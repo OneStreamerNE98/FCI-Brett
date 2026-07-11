@@ -40,7 +40,7 @@ export const DEFAULT_FILING_RULES: FilingRuleDraft[] = [
 ];
 
 export const DRIVE_BLUEPRINT = {
-  sharedDriveName: "Groundwork Operations",
+  sharedDriveName: "FCI Operations",
   roots: [
     "00_Company Admin / Client Directory (Google Sheet)",
     "01_Client Accounts / {CLIENT_CODE} — {CLIENT_NAME} / 00_Client Profile & Master Documents",
@@ -58,7 +58,7 @@ export const DRIVE_BLUEPRINT = {
     "05_Correspondence / Email Attachments",
     "06_Closeout",
   ],
-  gmailLabels: ["Groundwork/Intake", "Groundwork/Needs Review", "Groundwork/Filed"],
+  gmailLabels: ["FCI/Intake", "FCI/Needs Review", "FCI/Filed"],
 } as const;
 
 export function buildProjectFolderPlan(input: {

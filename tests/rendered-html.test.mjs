@@ -5,17 +5,18 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-test("ships the Groundwork product instead of starter content", async () => {
+test("ships the Floor Coverings International product instead of starter content", async () => {
   const [page, layout, app, css, packageJson] = await Promise.all([
     read("app/page.tsx"), read("app/layout.tsx"), read("app/FloorOpsApp.tsx"),
     read("app/globals.css"), read("package.json"),
   ]);
   assert.match(page, /FloorOpsApp/);
-  assert.match(layout, /Groundwork \| Commercial Flooring Operations/);
+  assert.match(layout, /Floor Coverings International \| Commercial Operations/);
+  assert.match(app, /floor-coverings-international-logo\.png/);
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
   assert.match(app, /Smart inbox/);
-  assert.match(app, /Ask Groundwork/);
+  assert.match(app, /Ask FCI Assistant/);
   assert.match(css, /@media \(max-width:560px\)/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
@@ -38,10 +39,10 @@ test("declares durable records, uploads, and guarded integration endpoints", asy
   assert.match(assistantApi, /OPENAI_API_KEY/);
 });
 
-test("includes migration and branded social preview", async () => {
+test("includes migrations and the Floor Coverings International logo asset", async () => {
   await Promise.all([
     access(new URL("drizzle/0000_glossy_nekra.sql", root)),
-    access(new URL("public/og.png", root)),
+    access(new URL("public/floor-coverings-international-logo.png", root)),
   ]);
 });
 
@@ -60,5 +61,5 @@ test("models clients, independent projects, and review-first email filing", asyn
   assert.match(projectsApi, /client_id/);
   assert.match(rulesApi, /approval_required/);
   assert.match(workspace, /needs-project-selection/);
-  assert.match(workspace, /Groundwork\/Needs Review/);
+  assert.match(workspace, /FCI\/Needs Review/);
 });

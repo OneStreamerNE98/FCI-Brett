@@ -1,20 +1,20 @@
-# Groundwork Google Workspace organization
+# Floor Coverings International Google Workspace organization
 
 ## Source of truth
 
-Groundwork owns operational records: clients, contacts, projects, schedules, tasks, email-filing decisions, and audit history. Google Workspace is the company-owned collaboration layer:
+FCI Operations owns operational records: clients, contacts, projects, schedules, tasks, email-filing decisions, and audit history. Google Workspace is the company-owned collaboration layer:
 
 - **Google Sheets:** a generated `Client Directory` that office staff can view, filter, and export.
 - **Shared Drive:** all account and project documents, photos, archived emails, and attachments.
 - **Gmail:** one controlled intake mailbox with broad labels, not thousands of per-project filters.
 - **Calendar:** separate `Client Appointments` and `Field Schedule` calendars.
 
-The first sync is one-way from Groundwork to the Client Directory Sheet. This prevents a spreadsheet sort or rename from breaking the relationship between a client and its independent projects. Add a controlled `Intake / Changes` tab later if spreadsheet-originated changes are needed.
+The first sync is one-way from FCI Operations to the Client Directory Sheet. This prevents a spreadsheet sort or rename from breaking the relationship between a client and its independent projects. Add a controlled `Intake / Changes` tab later if spreadsheet-originated changes are needed.
 
 ## Shared Drive blueprint
 
 ```text
-Groundwork Operations/
+FCI Operations/
   00_Company Admin/
     Client Directory (Google Sheet)
     Templates/
@@ -42,7 +42,7 @@ Do not put project folders beneath a client folder. A client can have many proje
 
 ## Email and file rules
 
-Configure rules in **Groundwork → Settings → Email & file rules**. Each rule has a priority, matching criteria, action, destination category, and mandatory approval.
+Configure rules in **FCI Operations → Settings → Email & file rules**. Each rule has a priority, matching criteria, action, destination category, and mandatory approval.
 
 Recommended matching order:
 
@@ -50,21 +50,21 @@ Recommended matching order:
 2. Explicit user rule → suggest the configured project or client destination.
 3. Known contact with exactly one eligible project → suggest that project.
 4. Known contact with two or more eligible projects → require project selection.
-5. Everything else → `Groundwork/Needs Review` and `99_Unsorted Intake`.
+5. Everything else → `FCI/Needs Review` and `99_Unsorted Intake`.
 
 Only use these broad Gmail labels:
 
 ```text
-Groundwork/Intake
-Groundwork/Needs Review
-Groundwork/Filed
+FCI/Intake
+FCI/Needs Review
+FCI/Filed
 ```
 
-On approval, Groundwork should save the original email as an `.eml` file in the selected project’s `05_Correspondence/Email Archive/YYYY-MM`, copy attachments to `Email Attachments/YYYY-MM`, record the Gmail/Drive identifiers and decision in the activity log, and apply `Groundwork/Filed`. Remove the Gmail `INBOX` label only when a user explicitly chooses to archive it.
+On approval, FCI Operations should save the original email as an `.eml` file in the selected project’s `05_Correspondence/Email Archive/YYYY-MM`, copy attachments to `Email Attachments/YYYY-MM`, record the Gmail/Drive identifiers and decision in the activity log, and apply `FCI/Filed`. Remove the Gmail `INBOX` label only when a user explicitly chooses to archive it.
 
 ## Workspace setup checklist
 
-- Create a company-owned Shared Drive named `Groundwork Operations`.
+- Create a company-owned Shared Drive named `FCI Operations`.
 - Create Google Groups for office staff, project managers, and field leads.
 - Create the `Client Directory` Google Sheet in `00_Company Admin`.
 - Select a dedicated project-intake mailbox.
