@@ -71,7 +71,7 @@ On approval, FCI Operations should save the original email as an `.eml` file in 
 - Create the `Client Appointments` and `Field Schedule` calendars.
 - Create a Google Cloud project; enable Drive, Gmail, Sheets, Calendar, and Pub/Sub APIs.
 - Register the OAuth client and approve the least-privilege scopes needed by the application.
-- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_SHARED_DRIVE_ID`, `GOOGLE_CLIENT_DIRECTORY_SHEET_ID`, and `GOOGLE_INTAKE_MAILBOX` in the hosted environment.
+- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `GOOGLE_SHARED_DRIVE_ID`, `GOOGLE_CLIENT_DIRECTORY_SHEET_ID`, `GOOGLE_INTAKE_MAILBOX`, `GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID`, `GOOGLE_FIELD_SCHEDULE_CALENDAR_ID`, and `GOOGLE_PUBSUB_TOPIC` in the hosted environment. Keep secrets out of source control.
 
 ## Operational controls still needed before live automation
 

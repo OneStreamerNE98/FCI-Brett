@@ -66,3 +66,23 @@ test("models clients, independent projects, and review-first email filing", asyn
   assert.match(workspace, /needs-project-selection/);
   assert.match(workspace, /FCI\/Needs Review/);
 });
+
+test("wires prototype controls and exposes an honest Workspace readiness check", async () => {
+  const [app, workspaceApi, envExample, testGuide] = await Promise.all([
+    read("app/FloorOpsApp.tsx"), read("app/api/v1/google-workspace/route.ts"),
+    read(".env.example"), read("docs/testing-and-google-workspace-setup.md"),
+  ]);
+  assert.match(app, /workspace-search/);
+  assert.match(app, /setNotificationsOpen/);
+  assert.match(app, /onAdvance\(lead\.id\)/);
+  assert.match(app, /ShiftModal/);
+  assert.match(app, /InboxReviewModal/);
+  assert.match(app, /SourceDetailModal/);
+  assert.match(app, /TestingLaunchPanel/);
+  assert.doesNotMatch(app, /3 email suggestions approved and filed/);
+  assert.match(workspaceApi, /credentialsPresent/);
+  assert.match(workspaceApi, /connected: false/);
+  assert.match(envExample, /GOOGLE_TOKEN_ENCRYPTION_KEY/);
+  assert.match(envExample, /GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID/);
+  assert.match(testGuide, /Test the prototype before connecting company data/);
+});

@@ -28,6 +28,8 @@ Copy `.env.example` to `.env.local` before connecting external services. The pro
 
 See [`docs/google-workspace-organization.md`](docs/google-workspace-organization.md) for the shared-drive layout, email rules, client-sheet mirror, and administrator checklist.
 
+For the prototype test sequence and the exact Google Cloud / Workspace handoff, see [`docs/testing-and-google-workspace-setup.md`](docs/testing-and-google-workspace-setup.md).
+
 ## Workspace Auth Headers
 
 OpenAI workspace sites can read the current user's email from

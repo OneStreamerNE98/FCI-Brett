@@ -6,7 +6,7 @@ type ClientBody = { name?: string; industry?: string; status?: string; primaryCo
 
 export async function GET() {
   await ensureWorkspaceSchema();
-  const result = await env.DB.prepare("SELECT c.*, COUNT(p.id) AS project_count FROM clients c LEFT JOIN projects p ON p.client_id = c.id GROUP BY c.id ORDER BY c.name ASC").all();
+  const result = await env.DB.prepare("SELECT c.*, COUNT(p.id) AS project_count, (SELECT name FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_name, (SELECT email FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_email FROM clients c LEFT JOIN projects p ON p.client_id = c.id GROUP BY c.id ORDER BY c.name ASC").all();
   return NextResponse.json({ clients: result.results });
 }
 
