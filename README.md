@@ -1,14 +1,12 @@
-# vinext-starter
+# Groundwork
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Commercial flooring operations software for client intake, independent project delivery, crew scheduling, and Google Workspace organization.
 
 ## Prerequisites
 
 - Node.js `>=22.13.0`
 
-## Quick Start
+## Local prototype
 
 ```bash
 npm install
@@ -16,16 +14,19 @@ npm run dev
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Copy `.env.example` to `.env.local` before connecting external services. The prototype works without credentials; Google Workspace features remain in planning/setup mode until an administrator configures the Shared Drive and OAuth app.
 
-## Included Shape
+## Included capabilities
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- Client Directory with repeat clients and multiple independent projects
+- Email and file-filing rule configuration under Settings
+- Google Shared Drive and Google Sheet organizational blueprint
+- Gmail review queue, project scheduling, client/project activity, and AI assistant prototype
+- D1-backed data-model and API foundation for clients, contacts, projects, rules, mail items, and workspace settings
+
+## Google Workspace setup
+
+See [`docs/google-workspace-organization.md`](docs/google-workspace-organization.md) for the shared-drive layout, email rules, client-sheet mirror, and administrator checklist.
 
 ## Workspace Auth Headers
 

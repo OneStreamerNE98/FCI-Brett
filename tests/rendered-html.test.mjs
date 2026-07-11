@@ -44,3 +44,21 @@ test("includes migration and branded social preview", async () => {
     access(new URL("public/og.png", root)),
   ]);
 });
+
+test("models clients, independent projects, and review-first email filing", async () => {
+  const [app, schema, clientsApi, projectsApi, rulesApi, workspace] = await Promise.all([
+    read("app/FloorOpsApp.tsx"), read("db/schema.ts"), read("app/api/v1/clients/route.ts"),
+    read("app/api/v1/projects/route.ts"), read("app/api/v1/filing-rules/route.ts"), read("app/lib/google-workspace.ts"),
+  ]);
+  assert.match(app, /Client Directory/);
+  assert.match(app, /multiple independent projects/);
+  assert.match(app, /Multi-project protection/);
+  assert.match(schema, /export const clients/);
+  assert.match(schema, /export const projects/);
+  assert.match(schema, /export const filingRules/);
+  assert.match(clientsApi, /client_code/);
+  assert.match(projectsApi, /client_id/);
+  assert.match(rulesApi, /approval_required/);
+  assert.match(workspace, /needs-project-selection/);
+  assert.match(workspace, /Groundwork\/Needs Review/);
+});
