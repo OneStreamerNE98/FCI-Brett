@@ -17,7 +17,7 @@ Do not use real client documents, a live mailbox, or crew schedules for these te
 
 ## 2. Prepare Google Workspace
 
-Your Google Workspace administrator should create or identify these company-owned resources:
+For the production workspace, your Google Workspace administrator should create or identify these company-owned resources:
 
 - Shared Drive: `FCI Operations`
 - Google Sheet: `Client Directory`, inside `00_Company Admin`
@@ -27,6 +27,12 @@ Your Google Workspace administrator should create or identify these company-owne
 - Google Groups for office staff, project managers, and field leads
 
 Keep each project under `02_Projects`, not inside its client folder. The client folder is for account-level material and project shortcuts only.
+
+### Temporary My Drive option
+
+For a safe early prototype, create one empty My Drive folder dedicated to FCI Operations and put the same structure inside it. Configure the hosted site with `GOOGLE_DRIVE_MODE=my-drive`, `GOOGLE_DRIVE_ROOT_FOLDER_ID`, and the new Client Directory Sheet ID. This proves the folder organization only; it does not authorize the app to read Gmail or Drive.
+
+Do not use the account's My Drive root, share this temporary folder widely, or upload live client records until role controls and secure OAuth are implemented. Move the contents to the company Shared Drive before staff rollout.
 
 ## 3. Create the Google Cloud authorization application
 
@@ -48,7 +54,8 @@ Add these as hosted environment values/secrets, never to source control or chat:
 - `GOOGLE_CLIENT_SECRET` (secret)
 - `GOOGLE_OAUTH_REDIRECT_URI`
 - `GOOGLE_TOKEN_ENCRYPTION_KEY` (secret, high-entropy)
-- `GOOGLE_SHARED_DRIVE_ID`
+- `GOOGLE_DRIVE_MODE` (`my-drive` for the temporary folder or `shared-drive` for production)
+- `GOOGLE_DRIVE_ROOT_FOLDER_ID` (temporary My Drive mode only) or `GOOGLE_SHARED_DRIVE_ID` (production)
 - `GOOGLE_CLIENT_DIRECTORY_SHEET_ID`
 - `GOOGLE_INTAKE_MAILBOX`
 - `GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID`

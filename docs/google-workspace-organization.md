@@ -11,6 +11,12 @@ FCI Operations owns operational records: clients, contacts, projects, schedules,
 
 The first sync is one-way from FCI Operations to the Client Directory Sheet. This prevents a spreadsheet sort or rename from breaking the relationship between a client and its independent projects. Add a controlled `Intake / Changes` tab later if spreadsheet-originated changes are needed.
 
+## Temporary My Drive workspace
+
+For an early prototype, use one empty, dedicated My Drive folder as the workspace root. Create the same structure shown below inside that folder; the application must never use the account's My Drive root. Configure `GOOGLE_DRIVE_MODE=my-drive` and `GOOGLE_DRIVE_ROOT_FOLDER_ID` with that folder's ID.
+
+This is suitable only for testing and one-owner operation because the folder is owned by that Google account. Before adding wider staff access or live client documents, copy/move the structure to the company Shared Drive and change the mode to `shared-drive` with `GOOGLE_SHARED_DRIVE_ID`. The client and project data model does not change.
+
 ## Shared Drive blueprint
 
 ```text
@@ -64,14 +70,14 @@ On approval, FCI Operations should save the original email as an `.eml` file in 
 
 ## Workspace setup checklist
 
-- Create a company-owned Shared Drive named `FCI Operations`.
+- For production, create a company-owned Shared Drive named `FCI Operations`. For early testing, create one dedicated My Drive folder instead.
 - Create Google Groups for office staff, project managers, and field leads.
 - Create the `Client Directory` Google Sheet in `00_Company Admin`.
 - Select a dedicated project-intake mailbox.
 - Create the `Client Appointments` and `Field Schedule` calendars.
 - Create a Google Cloud project; enable Drive, Gmail, Sheets, Calendar, and Pub/Sub APIs.
 - Register the OAuth client and approve the least-privilege scopes needed by the application.
-- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `GOOGLE_SHARED_DRIVE_ID`, `GOOGLE_CLIENT_DIRECTORY_SHEET_ID`, `GOOGLE_INTAKE_MAILBOX`, `GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID`, `GOOGLE_FIELD_SCHEDULE_CALENDAR_ID`, and `GOOGLE_PUBSUB_TOPIC` in the hosted environment. Keep secrets out of source control.
+- Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, `GOOGLE_TOKEN_ENCRYPTION_KEY`, `GOOGLE_DRIVE_MODE`, `GOOGLE_DRIVE_ROOT_FOLDER_ID` (temporary mode) or `GOOGLE_SHARED_DRIVE_ID` (production), `GOOGLE_CLIENT_DIRECTORY_SHEET_ID`, `GOOGLE_INTAKE_MAILBOX`, `GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID`, `GOOGLE_FIELD_SCHEDULE_CALENDAR_ID`, and `GOOGLE_PUBSUB_TOPIC` in the hosted environment. Keep secrets out of source control.
 
 ## Operational controls still needed before live automation
 

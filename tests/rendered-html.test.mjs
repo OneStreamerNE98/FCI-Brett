@@ -82,7 +82,11 @@ test("wires prototype controls and exposes an honest Workspace readiness check",
   assert.doesNotMatch(app, /3 email suggestions approved and filed/);
   assert.match(workspaceApi, /credentialsPresent/);
   assert.match(workspaceApi, /connected: false/);
+  assert.match(workspaceApi, /GOOGLE_DRIVE_ROOT_FOLDER_ID/);
+  assert.match(app, /Temporary Drive folder configured/);
+  assert.match(app, /Move the workspace to a company Shared Drive/);
   assert.match(envExample, /GOOGLE_TOKEN_ENCRYPTION_KEY/);
+  assert.match(envExample, /GOOGLE_DRIVE_MODE/);
   assert.match(envExample, /GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID/);
   assert.match(testGuide, /Test the prototype before connecting company data/);
 });

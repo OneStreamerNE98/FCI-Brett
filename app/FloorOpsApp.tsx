@@ -443,13 +443,20 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState<"unknown" | "missing" | "credentials">("unknown");
   const [missing, setMissing] = useState<string[]>([]);
+  const [workspace, setWorkspace] = useState<{ mode?: "shared-drive" | "my-drive"; storageLabel?: string; storageName?: string; temporary?: boolean; storageConfigured?: boolean } | null>(null);
+
   async function checkSetup() {
     setChecking(true);
     try {
       const response = await fetch("/api/v1/google-workspace");
       if (!response.ok) throw new Error("Workspace readiness check failed");
-      const data = await response.json() as { credentialsPresent?: boolean; missing?: string[] };
+      const data = await response.json() as {
+        credentialsPresent?: boolean;
+        missing?: string[];
+        workspace?: { mode?: "shared-drive" | "my-drive"; storageLabel?: string; storageName?: string; temporary?: boolean; storageConfigured?: boolean };
+      };
       setMissing(data.missing ?? []);
+      setWorkspace(data.workspace ?? null);
       setStatus(data.credentialsPresent ? "credentials" : "missing");
       notify(data.credentialsPresent ? "Configuration is present. Finish OAuth authorization before Google data can be accessed." : `Workspace setup still needs ${Math.max(1, data.missing?.length ?? 0)} item(s)`);
     } catch {
@@ -459,8 +466,44 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
       setChecking(false);
     }
   }
+
   const configured = status === "credentials";
-  return <section className="panel workspace-settings"><div className="settings-heading"><div><p className="eyebrow">Google Workspace foundation</p><h2>Google Workspace</h2><p>One company-owned Shared Drive, two calendars, a mirrored Client Directory sheet, and a dedicated intake mailbox.</p></div><button className="primary-button" onClick={checkSetup} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button></div><div className={`workspace-connection ${configured ? "ready" : ""}`}><div className="integration-logo google"><Mail size={20} /></div><div><strong>{configured ? "Configuration entered — OAuth not yet verified" : "Google Workspace setup required"}</strong><span>{configured ? "The app still needs the owner to complete secure OAuth authorization before it can access Drive, Gmail, Sheets, or Calendar." : "Gmail, Drive, Sheets, and Calendar are not connected until all required configuration is present."}</span></div><span>{configured ? "Authorize next" : "Not connected"}</span></div>{missing.length > 0 && <p className="workspace-missing"><strong>Still needed:</strong> {missing.join(", ")}</p>}<div className="drive-blueprint"><div><h3>Shared Drive blueprint</h3><p>FCI Operations</p></div><ol>{DRIVE_BLUEPRINT.roots.map((item) => <li key={item}>{item}</li>)}</ol><div className="project-folder-list"><strong>Every independent project receives:</strong>{DRIVE_BLUEPRINT.projectFolders.map((item) => <span key={item}><FolderOpen size={13} />{item}</span>)}</div></div><div className="workspace-checklist"><h3>Before you connect</h3><label><input type="checkbox" /> Shared Drive created and owned by the company</label><label><input type="checkbox" /> Google Sheet named “Client Directory” created in that Shared Drive</label><label><input type="checkbox" /> Dedicated intake mailbox selected</label><label><input type="checkbox" /> Google Cloud OAuth app approved by Workspace admin</label><label><input type="checkbox" /> Client Appointments and Field Schedule calendars created</label></div></section>;
+  const temporary = workspace?.temporary === true;
+  const storageName = workspace?.storageName ?? "FCI Operations";
+
+  return <section className="panel workspace-settings">
+    <div className="settings-heading">
+      <div>
+        <p className="eyebrow">Google Workspace foundation</p>
+        <h2>Google Workspace</h2>
+        <p>{temporary ? "A contained My Drive folder is configured for early testing. Gmail, calendars, and secure OAuth still need to be connected." : "One company-owned Shared Drive, two calendars, a mirrored Client Directory sheet, and a dedicated intake mailbox."}</p>
+      </div>
+      <button className="primary-button" onClick={checkSetup} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
+    </div>
+    <div className={`workspace-connection ${configured ? "ready" : ""}`}>
+      <div className="integration-logo google"><Mail size={20} /></div>
+      <div>
+        <strong>{configured ? "Configuration entered — OAuth not yet verified" : temporary && workspace?.storageConfigured ? "Temporary Drive folder configured" : "Google Workspace setup required"}</strong>
+        <span>{configured ? "The app still needs the owner to complete secure OAuth authorization before it can access Drive, Gmail, Sheets, or Calendar." : temporary && workspace?.storageConfigured ? "The Drive root is set, but the app cannot access or change Google data until secure OAuth is complete." : "Gmail, Drive, Sheets, and Calendar are not connected until all required configuration is present."}</span>
+      </div>
+      <span>{configured ? "Authorize next" : temporary && workspace?.storageConfigured ? "Storage ready" : "Not connected"}</span>
+    </div>
+    {temporary && <p className="workspace-warning"><CircleAlert size={15} /><span>This folder is a temporary My Drive workspace owned by its creator. Move the workspace to a company Shared Drive before wider staff use.</span></p>}
+    {missing.length > 0 && <p className="workspace-missing"><strong>Still needed:</strong> {missing.join(", ")}</p>}
+    <div className="drive-blueprint">
+      <div><h3>{temporary ? "Temporary My Drive blueprint" : "Shared Drive blueprint"}</h3><p>{storageName}</p></div>
+      <ol>{DRIVE_BLUEPRINT.roots.map((item) => <li key={item}>{item}</li>)}</ol>
+      <div className="project-folder-list"><strong>Every independent project receives:</strong>{DRIVE_BLUEPRINT.projectFolders.map((item) => <span key={item}><FolderOpen size={13} />{item}</span>)}</div>
+    </div>
+    <div className="workspace-checklist">
+      <h3>Before you connect</h3>
+      <label><input type="checkbox" /> {temporary ? "Temporary Google Drive root folder created and limited to test documents" : "Shared Drive created and owned by the company"}</label>
+      <label><input type="checkbox" /> Google Sheet named “Client Directory” created in the selected workspace</label>
+      <label><input type="checkbox" /> Dedicated intake mailbox selected</label>
+      <label><input type="checkbox" /> Google Cloud OAuth app approved by Workspace admin</label>
+      <label><input type="checkbox" /> Client Appointments and Field Schedule calendars created</label>
+    </div>
+  </section>;
 }
 
 function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => void }) {

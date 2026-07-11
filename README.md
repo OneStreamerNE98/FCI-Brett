@@ -14,13 +14,13 @@ npm run dev
 npm run build
 ```
 
-Copy `.env.example` to `.env.local` before connecting external services. The prototype works without credentials; Google Workspace features remain in planning/setup mode until an administrator configures the Shared Drive and OAuth app.
+Copy `.env.example` to `.env.local` before connecting external services. The prototype works without credentials; Google Workspace features remain in planning/setup mode until an administrator configures either a contained temporary My Drive root or the production Shared Drive, then completes OAuth.
 
 ## Included capabilities
 
 - Client Directory with repeat clients and multiple independent projects
 - Email and file-filing rule configuration under Settings
-- Google Shared Drive and Google Sheet organizational blueprint
+- Google Drive / Shared Drive and Google Sheet organizational blueprint
 - Gmail review queue, project scheduling, client/project activity, and AI assistant prototype
 - D1-backed data-model and API foundation for clients, contacts, projects, rules, mail items, and workspace settings
 

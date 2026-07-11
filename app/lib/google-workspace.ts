@@ -41,6 +41,7 @@ export const DEFAULT_FILING_RULES: FilingRuleDraft[] = [
 
 export const DRIVE_BLUEPRINT = {
   sharedDriveName: "FCI Operations",
+  temporaryWorkspaceName: "FCI Operations — Temporary",
   roots: [
     "00_Company Admin / Client Directory (Google Sheet)",
     "01_Client Accounts / {CLIENT_CODE} — {CLIENT_NAME} / 00_Client Profile & Master Documents",
@@ -60,6 +61,30 @@ export const DRIVE_BLUEPRINT = {
   ],
   gmailLabels: ["FCI/Intake", "FCI/Needs Review", "FCI/Filed"],
 } as const;
+
+export type DriveWorkspaceMode = "shared-drive" | "my-drive";
+
+export function resolveDriveWorkspace(input: {
+  mode?: string;
+  rootFolderId?: string;
+  sharedDriveId?: string;
+}) {
+  const requestedMode = input.mode?.trim().toLowerCase();
+  const modeIsValid = !requestedMode || requestedMode === "shared-drive" || requestedMode === "my-drive";
+  const mode: DriveWorkspaceMode = requestedMode === "my-drive" ? "my-drive" : "shared-drive";
+  const rootFolderId = mode === "my-drive" ? input.rootFolderId?.trim() : input.sharedDriveId?.trim();
+  const isTemporary = mode === "my-drive";
+
+  return {
+    mode,
+    modeIsValid,
+    rootFolderId,
+    isTemporary,
+    storageLabel: isTemporary ? "Temporary My Drive workspace" : "Company Shared Drive",
+    storageName: isTemporary ? DRIVE_BLUEPRINT.temporaryWorkspaceName : DRIVE_BLUEPRINT.sharedDriveName,
+    storageRequirementLabel: isTemporary ? "temporary Google Drive root folder ID" : "Shared Drive ID",
+  };
+}
 
 export function buildProjectFolderPlan(input: {
   clientCode: string;
