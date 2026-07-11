@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity, Bell, Bot, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
@@ -127,13 +126,8 @@ export function FloorOpsApp({ userName }: { userName: string }) {
     <div className="app-shell">
       <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
           <div className="brand">
-            <Image
-              src="/floor-coverings-international-logo.png"
-              alt="Floor Coverings International"
-              width={1024}
-              height={256}
-              priority
-            />
+            {/* eslint-disable-next-line @next/next/no-img-element -- The supplied local brand mark does not need optimizer handling. */}
+            <img src="/floor-coverings-international-logo.png" alt="Floor Coverings International" />
           </div>
         <button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <nav className="main-nav" aria-label="Main navigation">
