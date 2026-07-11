@@ -3,9 +3,9 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity, Bell, Bot, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronRight, CircleAlert, CircleCheckBig, Clock3, ContactRound, FileText, FolderOpen, FolderTree, HardHat,
+  ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, FileText, FolderOpen, FolderTree, HardHat,
   Inbox, LayoutDashboard, ListTodo, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal,
-  ListFilter, Plus, Search, Send, Settings, ShieldCheck, Sparkles, Upload, Users, X, Zap,
+  ListFilter, LogOut, Plus, RefreshCw, Search, Send, Settings, ShieldCheck, Sparkles, Upload, Users, X, Zap,
 } from "lucide-react";
 import { DEFAULT_FILING_RULES, DRIVE_BLUEPRINT, type FilingRuleDraft } from "./lib/google-workspace";
 
@@ -26,7 +26,6 @@ type SheetMirrorStatus = {
 };
 type ProjectUpdateDraft = { project: Project; subject: string; message: string };
 type ShiftAssignment = { id: string; crew: string; site: string; day: string; time: string; status: "Pending" | "Acknowledged" };
-type InboxMessage = { id: string; sender: string; subject: string; preview: string; suggestedProject: string; confidence: number };
 
 const leadStages = ["New inquiry", "Site visit", "Proposal", "Decision"];
 
@@ -61,13 +60,16 @@ const schedule = [
 const navItems: { label: View; icon: typeof LayoutDashboard; badge?: string }[] = [
   { label: "Overview", icon: LayoutDashboard }, { label: "Leads", icon: Zap, badge: "4" },
   { label: "Clients", icon: ContactRound }, { label: "Projects", icon: BriefcaseBusiness }, { label: "Schedule", icon: CalendarDays, badge: "2" },
-  { label: "Inbox", icon: Inbox, badge: "6" }, { label: "AI Assistant", icon: Sparkles },
+  { label: "Inbox", icon: Inbox }, { label: "AI Assistant", icon: Sparkles },
   { label: "Reports", icon: Activity }, { label: "Settings", icon: Settings },
 ];
 
-export function FloorOpsApp({ userName }: { userName: string }) {
+export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: string; userEmail: string; signOutHref: string }) {
   const [view, setView] = useState<View>("Overview");
   const [mobileNav, setMobileNav] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [leadModal, setLeadModal] = useState(false);
   const [clientModal, setClientModal] = useState(false);
   const [projectModal, setProjectModal] = useState(false);
@@ -88,6 +90,7 @@ export function FloorOpsApp({ userName }: { userName: string }) {
   const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
   const [sheetSyncing, setSheetSyncing] = useState(false);
   const firstName = userName.includes("@") ? "there" : userName.split(" ")[0];
+  const userInitials = userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
 
   async function refreshDirectoryData() {
     try {
@@ -111,6 +114,12 @@ export function FloorOpsApp({ userName }: { userName: string }) {
 
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileNav(false);
+        setWorkspaceMenuOpen(false);
+        setProfileMenuOpen(false);
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         document.getElementById("workspace-search")?.focus();
@@ -231,6 +240,8 @@ export function FloorOpsApp({ userName }: { userName: string }) {
   function openRules() {
     setSettingsArea("Email & file rules");
     setView("Settings");
+    setWorkspaceMenuOpen(false);
+    setProfileMenuOpen(false);
   }
 
   function openGoogleWorkspace() {
@@ -238,7 +249,39 @@ export function FloorOpsApp({ userName }: { userName: string }) {
     setClientOpen(false);
     setSettingsArea("Google Workspace");
     setView("Settings");
+    setWorkspaceMenuOpen(false);
+    setProfileMenuOpen(false);
     notify("Google Workspace setup opened");
+  }
+
+  function openDirectorySettings() {
+    setSettingsArea("Client Directory");
+    setView("Settings");
+    setWorkspaceMenuOpen(false);
+    setProfileMenuOpen(false);
+  }
+
+  function openTestingChecklist() {
+    setSettingsArea("Testing & launch");
+    setView("Settings");
+    setWorkspaceMenuOpen(false);
+    setProfileMenuOpen(false);
+  }
+
+  async function copySignedInEmail() {
+    try {
+      await navigator.clipboard.writeText(userEmail);
+      notify("Signed-in email copied");
+    } catch {
+      notify(`Signed in as ${userEmail}`);
+    }
+    setProfileMenuOpen(false);
+  }
+
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => !current);
+    setWorkspaceMenuOpen(false);
+    setProfileMenuOpen(false);
   }
 
   function openProject(project: Project) {
@@ -288,21 +331,31 @@ export function FloorOpsApp({ userName }: { userName: string }) {
   }
 
   return (
-    <div className="app-shell">
-      <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-is-collapsed" : ""}`}>
+      <aside className={`sidebar ${mobileNav ? "open" : ""} ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <div className="sidebar-brand-row">
           <div className="brand">
             {/* eslint-disable-next-line @next/next/no-img-element -- The supplied local brand mark does not need optimizer handling. */}
             <img src="/floor-coverings-international-logo.png" alt="Floor Coverings International" />
+            <span className="brand-compact" aria-hidden="true"><Building2 size={22} /></span>
           </div>
+          <button className="sidebar-collapse" onClick={toggleSidebar} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>{sidebarCollapsed ? <ChevronsRight size={17} /> : <ChevronsLeft size={17} />}</button>
+        </div>
         <button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <p>Workspace</p>
-          {navItems.slice(0, 7).map(({ label, icon: Icon, badge }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); }}><Icon size={18} /><span>{label}</span>{badge && <b>{badge}</b>}</button>)}
+          {navItems.slice(0, 7).map(({ label, icon: Icon, badge }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={label} title={label}><Icon size={18} /><span>{label}</span>{badge && <b>{badge}</b>}</button>)}
           <p>Management</p>
-          {navItems.slice(7).map(({ label, icon: Icon }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); }}><Icon size={18} /><span>{label}</span></button>)}
+          {navItems.slice(7).map(({ label, icon: Icon }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={label} title={label}><Icon size={18} /><span>{label}</span></button>)}
         </nav>
-        <div className="workspace-card"><div className="workspace-icon"><Building2 size={17} /></div><div><span>Workspace</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></div>
-        <div className="profile"><div className="avatar">JG</div><div><strong>{userName}</strong><span>Administrator</span></div><MoreHorizontal size={18} /></div>
+        <div className="sidebar-menu-wrap workspace-menu-wrap">
+          <button className="workspace-card" onClick={() => { setWorkspaceMenuOpen((current) => !current); setProfileMenuOpen(false); }} aria-haspopup="menu" aria-expanded={workspaceMenuOpen} title="Workspace actions"><div className="workspace-icon"><Building2 size={17} /></div><div><span>Workspace</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></button>
+          {workspaceMenuOpen && <div className="sidebar-popover workspace-popover" role="menu"><div className="menu-heading"><strong>FCI Operations</strong><span>Single-company workspace</span></div><button role="menuitem" onClick={() => { setView("Clients"); setWorkspaceMenuOpen(false); }}><ContactRound size={15} /> Client Directory</button><button role="menuitem" onClick={openDirectorySettings}><FolderTree size={15} /> Directory sync</button><button role="menuitem" onClick={openGoogleWorkspace}><Building2 size={15} /> Google Workspace</button><button role="menuitem" onClick={openTestingChecklist}><ShieldCheck size={15} /> Testing & launch</button></div>}
+        </div>
+        <div className="sidebar-menu-wrap profile-menu-wrap">
+          <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); }} aria-haspopup="menu" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>Administrator</span></div><MoreHorizontal size={18} /></button>
+          {profileMenuOpen && <div className="sidebar-popover profile-popover" role="menu"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · Administrator</span></div><button role="menuitem" onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button><button role="menuitem" onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button><button role="menuitem" onClick={() => { setView("Settings"); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }}><Settings size={15} /> Workspace settings</button><button role="menuitem" onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a role="menuitem" href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
+        </div>
       </aside>
 
       {mobileNav && <button className="sidebar-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
@@ -310,7 +363,7 @@ export function FloorOpsApp({ userName }: { userName: string }) {
         <header className="topbar">
           <button className="mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={21} /></button>
           <form className="search" onSubmit={(event) => { event.preventDefault(); searchWorkspace(); }}><Search size={18} /><input id="workspace-search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} aria-label="Search workspace" placeholder="Search projects, clients, contacts…" /><button className="search-shortcut" type="button" onClick={() => document.getElementById("workspace-search")?.focus()} aria-label="Focus workspace search">⌘ K</button></form>
-          <div className="top-actions"><div className="notification-wrap"><button className="icon-button" onClick={() => setNotificationsOpen((current) => !current)} aria-label="Notifications" aria-expanded={notificationsOpen}><Bell size={19} /><i /></button>{notificationsOpen && <div className="notification-menu" role="status"><strong>Needs attention</strong><button onClick={() => { setView("Schedule"); setNotificationsOpen(false); }}>2 schedule confirmations pending</button><button onClick={() => { setView("Inbox"); setNotificationsOpen(false); }}>3 email matches ready for review</button><button onClick={() => { setView("Projects"); setNotificationsOpen(false); }}>1 closeout follow-up overdue</button></div>}</div><button className="primary-button" onClick={() => setLeadModal(true)}><Plus size={17} /> Add lead</button></div>
+          <div className="top-actions"><div className="notification-wrap"><button className="icon-button" onClick={() => setNotificationsOpen((current) => !current)} aria-label="Notifications" aria-expanded={notificationsOpen}><Bell size={19} /><i /></button>{notificationsOpen && <div className="notification-menu" role="status"><strong>Needs attention</strong><button onClick={() => { setView("Schedule"); setNotificationsOpen(false); }}>2 schedule confirmations pending</button><button onClick={() => { setView("Inbox"); setNotificationsOpen(false); }}>Open your connected Gmail inbox</button><button onClick={() => { setView("Projects"); setNotificationsOpen(false); }}>1 closeout follow-up overdue</button></div>}</div><button className="primary-button" onClick={() => setLeadModal(true)}><Plus size={17} /> Add lead</button></div>
         </header>
 
         <div className="page-wrap">
@@ -319,7 +372,7 @@ export function FloorOpsApp({ userName }: { userName: string }) {
           {view === "Clients" && <ClientsView clients={clients} projects={projectItems} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => setProjectModal(true)} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
           {view === "Projects" && <ProjectsView projects={projectItems} onNewProject={() => setProjectModal(true)} onProject={openProject} />}
           {view === "Schedule" && <ScheduleView notify={notify} />}
-          {view === "Inbox" && <InboxView notify={notify} onRules={openRules} />}
+          {view === "Inbox" && <InboxView notify={notify} onRules={openRules} projects={projectItems} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView />}
           {view === "Reports" && <ReportsView />}
           {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} rules={filingRules} projects={projectItems} onAddRule={() => setRuleModal(true)} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
@@ -360,7 +413,7 @@ function Overview({ firstName, leads, projects, onView, onProject }: { firstName
     </section>
     <section className="dashboard-grid lower-grid">
       <div className="panel projects-panel"><PanelHeader title="Active projects" subtitle="8 total" action="View projects" onAction={() => onView("Projects")} /><div className="project-cards">{projects.map((project) => <button className="project-card" key={project.number} onClick={() => onProject(project)}><div className="project-card-top"><Status text={project.status} /><MoreHorizontal size={17} /></div><span className="project-number">{project.number}</span><h3>{project.name}</h3><p>{project.client}</p><div className="progress-row"><span>Progress</span><b>{project.progress}%</b></div><div className="progress"><i style={{ width: `${project.progress}%` }} /></div><div className="project-meta"><span><MapPin size={13} />{project.site}</span><span>{project.value}</span></div></button>)}</div></div>
-      <div className="panel inbox-panel"><PanelHeader title="Smart inbox" subtitle="6 unfiled" action="Review inbox" onAction={() => onView("Inbox")} /><div className="mail-list"><MailItem sender="Elena Park" subject="Ridgeway finish selections" project="Suggested: Hudson Retail" time="9:42 AM" /><MailItem sender="Carlos Rivera" subject="Photos from Harbor Plaza" project="Suggested: CF-2026-038" time="8:17 AM" /><MailItem sender="Morgan Construction" subject="Updated dock access plan" project="Suggested: One Harbor Plaza" time="Yesterday" /></div><button className="inbox-cta" onClick={() => onView("Inbox")}><Sparkles size={15} /> Review 3 high-confidence matches</button></div>
+      <div className="panel inbox-panel"><PanelHeader title="Connected inbox" subtitle="Explicit Gmail access" action="Open inbox" onAction={() => onView("Inbox")} /><div className="dashboard-inbox-empty"><Mail size={20} /><div><strong>Your Gmail stays in your control</strong><p>Open the Inbox to load up to 20 message summaries from the approved test account. Filing always requires your project selection and confirmation.</p></div></div><button className="inbox-cta" onClick={() => onView("Inbox")}><Mail size={15} /> Open connected inbox</button></div>
     </section>
   </>;
 }
@@ -433,31 +486,164 @@ function ScheduleView({ notify }: { notify: (s: string) => void }) {
   </>;
 }
 
-function InboxView({ notify, onRules }: { notify: (s: string) => void; onRules: () => void }) {
-  const messages: InboxMessage[] = [
-    { id: "mail-ridgeway", sender: "Elena Park", subject: "Ridgeway finish selections", preview: "Attached are the updated LVT and base selections we reviewed…", suggestedProject: "Hudson Retail Group", confidence: 98 },
-    { id: "mail-harbor", sender: "Carlos Rivera", subject: "Photos from Harbor Plaza", preview: "Moisture test photos and readings from this morning are attached.", suggestedProject: "CF-2026-038", confidence: 96 },
-    { id: "mail-dock", sender: "Morgan Construction", subject: "Updated dock access plan", preview: "Please use the revised loading dock sequence beginning Monday.", suggestedProject: "One Harbor Plaza", confidence: 91 },
-    { id: "mail-fairfield", sender: "Priya Shah", subject: "RE: Fairfield Commons proposal", preview: "We have two questions about the alternates in section three…", suggestedProject: "Mason & Reed", confidence: 84 },
-  ];
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [reviewItems, setReviewItems] = useState<InboxMessage[]>([]);
-  const [reviewed, setReviewed] = useState<Record<string, string>>({});
-  const allSelected = selectedIds.length === messages.length;
-  function toggleMessage(id: string) {
-    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+type InboxBucket = "inbox" | "intake" | "needs-review" | "filed";
+type GmailWorkspaceStatus = {
+  connectionStatus?: string;
+  connectionAccount?: string | null;
+  gmailConnected?: boolean;
+  gmailEnabled?: boolean;
+  requiresReauthorization?: boolean;
+  environment?: "test" | "production";
+};
+
+const inboxBucketLabels: Record<InboxBucket, string> = {
+  inbox: "Inbox",
+  intake: "FCI Intake",
+  "needs-review": "Needs Review",
+  filed: "Filed",
+};
+
+function inboxDate(value: string | null) {
+  if (!value) return "Date unavailable";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function InboxView({ notify, onRules, projects, onGoogleSetup }: { notify: (s: string) => void; onRules: () => void; projects: Project[]; onGoogleSetup: () => void }) {
+  const [workspace, setWorkspace] = useState<GmailWorkspaceStatus | null>(null);
+  const [messages, setMessages] = useState<GmailTestMessage[]>([]);
+  const [bucket, setBucket] = useState<InboxBucket>("inbox");
+  const [search, setSearch] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [labelReady, setLabelReady] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [filingMessage, setFilingMessage] = useState<GmailTestMessage | null>(null);
+  const [filingProjectId, setFilingProjectId] = useState("");
+  const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
+  const [filingLoading, setFilingLoading] = useState(false);
+  const [filingSubmitting, setFilingSubmitting] = useState(false);
+
+  async function checkGmailConnection() {
+    setChecking(true);
+    try {
+      const response = await fetch("/api/v1/google-workspace");
+      if (!response.ok) throw new Error("Google Workspace status could not be checked.");
+      const data = await response.json() as { workspace?: GmailWorkspaceStatus };
+      setWorkspace(data.workspace ?? null);
+      setError(null);
+    } catch (connectionError) {
+      setWorkspace(null);
+      setError(connectionError instanceof Error ? connectionError.message : "Google Workspace status could not be checked.");
+    } finally {
+      setChecking(false);
+    }
   }
-  function openReview(items: InboxMessage[]) {
-    if (!items.length) {
-      notify("Select a message or choose the high-confidence suggestions to review");
+
+  useEffect(() => {
+    const check = window.setTimeout(() => { void checkGmailConnection(); }, 0);
+    return () => window.clearTimeout(check);
+  }, []);
+
+  const gmailReady = workspace?.connectionStatus === "connected" && workspace.gmailEnabled === true && workspace.gmailConnected === true;
+
+  async function loadMessages() {
+    setLoading(true);
+    setError(null);
+    try {
+      const parameters = new URLSearchParams({ label: bucket });
+      if (search.trim()) parameters.set("q", search.trim());
+      const response = await fetch(`/api/v1/integrations/google/gmail/messages?${parameters.toString()}`);
+      const data = await response.json().catch(() => ({})) as { messages?: GmailTestMessage[]; labelReady?: boolean; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Your Gmail messages could not be loaded.");
+      setMessages(data.messages ?? []);
+      setLabelReady(Boolean(data.labelReady));
+      notify(`Loaded ${data.messages?.length ?? 0} message${(data.messages?.length ?? 0) === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`);
+    } catch (loadError) {
+      setMessages([]);
+      setError(loadError instanceof Error ? loadError.message : "Your Gmail messages could not be loaded.");
+      await checkGmailConnection();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function prepareLabels() {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "FCI Gmail labels could not be prepared.");
+      setLabelReady(true);
+      notify("FCI Gmail labels are ready. No messages were moved or archived.");
+      await loadMessages();
+    } catch (prepareError) {
+      setError(prepareError instanceof Error ? prepareError.message : "FCI Gmail labels could not be prepared.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openFilingReview(message: GmailTestMessage) {
+    setFilingMessage(message);
+    setFilingProjectId("");
+    setFilingPreview(null);
+  }
+
+  function closeFilingReview() {
+    if (filingLoading || filingSubmitting) return;
+    setFilingMessage(null);
+    setFilingProjectId("");
+    setFilingPreview(null);
+  }
+
+  async function previewGmailFiling() {
+    if (!filingMessage || !filingProjectId) {
+      notify("Choose the exact independent project before reviewing this email filing.");
       return;
     }
-    setReviewItems(items);
+    setFilingLoading(true);
+    try {
+      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
+      const data = await response.json().catch(() => ({})) as GmailFilingPreview & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "The Gmail filing preview could not be loaded.");
+      setFilingPreview(data);
+      notify(`Review the Drive filing for ${data.project.number}. Nothing has been copied yet.`);
+    } catch (previewError) {
+      setFilingPreview(null);
+      notify(previewError instanceof Error ? previewError.message : "The Gmail filing preview could not be loaded.");
+    } finally {
+      setFilingLoading(false);
+    }
   }
-  return <><PageTitle eyebrow="Gmail intake" title="Smart inbox" text="Review suggestions before emails and attachments are filed" action={<button className="soft-button" onClick={onRules}><ListFilter size={15} /> Email & file rules</button>} />
-    <section className="inbox-safety"><ShieldCheck size={18} /><div><strong>Safe routing is on</strong><span>A contact with multiple active projects is never auto-filed. FCI Operations requires a project number, a specific rule, or your selection.</span></div><button onClick={onRules}>Manage rules</button></section>
-    <div className="inbox-layout"><section className="panel message-list"><header className="list-toolbar"><label><input type="checkbox" checked={allSelected} onChange={(event) => setSelectedIds(event.target.checked ? messages.map((message) => message.id) : [])} /> Select all</label><button onClick={() => openReview(selectedIds.length ? messages.filter((message) => selectedIds.includes(message.id)) : messages.filter((message) => message.confidence >= 90))}><Sparkles size={15} /> {selectedIds.length ? `Review ${selectedIds.length} selected` : "Review high-confidence"}</button></header>{messages.map((message, index) => <article className="message-row" key={message.id}><input type="checkbox" checked={selectedIds.includes(message.id)} onChange={() => toggleMessage(message.id)} aria-label={`Select ${message.subject}`} /><div className={`sender-dot s${index}`}>{message.sender.split(" ").map((part) => part[0]).join("")}</div><div className="message-copy"><strong>{message.sender} <span>{index < 2 && "NEW"}</span></strong><h3>{message.subject}</h3><p>{message.preview}</p><div><FolderOpen size={13} /> Suggested: {message.suggestedProject} <b>{message.confidence}% match</b></div></div><div className="message-actions"><span>{index < 3 ? "Today" : "Yesterday"}</span>{reviewed[message.id] && <small>{reviewed[message.id]}</small>}<button onClick={() => openReview([message])}><Check size={16} /> {reviewed[message.id] ? "Review again" : "Review"}</button></div></article>)}</section><aside className="panel inbox-summary"><div className="summary-icon"><Sparkles size={20} /></div><h3>Inbox assistant</h3><p>Rules suggest a destination; you approve every email, file, and attachment before it moves.</p><div><span>High confidence</span><strong>3</strong></div><div><span>Needs project selection</span><strong>2</strong></div><div><span>Needs review</span><strong>1</strong></div><hr /><small>Gmail setup required</small><small>Drive archive setup required</small></aside></div>
-    {reviewItems.length > 0 && <InboxReviewModal messages={reviewItems} onClose={() => setReviewItems([])} onApprove={() => { setReviewed((current) => ({ ...current, ...Object.fromEntries(reviewItems.map((item) => [item.id, "Approved—waiting for Gmail"] as const)) })); setSelectedIds((current) => current.filter((id) => !reviewItems.some((item) => item.id === id))); notify(`${reviewItems.length} email ${reviewItems.length === 1 ? "decision" : "decisions"} recorded. Gmail will not be changed until it is connected.`); setReviewItems([]); }} onNeedsReview={() => { setReviewed((current) => ({ ...current, ...Object.fromEntries(reviewItems.map((item) => [item.id, "Needs project selection"] as const)) })); notify(`${reviewItems.length} email ${reviewItems.length === 1 ? "was" : "were"} sent to the review queue`); setReviewItems([]); }} />}
+
+  async function confirmGmailFiling() {
+    if (!filingMessage || !filingProjectId || !filingPreview) return;
+    setFilingSubmitting(true);
+    try {
+      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: filingProjectId }) });
+      const data = await response.json().catch(() => ({})) as { filed?: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number }; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "The Gmail filing could not be completed.");
+      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`);
+      setFilingMessage(null);
+      setFilingProjectId("");
+      setFilingPreview(null);
+      await loadMessages();
+    } catch (filingError) {
+      notify(filingError instanceof Error ? filingError.message : "The Gmail filing could not be completed.");
+    } finally {
+      setFilingSubmitting(false);
+    }
+  }
+
+  const connectionText = gmailReady ? `Connected Gmail: ${workspace?.connectionAccount ?? "approved test account"}` : workspace?.requiresReauthorization ? "Google needs to be reconnected to approve Gmail access." : "Connect the approved personal Google test account to load messages.";
+  return <><PageTitle eyebrow="Gmail intake" title="Connected inbox" text="Load a bounded view of the approved Gmail test account; filing always requires an exact project and your final approval." action={<div className="title-actions"><button className="soft-button" onClick={onRules}><ListFilter size={15} /> Email & file rules</button>{gmailReady ? <button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>{loading ? "Loading…" : <><RefreshCw size={15} /> Refresh inbox</>}</button> : <button className="primary-button" onClick={onGoogleSetup}><Building2 size={15} /> Google setup</button>}</div>} />
+    <section className={`inbox-connection ${gmailReady ? "ready" : ""}`}><Mail size={18} /><div><strong>{gmailReady ? connectionText : "Gmail connection required"}</strong><span>{gmailReady ? "This is the approved Google account for the personal test profile. Loading messages never changes Gmail." : connectionText}</span></div><button className="soft-button" onClick={() => void checkGmailConnection()} disabled={checking}>{checking ? "Checking…" : "Check connection"}</button></section>
+    <section className="inbox-safety"><ShieldCheck size={18} /><div><strong>Safe filing is on</strong><span>Every email stays in Gmail. When you choose a project, FCI Operations first copies the email and attachments to Drive, then adds FCI/Filed only after the copy succeeds.</span></div><button onClick={onRules}>Manage rules</button></section>
+    {error && <p className="workspace-missing">{error}</p>}
+    <div className="inbox-layout"><section className="panel message-list"><header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => { setBucket(event.target.value as InboxBucket); setMessages([]); setLabelReady(null); }} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI Intake</option><option value="needs-review">FCI Needs Review</option><option value="filed">FCI Filed</option></select></label><label>Search Gmail<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label></div><div className="workspace-actions">{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
+      {!gmailReady ? <div className="inbox-empty"><Mail size={25} /><h3>Connect Gmail to see your inbox</h3><p>This page reads only the approved personal test account after you click Load messages. It does not assume your ChatGPT sign-in and Google account are the same.</p><button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button></div> : messages.length === 0 ? <div className="inbox-empty"><Inbox size={25} /><h3>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h3><p>Choose a mailbox, optionally enter a Gmail search, and select Load messages. The view is limited to 20 message summaries.</p><button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>Load {inboxBucketLabels[bucket]}</button></div> : messages.map((message, index) => <article className="message-row live-message-row" key={message.id}><div className={`sender-dot s${index % 4}`}>{(message.from ?? "?").split(/[\s@<]+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div><div className="message-copy"><strong>{message.from ?? "Unknown sender"}</strong><h3>{message.subject ?? "(No subject)"}</h3><p>{message.snippet || "No preview available."}</p><div><ShieldCheck size={13} /> Project selection required before filing</div></div><div className="message-actions"><span>{inboxDate(message.date)}</span><small>{message.to ? `To: ${message.to}` : "Approved test mailbox"}</small><button className="primary-button" onClick={() => openFilingReview(message)}><FolderOpen size={14} /> File to project</button></div></article>)}</section><aside className="panel inbox-summary"><div className="summary-icon"><Mail size={20} /></div><h3>Inbox status</h3><p>{gmailReady ? `Showing ${messages.length} loaded message${messages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.` : "Gmail is not connected yet."}</p><div><span>Connected account</span><strong>{workspace?.connectionAccount ?? "Not connected"}</strong></div><div><span>Message limit</span><strong>20 summaries</strong></div><div><span>Filing protection</span><strong>Exact project required</strong></div><hr /><small>{workspace?.environment === "test" ? "Personal test mode" : "Google setup required"}</small><small>Inbox is retained after filing</small></aside></div>
+    {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
   </>;
 }
 
@@ -520,7 +706,7 @@ function DirectorySyncPanel({ mirror, syncing, onSync, onConfigure }: { mirror: 
     <div className="directory-layout"><div><h3>What lives in the app</h3><ul><li>Client-to-project relationships and project numbers</li><li>Contacts, statuses, dates, values, and Drive mappings</li><li>Future tasks, notes, meetings, communications, schedules, and activity history</li></ul></div><div><h3>How to use the spreadsheet</h3><p>Use it to view, filter, export, and add account notes. Do not edit the generated Project Register; the next sync rebuilds it from FCI Operations. Spreadsheet edits do not write back to the app yet.</p></div></div></section>;
 }
 
-type GmailTestMessage = { id: string; from: string | null; subject: string | null; date: string | null; snippet: string };
+type GmailTestMessage = { id: string; threadId?: string | null; from: string | null; to?: string | null; subject: string | null; date: string | null; snippet: string; labelIds?: string[] };
 type GmailFilingPreview = {
   message: { id: string; threadId: string | null; from: string | null; to: string | null; subject: string | null; date: string | null; attachmentCount: number; attachments: Array<{ filename: string; mimeType: string; byteSize: number }> };
   project: { id: string; number: string; name: string; client: string };
@@ -928,10 +1114,6 @@ function ShiftDetailModal({ shift, onClose, onAcknowledge }: { shift: ShiftAssig
   return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Shift assignment</p><h2>{shift.site}</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="modal-detail"><dl><div><dt>Crew</dt><dd>{shift.crew}</dd></div><div><dt>When</dt><dd>{shift.day} · {shift.time}</dd></div><div><dt>Current status</dt><dd><Status text={shift.status} /></dd></div></dl><p>Use acknowledgement only for this prototype view. Published employee messages and calendar synchronization require the Google Workspace connection.</p></div><footer className="modal-footer"><button className="soft-button" onClick={onClose}>Close</button>{shift.status === "Pending" && <button className="primary-button" onClick={onAcknowledge}><Check size={16} /> Acknowledge</button>}</footer></div></div>;
 }
 
-function InboxReviewModal({ messages, onClose, onApprove, onNeedsReview }: { messages: InboxMessage[]; onClose: () => void; onApprove: () => void; onNeedsReview: () => void }) {
-  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Review-first email filing</p><h2>{messages.length} suggested {messages.length === 1 ? "message" : "messages"}</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="modal-detail"><p>These decisions only update the safe prototype queue. No Gmail label, archive, email copy, attachment, or Drive file will change until OAuth and the review-to-file workflow are connected.</p>{messages.map((message) => <div className="review-message" key={message.id}><strong>{message.subject}</strong><span>{message.sender} · {message.confidence}% match · Suggested: {message.suggestedProject}</span></div>)}</div><footer className="modal-footer"><button className="soft-button" onClick={onNeedsReview}>Needs project selection</button><button className="primary-button" onClick={onApprove}><Check size={16} /> Record approval</button></footer></div></div>;
-}
-
 function SourceDetailModal({ citation, onClose }: { citation: string; onClose: () => void }) {
   return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Assistant source</p><h2>Evidence reference</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="modal-detail"><strong>{citation}</strong><p>This source is available in the prototype evidence list. Once Drive and the permission-aware index are connected, this control will open the exact permitted project record or archived document.</p></div><footer className="modal-footer"><button className="primary-button" onClick={onClose}>Done</button></footer></div></div>;
 }
@@ -1020,4 +1202,3 @@ function PanelHeader({ title, subtitle, action, onAction }: { title: string; sub
 function PageTitle({ eyebrow, title, text, action }: { eyebrow: string; title: string; text: string; action?: React.ReactNode }) { return <div className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{text}</p></div>{action}</div> }
 function Avatar({ initials, color }: { initials: string; color: string }) { return <div className={`mini-avatar ${color}`}>{initials}</div> }
 function Status({ text }: { text: string }) { return <span className={`status status-${text.toLowerCase().replaceAll(" ", "-")}`}>{text}</span> }
-function MailItem({ sender, subject, project, time }: { sender: string; subject: string; project: string; time: string }) { return <div className="mail-item"><div className="mail-avatar">{sender.split(" ").map(s => s[0]).join("")}</div><div><strong>{sender}</strong><span>{subject}</span><small><FolderOpen size={12} />{project}</small></div><time>{time}</time></div> }

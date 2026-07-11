@@ -15,7 +15,9 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(app, /floor-coverings-international-logo\.png/);
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
-  assert.match(app, /Smart inbox/);
+  assert.match(app, /Connected inbox/);
+  assert.match(app, /Connected Gmail/);
+  assert.match(app, /Load messages/);
   assert.match(app, /Ask FCI Assistant/);
   assert.match(css, /--cream:#f6f2ed/);
   assert.match(css, /\.sidebar \{ background:var\(--cream\); color:var\(--ink\);/);
@@ -95,7 +97,11 @@ test("wires prototype controls and exposes an honest Workspace readiness check",
   assert.match(app, /setNotificationsOpen/);
   assert.match(app, /onAdvance\(lead\.id\)/);
   assert.match(app, /ShiftModal/);
-  assert.match(app, /InboxReviewModal/);
+  assert.match(app, /Connected Gmail/);
+  assert.match(app, /Load messages/);
+  assert.match(app, /GmailFilingModal/);
+  assert.match(app, /sidebarCollapsed/);
+  assert.match(app, /Workspace actions/);
   assert.match(app, /SourceDetailModal/);
   assert.match(app, /TestingLaunchPanel/);
   assert.doesNotMatch(app, /3 email suggestions approved and filed/);
