@@ -281,7 +281,7 @@ export function FloorOpsApp({ userName }: { userName: string }) {
           {view === "Inbox" && <InboxView notify={notify} onRules={openRules} />}
           {view === "AI Assistant" && <AssistantView />}
           {view === "Reports" && <ReportsView />}
-          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} rules={filingRules} onAddRule={() => setRuleModal(true)} />}
+          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} rules={filingRules} projects={projectItems} onAddRule={() => setRuleModal(true)} />}
         </div>
       </main>
       {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
@@ -441,19 +441,28 @@ function AssistantView() {
 
 function ReportsView() { return <><PageTitle eyebrow="Business performance" title="Reports" text="A clear view of pipeline, delivery, and workload" /><section className="metrics-grid"><Metric label="Won revenue YTD" value="$1.28m" note="18 projects" trend="+24%" icon={BriefcaseBusiness} color="green" /><Metric label="Average sales cycle" value="31 days" note="Inquiry to award" trend="-4 days" icon={Clock3} color="blue" /><Metric label="Crew utilization" value="82%" note="Next 30 days" trend="Healthy" icon={Users} color="orange" /><Metric label="Closeout time" value="9 days" note="Average" trend="-2 days" icon={CheckCircle2} color="violet" /></section><div className="reports-grid"><section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" /><div className="bar-chart">{[["New inquiry", 45, "$86.5k"], ["Site visit", 72, "$142k"], ["Proposal", 34, "$64.8k"], ["Decision", 100, "$218.4k"]].map((b) => <div key={String(b[0])}><span>{b[0]}</span><div><i style={{ width: `${b[1]}%` }} /></div><strong>{b[2]}</strong></div>)}</div></section><section className="panel report-chart"><PanelHeader title="Project health" subtitle="8 active" /><div className="health-donut"><div><strong>75%</strong><span>On track</span></div></div><div className="legend"><span><i className="g" />On track <b>6</b></span><span><i className="a" />At risk <b>1</b></span><span><i className="r" />Blocked <b>1</b></span></div></section></div></> }
 
-function SettingsView({ notify, section, onSection, rules, onAddRule }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; rules: FilingRuleDraft[]; onAddRule: () => void }) {
+function SettingsView({ notify, section, onSection, rules, projects, onAddRule }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; rules: FilingRuleDraft[]; projects: Project[]; onAddRule: () => void }) {
   const options = ["Google Workspace", "Email & file rules", "Client Directory", "Testing & launch", "Pipeline stages", "Notifications", "People & roles", "Data & security"];
   return <><PageTitle eyebrow="Administration" title="Workspace settings" text="Set your Google structure, routing rules, and access controls in one place" />
     <div className="settings-layout"><aside className="settings-nav panel">{options.map((option) => <button className={section === option ? "active" : ""} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
       {section === "Email & file rules" && <section className="panel rule-settings"><div className="settings-heading"><div><p className="eyebrow">Gmail intake rules</p><h2>Email & file rules</h2><p>Rules propose a destination; approval remains required before FCI Operations labels, archives, or copies anything.</p></div><button className="primary-button" onClick={onAddRule}><Plus size={16} /> Add rule</button></div><div className="rule-callout"><ShieldCheck size={19} /><p><strong>Multi-project protection</strong><br />A contact match cannot auto-select a project if that client has multiple eligible projects.</p></div><div className="rules-table"><div className="rules-table-head"><span>Priority</span><span>Rule</span><span>When it matches</span><span>Action</span><span>Destination</span></div>{rules.map((rule) => <div className="rule-row" key={rule.id ?? rule.name}><span className="rule-priority">{rule.priority}</span><span><strong>{rule.name}</strong><small>{rule.enabled ? "Enabled" : "Disabled"} · approval required</small></span><span>{rule.matchSummary}</span><Status text={rule.action === "review" ? "Needs review" : rule.action === "ignore" ? "Ignored" : "Suggest"} /><span>{rule.targetCategory}</span></div>)}</div><div className="rule-footnote"><Mail size={15} /><span>Use only broad Gmail labels: <b>{DRIVE_BLUEPRINT.gmailLabels.join(", ")}</b>. Do not create a Gmail filter per project.</span></div></section>}
-      {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} />}
+      {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
       {section === "Client Directory" && <section className="panel client-directory-settings"><div className="settings-heading"><div><p className="eyebrow">Google Sheets mirror</p><h2>Client Directory</h2><p>FCI Operations is the operational source of truth; a Google Sheet gives your team a familiar, always-current directory in the Shared Drive.</p></div><button className="soft-button" onClick={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to configure the Client Directory sheet"); }}>Configure sheet</button></div><div className="directory-layout"><div><h3>What syncs to the Google Sheet</h3><ul><li>Client code and legal/business name</li><li>Primary contact and email</li><li>Active-project count and project links</li><li>Client account folder and status</li></ul></div><div><h3>Why one-way at launch</h3><p>It keeps client records, projects, email rules, and the audit trail from becoming inconsistent. A controlled import tab can be added later for spreadsheet changes.</p></div></div></section>}
       {section === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
       {!(["Email & file rules", "Google Workspace", "Client Directory", "Testing & launch"] as string[]).includes(section) && <section className="panel integrations"><h2>{section}</h2><p>This administration area is ready for the next implementation step.</p><div className="settings-placeholder"><Settings size={22} /><span>Configure this area after the Google Workspace foundation is connected.</span></div></section>}
     </div></>;
 }
 
-function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
+type GmailTestMessage = { id: string; from: string | null; subject: string | null; date: string | null; snippet: string };
+type GmailFilingPreview = {
+  message: { id: string; threadId: string | null; from: string | null; to: string | null; subject: string | null; date: string | null; attachmentCount: number; attachments: Array<{ filename: string; mimeType: string; byteSize: number }> };
+  project: { id: string; number: string; name: string; client: string };
+  destinations: { emailArchive: string; attachments: string };
+  existing: { status: string; filed: boolean; emailDriveUrl: string | null; attachmentCount: number; filedAt: number | null } | null;
+  inboxRetained: boolean;
+};
+
+function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => void; projects: Project[] }) {
   const [checking, setChecking] = useState(false);
   const [working, setWorking] = useState(false);
   const [status, setStatus] = useState<"unknown" | "missing" | "credentials">("unknown");
@@ -477,11 +486,16 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
     enabledServices?: string[];
     broadScopeAcknowledged?: boolean;
   } | null>(null);
-  const [gmailMessages, setGmailMessages] = useState<Array<{ id: string; from: string | null; subject: string | null; date: string | null; snippet: string }>>([]);
+  const [gmailMessages, setGmailMessages] = useState<GmailTestMessage[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<Array<{ id: string; title: string; start: string; end: string; url?: string }>>([]);
   const [gmailWorking, setGmailWorking] = useState(false);
   const [calendarWorking, setCalendarWorking] = useState(false);
   const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
+  const [filingMessage, setFilingMessage] = useState<GmailTestMessage | null>(null);
+  const [filingProjectId, setFilingProjectId] = useState("");
+  const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
+  const [filingLoading, setFilingLoading] = useState(false);
+  const [filingSubmitting, setFilingSubmitting] = useState(false);
 
   async function checkSetup() {
     setChecking(true);
@@ -589,7 +603,7 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
   async function refreshTestGmail() {
     setGmailWorking(true);
     try {
-      const data = await readApi<{ messages?: Array<{ id: string; from: string | null; subject: string | null; date: string | null; snippet: string }>; labelReady?: boolean }>("/api/v1/integrations/google/gmail/messages?label=inbox");
+      const data = await readApi<{ messages?: GmailTestMessage[]; labelReady?: boolean }>("/api/v1/integrations/google/gmail/messages?label=inbox");
       setGmailMessages(data.messages ?? []);
       setGmailLabelsReady((current) => current || Boolean(data.labelReady));
       notify(`Loaded ${data.messages?.length ?? 0} personal test inbox message(s).`);
@@ -626,6 +640,58 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
       notify(error instanceof Error ? error.message : "The Filed label could not be added.");
     } finally {
       setGmailWorking(false);
+    }
+  }
+
+  function openFilingReview(message: GmailTestMessage) {
+    setFilingMessage(message);
+    setFilingProjectId("");
+    setFilingPreview(null);
+  }
+
+  function closeFilingReview() {
+    if (filingLoading || filingSubmitting) return;
+    setFilingMessage(null);
+    setFilingProjectId("");
+    setFilingPreview(null);
+  }
+
+  async function previewGmailFiling() {
+    if (!filingMessage || !filingProjectId) {
+      notify("Choose the exact independent project before reviewing this email filing.");
+      return;
+    }
+    setFilingLoading(true);
+    try {
+      const data = await readApi<GmailFilingPreview>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
+      setFilingPreview(data);
+      notify(`Ready to review the Drive filing for ${data.project.number}. Nothing has been copied yet.`);
+    } catch (error) {
+      setFilingPreview(null);
+      notify(error instanceof Error ? error.message : "The Gmail filing preview could not be loaded.");
+    } finally {
+      setFilingLoading(false);
+    }
+  }
+
+  async function confirmGmailFiling() {
+    if (!filingMessage || !filingProjectId || !filingPreview) return;
+    setFilingSubmitting(true);
+    try {
+      const data = await readApi<{ filed: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number } }>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: filingProjectId }),
+      });
+      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`);
+      setFilingMessage(null);
+      setFilingProjectId("");
+      setFilingPreview(null);
+      await refreshTestGmail();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Gmail filing could not be completed.");
+    } finally {
+      setFilingSubmitting(false);
     }
   }
 
@@ -715,13 +781,13 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
       <div className="test-service-grid">
         <section className="test-service-card">
           <div className="test-service-heading"><Mail size={17} /><div><strong>Personal Gmail</strong><span>{gmailReady ? "Connected for explicit test actions" : workspace?.gmailEnabled ? "Reconnect Google to approve Gmail" : "Enable Gmail in the test profile first"}</span></div></div>
-          <p>Prepare FCI labels, view up to 20 inbox message summaries, send only to your approved test address, or explicitly add <b>FCI/Filed</b>. Inbox stays intact.</p>
+          <p>Prepare FCI labels, view up to 20 inbox message summaries, send only to your approved test address, or review-copy one message into a selected project Drive workspace. Gmail is labeled only after the Drive copy succeeds; Inbox stays intact.</p>
           <div className="workspace-actions">
             <button className="soft-button" onClick={prepareTestGmailLabels} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</button>
             <button className="soft-button" onClick={refreshTestGmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Loading…" : "View test inbox"}</button>
             <button className="primary-button" onClick={sendSelfTestEmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Sending…" : "Send self-test email"}</button>
           </div>
-          {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><button className="soft-button" onClick={() => labelTestMessageFiled(message.id)} disabled={gmailWorking}>Add Filed</button></article>)}</div>}
+          {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><button className="primary-button" onClick={() => openFilingReview(message)} disabled={gmailWorking}>File to project</button><button className="soft-button" onClick={() => labelTestMessageFiled(message.id)} disabled={gmailWorking}>Label only</button></div></article>)}</div>}
         </section>
         <section className="test-service-card">
           <div className="test-service-heading"><CalendarDays size={17} /><div><strong>Personal Calendar</strong><span>{calendarReady ? "Connected for safe test holds" : workspace?.calendarEnabled ? "Reconnect Google to approve Calendar" : "Enable Calendar in the test profile first"}</span></div></div>
@@ -747,7 +813,27 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
       <label><input type="checkbox" /> {testProfile ? "Use Gmail labels and Calendar holds only after a direct test action" : "Keep Gmail and Calendar production actions disabled until their separate review workflow is built"}</label>
       <label><input type="checkbox" /> Before launch, create a separate production connection; do not promote personal test credentials</label>
     </div>
+    {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
   </section>;
+}
+
+function GmailFilingModal({ message, projects, projectId, preview, loading, submitting, onProject, onPreview, onConfirm, onClose }: {
+  message: GmailTestMessage;
+  projects: Project[];
+  projectId: string;
+  preview: GmailFilingPreview | null;
+  loading: boolean;
+  submitting: boolean;
+  onProject: (projectId: string) => void;
+  onPreview: () => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const selectedProject = projects.find((project) => project.id === projectId);
+  const attachmentLabel = preview?.message.attachmentCount ?? 0;
+  const formatBytes = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const alreadyFiled = preview?.existing?.filed === true;
+  return <div className="modal-backdrop" role="presentation"><div className="modal gmail-filing-modal" role="dialog" aria-modal="true" aria-labelledby="gmail-filing-title"><header><div><p className="eyebrow">Review-approved Gmail filing</p><h2 id="gmail-filing-title">File to one project</h2></div><button onClick={onClose} aria-label="Close" disabled={loading || submitting}><X size={20} /></button></header><div className="modal-detail"><div className="filing-message-summary"><Mail size={17} /><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span></div></div><label className="filing-project-select">Exact independent project<select value={projectId} onChange={(event) => onProject(event.target.value)} disabled={loading || submitting}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name} · {project.client}</option>)}</select></label>{selectedProject && <p className={selectedProject.driveFolderId ? "filing-workspace-ready" : "filing-workspace-pending"}>{selectedProject.driveFolderId ? <><CheckCircle2 size={14} /> Managed Drive workspace detected for this project.</> : <><CircleAlert size={14} /> This project needs its managed Drive workspace before email can be filed. The review will not create a folder.</>}</p>}<p className="form-help"><ShieldCheck size={14} /> The original email becomes an <b>.eml</b> in <b>05_Correspondence / Email Archive</b>. Attachments go to <b>05_Correspondence / Email Attachments</b>. Your Gmail Inbox label is retained.</p>{preview && <div className="filing-preview"><div className="filing-preview-heading"><div><FolderOpen size={16} /><strong>{preview.project.number} — {preview.project.name}</strong><span>{preview.project.client}</span></div>{alreadyFiled && <Status text="Filed" />}</div>{alreadyFiled ? <p className="filing-existing">This email was already filed to this project. No second copy will be made.</p> : <><dl><div><dt>Email archive</dt><dd>{preview.destinations.emailArchive}</dd></div><div><dt>Attachments</dt><dd>{preview.destinations.attachments}</dd></div></dl><div className="filing-attachments"><strong>{attachmentLabel} attachment{attachmentLabel === 1 ? "" : "s"}</strong>{preview.message.attachments.length ? <ul>{preview.message.attachments.map((attachment, index) => <li key={`${attachment.filename}-${index}`}><FileText size={13} /><span>{attachment.filename}</span><small>{attachment.mimeType} · {formatBytes(attachment.byteSize)}</small></li>)}</ul> : <p>No separate attachments were found. The original email will still be copied as an .eml file.</p>}</div><p className="filing-confirmation"><ShieldCheck size={14} /> Nothing has been copied yet. Select <b>Copy email to project</b> to complete this one approved filing.</p></>}</div>}</div><footer className="modal-footer"><button className="soft-button" onClick={onClose} disabled={loading || submitting}>Cancel</button>{preview ? <button className="primary-button" onClick={onConfirm} disabled={loading || submitting || alreadyFiled}>{submitting ? "Copying…" : alreadyFiled ? "Already filed" : `Copy email + ${attachmentLabel} attachment${attachmentLabel === 1 ? "" : "s"}`}</button> : <button className="primary-button" onClick={onPreview} disabled={!projectId || loading || submitting}>{loading ? "Reviewing…" : "Review destination"}</button>}</footer></div></div>;
 }
 
 function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => void }) {

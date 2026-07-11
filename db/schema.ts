@@ -1,4 +1,4 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const records = sqliteTable("records", {
   id: text("id").primaryKey(),
@@ -104,6 +104,59 @@ export const mailItems = sqliteTable("mail_items", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+/**
+ * A review-approved archive of one Gmail message into exactly one project.
+ *
+ * This deliberately lives beside the earlier suggestion-only `mail_items` table:
+ * the archive record is an immutable operational decision with its own Drive
+ * evidence and retry state, rather than a loose inbox match.
+ */
+export const gmailFileArchives = sqliteTable("gmail_file_archives", {
+  id: text("id").primaryKey(),
+  connectionKey: text("connection_key").notNull(),
+  gmailMessageId: text("gmail_message_id").notNull(),
+  gmailThreadId: text("gmail_thread_id"),
+  projectId: text("project_id").notNull(),
+  projectDriveFolderId: text("project_drive_folder_id").notNull(),
+  emailArchiveFolderId: text("email_archive_folder_id").notNull(),
+  attachmentFolderId: text("attachment_folder_id").notNull(),
+  status: text("status").notNull(),
+  approvalActor: text("approval_actor").notNull(),
+  approvedAt: integer("approved_at", { mode: "timestamp_ms" }).notNull(),
+  emailDriveFileId: text("email_drive_file_id"),
+  emailDriveUrl: text("email_drive_url"),
+  attachmentCount: integer("attachment_count").notNull().default(0),
+  lastErrorCode: text("last_error_code"),
+  filedAt: integer("filed_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  // One Gmail message belongs to one explicit project in a connection profile.
+  // This prevents accidental reuse across a repeat client's independent jobs.
+  uniqueIndex("gmail_file_archives_profile_message_unique").on(table.connectionKey, table.gmailMessageId),
+  index("gmail_file_archives_project_status_idx").on(table.connectionKey, table.projectId, table.status, table.updatedAt),
+]);
+
+/** Individual `.eml` and attachment files copied for a Gmail archive. */
+export const gmailFileArchiveArtifacts = sqliteTable("gmail_file_archive_artifacts", {
+  id: text("id").primaryKey(),
+  archiveId: text("archive_id").notNull(),
+  artifactKey: text("artifact_key").notNull(),
+  kind: text("kind").notNull(),
+  gmailAttachmentId: text("gmail_attachment_id"),
+  originalFilename: text("original_filename"),
+  mimeType: text("mime_type").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  sha256: text("sha256"),
+  driveFileId: text("drive_file_id").notNull(),
+  driveUrl: text("drive_url").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  uniqueIndex("gmail_file_archive_artifacts_archive_key_unique").on(table.archiveId, table.artifactKey),
+  index("gmail_file_archive_artifacts_archive_idx").on(table.archiveId, table.kind),
+]);
 
 export const googleOauthAttempts = sqliteTable("google_oauth_attempts", {
   id: text("id").primaryKey(),

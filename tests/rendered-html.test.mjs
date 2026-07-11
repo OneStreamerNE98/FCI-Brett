@@ -144,3 +144,25 @@ test("provides explicit, test-only Gmail and Calendar controls", async () => {
   assert.match(app, /Create test hold/);
   assert.match(guide, /GOOGLE_TEST_ENABLED_SERVICES=drive,gmail,calendar/);
 });
+
+test("files Gmail only after an explicit single-project review", async () => {
+  const [app, schema, gmail, drive, filingRoute] = await Promise.all([
+    read("app/FloorOpsApp.tsx"), read("db/schema.ts"), read("app/lib/google-gmail.ts"),
+    read("app/lib/google-drive.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts"),
+  ]);
+  assert.match(app, /File to project/);
+  assert.match(app, /GmailFilingModal/);
+  assert.match(app, /Copy email \+ \$/);
+  assert.match(schema, /gmailFileArchives/);
+  assert.match(schema, /gmailFileArchiveArtifacts/);
+  assert.match(gmail, /getMessageArchive/);
+  assert.match(gmail, /format: "raw"/);
+  assert.match(drive, /resolveManagedProjectFolderPath/);
+  assert.match(drive, /findOrUploadManagedFile/);
+  assert.match(filingRoute, /requireSameOrigin/);
+  assert.match(filingRoute, /project_drive_workspace_required/);
+  assert.match(filingRoute, /gmail_message_already_assigned/);
+  assert.match(filingRoute, /fciGmailMessageId/);
+  assert.match(filingRoute, /applyFiledLabel/);
+  assert.match(filingRoute, /inboxRetained: true/);
+});

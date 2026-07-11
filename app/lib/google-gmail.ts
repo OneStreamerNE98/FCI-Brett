@@ -3,6 +3,18 @@ import { GoogleIntegrationError, type GoogleRuntimeConfig } from "./google-oauth
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const MAX_MESSAGE_RESULTS = 20;
 const MAX_SEARCH_QUERY_LENGTH = 240;
+const MAX_ARCHIVE_MESSAGE_PARTS = 160;
+const MEBIBYTE = 1024 * 1024;
+
+// Archive retrieval happens in the request path for the personal test profile.
+// Keep the hard caps here (rather than trusting a caller) so a malformed message
+// cannot make the worker fetch an unbounded attachment tree.
+export const GMAIL_ARCHIVE_LIMITS = {
+  maxRawBytes: 20 * MEBIBYTE,
+  maxAttachmentCount: 20,
+  maxAttachmentBytes: 15 * MEBIBYTE,
+  maxTotalAttachmentBytes: 20 * MEBIBYTE,
+} as const;
 
 export const FCI_GMAIL_LABELS = {
   root: "FCI",
@@ -17,15 +29,31 @@ type GmailLabel = {
   type?: string;
 };
 
+type GmailHeader = { name?: string; value?: string };
+
+type GmailMessageBody = {
+  attachmentId?: string;
+  data?: string;
+  size?: number;
+};
+
+type GmailMessagePart = {
+  partId?: string;
+  mimeType?: string;
+  filename?: string;
+  headers?: GmailHeader[];
+  body?: GmailMessageBody;
+  parts?: GmailMessagePart[];
+};
+
 type GmailMessage = {
   id: string;
   threadId?: string;
   labelIds?: string[];
   snippet?: string;
   internalDate?: string;
-  payload?: {
-    headers?: Array<{ name?: string; value?: string }>;
-  };
+  raw?: string;
+  payload?: GmailMessagePart;
 };
 
 export type GmailMessageSummary = {
@@ -44,6 +72,39 @@ export type GmailLabelSummary = {
   name: string;
 };
 
+export type GmailArchiveFetchOptions = {
+  /** Optional lower limits for a particular filing action. Values can never exceed GMAIL_ARCHIVE_LIMITS. */
+  maxRawBytes?: number;
+  maxAttachmentCount?: number;
+  maxAttachmentBytes?: number;
+  maxTotalAttachmentBytes?: number;
+};
+
+export type GmailRawMessage = {
+  id: string;
+  threadId: string | null;
+  bytes: Uint8Array;
+};
+
+export type GmailAttachment = {
+  /** The original Gmail filename when present. Keep it for audit metadata, not for a local filesystem path. */
+  originalFilename: string | null;
+  /** A deterministic filename safe to use as a Google Drive display name. */
+  filename: string;
+  mimeType: string;
+  partId: string | null;
+  attachmentId: string | null;
+  bytes: Uint8Array;
+};
+
+export type GmailMessageArchive = {
+  id: string;
+  threadId: string | null;
+  summary: GmailMessageSummary;
+  raw: GmailRawMessage;
+  attachments: GmailAttachment[];
+};
+
 export type GmailListBucket = "inbox" | "intake" | "needs-review" | "filed";
 
 const LABEL_NAME_BY_BUCKET: Record<GmailListBucket, string | null> = {
@@ -58,7 +119,7 @@ function compactText(value: string | undefined, maximum: number) {
   return value.replace(/\s+/g, " ").trim().slice(0, maximum);
 }
 
-function header(headers: GmailMessage["payload"]["headers"], name: string) {
+function header(headers: GmailHeader[] | undefined, name: string) {
   return compactText(headers?.find((item) => item.name?.toLowerCase() === name.toLowerCase())?.value, 500) || null;
 }
 
@@ -91,6 +152,138 @@ function encodedHeader(value: string) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return `=?UTF-8?B?${btoa(binary)}?=`;
+}
+
+function archiveLimitError(message: string) {
+  return new GoogleIntegrationError("gmail_archive_too_large", message, 413);
+}
+
+function archiveResponseError(message: string) {
+  return new GoogleIntegrationError("gmail_archive_invalid_response", message, 503);
+}
+
+function limitedOption(value: number | undefined, fallback: number, maximum: number, label: string) {
+  if (value === undefined) return fallback;
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new GoogleIntegrationError("invalid_gmail_archive_limit", `${label} must be a positive whole number.`, 400);
+  }
+  return Math.min(value, maximum);
+}
+
+function resolveArchiveLimits(input: GmailArchiveFetchOptions = {}) {
+  return {
+    maxRawBytes: limitedOption(input.maxRawBytes, GMAIL_ARCHIVE_LIMITS.maxRawBytes, GMAIL_ARCHIVE_LIMITS.maxRawBytes, "The raw email limit"),
+    maxAttachmentCount: limitedOption(input.maxAttachmentCount, GMAIL_ARCHIVE_LIMITS.maxAttachmentCount, GMAIL_ARCHIVE_LIMITS.maxAttachmentCount, "The attachment-count limit"),
+    maxAttachmentBytes: limitedOption(input.maxAttachmentBytes, GMAIL_ARCHIVE_LIMITS.maxAttachmentBytes, GMAIL_ARCHIVE_LIMITS.maxAttachmentBytes, "The attachment-size limit"),
+    maxTotalAttachmentBytes: limitedOption(input.maxTotalAttachmentBytes, GMAIL_ARCHIVE_LIMITS.maxTotalAttachmentBytes, GMAIL_ARCHIVE_LIMITS.maxTotalAttachmentBytes, "The total attachment limit"),
+  };
+}
+
+function decodeGmailBase64Url(value: unknown, maximumBytes: number, label: string) {
+  if (typeof value !== "string" || !value) throw archiveResponseError(`Gmail returned ${label} without encoded content.`);
+  if (!/^[A-Za-z0-9_-]*={0,2}$/.test(value)) throw archiveResponseError(`Gmail returned ${label} with invalid base64url content.`);
+  // Base64 expands to at most four characters for every three bytes. Reject before
+  // decoding to keep the test worker from allocating an oversized archive payload.
+  if (value.length > Math.ceil(maximumBytes / 3) * 4 + 4) {
+    throw archiveLimitError(`${label} exceeds the configured archive size limit.`);
+  }
+  try {
+    const unpadded = value.replace(/=+$/g, "").replace(/-/g, "+").replace(/_/g, "/");
+    const padding = "=".repeat((4 - (unpadded.length % 4)) % 4);
+    const binary = atob(`${unpadded}${padding}`);
+    if (binary.length > maximumBytes) throw archiveLimitError(`${label} exceeds the configured archive size limit.`);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
+  } catch (error) {
+    if (error instanceof GoogleIntegrationError) throw error;
+    throw archiveResponseError(`Gmail returned ${label} with invalid encoded content.`);
+  }
+}
+
+function attachmentFallbackName(partId: string | null, mimeType: string) {
+  const normalizedPartId = partId?.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "") || "file";
+  const extension = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "text/plain": ".txt",
+  }[mimeType.toLowerCase()] ?? "";
+  return `attachment-${normalizedPartId}${extension}`;
+}
+
+/**
+ * Makes a Gmail-provided filename safe for use as a Drive display name. This does
+ * not create a filesystem path, and intentionally strips separators/control chars.
+ */
+export function sanitizeGmailAttachmentFilename(value: string | undefined, fallback = "attachment") {
+  const clean = (candidate: string) => candidate
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\.{2,}/g, ".")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 180)
+    .replace(/[.\s]+$/g, "");
+  return clean(value ?? "") || clean(fallback) || "attachment";
+}
+
+function hasAttachmentDisposition(part: GmailMessagePart) {
+  const disposition = header(part.headers, "Content-Disposition");
+  return Boolean(disposition && /(?:^|[;\s])(attachment|inline)(?:$|[;\s])/i.test(disposition));
+}
+
+function hasInlineBinaryContent(part: GmailMessagePart) {
+  return Boolean(header(part.headers, "Content-ID") && part.mimeType?.toLowerCase().startsWith("image/"));
+}
+
+type GmailAttachmentCandidate = {
+  partId: string | null;
+  attachmentId: string | null;
+  inlineData: string | null;
+  originalFilename: string | null;
+  filename: string;
+  mimeType: string;
+  declaredSize: number | null;
+};
+
+function collectAttachmentCandidates(payload: GmailMessagePart | undefined) {
+  if (!payload) return [] as GmailAttachmentCandidate[];
+  const candidates: GmailAttachmentCandidate[] = [];
+  const pending: GmailMessagePart[] = [payload];
+  let inspected = 0;
+  while (pending.length) {
+    const part = pending.pop();
+    if (!part) continue;
+    inspected += 1;
+    if (inspected > MAX_ARCHIVE_MESSAGE_PARTS) {
+      throw new GoogleIntegrationError("gmail_message_too_complex", "This Gmail message has too many MIME parts to archive safely.", 413);
+    }
+    for (const child of part.parts ?? []) pending.push(child);
+
+    const attachmentId = typeof part.body?.attachmentId === "string" && part.body.attachmentId ? part.body.attachmentId : null;
+    const inlineData = typeof part.body?.data === "string" && part.body.data ? part.body.data : null;
+    const originalFilename = typeof part.filename === "string" && part.filename.trim() ? part.filename.trim() : null;
+    if (!attachmentId && !inlineData) continue;
+    if (!originalFilename && !hasAttachmentDisposition(part) && !hasInlineBinaryContent(part)) continue;
+    const partId = typeof part.partId === "string" && part.partId ? part.partId : null;
+    const mimeType = typeof part.mimeType === "string" && part.mimeType.trim() ? part.mimeType.trim().toLowerCase() : "application/octet-stream";
+    const declaredSize = typeof part.body?.size === "number" && Number.isSafeInteger(part.body.size) && part.body.size >= 0 ? part.body.size : null;
+    candidates.push({
+      partId,
+      attachmentId,
+      inlineData,
+      originalFilename,
+      filename: sanitizeGmailAttachmentFilename(originalFilename ?? attachmentFallbackName(partId, mimeType)),
+      mimeType,
+      declaredSize,
+    });
+  }
+  return candidates;
 }
 
 export function validateGmailMessageId(messageId: string) {
@@ -225,7 +418,7 @@ export class GoogleGmailClient {
     const response = await this.request<{ labels?: GmailLabel[] }>("labels");
     return (response.labels ?? [])
       .filter((label): label is GmailLabel => Boolean(label.id && label.name))
-      .map((label) => ({ id: label.id, name: label.name, type: label.type }));
+      .map((label): GmailLabel => ({ id: label.id, name: label.name, ...(label.type ? { type: label.type } : {}) }));
   }
 
   private uniqueLabel(labels: GmailLabel[], name: string) {
@@ -284,6 +477,101 @@ export class GoogleGmailClient {
     for (const headerName of ["From", "To", "Subject", "Date"]) parameters.append("metadataHeaders", headerName);
     const message = await this.request<GmailMessage>(`messages/${encodeURIComponent(validateGmailMessageId(messageId))}?${parameters.toString()}`);
     return mapMessage(message);
+  }
+
+  private async getFullMessage(messageId: string) {
+    const safeMessageId = validateGmailMessageId(messageId);
+    const parameters = new URLSearchParams({ format: "full" });
+    const message = await this.request<GmailMessage>(`messages/${encodeURIComponent(safeMessageId)}?${parameters.toString()}`);
+    if (message.id !== safeMessageId) {
+      throw archiveResponseError("Gmail returned an unexpected message while preparing the archive.");
+    }
+    return message;
+  }
+
+  /** Retrieves the original RFC 822 representation as bytes for an `.eml` archive. */
+  async getRawMessage(messageId: string, options: GmailArchiveFetchOptions = {}): Promise<GmailRawMessage> {
+    const safeMessageId = validateGmailMessageId(messageId);
+    const limits = resolveArchiveLimits(options);
+    const parameters = new URLSearchParams({ format: "raw" });
+    const message = await this.request<GmailMessage>(`messages/${encodeURIComponent(safeMessageId)}?${parameters.toString()}`);
+    if (message.id !== safeMessageId) {
+      throw archiveResponseError("Gmail returned an unexpected message while retrieving the RFC 822 archive.");
+    }
+    return {
+      id: message.id,
+      threadId: message.threadId ?? null,
+      bytes: decodeGmailBase64Url(message.raw, limits.maxRawBytes, "the raw email"),
+    };
+  }
+
+  private async attachmentBytes(messageId: string, candidate: GmailAttachmentCandidate, maximumBytes: number) {
+    if (candidate.inlineData) return decodeGmailBase64Url(candidate.inlineData, maximumBytes, `attachment ${candidate.filename}`);
+    if (!candidate.attachmentId || candidate.attachmentId.length > 1_024 || /[\u0000-\u001f\u007f]/.test(candidate.attachmentId)) {
+      throw archiveResponseError("Gmail returned an attachment without a valid identifier.");
+    }
+    const response = await this.request<{ data?: string }>(`messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(candidate.attachmentId)}`);
+    return decodeGmailBase64Url(response.data, maximumBytes, `attachment ${candidate.filename}`);
+  }
+
+  private async attachmentsFromFullMessage(messageId: string, message: GmailMessage, options: GmailArchiveFetchOptions) {
+    const limits = resolveArchiveLimits(options);
+    const candidates = collectAttachmentCandidates(message.payload);
+    if (candidates.length > limits.maxAttachmentCount) {
+      throw archiveLimitError(`This Gmail message has more than ${limits.maxAttachmentCount} archiveable attachments.`);
+    }
+
+    let totalBytes = 0;
+    const attachments: GmailAttachment[] = [];
+    for (const candidate of candidates) {
+      if (candidate.declaredSize !== null && candidate.declaredSize > limits.maxAttachmentBytes) {
+        throw archiveLimitError(`Attachment ${candidate.filename} exceeds the configured attachment size limit.`);
+      }
+      if (candidate.declaredSize !== null && totalBytes + candidate.declaredSize > limits.maxTotalAttachmentBytes) {
+        throw archiveLimitError("The Gmail message attachments exceed the configured total archive size limit.");
+      }
+      const bytes = await this.attachmentBytes(messageId, candidate, limits.maxAttachmentBytes);
+      if (totalBytes + bytes.byteLength > limits.maxTotalAttachmentBytes) {
+        throw archiveLimitError("The Gmail message attachments exceed the configured total archive size limit.");
+      }
+      totalBytes += bytes.byteLength;
+      attachments.push({
+        originalFilename: candidate.originalFilename,
+        filename: candidate.filename,
+        mimeType: candidate.mimeType,
+        partId: candidate.partId,
+        attachmentId: candidate.attachmentId,
+        bytes,
+      });
+    }
+    return attachments;
+  }
+
+  /** Recursively finds and retrieves archiveable Gmail attachments, without changing Gmail labels or message state. */
+  async getMessageAttachments(messageId: string, options: GmailArchiveFetchOptions = {}): Promise<GmailAttachment[]> {
+    const safeMessageId = validateGmailMessageId(messageId);
+    const message = await this.getFullMessage(safeMessageId);
+    return this.attachmentsFromFullMessage(safeMessageId, message, options);
+  }
+
+  /**
+   * Fetches both the original `.eml` bytes and separate attachment bytes. It is
+   * read-only against Gmail; the coordinator decides whether to upload or label it.
+   */
+  async getMessageArchive(messageId: string, options: GmailArchiveFetchOptions = {}): Promise<GmailMessageArchive> {
+    const safeMessageId = validateGmailMessageId(messageId);
+    const [raw, full] = await Promise.all([
+      this.getRawMessage(safeMessageId, options),
+      this.getFullMessage(safeMessageId),
+    ]);
+    const attachments = await this.attachmentsFromFullMessage(safeMessageId, full, options);
+    return {
+      id: safeMessageId,
+      threadId: full.threadId ?? raw.threadId,
+      summary: mapMessage(full),
+      raw,
+      attachments,
+    };
   }
 
   async applyFiledLabel(messageId: string) {
