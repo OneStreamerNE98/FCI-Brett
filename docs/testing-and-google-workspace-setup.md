@@ -7,10 +7,10 @@ Use disposable test records first. The prototype now supports the following safe
 1. Add a test client, then create two independent projects for that client. Refresh and confirm the client code and project numbers stay consistent. In **Settings → Client Directory**, run **Sync now** and confirm the Client Directory and Project Register tabs match the app.
 2. Open **Leads** and advance a lead through the pipeline. Confirm the column counts move with it.
 3. Open **Projects**, switch between Active, Planning, Closeout, and Archived, and toggle the project-manager filter.
-4. Use the top search field (or `Ctrl/Cmd + K`) to open a client or project.
+4. Use the top search field (press `Enter`, click the search button, or use `Ctrl/Cmd + K`) to find and open a client, contact, or project.
 5. Open **Schedule**, create a draft shift, open an assignment, acknowledge it, and resolve the displayed conflict.
 6. Open **Inbox** and confirm it identifies the approved Google test account. Select a mailbox and click **Load messages** to request no more than 20 message summaries. Use **Review & file** only with a sample message, choose the project, inspect the preview, and explicitly confirm before Gmail labels or Drive copies are changed.
-7. Open **AI Assistant**, change the project context, ask a question, and open each source reference.
+7. Open **AI Assistant**, choose a project, ask a question, and open each cited source reference. The first release is intentionally grounded in saved project, client, contact, activity, and archived-email metadata—not raw Drive documents, transcript contents, or a semantic document index.
 8. In **Settings → Testing & launch**, work through the displayed checklist.
 
 Do not use real client documents, a live mailbox, or crew schedules for these tests yet.
@@ -34,7 +34,9 @@ For a safe early prototype, use your personal Google account with one empty My D
 
 Use only sample/test messages and documents. Do not use the account's My Drive root, share this temporary folder widely, or upload live client records. The personal test profile can request Drive, Sheets, Gmail, and Calendar scopes together when you deliberately set `GOOGLE_TEST_ENABLED_SERVICES=drive,gmail,calendar,sheets` and reconnect.
 
-For personal Gmail testing, use only messages you send to yourself. The Inbox deliberately does not load mail automatically: it first checks the approved Google connection, then requires an explicit **Load messages** action. It can prepare the three FCI test labels, show a small bounded inbox view, send a self-test email, and apply `FCI/Filed` only after you click the action. It does not automatically archive, remove `INBOX`, or file mail into a project folder. The app sign-in name and the connected Google account are displayed separately; they are not assumed to be the same identity.
+For personal Gmail testing, use only messages you send to yourself. The Inbox deliberately does not load mail automatically: it first checks the approved Google connection, then requires an explicit **Load messages** action. It can prepare the three FCI test labels, show a small bounded inbox view, create a self-test email, save a reply as an unsent Gmail draft, and apply `FCI/Filed` only after you click the action. It does not automatically archive, remove `INBOX`, or file mail into a project folder. The app sign-in name and the connected Google account are displayed separately; they are not assumed to be the same identity.
+
+Use **Settings → Inbox & file rules** to manage the simple review-first filing rules. Keep Gmail to three broad labels—`FCI/Intake`, `FCI/Needs Review`, and `FCI/Filed`—and let the selected project Drive folder be the permanent location. Project-number matches can be suggested, but a client with multiple projects must always be reviewed and assigned to the exact project before filing.
 
 For personal Calendar testing, the app reads a bounded upcoming window from your primary calendar and can create one private, attendee-free 30-minute test hold. It does not invite clients or change existing events.
 

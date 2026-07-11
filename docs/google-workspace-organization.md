@@ -61,7 +61,7 @@ Do not put project folders beneath a client folder. A client can have many proje
 
 ## Email and file rules
 
-Configure rules in **FCI Operations → Settings → Email & file rules**. Each rule has a priority, matching criteria, action, destination category, and mandatory approval.
+Configure rules in **FCI Operations → Settings → Inbox & file rules**. Each rule has a priority, matching criteria, action, destination category, and mandatory approval. Keep the rules review-first: rules may suggest a project or send a message to review, but they never file a message without the office user choosing the exact independent project.
 
 Recommended matching order:
 
@@ -79,7 +79,11 @@ FCI/Needs Review
 FCI/Filed
 ```
 
-On approval, FCI Operations should save the original email as an `.eml` file in the selected project’s `05_Correspondence/Email Archive/YYYY-MM`, copy attachments to `Email Attachments/YYYY-MM`, record the Gmail/Drive identifiers and decision in the activity log, and apply `FCI/Filed`. Remove the Gmail `INBOX` label only when a user explicitly chooses to archive it.
+On approval, FCI Operations saves the original email as an `.eml` file in the selected project’s `05_Correspondence/Email Archive`, copies attachments to `Email Attachments`, records the Gmail/Drive identifiers and decision in the activity log, and applies `FCI/Filed`. The Gmail `INBOX` label is retained. For personal testing, replies are saved as Gmail drafts to the approved test account and are not sent by FCI Operations.
+
+## Personal web-app shortcut
+
+The hosted FCI Operations site is an installable web app. In Chrome or Edge, use the browser’s **Install app** command to add it as a separate app window in the personal Google/Chrome profile. Google’s personal app launcher cannot add an arbitrary custom web URL; a true Gmail side panel is a separate Google Workspace Add-on project and should wait until individual Gmail connections are implemented.
 
 ## Workspace setup checklist
 

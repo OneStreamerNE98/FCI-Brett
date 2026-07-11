@@ -40,15 +40,43 @@ test("declares durable records, uploads, and guarded integration endpoints", asy
   assert.match(recordsApi, /type and payload are required/);
   assert.match(uploadsApi, /20 \* 1024 \* 1024/);
   assert.match(uploadsApi, /file type is not allowed/);
-  assert.match(assistantApi, /permission-aware commercial flooring project assistant/);
+  assert.match(assistantApi, /read-only commercial flooring project assistant/);
   assert.match(assistantApi, /OPENAI_API_KEY/);
+  assert.match(assistantApi, /projectEvidence/);
+  assert.match(assistantApi, /citationIds/);
+  assert.match(assistantApi, /records-only/);
 });
 
 test("includes migrations and the Floor Coverings International logo asset", async () => {
   await Promise.all([
     access(new URL("drizzle/0000_glossy_nekra.sql", root)),
     access(new URL("public/floor-coverings-international-logo.png", root)),
+    access(new URL("public/manifest.webmanifest", root)),
   ]);
+});
+
+test("adds a searchable, configurable inbox with draft-only personal replies", async () => {
+  const [app, searchApi, settingsApi, ruleApi, replyApi, gmail, manifest] = await Promise.all([
+    read("app/FloorOpsApp.tsx"), read("app/api/v1/search/route.ts"), read("app/api/v1/settings/workspace/route.ts"),
+    read("app/api/v1/filing-rules/[ruleId]/route.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts"),
+    read("app/lib/google-gmail.ts"), read("public/manifest.webmanifest"),
+  ]);
+  assert.match(app, /Search this Gmail mailbox/);
+  assert.match(app, /Save Gmail draft/);
+  assert.match(app, /Calendar & appointments/);
+  assert.match(app, /My account/);
+  assert.match(app, /WorkspaceDefaultsPanel/);
+  assert.match(searchApi, /contacts ct JOIN clients/);
+  assert.match(searchApi, /ESCAPE/);
+  assert.match(settingsApi, /workspace_settings/);
+  assert.match(settingsApi, /review-first/);
+  assert.match(ruleApi, /export async function PATCH/);
+  assert.match(ruleApi, /export async function DELETE/);
+  assert.match(replyApi, /sent: false/);
+  assert.match(replyApi, /validateTestRecipient/);
+  assert.match(gmail, /createReplyDraft/);
+  assert.match(gmail, /getReplyContext/);
+  assert.match(manifest, /"display": "standalone"/);
 });
 
 test("models clients, independent projects, and review-first email filing", async () => {

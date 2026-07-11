@@ -5,7 +5,7 @@ import {
   Activity, Bell, Bot, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, FileText, FolderOpen, FolderTree, HardHat,
   Inbox, LayoutDashboard, ListTodo, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal,
-  ListFilter, LogOut, Plus, RefreshCw, Search, Send, Settings, ShieldCheck, Sparkles, Upload, Users, X, Zap,
+  ListFilter, LogOut, Plus, RefreshCw, Reply, Search, Send, Settings, ShieldCheck, Sparkles, Trash2, Upload, Users, X, Zap,
 } from "lucide-react";
 import { DEFAULT_FILING_RULES, DRIVE_BLUEPRINT, type FilingRuleDraft } from "./lib/google-workspace";
 
@@ -26,6 +26,19 @@ type SheetMirrorStatus = {
 };
 type ProjectUpdateDraft = { project: Project; subject: string; message: string };
 type ShiftAssignment = { id: string; crew: string; site: string; day: string; time: string; status: "Pending" | "Acknowledged" };
+type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
+type LocalAccountPreferences = { timezone?: string; replySignature?: string };
+
+function readLocalAccountPreferences(email: string): LocalAccountPreferences {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(`fci-user-preferences:${email.toLowerCase()}`);
+    const parsed = raw ? JSON.parse(raw) as LocalAccountPreferences : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 const leadStages = ["New inquiry", "Site visit", "Proposal", "Decision"];
 
@@ -82,9 +95,11 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
   const [clients, setClients] = useState(initialClients);
   const [projectItems, setProjectItems] = useState(initialProjects);
   const [filingRules, setFilingRules] = useState<FilingRuleDraft[]>(DEFAULT_FILING_RULES);
-  const [settingsArea, setSettingsArea] = useState("Email & file rules");
+  const [settingsArea, setSettingsArea] = useState("Inbox & file rules");
   const [toast, setToast] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchResults, setSearchResults] = useState<WorkspaceSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [projectUpdate, setProjectUpdate] = useState<Project | null>(null);
   const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
@@ -235,10 +250,43 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
     notify(savedRemotely ? `Email rule “${rule.name}” added` : `Email rule “${rule.name}” saved locally; retry sync when the data service is available`);
   }
 
+  async function updateRule(rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) {
+    if (!rule.id) {
+      setFilingRules((current) => current.map((item) => item.name === rule.name ? { ...item, ...patch } : item));
+      notify("Starter rule updated for this browser session. Add a custom rule to manage it permanently.");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/v1/filing-rules/${encodeURIComponent(rule.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Rule could not be updated.");
+      setFilingRules((current) => current.map((item) => item.id === rule.id ? { ...item, ...patch } : item).sort((left, right) => left.priority - right.priority));
+      notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Rule could not be updated.");
+    }
+  }
+
+  async function deleteRule(rule: FilingRuleDraft) {
+    if (!rule.id) {
+      notify("Starter rules stay available for reference. Add custom rules to manage your own routing.");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/v1/filing-rules/${encodeURIComponent(rule.id)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Rule could not be deleted.");
+      setFilingRules((current) => current.filter((item) => item.id !== rule.id));
+      notify(`Email rule “${rule.name}” deleted`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Rule could not be deleted.");
+    }
+  }
+
   const clientProjectCounts = useMemo(() => new Map(clients.map((client) => [client.id, projectItems.filter((project) => project.clientId === client.id).length])), [clients, projectItems]);
 
   function openRules() {
-    setSettingsArea("Email & file rules");
+    setSettingsArea("Inbox & file rules");
     setView("Settings");
     setWorkspaceMenuOpen(false);
     setProfileMenuOpen(false);
@@ -309,25 +357,50 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
     notify(`${currentLead.company} moved to ${nextStage}`);
   }
 
-  function searchWorkspace() {
-    const query = searchTerm.trim().toLowerCase();
-    if (!query) {
-      notify("Enter a client, project, project number, or contact to search");
+  async function searchWorkspace() {
+    const query = searchTerm.trim();
+    if (query.length < 2) {
+      setSearchResults([]);
+      notify("Enter at least two characters to search clients, projects, and contacts");
       return;
     }
-    const project = projectItems.find((item) => [item.name, item.number, item.client, item.site, item.lead].some((value) => value.toLowerCase().includes(query)));
-    if (project) {
-      openProject(project);
-      notify(`Opened ${project.number}`);
+    setSearching(true);
+    try {
+      const response = await fetch(`/api/v1/search?q=${encodeURIComponent(query)}`);
+      const data = await response.json().catch(() => ({})) as { results?: WorkspaceSearchResult[]; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Workspace search could not be completed.");
+      setSearchResults(data.results ?? []);
+      if (!data.results?.length) notify(`No workspace records matched “${query}”`);
+    } catch (error) {
+      setSearchResults([]);
+      notify(error instanceof Error ? error.message : "Workspace search could not be completed.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function openSearchResult(result: WorkspaceSearchResult) {
+    setSearchResults([]);
+    setSearchTerm("");
+    if (result.kind === "project") {
+      const project = projectItems.find((item) => item.id === result.projectId);
+      if (project) {
+        openProject(project);
+        notify(`Opened ${project.number}`);
+      } else {
+        setView("Projects");
+        notify("Project found. Refresh the directory if it is not listed yet.");
+      }
       return;
     }
-    const client = clients.find((item) => [item.name, item.code, item.contact, item.email].some((value) => value.toLowerCase().includes(query)));
+    const client = clients.find((item) => item.id === result.clientId);
     if (client) {
       openClient(client);
       notify(`Opened ${client.name}`);
-      return;
+    } else {
+      setView("Clients");
+      notify("Client found. Refresh the directory if it is not listed yet.");
     }
-    notify(`No client or project matched “${searchTerm}”`);
   }
 
   return (
@@ -362,7 +435,7 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
       <main className="main-area">
         <header className="topbar">
           <button className="mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={21} /></button>
-          <form className="search" onSubmit={(event) => { event.preventDefault(); searchWorkspace(); }}><Search size={18} /><input id="workspace-search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} aria-label="Search workspace" placeholder="Search projects, clients, contacts…" /><button className="search-shortcut" type="button" onClick={() => document.getElementById("workspace-search")?.focus()} aria-label="Focus workspace search">⌘ K</button></form>
+          <form className="search" onSubmit={(event) => { event.preventDefault(); void searchWorkspace(); }}><Search size={18} /><input id="workspace-search" value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setSearchResults([]); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchWorkspace(); } }} aria-label="Search workspace" placeholder="Search projects, clients, contacts…" /><button className="search-shortcut" type="submit" disabled={searching} aria-label="Search workspace">{searching ? "…" : "⌘ K"}</button>{searchResults.length > 0 && <div className="global-search-results" role="listbox" aria-label="Workspace search results">{searchResults.map((result) => <button type="button" key={`${result.kind}-${result.id}`} role="option" aria-selected={false} onClick={() => openSearchResult(result)}><span>{result.kind === "project" ? <BriefcaseBusiness size={14} /> : result.kind === "contact" ? <ContactRound size={14} /> : <Users size={14} />}</span><div><strong>{result.title}</strong><small>{result.kind} · {result.subtitle}</small></div><ChevronRight size={14} /></button>)}</div>}</form>
           <div className="top-actions"><div className="notification-wrap"><button className="icon-button" onClick={() => setNotificationsOpen((current) => !current)} aria-label="Notifications" aria-expanded={notificationsOpen}><Bell size={19} /><i /></button>{notificationsOpen && <div className="notification-menu" role="status"><strong>Needs attention</strong><button onClick={() => { setView("Schedule"); setNotificationsOpen(false); }}>2 schedule confirmations pending</button><button onClick={() => { setView("Inbox"); setNotificationsOpen(false); }}>Open your connected Gmail inbox</button><button onClick={() => { setView("Projects"); setNotificationsOpen(false); }}>1 closeout follow-up overdue</button></div>}</div><button className="primary-button" onClick={() => setLeadModal(true)}><Plus size={17} /> Add lead</button></div>
         </header>
 
@@ -372,10 +445,10 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
           {view === "Clients" && <ClientsView clients={clients} projects={projectItems} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => setProjectModal(true)} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
           {view === "Projects" && <ProjectsView projects={projectItems} onNewProject={() => setProjectModal(true)} onProject={openProject} />}
           {view === "Schedule" && <ScheduleView notify={notify} />}
-          {view === "Inbox" && <InboxView notify={notify} onRules={openRules} projects={projectItems} onGoogleSetup={openGoogleWorkspace} />}
-          {view === "AI Assistant" && <AssistantView />}
+          {view === "Inbox" && <InboxView notify={notify} onRules={openRules} projects={projectItems} userEmail={userEmail} onGoogleSetup={openGoogleWorkspace} />}
+          {view === "AI Assistant" && <AssistantView projects={projectItems} />}
           {view === "Reports" && <ReportsView />}
-          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} rules={filingRules} projects={projectItems} onAddRule={() => setRuleModal(true)} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
+          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
         </div>
       </main>
       {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
@@ -509,7 +582,19 @@ function inboxDate(value: string | null) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function InboxView({ notify, onRules, projects, onGoogleSetup }: { notify: (s: string) => void; onRules: () => void; projects: Project[]; onGoogleSetup: () => void }) {
+type InboxProjectSuggestion = { kind: "project" | "needs-review" | "intake"; text: string };
+
+function inboxProjectSuggestion(message: GmailTestMessage, projects: Project[]): InboxProjectSuggestion {
+  const searchable = [message.from, message.subject, message.snippet].filter(Boolean).join(" ").toLowerCase();
+  const exactNumber = projects.find((project) => searchable.includes(project.number.toLowerCase()));
+  if (exactNumber) return { kind: "project", text: `Suggested: ${exactNumber.number} — ${exactNumber.name}` };
+  const matchingClients = projects.filter((project) => project.client.length > 3 && searchable.includes(project.client.toLowerCase()));
+  if (matchingClients.length === 1) return { kind: "project", text: `Suggested: ${matchingClients[0].number} — ${matchingClients[0].name}` };
+  if (matchingClients.length > 1) return { kind: "needs-review", text: "Needs review: this client has multiple independent projects" };
+  return { kind: "intake", text: "FCI Intake: choose a project before filing" };
+}
+
+function InboxView({ notify, onRules, projects, userEmail, onGoogleSetup }: { notify: (s: string) => void; onRules: () => void; projects: Project[]; userEmail: string; onGoogleSetup: () => void }) {
   const [workspace, setWorkspace] = useState<GmailWorkspaceStatus | null>(null);
   const [messages, setMessages] = useState<GmailTestMessage[]>([]);
   const [bucket, setBucket] = useState<InboxBucket>("inbox");
@@ -523,6 +608,10 @@ function InboxView({ notify, onRules, projects, onGoogleSetup }: { notify: (s: s
   const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
   const [filingLoading, setFilingLoading] = useState(false);
   const [filingSubmitting, setFilingSubmitting] = useState(false);
+  const [replyMessage, setReplyMessage] = useState<GmailTestMessage | null>(null);
+  const [replyBody, setReplyBody] = useState("");
+  const [replySaving, setReplySaving] = useState(false);
+  const [replySignature] = useState(() => typeof readLocalAccountPreferences(userEmail).replySignature === "string" ? readLocalAccountPreferences(userEmail).replySignature!.slice(0, 1_500) : "");
 
   async function checkGmailConnection() {
     setChecking(true);
@@ -636,59 +725,159 @@ function InboxView({ notify, onRules, projects, onGoogleSetup }: { notify: (s: s
     }
   }
 
+  function openReplyComposer(message: GmailTestMessage) {
+    setReplyMessage(message);
+    setReplyBody(replySignature ? `\n\n${replySignature}` : "");
+  }
+
+  function closeReplyComposer() {
+    if (replySaving) return;
+    setReplyMessage(null);
+    setReplyBody("");
+  }
+
+  async function saveReplyDraft() {
+    if (!replyMessage || !replyBody.trim()) {
+      notify("Write a reply before saving a Gmail draft.");
+      return;
+    }
+    setReplySaving(true);
+    try {
+      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(replyMessage.id)}/reply-draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: replyBody }) });
+      const data = await response.json().catch(() => ({})) as { draftSaved?: boolean; recipient?: string; error?: string };
+      if (!response.ok || !data.draftSaved) throw new Error(data.error ?? "Gmail draft could not be saved.");
+      notify(`Reply draft saved in Gmail for ${data.recipient ?? "the original sender"}. It was not sent.`);
+      setReplyMessage(null);
+      setReplyBody("");
+    } catch (replyError) {
+      notify(replyError instanceof Error ? replyError.message : "Gmail draft could not be saved.");
+    } finally {
+      setReplySaving(false);
+    }
+  }
+
   const connectionText = gmailReady ? `Connected Gmail: ${workspace?.connectionAccount ?? "approved test account"}` : workspace?.requiresReauthorization ? "Google needs to be reconnected to approve Gmail access." : "Connect the approved personal Google test account to load messages.";
-  return <><PageTitle eyebrow="Gmail intake" title="Connected inbox" text="Load a bounded view of the approved Gmail test account; filing always requires an exact project and your final approval." action={<div className="title-actions"><button className="soft-button" onClick={onRules}><ListFilter size={15} /> Email & file rules</button>{gmailReady ? <button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>{loading ? "Loading…" : <><RefreshCw size={15} /> Refresh inbox</>}</button> : <button className="primary-button" onClick={onGoogleSetup}><Building2 size={15} /> Google setup</button>}</div>} />
+  return <>
+    <PageTitle eyebrow="Gmail intake" title="Connected inbox" text="Search the approved Gmail test account, link each message to one independent project, and keep Gmail organized without creating a folder for every job." action={<div className="title-actions"><button className="soft-button" onClick={onRules}><ListFilter size={15} /> Inbox & file rules</button>{gmailReady ? <button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>{loading ? "Loading…" : <><RefreshCw size={15} /> Refresh inbox</>}</button> : <button className="primary-button" onClick={onGoogleSetup}><Building2 size={15} /> Google setup</button>}</div>} />
     <section className={`inbox-connection ${gmailReady ? "ready" : ""}`}><Mail size={18} /><div><strong>{gmailReady ? connectionText : "Gmail connection required"}</strong><span>{gmailReady ? "This is the approved Google account for the personal test profile. Loading messages never changes Gmail." : connectionText}</span></div><button className="soft-button" onClick={() => void checkGmailConnection()} disabled={checking}>{checking ? "Checking…" : "Check connection"}</button></section>
-    <section className="inbox-safety"><ShieldCheck size={18} /><div><strong>Safe filing is on</strong><span>Every email stays in Gmail. When you choose a project, FCI Operations first copies the email and attachments to Drive, then adds FCI/Filed only after the copy succeeds.</span></div><button onClick={onRules}>Manage rules</button></section>
+    <section className="inbox-safety"><ShieldCheck size={18} /><div><strong>Safe filing is on</strong><span>Project numbers are suggested first. A client with more than one project always stays in review until you choose the exact destination.</span></div><button onClick={onRules}>Manage rules</button></section>
     {error && <p className="workspace-missing">{error}</p>}
-    <div className="inbox-layout"><section className="panel message-list"><header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => { setBucket(event.target.value as InboxBucket); setMessages([]); setLabelReady(null); }} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI Intake</option><option value="needs-review">FCI Needs Review</option><option value="filed">FCI Filed</option></select></label><label>Search Gmail<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label></div><div className="workspace-actions">{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
-      {!gmailReady ? <div className="inbox-empty"><Mail size={25} /><h3>Connect Gmail to see your inbox</h3><p>This page reads only the approved personal test account after you click Load messages. It does not assume your ChatGPT sign-in and Google account are the same.</p><button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button></div> : messages.length === 0 ? <div className="inbox-empty"><Inbox size={25} /><h3>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h3><p>Choose a mailbox, optionally enter a Gmail search, and select Load messages. The view is limited to 20 message summaries.</p><button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>Load {inboxBucketLabels[bucket]}</button></div> : messages.map((message, index) => <article className="message-row live-message-row" key={message.id}><div className={`sender-dot s${index % 4}`}>{(message.from ?? "?").split(/[\s@<]+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div><div className="message-copy"><strong>{message.from ?? "Unknown sender"}</strong><h3>{message.subject ?? "(No subject)"}</h3><p>{message.snippet || "No preview available."}</p><div><ShieldCheck size={13} /> Project selection required before filing</div></div><div className="message-actions"><span>{inboxDate(message.date)}</span><small>{message.to ? `To: ${message.to}` : "Approved test mailbox"}</small><button className="primary-button" onClick={() => openFilingReview(message)}><FolderOpen size={14} /> File to project</button></div></article>)}</section><aside className="panel inbox-summary"><div className="summary-icon"><Mail size={20} /></div><h3>Inbox status</h3><p>{gmailReady ? `Showing ${messages.length} loaded message${messages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.` : "Gmail is not connected yet."}</p><div><span>Connected account</span><strong>{workspace?.connectionAccount ?? "Not connected"}</strong></div><div><span>Message limit</span><strong>20 summaries</strong></div><div><span>Filing protection</span><strong>Exact project required</strong></div><hr /><small>{workspace?.environment === "test" ? "Personal test mode" : "Google setup required"}</small><small>Inbox is retained after filing</small></aside></div>
+    <div className="inbox-layout">
+      <section className="panel message-list">
+        <header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => { setBucket(event.target.value as InboxBucket); setMessages([]); setLabelReady(null); }} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI Intake</option><option value="needs-review">FCI Needs Review</option><option value="filed">FCI Filed</option></select></label><label>Search this Gmail mailbox<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label><small className="gmail-search-help">Use Gmail search terms such as <b>from:</b>, <b>subject:</b>, or a project number.</small></div><div className="workspace-actions">{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
+        {!gmailReady ? <div className="inbox-empty"><Mail size={25} /><h3>Connect Gmail to see your inbox</h3><p>This page reads only the approved personal test account after you click Load messages. It does not assume your ChatGPT sign-in and Google account are the same.</p><button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button></div> : messages.length === 0 ? <div className="inbox-empty"><Inbox size={25} /><h3>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h3><p>Choose a mailbox, optionally enter a Gmail search, and select Load messages. The view is limited to 20 message summaries.</p><button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>Load {inboxBucketLabels[bucket]}</button></div> : messages.map((message, index) => {
+          const suggestion = inboxProjectSuggestion(message, projects);
+          return <article className="message-row live-message-row" key={message.id}><div className={`sender-dot s${index % 4}`}>{(message.from ?? "?").split(/[\s@<]+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div><div className="message-copy"><strong>{message.from ?? "Unknown sender"}</strong><h3>{message.subject ?? "(No subject)"}</h3><p>{message.snippet || "No preview available."}</p><div className={`inbox-project-suggestion ${suggestion.kind}`}><ShieldCheck size={13} /> {suggestion.text}</div></div><div className="message-actions"><span>{inboxDate(message.date)}</span><small>{message.to ? `To: ${message.to}` : "Approved test mailbox"}</small><button className="primary-button" onClick={() => openFilingReview(message)}><FolderOpen size={14} /> File to project</button><button className="soft-button" onClick={() => openReplyComposer(message)}><Reply size={14} /> Reply</button></div></article>;
+        })}
+      </section>
+      <aside className="panel inbox-summary"><div className="summary-icon"><Mail size={20} /></div><h3>Inbox status</h3><p>{gmailReady ? `Showing ${messages.length} loaded message${messages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.` : "Gmail is not connected yet."}</p><div><span>Connected account</span><strong>{workspace?.connectionAccount ?? "Not connected"}</strong></div><div><span>Message limit</span><strong>20 summaries</strong></div><div><span>Filing protection</span><strong>Exact project required</strong></div><hr /><h4>Keep it organized</h4><ul className="inbox-organization"><li>Use only FCI Intake, Needs Review, and Filed labels.</li><li>Use project numbers for the safest match.</li><li>Store the permanent email and attachments in that project’s Drive folder.</li></ul><small>{workspace?.environment === "test" ? "Personal test mode" : "Google setup required"}</small><small>Inbox is retained after filing</small></aside>
+    </div>
     {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
+    {replyMessage && <GmailReplyModal message={replyMessage} body={replyBody} saving={replySaving} onBody={setReplyBody} onSave={saveReplyDraft} onClose={closeReplyComposer} />}
   </>;
 }
 
-function AssistantView() {
+type AssistantCitation = { id: string; label: string; detail: string };
+
+function AssistantView({ projects }: { projects: Project[] }) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
-  const [answer, setAnswer] = useState<{ answer: string; citations: string[] } | null>(null);
-  const [context, setContext] = useState("Atlas Design Group · Westport Medical");
-  const [sourceDetail, setSourceDetail] = useState<string | null>(null);
-  const contextText = context === "All authorized projects" ? "Authorized projects include Westport Medical, Northpoint Imaging Suite, One Harbor Plaza, and The Foundry Hotel. Use only the supplied project records and say when evidence is missing." : "Atlas Design Group; Westport Medical Center; mobilization July 15; moisture testing complete; adhesive delivery pending; client site access confirmed after 6:00 AM.";
+  const [answer, setAnswer] = useState<{ mode: "ai-grounded" | "records-only"; answer: string; citations: AssistantCitation[]; missingEvidence: string } | null>(null);
+  const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
+  const [sourceDetail, setSourceDetail] = useState<AssistantCitation | null>(null);
+  const activeProjectId = projects.some((project) => project.id === projectId) ? projectId : projects[0]?.id ?? "";
   async function ask(q?: string) {
     const prompt = q ?? question;
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || !activeProjectId) return;
     setQuestion(prompt);
     setLoading(true);
     try {
-      const response = await fetch("/api/v1/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: prompt, context: contextText }) });
-      if (!response.ok) throw new Error("Assistant request failed");
-      const data = await response.json() as { answer?: string; citations?: string[] };
-      if (!data.answer || !data.citations) throw new Error("Assistant response was incomplete");
-      setAnswer({ answer: data.answer, citations: data.citations });
-    } catch {
-      setAnswer({ answer: "The assistant could not reach its service. You can keep testing the workflow, but connect the OpenAI key before relying on answers for project decisions.", citations: [] });
+      const response = await fetch("/api/v1/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: prompt, projectId: activeProjectId }) });
+      const data = await response.json().catch(() => ({})) as { mode?: "ai-grounded" | "records-only"; answer?: string; citations?: AssistantCitation[]; missingEvidence?: string; error?: string };
+      if (!response.ok || !data.answer || !data.citations || !data.mode) throw new Error(data.error ?? "Assistant request failed");
+      setAnswer({ mode: data.mode, answer: data.answer, citations: data.citations, missingEvidence: data.missingEvidence ?? "" });
+    } catch (error) {
+      setAnswer({ mode: "records-only", answer: error instanceof Error ? error.message : "The assistant could not reach its project-record service.", citations: [], missingEvidence: "No answer was generated. Check the selected project and the assistant configuration." });
     } finally {
       setLoading(false);
     }
   }
-  return <><PageTitle eyebrow="Permission-aware AI" title="Ask FCI Assistant" text="Answers are grounded in the project records you’re allowed to see" />
-    <div className="assistant-layout"><section className="assistant-main panel"><div className="assistant-hero"><div className="ai-orb"><Bot size={29} /></div><h2>What would you like to know?</h2><p>Search project notes, emails, files, meetings, schedules, and tasks.</p></div><div className="prompt-chips">{["What needs attention this week?", "Summarize Westport Medical", "Which clients need a follow-up?"].map((q) => <button key={q} onClick={() => ask(q)}>{q}<ChevronRight size={14} /></button>)}</div>{answer && <article className="ai-answer"><div><Sparkles size={18} /><strong>FCI Assistant answer</strong></div><p>{answer.answer}</p><h4>Sources</h4>{answer.citations.length ? answer.citations.map((citation, index) => <button key={citation} onClick={() => setSourceDetail(citation)}><FileText size={14} /><span>[{index + 1}] {citation}</span><ChevronRight size={14} /></button>) : <p className="source-empty">No verified source links are available for this response.</p>}</article>}<form className="ask-box" onSubmit={(event) => { event.preventDefault(); ask(); }}><select value={context} onChange={(event) => setContext(event.target.value)} aria-label="Project context"><option>Atlas Design Group · Westport Medical</option><option>All authorized projects</option></select><div><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about a client, project, meeting, or schedule…" aria-label="Ask FCI Assistant" /><button disabled={loading || !question.trim()} aria-label="Send question">{loading ? <span className="spinner" /> : <Send size={18} />}</button></div><small><Sparkles size={12} /> Answers include source links. Verify important decisions.</small></form></section><aside className="panel recent-questions"><h3>Recent questions</h3>{["What changed in the Harbor Plaza scope?", "Summarize the last client meeting", "Who has not confirmed next week?", "List overdue closeout items"].map((q, index) => <button key={q} onClick={() => ask(q)}><MessageSquareText size={15} /><span>{q}<small>{index === 0 ? "12 min ago" : `${index + 1} days ago`}</small></span></button>)}<div className="privacy-note"><CheckCircle2 size={17} /><p><strong>Project permissions apply</strong><br />Answers never include records you cannot access.</p></div></aside></div>
+  return <><PageTitle eyebrow="Project-record assistant" title="Ask FCI Assistant" text="Start with saved project, client, contact, activity, and approved email-archive facts. Files and meeting notes will join after approved indexing is added." />
+    <div className="assistant-layout"><section className="assistant-main panel"><div className="assistant-hero"><div className="ai-orb"><Bot size={29} /></div><h2>What would you like to know?</h2><p>Choose one project so every answer has a clear, reviewable evidence boundary.</p></div><div className="prompt-chips">{["What facts are saved for this project?", "Summarize the current project record", "What evidence is still missing?"].map((q) => <button key={q} onClick={() => void ask(q)} disabled={!activeProjectId}>{q}<ChevronRight size={14} /></button>)}</div>{answer && <article className="ai-answer"><div><Sparkles size={18} /><strong>{answer.mode === "ai-grounded" ? "AI-grounded answer" : "Project-record summary"}</strong><span className="assistant-mode">{answer.mode === "ai-grounded" ? "OpenAI enabled" : "OpenAI not configured or unavailable"}</span></div><p>{answer.answer}</p><p className="assistant-missing"><CircleAlert size={14} /> {answer.missingEvidence}</p><h4>Sources</h4>{answer.citations.length ? answer.citations.map((citation, index) => <button key={citation.id} onClick={() => setSourceDetail(citation)}><FileText size={14} /><span>[{index + 1}] {citation.label}</span><ChevronRight size={14} /></button>) : <p className="source-empty">No verified sources were returned for this answer.</p>}</article>}<form className="ask-box" onSubmit={(event) => { event.preventDefault(); void ask(); }}><select value={activeProjectId} onChange={(event) => { setProjectId(event.target.value); setAnswer(null); }} aria-label="Project context" disabled={!projects.length}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name}</option>)}</select><div><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about the selected project record…" aria-label="Ask FCI Assistant" /><button disabled={loading || !question.trim() || !activeProjectId} aria-label="Send question">{loading ? <span className="spinner" /> : <Send size={18} />}</button></div><small><Sparkles size={12} /> Every answer is read-only and cites only server-selected project evidence.</small></form></section><aside className="panel recent-questions"><h3>Suggested questions</h3>{["What is the current project status?", "Who is the primary contact?", "How many email archives are linked?", "What evidence has not been captured yet?"].map((q) => <button key={q} onClick={() => void ask(q)} disabled={!activeProjectId}><MessageSquareText size={15} /><span>{q}<small>Selected project only</small></span></button>)}<div className="privacy-note"><CheckCircle2 size={17} /><p><strong>Office-record scope</strong><br />This first version uses the operational records available to approved office users. Project-specific permissions are the next access-control layer.</p></div></aside></div>
     {sourceDetail && <SourceDetailModal citation={sourceDetail} onClose={() => setSourceDetail(null)} />}
   </>;
 }
 
 function ReportsView() { return <><PageTitle eyebrow="Business performance" title="Reports" text="A clear view of pipeline, delivery, and workload" /><section className="metrics-grid"><Metric label="Won revenue YTD" value="$1.28m" note="18 projects" trend="+24%" icon={BriefcaseBusiness} color="green" /><Metric label="Average sales cycle" value="31 days" note="Inquiry to award" trend="-4 days" icon={Clock3} color="blue" /><Metric label="Crew utilization" value="82%" note="Next 30 days" trend="Healthy" icon={Users} color="orange" /><Metric label="Closeout time" value="9 days" note="Average" trend="-2 days" icon={CheckCircle2} color="violet" /></section><div className="reports-grid"><section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" /><div className="bar-chart">{[["New inquiry", 45, "$86.5k"], ["Site visit", 72, "$142k"], ["Proposal", 34, "$64.8k"], ["Decision", 100, "$218.4k"]].map((b) => <div key={String(b[0])}><span>{b[0]}</span><div><i style={{ width: `${b[1]}%` }} /></div><strong>{b[2]}</strong></div>)}</div></section><section className="panel report-chart"><PanelHeader title="Project health" subtitle="8 active" /><div className="health-donut"><div><strong>75%</strong><span>On track</span></div></div><div className="legend"><span><i className="g" />On track <b>6</b></span><span><i className="a" />At risk <b>1</b></span><span><i className="r" />Blocked <b>1</b></span></div></section></div></> }
 
-function SettingsView({ notify, section, onSection, rules, projects, onAddRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; rules: FilingRuleDraft[]; projects: Project[]; onAddRule: () => void; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
-  const options = ["Google Workspace", "Email & file rules", "Client Directory", "Testing & launch", "Pipeline stages", "Notifications", "People & roles", "Data & security"];
-  return <><PageTitle eyebrow="Administration" title="Workspace settings" text="Set your Google structure, routing rules, and access controls in one place" />
+function SettingsView({ notify, section, onSection, rules, projects, userName, userEmail, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
+  const options = ["My account", "Google Workspace", "Calendar & appointments", "Inbox & file rules", "Client Directory", "Workflow & notifications", "Data & security", "Testing & launch"];
+  return <><PageTitle eyebrow="Control center" title="Settings" text="Keep personal preferences, Google connections, inbox rules, calendar defaults, and workspace safeguards in one simple place." />
     <div className="settings-layout"><aside className="settings-nav panel">{options.map((option) => <button className={section === option ? "active" : ""} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
-      {section === "Email & file rules" && <section className="panel rule-settings"><div className="settings-heading"><div><p className="eyebrow">Gmail intake rules</p><h2>Email & file rules</h2><p>Rules propose a destination; approval remains required before FCI Operations labels, archives, or copies anything.</p></div><button className="primary-button" onClick={onAddRule}><Plus size={16} /> Add rule</button></div><div className="rule-callout"><ShieldCheck size={19} /><p><strong>Multi-project protection</strong><br />A contact match cannot auto-select a project if that client has multiple eligible projects.</p></div><div className="rules-table"><div className="rules-table-head"><span>Priority</span><span>Rule</span><span>When it matches</span><span>Action</span><span>Destination</span></div>{rules.map((rule) => <div className="rule-row" key={rule.id ?? rule.name}><span className="rule-priority">{rule.priority}</span><span><strong>{rule.name}</strong><small>{rule.enabled ? "Enabled" : "Disabled"} · approval required</small></span><span>{rule.matchSummary}</span><Status text={rule.action === "review" ? "Needs review" : rule.action === "ignore" ? "Ignored" : "Suggest"} /><span>{rule.targetCategory}</span></div>)}</div><div className="rule-footnote"><Mail size={15} /><span>Use only broad Gmail labels: <b>{DRIVE_BLUEPRINT.gmailLabels.join(", ")}</b>. Do not create a Gmail filter per project.</span></div></section>}
+      {section === "My account" && <MyAccountPanel notify={notify} userName={userName} userEmail={userEmail} onGoogleSetup={onGoogleSetup} />}
       {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
+      {section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} />}
+      {section === "Inbox & file rules" && <section className="panel rule-settings"><div className="settings-heading"><div><p className="eyebrow">Gmail intake rules</p><h2>Inbox & file rules</h2><p>Rules decide whether the app suggests a project, sends a message to review, or ignores it. Every Drive filing still requires your approval.</p></div><button className="primary-button" onClick={onAddRule}><Plus size={16} /> Add rule</button></div><div className="rule-callout"><ShieldCheck size={19} /><p><strong>Multi-project protection</strong><br />A project number is the safest match. A client with multiple independent projects is always kept in review until you choose the exact job.</p></div><div className="rules-table"><div className="rules-table-head"><span>Priority</span><span>Rule</span><span>When it matches</span><span>Action</span><span>Destination</span></div>{rules.map((rule) => <div className="rule-row" key={rule.id ?? rule.name}><span className="rule-priority">{rule.priority}</span><span><strong>{rule.name}</strong><small>{rule.enabled ? "Enabled" : "Paused"} · approval required</small><div className="rule-inline-actions"><button className="soft-button" onClick={() => void onUpdateRule(rule, { enabled: !rule.enabled })}>{rule.enabled ? "Pause" : "Enable"}</button>{rule.id && <button className="icon-text-button danger" aria-label={`Delete ${rule.name}`} onClick={() => { if (window.confirm(`Delete the email rule “${rule.name}”?`)) void onDeleteRule(rule); }}><Trash2 size={14} /> Delete</button>}</div></span><span>{rule.matchSummary}</span><Status text={rule.action === "review" ? "Needs review" : rule.action === "ignore" ? "Ignored" : "Suggest"} /><span>{rule.targetCategory}</span></div>)}</div><div className="rule-footnote"><Mail size={15} /><span>Keep Gmail simple: use only <b>{DRIVE_BLUEPRINT.gmailLabels.join(", ")}</b>. The project’s Drive folder—not a Gmail label per project—is the permanent filing location.</span></div></section>}
       {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets"); }} />}
+      {section === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} />}
+      {section === "Data & security" && <DataSecurityPanel />}
       {section === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
-      {!(["Email & file rules", "Google Workspace", "Client Directory", "Testing & launch"] as string[]).includes(section) && <section className="panel integrations"><h2>{section}</h2><p>This administration area is ready for the next implementation step.</p><div className="settings-placeholder"><Settings size={22} /><span>Configure this area after the Google Workspace foundation is connected.</span></div></section>}
     </div></>;
+}
+
+type WorkspacePreferenceValues = { timezone: string; appointmentCalendarName: string; fieldCalendarName: string; appointmentReminderHours: number; crewReminderHours: number; inboxReviewMode: "review-first"; officeNotificationEmail: string };
+
+const defaultWorkspacePreferences: WorkspacePreferenceValues = { timezone: "America/New_York", appointmentCalendarName: "Client Appointments", fieldCalendarName: "Field Schedule", appointmentReminderHours: 24, crewReminderHours: 24, inboxReviewMode: "review-first", officeNotificationEmail: "" };
+
+function MyAccountPanel({ notify, userName, userEmail, onGoogleSetup }: { notify: (message: string) => void; userName: string; userEmail: string; onGoogleSetup: () => void }) {
+  const storageKey = `fci-user-preferences:${userEmail.toLowerCase()}`;
+  const [timezone, setTimezone] = useState(() => typeof readLocalAccountPreferences(userEmail).timezone === "string" ? readLocalAccountPreferences(userEmail).timezone! : "America/New_York");
+  const [replySignature, setReplySignature] = useState(() => typeof readLocalAccountPreferences(userEmail).replySignature === "string" ? readLocalAccountPreferences(userEmail).replySignature!.slice(0, 1_500) : "");
+  const [connectionAccount, setConnectionAccount] = useState<string | null>(null);
+  useEffect(() => {
+    void fetch("/api/v1/google-workspace").then((response) => response.ok ? response.json() : null).then((data) => setConnectionAccount(typeof data?.workspace?.connectionAccount === "string" ? data.workspace.connectionAccount : null)).catch(() => undefined);
+  }, [storageKey]);
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    window.localStorage.setItem(storageKey, JSON.stringify({ timezone, replySignature }));
+    notify("My preferences were saved in this browser");
+  }
+  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Personal settings</p><h2>My account</h2><p>Set the preferences used for your own app experience. These are kept in this browser and never change another user’s settings.</p></div></div><div className="account-identity"><div className="avatar">{userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC"}</div><div><strong>{userName}</strong><span>{userEmail}</span></div></div><form onSubmit={save}><div className="form-row"><label>My display timezone<select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label><label>Connected Google test account<input value={connectionAccount ?? "Not connected"} readOnly /></label></div><label>Default reply signature<textarea value={replySignature} onChange={(event) => setReplySignature(event.target.value)} placeholder="Name, title, phone, and company" maxLength={1500} /></label><p className="form-help"><Reply size={14} /> The signature is added when you open a Gmail reply draft. Calendar and Gmail connections are managed separately so personal testing never becomes the company connection.</p><footer><button type="button" className="soft-button" onClick={onGoogleSetup}><Building2 size={15} /> Manage Google connection</button><button type="submit" className="primary-button"><Check size={15} /> Save my preferences</button></footer></form></section>;
+}
+
+function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calendar" | "workflow"; notify: (message: string) => void; onGoogleSetup: () => void }) {
+  const [settings, setSettings] = useState<WorkspacePreferenceValues>(defaultWorkspacePreferences);
+  const [saving, setSaving] = useState(false);
+  const [calendarAccount, setCalendarAccount] = useState<string | null>(null);
+  const [calendarConnected, setCalendarConnected] = useState(false);
+  useEffect(() => {
+    void Promise.all([fetch("/api/v1/settings/workspace").then((response) => response.ok ? response.json() : null), fetch("/api/v1/google-workspace").then((response) => response.ok ? response.json() : null)]).then(([settingsData, googleData]) => {
+      if (settingsData?.settings) setSettings({ ...defaultWorkspacePreferences, ...settingsData.settings });
+      setCalendarAccount(typeof googleData?.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
+      setCalendarConnected(googleData?.workspace?.calendarConnected === true && googleData?.workspace?.calendarEnabled === true && googleData?.workspace?.connectionStatus === "connected");
+    }).catch(() => undefined);
+  }, []);
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/settings/workspace", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+      const data = await response.json().catch(() => ({})) as { settings?: WorkspacePreferenceValues; error?: string };
+      if (!response.ok || !data.settings) throw new Error(data.error ?? "Settings could not be saved.");
+      setSettings({ ...defaultWorkspacePreferences, ...data.settings });
+      notify(mode === "calendar" ? "Calendar defaults saved" : "Workflow and notification defaults saved");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Settings could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  const calendar = mode === "calendar";
+  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">{calendar ? "Appointment settings" : "Operating defaults"}</p><h2>{calendar ? "Calendar & appointments" : "Workflow & notifications"}</h2><p>{calendar ? "Set the calendar names, timezone, and reminder defaults before live scheduling is enabled." : "Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled."}</p></div><button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button></div><div className={`settings-connection ${calendarConnected ? "ready" : ""}`}><CalendarDays size={18} /><div><strong>{calendarConnected ? "Calendar connection ready" : "Calendar connection required"}</strong><span>{calendarConnected ? `${calendarAccount ?? "Approved test account"} is connected for personal test holds.` : "Reconnect Google and approve Calendar before testing appointments."}</span></div></div><form onSubmit={save}>{calendar ? <><div className="form-row"><label>Workspace timezone<select value={settings.timezone} onChange={(event) => setSettings((current) => ({ ...current, timezone: event.target.value }))}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label><label>Appointment reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label></div><div className="form-row"><label>Client appointment calendar name<input value={settings.appointmentCalendarName} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarName: event.target.value }))} /></label><label>Field schedule calendar name<input value={settings.fieldCalendarName} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarName: event.target.value }))} /></label></div><p className="form-help"><CalendarDays size={14} /> The personal test adapter uses the connected account’s primary calendar today. These saved names define the company calendar mapping to add when production Workspace is connected.</p></> : <><div className="form-row"><label>Client reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label><label>Crew reminder hours<input type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} /></label></div><label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label><div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div></>}<footer><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</button></footer></form></section>;
+}
+
+function DataSecurityPanel() {
+  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Safety & access</p><h2>Data & security</h2><p>These safeguards are already active in the prototype and identify what must be completed before staff-wide use.</p></div></div><div className="settings-security-list"><div><ShieldCheck size={18} /><span><strong>Review-first email filing</strong><small>Messages retain Inbox; project copies and FCI/Filed occur only after a direct approval.</small></span></div><div><Building2 size={18} /><span><strong>Separate personal test and company production profiles</strong><small>Personal Google credentials and folders are never promoted to company production.</small></span></div><div><Settings size={18} /><span><strong>Installable web app</strong><small>This site now includes a web-app manifest. In Chrome or Edge, use the browser’s Install app command to add FCI Operations as its own app window. The Google app launcher cannot add an arbitrary personal URL; a true Gmail sidebar requires a separate Workspace Add-on deployment.</small></span></div></div></section>;
 }
 
 function formatSyncTime(value: number | null) {
@@ -1097,6 +1286,10 @@ function GmailFilingModal({ message, projects, projectId, preview, loading, subm
   return <div className="modal-backdrop" role="presentation"><div className="modal gmail-filing-modal" role="dialog" aria-modal="true" aria-labelledby="gmail-filing-title"><header><div><p className="eyebrow">Review-approved Gmail filing</p><h2 id="gmail-filing-title">File to one project</h2></div><button onClick={onClose} aria-label="Close" disabled={loading || submitting}><X size={20} /></button></header><div className="modal-detail"><div className="filing-message-summary"><Mail size={17} /><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span></div></div><label className="filing-project-select">Exact independent project<select value={projectId} onChange={(event) => onProject(event.target.value)} disabled={loading || submitting}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name} · {project.client}</option>)}</select></label>{selectedProject && <p className={selectedProject.driveFolderId ? "filing-workspace-ready" : "filing-workspace-pending"}>{selectedProject.driveFolderId ? <><CheckCircle2 size={14} /> Managed Drive workspace detected for this project.</> : <><CircleAlert size={14} /> This project needs its managed Drive workspace before email can be filed. The review will not create a folder.</>}</p>}<p className="form-help"><ShieldCheck size={14} /> The original email becomes an <b>.eml</b> in <b>05_Correspondence / Email Archive</b>. Attachments go to <b>05_Correspondence / Email Attachments</b>. Your Gmail Inbox label is retained.</p>{preview && <div className="filing-preview"><div className="filing-preview-heading"><div><FolderOpen size={16} /><strong>{preview.project.number} — {preview.project.name}</strong><span>{preview.project.client}</span></div>{alreadyFiled && <Status text="Filed" />}</div>{alreadyFiled ? <p className="filing-existing">This email was already filed to this project. No second copy will be made.</p> : <><dl><div><dt>Email archive</dt><dd>{preview.destinations.emailArchive}</dd></div><div><dt>Attachments</dt><dd>{preview.destinations.attachments}</dd></div></dl><div className="filing-attachments"><strong>{attachmentLabel} attachment{attachmentLabel === 1 ? "" : "s"}</strong>{preview.message.attachments.length ? <ul>{preview.message.attachments.map((attachment, index) => <li key={`${attachment.filename}-${index}`}><FileText size={13} /><span>{attachment.filename}</span><small>{attachment.mimeType} · {formatBytes(attachment.byteSize)}</small></li>)}</ul> : <p>No separate attachments were found. The original email will still be copied as an .eml file.</p>}</div><p className="filing-confirmation"><ShieldCheck size={14} /> Nothing has been copied yet. Select <b>Copy email to project</b> to complete this one approved filing.</p></>}</div>}</div><footer className="modal-footer"><button className="soft-button" onClick={onClose} disabled={loading || submitting}>Cancel</button>{preview ? <button className="primary-button" onClick={onConfirm} disabled={loading || submitting || alreadyFiled}>{submitting ? "Copying…" : alreadyFiled ? "Already filed" : `Copy email + ${attachmentLabel} attachment${attachmentLabel === 1 ? "" : "s"}`}</button> : <button className="primary-button" onClick={onPreview} disabled={!projectId || loading || submitting}>{loading ? "Reviewing…" : "Review destination"}</button>}</footer></div></div>;
 }
 
+function GmailReplyModal({ message, body, saving, onBody, onSave, onClose }: { message: GmailTestMessage; body: string; saving: boolean; onBody: (value: string) => void; onSave: () => void; onClose: () => void }) {
+  return <div className="modal-backdrop" role="presentation"><div className="modal gmail-reply-modal" role="dialog" aria-modal="true" aria-labelledby="gmail-reply-title"><header><div><p className="eyebrow">Personal Gmail test</p><h2 id="gmail-reply-title">Save a reply draft</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={(event) => { event.preventDefault(); onSave(); }}><div className="modal-detail"><div className="filing-message-summary"><Mail size={17} /><div><strong>{message.subject || "(No subject)"}</strong><span>Reply target: {message.from || "original sender"}</span></div></div><label>Reply message<textarea value={body} onChange={(event) => onBody(event.target.value)} placeholder="Write your reply…" maxLength={6000} required disabled={saving} /></label><p className="form-help"><ShieldCheck size={14} /> The app saves an unsent draft in the original Gmail thread. In personal test mode, Gmail verifies the recipient is your approved test account. Sending remains a separate action in Gmail.</p></div><footer className="modal-footer"><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || !body.trim()}>{saving ? "Saving…" : <><Reply size={16} /> Save Gmail draft</>}</button></footer></form></div></div>;
+}
+
 function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => void }) {
   return <section className="panel test-launch"><div className="settings-heading"><div><p className="eyebrow">Prototype verification</p><h2>Test & launch checklist</h2><p>Use the safe prototype controls first, then connect Google Workspace only after the data and permission checks are complete.</p></div><button className="primary-button" onClick={onGoogleSetup}>Open Workspace check</button></div><ol className="test-checklist"><li><strong>Clients and projects:</strong> add a client, create two independent projects, refresh, and verify their codes and project numbers remain consistent.</li><li><strong>Workflow controls:</strong> advance a lead, filter projects, add a draft shift, resolve a schedule conflict, and review an inbox suggestion.</li><li><strong>AI:</strong> ask a question, switch project context, and open every source reference. Do not rely on responses for decisions until the OpenAI key and retrieval indexes are configured.</li><li><strong>Personal Google test:</strong> connect the dedicated Drive folder and approved personal account, verify the root, then prepare Gmail labels, send yourself a test email, and create a private Calendar hold.</li><li><strong>Company production later:</strong> create a separate company OAuth client, Shared Drive, mailbox, Sheet, and calendars; never reuse the personal test credentials or folders.</li><li><strong>Before live staff use:</strong> run permission tests and complete the full lead-to-closeout lifecycle with non-production records.</li></ol></section>;
 }
@@ -1114,8 +1307,8 @@ function ShiftDetailModal({ shift, onClose, onAcknowledge }: { shift: ShiftAssig
   return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Shift assignment</p><h2>{shift.site}</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="modal-detail"><dl><div><dt>Crew</dt><dd>{shift.crew}</dd></div><div><dt>When</dt><dd>{shift.day} · {shift.time}</dd></div><div><dt>Current status</dt><dd><Status text={shift.status} /></dd></div></dl><p>Use acknowledgement only for this prototype view. Published employee messages and calendar synchronization require the Google Workspace connection.</p></div><footer className="modal-footer"><button className="soft-button" onClick={onClose}>Close</button>{shift.status === "Pending" && <button className="primary-button" onClick={onAcknowledge}><Check size={16} /> Acknowledge</button>}</footer></div></div>;
 }
 
-function SourceDetailModal({ citation, onClose }: { citation: string; onClose: () => void }) {
-  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Assistant source</p><h2>Evidence reference</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="modal-detail"><strong>{citation}</strong><p>This source is available in the prototype evidence list. Once Drive and the permission-aware index are connected, this control will open the exact permitted project record or archived document.</p></div><footer className="modal-footer"><button className="primary-button" onClick={onClose}>Done</button></footer></div></div>;
+function SourceDetailModal({ citation, onClose }: { citation: AssistantCitation; onClose: () => void }) {
+  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Assistant source</p><h2>Evidence reference</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="modal-detail"><strong>{citation.label}</strong><p>{citation.detail}</p><p>This is a server-selected project record reference. Raw Gmail content, Drive files, notes, and transcripts are not returned by this first assistant release.</p></div><footer className="modal-footer"><button className="primary-button" onClick={onClose}>Done</button></footer></div></div>;
 }
 
 function ProjectUpdateModal({ project, onClose, onSave }: { project: Project; onClose: () => void; onSave: (draft: ProjectUpdateDraft) => void }) {

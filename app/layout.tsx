@@ -15,7 +15,10 @@ export async function generateMetadata(): Promise<Metadata> {
   const description = "Lead-to-closeout commercial flooring operations for Floor Coverings International.";
   return {
     metadataBase: new URL(origin), title, description,
+    manifest: "/manifest.webmanifest",
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    applicationName: "FCI Operations",
+    appleWebApp: { capable: true, title: "FCI Operations", statusBarStyle: "default" },
     openGraph: { title, description, type: "website" },
     twitter: { card: "summary", title, description },
   };

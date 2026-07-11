@@ -105,6 +105,21 @@ export type GmailMessageArchive = {
   attachments: GmailAttachment[];
 };
 
+export type GmailReplyContext = {
+  messageId: string;
+  threadId: string;
+  recipient: string;
+  subject: string;
+  inReplyTo: string | null;
+  references: string | null;
+};
+
+export type GmailReplyDraft = {
+  id: string;
+  messageId: string | null;
+  threadId: string | null;
+};
+
 export type GmailListBucket = "inbox" | "intake" | "needs-review" | "filed";
 
 const LABEL_NAME_BY_BUCKET: Record<GmailListBucket, string | null> = {
@@ -375,6 +390,48 @@ export function createTestMessageRaw(recipient: string, subject: string, body: s
   return base64Url(new TextEncoder().encode(mime));
 }
 
+function extractEmailAddress(value: string | null) {
+  if (!value) return null;
+  const bracketed = value.match(/<([^<>\s@]+@[^<>\s@]+)>/);
+  const candidate = (bracketed?.[1] ?? value.match(/\b[^\s@<>]+@[^\s@<>]+\b/)?.[0] ?? "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : null;
+}
+
+function replyHeader(value: string | null) {
+  if (!value) return null;
+  const compact = value.replace(/[\r\n\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  return compact && compact.length <= 500 ? compact : null;
+}
+
+function replySubject(value: string | null) {
+  const base = (value ?? "").replace(/^\s*(?:re\s*:\s*)+/i, "").replace(/[\r\n\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 160) || "Message";
+  return `Re: ${base}`;
+}
+
+export function validateReplyDraftBody(value: unknown) {
+  if (typeof value !== "string") throw new GoogleIntegrationError("invalid_reply_draft", "Write a reply before saving a Gmail draft.", 400);
+  const body = value.replace(/\r\n/g, "\n").trim();
+  if (!body || body.length > 6_000 || /\u0000/.test(body)) {
+    throw new GoogleIntegrationError("invalid_reply_draft", "Reply text is required and must be 6,000 characters or fewer.", 400);
+  }
+  return body;
+}
+
+export function createReplyDraftRaw(input: { recipient: string; subject: string; body: string; inReplyTo: string | null; references: string | null }) {
+  const headers = [
+    `To: ${input.recipient}`,
+    `Subject: ${encodedHeader(input.subject)}`,
+    ...(input.inReplyTo ? [`In-Reply-To: ${input.inReplyTo}`] : []),
+    ...(input.references ? [`References: ${input.references}`] : []),
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    base64MimeLines(input.body),
+  ];
+  return base64Url(new TextEncoder().encode(headers.join("\r\n")));
+}
+
 export class GoogleGmailClient {
   constructor(private readonly accessToken: string) {}
 
@@ -571,6 +628,47 @@ export class GoogleGmailClient {
       summary: mapMessage(full),
       raw,
       attachments,
+    };
+  }
+
+  /** Returns only the server-derived headers needed to save a safe reply draft. */
+  async getReplyContext(messageId: string): Promise<GmailReplyContext> {
+    const safeMessageId = validateGmailMessageId(messageId);
+    const message = await this.getFullMessage(safeMessageId);
+    const summary = mapMessage(message);
+    const recipient = extractEmailAddress(summary.from);
+    const threadId = message.threadId ?? null;
+    if (!recipient || !threadId) {
+      throw new GoogleIntegrationError("gmail_reply_context_missing", "Gmail did not return the sender or thread information needed for a reply draft.", 409);
+    }
+    const inReplyTo = replyHeader(header(message.payload?.headers, "Message-ID"));
+    const references = replyHeader(header(message.payload?.headers, "References")) ?? inReplyTo;
+    return {
+      messageId: safeMessageId,
+      threadId,
+      recipient,
+      subject: replySubject(summary.subject),
+      inReplyTo,
+      references,
+    };
+  }
+
+  /** Creates an unsent Gmail draft in the original message thread. Sending remains a separate user action in Gmail. */
+  async createReplyDraft(input: GmailReplyContext & { body: string }): Promise<GmailReplyDraft> {
+    const response = await this.request<{ id?: string; message?: GmailMessage }>("drafts", {
+      method: "POST",
+      body: JSON.stringify({
+        message: {
+          threadId: input.threadId,
+          raw: createReplyDraftRaw(input),
+        },
+      }),
+    });
+    if (!response.id) throw archiveResponseError("Gmail did not return a draft identifier.");
+    return {
+      id: response.id,
+      messageId: response.message?.id ?? null,
+      threadId: response.message?.threadId ?? input.threadId,
     };
   }
 

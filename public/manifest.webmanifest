@@ -1,0 +1,17 @@
+{
+  "name": "Floor Coverings International Operations",
+  "short_name": "FCI Operations",
+  "description": "Commercial flooring leads, projects, inbox, schedules, and project records.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f2ed",
+  "theme_color": "#f6f2ed",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
