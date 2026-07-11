@@ -12,7 +12,7 @@ import { DEFAULT_FILING_RULES, DRIVE_BLUEPRINT, type FilingRuleDraft } from "./l
 type View = "Overview" | "Leads" | "Clients" | "Projects" | "Schedule" | "Inbox" | "AI Assistant" | "Reports" | "Settings";
 type Lead = { id: string; company: string; contact: string; project: string; value: string; stage: string; source: string; next: string; initials: string; color: string };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending" };
-type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; site: string; lead: string; date: string; accent: string };
+type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; site: string; lead: string; date: string; accent: string; driveFolderId?: string; driveUrl?: string };
 type ProjectUpdateDraft = { project: Project; subject: string; message: string };
 type ShiftAssignment = { id: string; crew: string; site: string; day: string; time: string; status: "Pending" | "Acknowledged" };
 type InboxMessage = { id: string; sender: string; subject: string; preview: string; suggestedProject: string; confidence: number };
@@ -83,7 +83,7 @@ export function FloorOpsApp({ userName }: { userName: string }) {
       fetch("/api/v1/filing-rules").then((r) => r.ok ? r.json() : null),
     ]).then(([clientData, projectData, ruleData]) => {
       if (clientData?.clients?.length) setClients(clientData.clients.map((client: Record<string, unknown>) => ({ id: String(client.id), code: String(client.client_code), name: String(client.name), contact: String(client.primary_contact_name ?? "Primary contact"), email: String(client.primary_contact_email ?? ""), industry: String(client.industry ?? "Commercial"), status: String(client.status), initials: String(client.name).split(" ").map((x) => x[0]).slice(0, 2).join(""), color: "sage", googleStatus: "Setup pending" as const })));
-      if (projectData?.projects?.length) setProjectItems(projectData.projects.map((project: Record<string, unknown>) => ({ id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: String(project.status), progress: 0, value: project.estimated_value ? `$${Number(project.estimated_value).toLocaleString()}` : "TBD", site: String(project.site ?? "Site pending"), lead: String(project.project_manager ?? "Unassigned"), date: "Dates pending", accent: "sage" })));
+      if (projectData?.projects?.length) setProjectItems(projectData.projects.map((project: Record<string, unknown>) => ({ id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: String(project.status), progress: 0, value: project.estimated_value ? `$${Number(project.estimated_value).toLocaleString()}` : "TBD", site: String(project.site ?? "Site pending"), lead: String(project.project_manager ?? "Unassigned"), date: "Dates pending", accent: "sage", driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined })));
       if (ruleData?.rules?.length) setFilingRules(ruleData.rules.map((rule: Record<string, unknown>) => ({ id: rule.id ? String(rule.id) : undefined, name: String(rule.name), enabled: Boolean(rule.enabled), priority: Number(rule.priority), matchSummary: String(rule.matchSummary ?? rule.match_summary), action: String(rule.action) as FilingRuleDraft["action"], targetCategory: String(rule.targetCategory ?? rule.target_category), approvalRequired: Boolean(rule.approvalRequired ?? rule.approval_required) })));
     }).catch(() => undefined);
   }, []);
@@ -154,6 +154,20 @@ export function FloorOpsApp({ userName }: { userName: string }) {
     setProjectItems((current) => [savedProject, ...current]);
     setProjectModal(false);
     notify(savedRemotely ? `${project.name} is now an independent project for ${project.client}` : `${project.name} created locally; retry sync when the data service is available`);
+  }
+
+  async function provisionProjectDrive(project: Project) {
+    try {
+      const response = await fetch(`/api/v1/projects/${encodeURIComponent(project.id)}/drive`, { method: "POST" });
+      const data = await response.json() as { driveFolderId?: string; driveUrl?: string; created?: boolean; environment?: string; error?: string };
+      if (!response.ok || !data.driveFolderId || !data.driveUrl) throw new Error(data.error ?? "The project Drive workspace could not be created.");
+      const updated = { ...project, driveFolderId: data.driveFolderId, driveUrl: data.driveUrl };
+      setProjectItems((current) => current.map((item) => item.id === project.id ? updated : item));
+      setSelectedProject((current) => current.id === project.id ? updated : current);
+      notify(data.created ? `${project.name} now has a ${data.environment ?? "test"} Drive workspace` : `${project.name} already has a Drive workspace`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The project Drive workspace could not be created.");
+    }
   }
 
   async function addRule(rule: FilingRuleDraft) {
@@ -274,7 +288,7 @@ export function FloorOpsApp({ userName }: { userName: string }) {
       {clientModal && <ClientModal onClose={() => setClientModal(false)} onSave={addClient} />}
       {projectModal && <NewProjectModal clients={clients} onClose={() => setProjectModal(false)} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
-      {projectOpen && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} />}
+      {projectOpen && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} />}
       {clientOpen && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); setProjectModal(true); }} />}
       {projectUpdate && <ProjectUpdateModal project={projectUpdate} onClose={() => setProjectUpdate(null)} onSave={(draft) => { setProjectUpdate(null); notify(`Update for ${draft.project.name} prepared. Connect Gmail before sending.`); }} />}
       {toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
@@ -441,9 +455,22 @@ function SettingsView({ notify, section, onSection, rules, onAddRule }: { notify
 
 function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
   const [checking, setChecking] = useState(false);
+  const [working, setWorking] = useState(false);
   const [status, setStatus] = useState<"unknown" | "missing" | "credentials">("unknown");
   const [missing, setMissing] = useState<string[]>([]);
-  const [workspace, setWorkspace] = useState<{ mode?: "shared-drive" | "my-drive"; storageLabel?: string; storageName?: string; temporary?: boolean; storageConfigured?: boolean } | null>(null);
+  const [workspace, setWorkspace] = useState<{
+    mode?: "shared-drive" | "my-drive";
+    storageLabel?: string;
+    storageName?: string;
+    temporary?: boolean;
+    storageConfigured?: boolean;
+    environment?: "test" | "production";
+    connectionStatus?: string;
+    connectionAccount?: string | null;
+    provisioningEnabled?: boolean;
+    gmailFilingEnabled?: boolean;
+    broadScopeAcknowledged?: boolean;
+  } | null>(null);
 
   async function checkSetup() {
     setChecking(true);
@@ -453,7 +480,19 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
       const data = await response.json() as {
         credentialsPresent?: boolean;
         missing?: string[];
-        workspace?: { mode?: "shared-drive" | "my-drive"; storageLabel?: string; storageName?: string; temporary?: boolean; storageConfigured?: boolean };
+        workspace?: {
+          mode?: "shared-drive" | "my-drive";
+          storageLabel?: string;
+          storageName?: string;
+          temporary?: boolean;
+          storageConfigured?: boolean;
+          environment?: "test" | "production";
+          connectionStatus?: string;
+          connectionAccount?: string | null;
+          provisioningEnabled?: boolean;
+          gmailFilingEnabled?: boolean;
+          broadScopeAcknowledged?: boolean;
+        };
       };
       setMissing(data.missing ?? []);
       setWorkspace(data.workspace ?? null);
@@ -467,47 +506,114 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
     }
   }
 
+  async function connectGoogleDrive() {
+    setWorking(true);
+    try {
+      const response = await fetch("/api/v1/integrations/google/authorize", { method: "POST" });
+      const data = await response.json() as { authorizationUrl?: string; error?: string };
+      if (!response.ok || !data.authorizationUrl) throw new Error(data.error ?? "Google Drive could not be authorized.");
+      window.location.assign(data.authorizationUrl);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Google Drive could not be authorized.");
+      setWorking(false);
+    }
+  }
+
+  async function verifyGoogleDrive() {
+    setWorking(true);
+    try {
+      const response = await fetch("/api/v1/integrations/google/drive/verify", { method: "POST" });
+      const data = await response.json() as { verified?: boolean; error?: string };
+      if (!response.ok || !data.verified) throw new Error(data.error ?? "The Drive workspace could not be verified.");
+      notify("The active Drive workspace was verified. You can now enable project-folder testing when ready.");
+      await checkSetup();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Drive workspace could not be verified.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function disconnectGoogleDrive() {
+    setWorking(true);
+    try {
+      const response = await fetch("/api/v1/integrations/google/connection", { method: "DELETE" });
+      const data = await response.json() as { disconnected?: boolean; error?: string };
+      if (!response.ok || !data.disconnected) throw new Error(data.error ?? "The Google connection could not be removed.");
+      notify("The active Google connection was removed from FCI Operations.");
+      await checkSetup();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Google connection could not be removed.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   const configured = status === "credentials";
   const temporary = workspace?.temporary === true;
+  const testProfile = (workspace?.environment ?? "test") === "test";
+  const connected = workspace?.connectionStatus === "connected";
   const storageName = workspace?.storageName ?? "FCI Operations";
+  const oauthResult = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("google");
+  const oauthMessage = oauthResult === "connected"
+    ? "Google Drive was connected. Run the readiness check to refresh this panel."
+    : oauthResult === "authorization-cancelled"
+      ? "Google authorization was cancelled; no connection was saved."
+      : oauthResult === "authorization-expired"
+        ? "Google authorization expired. Start the connection again from this page."
+        : oauthResult === "admin-required"
+          ? "An approved FCI administrator must complete the Google connection."
+          : oauthResult === "setup-needed"
+            ? "Google Drive setup is incomplete. Review the missing configuration below."
+            : oauthResult === "connection-failed"
+              ? "Google Drive could not be connected. Confirm the approved account and folder, then try again."
+              : null;
 
   return <section className="panel workspace-settings">
     <div className="settings-heading">
       <div>
         <p className="eyebrow">Google Workspace foundation</p>
         <h2>Google Workspace</h2>
-        <p>{temporary ? "A contained My Drive folder is configured for early testing. Gmail, calendars, and secure OAuth still need to be connected." : "One company-owned Shared Drive, two calendars, a mirrored Client Directory sheet, and a dedicated intake mailbox."}</p>
+        <p>{testProfile ? "Personal Google testing stays in a separate test profile. Later, production will require a new company Google connection and a company-owned workspace." : "This production profile is reserved for the company Google account and company-owned workspace."}</p>
       </div>
       <button className="primary-button" onClick={checkSetup} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
     </div>
-    <div className={`workspace-connection ${configured ? "ready" : ""}`}>
+    <div className={`workspace-connection ${connected ? "ready" : ""}`}>
       <div className="integration-logo google"><Mail size={20} /></div>
       <div>
-        <strong>{configured ? "Configuration entered — OAuth not yet verified" : temporary && workspace?.storageConfigured ? "Temporary Drive folder configured" : "Google Workspace setup required"}</strong>
-        <span>{configured ? "The app still needs the owner to complete secure OAuth authorization before it can access Drive, Gmail, Sheets, or Calendar." : temporary && workspace?.storageConfigured ? "The Drive root is set, but the app cannot access or change Google data until secure OAuth is complete." : "Gmail, Drive, Sheets, and Calendar are not connected until all required configuration is present."}</span>
+        <strong>{connected ? `${testProfile ? "Test" : "Production"} Google Drive connected` : configured ? `Ready to connect ${testProfile ? "test" : "production"} Google Drive` : temporary && workspace?.storageConfigured ? "Temporary Drive folder configured" : "Google Workspace setup required"}</strong>
+        <span>{connected ? `${workspace?.connectionAccount ?? "Approved account"} is connected to the ${testProfile ? "test" : "production"} profile. Gmail, Calendar, and email filing remain disabled.` : configured ? "Connection uses Drive only. It does not request Gmail, Calendar, or Sheets access." : temporary && workspace?.storageConfigured ? "The Drive root is set, but OAuth and admin safety settings still need to be configured." : "Google Drive is not connected until the active profile configuration is complete."}</span>
       </div>
-      <span>{configured ? "Authorize next" : temporary && workspace?.storageConfigured ? "Storage ready" : "Not connected"}</span>
+      <span>{connected ? "Connected" : configured ? "Authorize next" : temporary && workspace?.storageConfigured ? "Storage ready" : "Not connected"}</span>
     </div>
-    {temporary && <p className="workspace-warning"><CircleAlert size={15} /><span>This folder is a temporary My Drive workspace owned by its creator. Move the workspace to a company Shared Drive before wider staff use.</span></p>}
+    {testProfile && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Personal test mode:</strong> use only sample/test messages and documents. Your personal Gmail and Drive connection remains separate from the future company Google account; no Gmail actions are enabled in this phase.</span></p>}
+    {oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
+    {temporary && !testProfile && <p className="workspace-warning"><CircleAlert size={15} /><span>This folder is a temporary My Drive workspace owned by its creator. Move the workspace to a company Shared Drive before wider staff use.</span></p>}
     {missing.length > 0 && <p className="workspace-missing"><strong>Still needed:</strong> {missing.join(", ")}</p>}
+    <div className="workspace-actions">
+      {!connected && <button className="primary-button" onClick={connectGoogleDrive} disabled={!configured || working}>{working ? "Preparing…" : `Connect ${testProfile ? "test" : "production"} Google Drive`}</button>}
+      {connected && <button className="primary-button" onClick={verifyGoogleDrive} disabled={working}>{working ? "Verifying…" : "Verify workspace folder"}</button>}
+      {connected && <button className="soft-button" onClick={disconnectGoogleDrive} disabled={working}>Disconnect active profile</button>}
+    </div>
+    {connected && !workspace?.provisioningEnabled && <p className="workspace-missing"><strong>Folder creation remains off:</strong> enable the active profile’s Drive provisioning flag only after you verify the test workspace. This prevents accidental folder creation while you are testing.</p>}
     <div className="drive-blueprint">
       <div><h3>{temporary ? "Temporary My Drive blueprint" : "Shared Drive blueprint"}</h3><p>{storageName}</p></div>
       <ol>{DRIVE_BLUEPRINT.roots.map((item) => <li key={item}>{item}</li>)}</ol>
       <div className="project-folder-list"><strong>Every independent project receives:</strong>{DRIVE_BLUEPRINT.projectFolders.map((item) => <span key={item}><FolderOpen size={13} />{item}</span>)}</div>
     </div>
     <div className="workspace-checklist">
-      <h3>Before you connect</h3>
-      <label><input type="checkbox" /> {temporary ? "Temporary Google Drive root folder created and limited to test documents" : "Shared Drive created and owned by the company"}</label>
-      <label><input type="checkbox" /> Google Sheet named “Client Directory” created in the selected workspace</label>
-      <label><input type="checkbox" /> Dedicated intake mailbox selected</label>
-      <label><input type="checkbox" /> Google Cloud OAuth app approved by Workspace admin</label>
-      <label><input type="checkbox" /> Client Appointments and Field Schedule calendars created</label>
+      <h3>{testProfile ? "Personal test safeguards" : "Production safeguards"}</h3>
+      <label><input type="checkbox" /> {testProfile ? "Use only a dedicated personal test folder and sample messages" : "Use a company-owned Shared Drive and company sender mailbox"}</label>
+      <label><input type="checkbox" /> Authorize only the approved Google account for this profile</label>
+      <label><input type="checkbox" /> Verify the workspace folder before enabling project-folder creation</label>
+      <label><input type="checkbox" /> Keep Gmail filing disabled until its separate review and consent workflow is built</label>
+      <label><input type="checkbox" /> Before launch, create a separate production connection; do not promote personal test credentials</label>
     </div>
   </section>;
 }
 
 function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => void }) {
-  return <section className="panel test-launch"><div className="settings-heading"><div><p className="eyebrow">Prototype verification</p><h2>Test & launch checklist</h2><p>Use the safe prototype controls first, then connect Google Workspace only after the data and permission checks are complete.</p></div><button className="primary-button" onClick={onGoogleSetup}>Open Workspace check</button></div><ol className="test-checklist"><li><strong>Clients and projects:</strong> add a client, create two independent projects, refresh, and verify their codes and project numbers remain consistent.</li><li><strong>Workflow controls:</strong> advance a lead, filter projects, add a draft shift, resolve a schedule conflict, and review an inbox suggestion.</li><li><strong>AI:</strong> ask a question, switch project context, and open every source reference. Do not rely on responses for decisions until the OpenAI key and retrieval indexes are configured.</li><li><strong>Google preflight:</strong> create the Shared Drive, Sheet, mailbox, and calendars; enter the non-secret identifiers in hosted settings; then complete OAuth as the company owner.</li><li><strong>Before live staff use:</strong> require role checks, run permission tests, and test the full lead-to-closeout lifecycle with non-production records.</li></ol></section>;
+  return <section className="panel test-launch"><div className="settings-heading"><div><p className="eyebrow">Prototype verification</p><h2>Test & launch checklist</h2><p>Use the safe prototype controls first, then connect Google Workspace only after the data and permission checks are complete.</p></div><button className="primary-button" onClick={onGoogleSetup}>Open Workspace check</button></div><ol className="test-checklist"><li><strong>Clients and projects:</strong> add a client, create two independent projects, refresh, and verify their codes and project numbers remain consistent.</li><li><strong>Workflow controls:</strong> advance a lead, filter projects, add a draft shift, resolve a schedule conflict, and review an inbox suggestion.</li><li><strong>AI:</strong> ask a question, switch project context, and open every source reference. Do not rely on responses for decisions until the OpenAI key and retrieval indexes are configured.</li><li><strong>Personal Google test:</strong> configure only the dedicated test Drive folder and approved personal account, then verify the root before enabling folder creation. Gmail, Calendar, and Sheet actions remain off.</li><li><strong>Company production later:</strong> create a separate company OAuth client, Shared Drive, mailbox, Sheet, and calendars; never reuse the personal test credentials or folders.</li><li><strong>Before live staff use:</strong> run permission tests and complete the full lead-to-closeout lifecycle with non-production records.</li></ol></section>;
 }
 
 function ShiftModal({ crews, onClose, onSave }: { crews: string[]; onClose: () => void; onSave: (shift: Omit<ShiftAssignment, "id" | "status">) => void }) {
@@ -562,7 +668,40 @@ function RuleModal({ onClose, onSave }: { onClose: () => void; onSave: (rule: Fi
   return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Gmail intake</p><h2>Add an email filing rule</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>Rule name<input name="name" required placeholder="e.g. Estimator bid invitations" /></label><div className="form-row"><label>Priority<input name="priority" type="number" min="1" defaultValue="10" required /></label><label>Action<select name="action"><option value="suggest">Suggest a project</option><option value="review">Send to review</option><option value="ignore">Ignore</option></select></label></div><label>When this matches<textarea name="matchSummary" required placeholder="Example: sender is estimator@builder.com and subject contains BID" /></label><label>Default Drive destination<input name="targetCategory" required defaultValue="05_Correspondence / Email Archive" /></label><p className="form-help"><ShieldCheck size={14} /> New rules always require review before Gmail labels, email archives, or attachments are changed.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add rule"}</button></footer></form></div></div>;
 }
 
-function ProjectDrawer({ project, onClose, notify }: { project: Project; onClose: () => void; notify: (s: string) => void }) { const [tab, setTab] = useState("Overview"); return <div className="drawer-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}><aside className="project-drawer"><header><button onClick={onClose} aria-label="Close project"><X size={20} /></button><Status text={project.status} /><span>{project.number}</span></header><div className="drawer-title"><p>{project.client}</p><h2>{project.name}</h2><div><span><MapPin size={14} />{project.site}</span><span><CalendarDays size={14} />{project.date}</span></div></div><nav>{["Overview", "Tasks", "Files", "Schedule", "Activity"].map((t) => <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{t}</button>)}</nav><div className="drawer-body">{tab === "Overview" ? <><section className="project-health"><div><span>Overall progress</span><strong>{project.progress}%</strong></div><div className="progress"><i style={{ width: `${project.progress}%` }} /></div><p><CheckCircle2 size={15} /> Project is managed independently from other client work</p></section><div className="drawer-stats"><div><span>Contract value</span><strong>{project.value}</strong></div><div><span>Project manager</span><strong>{project.lead}</strong></div><div><span>Open tasks</span><strong>7</strong></div><div><span>Files</span><strong>38</strong></div></div><section className="next-actions"><h3>Next actions</h3>{["Confirm adhesive delivery", "Send floor prep photos", "Approve phase 2 crew schedule"].map((x, i) => <label key={x}><input type="checkbox" onChange={() => notify(`Completed: ${x}`)} /><span><strong>{x}</strong><small>{i === 0 ? "Due tomorrow" : `Due Jul ${14 + i}`}</small></span></label>)}</section><section className="recent-activity"><h3>Recent activity</h3><div><div className="event-icon"><Mail size={14} /></div><p><strong>Email filed to project</strong><span>Updated dock access plan · 38 min ago</span></p></div><div><div className="event-icon"><Upload size={14} /></div><p><strong>6 site photos uploaded</strong><span>By Carlos Rivera · 2 hours ago</span></p></div><div><div className="event-icon"><Check size={14} /></div><p><strong>Moisture testing completed</strong><span>By Mike Torres · Yesterday</span></p></div></section></> : <EmptyProjectTab tab={tab} notify={notify} />}</div><footer><button className="soft-button" onClick={() => notify("Google Drive folder will open after Workspace setup")}><FolderOpen size={16} /> Drive folder</button><button className="primary-button" onClick={() => notify("Project update composer opened")}><Send size={16} /> Send update</button></footer></aside></div> }
+function ProjectDrawer({ project, onClose, notify, onProvisionDrive }: { project: Project; onClose: () => void; notify: (s: string) => void; onProvisionDrive: (project: Project) => Promise<void> }) {
+  const [tab, setTab] = useState("Overview");
+  const [provisioning, setProvisioning] = useState(false);
+
+  async function handleDrive() {
+    if (project.driveUrl) {
+      window.open(project.driveUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setProvisioning(true);
+    await onProvisionDrive(project);
+    setProvisioning(false);
+  }
+
+  return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <aside className="project-drawer">
+      <header><button onClick={onClose} aria-label="Close project"><X size={20} /></button><Status text={project.status} /><span>{project.number}</span></header>
+      <div className="drawer-title"><p>{project.client}</p><h2>{project.name}</h2><div><span><MapPin size={14} />{project.site}</span><span><CalendarDays size={14} />{project.date}</span></div></div>
+      <nav>{["Overview", "Tasks", "Files", "Schedule", "Activity"].map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
+      <div className="drawer-body">
+        {tab === "Overview" ? <>
+          <section className="project-health"><div><span>Overall progress</span><strong>{project.progress}%</strong></div><div className="progress"><i style={{ width: `${project.progress}%` }} /></div><p><CheckCircle2 size={15} /> Project is managed independently from other client work</p></section>
+          <div className="drawer-stats"><div><span>Contract value</span><strong>{project.value}</strong></div><div><span>Project manager</span><strong>{project.lead}</strong></div><div><span>Open tasks</span><strong>7</strong></div><div><span>Files</span><strong>38</strong></div></div>
+          <section className="next-actions"><h3>Next actions</h3>{["Confirm adhesive delivery", "Send floor prep photos", "Approve phase 2 crew schedule"].map((item, index) => <label key={item}><input type="checkbox" onChange={() => notify(`Completed: ${item}`)} /><span><strong>{item}</strong><small>{index === 0 ? "Due tomorrow" : `Due Jul ${14 + index}`}</small></span></label>)}</section>
+          <section className="recent-activity"><h3>Recent activity</h3><div><div className="event-icon"><Mail size={14} /></div><p><strong>Email filed to project</strong><span>Updated dock access plan · 38 min ago</span></p></div><div><div className="event-icon"><Upload size={14} /></div><p><strong>6 site photos uploaded</strong><span>By Carlos Rivera · 2 hours ago</span></p></div><div><div className="event-icon"><Check size={14} /></div><p><strong>Moisture testing completed</strong><span>By Mike Torres · Yesterday</span></p></div></section>
+        </> : <EmptyProjectTab tab={tab} notify={notify} />}
+      </div>
+      <footer>
+        <button className="soft-button" onClick={handleDrive} disabled={provisioning}><FolderOpen size={16} /> {provisioning ? "Creating folder…" : project.driveUrl ? "Open Drive folder" : "Create Drive folder"}</button>
+        <button className="primary-button" onClick={() => notify("Project update composer opened")}><Send size={16} /> Send update</button>
+      </footer>
+    </aside>
+  </div>;
+}
 
 function ClientDrawer({ client, projects, onClose, onNewProject }: { client: Client; projects: Project[]; onClose: () => void; onNewProject: () => void }) { return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="project-drawer client-drawer"><header><button onClick={onClose} aria-label="Close client"><X size={20} /></button><Status text={client.status} /><span>{client.code}</span></header><div className="drawer-title"><p>Client account</p><h2>{client.name}</h2><div><span><ContactRound size={14} />{client.contact}</span><span><Mail size={14} />{client.email || "Contact email pending"}</span></div></div><div className="client-drawer-body"><section className="client-account-card"><div className="directory-badge"><FolderTree size={19} /></div><div><strong>Client account folder</strong><span>Google Shared Drive setup pending</span></div></section><div className="client-summary-grid"><div><span>Industry</span><strong>{client.industry}</strong></div><div><span>Independent projects</span><strong>{projects.length}</strong></div></div><section className="client-project-section"><header><h3>Projects for this client</h3><button onClick={onNewProject}><Plus size={14} /> New project</button></header>{projects.map((project) => <div className="client-project-link" key={project.id}><div><Status text={project.status} /><strong>{project.name}</strong><span>{project.number} · {project.site}</span></div><ChevronRight size={16} /></div>)}{!projects.length && <p className="empty-client-projects">No projects yet. Create the first independent project for this client.</p>}</section><section className="client-account-notes"><h3>Account-level documents</h3><p>Store reusable client documents here: insurance, master service agreements, tax information, and ongoing contacts. Project-specific documents stay inside their own project folders.</p></section></div></aside></div>; }
 

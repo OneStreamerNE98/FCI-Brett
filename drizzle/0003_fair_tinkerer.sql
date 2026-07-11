@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `drive_folder_mappings_profile_entity_folder_unique` ON `drive_folder_mappings` (`connection_key`,`entity_type`,`entity_id`,`folder_key`);

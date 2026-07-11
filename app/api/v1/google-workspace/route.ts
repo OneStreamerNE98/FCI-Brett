@@ -1,32 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildProjectFolderPlan, DRIVE_BLUEPRINT, resolveDriveWorkspace } from "../../../lib/google-workspace";
+import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-workspace";
+import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../lib/google-oauth";
+import { requireOfficeUser } from "../../../lib/workspace-auth";
+import { ensureWorkspaceSchema } from "../_workspace-data";
 
-export async function GET() {
-  const workspace = resolveDriveWorkspace({
-    mode: process.env.GOOGLE_DRIVE_MODE,
-    rootFolderId: process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID,
-    sharedDriveId: process.env.GOOGLE_SHARED_DRIVE_ID,
-  });
+export async function GET(request: NextRequest) {
+  const auth = requireOfficeUser(request);
+  if ("response" in auth) return auth.response;
+  await ensureWorkspaceSchema();
+  const google = getGoogleRuntimeConfig();
+  const workspace = google.drive;
+  const connection = await getGoogleConnectionStatus(google);
   const requirements = [
-    ["Google OAuth client ID", process.env.GOOGLE_CLIENT_ID],
-    ["Google OAuth client secret", process.env.GOOGLE_CLIENT_SECRET],
-    ["OAuth redirect URI", process.env.GOOGLE_OAUTH_REDIRECT_URI],
-    ["token encryption key", process.env.GOOGLE_TOKEN_ENCRYPTION_KEY],
-    [workspace.storageRequirementLabel, workspace.rootFolderId],
-    ["Client Directory Sheet ID", process.env.GOOGLE_CLIENT_DIRECTORY_SHEET_ID],
-    ["intake mailbox", process.env.GOOGLE_INTAKE_MAILBOX],
-    ["Client Appointments calendar ID", process.env.GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID],
-    ["Field Schedule calendar ID", process.env.GOOGLE_FIELD_SCHEDULE_CALENDAR_ID],
+    ...google.missing.map((label) => [label, undefined] as const),
+    ["FCI administrator allowlist", process.env.FCI_ADMIN_EMAILS],
   ];
   const missing = [
     ...requirements.filter(([, value]) => !value).map(([label]) => label),
-    ...(workspace.modeIsValid ? [] : ["Google Drive mode (must be shared-drive or my-drive)"]),
   ];
-  const credentialsPresent = missing.length === 0;
+  const credentialsPresent = google.oauthReady && Boolean(process.env.FCI_ADMIN_EMAILS);
   return NextResponse.json({
     configured: credentialsPresent,
     credentialsPresent,
-    connected: false,
+    connected: connection.connected,
     missing,
     workspace: {
       mode: workspace.mode,
@@ -34,14 +30,23 @@ export async function GET() {
       storageName: workspace.storageName,
       temporary: workspace.isTemporary,
       storageConfigured: Boolean(workspace.rootFolderId),
+      environment: google.environment,
+      connectionKey: google.connectionKey,
+      connectionStatus: connection.status,
+      connectionAccount: connection.account,
+      provisioningEnabled: google.provisioningEnabled,
+      gmailFilingEnabled: google.gmailFilingEnabled,
+      broadScopeAcknowledged: google.broadScopeAcknowledged,
     },
     blueprint: DRIVE_BLUEPRINT,
     requiredEnvironment: requirements.map(([label]) => label),
-    nextStep: credentialsPresent ? "OAuth authorization still needs to be completed by the company owner." : "Add the missing hosted configuration values, then complete OAuth authorization.",
+    nextStep: connection.connected ? "Drive is connected for the active profile. Gmail, Calendar, and email filing remain disabled." : credentialsPresent ? "An FCI administrator can now connect the approved Google account for the active profile." : "Add the missing active-profile configuration values before authorizing Google Drive.",
   });
 }
 
 export async function POST(request: NextRequest) {
+  const auth = requireOfficeUser(request);
+  if ("response" in auth) return auth.response;
   const body = await request.json() as { clientCode?: string; clientName?: string; projectNumber?: string; projectName?: string };
   if (!body.clientCode || !body.clientName || !body.projectNumber || !body.projectName) return NextResponse.json({ error: "client and project details are required" }, { status: 400 });
   return NextResponse.json({ plan: buildProjectFolderPlan(body) });

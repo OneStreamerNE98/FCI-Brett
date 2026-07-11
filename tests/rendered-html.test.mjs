@@ -81,12 +81,39 @@ test("wires prototype controls and exposes an honest Workspace readiness check",
   assert.match(app, /TestingLaunchPanel/);
   assert.doesNotMatch(app, /3 email suggestions approved and filed/);
   assert.match(workspaceApi, /credentialsPresent/);
-  assert.match(workspaceApi, /connected: false/);
-  assert.match(workspaceApi, /GOOGLE_DRIVE_ROOT_FOLDER_ID/);
+  assert.match(workspaceApi, /connected: connection\.connected/);
+  assert.match(workspaceApi, /getGoogleRuntimeConfig/);
   assert.match(app, /Temporary Drive folder configured/);
   assert.match(app, /Move the workspace to a company Shared Drive/);
-  assert.match(envExample, /GOOGLE_TOKEN_ENCRYPTION_KEY/);
-  assert.match(envExample, /GOOGLE_DRIVE_MODE/);
-  assert.match(envExample, /GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID/);
+  assert.match(app, /Personal test mode/);
+  assert.match(envExample, /GOOGLE_TEST_TOKEN_ENCRYPTION_KEY/);
+  assert.match(envExample, /GOOGLE_TEST_DRIVE_MODE/);
+  assert.match(envExample, /GOOGLE_PRODUCTION_DRIVE_MODE/);
+  assert.match(envExample, /GOOGLE_TEST_CLIENT_APPOINTMENTS_CALENDAR_ID/);
   assert.match(testGuide, /Test the prototype before connecting company data/);
+});
+
+test("keeps personal Google testing isolated from company production", async () => {
+  const [oauth, drive, auth, chatAuth, projectsApi, projectDriveApi, schema, guide] = await Promise.all([
+    read("app/lib/google-oauth.ts"), read("app/lib/google-drive.ts"), read("app/lib/workspace-auth.ts"),
+    read("app/chatgpt-auth.ts"), read("app/api/v1/projects/route.ts"), read("app/api/v1/projects/[projectId]/drive/route.ts"),
+    read("db/schema.ts"), read("docs/testing-and-google-workspace-setup.md"),
+  ]);
+  assert.match(oauth, /GOOGLE_CONNECTION_ENVIRONMENT/);
+  assert.match(oauth, /AES-GCM/);
+  assert.match(oauth, /code_challenge_method/);
+  assert.match(oauth, /GOOGLE_REVOCATION_URL/);
+  assert.match(drive, /assertContained/);
+  assert.match(drive, /fciProjectId/);
+  assert.match(auth, /FCI_ADMIN_EMAILS/);
+  assert.match(auth, /same-origin browser request/);
+  assert.match(auth, /NODE_ENV !== "development"/);
+  assert.match(chatAuth, /FCI_LOCAL_DEV_USER_EMAIL/);
+  assert.match(projectsApi, /m\.connection_key = \?/);
+  assert.doesNotMatch(projectsApi, /SELECT p\.\*/);
+  assert.match(projectDriveApi, /drive_folder_mappings/);
+  assert.doesNotMatch(projectDriveApi, /UPDATE projects SET drive_folder_id/);
+  assert.match(schema, /drive_folder_mappings_profile_entity_folder_unique/);
+  assert.match(guide, /External\*\* OAuth consent screen in \*\*Testing/);
+  assert.match(guide, /company-owned Google Cloud project and OAuth client/);
 });

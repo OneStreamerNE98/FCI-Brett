@@ -13,9 +13,19 @@ export async function ensureWorkspaceSchema() {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS workspace_settings (id TEXT PRIMARY KEY, shared_drive_id TEXT, client_directory_sheet_id TEXT, intake_mailbox TEXT, settings_json TEXT NOT NULL DEFAULT '{}', updated_by TEXT NOT NULL, updated_at INTEGER NOT NULL)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS mail_items (id TEXT PRIMARY KEY, gmail_message_id TEXT, gmail_thread_id TEXT, client_id TEXT, suggested_project_id TEXT, approved_project_id TEXT, status TEXT NOT NULL, match_reason TEXT, email_drive_file_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS mail_items_status_idx ON mail_items(status, updated_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS activity_events (id TEXT PRIMARY KEY, record_id TEXT NOT NULL, action TEXT NOT NULL, actor TEXT NOT NULL, detail TEXT, created_at INTEGER NOT NULL)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS google_oauth_attempts (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL, state_hash TEXT NOT NULL UNIQUE, pkce_verifier_ciphertext TEXT NOT NULL, browser_nonce_hash TEXT NOT NULL, initiated_by TEXT NOT NULL, scopes_json TEXT NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, created_at INTEGER NOT NULL)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS google_oauth_attempts_expiry_idx ON google_oauth_attempts(expires_at, consumed_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS google_connections (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL UNIQUE, google_subject TEXT NOT NULL, google_email TEXT NOT NULL, scopes_json TEXT NOT NULL, refresh_token_ciphertext TEXT NOT NULL, key_version TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'connected', last_error_code TEXT, last_success_at INTEGER, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, revoked_at INTEGER)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS drive_folder_mappings (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, folder_key TEXT NOT NULL, drive_file_id TEXT NOT NULL UNIQUE, parent_drive_file_id TEXT, drive_url TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(connection_key, entity_type, entity_id, folder_key))"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS google_drive_operations (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL, operation_key TEXT NOT NULL UNIQUE, project_id TEXT NOT NULL, status TEXT NOT NULL, lease_expires_at INTEGER, last_error_code TEXT, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS google_integration_events (id TEXT PRIMARY KEY, connection_key TEXT NOT NULL, event_type TEXT NOT NULL, actor TEXT NOT NULL, entity_type TEXT, entity_id TEXT, detail TEXT, created_at INTEGER NOT NULL)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS google_integration_events_created_idx ON google_integration_events(created_at)"),
   ]);
 }
 
 export function actorFrom(headers: Headers) {
-  return headers.get("oai-authenticated-user-email") ?? "local-user";
+  const actor = headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
+  if (!actor) throw new Error("Authenticated office user is required");
+  return actor;
 }

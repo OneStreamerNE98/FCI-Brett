@@ -16,10 +16,19 @@ const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
 const CALLBACK_PATH = "/callback";
 
+function localDevelopmentUser(): ChatGPTUser | null {
+  // This fallback exists only for `npm run dev` on the developer's machine.
+  // Hosted builds must receive the identity header from the private site host.
+  if (process.env.NODE_ENV !== "development") return null;
+  const email = process.env.FCI_LOCAL_DEV_USER_EMAIL?.trim().toLowerCase();
+  if (!email) return null;
+  return { displayName: email, email, fullName: null };
+}
+
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
   const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!email) return null;
+  if (!email) return localDevelopmentUser();
 
   const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
   const fullName =

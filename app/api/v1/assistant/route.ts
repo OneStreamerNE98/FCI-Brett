@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 
 const demoAnswer = {
   answer: "Atlas Design Group's Westport Medical project is on track for the July 15 mobilization. The client confirmed access after 6:00 AM, moisture testing is complete, and the remaining risk is the pending adhesive delivery confirmation due tomorrow.",
@@ -6,8 +7,13 @@ const demoAnswer = {
 };
 
 export async function POST(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return originError;
+  const auth = requireOfficeUser(request);
+  if ("response" in auth) return auth.response;
   const { question, context } = await request.json() as { question?: string; context?: string };
-  if (!question) return NextResponse.json({ error: "question is required" }, { status: 400 });
+  if (!question?.trim()) return NextResponse.json({ error: "question is required" }, { status: 400 });
+  if (question.length > 2000 || (context?.length ?? 0) > 8000) return NextResponse.json({ error: "question or context is too long" }, { status: 413 });
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return NextResponse.json(demoAnswer);
 

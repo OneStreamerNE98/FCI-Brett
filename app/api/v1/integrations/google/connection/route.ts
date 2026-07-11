@@ -1,0 +1,24 @@
+import { NextRequest, NextResponse } from "next/server";
+import { disconnectGoogleConnection, getGoogleConnectionStatus, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth";
+import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
+import { ensureWorkspaceSchema } from "../../../_workspace-data";
+
+export async function GET(request: NextRequest) {
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return auth.response;
+  await ensureWorkspaceSchema();
+  const config = getGoogleRuntimeConfig();
+  return NextResponse.json({ environment: config.environment, connection: await getGoogleConnectionStatus(config), gmailFilingEnabled: false });
+}
+
+export async function DELETE(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return originError;
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return auth.response;
+  await ensureWorkspaceSchema();
+  const config = getGoogleRuntimeConfig();
+  const result = await disconnectGoogleConnection(config);
+  await writeGoogleIntegrationEvent(config, "oauth.disconnected", auth.user.email, "connection", config.connectionKey, `environment=${config.environment};google_revocation=${result.revocationRequested ? "requested" : "not-confirmed"}`);
+  return NextResponse.json({ disconnected: true, revocationRequested: result.revocationRequested });
+}

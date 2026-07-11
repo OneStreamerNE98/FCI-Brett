@@ -14,14 +14,18 @@ npm run dev
 npm run build
 ```
 
-Copy `.env.example` to `.env.local` before connecting external services. The prototype works without credentials; Google Workspace features remain in planning/setup mode until an administrator configures either a contained temporary My Drive root or the production Shared Drive, then completes OAuth.
+Copy `.env.example` to `.env.local` before connecting external services. The prototype supports separate **test** and **production** Google connection profiles: test with a dedicated personal Google account/folder first, then create a separate company-account connection for production. OAuth tokens and Drive-folder mappings are kept profile-specific, so a personal test folder is never opened from the production profile.
+
+For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your own email and add that same address to `FCI_ADMIN_EMAILS`. The fallback is available only to `npm run dev` on `localhost`; the hosted site still requires ChatGPT sign-in.
 
 ## Included capabilities
 
 - Client Directory with repeat clients and multiple independent projects
 - Email and file-filing rule configuration under Settings
+- Protected Drive-only OAuth connection, root verification, and explicit project-folder provisioning
+- Separate personal-test and company-production Google Drive profiles
 - Google Drive / Shared Drive and Google Sheet organizational blueprint
-- Gmail review queue, project scheduling, client/project activity, and AI assistant prototype
+- Gmail review queue, project scheduling, client/project activity, and AI assistant prototype (not connected to Gmail yet)
 - D1-backed data-model and API foundation for clients, contacts, projects, rules, mail items, and workspace settings
 
 ## Google Workspace setup
@@ -92,7 +96,7 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
+- `npm test`: build the application and run source-level prototype checks
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
 ## Learn More

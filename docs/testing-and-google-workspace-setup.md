@@ -28,44 +28,65 @@ For the production workspace, your Google Workspace administrator should create 
 
 Keep each project under `02_Projects`, not inside its client folder. The client folder is for account-level material and project shortcuts only.
 
-### Temporary My Drive option
+### Personal test profile
 
-For a safe early prototype, create one empty My Drive folder dedicated to FCI Operations and put the same structure inside it. Configure the hosted site with `GOOGLE_DRIVE_MODE=my-drive`, `GOOGLE_DRIVE_ROOT_FOLDER_ID`, and the new Client Directory Sheet ID. This proves the folder organization only; it does not authorize the app to read Gmail or Drive.
+For a safe early prototype, use your personal Google account with one empty My Drive folder dedicated to FCI Operations and put the same structure inside it. Configure the hosted site with `GOOGLE_CONNECTION_ENVIRONMENT=test`, the `GOOGLE_TEST_*` values, and the new Client Directory Sheet ID.
 
-Do not use the account's My Drive root, share this temporary folder widely, or upload live client records until role controls and secure OAuth are implemented. Move the contents to the company Shared Drive before staff rollout.
+Use only sample/test messages and documents. Do not use the account's My Drive root, share this temporary folder widely, or upload live client records. The Drive-only test connection does not request Gmail, Calendar, or Sheets scopes, and Gmail filing remains disabled.
 
-## 3. Create the Google Cloud authorization application
+For personal Gmail testing, create a separate test label and use only messages you send to yourself. The email-review screen can be tested with its built-in sample messages now. Real Gmail reading, labeling, `.eml` archiving, and attachment copy are a later, separately authorized milestone—there is no switch that enables those actions in this release.
 
-1. Create separate Google Cloud projects for testing and production.
-2. Enable the Drive, Gmail, Sheets, Calendar, and Pub/Sub APIs.
-3. Configure an **Internal** OAuth consent screen for your Workspace domain.
-4. Create a Web application OAuth client and add this exact production callback URL when the OAuth feature is implemented:
+### Promote to company production later
+
+When testing is complete, create a **separate** company Google OAuth client and company Shared Drive, then add the `GOOGLE_PRODUCTION_*` values and set `GOOGLE_CONNECTION_ENVIRONMENT=production`. Authorize the company Google account from the app. Do not overwrite the personal test connection or reuse its client secret, refresh token, or folder IDs.
+
+## 3. Create two Google Cloud authorization applications
+
+Keep the two OAuth configurations separate from the start. Google recommends separate projects for testing and production when restricted scopes are involved.
+
+### Personal test application
+
+1. Create a Google Cloud project just for testing and enable the **Drive API** only.
+2. Create an **External** OAuth consent screen in **Testing** status and add your personal Gmail address as a test user. An Internal consent screen cannot authorize a personal Gmail account.
+3. Create a **Web application** OAuth client and add the exact callback URL:
 
    `https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback`
 
-5. Ask the Workspace administrator to approve the app and the least-privilege scopes. Gmail mailbox access is sensitive; do not request more than the intake workflow needs.
-6. Create a Pub/Sub topic for Gmail intake notifications. Gmail watches must be renewed before their seven-day expiry.
+4. Request only `openid`, `email`, and the Drive scope used by the app. The first Drive-only authorization does not need Gmail, Calendar, Sheets, or Pub/Sub APIs.
+
+An External app in Testing will normally require reauthorization after seven days when it uses Drive access. That is expected for this temporary personal test profile.
+
+### Company production application
+
+1. Create a separate company-owned Google Cloud project and OAuth client.
+2. Use an **Internal** consent screen for the company's Workspace domain, and have the Workspace administrator approve the client and required scopes.
+3. Use a company-owned custom domain for the production site and register its exact HTTPS callback URL. Do not rely on the temporary `chatgpt.site` address for a production OAuth deployment.
+4. Start with the same Drive-only scopes. Add Gmail, Calendar, Sheets, and Pub/Sub incrementally only when their adapters, webhooks, and permission tests are complete.
 
 ## 4. Add hosted configuration values
 
 Add these as hosted environment values/secrets, never to source control or chat:
 
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET` (secret)
-- `GOOGLE_OAUTH_REDIRECT_URI`
-- `GOOGLE_TOKEN_ENCRYPTION_KEY` (secret, high-entropy)
-- `GOOGLE_DRIVE_MODE` (`my-drive` for the temporary folder or `shared-drive` for production)
-- `GOOGLE_DRIVE_ROOT_FOLDER_ID` (temporary My Drive mode only) or `GOOGLE_SHARED_DRIVE_ID` (production)
-- `GOOGLE_CLIENT_DIRECTORY_SHEET_ID`
-- `GOOGLE_INTAKE_MAILBOX`
-- `GOOGLE_CLIENT_APPOINTMENTS_CALENDAR_ID`
-- `GOOGLE_FIELD_SCHEDULE_CALENDAR_ID`
-- `GOOGLE_PUBSUB_TOPIC`
+- `FCI_ADMIN_EMAILS`
+- `GOOGLE_CONNECTION_ENVIRONMENT` (`test` initially)
+- `GOOGLE_TEST_CLIENT_ID`
+- `GOOGLE_TEST_CLIENT_SECRET` (secret)
+- `GOOGLE_TEST_OAUTH_REDIRECT_URI`
+- `GOOGLE_TEST_TOKEN_ENCRYPTION_KEY` (secret, exactly 32 bytes encoded as base64url)
+- `GOOGLE_TEST_DRIVE_MODE=my-drive`
+- `GOOGLE_TEST_DRIVE_ROOT_FOLDER_ID`
+- `GOOGLE_TEST_AUTHORIZED_ACCOUNT_EMAILS` (your approved personal Google account)
+- `GOOGLE_TEST_MY_DRIVE_BROAD_SCOPE_ACKNOWLEDGED=true` after you understand the test scope
+- `GOOGLE_TEST_DRIVE_PROVISIONING_ENABLED=true` only after the app verifies the test root
+- `GOOGLE_TEST_CLIENT_DIRECTORY_SHEET_ID` (reference only until Sheet sync is added)
+- `GOOGLE_TEST_INTAKE_MAILBOX`, `GOOGLE_TEST_CLIENT_APPOINTMENTS_CALENDAR_ID`, `GOOGLE_TEST_FIELD_SCHEDULE_CALENDAR_ID`, and `GOOGLE_TEST_PUBSUB_TOPIC` (reserved for later separate integration work)
 
 Use **Settings → Google Workspace → Check readiness** to confirm that the prototype has all configuration values. A green status there means only that configuration is present; it does not authorize access to Google data.
 
-## 5. What remains before real Google data can be connected
+## 5. What is available now and what comes next
 
-The current release provides the client/project data model, a safe review-first inbox workflow, and a configuration preflight. It does not yet include a production OAuth callback, encrypted refresh-token storage, Google API adapter, Gmail watch handler, Calendar sync worker, or role enforcement for API mutations.
+The current release includes a protected Drive-only OAuth flow: an approved administrator can connect the active profile, verify its root folder, and explicitly create an independent client/project folder tree. Refresh tokens are encrypted and test/production folder mappings stay separate.
 
-Build and test those controls before authorizing the application against a live mailbox or Shared Drive. The first live integration test should use a test mailbox and a non-production Shared Drive folder.
+Gmail watch handling, Gmail filing, Sheet synchronization, Calendar synchronization, and live SMS are still not enabled. They need their own least-privilege scope requests, explicit user approval, signed webhook processing, idempotency checks, and permission tests before real company data is used.
+
+The first real Gmail test should use the personal test profile, a self-sent test message, and a dedicated test label. Company Gmail must wait for the separate company production OAuth client and security review.
