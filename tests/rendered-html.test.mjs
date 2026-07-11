@@ -17,6 +17,9 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(app, /Schedule & crews/);
   assert.match(app, /Smart inbox/);
   assert.match(app, /Ask FCI Assistant/);
+  assert.match(css, /--cream:#f6f2ed/);
+  assert.match(css, /\.sidebar \{ background:var\(--cream\); color:var\(--ink\);/);
+  assert.match(css, /\.brand \{ padding:0; margin:0 4px 26px; background:transparent;/);
   assert.match(css, /@media \(max-width:560px\)/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
