@@ -117,3 +117,30 @@ test("keeps personal Google testing isolated from company production", async () 
   assert.match(guide, /External\*\* OAuth consent screen in \*\*Testing/);
   assert.match(guide, /company-owned Google Cloud project and OAuth client/);
 });
+
+test("provides explicit, test-only Gmail and Calendar controls", async () => {
+  const [oauth, gmail, gmailHelper, gmailLabel, gmailSend, calendar, calendarHold, app, guide] = await Promise.all([
+    read("app/lib/google-oauth.ts"), read("app/lib/google-gmail.ts"),
+    read("app/api/v1/integrations/google/gmail/_route-helpers.ts"),
+    read("app/api/v1/integrations/google/gmail/messages/[messageId]/label/route.ts"),
+    read("app/api/v1/integrations/google/gmail/send-test/route.ts"),
+    read("app/lib/google-calendar-client.ts"),
+    read("app/api/v1/integrations/google/calendar/test-hold/route.ts"),
+    read("app/FloorOpsApp.tsx"), read("docs/testing-and-google-workspace-setup.md"),
+  ]);
+  assert.match(oauth, /ENABLED_SERVICES/);
+  assert.match(oauth, /https:\/\/www\.googleapis\.com\/auth\/gmail\.modify/);
+  assert.match(oauth, /https:\/\/www\.googleapis\.com\/auth\/calendar\.events/);
+  assert.match(gmailHelper, /assertGoogleTestService\(config, "gmail"\)/);
+  assert.match(gmailHelper, /getGoogleAccessToken\(config, "gmail"\)/);
+  assert.match(gmail, /expectedGoogleEmails\.includes\(recipient\)/);
+  assert.match(gmailLabel, /inbox_retained=true/);
+  assert.match(gmailSend, /requireSameOrigin/);
+  assert.match(calendar, /visibility: "private"/);
+  assert.match(calendar, /attendees=none/);
+  assert.match(calendarHold, /requireSameOrigin/);
+  assert.match(app, /Gmail & Calendar test controls/);
+  assert.match(app, /Send self-test email/);
+  assert.match(app, /Create test hold/);
+  assert.match(guide, /GOOGLE_TEST_ENABLED_SERVICES=drive,gmail,calendar/);
+});

@@ -34,13 +34,19 @@ export async function GET(request: NextRequest) {
       connectionKey: google.connectionKey,
       connectionStatus: connection.status,
       connectionAccount: connection.account,
+      driveConnected: connection.services.drive,
+      gmailConnected: connection.services.gmail,
+      calendarConnected: connection.services.calendar,
+      requiresReauthorization: connection.requiresReauthorization,
       provisioningEnabled: google.provisioningEnabled,
-      gmailFilingEnabled: google.gmailFilingEnabled,
+      gmailEnabled: google.gmailEnabled,
+      calendarEnabled: google.calendarEnabled,
+      enabledServices: google.enabledServices,
       broadScopeAcknowledged: google.broadScopeAcknowledged,
     },
     blueprint: DRIVE_BLUEPRINT,
     requiredEnvironment: requirements.map(([label]) => label),
-    nextStep: connection.connected ? "Drive is connected for the active profile. Gmail, Calendar, and email filing remain disabled." : credentialsPresent ? "An FCI administrator can now connect the approved Google account for the active profile." : "Add the missing active-profile configuration values before authorizing Google Drive.",
+    nextStep: connection.requiresReauthorization ? "Reconnect the approved Google account and approve every selected personal-test service." : connection.connected ? "The selected Google services are connected for the active profile." : credentialsPresent ? "An FCI administrator can now connect the approved Google account for the active profile." : "Add the missing active-profile configuration values before authorizing Google.",
   });
 }
 

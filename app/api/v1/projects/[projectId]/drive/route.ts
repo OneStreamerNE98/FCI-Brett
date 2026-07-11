@@ -39,7 +39,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     .first<ProjectRow>();
   if (!project) return NextResponse.json({ error: "Project not found." }, { status: 404 });
 
-  const accessToken = await getGoogleAccessToken(config);
+  const accessToken = await getGoogleAccessToken(config, "drive");
   const drive = new GoogleDriveClient(accessToken, config);
   const existing = await env.DB.prepare("SELECT drive_file_id, drive_url FROM drive_folder_mappings WHERE connection_key = ? AND entity_type = 'project' AND entity_id = ? AND folder_key = 'project-root'")
     .bind(config.connectionKey, project.id)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../lib/google-drive";
-import { assertExpectedGoogleAccount, consumeGoogleOauthAttempt, exchangeGoogleAuthorizationCode, fetchGoogleUserProfile, getGoogleRuntimeConfig, saveGoogleConnection, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth";
+import { assertExpectedGoogleAccount, assertGrantedGoogleServiceScopes, consumeGoogleOauthAttempt, exchangeGoogleAuthorizationCode, fetchGoogleUserProfile, getGoogleRuntimeConfig, saveGoogleConnection, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth";
 import { requireOfficeUser } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 
@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
   try {
     const verifier = await consumeGoogleOauthAttempt(config, state, browserNonce, auth.user.email);
     const tokens = await exchangeGoogleAuthorizationCode(config, code, verifier);
+    assertGrantedGoogleServiceScopes(config, tokens.scope);
     const profile = await fetchGoogleUserProfile(tokens.accessToken);
     assertExpectedGoogleAccount(config, profile);
     const drive = new GoogleDriveClient(tokens.accessToken, config);

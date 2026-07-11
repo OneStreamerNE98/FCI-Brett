@@ -22,10 +22,10 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 
 - Client Directory with repeat clients and multiple independent projects
 - Email and file-filing rule configuration under Settings
-- Protected Drive-only OAuth connection, root verification, and explicit project-folder provisioning
-- Separate personal-test and company-production Google Drive profiles
+- Protected personal-test OAuth connection for Drive, Gmail, and Calendar, plus root verification and explicit project-folder provisioning
+- Separate personal-test and company-production Google profiles
 - Google Drive / Shared Drive and Google Sheet organizational blueprint
-- Gmail review queue, project scheduling, client/project activity, and AI assistant prototype (not connected to Gmail yet)
+- Gmail review queue and Calendar test controls, project scheduling, client/project activity, and AI assistant prototype
 - D1-backed data-model and API foundation for clients, contacts, projects, rules, mail items, and workspace settings
 
 ## Google Workspace setup

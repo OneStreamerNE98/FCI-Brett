@@ -467,10 +467,21 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
     environment?: "test" | "production";
     connectionStatus?: string;
     connectionAccount?: string | null;
+    driveConnected?: boolean;
+    gmailConnected?: boolean;
+    calendarConnected?: boolean;
+    requiresReauthorization?: boolean;
     provisioningEnabled?: boolean;
-    gmailFilingEnabled?: boolean;
+    gmailEnabled?: boolean;
+    calendarEnabled?: boolean;
+    enabledServices?: string[];
     broadScopeAcknowledged?: boolean;
   } | null>(null);
+  const [gmailMessages, setGmailMessages] = useState<Array<{ id: string; from: string | null; subject: string | null; date: string | null; snippet: string }>>([]);
+  const [calendarEvents, setCalendarEvents] = useState<Array<{ id: string; title: string; start: string; end: string; url?: string }>>([]);
+  const [gmailWorking, setGmailWorking] = useState(false);
+  const [calendarWorking, setCalendarWorking] = useState(false);
+  const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
 
   async function checkSetup() {
     setChecking(true);
@@ -489,8 +500,14 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
           environment?: "test" | "production";
           connectionStatus?: string;
           connectionAccount?: string | null;
+          driveConnected?: boolean;
+          gmailConnected?: boolean;
+          calendarConnected?: boolean;
+          requiresReauthorization?: boolean;
           provisioningEnabled?: boolean;
-          gmailFilingEnabled?: boolean;
+          gmailEnabled?: boolean;
+          calendarEnabled?: boolean;
+          enabledServices?: string[];
           broadScopeAcknowledged?: boolean;
         };
       };
@@ -549,14 +566,111 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
     }
   }
 
+  async function readApi<T>(url: string, init?: RequestInit) {
+    const response = await fetch(url, init);
+    const data = await response.json().catch(() => ({})) as T & { error?: string };
+    if (!response.ok) throw new Error(data.error ?? "The Google test action could not be completed.");
+    return data;
+  }
+
+  async function prepareTestGmailLabels() {
+    setGmailWorking(true);
+    try {
+      await readApi<{ prepared: boolean }>("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
+      setGmailLabelsReady(true);
+      notify("FCI test Gmail labels are ready. No messages were moved or archived.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Gmail labels could not be prepared.");
+    } finally {
+      setGmailWorking(false);
+    }
+  }
+
+  async function refreshTestGmail() {
+    setGmailWorking(true);
+    try {
+      const data = await readApi<{ messages?: Array<{ id: string; from: string | null; subject: string | null; date: string | null; snippet: string }>; labelReady?: boolean }>("/api/v1/integrations/google/gmail/messages?label=inbox");
+      setGmailMessages(data.messages ?? []);
+      setGmailLabelsReady((current) => current || Boolean(data.labelReady));
+      notify(`Loaded ${data.messages?.length ?? 0} personal test inbox message(s).`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The test inbox could not be loaded.");
+    } finally {
+      setGmailWorking(false);
+    }
+  }
+
+  async function sendSelfTestEmail() {
+    setGmailWorking(true);
+    try {
+      await readApi<{ sent: boolean }>("/api/v1/integrations/google/gmail/send-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      notify("A test email was sent only to the approved personal test address.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The self-test email could not be sent.");
+    } finally {
+      setGmailWorking(false);
+    }
+  }
+
+  async function labelTestMessageFiled(messageId: string) {
+    setGmailWorking(true);
+    try {
+      await readApi<{ filed: boolean }>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(messageId)}/label`, { method: "POST" });
+      notify("FCI/Filed was added. The message remains in your inbox.");
+      await refreshTestGmail();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Filed label could not be added.");
+    } finally {
+      setGmailWorking(false);
+    }
+  }
+
+  async function refreshTestCalendar() {
+    setCalendarWorking(true);
+    try {
+      const data = await readApi<{ events?: Array<{ id: string; title: string; start: string; end: string; url?: string }> }>("/api/v1/integrations/google/calendar/events");
+      setCalendarEvents(data.events ?? []);
+      notify(`Loaded ${data.events?.length ?? 0} upcoming personal Calendar event(s).`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The personal test calendar could not be loaded.");
+    } finally {
+      setCalendarWorking(false);
+    }
+  }
+
+  async function createTestCalendarHold() {
+    setCalendarWorking(true);
+    try {
+      await readApi<{ event: { start: string } }>("/api/v1/integrations/google/calendar/test-hold", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      notify("A private 30-minute test hold was created with no attendees or notifications.");
+      await refreshTestCalendar();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The test calendar hold could not be created.");
+    } finally {
+      setCalendarWorking(false);
+    }
+  }
+
   const configured = status === "credentials";
   const temporary = workspace?.temporary === true;
   const testProfile = (workspace?.environment ?? "test") === "test";
   const connected = workspace?.connectionStatus === "connected";
+  const gmailReady = testProfile && connected && workspace?.gmailEnabled === true && workspace?.gmailConnected === true;
+  const calendarReady = testProfile && connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
+  const reconnectRequired = workspace?.requiresReauthorization === true;
+  const selectedServices = workspace?.enabledServices?.join(", ") ?? "drive";
   const storageName = workspace?.storageName ?? "FCI Operations";
   const oauthResult = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("google");
   const oauthMessage = oauthResult === "connected"
-    ? "Google Drive was connected. Run the readiness check to refresh this panel."
+    ? "Google was connected. Run the readiness check to refresh this panel."
     : oauthResult === "authorization-cancelled"
       ? "Google authorization was cancelled; no connection was saved."
       : oauthResult === "authorization-expired"
@@ -564,9 +678,9 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
         : oauthResult === "admin-required"
           ? "An approved FCI administrator must complete the Google connection."
           : oauthResult === "setup-needed"
-            ? "Google Drive setup is incomplete. Review the missing configuration below."
+              ? "Google setup is incomplete. Review the missing configuration below."
             : oauthResult === "connection-failed"
-              ? "Google Drive could not be connected. Confirm the approved account and folder, then try again."
+              ? "Google could not be connected. Confirm the approved account, folder, and requested services, then try again."
               : null;
 
   return <section className="panel workspace-settings">
@@ -581,21 +695,45 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
     <div className={`workspace-connection ${connected ? "ready" : ""}`}>
       <div className="integration-logo google"><Mail size={20} /></div>
       <div>
-        <strong>{connected ? `${testProfile ? "Test" : "Production"} Google Drive connected` : configured ? `Ready to connect ${testProfile ? "test" : "production"} Google Drive` : temporary && workspace?.storageConfigured ? "Temporary Drive folder configured" : "Google Workspace setup required"}</strong>
-        <span>{connected ? `${workspace?.connectionAccount ?? "Approved account"} is connected to the ${testProfile ? "test" : "production"} profile. Gmail, Calendar, and email filing remain disabled.` : configured ? "Connection uses Drive only. It does not request Gmail, Calendar, or Sheets access." : temporary && workspace?.storageConfigured ? "The Drive root is set, but OAuth and admin safety settings still need to be configured." : "Google Drive is not connected until the active profile configuration is complete."}</span>
+        <strong>{connected ? `${testProfile ? "Personal test" : "Production"} Google services connected` : reconnectRequired ? "Google permission update required" : configured ? `Ready to connect ${testProfile ? "personal test" : "production"} Google services` : temporary && workspace?.storageConfigured ? "Temporary Drive folder configured" : "Google Workspace setup required"}</strong>
+        <span>{connected ? `${workspace?.connectionAccount ?? "Approved account"} is connected with ${selectedServices}.` : reconnectRequired ? "Reconnect and approve every selected service before Gmail or Calendar test controls can be used." : configured ? `The active profile will request ${selectedServices}.` : temporary && workspace?.storageConfigured ? "The Drive root is set, but OAuth and admin safety settings still need to be configured." : "Google is not connected until the active profile configuration is complete."}</span>
       </div>
-      <span>{connected ? "Connected" : configured ? "Authorize next" : temporary && workspace?.storageConfigured ? "Storage ready" : "Not connected"}</span>
+      <span>{connected ? "Connected" : reconnectRequired ? "Reconnect" : configured ? "Authorize next" : temporary && workspace?.storageConfigured ? "Storage ready" : "Not connected"}</span>
     </div>
-    {testProfile && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Personal test mode:</strong> use only sample/test messages and documents. Your personal Gmail and Drive connection remains separate from the future company Google account; no Gmail actions are enabled in this phase.</span></p>}
+    {testProfile && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Personal test mode:</strong> use only self-sent test messages and sample documents. Gmail labels, self-test email, and Calendar holds require your direct click; the app never automatically archives email, removes Inbox, invites guests, or alters existing events.</span></p>}
     {oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
     {temporary && !testProfile && <p className="workspace-warning"><CircleAlert size={15} /><span>This folder is a temporary My Drive workspace owned by its creator. Move the workspace to a company Shared Drive before wider staff use.</span></p>}
     {missing.length > 0 && <p className="workspace-missing"><strong>Still needed:</strong> {missing.join(", ")}</p>}
     <div className="workspace-actions">
-      {!connected && <button className="primary-button" onClick={connectGoogleDrive} disabled={!configured || working}>{working ? "Preparing…" : `Connect ${testProfile ? "test" : "production"} Google Drive`}</button>}
+      {!connected && <button className="primary-button" onClick={connectGoogleDrive} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect personal Google test" : `Connect ${testProfile ? "personal test" : "production"} Google`}</button>}
       {connected && <button className="primary-button" onClick={verifyGoogleDrive} disabled={working}>{working ? "Verifying…" : "Verify workspace folder"}</button>}
       {connected && <button className="soft-button" onClick={disconnectGoogleDrive} disabled={working}>Disconnect active profile</button>}
     </div>
     {connected && !workspace?.provisioningEnabled && <p className="workspace-missing"><strong>Folder creation remains off:</strong> enable the active profile’s Drive provisioning flag only after you verify the test workspace. This prevents accidental folder creation while you are testing.</p>}
+    {testProfile && <section className="test-google-services" aria-label="Personal Google test controls">
+      <header><div><p className="eyebrow">Personal account testing</p><h3>Gmail & Calendar test controls</h3><p>These are limited to the approved personal test account. Nothing runs automatically.</p></div></header>
+      <div className="test-service-grid">
+        <section className="test-service-card">
+          <div className="test-service-heading"><Mail size={17} /><div><strong>Personal Gmail</strong><span>{gmailReady ? "Connected for explicit test actions" : workspace?.gmailEnabled ? "Reconnect Google to approve Gmail" : "Enable Gmail in the test profile first"}</span></div></div>
+          <p>Prepare FCI labels, view up to 20 inbox message summaries, send only to your approved test address, or explicitly add <b>FCI/Filed</b>. Inbox stays intact.</p>
+          <div className="workspace-actions">
+            <button className="soft-button" onClick={prepareTestGmailLabels} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</button>
+            <button className="soft-button" onClick={refreshTestGmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Loading…" : "View test inbox"}</button>
+            <button className="primary-button" onClick={sendSelfTestEmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Sending…" : "Send self-test email"}</button>
+          </div>
+          {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><button className="soft-button" onClick={() => labelTestMessageFiled(message.id)} disabled={gmailWorking}>Add Filed</button></article>)}</div>}
+        </section>
+        <section className="test-service-card">
+          <div className="test-service-heading"><CalendarDays size={17} /><div><strong>Personal Calendar</strong><span>{calendarReady ? "Connected for safe test holds" : workspace?.calendarEnabled ? "Reconnect Google to approve Calendar" : "Enable Calendar in the test profile first"}</span></div></div>
+          <p>View a seven-day window of your primary calendar or create one private 30-minute FCI test hold. It has no guests and sends no notifications.</p>
+          <div className="workspace-actions">
+            <button className="soft-button" onClick={refreshTestCalendar} disabled={!calendarReady || calendarWorking}>{calendarWorking ? "Loading…" : "View upcoming events"}</button>
+            <button className="primary-button" onClick={createTestCalendarHold} disabled={!calendarReady || calendarWorking}>{calendarWorking ? "Creating…" : "Create test hold"}</button>
+          </div>
+          {calendarEvents.length > 0 && <div className="test-service-list">{calendarEvents.map((event) => <article key={event.id}><div><strong>{event.title}</strong><span>{new Date(event.start).toLocaleString()} – {new Date(event.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></div>{event.url && <button className="soft-button" onClick={() => window.open(event.url, "_blank", "noopener,noreferrer")}>Open</button>}</article>)}</div>}
+        </section>
+      </div>
+    </section>}
     <div className="drive-blueprint">
       <div><h3>{temporary ? "Temporary My Drive blueprint" : "Shared Drive blueprint"}</h3><p>{storageName}</p></div>
       <ol>{DRIVE_BLUEPRINT.roots.map((item) => <li key={item}>{item}</li>)}</ol>
@@ -606,14 +744,14 @@ function GoogleWorkspacePanel({ notify }: { notify: (s: string) => void }) {
       <label><input type="checkbox" /> {testProfile ? "Use only a dedicated personal test folder and sample messages" : "Use a company-owned Shared Drive and company sender mailbox"}</label>
       <label><input type="checkbox" /> Authorize only the approved Google account for this profile</label>
       <label><input type="checkbox" /> Verify the workspace folder before enabling project-folder creation</label>
-      <label><input type="checkbox" /> Keep Gmail filing disabled until its separate review and consent workflow is built</label>
+      <label><input type="checkbox" /> {testProfile ? "Use Gmail labels and Calendar holds only after a direct test action" : "Keep Gmail and Calendar production actions disabled until their separate review workflow is built"}</label>
       <label><input type="checkbox" /> Before launch, create a separate production connection; do not promote personal test credentials</label>
     </div>
   </section>;
 }
 
 function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => void }) {
-  return <section className="panel test-launch"><div className="settings-heading"><div><p className="eyebrow">Prototype verification</p><h2>Test & launch checklist</h2><p>Use the safe prototype controls first, then connect Google Workspace only after the data and permission checks are complete.</p></div><button className="primary-button" onClick={onGoogleSetup}>Open Workspace check</button></div><ol className="test-checklist"><li><strong>Clients and projects:</strong> add a client, create two independent projects, refresh, and verify their codes and project numbers remain consistent.</li><li><strong>Workflow controls:</strong> advance a lead, filter projects, add a draft shift, resolve a schedule conflict, and review an inbox suggestion.</li><li><strong>AI:</strong> ask a question, switch project context, and open every source reference. Do not rely on responses for decisions until the OpenAI key and retrieval indexes are configured.</li><li><strong>Personal Google test:</strong> configure only the dedicated test Drive folder and approved personal account, then verify the root before enabling folder creation. Gmail, Calendar, and Sheet actions remain off.</li><li><strong>Company production later:</strong> create a separate company OAuth client, Shared Drive, mailbox, Sheet, and calendars; never reuse the personal test credentials or folders.</li><li><strong>Before live staff use:</strong> run permission tests and complete the full lead-to-closeout lifecycle with non-production records.</li></ol></section>;
+  return <section className="panel test-launch"><div className="settings-heading"><div><p className="eyebrow">Prototype verification</p><h2>Test & launch checklist</h2><p>Use the safe prototype controls first, then connect Google Workspace only after the data and permission checks are complete.</p></div><button className="primary-button" onClick={onGoogleSetup}>Open Workspace check</button></div><ol className="test-checklist"><li><strong>Clients and projects:</strong> add a client, create two independent projects, refresh, and verify their codes and project numbers remain consistent.</li><li><strong>Workflow controls:</strong> advance a lead, filter projects, add a draft shift, resolve a schedule conflict, and review an inbox suggestion.</li><li><strong>AI:</strong> ask a question, switch project context, and open every source reference. Do not rely on responses for decisions until the OpenAI key and retrieval indexes are configured.</li><li><strong>Personal Google test:</strong> connect the dedicated Drive folder and approved personal account, verify the root, then prepare Gmail labels, send yourself a test email, and create a private Calendar hold.</li><li><strong>Company production later:</strong> create a separate company OAuth client, Shared Drive, mailbox, Sheet, and calendars; never reuse the personal test credentials or folders.</li><li><strong>Before live staff use:</strong> run permission tests and complete the full lead-to-closeout lifecycle with non-production records.</li></ol></section>;
 }
 
 function ShiftModal({ crews, onClose, onSave }: { crews: string[]; onClose: () => void; onSave: (shift: Omit<ShiftAssignment, "id" | "status">) => void }) {

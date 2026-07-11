@@ -7,10 +7,19 @@ const GOOGLE_REVOCATION_URL = "https://oauth2.googleapis.com/revoke";
 const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
 const ENCRYPTION_VERSION = "v1";
 const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+const GOOGLE_GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
+const GOOGLE_CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 type EnvironmentValues = Record<string, string | undefined>;
 
 export type GoogleConnectionEnvironment = "test" | "production";
+export type GoogleService = "drive" | "gmail" | "calendar";
+
+const SERVICE_SCOPES: Record<GoogleService, string> = {
+  drive: GOOGLE_DRIVE_SCOPE,
+  gmail: GOOGLE_GMAIL_MODIFY_SCOPE,
+  calendar: GOOGLE_CALENDAR_EVENTS_SCOPE,
+};
 
 export type GoogleRuntimeConfig = {
   environment: GoogleConnectionEnvironment;
@@ -23,12 +32,14 @@ export type GoogleRuntimeConfig = {
   tokenEncryptionKeyVersion: string;
   expectedGoogleEmails: string[];
   drive: ReturnType<typeof resolveDriveWorkspace>;
+  enabledServices: GoogleService[];
+  serviceScopes: Record<GoogleService, string>;
   scopes: string[];
   missing: string[];
   oauthReady: boolean;
   provisioningEnabled: boolean;
-  // Intentionally hard-disabled until a separate Gmail review/archival adapter exists.
-  gmailFilingEnabled: boolean;
+  gmailEnabled: boolean;
+  calendarEnabled: boolean;
   broadScopeAcknowledged: boolean;
 };
 
@@ -65,6 +76,19 @@ function profileValue(input: EnvironmentValues, environment: GoogleConnectionEnv
 
 function profileBoolean(input: EnvironmentValues, environment: GoogleConnectionEnvironment, name: string) {
   return profileValue(input, environment, name)?.trim().toLowerCase() === "true";
+}
+
+function profileServices(input: EnvironmentValues, environment: GoogleConnectionEnvironment) {
+  const configured = list(profileValue(input, environment, "ENABLED_SERVICES"));
+  const known = new Set<GoogleService>(["drive", "gmail", "calendar"]);
+  const unknown = configured.filter((service) => !known.has(service as GoogleService));
+  const requestedKnown = configured.filter((service): service is GoogleService => known.has(service as GoogleService));
+  const productionOnlyUnsupported = environment === "production" ? requestedKnown.filter((service) => service !== "drive") : [];
+  const enabled = Array.from(new Set<GoogleService>([
+    "drive",
+    ...(environment === "test" ? requestedKnown : []),
+  ]));
+  return { enabled, unknown, productionOnlyUnsupported };
 }
 
 function decodeBase64Url(value: string) {
@@ -156,6 +180,9 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = process.env) {
   const redirectUri = profileValue(input, environment, "OAUTH_REDIRECT_URI");
   const tokenEncryptionKey = profileValue(input, environment, "TOKEN_ENCRYPTION_KEY");
   const expectedGoogleEmails = list(profileValue(input, environment, "AUTHORIZED_ACCOUNT_EMAILS"));
+  const services = profileServices(input, environment);
+  const gmailEnabled = services.enabled.includes("gmail");
+  const calendarEnabled = services.enabled.includes("calendar");
   // A server-side Drive token against any My Drive folder carries a broad Drive scope.
   // Require an explicit acknowledgement for both profiles so a production profile cannot
   // silently fall back to an individual employee's My Drive.
@@ -170,6 +197,8 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = process.env) {
     ...(!isValidEncryptionKey(tokenEncryptionKey) ? ["32-byte Google token encryption key"] : []),
     ...(expectedGoogleEmails.length === 0 ? ["authorized Google account email"] : []),
     ...(!broadScopeAcknowledged ? ["My Drive broad-scope test acknowledgement"] : []),
+    ...(services.unknown.length ? [`valid Google services (unknown: ${services.unknown.join(", ")})`] : []),
+    ...(services.productionOnlyUnsupported.length ? ["Gmail and Calendar are available only in the personal test profile for this release"] : []),
   ];
   return {
     environment,
@@ -182,13 +211,34 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = process.env) {
     tokenEncryptionKeyVersion: profileValue(input, environment, "TOKEN_ENCRYPTION_KEY_VERSION") ?? "1",
     expectedGoogleEmails,
     drive,
-    scopes: ["openid", "email", GOOGLE_DRIVE_SCOPE],
+    enabledServices: services.enabled,
+    serviceScopes: SERVICE_SCOPES,
+    scopes: ["openid", "email", ...services.enabled.map((service) => SERVICE_SCOPES[service])],
     missing,
     oauthReady: missing.length === 0,
     provisioningEnabled: profileBoolean(input, environment, "DRIVE_PROVISIONING_ENABLED"),
-    gmailFilingEnabled: false,
+    gmailEnabled,
+    calendarEnabled,
     broadScopeAcknowledged,
   } satisfies GoogleRuntimeConfig;
+}
+
+export function assertGoogleTestService(config: GoogleRuntimeConfig, service: Exclude<GoogleService, "drive">) {
+  if (config.environment !== "test") {
+    throw new GoogleIntegrationError("test_service_only", "Gmail and Calendar are enabled only for the isolated personal test profile.", 403);
+  }
+  if (!config.enabledServices.includes(service)) {
+    throw new GoogleIntegrationError("service_not_enabled", `Enable ${service} for the personal test profile, then reconnect Google.`, 409);
+  }
+}
+
+export function assertGrantedGoogleServiceScopes(config: GoogleRuntimeConfig, grantedScopes: string[]) {
+  const missing = config.enabledServices
+    .map((service) => config.serviceScopes[service])
+    .filter((scope) => !grantedScopes.includes(scope));
+  if (missing.length) {
+    throw new GoogleIntegrationError("required_scopes_missing", "Google did not grant every selected test service. Reconnect and approve the requested permissions.", 409);
+  }
 }
 
 export function buildGoogleAuthorizationUrl(config: GoogleRuntimeConfig, state: string, codeChallenge: string) {
@@ -326,18 +376,43 @@ type ConnectionRow = {
   id: string;
   google_email: string;
   refresh_token_ciphertext: string;
+  scopes_json?: string;
   status: string;
 };
 
+function storedScopes(value: string | undefined) {
+  try {
+    const parsed = JSON.parse(value ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((scope): scope is string => typeof scope === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function serviceIsGranted(config: GoogleRuntimeConfig, scopes: string[], service: GoogleService) {
+  return scopes.includes(config.serviceScopes[service]);
+}
+
 export async function getGoogleConnectionStatus(config: GoogleRuntimeConfig) {
-  const connection = await env.DB.prepare("SELECT id, google_email, status FROM google_connections WHERE connection_key = ?")
+  const connection = await env.DB.prepare("SELECT id, google_email, scopes_json, status FROM google_connections WHERE connection_key = ?")
     .bind(config.connectionKey)
-    .first<{ id: string; google_email: string; status: string }>();
+    .first<{ id: string; google_email: string; scopes_json: string; status: string }>();
   const email = connection?.google_email ?? null;
+  const scopes = storedScopes(connection?.scopes_json);
+  const hasUsableConnection = connection?.status === "connected";
+  const services = {
+    drive: Boolean(hasUsableConnection && serviceIsGranted(config, scopes, "drive")),
+    gmail: Boolean(hasUsableConnection && config.gmailEnabled && serviceIsGranted(config, scopes, "gmail")),
+    calendar: Boolean(hasUsableConnection && config.calendarEnabled && serviceIsGranted(config, scopes, "calendar")),
+  };
+  const requiresReauthorization = Boolean(hasUsableConnection && config.enabledServices.some((service) => !serviceIsGranted(config, scopes, service)));
+  const status = !connection ? "not-connected" : requiresReauthorization ? "reauthorization-required" : connection.status;
   return {
-    connected: connection?.status === "connected",
-    status: connection?.status ?? "not-connected",
+    connected: status === "connected",
+    status,
     account: email ? `${email.slice(0, 2)}•••@${email.split("@")[1] ?? ""}` : null,
+    services,
+    requiresReauthorization,
   };
 }
 
@@ -380,12 +455,15 @@ export async function saveGoogleConnection(config: GoogleRuntimeConfig, tokens: 
     .run();
 }
 
-export async function getGoogleAccessToken(config: GoogleRuntimeConfig) {
-  const connection = await env.DB.prepare("SELECT id, google_email, refresh_token_ciphertext, status FROM google_connections WHERE connection_key = ?")
+export async function getGoogleAccessToken(config: GoogleRuntimeConfig, requiredService?: GoogleService) {
+  const connection = await env.DB.prepare("SELECT id, google_email, refresh_token_ciphertext, scopes_json, status FROM google_connections WHERE connection_key = ?")
     .bind(config.connectionKey)
     .first<ConnectionRow>();
   if (!connection || connection.status !== "connected") {
-    throw new GoogleIntegrationError("google_not_connected", "Connect the approved Google account before creating project folders.", 409);
+    throw new GoogleIntegrationError("google_not_connected", "Connect the approved Google account before using this Google service.", 409);
+  }
+  if (requiredService && !serviceIsGranted(config, storedScopes(connection.scopes_json), requiredService)) {
+    throw new GoogleIntegrationError("google_scope_reauthorization_required", `Reconnect Google and approve the ${requiredService} test permission before continuing.`, 409);
   }
   const refreshToken = await decryptGoogleSecret(connection.refresh_token_ciphertext, config.tokenEncryptionKey, `google-connection:${config.connectionKey}:refresh`);
   try {

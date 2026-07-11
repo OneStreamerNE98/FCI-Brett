@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const config = getGoogleRuntimeConfig();
-  return NextResponse.json({ environment: config.environment, connection: await getGoogleConnectionStatus(config), gmailFilingEnabled: false });
+  return NextResponse.json({ environment: config.environment, connection: await getGoogleConnectionStatus(config), enabledServices: config.enabledServices });
 }
 
 export async function DELETE(request: NextRequest) {

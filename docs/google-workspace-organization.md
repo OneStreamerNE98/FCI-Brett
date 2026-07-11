@@ -21,14 +21,14 @@ This is suitable only for testing and one-owner operation because the folder is 
 
 FCI Operations treats personal testing and company production as separate connections, not a single connection that is renamed later.
 
-- **Test profile:** a personal Google account, the dedicated `FCI Operations — Temporary` folder, sample/test documents only, and Drive-only authorization.
+- **Test profile:** a personal Google account, the dedicated `FCI Operations — Temporary` folder, self-sent test mail only, and deliberately enabled Drive/Gmail/Calendar authorization.
 - **Production profile:** a company Google account, company-owned Shared Drive, a distinct OAuth client/secret, and a new authorization. It never reuses the personal refresh token.
 
 Folder mappings are saved by profile. When production is enabled, new company folders are created under the company workspace; personal test folders remain intact for reference but are not used by production projects.
 
 The project and client APIs resolve Drive links from the active profile mapping only. A test-folder link is not shown or opened when the production profile is active, even though the same client and project records are retained.
 
-Do not use a personal inbox for real client email, enable Gmail filing in the test profile, or copy the test OAuth credentials into the production profile. Gmail, Calendar, and Sheets are intentionally outside the Drive-only test authorization.
+Do not use a personal inbox for real client email or copy the test OAuth credentials into the production profile. Gmail test actions are explicit: the app can create labels, show a bounded test inbox, send to the approved test address, and apply a label after your click. It never automatically archives, removes `INBOX`, or sends to a client in the personal test profile.
 
 ## Shared Drive blueprint
 
