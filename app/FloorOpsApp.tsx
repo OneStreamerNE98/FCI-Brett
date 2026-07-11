@@ -13,6 +13,17 @@ type View = "Overview" | "Leads" | "Clients" | "Projects" | "Schedule" | "Inbox"
 type Lead = { id: string; company: string; contact: string; project: string; value: string; stage: string; source: string; next: string; initials: string; color: string };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending" };
 type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; site: string; lead: string; date: string; accent: string; driveFolderId?: string; driveUrl?: string };
+type SheetMirrorStatus = {
+  configured: boolean;
+  enabled: boolean;
+  connected: boolean;
+  spreadsheetUrl: string | null;
+  spreadsheetName: string | null;
+  clients: { status: string; lastSyncedAt: number | null; lastError: string | null };
+  projects: { status: string; lastSyncedAt: number | null; lastError: string | null };
+  lastSyncedAt: number | null;
+  reason: string | null;
+};
 type ProjectUpdateDraft = { project: Project; subject: string; message: string };
 type ShiftAssignment = { id: string; crew: string; site: string; day: string; time: string; status: "Pending" | "Acknowledged" };
 type InboxMessage = { id: string; sender: string; subject: string; preview: string; suggestedProject: string; confidence: number };
@@ -74,18 +85,28 @@ export function FloorOpsApp({ userName }: { userName: string }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [projectUpdate, setProjectUpdate] = useState<Project | null>(null);
+  const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
+  const [sheetSyncing, setSheetSyncing] = useState(false);
   const firstName = userName.includes("@") ? "there" : userName.split(" ")[0];
 
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/v1/clients").then((r) => r.ok ? r.json() : null),
-      fetch("/api/v1/projects").then((r) => r.ok ? r.json() : null),
-      fetch("/api/v1/filing-rules").then((r) => r.ok ? r.json() : null),
-    ]).then(([clientData, projectData, ruleData]) => {
+  async function refreshDirectoryData() {
+    try {
+      const [clientData, projectData, ruleData, mirrorData] = await Promise.all([
+        fetch("/api/v1/clients").then((r) => r.ok ? r.json() : null),
+        fetch("/api/v1/projects").then((r) => r.ok ? r.json() : null),
+        fetch("/api/v1/filing-rules").then((r) => r.ok ? r.json() : null),
+        fetch("/api/v1/integrations/google/sheets/status").then((r) => r.ok ? r.json() : null),
+      ]);
       if (clientData?.clients?.length) setClients(clientData.clients.map((client: Record<string, unknown>) => ({ id: String(client.id), code: String(client.client_code), name: String(client.name), contact: String(client.primary_contact_name ?? "Primary contact"), email: String(client.primary_contact_email ?? ""), industry: String(client.industry ?? "Commercial"), status: String(client.status), initials: String(client.name).split(" ").map((x) => x[0]).slice(0, 2).join(""), color: "sage", googleStatus: "Setup pending" as const })));
       if (projectData?.projects?.length) setProjectItems(projectData.projects.map((project: Record<string, unknown>) => ({ id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: String(project.status), progress: 0, value: project.estimated_value ? `$${Number(project.estimated_value).toLocaleString()}` : "TBD", site: String(project.site ?? "Site pending"), lead: String(project.project_manager ?? "Unassigned"), date: "Dates pending", accent: "sage", driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined })));
       if (ruleData?.rules?.length) setFilingRules(ruleData.rules.map((rule: Record<string, unknown>) => ({ id: rule.id ? String(rule.id) : undefined, name: String(rule.name), enabled: Boolean(rule.enabled), priority: Number(rule.priority), matchSummary: String(rule.matchSummary ?? rule.match_summary), action: String(rule.action) as FilingRuleDraft["action"], targetCategory: String(rule.targetCategory ?? rule.target_category), approvalRequired: Boolean(rule.approvalRequired ?? rule.approval_required) })));
-    }).catch(() => undefined);
+      if (mirrorData?.mirror) setSheetMirror(mirrorData.mirror as SheetMirrorStatus);
+    } catch { /* Keep the local prototype usable while the service starts. */ }
+  }
+
+  useEffect(() => {
+    const refresh = window.setTimeout(() => { void refreshDirectoryData(); }, 0);
+    return () => window.clearTimeout(refresh);
   }, []);
 
   useEffect(() => {
@@ -130,15 +151,17 @@ export function FloorOpsApp({ userName }: { userName: string }) {
     try {
       const response = await fetch("/api/v1/clients", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: client.name, industry: client.industry, status: client.status.toLowerCase(), primaryContact: { name: client.contact, email: client.email } }) });
       if (!response.ok) throw new Error("Client could not be saved");
-      const data = await response.json() as { id: string; clientCode: string };
+      const data = await response.json() as { id: string; clientCode: string; sheetSync?: { status?: string; message?: string } };
       savedClient = { ...client, id: data.id, code: data.clientCode };
       savedRemotely = true;
+      if (data.sheetSync?.status === "synced") await refreshDirectoryData();
+      notify(data.sheetSync?.message ?? `${client.name} saved in FCI Operations`);
     } catch { /* The local prototype remains usable while a data service is unavailable. */ }
     const replacingDemoDirectory = clients.every((current) => initialClients.some((demo) => demo.id === current.id));
     setClients((current) => replacingDemoDirectory ? [savedClient] : [savedClient, ...current]);
     if (replacingDemoDirectory) setProjectItems([]);
     setClientModal(false);
-    notify(savedRemotely ? `${client.name} added to the Client Directory` : `${client.name} added locally; retry sync when the data service is available`);
+    if (!savedRemotely) notify(`${client.name} added locally; retry sync when the data service is available`);
   }
 
   async function addProject(project: Project) {
@@ -147,13 +170,31 @@ export function FloorOpsApp({ userName }: { userName: string }) {
     try {
       const response = await fetch("/api/v1/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: project.clientId, name: project.name, status: project.status.toLowerCase(), site: project.site, projectManager: project.lead, estimatedValue: Number(project.value.replace(/[^0-9]/g, "")) || undefined }) });
       if (!response.ok) throw new Error("Project could not be saved");
-      const data = await response.json() as { id: string; projectNumber: string };
+      const data = await response.json() as { id: string; projectNumber: string; sheetSync?: { status?: string; message?: string } };
       savedProject = { ...project, id: data.id, number: data.projectNumber };
       savedRemotely = true;
+      if (data.sheetSync?.status === "synced") await refreshDirectoryData();
+      notify(data.sheetSync?.message ?? `${project.name} saved in FCI Operations`);
     } catch { /* The local prototype remains usable while a data service is unavailable. */ }
     setProjectItems((current) => [savedProject, ...current]);
     setProjectModal(false);
-    notify(savedRemotely ? `${project.name} is now an independent project for ${project.client}` : `${project.name} created locally; retry sync when the data service is available`);
+    if (!savedRemotely) notify(`${project.name} created locally; retry sync when the data service is available`);
+  }
+
+  async function syncGoogleSheet() {
+    setSheetSyncing(true);
+    try {
+      const response = await fetch("/api/v1/integrations/google/sheets/sync", { method: "POST" });
+      const data = await response.json() as { result?: { clients?: { total?: number }; projects?: { total?: number } }; mirror?: SheetMirrorStatus; error?: string };
+      if (data.mirror) setSheetMirror(data.mirror);
+      if (!response.ok) throw new Error(data.error ?? "Google Sheet sync could not be completed.");
+      await refreshDirectoryData();
+      notify(`Google Sheet synced: ${data.result?.clients?.total ?? 0} clients and ${data.result?.projects?.total ?? 0} projects`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Google Sheet sync could not be completed.");
+    } finally {
+      setSheetSyncing(false);
+    }
   }
 
   async function provisionProjectDrive(project: Project) {
@@ -275,13 +316,13 @@ export function FloorOpsApp({ userName }: { userName: string }) {
         <div className="page-wrap">
           {view === "Overview" && <Overview firstName={firstName} leads={leads} projects={projectItems} onView={setView} onProject={openProject} />}
           {view === "Leads" && <LeadsView leads={leads} onAdd={() => setLeadModal(true)} onAdvance={advanceLead} />}
-          {view === "Clients" && <ClientsView clients={clients} projects={projectItems} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => setProjectModal(true)} />}
+          {view === "Clients" && <ClientsView clients={clients} projects={projectItems} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => setProjectModal(true)} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
           {view === "Projects" && <ProjectsView projects={projectItems} onNewProject={() => setProjectModal(true)} onProject={openProject} />}
           {view === "Schedule" && <ScheduleView notify={notify} />}
           {view === "Inbox" && <InboxView notify={notify} onRules={openRules} />}
           {view === "AI Assistant" && <AssistantView />}
           {view === "Reports" && <ReportsView />}
-          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} rules={filingRules} projects={projectItems} onAddRule={() => setRuleModal(true)} />}
+          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} rules={filingRules} projects={projectItems} onAddRule={() => setRuleModal(true)} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
         </div>
       </main>
       {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
@@ -331,10 +372,21 @@ function LeadsView({ leads, onAdd, onAdvance }: { leads: Lead[]; onAdd: () => vo
   </>;
 }
 
-function ClientsView({ clients, projects, projectCounts, onAdd, onClient, onNewProject }: { clients: Client[]; projects: Project[]; projectCounts: Map<string, number>; onAdd: () => void; onClient: (client: Client) => void; onNewProject: () => void }) {
+function sheetStateLabel(mirror: SheetMirrorStatus | null) {
+  if (!mirror) return "Checking sync";
+  if (mirror.clients.status === "syncing" || mirror.projects.status === "syncing") return "Syncing";
+  if (mirror.reason || mirror.clients.status === "failed" || mirror.projects.status === "failed") return "Needs attention";
+  if (mirror.clients.status === "synced" && mirror.projects.status === "synced") return "Synced";
+  return "Not synced";
+}
+
+function ClientsView({ clients, projects, projectCounts, onAdd, onClient, onNewProject, sheetMirror, onSyncGoogleSheet, syncingSheet }: { clients: Client[]; projects: Project[]; projectCounts: Map<string, number>; onAdd: () => void; onClient: (client: Client) => void; onNewProject: () => void; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
+  const syncLabel = sheetStateLabel(sheetMirror);
+  const synced = syncLabel === "Synced";
+  const needsAttention = syncLabel === "Needs attention";
   return <><PageTitle eyebrow="Google Workspace directory" title="Clients" text="Each client can have multiple independent projects, contacts, and account-level documents" action={<div className="title-actions"><button className="soft-button" onClick={onNewProject}><BriefcaseBusiness size={16} /> New project</button><button className="primary-button" onClick={onAdd}><Plus size={17} /> Add client</button></div>} />
-    <section className="client-directory-banner"><div className="directory-badge"><FolderTree size={20} /></div><div><strong>Client Directory mirrors to Google Sheets after Google Workspace setup</strong><span>The app manages project relationships; Google Drive holds account documents and independent project folders.</span></div><span className="directory-status"><CircleCheckBig size={14} />Ready to configure</span></section>
-    <div className="client-directory panel"><div className="client-table-head"><span>Client</span><span>Primary contact</span><span>Independent projects</span><span>Google Workspace</span><span /></div>{clients.map((client) => { const projectCount = projectCounts.get(client.id) ?? 0; const clientProjects = projects.filter((project) => project.clientId === client.id); return <button className="client-table-row" key={client.id} onClick={() => onClient(client)}><div className="client-identity"><Avatar initials={client.initials} color={client.color} /><span><strong>{client.name}</strong><small>{client.code} · {client.industry}</small></span></div><span><strong>{client.contact}</strong><small>{client.email || "Email to add"}</small></span><span className="client-project-count"><b>{projectCount}</b><small>{projectCount === 1 ? "project" : "projects"}{clientProjects.length > 1 ? " · independently managed" : ""}</small></span><span className={client.googleStatus === "Ready" ? "google-ready" : "google-pending"}>{client.googleStatus === "Ready" ? <CircleCheckBig size={13} /> : <Clock3 size={13} />}{client.googleStatus}</span><ChevronRight size={17} /></button>})}</div>
+    <section className="client-directory-banner"><div className="directory-badge"><FolderTree size={20} /></div><div><strong>FCI Operations is the source of truth; Google Sheets is a live directory mirror</strong><span>{sheetMirror?.reason ?? "The Client Directory preserves account notes, while Project Register is generated from the app."}</span></div><div className="directory-sync-actions"><span className={`directory-status ${needsAttention ? "needs-attention" : ""}`}>{synced ? <CircleCheckBig size={14} /> : <Clock3 size={14} />}{syncLabel}</span><button className="soft-button" onClick={() => void onSyncGoogleSheet()} disabled={syncingSheet}>{syncingSheet ? "Syncing…" : "Sync Google Sheet"}</button></div></section>
+    <div className="client-directory panel"><div className="client-table-head"><span>Client</span><span>Primary contact</span><span>Independent projects</span><span>Google Sheet</span><span /></div>{clients.map((client) => { const projectCount = projectCounts.get(client.id) ?? 0; const clientProjects = projects.filter((project) => project.clientId === client.id); return <button className="client-table-row" key={client.id} onClick={() => onClient(client)}><div className="client-identity"><Avatar initials={client.initials} color={client.color} /><span><strong>{client.name}</strong><small>{client.code} · {client.industry}</small></span></div><span><strong>{client.contact}</strong><small>{client.email || "Email to add"}</small></span><span className="client-project-count"><b>{projectCount}</b><small>{projectCount === 1 ? "project" : "projects"}{clientProjects.length > 1 ? " · independently managed" : ""}</small></span><span className={synced ? "google-ready" : "google-pending"}>{synced ? <CircleCheckBig size={13} /> : <Clock3 size={13} />}{syncLabel}</span><ChevronRight size={17} /></button>})}</div>
   </>;
 }
 
@@ -441,16 +493,31 @@ function AssistantView() {
 
 function ReportsView() { return <><PageTitle eyebrow="Business performance" title="Reports" text="A clear view of pipeline, delivery, and workload" /><section className="metrics-grid"><Metric label="Won revenue YTD" value="$1.28m" note="18 projects" trend="+24%" icon={BriefcaseBusiness} color="green" /><Metric label="Average sales cycle" value="31 days" note="Inquiry to award" trend="-4 days" icon={Clock3} color="blue" /><Metric label="Crew utilization" value="82%" note="Next 30 days" trend="Healthy" icon={Users} color="orange" /><Metric label="Closeout time" value="9 days" note="Average" trend="-2 days" icon={CheckCircle2} color="violet" /></section><div className="reports-grid"><section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" /><div className="bar-chart">{[["New inquiry", 45, "$86.5k"], ["Site visit", 72, "$142k"], ["Proposal", 34, "$64.8k"], ["Decision", 100, "$218.4k"]].map((b) => <div key={String(b[0])}><span>{b[0]}</span><div><i style={{ width: `${b[1]}%` }} /></div><strong>{b[2]}</strong></div>)}</div></section><section className="panel report-chart"><PanelHeader title="Project health" subtitle="8 active" /><div className="health-donut"><div><strong>75%</strong><span>On track</span></div></div><div className="legend"><span><i className="g" />On track <b>6</b></span><span><i className="a" />At risk <b>1</b></span><span><i className="r" />Blocked <b>1</b></span></div></section></div></> }
 
-function SettingsView({ notify, section, onSection, rules, projects, onAddRule }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; rules: FilingRuleDraft[]; projects: Project[]; onAddRule: () => void }) {
+function SettingsView({ notify, section, onSection, rules, projects, onAddRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; rules: FilingRuleDraft[]; projects: Project[]; onAddRule: () => void; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
   const options = ["Google Workspace", "Email & file rules", "Client Directory", "Testing & launch", "Pipeline stages", "Notifications", "People & roles", "Data & security"];
   return <><PageTitle eyebrow="Administration" title="Workspace settings" text="Set your Google structure, routing rules, and access controls in one place" />
     <div className="settings-layout"><aside className="settings-nav panel">{options.map((option) => <button className={section === option ? "active" : ""} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
       {section === "Email & file rules" && <section className="panel rule-settings"><div className="settings-heading"><div><p className="eyebrow">Gmail intake rules</p><h2>Email & file rules</h2><p>Rules propose a destination; approval remains required before FCI Operations labels, archives, or copies anything.</p></div><button className="primary-button" onClick={onAddRule}><Plus size={16} /> Add rule</button></div><div className="rule-callout"><ShieldCheck size={19} /><p><strong>Multi-project protection</strong><br />A contact match cannot auto-select a project if that client has multiple eligible projects.</p></div><div className="rules-table"><div className="rules-table-head"><span>Priority</span><span>Rule</span><span>When it matches</span><span>Action</span><span>Destination</span></div>{rules.map((rule) => <div className="rule-row" key={rule.id ?? rule.name}><span className="rule-priority">{rule.priority}</span><span><strong>{rule.name}</strong><small>{rule.enabled ? "Enabled" : "Disabled"} · approval required</small></span><span>{rule.matchSummary}</span><Status text={rule.action === "review" ? "Needs review" : rule.action === "ignore" ? "Ignored" : "Suggest"} /><span>{rule.targetCategory}</span></div>)}</div><div className="rule-footnote"><Mail size={15} /><span>Use only broad Gmail labels: <b>{DRIVE_BLUEPRINT.gmailLabels.join(", ")}</b>. Do not create a Gmail filter per project.</span></div></section>}
       {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
-      {section === "Client Directory" && <section className="panel client-directory-settings"><div className="settings-heading"><div><p className="eyebrow">Google Sheets mirror</p><h2>Client Directory</h2><p>FCI Operations is the operational source of truth; a Google Sheet gives your team a familiar, always-current directory in the Shared Drive.</p></div><button className="soft-button" onClick={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to configure the Client Directory sheet"); }}>Configure sheet</button></div><div className="directory-layout"><div><h3>What syncs to the Google Sheet</h3><ul><li>Client code and legal/business name</li><li>Primary contact and email</li><li>Active-project count and project links</li><li>Client account folder and status</li></ul></div><div><h3>Why one-way at launch</h3><p>It keeps client records, projects, email rules, and the audit trail from becoming inconsistent. A controlled import tab can be added later for spreadsheet changes.</p></div></div></section>}
+      {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets"); }} />}
       {section === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
       {!(["Email & file rules", "Google Workspace", "Client Directory", "Testing & launch"] as string[]).includes(section) && <section className="panel integrations"><h2>{section}</h2><p>This administration area is ready for the next implementation step.</p><div className="settings-placeholder"><Settings size={22} /><span>Configure this area after the Google Workspace foundation is connected.</span></div></section>}
     </div></>;
+}
+
+function formatSyncTime(value: number | null) {
+  return value ? new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "Not yet synced";
+}
+
+function DirectorySyncPanel({ mirror, syncing, onSync, onConfigure }: { mirror: SheetMirrorStatus | null; syncing: boolean; onSync: () => Promise<void>; onConfigure: () => void }) {
+  const ready = Boolean(mirror?.configured && mirror.enabled && mirror.connected);
+  const clientsStatus = mirror?.clients.status ?? "checking";
+  const projectsStatus = mirror?.projects.status ?? "checking";
+  return <section className="panel client-directory-settings"><div className="settings-heading"><div><p className="eyebrow">Google Sheets mirror</p><h2>Client Directory & Project Register</h2><p>FCI Operations stores the working metadata and relationships. Your Google spreadsheet is a one-way, always-current directory and export view.</p></div><div className="workspace-actions">{mirror?.spreadsheetUrl && <a className="soft-button" href={mirror.spreadsheetUrl} target="_blank" rel="noreferrer"><FolderOpen size={15} /> Open spreadsheet</a>}<button className="primary-button" onClick={() => void onSync()} disabled={syncing || !ready}>{syncing ? "Syncing…" : "Sync now"}</button></div></div>
+    {!ready && <div className="workspace-missing"><CircleAlert size={16} /><span>{mirror?.reason ?? "Checking Google Sheets configuration…"}</span><button className="soft-button" onClick={onConfigure}>Google setup</button></div>}
+    <div className="directory-sync-summary"><article><div><FolderTree size={17} /></div><span>Client Directory</span><strong>{clientsStatus === "synced" ? "Synced" : clientsStatus === "failed" ? "Needs attention" : clientsStatus}</strong><small>{formatSyncTime(mirror?.clients.lastSyncedAt ?? null)}</small><p>Updates client code, contacts, project count, folder link, status, and last update. Your Account Notes column remains yours.</p></article><article><div><BriefcaseBusiness size={17} /></div><span>Project Register</span><strong>{projectsStatus === "synced" ? "Synced" : projectsStatus === "failed" ? "Needs attention" : projectsStatus}</strong><small>{formatSyncTime(mirror?.projects.lastSyncedAt ?? null)}</small><p>Generated from independent project records, including the client, status, site, value, manager, and Drive workspace link.</p></article></div>
+    {(mirror?.clients.lastError || mirror?.projects.lastError) && <div className="workspace-missing"><CircleAlert size={16} /><span>{mirror.clients.lastError ?? mirror.projects.lastError}</span></div>}
+    <div className="directory-layout"><div><h3>What lives in the app</h3><ul><li>Client-to-project relationships and project numbers</li><li>Contacts, statuses, dates, values, and Drive mappings</li><li>Future tasks, notes, meetings, communications, schedules, and activity history</li></ul></div><div><h3>How to use the spreadsheet</h3><p>Use it to view, filter, export, and add account notes. Do not edit the generated Project Register; the next sync rebuilds it from FCI Operations. Spreadsheet edits do not write back to the app yet.</p></div></div></section>;
 }
 
 type GmailTestMessage = { id: string; from: string | null; subject: string | null; date: string | null; snippet: string };
@@ -479,10 +546,13 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
     driveConnected?: boolean;
     gmailConnected?: boolean;
     calendarConnected?: boolean;
+    sheetsConnected?: boolean;
     requiresReauthorization?: boolean;
     provisioningEnabled?: boolean;
     gmailEnabled?: boolean;
     calendarEnabled?: boolean;
+    sheetsEnabled?: boolean;
+    clientDirectorySheetConfigured?: boolean;
     enabledServices?: string[];
     broadScopeAcknowledged?: boolean;
   } | null>(null);
@@ -517,10 +587,13 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
           driveConnected?: boolean;
           gmailConnected?: boolean;
           calendarConnected?: boolean;
+          sheetsConnected?: boolean;
           requiresReauthorization?: boolean;
           provisioningEnabled?: boolean;
           gmailEnabled?: boolean;
           calendarEnabled?: boolean;
+          sheetsEnabled?: boolean;
+          clientDirectorySheetConfigured?: boolean;
           enabledServices?: string[];
           broadScopeAcknowledged?: boolean;
         };
@@ -731,6 +804,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   const connected = workspace?.connectionStatus === "connected";
   const gmailReady = testProfile && connected && workspace?.gmailEnabled === true && workspace?.gmailConnected === true;
   const calendarReady = testProfile && connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
+  const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
   const reconnectRequired = workspace?.requiresReauthorization === true;
   const selectedServices = workspace?.enabledServices?.join(", ") ?? "drive";
   const storageName = workspace?.storageName ?? "FCI Operations";
@@ -762,11 +836,12 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       <div className="integration-logo google"><Mail size={20} /></div>
       <div>
         <strong>{connected ? `${testProfile ? "Personal test" : "Production"} Google services connected` : reconnectRequired ? "Google permission update required" : configured ? `Ready to connect ${testProfile ? "personal test" : "production"} Google services` : temporary && workspace?.storageConfigured ? "Temporary Drive folder configured" : "Google Workspace setup required"}</strong>
-        <span>{connected ? `${workspace?.connectionAccount ?? "Approved account"} is connected with ${selectedServices}.` : reconnectRequired ? "Reconnect and approve every selected service before Gmail or Calendar test controls can be used." : configured ? `The active profile will request ${selectedServices}.` : temporary && workspace?.storageConfigured ? "The Drive root is set, but OAuth and admin safety settings still need to be configured." : "Google is not connected until the active profile configuration is complete."}</span>
+        <span>{connected ? `${workspace?.connectionAccount ?? "Approved account"} is connected with ${selectedServices}.` : reconnectRequired ? "Reconnect and approve every selected service before Sheets, Gmail, or Calendar controls can be used." : configured ? `The active profile will request ${selectedServices}.` : temporary && workspace?.storageConfigured ? "The Drive root is set, but OAuth and admin safety settings still need to be configured." : "Google is not connected until the active profile configuration is complete."}</span>
       </div>
       <span>{connected ? "Connected" : reconnectRequired ? "Reconnect" : configured ? "Authorize next" : temporary && workspace?.storageConfigured ? "Storage ready" : "Not connected"}</span>
     </div>
     {testProfile && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Personal test mode:</strong> use only self-sent test messages and sample documents. Gmail labels, self-test email, and Calendar holds require your direct click; the app never automatically archives email, removes Inbox, invites guests, or alters existing events.</span></p>}
+    {workspace?.sheetsEnabled && <p className="workspace-warning"><FileText size={15} /><span><strong>Google Sheets:</strong> {sheetsReady ? "the Client Directory and Project Register mirror are ready. Use Settings → Client Directory to sync them." : workspace.clientDirectorySheetConfigured ? "reconnect Google to approve Sheets, then use Settings → Client Directory to run the first sync." : "add the Client Directory spreadsheet ID to the active Google profile before syncing."}</span></p>}
     {oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
     {temporary && !testProfile && <p className="workspace-warning"><CircleAlert size={15} /><span>This folder is a temporary My Drive workspace owned by its creator. Move the workspace to a company Shared Drive before wider staff use.</span></p>}
     {missing.length > 0 && <p className="workspace-missing"><strong>Still needed:</strong> {missing.join(", ")}</p>}
@@ -877,13 +952,13 @@ function LeadModal({ onClose, onSave }: { onClose: () => void; onSave: (l: Lead)
 function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client: Client) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const name = String(form.get("name")); try { await onSave({ id: crypto.randomUUID(), code: `CL-${String(100 + Math.floor(Math.random() * 900))}`, name, contact: String(form.get("contact")), email: String(form.get("email")), industry: String(form.get("industry")), status: String(form.get("status")), initials: name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase(), color: "sage", googleStatus: "Setup pending" }); } finally { setSaving(false); } }
-  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Client Directory</p><h2>Add a client</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>Client business name<input name="name" required placeholder="e.g. Atlas Design Group" /></label><div className="form-row"><label>Primary contact<input name="contact" required placeholder="Full name" /></label><label>Work email<input name="email" type="email" required placeholder="name@company.com" /></label></div><div className="form-row"><label>Industry<select name="industry"><option>General contractor</option><option>Healthcare</option><option>Retail</option><option>Hospitality</option><option>Property management</option><option>Other commercial</option></select></label><label>Client status<select name="status"><option>Active</option><option>Prospect</option><option>Inactive</option></select></label></div><p className="form-help"><FolderTree size={14} /> After Google Workspace is connected, FCI Operations will create the client account folder and Client Directory row.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add client"}</button></footer></form></div></div>;
+  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Client Directory</p><h2>Add a client</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>Client business name<input name="name" required placeholder="e.g. Atlas Design Group" /></label><div className="form-row"><label>Primary contact<input name="contact" required placeholder="Full name" /></label><label>Work email<input name="email" type="email" required placeholder="name@company.com" /></label></div><div className="form-row"><label>Industry<select name="industry"><option>General contractor</option><option>Healthcare</option><option>Retail</option><option>Hospitality</option><option>Property management</option><option>Other commercial</option></select></label><label>Client status<select name="status"><option>Active</option><option>Prospect</option><option>Inactive</option></select></label></div><p className="form-help"><FolderTree size={14} /> The app saves the client first, then syncs the Client Directory when Google Sheets is connected. The account folder is created with the first project workspace.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add client"}</button></footer></form></div></div>;
 }
 
 function NewProjectModal({ clients, onClose, onSave }: { clients: Client[]; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); try { await onSave({ id: crypto.randomUUID(), clientId, number: `CF-2026-${String(50 + Math.floor(Math.random() * 900)).padStart(3, "0")}`, client: client.name, name, status: String(form.get("status")), progress: 0, value: form.get("value") ? `$${Number(form.get("value")).toLocaleString()}` : "TBD", site: String(form.get("site")), lead: String(form.get("manager")), date: "Dates pending", accent: client.color }); } finally { setSaving(false); } }
-  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>Client<select name="clientId" required>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="e.g. Westport Medical Center" /></label><div className="form-row"><label>Site<input name="site" required placeholder="City, State" /></label><label>Project manager<input name="manager" required placeholder="Assigned manager" /></label></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value<input name="value" type="number" min="0" placeholder="125000" /></label></div><p className="form-help"><FolderTree size={14} /> This creates a separate project number, project folder tree, schedule, activity history, and email destination.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Creating…" : "Create project"}</button></footer></form></div></div>;
+  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>Client<select name="clientId" required>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="e.g. Westport Medical Center" /></label><div className="form-row"><label>Site<input name="site" required placeholder="City, State" /></label><label>Project manager<input name="manager" required placeholder="Assigned manager" /></label></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value<input name="value" type="number" min="0" placeholder="125000" /></label></div><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Creating…" : "Create project"}</button></footer></form></div></div>;
 }
 
 function RuleModal({ onClose, onSave }: { onClose: () => void; onSave: (rule: FilingRuleDraft) => Promise<void> }) {

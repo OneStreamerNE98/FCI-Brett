@@ -4,12 +4,12 @@
 
 FCI Operations owns operational records: clients, contacts, projects, schedules, tasks, email-filing decisions, and audit history. Google Workspace is the company-owned collaboration layer:
 
-- **Google Sheets:** a generated `Client Directory` that office staff can view, filter, and export.
+- **Google Sheets:** a generated `Client Directory` plus a `Project Register` tab that office staff can view, filter, and export.
 - **Shared Drive:** all account and project documents, photos, archived emails, and attachments.
 - **Gmail:** one controlled intake mailbox with broad labels, not thousands of per-project filters.
 - **Calendar:** separate `Client Appointments` and `Field Schedule` calendars.
 
-The first sync is one-way from FCI Operations to the Client Directory Sheet. This prevents a spreadsheet sort or rename from breaking the relationship between a client and its independent projects. Add a controlled `Intake / Changes` tab later if spreadsheet-originated changes are needed.
+The first sync is one-way from FCI Operations to the Google spreadsheet. The existing `Client Directory` keeps its **Account Notes** column for office use; the app updates the other directory fields. `Project Register` is app-generated and rebuilt from independent project records. This prevents a spreadsheet sort or rename from breaking the relationship between a client and its projects. Add a controlled `Intake / Changes` tab later if spreadsheet-originated changes are needed.
 
 ## Temporary My Drive workspace
 
@@ -21,7 +21,7 @@ This is suitable only for testing and one-owner operation because the folder is 
 
 FCI Operations treats personal testing and company production as separate connections, not a single connection that is renamed later.
 
-- **Test profile:** a personal Google account, the dedicated `FCI Operations — Temporary` folder, self-sent test mail only, and deliberately enabled Drive/Gmail/Calendar authorization.
+- **Test profile:** a personal Google account, the dedicated `FCI Operations — Temporary` folder, self-sent test mail only, and deliberately enabled Drive/Sheets/Gmail/Calendar authorization.
 - **Production profile:** a company Google account, company-owned Shared Drive, a distinct OAuth client/secret, and a new authorization. It never reuses the personal refresh token.
 
 Folder mappings are saved by profile. When production is enabled, new company folders are created under the company workspace; personal test folders remain intact for reference but are not used by production projects.
@@ -35,7 +35,7 @@ Do not use a personal inbox for real client email or copy the test OAuth credent
 ```text
 FCI Operations/
   00_Company Admin/
-    Client Directory (Google Sheet)
+    Client Directory (Google Sheet; Project Register tab)
     Templates/
   01_Client Accounts/
     CL-0001 — Atlas Design Group/
@@ -85,7 +85,7 @@ On approval, FCI Operations should save the original email as an `.eml` file in 
 
 - For production, create a company-owned Shared Drive named `FCI Operations`. For early testing, create one dedicated My Drive folder instead.
 - Create Google Groups for office staff, project managers, and field leads.
-- Create the `Client Directory` Google Sheet in `00_Company Admin`.
+- Create the `Client Directory` Google Sheet in `00_Company Admin`. The app adds and manages the `Project Register` tab after Sheets is connected.
 - Select a dedicated project-intake mailbox.
 - Create the `Client Appointments` and `Field Schedule` calendars.
 - Create a Google Cloud project; enable Drive, Gmail, Sheets, Calendar, and Pub/Sub APIs.

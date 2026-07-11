@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
+import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
 
 type ClientBody = { name?: string; industry?: string; status?: string; primaryContact?: { name?: string; email?: string; phone?: string; role?: string } };
 
@@ -38,5 +39,8 @@ export async function POST(request: NextRequest) {
     statements.push(env.DB.prepare("INSERT INTO contacts (id, client_id, name, email, phone, role, is_primary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)").bind(crypto.randomUUID(), id, body.primaryContact.name.trim(), body.primaryContact.email ?? null, body.primaryContact.phone ?? null, body.primaryContact.role ?? "Primary contact", now, now));
   }
   await env.DB.batch(statements);
-  return NextResponse.json({ id, clientCode, name, createdAt: now }, { status: 201 });
+  // The operational record is durable before any external write is attempted.
+  // A Sheet failure is visible to the user but can never discard a new client.
+  const sheetSync = await trySyncGoogleDirectory(getGoogleRuntimeConfig(), actor);
+  return NextResponse.json({ id, clientCode, name, createdAt: now, sheetSync }, { status: 201 });
 }

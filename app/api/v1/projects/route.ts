@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
+import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
 
 type ProjectBody = { clientId?: string; name?: string; status?: string; site?: string; projectManager?: string; estimatedValue?: number };
 
@@ -35,5 +36,7 @@ export async function POST(request: NextRequest) {
   const projectNumber = `CF-${new Date().getUTCFullYear()}-${String((count?.count ?? 0) + 1).padStart(3, "0")}`;
   const id = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO projects (id, project_number, client_id, name, status, site, project_manager, estimated_value, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id, projectNumber, body.clientId, body.name.trim(), body.status ?? "planning", body.site ?? null, body.projectManager ?? null, body.estimatedValue ?? null, auth.user.email, now, now).run();
-  return NextResponse.json({ id, projectNumber, createdAt: now }, { status: 201 });
+  // A project changes both the Project Register and its parent client's active-project count.
+  const sheetSync = await trySyncGoogleDirectory(getGoogleRuntimeConfig(), auth.user.email);
+  return NextResponse.json({ id, projectNumber, createdAt: now, sheetSync }, { status: 201 });
 }

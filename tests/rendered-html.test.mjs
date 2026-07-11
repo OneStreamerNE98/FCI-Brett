@@ -67,6 +67,25 @@ test("models clients, independent projects, and review-first email filing", asyn
   assert.match(workspace, /FCI\/Needs Review/);
 });
 
+test("keeps the app authoritative while mirroring clients and projects to Google Sheets", async () => {
+  const [oauth, sheets, clientsApi, projectsApi, statusApi, syncApi, schema, guide] = await Promise.all([
+    read("app/lib/google-oauth.ts"), read("app/lib/google-sheets.ts"), read("app/api/v1/clients/route.ts"),
+    read("app/api/v1/projects/route.ts"), read("app/api/v1/integrations/google/sheets/status/route.ts"),
+    read("app/api/v1/integrations/google/sheets/sync/route.ts"), read("db/schema.ts"), read("docs/google-workspace-organization.md"),
+  ]);
+  assert.match(oauth, /https:\/\/www\.googleapis\.com\/auth\/spreadsheets/);
+  assert.match(oauth, /clientDirectorySheetId/);
+  assert.match(sheets, /Account Notes is intentionally spreadsheet-owned/);
+  assert.match(sheets, /Project Register/);
+  assert.match(sheets, /valueInputOption=RAW/);
+  assert.match(clientsApi, /trySyncGoogleDirectory/);
+  assert.match(projectsApi, /trySyncGoogleDirectory/);
+  assert.match(statusApi, /getGoogleSheetMirrorStatus/);
+  assert.match(syncApi, /requireSameOrigin/);
+  assert.match(schema, /googleSheetSyncState/);
+  assert.match(guide, /Project Register/);
+});
+
 test("wires prototype controls and exposes an honest Workspace readiness check", async () => {
   const [app, workspaceApi, envExample, testGuide] = await Promise.all([
     read("app/FloorOpsApp.tsx"), read("app/api/v1/google-workspace/route.ts"),

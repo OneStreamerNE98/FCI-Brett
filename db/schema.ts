@@ -216,6 +216,21 @@ export const googleDriveOperations = sqliteTable("google_drive_operations", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/** Per-profile state for the generated Google Sheets client/project directory mirror. */
+export const googleSheetSyncState = sqliteTable("google_sheet_sync_state", {
+  connectionKey: text("connection_key").notNull(),
+  entityType: text("entity_type").notNull(),
+  status: text("status").notNull(),
+  lastSyncedAt: integer("last_synced_at", { mode: "timestamp_ms" }),
+  lastErrorCode: text("last_error_code"),
+  lastErrorMessage: text("last_error_message"),
+  lastAttemptAt: integer("last_attempt_at", { mode: "timestamp_ms" }),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  uniqueIndex("google_sheet_sync_state_profile_entity_unique").on(table.connectionKey, table.entityType),
+]);
+
 export const googleIntegrationEvents = sqliteTable("google_integration_events", {
   id: text("id").primaryKey(),
   connectionKey: text("connection_key").notNull(),

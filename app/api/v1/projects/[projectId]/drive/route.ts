@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../lib/google-drive";
 import { GoogleIntegrationError, getGoogleAccessToken, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth";
+import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 
@@ -75,7 +76,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
         .bind(crypto.randomUUID(), project.id, auth.user.email, `Project workspace created in ${config.environment} Drive profile`, completedAt),
     ]);
     await writeGoogleIntegrationEvent(config, "drive.project_folder_provisioned", auth.user.email, "project", project.id, `environment=${config.environment}`);
-    return NextResponse.json({ created: true, driveFolderId: provisioned.projectFolder.id, driveUrl: provisioned.projectFolder.url, environment: config.environment }, { status: 201 });
+    const sheetSync = await trySyncGoogleDirectory(config, auth.user.email);
+    return NextResponse.json({ created: true, driveFolderId: provisioned.projectFolder.id, driveUrl: provisioned.projectFolder.url, environment: config.environment, sheetSync }, { status: 201 });
   } catch (error) {
     const code = error instanceof GoogleIntegrationError ? error.code : "provision_failed";
     await env.DB.prepare("UPDATE google_drive_operations SET status = 'failed', lease_expires_at = NULL, last_error_code = ?, updated_at = ? WHERE operation_key = ?")
