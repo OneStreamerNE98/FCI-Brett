@@ -27,18 +27,6 @@ type SheetMirrorStatus = {
 type ProjectUpdateDraft = { project: Project; subject: string; message: string };
 type ShiftAssignment = { id: string; crew: string; site: string; day: string; time: string; status: "Pending" | "Acknowledged" };
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
-type LocalAccountPreferences = { timezone?: string; replySignature?: string };
-
-function readLocalAccountPreferences(email: string): LocalAccountPreferences {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(`fci-user-preferences:${email.toLowerCase()}`);
-    const parsed = raw ? JSON.parse(raw) as LocalAccountPreferences : {};
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
 
 const leadStages = ["New inquiry", "Site visit", "Proposal", "Decision"];
 
@@ -454,7 +442,7 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
           {view === "Clients" && <ClientsView clients={clients} projects={projectItems} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => setProjectModal(true)} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
           {view === "Projects" && <ProjectsView projects={projectItems} onNewProject={() => setProjectModal(true)} onProject={openProject} />}
           {view === "Schedule" && <ScheduleView notify={notify} />}
-          {view === "Inbox" && <InboxView notify={notify} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} userEmail={userEmail} onGoogleSetup={openGoogleWorkspace} />}
+          {view === "Inbox" && <InboxView notify={notify} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
           {view === "Reports" && <ReportsView />}
           {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
@@ -601,7 +589,7 @@ function inboxProjectSuggestion(message: GmailTestMessage, projects: Project[], 
   return { kind: "intake", text: "FCI Intake: no enabled built-in rule matched; choose a project before filing", reason: decision.reason };
 }
 
-function InboxView({ notify, onRules, projects, clients, rules, userEmail, onGoogleSetup }: { notify: (s: string) => void; onRules: () => void; projects: Project[]; clients: Client[]; rules: FilingRuleDraft[]; userEmail: string; onGoogleSetup: () => void }) {
+function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }: { notify: (s: string) => void; onRules: () => void; projects: Project[]; clients: Client[]; rules: FilingRuleDraft[]; onGoogleSetup: () => void }) {
   const [workspace, setWorkspace] = useState<GmailWorkspaceStatus | null>(null);
   const [messages, setMessages] = useState<GmailTestMessage[]>([]);
   const [bucket, setBucket] = useState<InboxBucket>("inbox");
@@ -618,7 +606,7 @@ function InboxView({ notify, onRules, projects, clients, rules, userEmail, onGoo
   const [replyMessage, setReplyMessage] = useState<GmailTestMessage | null>(null);
   const [replyBody, setReplyBody] = useState("");
   const [replySaving, setReplySaving] = useState(false);
-  const [replySignature] = useState(() => typeof readLocalAccountPreferences(userEmail).replySignature === "string" ? readLocalAccountPreferences(userEmail).replySignature!.slice(0, 1_500) : "");
+  const [replySignature, setReplySignature] = useState("");
 
   async function checkGmailConnection() {
     setChecking(true);
@@ -639,6 +627,13 @@ function InboxView({ notify, onRules, projects, clients, rules, userEmail, onGoo
   useEffect(() => {
     const check = window.setTimeout(() => { void checkGmailConnection(); }, 0);
     return () => window.clearTimeout(check);
+  }, []);
+
+  useEffect(() => {
+    void fetch("/api/v1/settings/me")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setReplySignature(typeof data?.preferences?.replySignature === "string" ? data.preferences.replySignature.slice(0, 2_000) : ""))
+      .catch(() => undefined);
   }, []);
 
   const gmailReady = workspace?.connectionStatus === "connected" && workspace.gmailEnabled === true && workspace.gmailConnected === true;
@@ -832,24 +827,71 @@ function SettingsView({ notify, section, onSection, rules, projects, userName, u
     </div></>;
 }
 
-type WorkspacePreferenceValues = { timezone: string; appointmentCalendarName: string; fieldCalendarName: string; appointmentReminderHours: number; crewReminderHours: number; inboxReviewMode: "review-first"; officeNotificationEmail: string };
+type UserAccountPreferences = { displayTimezone: string; replySignature: string; personalCalendarDisplay: boolean };
+type WorkspacePreferenceValues = {
+  timezone: string;
+  appointmentCalendarName: string;
+  fieldCalendarName: string;
+  calendarSetupMode: "create-shared" | "use-existing";
+  appointmentCalendarId: string;
+  fieldCalendarId: string;
+  personalAvailabilityPolicy: "free-busy" | "off";
+  calendarEditPolicy: "app-authoritative";
+  appointmentReminderHours: number;
+  crewReminderHours: number;
+  inboxReviewMode: "review-first";
+  officeNotificationEmail: string;
+};
 
-const defaultWorkspacePreferences: WorkspacePreferenceValues = { timezone: "America/New_York", appointmentCalendarName: "Client Appointments", fieldCalendarName: "Field Schedule", appointmentReminderHours: 24, crewReminderHours: 24, inboxReviewMode: "review-first", officeNotificationEmail: "" };
+const defaultUserAccountPreferences: UserAccountPreferences = { displayTimezone: "America/New_York", replySignature: "", personalCalendarDisplay: true };
+const defaultWorkspacePreferences: WorkspacePreferenceValues = {
+  timezone: "America/New_York",
+  appointmentCalendarName: "FCI • Client Appointments",
+  fieldCalendarName: "FCI • Field Schedule",
+  calendarSetupMode: "create-shared",
+  appointmentCalendarId: "",
+  fieldCalendarId: "",
+  personalAvailabilityPolicy: "free-busy",
+  calendarEditPolicy: "app-authoritative",
+  appointmentReminderHours: 24,
+  crewReminderHours: 24,
+  inboxReviewMode: "review-first",
+  officeNotificationEmail: "",
+};
 
 function MyAccountPanel({ notify, userName, userEmail, onGoogleSetup }: { notify: (message: string) => void; userName: string; userEmail: string; onGoogleSetup: () => void }) {
-  const storageKey = `fci-user-preferences:${userEmail.toLowerCase()}`;
-  const [timezone, setTimezone] = useState(() => typeof readLocalAccountPreferences(userEmail).timezone === "string" ? readLocalAccountPreferences(userEmail).timezone! : "America/New_York");
-  const [replySignature, setReplySignature] = useState(() => typeof readLocalAccountPreferences(userEmail).replySignature === "string" ? readLocalAccountPreferences(userEmail).replySignature!.slice(0, 1_500) : "");
+  const [preferences, setPreferences] = useState<UserAccountPreferences>(defaultUserAccountPreferences);
   const [connectionAccount, setConnectionAccount] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
-    void fetch("/api/v1/google-workspace").then((response) => response.ok ? response.json() : null).then((data) => setConnectionAccount(typeof data?.workspace?.connectionAccount === "string" ? data.workspace.connectionAccount : null)).catch(() => undefined);
-  }, [storageKey]);
-  function save(event: FormEvent<HTMLFormElement>) {
+    let active = true;
+    void Promise.all([
+      fetch("/api/v1/settings/me").then((response) => response.ok ? response.json() : null),
+      fetch("/api/v1/google-workspace").then((response) => response.ok ? response.json() : null),
+    ]).then(([preferenceData, googleData]) => {
+      if (!active) return;
+      if (preferenceData?.preferences) setPreferences({ ...defaultUserAccountPreferences, ...preferenceData.preferences });
+      setConnectionAccount(typeof googleData?.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
+    }).catch(() => undefined).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    window.localStorage.setItem(storageKey, JSON.stringify({ timezone, replySignature }));
-    notify("My preferences were saved in this browser");
+    setSaving(true);
+    try {
+      const response = await fetch("/api/v1/settings/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(preferences) });
+      const data = await response.json().catch(() => ({})) as { preferences?: UserAccountPreferences; error?: string };
+      if (!response.ok || !data.preferences) throw new Error(data.error ?? "Your account preferences could not be saved.");
+      setPreferences({ ...defaultUserAccountPreferences, ...data.preferences });
+      notify("Your preferences are saved to your signed-in FCI account");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Your account preferences could not be saved.");
+    } finally {
+      setSaving(false);
+    }
   }
-  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Personal settings</p><h2>My account</h2><p>Set the preferences used for your own app experience. These are kept in this browser and never change another user’s settings.</p></div></div><div className="account-identity"><div className="avatar">{userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC"}</div><div><strong>{userName}</strong><span>{userEmail}</span></div></div><form onSubmit={save}><div className="form-row"><label>My display timezone<select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label><label>Shared Google test account<input value={connectionAccount ?? "Not connected"} readOnly /></label></div><label>Default reply signature<textarea value={replySignature} onChange={(event) => setReplySignature(event.target.value)} placeholder="Name, title, phone, and company" maxLength={1500} /></label><p className="form-help"><Reply size={14} /> The signature is added when you open a Gmail reply draft. This early prototype has one administrator-managed personal test connection, not one Gmail or Calendar connection per app user.</p><footer><button type="button" className="soft-button" onClick={onGoogleSetup}><Building2 size={15} /> Manage shared Google test</button><button type="submit" className="primary-button"><Check size={15} /> Save my preferences</button></footer></form></section>;
+  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Signed-in account</p><h2>My account</h2><p>Your timezone, reply signature, and calendar display preference are saved to this FCI account and follow you between browsers.</p></div></div><div className="account-identity"><div className="avatar">{userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC"}</div><div><strong>{userName}</strong><span>{userEmail}</span></div></div><form onSubmit={save}><div className="form-row"><label>My display timezone<select value={preferences.displayTimezone} onChange={(event) => setPreferences((current) => ({ ...current, displayTimezone: event.target.value }))} disabled={loading || saving}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label><label>Shared Google test account<input value={connectionAccount ?? "Not connected"} readOnly /></label></div><label>Default reply signature<textarea value={preferences.replySignature} onChange={(event) => setPreferences((current) => ({ ...current, replySignature: event.target.value }))} placeholder="Name, title, phone, and company" maxLength={2000} disabled={loading || saving} /></label><label className="settings-checkbox"><input type="checkbox" checked={preferences.personalCalendarDisplay} onChange={(event) => setPreferences((current) => ({ ...current, personalCalendarDisplay: event.target.checked }))} disabled={loading || saving} /><span><strong>Show my published FCI shifts on my personal calendar when I link it</strong><small>This is your saved preference. It takes effect only after individual Google account connections are added.</small></span></label><p className="form-help"><Reply size={14} /> Your FCI sign-in and Google account are separate by design. The current prototype has one administrator-managed personal test connection; it never assumes that it belongs to this signed-in user.</p><footer><button type="button" className="soft-button" onClick={onGoogleSetup}><Building2 size={15} /> Manage shared Google test</button><button type="submit" className="primary-button" disabled={loading || saving}>{saving ? "Saving…" : <><Check size={15} /> Save my preferences</>}</button></footer></form></section>;
 }
 
 function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calendar" | "workflow"; notify: (message: string) => void; onGoogleSetup: () => void }) {
@@ -879,12 +921,76 @@ function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calend
       setSaving(false);
     }
   }
-  const calendar = mode === "calendar";
-  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">{calendar ? "Calendar defaults" : "Operating defaults"}</p><h2>{calendar ? "Calendar & appointment defaults" : "Workflow & notifications"}</h2><p>{calendar ? "Save the timezone, calendar names, and reminder defaults for the later scheduling integration. Personal testing currently uses only the shared test account’s primary calendar." : "Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled."}</p></div><button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button></div><div className={`settings-connection ${calendarConnected ? "ready" : ""}`}><CalendarDays size={18} /><div><strong>{calendarConnected ? "Personal test calendar connected" : "Calendar connection required"}</strong><span>{calendarConnected ? `${calendarAccount ?? "Approved test account"} is connected for private test holds only.` : "Reconnect Google and approve Calendar before testing private calendar holds."}</span></div></div><form onSubmit={save}>{calendar ? <><div className="form-row"><label>Workspace timezone<select value={settings.timezone} onChange={(event) => setSettings((current) => ({ ...current, timezone: event.target.value }))}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label><label>Appointment reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label></div><div className="form-row"><label>Client appointment calendar name<input value={settings.appointmentCalendarName} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarName: event.target.value }))} /></label><label>Field schedule calendar name<input value={settings.fieldCalendarName} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarName: event.target.value }))} /></label></div><p className="form-help"><CalendarDays size={14} /> These saved names will drive the company calendar mapping once production scheduling is added. They do not rename or choose calendars in the personal test profile.</p></> : <><div className="form-row"><label>Client reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label><label>Crew reminder hours<input type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} /></label></div><label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label><div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div></>}<footer><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</button></footer></form></section>;
+  if (mode === "calendar") {
+    return <section className="panel settings-form-panel">
+      <div className="settings-heading">
+        <div>
+          <p className="eyebrow">Organization calendar plan</p>
+          <h2>Calendar & appointments</h2>
+          <p>Keep company work in two shared FCI calendars. Personal calendars are optional availability sources, never the source of truth for client appointments or field work.</p>
+        </div>
+        <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
+      </div>
+      <div className={`settings-connection ${calendarConnected ? "ready" : ""}`}>
+        <CalendarDays size={18} />
+        <div>
+          <strong>{calendarConnected ? "Personal test calendar connected" : "Calendar connection required"}</strong>
+          <span>{calendarConnected ? `${calendarAccount ?? "Approved test account"} is connected for private test holds only.` : "Reconnect Google and approve Calendar before testing private calendar holds."}</span>
+        </div>
+      </div>
+      <form onSubmit={save}>
+        <div className="settings-static-row">
+          <CalendarDays size={16} />
+          <div><strong>Recommended setup</strong><span>Create or select one shared <b>FCI • Client Appointments</b> calendar and one shared <b>FCI • Field Schedule</b> calendar. Do not create one calendar per user; invite assigned people to the same company event instead.</span></div>
+        </div>
+        <div className="form-row">
+          <label>Calendar setup<select value={settings.calendarSetupMode} onChange={(event) => setSettings((current) => ({ ...current, calendarSetupMode: event.target.value as WorkspacePreferenceValues["calendarSetupMode"] }))}><option value="create-shared">Create two shared FCI calendars (recommended)</option><option value="use-existing">Use existing company calendars</option></select></label>
+          <label>Workspace timezone<select value={settings.timezone} onChange={(event) => setSettings((current) => ({ ...current, timezone: event.target.value }))}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label>
+        </div>
+        <div className="form-row">
+          <label>Client appointments calendar name<input value={settings.appointmentCalendarName} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarName: event.target.value }))} /></label>
+          <label>Field schedule calendar name<input value={settings.fieldCalendarName} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarName: event.target.value }))} /></label>
+        </div>
+        {settings.calendarSetupMode === "use-existing" && <div className="form-row">
+          <label>Client appointments calendar ID<input value={settings.appointmentCalendarId} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /></label>
+          <label>Field schedule calendar ID<input value={settings.fieldCalendarId} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /></label>
+        </div>}
+        <div className="form-row">
+          <label>Appointment reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label>
+          <label>Personal availability policy<select value={settings.personalAvailabilityPolicy} onChange={(event) => setSettings((current) => ({ ...current, personalAvailabilityPolicy: event.target.value as WorkspacePreferenceValues["personalAvailabilityPolicy"] }))}><option value="free-busy">Use linked users’ free/busy time only</option><option value="off">Do not use personal calendars</option></select></label>
+        </div>
+        <div className="settings-static-row">
+          <ShieldCheck size={16} />
+          <div><strong>Sync & conflict policy</strong><span>FCI Operations will remain authoritative. A later edit to an app-created Google event will be flagged for review instead of silently overwriting the project schedule.</span></div>
+        </div>
+        <div className="settings-static-row">
+          <Mail size={16} />
+          <div><strong>Gmail relationship</strong><span>Gmail and Calendar are separate. When a message becomes an appointment, the app will link the thread to the appointment; Gmail-generated travel or reservation events are never imported into the company schedule automatically.</span></div>
+        </div>
+        <p className="form-help"><CalendarDays size={14} /> These settings are saved now. The personal test adapter still uses only the test account’s primary calendar; company calendar creation, picker, event links, and two-way sync are the next integration step.</p>
+        <footer><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : <><Check size={15} /> Save calendar plan</>}</button></footer>
+      </form>
+    </section>;
+  }
+  return <section className="panel settings-form-panel">
+    <div className="settings-heading">
+      <div><p className="eyebrow">Operating defaults</p><h2>Workflow & notifications</h2><p>Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled.</p></div>
+      <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
+    </div>
+    <form onSubmit={save}>
+      <div className="form-row">
+        <label>Client reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label>
+        <label>Crew reminder hours<input type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} /></label>
+      </div>
+      <label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label>
+      <div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div>
+      <footer><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</button></footer>
+    </form>
+  </section>;
 }
 
 function DataSecurityPanel() {
-  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Safety & access</p><h2>Data & security</h2><p>These safeguards are already active in the prototype and identify what must be completed before staff-wide use.</p></div></div><div className="settings-security-list"><div><ShieldCheck size={18} /><span><strong>Review-first email filing</strong><small>Messages retain Inbox; project copies and FCI/Filed occur only after a direct approval.</small></span></div><div><Building2 size={18} /><span><strong>Separate personal test and company production profiles</strong><small>Personal Google credentials and folders are never promoted to company production.</small></span></div><div><Settings size={18} /><span><strong>Installable web app</strong><small>This site now includes a web-app manifest. In Chrome or Edge, use the browser’s Install app command to add FCI Operations as its own app window. The Google app launcher cannot add an arbitrary personal URL; a true Gmail sidebar requires a separate Workspace Add-on deployment.</small></span></div></div></section>;
+  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Safety & access</p><h2>Data & security</h2><p>These safeguards are already active in the prototype and identify what must be completed before staff-wide use.</p></div></div><div className="settings-security-list"><div><ShieldCheck size={18} /><span><strong>Review-first email filing</strong><small>Messages retain Inbox; project copies and FCI/Filed occur only after a direct approval.</small></span></div><div><Users size={18} /><span><strong>FCI account and Google account stay distinct</strong><small>Account preferences are tied to the signed-in FCI user. Individual Google connections will be explicitly authorized later; the current test connection is shared and administrator-managed.</small></span></div><div><Building2 size={18} /><span><strong>Separate personal test and company production profiles</strong><small>Personal Google credentials and folders are never promoted to company production.</small></span></div><div><Settings size={18} /><span><strong>Installable web app</strong><small>This site now includes a web-app manifest. In Chrome or Edge, use the browser’s Install app command to add FCI Operations as its own app window. The Google app launcher cannot add an arbitrary personal URL; a true Gmail sidebar requires a separate Workspace Add-on deployment.</small></span></div></div></section>;
 }
 
 function formatSyncTime(value: number | null) {
@@ -1210,7 +1316,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       <div>
         <p className="eyebrow">Google Workspace foundation</p>
         <h2>Google Workspace</h2>
-        <p>{testProfile ? "Personal Google testing stays in a separate test profile. Later, production will require a new company Google connection and a company-owned workspace." : "This production profile is reserved for the company Google account and company-owned workspace."}</p>
+        <p>{testProfile ? "Personal Google testing is one administrator-managed test profile. It does not automatically attach to every signed-in FCI user; production will use a separate company connection and individual user authorizations where needed." : "This production profile is reserved for the company Google account and company-owned workspace."}</p>
       </div>
       <button className="primary-button" onClick={checkSetup} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
     </div>

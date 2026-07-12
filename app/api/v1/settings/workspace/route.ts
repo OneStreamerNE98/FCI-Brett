@@ -9,6 +9,11 @@ export type WorkspacePreferences = {
   timezone: string;
   appointmentCalendarName: string;
   fieldCalendarName: string;
+  calendarSetupMode: "create-shared" | "use-existing";
+  appointmentCalendarId: string;
+  fieldCalendarId: string;
+  personalAvailabilityPolicy: "free-busy" | "off";
+  calendarEditPolicy: "app-authoritative";
   appointmentReminderHours: number;
   crewReminderHours: number;
   inboxReviewMode: "review-first";
@@ -17,8 +22,13 @@ export type WorkspacePreferences = {
 
 const defaults: WorkspacePreferences = {
   timezone: "America/New_York",
-  appointmentCalendarName: "Client Appointments",
-  fieldCalendarName: "Field Schedule",
+  appointmentCalendarName: "FCI • Client Appointments",
+  fieldCalendarName: "FCI • Field Schedule",
+  calendarSetupMode: "create-shared",
+  appointmentCalendarId: "",
+  fieldCalendarId: "",
+  personalAvailabilityPolicy: "free-busy",
+  calendarEditPolicy: "app-authoritative",
   appointmentReminderHours: 24,
   crewReminderHours: 24,
   inboxReviewMode: "review-first",
@@ -42,12 +52,30 @@ function cleanEmail(value: unknown) {
   return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
 }
 
+function cleanCalendarMode(value: unknown): WorkspacePreferences["calendarSetupMode"] {
+  return value === "use-existing" ? "use-existing" : "create-shared";
+}
+
+function cleanAvailabilityPolicy(value: unknown): WorkspacePreferences["personalAvailabilityPolicy"] {
+  return value === "off" ? "off" : "free-busy";
+}
+
+function cleanOptionalText(value: unknown, maximum: number) {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, maximum);
+}
+
 function normalizeSettings(value: unknown): WorkspacePreferences {
   const input = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   return {
     timezone: cleanText(input.timezone, defaults.timezone, 80),
     appointmentCalendarName: cleanText(input.appointmentCalendarName, defaults.appointmentCalendarName, 120),
     fieldCalendarName: cleanText(input.fieldCalendarName, defaults.fieldCalendarName, 120),
+    calendarSetupMode: cleanCalendarMode(input.calendarSetupMode),
+    appointmentCalendarId: cleanOptionalText(input.appointmentCalendarId, 320),
+    fieldCalendarId: cleanOptionalText(input.fieldCalendarId, 320),
+    personalAvailabilityPolicy: cleanAvailabilityPolicy(input.personalAvailabilityPolicy),
+    calendarEditPolicy: "app-authoritative",
     appointmentReminderHours: cleanHours(input.appointmentReminderHours, defaults.appointmentReminderHours),
     crewReminderHours: cleanHours(input.crewReminderHours, defaults.crewReminderHours),
     inboxReviewMode: "review-first",

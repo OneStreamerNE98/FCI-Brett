@@ -83,6 +83,19 @@ FCI/Filed
 
 On approval, FCI Operations saves the original email as an `.eml` file in the selected project’s `05_Correspondence/Email Archive`, copies attachments to `Email Attachments`, records the Gmail/Drive identifiers and decision in the activity log, and applies `FCI/Filed`. The Gmail `INBOX` label is retained. For personal testing, replies are saved as Gmail drafts to the approved test account and are not sent by FCI Operations.
 
+## Calendar ownership and sync
+
+Use two company-owned calendars, not one new calendar for every person:
+
+- `FCI • Client Appointments` for client meetings, site walks, and confirmation-driven appointments.
+- `FCI • Field Schedule` for published crew shifts and work blocks.
+
+The FCI app is the operational source of truth. When calendar synchronization is enabled, it should create or update one company event and invite the assigned project manager or employee to that same event; it should not copy the job into each person’s private calendar. Personal calendars are optional free/busy sources only, with each person explicitly authorizing their own Google account. Employees without Google accounts continue to receive their schedule by email/SMS action link.
+
+Gmail and Calendar are separate Google services on the same account. An email can be linked to an appointment when staff deliberately schedule from that message, but Gmail-generated travel, reservation, or ticket events must never become company schedule records automatically. During the first real sync phase, app-created events flow from FCI Operations to the selected company calendar. Later calendar edits should be flagged for review instead of silently overwriting the project schedule.
+
+The current personal test adapter remains intentionally limited to the approved test account’s primary calendar and private test holds. It does not yet create the two company calendars, read individual availability, or run two-way event synchronization.
+
 ## Personal web-app shortcut
 
 The hosted FCI Operations site is an installable web app. In Chrome or Edge, use the browser’s **Install app** command to add it as a separate app window in the personal Google/Chrome profile. Google’s personal app launcher cannot add an arbitrary custom web URL; a true Gmail side panel is a separate Google Workspace Add-on project and should wait until individual Gmail connections are implemented.

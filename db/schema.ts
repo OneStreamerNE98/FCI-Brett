@@ -91,6 +91,14 @@ export const workspaceSettings = sqliteTable("workspace_settings", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+export const userPreferences = sqliteTable("user_preferences", {
+  userEmail: text("user_email").primaryKey(),
+  displayTimezone: text("display_timezone").notNull(),
+  replySignature: text("reply_signature").notNull().default(""),
+  personalCalendarDisplay: integer("personal_calendar_display", { mode: "boolean" }).notNull().default(true),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const mailItems = sqliteTable("mail_items", {
   id: text("id").primaryKey(),
   gmailMessageId: text("gmail_message_id"),

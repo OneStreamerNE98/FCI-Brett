@@ -53,6 +53,7 @@ test("declares durable records, uploads, and guarded integration endpoints", asy
 test("includes migrations and the Floor Coverings International logo asset", async () => {
   await Promise.all([
     access(new URL("drizzle/0000_glossy_nekra.sql", root)),
+    access(new URL("drizzle/0006_wide_sprite.sql", root)),
     access(new URL("public/floor-coverings-international-logo.png", root)),
     access(new URL("public/manifest.webmanifest", root)),
   ]);
@@ -82,6 +83,39 @@ test("adds a searchable, configurable inbox with draft-only personal replies", a
   assert.match(gmail, /createReplyDraft/);
   assert.match(gmail, /getReplyContext/);
   assert.match(manifest, /"display": "standalone"/);
+});
+
+test("keeps personal preferences scoped to the authenticated office user", async () => {
+  const [schema, preferencesApi] = await Promise.all([
+    read("app/api/v1/_workspace-data.ts"), read("app/api/v1/settings/me/route.ts"),
+  ]);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS user_preferences/);
+  assert.match(schema, /user_email TEXT PRIMARY KEY/);
+  assert.match(preferencesApi, /requireOfficeUser\(request\)/);
+  assert.match(preferencesApi, /requireSameOrigin\(request\)/);
+  assert.match(preferencesApi, /WHERE user_email = \?/);
+  assert.match(preferencesApi, /auth\.user\.email/);
+  assert.match(preferencesApi, /displayTimezone/);
+  assert.match(preferencesApi, /replySignature/);
+  assert.match(preferencesApi, /personalCalendarDisplay/);
+  assert.match(preferencesApi, /length > 2_000/);
+  assert.match(preferencesApi, /Intl\.DateTimeFormat/);
+});
+
+test("makes the shared-calendar plan explicit without treating personal calendars as the source of truth", async () => {
+  const [app, settingsApi, guide] = await Promise.all([
+    read("app/FloorOpsApp.tsx"), read("app/api/v1/settings/workspace/route.ts"), read("docs/google-workspace-organization.md"),
+  ]);
+  assert.match(app, /Create two shared FCI calendars/);
+  assert.match(app, /Personal availability policy/);
+  assert.match(app, /Use linked users’ free\/busy time only/);
+  assert.match(app, /Gmail and Calendar are separate/);
+  assert.match(app, /individual Google account connections are added/);
+  assert.match(settingsApi, /calendarSetupMode/);
+  assert.match(settingsApi, /appointmentCalendarId/);
+  assert.match(settingsApi, /personalAvailabilityPolicy/);
+  assert.match(guide, /Calendar ownership and sync/);
+  assert.match(guide, /Personal calendars are optional free\/busy sources only/);
 });
 
 test("models clients, independent projects, and review-first email filing", async () => {
