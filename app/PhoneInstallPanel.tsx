@@ -108,7 +108,7 @@ export function PhoneInstallPanel() {
     <ol className="fci-phone-install-steps">
       <li>Open this site in <strong>Safari</strong> on your iPhone or iPad.</li>
       <li>Tap <Share2 aria-label="Share" size={15} strokeWidth={2.2} className="fci-phone-install-inline-icon" /> <strong>Share</strong>.</li>
-      <li>Choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.</li>
+      <li>Choose <strong>Add to Home Screen</strong>, turn on <strong>Open as Web App</strong>, then tap <strong>Add</strong>.</li>
     </ol>
   );
 

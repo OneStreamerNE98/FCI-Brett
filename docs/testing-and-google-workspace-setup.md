@@ -95,7 +95,7 @@ Use **Settings → Google Workspace → Check readiness** to confirm that the pr
 Do not copy this site into Google Drive. Drive stores project files; the phone-friendly app is the hosted website itself. Open `https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/` on the phone, sign in to the same account that has access to the private site, and add it to the home screen:
 
 - **Android:** open the site in Chrome, tap the three-dot menu, then choose **Install app** or **Add to Home screen**.
-- **iPhone/iPad:** open the site in Safari, tap **Share**, then **Add to Home Screen** and **Add**.
+- **iPhone/iPad:** open the site in Safari, tap **Share**, then **Add to Home Screen**, turn on **Open as Web App**, and tap **Add**.
 
 The same instructions are shown in **Settings → Data & security → Use FCI Operations like a phone app**. Installation creates a shortcut/app window but does not make the site available offline or bypass the site's sign-in protection.
 
