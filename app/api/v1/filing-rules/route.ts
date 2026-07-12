@@ -11,7 +11,15 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const result = await env.DB.prepare("SELECT * FROM filing_rules ORDER BY priority ASC, created_at ASC").all();
-  const rules = result.results.length ? result.results.map((row) => ({ ...row, enabled: Boolean(row.enabled), approvalRequired: Boolean(row.approval_required) })) : DEFAULT_FILING_RULES;
+  const storedRules = result.results.map((row) => ({ ...row, enabled: Boolean(row.enabled), approvalRequired: Boolean(row.approval_required) }));
+  // Built-in rules must remain available after someone adds a custom policy.
+  // Custom policies are appended; none can cause a Gmail write from this route.
+  const builtInNames = new Set(DEFAULT_FILING_RULES.map((rule) => rule.name.toLowerCase()));
+  const overrides = new Map(storedRules.filter((rule) => builtInNames.has(String(rule.name).toLowerCase())).map((rule) => [String(rule.name).toLowerCase(), rule]));
+  const rules = [
+    ...DEFAULT_FILING_RULES.map((rule) => ({ ...rule, ...overrides.get(rule.name.toLowerCase()) })),
+    ...storedRules.filter((rule) => !builtInNames.has(String(rule.name).toLowerCase())),
+  ].sort((left, right) => Number(left.priority) - Number(right.priority));
   return NextResponse.json({ rules });
 }
 

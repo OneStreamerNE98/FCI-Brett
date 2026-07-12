@@ -22,15 +22,13 @@ function compact(value: unknown, maximum: number) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, maximum) : "";
 }
 
-function fallbackAnswer(project: ProjectRecord, evidence: Evidence[]): AssistantResponse {
-  const archiveCount = evidence.filter((item) => item.id.startsWith("email:")).length;
-  const contactCount = evidence.filter((item) => item.id.startsWith("contact:")).length;
+function fallbackAnswer(project: ProjectRecord, evidence: Evidence[], totals: { contacts: number; archives: number }): AssistantResponse {
   const facts = [
     `${project.project_number} — ${project.name} for ${project.client_name} is currently ${project.status}.`,
     project.site ? `Site: ${project.site}.` : "Site is not recorded yet.",
     project.project_manager ? `Project manager: ${project.project_manager}.` : "Project manager is not recorded yet.",
-    project.estimated_value ? `Estimated value: $${Number(project.estimated_value).toLocaleString()}.` : "Estimated value is not recorded yet.",
-    `${contactCount} client contact${contactCount === 1 ? " is" : "s are"} available and ${archiveCount} review-approved email archive${archiveCount === 1 ? " is" : "s are"} linked to this project.`,
+    project.estimated_value !== null ? `Estimated value: $${Number(project.estimated_value).toLocaleString()}.` : "Estimated value is not recorded yet.",
+    `${totals.contacts} client contact${totals.contacts === 1 ? " is" : "s are"} available and ${totals.archives} review-approved email archive${totals.archives === 1 ? " is" : "s are"} linked to this project.`,
   ];
   return {
     mode: "records-only",
@@ -43,21 +41,23 @@ function fallbackAnswer(project: ProjectRecord, evidence: Evidence[]): Assistant
 async function projectEvidence(projectId: string) {
   const project = await env.DB.prepare("SELECT p.id, p.project_number, p.name, p.status, p.site, p.project_manager, p.estimated_value, c.id AS client_id, c.name AS client_name, c.client_code FROM projects p JOIN clients c ON c.id = p.client_id WHERE p.id = ?").bind(projectId).first<ProjectRecord>();
   if (!project) return null;
-  const [contacts, archives, events] = await Promise.all([
-    env.DB.prepare("SELECT id, name, email, role FROM contacts WHERE client_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 8").bind(project.client_id).all<{ id: string; name: string; email: string | null; role: string | null }>(),
+  const [contacts, archives, events, contactCount, archiveCount] = await Promise.all([
+    env.DB.prepare("SELECT id, name, email, role, is_primary FROM contacts WHERE client_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 8").bind(project.client_id).all<{ id: string; name: string; email: string | null; role: string | null; is_primary: number }>(),
     env.DB.prepare("SELECT id, attachment_count, filed_at FROM gmail_file_archives WHERE project_id = ? AND status = 'filed' ORDER BY filed_at DESC LIMIT 6").bind(projectId).all<{ id: string; attachment_count: number; filed_at: number | null }>(),
     env.DB.prepare("SELECT id, action, detail, created_at FROM activity_events WHERE record_id = ? ORDER BY created_at DESC LIMIT 6").bind(projectId).all<{ id: string; action: string; detail: string | null; created_at: number }>(),
+    env.DB.prepare("SELECT COUNT(*) AS total FROM contacts WHERE client_id = ?").bind(project.client_id).first<{ total: number }>(),
+    env.DB.prepare("SELECT COUNT(*) AS total FROM gmail_file_archives WHERE project_id = ? AND status = 'filed'").bind(projectId).first<{ total: number }>(),
   ]);
   const evidence: Evidence[] = [
     {
       id: `project:${project.id}`,
       label: `Project record · ${project.project_number}`,
-      detail: `${project.name} · ${project.client_name} · ${project.status}${project.site ? ` · ${project.site}` : ""}`,
+      detail: `${project.name} · ${project.client_name} · ${project.status}${project.site ? ` · ${project.site}` : ""}${project.project_manager ? ` · Project manager: ${project.project_manager}` : ""}${project.estimated_value !== null ? ` · Estimated value: $${Number(project.estimated_value).toLocaleString()}` : ""}`,
     },
     ...contacts.results.map((contact) => ({
       id: `contact:${contact.id}`,
       label: `Client contact · ${contact.name}`,
-      detail: `${contact.role ?? "Contact"}${contact.email ? ` · ${contact.email}` : ""}`,
+      detail: `${contact.is_primary ? "Primary contact · " : ""}${contact.role ?? "Contact"}${contact.email ? ` · ${contact.email}` : ""}`,
     })),
     ...archives.results.map((archive) => ({
       id: `email:${archive.id}`,
@@ -70,7 +70,7 @@ async function projectEvidence(projectId: string) {
       detail: compact(event.detail, 280) || new Date(event.created_at).toLocaleString(),
     })),
   ].slice(0, 16);
-  return { project, evidence };
+  return { project, evidence, totals: { contacts: Number(contactCount?.total ?? 0), archives: Number(archiveCount?.total ?? 0) } };
 }
 
 function parseGroundedOutput(value: unknown, allowed: Map<string, Evidence>) {
@@ -88,9 +88,12 @@ async function askModel(question: string, project: ProjectRecord, evidence: Evid
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   const evidenceText = evidence.map((item) => `${item.id}\n${item.label}\n${item.detail}`).join("\n\n");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    signal: controller.signal,
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4",
       input: [
@@ -115,7 +118,7 @@ async function askModel(question: string, project: ProjectRecord, evidence: Evid
         },
       },
     }),
-  });
+  }).finally(() => clearTimeout(timeout));
   if (!response.ok) return null;
   const data = await response.json() as { output_text?: string };
   if (!data.output_text) return null;
@@ -131,7 +134,11 @@ export async function POST(request: NextRequest) {
   if (originError) return originError;
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
-  const body = await request.json().catch(() => null) as { question?: unknown; projectId?: unknown } | null;
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > 9_000) return NextResponse.json({ error: "Question request is too large." }, { status: 413 });
+  const rawBody = await request.text();
+  if (new TextEncoder().encode(rawBody).byteLength > 9_000) return NextResponse.json({ error: "Question request is too large." }, { status: 413 });
+  const body = (() => { try { return JSON.parse(rawBody) as { question?: unknown; projectId?: unknown }; } catch { return null; } })();
   const question = typeof body?.question === "string" ? body.question.trim() : "";
   const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
   if (!question) return NextResponse.json({ error: "question is required" }, { status: 400 });
@@ -140,7 +147,7 @@ export async function POST(request: NextRequest) {
   await ensureWorkspaceSchema();
   const context = await projectEvidence(projectId);
   if (!context) return NextResponse.json({ error: "Project not found." }, { status: 404 });
-  const fallback = fallbackAnswer(context.project, context.evidence);
+  const fallback = fallbackAnswer(context.project, context.evidence, context.totals);
   const model = await askModel(question, context.project, context.evidence).catch(() => null);
   const payload: AssistantResponse = model
     ? { mode: "ai-grounded", answer: model.answer, citations: model.citations, missingEvidence: model.missingEvidence }

@@ -45,6 +45,9 @@ test("declares durable records, uploads, and guarded integration endpoints", asy
   assert.match(assistantApi, /projectEvidence/);
   assert.match(assistantApi, /citationIds/);
   assert.match(assistantApi, /records-only/);
+  assert.match(assistantApi, /SELECT COUNT\(\*\) AS total FROM contacts/);
+  assert.match(assistantApi, /AbortController/);
+  assert.match(assistantApi, /Question request is too large/);
 });
 
 test("includes migrations and the Floor Coverings International logo asset", async () => {
@@ -66,6 +69,8 @@ test("adds a searchable, configurable inbox with draft-only personal replies", a
   assert.match(app, /Calendar & appointments/);
   assert.match(app, /My account/);
   assert.match(app, /WorkspaceDefaultsPanel/);
+  assert.match(app, /Shared Google test account/);
+  assert.match(app, /reset to its built-in default/);
   assert.match(searchApi, /contacts ct JOIN clients/);
   assert.match(searchApi, /ESCAPE/);
   assert.match(settingsApi, /workspace_settings/);
@@ -95,6 +100,21 @@ test("models clients, independent projects, and review-first email filing", asyn
   assert.match(rulesApi, /approval_required/);
   assert.match(workspace, /needs-project-selection/);
   assert.match(workspace, /FCI\/Needs Review/);
+});
+
+test("applies enabled built-in filing rules to inbox hints without automatic Gmail writes", async () => {
+  const [app, workspace, rulesApi] = await Promise.all([
+    read("app/FloorOpsApp.tsx"), read("app/lib/google-workspace.ts"), read("app/api/v1/filing-rules/route.ts"),
+  ]);
+  assert.match(app, /evaluateInboxFilingRules/);
+  assert.match(app, /clients=\{clients\} rules=\{filingRules\}/);
+  assert.match(app, /Paused rules do not influence suggestions/);
+  assert.match(workspace, /export function evaluateInboxFilingRules/);
+  assert.match(workspace, /filter\(\(\{ rule \}\) => rule\.enabled\)/);
+  assert.match(workspace, /requiresManualReview: true/);
+  assert.match(workspace, /multiple-project-client/);
+  assert.match(rulesApi, /Built-in rules must remain available/);
+  assert.doesNotMatch(workspace, /applyFiledLabel/);
 });
 
 test("keeps the app authoritative while mirroring clients and projects to Google Sheets", async () => {

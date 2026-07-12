@@ -63,6 +63,8 @@ Do not put project folders beneath a client folder. A client can have many proje
 
 Configure rules in **FCI Operations → Settings → Inbox & file rules**. Each rule has a priority, matching criteria, action, destination category, and mandatory approval. Keep the rules review-first: rules may suggest a project or send a message to review, but they never file a message without the office user choosing the exact independent project.
 
+The first prototype actively evaluates the three built-in rules below in priority order. Pausing a built-in rule immediately removes that matcher from inbox suggestions. Custom free-text rules are saved as review-first policies, but do not run automatically until a supported matcher is added.
+
 Recommended matching order:
 
 1. Exact project number in subject or message body → suggest that project.
