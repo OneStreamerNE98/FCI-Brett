@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { normalizeGmailBucket, normalizeGmailSearch } from "../../../../../../lib/google-gmail";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
-import { getTestGmailClient, gmailErrorResponse } from "../_route-helpers";
+import { getWorkspaceGmailClient, gmailErrorResponse } from "../_route-helpers";
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
 
   try {
-    const { client } = await getTestGmailClient();
+    const { client } = await getWorkspaceGmailClient();
     const bucket = normalizeGmailBucket(request.nextUrl.searchParams.get("label"));
     const search = normalizeGmailSearch(request.nextUrl.searchParams.get("q"));
     const labelId = await client.labelIdForBucket(bucket);

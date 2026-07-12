@@ -51,6 +51,32 @@ export const contacts = sqliteTable("contacts", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
+/** Durable sales opportunities captured before they become client projects. */
+export const leads = sqliteTable("leads", {
+  id: text("id").primaryKey(),
+  leadNumber: text("lead_number").notNull(),
+  company: text("company").notNull(),
+  contactName: text("contact_name").notNull(),
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  projectName: text("project_name").notNull(),
+  source: text("source").notNull(),
+  stage: text("stage").notNull(),
+  site: text("site").notNull(),
+  estimatedValue: integer("estimated_value").notNull(),
+  nextAction: text("next_action").notNull(),
+  nextActionAt: integer("next_action_at", { mode: "timestamp_ms" }),
+  ownerEmail: text("owner_email").notNull(),
+  status: text("status").notNull().default("active"),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  uniqueIndex("leads_number_unique").on(table.leadNumber),
+  index("leads_status_updated_idx").on(table.status, table.updatedAt),
+  index("leads_stage_updated_idx").on(table.stage, table.updatedAt),
+]);
+
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
   projectNumber: text("project_number").notNull(),
@@ -66,6 +92,28 @@ export const projects = sqliteTable("projects", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+/** Project-specific meeting notes, including manual or Otter-derived evidence. */
+export const projectMeetings = sqliteTable("project_meetings", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull(),
+  title: text("title").notNull(),
+  meetingAt: integer("meeting_at", { mode: "timestamp_ms" }).notNull(),
+  meetingType: text("meeting_type").notNull(),
+  sourceProvider: text("source_provider").notNull(),
+  sourceUrl: text("source_url"),
+  attendeesJson: text("attendees_json", { mode: "json" }).notNull(),
+  notes: text("notes"),
+  transcript: text("transcript"),
+  summary: text("summary"),
+  decisions: text("decisions"),
+  actionItemsJson: text("action_items_json", { mode: "json" }).notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  index("project_meetings_project_date_idx").on(table.projectId, table.meetingAt),
+]);
 
 export const filingRules = sqliteTable("filing_rules", {
   id: text("id").primaryKey(),
@@ -95,7 +143,6 @@ export const userPreferences = sqliteTable("user_preferences", {
   userEmail: text("user_email").primaryKey(),
   displayTimezone: text("display_timezone").notNull(),
   replySignature: text("reply_signature").notNull().default(""),
-  personalCalendarDisplay: integer("personal_calendar_display", { mode: "boolean" }).notNull().default(true),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -248,4 +295,11 @@ export const googleIntegrationEvents = sqliteTable("google_integration_events", 
   entityId: text("entity_id"),
   detail: text("detail"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+/** Durable local-only fixtures used by Workspace simulation mode. */
+export const workspaceSimulationState = sqliteTable("workspace_simulation_state", {
+  id: text("id").primaryKey(),
+  stateJson: text("state_json", { mode: "json" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

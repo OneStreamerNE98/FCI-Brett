@@ -12,7 +12,6 @@ export type WorkspacePreferences = {
   calendarSetupMode: "create-shared" | "use-existing";
   appointmentCalendarId: string;
   fieldCalendarId: string;
-  personalAvailabilityPolicy: "free-busy" | "off";
   calendarEditPolicy: "app-authoritative";
   appointmentReminderHours: number;
   crewReminderHours: number;
@@ -27,7 +26,6 @@ const defaults: WorkspacePreferences = {
   calendarSetupMode: "create-shared",
   appointmentCalendarId: "",
   fieldCalendarId: "",
-  personalAvailabilityPolicy: "free-busy",
   calendarEditPolicy: "app-authoritative",
   appointmentReminderHours: 24,
   crewReminderHours: 24,
@@ -56,10 +54,6 @@ function cleanCalendarMode(value: unknown): WorkspacePreferences["calendarSetupM
   return value === "use-existing" ? "use-existing" : "create-shared";
 }
 
-function cleanAvailabilityPolicy(value: unknown): WorkspacePreferences["personalAvailabilityPolicy"] {
-  return value === "off" ? "off" : "free-busy";
-}
-
 function cleanOptionalText(value: unknown, maximum: number) {
   if (typeof value !== "string") return "";
   return value.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, maximum);
@@ -74,7 +68,6 @@ function normalizeSettings(value: unknown): WorkspacePreferences {
     calendarSetupMode: cleanCalendarMode(input.calendarSetupMode),
     appointmentCalendarId: cleanOptionalText(input.appointmentCalendarId, 320),
     fieldCalendarId: cleanOptionalText(input.fieldCalendarId, 320),
-    personalAvailabilityPolicy: cleanAvailabilityPolicy(input.personalAvailabilityPolicy),
     calendarEditPolicy: "app-authoritative",
     appointmentReminderHours: cleanHours(input.appointmentReminderHours, defaults.appointmentReminderHours),
     crewReminderHours: cleanHours(input.crewReminderHours, defaults.crewReminderHours),

@@ -6,7 +6,7 @@ const MAX_SEARCH_QUERY_LENGTH = 240;
 const MAX_ARCHIVE_MESSAGE_PARTS = 160;
 const MEBIBYTE = 1024 * 1024;
 
-// Archive retrieval happens in the request path for the personal test profile.
+// Archive retrieval happens in the request path for the connected Workspace mailbox.
 // Keep the hard caps here (rather than trusting a caller) so a malformed message
 // cannot make the worker fetch an unbounded attachment tree.
 export const GMAIL_ARCHIVE_LIMITS = {
@@ -337,42 +337,42 @@ export function normalizeGmailSearch(value: string | null) {
   return query;
 }
 
-export function assertTestGmailConnection(config: GoogleRuntimeConfig) {
-  if (config.environment !== "test") {
-    throw new GoogleIntegrationError("gmail_test_only", "Gmail actions are available only for the isolated personal test profile.", 403);
-  }
+export function assertWorkspaceGmailConnection(config: GoogleRuntimeConfig) {
   if (!config.oauthReady) {
-    throw new GoogleIntegrationError("google_configuration_required", "Complete the Google test setup before using Gmail.", 409);
+    throw new GoogleIntegrationError("google_configuration_required", "Complete the Google Workspace setup before using Gmail.", 409);
   }
   if (!config.gmailEnabled) {
-    throw new GoogleIntegrationError("gmail_test_not_enabled", "Enable Gmail for the personal test profile, then reconnect Google to approve its permissions.", 409);
+    throw new GoogleIntegrationError("gmail_not_enabled", "Enable Gmail for the Google Workspace connection, then reconnect Google to approve its permissions.", 409);
   }
 }
 
-export function validateTestRecipient(value: unknown, config: GoogleRuntimeConfig) {
+export function validateWorkspaceRecipient(value: unknown, config: GoogleRuntimeConfig) {
+  if (config.simulation) return "workspace-simulation@fci.example";
+  if (value === undefined && config.intakeMailbox) return config.intakeMailbox;
   if (value === undefined && config.expectedGoogleEmails.length === 1) {
     return config.expectedGoogleEmails[0];
   }
   if (typeof value !== "string") {
-    throw new GoogleIntegrationError("invalid_test_recipient", "Choose an approved personal test email address.", 400);
+    throw new GoogleIntegrationError("invalid_workspace_recipient", "Choose an approved Google Workspace email address.", 400);
   }
   const recipient = value.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || !config.expectedGoogleEmails.includes(recipient)) {
-    throw new GoogleIntegrationError("invalid_test_recipient", "Test messages can only be sent to the approved personal Google account.", 403);
+  const domain = recipient.split("@")[1] ?? "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || (!config.expectedGoogleEmails.includes(recipient) && !config.allowedDomains.includes(domain))) {
+    throw new GoogleIntegrationError("invalid_workspace_recipient", "Test messages can only be sent inside the approved Google Workspace domain.", 403);
   }
   return recipient;
 }
 
-export function validateTestMessageInput(input: Record<string, unknown>) {
-  const subject = input.subject === undefined ? "FCI Gmail integration test" : input.subject;
+export function validateWorkspaceMessageInput(input: Record<string, unknown>) {
+  const subject = input.subject === undefined ? "FCI Workspace integration test" : input.subject;
   const body = input.body === undefined
     ? "This is a safe test message from Floor Coverings International Operations."
     : input.body;
   if (typeof subject !== "string" || typeof body !== "string") {
-    throw new GoogleIntegrationError("invalid_test_message", "The test subject and message must be text.", 400);
+    throw new GoogleIntegrationError("invalid_workspace_message", "The test subject and message must be text.", 400);
   }
   if (subject.length > 180 || body.length > 4_000 || /[\r\n]/.test(subject)) {
-    throw new GoogleIntegrationError("invalid_test_message", "Use a single-line subject of 180 characters or fewer and a message of 4,000 characters or fewer.", 400);
+    throw new GoogleIntegrationError("invalid_workspace_message", "Use a single-line subject of 180 characters or fewer and a message of 4,000 characters or fewer.", 400);
   }
   return { subject: subject.trim(), body: body.trim() };
 }
@@ -457,7 +457,7 @@ export class GoogleGmailClient {
       throw new GoogleIntegrationError("gmail_reauthorization_required", "Google authorization needs to be reconnected.", 409);
     }
     if (response.status === 403) {
-      throw new GoogleIntegrationError("gmail_permission_denied", "The personal test account did not grant Gmail permission. Reconnect and approve Gmail access.", 403);
+      throw new GoogleIntegrationError("gmail_permission_denied", "The Google Workspace account did not grant Gmail permission. Reconnect and approve Gmail access.", 403);
     }
     if (response.status === 404) {
       throw new GoogleIntegrationError("gmail_not_found", "The requested Gmail message or label was not found.", 404);

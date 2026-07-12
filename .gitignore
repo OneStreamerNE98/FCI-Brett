@@ -30,6 +30,17 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.dev.vars
+
+# local credentials and private business exports
+client_secret*.json
+*credentials*.json
+*.sqlite
+*.sqlite3
+*.db
+/exports/
+/transcripts/
+/uploads/
 
 # vercel
 .vercel

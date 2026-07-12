@@ -1,20 +1,22 @@
 import { NextResponse } from "next/server";
-import { GoogleGmailClient, assertTestGmailConnection } from "../../../../../lib/google-gmail";
-import { GoogleIntegrationError, assertGoogleTestService, getGoogleAccessToken, getGoogleRuntimeConfig, type GoogleRuntimeConfig } from "../../../../../lib/google-oauth";
+import { GoogleGmailClient, assertWorkspaceGmailConnection } from "../../../../../lib/google-gmail";
+import { GoogleIntegrationError, assertGoogleService, getGoogleAccessToken, getGoogleRuntimeConfig, type GoogleRuntimeConfig } from "../../../../../lib/google-oauth";
+import { WorkspaceSimulationGmailClient } from "../../../../../lib/workspace-simulation";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 
 export function gmailErrorResponse(error: unknown) {
   if (error instanceof GoogleIntegrationError) {
     return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
   }
-  return NextResponse.json({ error: "Gmail test integration could not complete that request." }, { status: 500 });
+  return NextResponse.json({ error: "The Workspace Gmail integration could not complete that request." }, { status: 500 });
 }
 
-export async function getTestGmailClient(): Promise<{ config: GoogleRuntimeConfig; client: GoogleGmailClient }> {
+export async function getWorkspaceGmailClient(): Promise<{ config: GoogleRuntimeConfig; client: GoogleGmailClient | WorkspaceSimulationGmailClient }> {
   await ensureWorkspaceSchema();
   const config = getGoogleRuntimeConfig();
-  assertTestGmailConnection(config);
-  assertGoogleTestService(config, "gmail");
+  assertWorkspaceGmailConnection(config);
+  assertGoogleService(config, "gmail");
+  if (config.simulation) return { config, client: new WorkspaceSimulationGmailClient() };
   const accessToken = await getGoogleAccessToken(config, "gmail");
   return { config, client: new GoogleGmailClient(accessToken) };
 }

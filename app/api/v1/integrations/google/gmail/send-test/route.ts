@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateTestMessageInput, validateTestRecipient } from "../../../../../../lib/google-gmail";
+import { validateWorkspaceMessageInput, validateWorkspaceRecipient } from "../../../../../../lib/google-gmail";
 import { writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
-import { getTestGmailClient, gmailErrorResponse, readBoundedJson } from "../_route-helpers";
+import { getWorkspaceGmailClient, gmailErrorResponse, readBoundedJson } from "../_route-helpers";
 
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
 
   try {
     const input = await readBoundedJson(request, 6_000);
-    const { config, client } = await getTestGmailClient();
-    const recipient = validateTestRecipient(input.to, config);
-    const message = validateTestMessageInput(input);
+    const { config, client } = await getWorkspaceGmailClient();
+    const recipient = validateWorkspaceRecipient(input.to, config);
+    const message = validateWorkspaceMessageInput(input);
     const sent = await client.sendTestMessage({ recipient, ...message });
     await writeGoogleIntegrationEvent(
       config,
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       auth.user.email,
       "gmail-message",
       sent.id,
-      `recipient=${recipient};environment=test`,
+      `recipient=${recipient};mode=${config.environment}`,
     );
     return NextResponse.json(
       { sent: true, recipient, message: sent },

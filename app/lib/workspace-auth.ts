@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { env } from "cloudflare:workers";
 
 export type OfficeUser = {
   email: string;
@@ -6,6 +7,11 @@ export type OfficeUser = {
 };
 
 type AuthResult = { user: OfficeUser } | { response: NextResponse };
+type RuntimeEnvironment = Record<string, string | undefined>;
+
+function runtimeValue(name: string) {
+  return (env as unknown as RuntimeEnvironment)[name] ?? process.env[name];
+}
 
 function emailList(value: string | undefined) {
   return (value ?? "")
@@ -22,15 +28,15 @@ function domainList(value: string | undefined) {
 }
 
 function isAllowedOfficeEmail(email: string) {
-  const allowedEmails = emailList(process.env.FCI_OFFICE_EMAILS);
-  const allowedDomains = domainList(process.env.FCI_OFFICE_DOMAINS);
-  if (allowedEmails.length === 0 && allowedDomains.length === 0) return true;
+  const allowedEmails = emailList(runtimeValue("FCI_OFFICE_EMAILS"));
+  const allowedDomains = domainList(runtimeValue("FCI_OFFICE_DOMAINS"));
+  if (allowedEmails.length === 0 && allowedDomains.length === 0) return false;
   const domain = email.split("@")[1] ?? "";
   return allowedEmails.includes(email) || allowedDomains.includes(domain);
 }
 
 function isConfiguredAdmin(email: string) {
-  return emailList(process.env.FCI_ADMIN_EMAILS).includes(email);
+  return emailList(runtimeValue("FCI_ADMIN_EMAILS")).includes(email);
 }
 
 function localDevelopmentEmail(request: NextRequest) {
@@ -39,20 +45,25 @@ function localDevelopmentEmail(request: NextRequest) {
   if (process.env.NODE_ENV !== "development") return null;
   const hostname = request.nextUrl.hostname.toLowerCase();
   if (hostname !== "localhost" && hostname !== "127.0.0.1" && hostname !== "::1" && hostname !== "[::1]") return null;
-  return process.env.FCI_LOCAL_DEV_USER_EMAIL?.trim().toLowerCase() || null;
+  return runtimeValue("FCI_LOCAL_DEV_USER_EMAIL")?.trim().toLowerCase() || null;
 }
 
 export function requireOfficeUser(request: NextRequest, options: { admin?: boolean } = {}): AuthResult {
-  const email = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase() ?? localDevelopmentEmail(request);
+  const developmentEmail = localDevelopmentEmail(request);
+  const email = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase() ?? developmentEmail;
   if (!email) {
     return { response: NextResponse.json({ error: "Sign in with ChatGPT to use this workspace." }, { status: 401 }) };
   }
-  if (!isAllowedOfficeEmail(email)) {
-    return { response: NextResponse.json({ error: "Your account is not allowed to access this workspace." }, { status: 403 }) };
+  if (email !== developmentEmail && !isAllowedOfficeEmail(email)) {
+    const configured = Boolean(runtimeValue("FCI_OFFICE_EMAILS") || runtimeValue("FCI_OFFICE_DOMAINS"));
+    const error = configured
+      ? "Your account is not allowed to access this workspace."
+      : "Office access is not configured. Set FCI_OFFICE_EMAILS or FCI_OFFICE_DOMAINS before using the hosted app.";
+    return { response: NextResponse.json({ error }, { status: 403 }) };
   }
   const isAdmin = isConfiguredAdmin(email);
   if (options.admin && !isAdmin) {
-    const message = process.env.FCI_ADMIN_EMAILS ? "An FCI administrator must complete this action." : "Set FCI_ADMIN_EMAILS before enabling Google Workspace administration.";
+    const message = runtimeValue("FCI_ADMIN_EMAILS") ? "An FCI administrator must complete this action." : "Set FCI_ADMIN_EMAILS before enabling Google Workspace administration.";
     return { response: NextResponse.json({ error: message }, { status: 403 }) };
   }
   return { user: { email, isAdmin } };

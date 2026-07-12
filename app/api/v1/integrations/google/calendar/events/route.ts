@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleIntegrationError, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth";
-import { listTestCalendarEvents } from "../../../../../../lib/google-calendar-client";
+import { listWorkspaceCalendarEvents } from "../../../../../../lib/google-calendar-client";
+import { listSimulationCalendarEvents } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 
@@ -17,19 +18,16 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const config = getGoogleRuntimeConfig();
-  if (config.environment !== "test") {
-    return noStore({ error: "Calendar testing is available only in the isolated personal test profile." }, { status: 403 });
-  }
   if (!config.calendarEnabled) {
-    return noStore({ error: "Enable Calendar for the personal test profile and reconnect Google before testing Calendar." }, { status: 409 });
+    return noStore({ error: "Enable Calendar for the Google Workspace connection before using appointments." }, { status: 409 });
   }
 
   try {
-    return noStore(await listTestCalendarEvents(config, auth.user.email));
+    return noStore(config.simulation ? await listSimulationCalendarEvents() : await listWorkspaceCalendarEvents(config, auth.user.email));
   } catch (error) {
     if (error instanceof GoogleIntegrationError) {
       return noStore({ error: error.message, code: error.code }, { status: error.status });
     }
-    return noStore({ error: "The test Calendar could not be read. Try again." }, { status: 503 });
+    return noStore({ error: "The Workspace Calendar could not be read. Try again." }, { status: 503 });
   }
 }

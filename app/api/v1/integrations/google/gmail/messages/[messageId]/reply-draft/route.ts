@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateGmailMessageId, validateReplyDraftBody, validateTestRecipient } from "../../../../../../../../lib/google-gmail";
+import { validateGmailMessageId, validateReplyDraftBody, validateWorkspaceRecipient } from "../../../../../../../../lib/google-gmail";
 import { writeGoogleIntegrationEvent } from "../../../../../../../../lib/google-oauth";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../../lib/workspace-auth";
-import { getTestGmailClient, gmailErrorResponse, readBoundedJson } from "../../../_route-helpers";
+import { getWorkspaceGmailClient, gmailErrorResponse, readBoundedJson } from "../../../_route-helpers";
 
 /**
- * Personal-test reply flow: this saves an unsent Gmail draft addressed only to
- * the approved test account. It intentionally never sends email from the app.
+ * Saves an unsent Workspace Gmail draft in the source thread. Simulation mode
+ * stores the draft only in local simulation state and never contacts Google.
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ messageId: string }> }) {
   const originError = requireSameOrigin(request);
@@ -18,9 +18,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     const { messageId } = await context.params;
     const safeMessageId = validateGmailMessageId(messageId);
     const replyBody = validateReplyDraftBody(body.body);
-    const { config, client } = await getTestGmailClient();
+    const { config, client } = await getWorkspaceGmailClient();
     const reply = await client.getReplyContext(safeMessageId);
-    const recipient = validateTestRecipient(reply.recipient, config);
+    const recipient = validateWorkspaceRecipient(reply.recipient, config);
     const draft = await client.createReplyDraft({ ...reply, recipient, body: replyBody });
     await writeGoogleIntegrationEvent(
       config,
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
       auth.user.email,
       "gmail-message",
       safeMessageId,
-      `recipient=${recipient};thread=${reply.threadId};environment=test;sent=false`,
+      `recipient=${recipient};thread=${reply.threadId};mode=${config.environment};sent=false`,
     );
     return NextResponse.json({ draftSaved: true, recipient, subject: reply.subject, draft, sent: false }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

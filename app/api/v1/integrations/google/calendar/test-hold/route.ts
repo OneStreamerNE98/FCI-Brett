@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleIntegrationError, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth";
-import { createTestCalendarHold } from "../../../../../../lib/google-calendar-client";
+import { createWorkspaceCalendarHold } from "../../../../../../lib/google-calendar-client";
+import { createSimulationCalendarHold } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 
@@ -44,11 +45,8 @@ export async function POST(request: NextRequest) {
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const config = getGoogleRuntimeConfig();
-  if (config.environment !== "test") {
-    return noStore({ error: "Calendar testing is available only in the isolated personal test profile." }, { status: 403 });
-  }
   if (!config.calendarEnabled) {
-    return noStore({ error: "Enable Calendar for the personal test profile and reconnect Google before testing Calendar." }, { status: 409 });
+    return noStore({ error: "Enable Calendar for the Google Workspace connection before testing appointments." }, { status: 409 });
   }
 
   let body: Record<string, unknown> = {};
@@ -70,11 +68,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const start = parseStart(body.start);
-    return noStore({ event: await createTestCalendarHold(config, auth.user.email, start) }, { status: 201 });
+    return noStore({ event: config.simulation ? await createSimulationCalendarHold(start) : await createWorkspaceCalendarHold(config, auth.user.email, start), simulated: config.simulation }, { status: 201 });
   } catch (error) {
     if (error instanceof GoogleIntegrationError) {
       return noStore({ error: error.message, code: error.code }, { status: error.status });
     }
-    return noStore({ error: "The test Calendar hold could not be created. Check Calendar before retrying." }, { status: 503 });
+    return noStore({ error: "The Workspace Calendar hold could not be created. Check Calendar before retrying." }, { status: 503 });
   }
 }

@@ -76,7 +76,7 @@ export type GoogleSheetMirrorStatus = {
 export type GoogleSheetSyncResult = {
   clients: { inserted: number; updated: number; total: number };
   projects: { total: number };
-  spreadsheetUrl: string;
+  spreadsheetUrl: string | null;
   completedAt: number;
 };
 
@@ -301,21 +301,32 @@ async function updateSyncState(config: GoogleRuntimeConfig, entityType: "clients
 }
 
 function configuredMirrorError(config: GoogleRuntimeConfig) {
-  if (config.clientDirectorySheetIdInvalid) return new GoogleIntegrationError("invalid_sheet_id", "The Client Directory spreadsheet ID is invalid. Check the Google test profile configuration.", 503);
+  if (config.simulation) return null;
+  if (config.clientDirectorySheetIdInvalid) return new GoogleIntegrationError("invalid_sheet_id", "The Client Directory spreadsheet ID is invalid. Check the Google Workspace configuration.", 503);
   if (!config.clientDirectorySheetId) return new GoogleIntegrationError("sheet_not_configured", "Set the Client Directory spreadsheet ID before syncing clients and projects.", 409);
-  if (!config.sheetsEnabled) return new GoogleIntegrationError("sheets_not_enabled", "Enable the Sheets service for this Google profile, then reconnect Google.", 409);
+  if (!config.sheetsEnabled) return new GoogleIntegrationError("sheets_not_enabled", "Enable Sheets for the Google Workspace connection, then reconnect Google.", 409);
   return null;
 }
 
 export async function syncGoogleDirectory(config: GoogleRuntimeConfig, actor: string): Promise<GoogleSheetSyncResult> {
   const configurationError = configuredMirrorError(config);
   if (configurationError) throw configurationError;
-  const spreadsheetId = config.clientDirectorySheetId!;
+  const spreadsheetId = config.simulation ? "workspace-simulation-sheet" : config.clientDirectorySheetId!;
   await Promise.all([
     updateSyncState(config, "clients", { status: "syncing", actor }),
     updateSyncState(config, "projects", { status: "syncing", actor }),
   ]);
   try {
+    if (config.simulation) {
+      const [clients, projects] = await Promise.all([loadClientRows(config.connectionKey), loadProjectRows(config.connectionKey)]);
+      const completedAt = Date.now();
+      await Promise.all([
+        updateSyncState(config, "clients", { status: "synced", syncedAt: completedAt, actor }),
+        updateSyncState(config, "projects", { status: "synced", syncedAt: completedAt, actor }),
+      ]);
+      await writeGoogleIntegrationEvent(config, "sheets.simulation_directory_synced", actor, "workspace-simulation", spreadsheetId, JSON.stringify({ clients: clients.length, projects: projects.length }));
+      return { clients: { inserted: 0, updated: clients.length, total: clients.length }, projects: { total: projects.length }, spreadsheetUrl: null, completedAt };
+    }
     const accessToken = await getGoogleAccessToken(config, "sheets");
     const client = new GoogleSheetsClient(accessToken, spreadsheetId);
     const { clientSheet, projectSheet } = await ensureSheetTabs(client);
@@ -345,7 +356,7 @@ export async function trySyncGoogleDirectory(config: GoogleRuntimeConfig, actor:
   if (configuredMirrorError(config)) return { status: "not-configured" as const, message: "The Google Sheet mirror is not configured yet." };
   try {
     const result = await syncGoogleDirectory(config, actor);
-    return { status: "synced" as const, message: "Saved and synced to Google Sheets.", result };
+    return { status: "synced" as const, message: config.simulation ? "Saved and synced to the local Workspace simulation." : "Saved and synced to Google Sheets.", result };
   } catch (error) {
     const detail = errorDetails(error);
     return { status: "pending" as const, message: `Saved in FCI Operations; Google Sheet sync needs attention: ${detail.message}`, error: detail };
@@ -359,21 +370,22 @@ export async function getGoogleSheetMirrorStatus(config: GoogleRuntimeConfig, co
   const byType = new Map((states.results ?? []).map((state) => [state.entity_type, state]));
   const clients = byType.get("clients");
   const projects = byType.get("projects");
-  const configured = Boolean(config.clientDirectorySheetId) && !config.clientDirectorySheetIdInvalid;
+  const configured = config.simulation || Boolean(config.clientDirectorySheetId) && !config.clientDirectorySheetIdInvalid;
   const enabled = config.sheetsEnabled;
   const connected = connection.services.sheets;
   let reason: string | null = null;
-  if (config.clientDirectorySheetIdInvalid) reason = "The configured spreadsheet ID is invalid.";
-  else if (!configured) reason = "Add the Client Directory spreadsheet ID to the active Google profile.";
-  else if (!enabled) reason = "Enable Google Sheets for the active profile, then reconnect Google.";
+  if (config.simulation) reason = null;
+  else if (config.clientDirectorySheetIdInvalid) reason = "The configured spreadsheet ID is invalid.";
+  else if (!configured) reason = "Add the Client Directory spreadsheet ID to Google Workspace settings.";
+  else if (!enabled) reason = "Enable Google Sheets for the Workspace connection, then reconnect Google.";
   else if (!connected) reason = "Reconnect Google and approve the Sheets permission.";
   const lastSyncedAt = Math.max(clients?.last_synced_at ?? 0, projects?.last_synced_at ?? 0) || null;
   return {
     configured,
     enabled,
     connected,
-    spreadsheetUrl: configured ? sheetUrl(config.clientDirectorySheetId!) : null,
-    spreadsheetName: configured ? "Client Directory" : null,
+    spreadsheetUrl: config.simulation ? null : configured ? sheetUrl(config.clientDirectorySheetId!) : null,
+    spreadsheetName: config.simulation ? "Simulated Client Directory" : configured ? "Client Directory" : null,
     clients: { status: clients?.status ?? "not-synced", lastSyncedAt: clients?.last_synced_at ?? null, lastError: clients?.last_error_message ?? null },
     projects: { status: projects?.status ?? "not-synced", lastSyncedAt: projects?.last_synced_at ?? null, lastError: projects?.last_error_message ?? null },
     lastSyncedAt,

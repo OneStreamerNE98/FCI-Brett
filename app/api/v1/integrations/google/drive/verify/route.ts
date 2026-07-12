@@ -12,8 +12,12 @@ export async function POST(request: NextRequest) {
   await ensureWorkspaceSchema();
   const config = getGoogleRuntimeConfig();
   if (!config.oauthReady) return NextResponse.json({ error: "Google Drive setup is incomplete.", missing: config.missing }, { status: 409 });
+  if (config.simulation) {
+    await writeGoogleIntegrationEvent(config, "drive.simulation_verified", auth.user.email, "workspace", config.connectionKey, "mode=simulation");
+    return NextResponse.json({ verified: true, simulated: true, workspace: { name: config.drive.storageName, url: null, runtimeMode: config.environment } });
+  }
   const drive = new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
   const root = await drive.verifyRootFolder();
-  await writeGoogleIntegrationEvent(config, "drive.root_verified", auth.user.email, "workspace", root.id, `environment=${config.environment}`);
-  return NextResponse.json({ verified: true, workspace: { name: root.name, url: root.url, environment: config.environment } });
+  await writeGoogleIntegrationEvent(config, "drive.root_verified", auth.user.email, "workspace", root.id, "mode=workspace");
+  return NextResponse.json({ verified: true, workspace: { name: root.name, url: root.url, runtimeMode: config.environment } });
 }

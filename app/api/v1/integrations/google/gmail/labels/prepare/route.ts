@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { summarizeFciLabels } from "../../../../../../../lib/google-gmail";
 import { writeGoogleIntegrationEvent } from "../../../../../../../lib/google-oauth";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../lib/workspace-auth";
-import { getTestGmailClient, gmailErrorResponse } from "../../_route-helpers";
+import { getWorkspaceGmailClient, gmailErrorResponse } from "../../_route-helpers";
 
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   if ("response" in auth) return auth.response;
 
   try {
-    const { config, client } = await getTestGmailClient();
+    const { config, client } = await getWorkspaceGmailClient();
     const labels = await client.prepareFciLabels();
     await writeGoogleIntegrationEvent(
       config,
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       auth.user.email,
       "gmail-labels",
       config.connectionKey,
-      "labels=FCI/Intake,FCI/Needs Review,FCI/Filed;environment=test",
+      `labels=FCI/Intake,FCI/Needs Review,FCI/Filed;mode=${config.environment}`,
     );
     return NextResponse.json({ prepared: true, labels: summarizeFciLabels(labels) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

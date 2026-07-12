@@ -4,7 +4,7 @@ import { GoogleDriveClient } from "../../../../../../../../lib/google-drive";
 import { GoogleIntegrationError, getGoogleAccessToken, type GoogleRuntimeConfig } from "../../../../../../../../lib/google-oauth";
 import { validateGmailMessageId } from "../../../../../../../../lib/google-gmail";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../../lib/workspace-auth";
-import { getTestGmailClient, gmailErrorResponse, readBoundedJson } from "../../../_route-helpers";
+import { getWorkspaceGmailClient, gmailErrorResponse, readBoundedJson } from "../../../_route-helpers";
 
 const EMAIL_ARCHIVE_PATH = ["05_Correspondence", "Email Archive"] as const;
 const EMAIL_ATTACHMENTS_PATH = ["05_Correspondence", "Email Attachments"] as const;
@@ -34,7 +34,7 @@ type ArchiveProjectContext = {
   projectRoot: DriveMappingRow;
   emailArchiveFolder: { id: string; name: string; webViewLink?: string };
   attachmentFolder: { id: string; name: string; webViewLink?: string };
-  drive: GoogleDriveClient;
+  drive: GoogleDriveClient | null;
 };
 
 function projectId(value: unknown) {
@@ -85,8 +85,16 @@ async function loadProjectContext(config: GoogleRuntimeConfig, selectedProjectId
     throw new GoogleIntegrationError("project_drive_workspace_required", "Create and verify this project's managed Drive workspace before filing email. No folders were created.", 409);
   }
 
-  const accessToken = await getGoogleAccessToken(config, "drive");
-  const drive = new GoogleDriveClient(accessToken, config);
+  if (config.simulation) {
+    return {
+      project,
+      projectRoot,
+      emailArchiveFolder: { id: `${projectRoot.drive_file_id}-email-archive`, name: "Email Archive" },
+      attachmentFolder: { id: `${projectRoot.drive_file_id}-email-attachments`, name: "Email Attachments" },
+      drive: null,
+    };
+  }
+  const drive = new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
   await drive.assertContained(projectRoot.drive_file_id);
   const [emailArchiveFolder, attachmentFolder] = await Promise.all([
     drive.resolveManagedProjectFolderPath(projectRoot.drive_file_id, EMAIL_ARCHIVE_PATH),
@@ -130,7 +138,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mes
     const { messageId } = await context.params;
     const safeMessageId = validateGmailMessageId(messageId);
     const selectedProjectId = projectId(request.nextUrl.searchParams.get("projectId"));
-    const { config, client } = await getTestGmailClient();
+    const { config, client } = await getWorkspaceGmailClient();
     const [existing, workspace, message] = await Promise.all([
       findArchive(config, safeMessageId),
       loadProjectContext(config, selectedProjectId),
@@ -194,7 +202,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     selectedProjectId = projectId(body.projectId);
     const { messageId } = await context.params;
     const safeMessageId = validateGmailMessageId(messageId);
-    const gmail = await getTestGmailClient();
+    const gmail = await getWorkspaceGmailClient();
     config = gmail.config;
     const [existing, workspace, message] = await Promise.all([
       findArchive(config, safeMessageId),
@@ -204,6 +212,34 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     assertArchiveProject(existing, selectedProjectId);
     if (existing?.status === "filed") {
       return NextResponse.json({ filed: true, alreadyFiled: true, archive: publicArchive(existing), inboxRetained: true, environment: config.environment });
+    }
+
+    if (config.simulation) {
+      archiveId = existing?.id ?? crypto.randomUUID();
+      const filedAt = Date.now();
+      const emailDriveFileId = `sim-email-${safeMessageId}`;
+      const emailDriveUrl = `${request.nextUrl.origin}/?workspace-simulation=email&message=${encodeURIComponent(safeMessageId)}`;
+      const attachmentRows = message.attachments.map((attachment, index) => ({
+        id: crypto.randomUUID(),
+        artifactKey: artifactIdentity(attachment.attachmentId ?? attachment.partId, index),
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        byteSize: attachment.bytes.byteLength,
+        driveFileId: `sim-attachment-${safeMessageId}-${index + 1}`,
+        driveUrl: `${request.nextUrl.origin}/?workspace-simulation=attachment&message=${encodeURIComponent(safeMessageId)}&index=${index + 1}`,
+      }));
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO gmail_file_archives (id, connection_key, gmail_message_id, gmail_thread_id, project_id, project_drive_folder_id, email_archive_folder_id, attachment_folder_id, status, approval_actor, approved_at, email_drive_file_id, email_drive_url, attachment_count, last_error_code, filed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'filed', ?, ?, ?, ?, ?, NULL, ?, ?, ?) ON CONFLICT(connection_key, gmail_message_id) DO UPDATE SET project_id = excluded.project_id, status = 'filed', approval_actor = excluded.approval_actor, approved_at = excluded.approved_at, email_drive_file_id = excluded.email_drive_file_id, email_drive_url = excluded.email_drive_url, attachment_count = excluded.attachment_count, last_error_code = NULL, filed_at = excluded.filed_at, updated_at = excluded.updated_at")
+          .bind(archiveId, config.connectionKey, safeMessageId, message.threadId, selectedProjectId, workspace.projectRoot.drive_file_id, workspace.emailArchiveFolder.id, workspace.attachmentFolder.id, auth.user.email, filedAt, emailDriveFileId, emailDriveUrl, attachmentRows.length, filedAt, filedAt, filedAt),
+        env.DB.prepare("INSERT INTO gmail_file_archive_artifacts (id, archive_id, artifact_key, kind, gmail_attachment_id, original_filename, mime_type, byte_size, sha256, drive_file_id, drive_url, created_at, updated_at) VALUES (?, ?, 'original-eml', 'email', NULL, NULL, 'message/rfc822', ?, NULL, ?, ?, ?, ?) ON CONFLICT(archive_id, artifact_key) DO UPDATE SET byte_size = excluded.byte_size, drive_file_id = excluded.drive_file_id, drive_url = excluded.drive_url, updated_at = excluded.updated_at")
+          .bind(crypto.randomUUID(), archiveId, message.raw.bytes.byteLength, emailDriveFileId, emailDriveUrl, filedAt, filedAt),
+        ...attachmentRows.map((attachment) => env.DB.prepare("INSERT INTO gmail_file_archive_artifacts (id, archive_id, artifact_key, kind, gmail_attachment_id, original_filename, mime_type, byte_size, sha256, drive_file_id, drive_url, created_at, updated_at) VALUES (?, ?, ?, 'attachment', NULL, ?, ?, ?, NULL, ?, ?, ?, ?) ON CONFLICT(archive_id, artifact_key) DO UPDATE SET original_filename = excluded.original_filename, mime_type = excluded.mime_type, byte_size = excluded.byte_size, drive_file_id = excluded.drive_file_id, drive_url = excluded.drive_url, updated_at = excluded.updated_at")
+          .bind(attachment.id, archiveId, attachment.artifactKey, attachment.filename, attachment.mimeType, attachment.byteSize, attachment.driveFileId, attachment.driveUrl, filedAt, filedAt)),
+        env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, 'workspace_simulation.gmail_filed', ?, ?, ?)")
+          .bind(crypto.randomUUID(), selectedProjectId, auth.user.email, `Simulated Gmail archive completed with ${attachmentRows.length} attachment(s); Inbox retained`, filedAt),
+      ]);
+      await gmail.client.applyFiledLabel(safeMessageId);
+      return NextResponse.json({ filed: true, alreadyFiled: false, simulated: true, archive: { status: "filed", emailDriveUrl, attachmentCount: attachmentRows.length, attachments: attachmentRows }, inboxRetained: true, environment: config.environment });
     }
 
     archiveId = existing?.id ?? crypto.randomUUID();
@@ -222,14 +258,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
       env.DB.prepare("INSERT INTO gmail_file_archives (id, connection_key, gmail_message_id, gmail_thread_id, project_id, project_drive_folder_id, email_archive_folder_id, attachment_folder_id, status, approval_actor, approved_at, email_drive_file_id, email_drive_url, attachment_count, last_error_code, filed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'filing', ?, ?, NULL, NULL, 0, NULL, NULL, ?, ?) ON CONFLICT(connection_key, gmail_message_id) DO UPDATE SET gmail_thread_id = excluded.gmail_thread_id, project_id = excluded.project_id, project_drive_folder_id = excluded.project_drive_folder_id, email_archive_folder_id = excluded.email_archive_folder_id, attachment_folder_id = excluded.attachment_folder_id, status = 'filing', approval_actor = excluded.approval_actor, approved_at = excluded.approved_at, last_error_code = NULL, updated_at = excluded.updated_at")
         .bind(archiveId, config.connectionKey, safeMessageId, message.threadId, selectedProjectId, workspace.projectRoot.drive_file_id, workspace.emailArchiveFolder.id, workspace.attachmentFolder.id, auth.user.email, now, now, now),
       env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, 'gmail.archive_approved', ?, ?, ?)")
-        .bind(crypto.randomUUID(), selectedProjectId, auth.user.email, "Review-approved Gmail archive started; environment=test", now),
+      .bind(crypto.randomUUID(), selectedProjectId, auth.user.email, "Review-approved Workspace Gmail archive started", now),
       env.DB.prepare("INSERT INTO google_integration_events (id, connection_key, event_type, actor, entity_type, entity_id, detail, created_at) VALUES (?, ?, 'gmail.archive_approved', ?, 'project', ?, ?, ?)")
-        .bind(crypto.randomUUID(), config.connectionKey, auth.user.email, selectedProjectId, "environment=test;inbox_retained=true", now),
+        .bind(crypto.randomUUID(), config.connectionKey, auth.user.email, selectedProjectId, "mode=workspace;inbox_retained=true", now),
     ]);
     approvalRecorded = true;
 
     const emailArtifactKey = "original-eml";
-    const emailUpload = await workspace.drive.findOrUploadManagedFile({
+    const emailUpload = await workspace.drive!.findOrUploadManagedFile({
       parentId: workspace.emailArchiveFolder.id,
       name: `FCI-${workspace.project.project_number}-${safeMessageId}.eml`,
       mimeType: "message/rfc822",
@@ -257,7 +293,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     for (const [index, attachment] of message.attachments.entries()) {
       const artifactKey = artifactIdentity(attachment.attachmentId ?? attachment.partId, index);
       const sourceIdentity = artifactKey.slice("attachment-".length);
-      const upload = await workspace.drive.findOrUploadManagedFile({
+      const upload = await workspace.drive!.findOrUploadManagedFile({
         parentId: workspace.attachmentFolder.id,
         name: attachment.filename,
         mimeType: attachment.mimeType,
@@ -304,9 +340,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
       env.DB.prepare("UPDATE google_drive_operations SET status = 'completed', lease_expires_at = NULL, last_error_code = NULL, updated_at = ? WHERE operation_key = ?")
         .bind(filedAt, operationKey),
       env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, 'gmail.archive_filed', ?, ?, ?)")
-        .bind(crypto.randomUUID(), selectedProjectId, auth.user.email, `Review-approved Gmail archive completed with ${attachmentUploads.length} attachment(s); inbox retained; environment=test`, filedAt),
+        .bind(crypto.randomUUID(), selectedProjectId, auth.user.email, `Review-approved Workspace Gmail archive completed with ${attachmentUploads.length} attachment(s); inbox retained`, filedAt),
       env.DB.prepare("INSERT INTO google_integration_events (id, connection_key, event_type, actor, entity_type, entity_id, detail, created_at) VALUES (?, ?, 'gmail.archive_filed', ?, 'project', ?, ?, ?)")
-        .bind(crypto.randomUUID(), config.connectionKey, auth.user.email, selectedProjectId, `environment=test;attachment_count=${attachmentUploads.length};inbox_retained=true`, filedAt),
+        .bind(crypto.randomUUID(), config.connectionKey, auth.user.email, selectedProjectId, `mode=workspace;attachment_count=${attachmentUploads.length};inbox_retained=true`, filedAt),
     ]);
 
     return NextResponse.json({
@@ -334,7 +370,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
           env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, 'gmail.archive_failed', ?, ?, ?)")
             .bind(crypto.randomUUID(), selectedProjectId, auth.user.email, `Review-approved Gmail archive stopped; code=${code}; no Inbox label was removed`, failedAt),
           env.DB.prepare("INSERT INTO google_integration_events (id, connection_key, event_type, actor, entity_type, entity_id, detail, created_at) VALUES (?, ?, 'gmail.archive_failed', ?, 'project', ?, ?, ?)")
-            .bind(crypto.randomUUID(), config.connectionKey, auth.user.email, selectedProjectId, `environment=test;code=${code}`, failedAt),
+            .bind(crypto.randomUUID(), config.connectionKey, auth.user.email, selectedProjectId, `mode=${config.environment};code=${code}`, failedAt),
         ]);
       } catch {
         // Preserve the original integration error. Stable Drive properties and the

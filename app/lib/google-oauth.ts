@@ -13,7 +13,7 @@ const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
 type EnvironmentValues = Record<string, string | undefined>;
 
-export type GoogleConnectionEnvironment = "test" | "production";
+export type GoogleWorkspaceMode = "simulation" | "workspace";
 export type GoogleService = "drive" | "gmail" | "calendar" | "sheets";
 
 const SERVICE_SCOPES: Record<GoogleService, string> = {
@@ -24,8 +24,9 @@ const SERVICE_SCOPES: Record<GoogleService, string> = {
 };
 
 export type GoogleRuntimeConfig = {
-  environment: GoogleConnectionEnvironment;
-  environmentIsValid: boolean;
+  environment: GoogleWorkspaceMode;
+  simulation: boolean;
+  modeIsValid: boolean;
   connectionKey: string;
   clientId?: string;
   clientSecret?: string;
@@ -33,9 +34,13 @@ export type GoogleRuntimeConfig = {
   tokenEncryptionKey?: string;
   tokenEncryptionKeyVersion: string;
   expectedGoogleEmails: string[];
+  allowedDomains: string[];
   drive: ReturnType<typeof resolveDriveWorkspace>;
   clientDirectorySheetId?: string;
   clientDirectorySheetIdInvalid: boolean;
+  intakeMailbox?: string;
+  clientAppointmentsCalendarId?: string;
+  fieldScheduleCalendarId?: string;
   enabledServices: GoogleService[];
   serviceScopes: Record<GoogleService, string>;
   scopes: string[];
@@ -73,27 +78,21 @@ function list(value: string | undefined) {
     .filter(Boolean);
 }
 
-function profileValue(input: EnvironmentValues, environment: GoogleConnectionEnvironment, name: string) {
-  const profileKey = `GOOGLE_${environment === "test" ? "TEST" : "PRODUCTION"}_${name}`;
-  if (input[profileKey]) return input[profileKey];
-  return environment === "test" ? input[`GOOGLE_${name}`] : undefined;
+function workspaceValue(input: EnvironmentValues, name: string) {
+  return input[`GOOGLE_WORKSPACE_${name}`];
 }
 
-function profileBoolean(input: EnvironmentValues, environment: GoogleConnectionEnvironment, name: string) {
-  return profileValue(input, environment, name)?.trim().toLowerCase() === "true";
+function workspaceBoolean(input: EnvironmentValues, name: string) {
+  return workspaceValue(input, name)?.trim().toLowerCase() === "true";
 }
 
-function profileServices(input: EnvironmentValues, environment: GoogleConnectionEnvironment) {
-  const configured = list(profileValue(input, environment, "ENABLED_SERVICES"));
+function workspaceServices(input: EnvironmentValues, simulation: boolean) {
+  const configured = simulation ? ["drive", "gmail", "calendar", "sheets"] : list(workspaceValue(input, "ENABLED_SERVICES"));
   const known = new Set<GoogleService>(["drive", "gmail", "calendar", "sheets"]);
   const unknown = configured.filter((service) => !known.has(service as GoogleService));
   const requestedKnown = configured.filter((service): service is GoogleService => known.has(service as GoogleService));
-  const productionOnlyUnsupported = environment === "production" ? requestedKnown.filter((service) => service !== "drive" && service !== "sheets") : [];
-  const enabled = Array.from(new Set<GoogleService>([
-    "drive",
-    ...(environment === "test" ? requestedKnown : requestedKnown.filter((service) => service === "sheets")),
-  ]));
-  return { enabled, unknown, productionOnlyUnsupported };
+  const enabled = Array.from(new Set<GoogleService>(["drive", ...requestedKnown]));
+  return { enabled, unknown };
 }
 
 function optionalGoogleResourceId(value: string | undefined) {
@@ -179,60 +178,66 @@ export async function decryptGoogleSecret(ciphertext: string, keyMaterial: strin
   }
 }
 
-export function getGoogleRuntimeConfig(input: EnvironmentValues = process.env) {
-  const requested = input.GOOGLE_CONNECTION_ENVIRONMENT?.trim().toLowerCase() ?? "test";
-  const environmentIsValid = requested === "test" || requested === "production";
-  const environment: GoogleConnectionEnvironment = requested === "production" ? "production" : "test";
-  const mode = profileValue(input, environment, "DRIVE_MODE");
-  const rootFolderId = profileValue(input, environment, "DRIVE_ROOT_FOLDER_ID");
-  const sharedDriveId = profileValue(input, environment, "SHARED_DRIVE_ID");
-  const drive = resolveDriveWorkspace({ mode, rootFolderId, sharedDriveId });
-  const clientId = profileValue(input, environment, "CLIENT_ID");
-  const clientSecret = profileValue(input, environment, "CLIENT_SECRET");
-  const redirectUri = profileValue(input, environment, "OAUTH_REDIRECT_URI");
-  const tokenEncryptionKey = profileValue(input, environment, "TOKEN_ENCRYPTION_KEY");
-  const expectedGoogleEmails = list(profileValue(input, environment, "AUTHORIZED_ACCOUNT_EMAILS"));
-  const clientDirectorySheet = optionalGoogleResourceId(profileValue(input, environment, "CLIENT_DIRECTORY_SHEET_ID"));
-  const services = profileServices(input, environment);
+export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown as EnvironmentValues) {
+  const requested = input.GOOGLE_INTEGRATION_MODE?.trim().toLowerCase() ?? (input.NODE_ENV === "production" ? "workspace" : "simulation");
+  const modeIsValid = requested === "simulation" || requested === "workspace";
+  const environment: GoogleWorkspaceMode = requested === "workspace" ? "workspace" : "simulation";
+  const simulation = environment === "simulation";
+  const sharedDriveId = workspaceValue(input, "SHARED_DRIVE_ID");
+  const drive = resolveDriveWorkspace({ sharedDriveId, simulation });
+  const clientId = workspaceValue(input, "CLIENT_ID");
+  const clientSecret = workspaceValue(input, "CLIENT_SECRET");
+  const redirectUri = workspaceValue(input, "OAUTH_REDIRECT_URI");
+  const tokenEncryptionKey = workspaceValue(input, "TOKEN_ENCRYPTION_KEY");
+  const expectedGoogleEmails = list(workspaceValue(input, "AUTHORIZED_ACCOUNTS"));
+  const allowedDomains = list(workspaceValue(input, "ALLOWED_DOMAINS")).map((domain) => domain.replace(/^@/, ""));
+  const clientDirectorySheet = optionalGoogleResourceId(workspaceValue(input, "CLIENT_DIRECTORY_SHEET_ID"));
+  const intakeMailbox = workspaceValue(input, "INTAKE_MAILBOX")?.trim().toLowerCase();
+  const clientAppointmentsCalendarId = workspaceValue(input, "CLIENT_APPOINTMENTS_CALENDAR_ID")?.trim();
+  const fieldScheduleCalendarId = workspaceValue(input, "FIELD_SCHEDULE_CALENDAR_ID")?.trim();
+  const services = workspaceServices(input, simulation);
   const gmailEnabled = services.enabled.includes("gmail");
   const calendarEnabled = services.enabled.includes("calendar");
   const sheetsEnabled = services.enabled.includes("sheets");
-  // A server-side Drive token against any My Drive folder carries a broad Drive scope.
-  // Require an explicit acknowledgement for both profiles so a production profile cannot
-  // silently fall back to an individual employee's My Drive.
-  const broadScopeAcknowledged = drive.mode !== "my-drive" || profileBoolean(input, environment, "MY_DRIVE_BROAD_SCOPE_ACKNOWLEDGED");
-  const missing = [
-    ...(!environmentIsValid ? ["Google connection environment (test or production)"] : []),
-    ...(!drive.modeIsValid ? ["Google Drive mode (shared-drive or my-drive)"] : []),
+  const broadScopeAcknowledged = true;
+  const liveMissing = [
+    ...(!modeIsValid ? ["Google integration mode (simulation or workspace)"] : []),
     ...(!drive.rootFolderId ? [drive.storageRequirementLabel] : []),
     ...(!clientId ? ["Google OAuth client ID"] : []),
     ...(!clientSecret ? ["Google OAuth client secret"] : []),
     ...(!redirectUri ? ["OAuth redirect URI"] : []),
     ...(!isValidEncryptionKey(tokenEncryptionKey) ? ["32-byte Google token encryption key"] : []),
-    ...(expectedGoogleEmails.length === 0 ? ["authorized Google account email"] : []),
-    ...(!broadScopeAcknowledged ? ["My Drive broad-scope test acknowledgement"] : []),
+    ...(allowedDomains.length === 0 ? ["Google Workspace allowed domain"] : []),
+    ...(gmailEnabled && !intakeMailbox ? ["Google Workspace intake mailbox"] : []),
+    ...(calendarEnabled && !clientAppointmentsCalendarId ? ["client appointments calendar ID"] : []),
+    ...(calendarEnabled && !fieldScheduleCalendarId ? ["field schedule calendar ID"] : []),
     ...(services.unknown.length ? [`valid Google services (unknown: ${services.unknown.join(", ")})`] : []),
-    ...(services.productionOnlyUnsupported.length ? ["Gmail and Calendar are available only in the personal test profile for this release"] : []),
   ];
+  const missing = simulation ? [] : liveMissing;
   return {
     environment,
-    environmentIsValid,
-    connectionKey: `${environment}-drive`,
+    simulation,
+    modeIsValid,
+    connectionKey: simulation ? "workspace-simulation" : "google-workspace",
     clientId,
     clientSecret,
     redirectUri,
     tokenEncryptionKey,
-    tokenEncryptionKeyVersion: profileValue(input, environment, "TOKEN_ENCRYPTION_KEY_VERSION") ?? "1",
+    tokenEncryptionKeyVersion: workspaceValue(input, "TOKEN_ENCRYPTION_KEY_VERSION") ?? "1",
     expectedGoogleEmails,
+    allowedDomains,
     drive,
     clientDirectorySheetId: clientDirectorySheet.value,
     clientDirectorySheetIdInvalid: clientDirectorySheet.invalid,
+    intakeMailbox: simulation ? "workspace-simulation@fci.example" : intakeMailbox,
+    clientAppointmentsCalendarId: simulation ? "simulation-client-appointments" : clientAppointmentsCalendarId,
+    fieldScheduleCalendarId: simulation ? "simulation-field-schedule" : fieldScheduleCalendarId,
     enabledServices: services.enabled,
     serviceScopes: SERVICE_SCOPES,
     scopes: ["openid", "email", ...services.enabled.map((service) => SERVICE_SCOPES[service])],
     missing,
-    oauthReady: missing.length === 0,
-    provisioningEnabled: profileBoolean(input, environment, "DRIVE_PROVISIONING_ENABLED"),
+    oauthReady: simulation || missing.length === 0,
+    provisioningEnabled: simulation || workspaceBoolean(input, "DRIVE_PROVISIONING_ENABLED"),
     gmailEnabled,
     calendarEnabled,
     sheetsEnabled,
@@ -240,12 +245,9 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = process.env) {
   } satisfies GoogleRuntimeConfig;
 }
 
-export function assertGoogleTestService(config: GoogleRuntimeConfig, service: "gmail" | "calendar") {
-  if (config.environment !== "test") {
-    throw new GoogleIntegrationError("test_service_only", "Gmail and Calendar are enabled only for the isolated personal test profile.", 403);
-  }
+export function assertGoogleService(config: GoogleRuntimeConfig, service: GoogleService) {
   if (!config.enabledServices.includes(service)) {
-    throw new GoogleIntegrationError("service_not_enabled", `Enable ${service} for the personal test profile, then reconnect Google.`, 409);
+    throw new GoogleIntegrationError("service_not_enabled", `Enable ${service} for the Google Workspace connection, then reconnect Google.`, 409);
   }
 }
 
@@ -254,13 +256,13 @@ export function assertGrantedGoogleServiceScopes(config: GoogleRuntimeConfig, gr
     .map((service) => config.serviceScopes[service])
     .filter((scope) => !grantedScopes.includes(scope));
   if (missing.length) {
-    throw new GoogleIntegrationError("required_scopes_missing", "Google did not grant every selected test service. Reconnect and approve the requested permissions.", 409);
+    throw new GoogleIntegrationError("required_scopes_missing", "Google Workspace did not grant every selected service. Reconnect and approve the requested permissions.", 409);
   }
 }
 
 export function buildGoogleAuthorizationUrl(config: GoogleRuntimeConfig, state: string, codeChallenge: string) {
   if (!config.oauthReady || !config.clientId || !config.redirectUri) {
-    throw new GoogleIntegrationError("configuration_required", "Google Drive setup is incomplete.", 503);
+    throw new GoogleIntegrationError("configuration_required", "Google Workspace setup is incomplete.", 503);
   }
   const parameters = new URLSearchParams({
     client_id: config.clientId,
@@ -384,8 +386,10 @@ export async function fetchGoogleUserProfile(accessToken: string) {
 }
 
 export function assertExpectedGoogleAccount(config: GoogleRuntimeConfig, profile: GoogleUserProfile) {
-  if (!profile.emailVerified || !config.expectedGoogleEmails.includes(profile.email)) {
-    throw new GoogleIntegrationError("unauthorized_google_account", "Use the Google account approved for this connection profile.", 403);
+  const domain = profile.email.split("@")[1] ?? "";
+  const specificallyAllowed = config.expectedGoogleEmails.length > 0 && config.expectedGoogleEmails.includes(profile.email);
+  if (!profile.emailVerified || (!specificallyAllowed && !config.allowedDomains.includes(domain))) {
+    throw new GoogleIntegrationError("unauthorized_google_account", "Use an approved account from the configured Google Workspace domain.", 403);
   }
 }
 
@@ -411,6 +415,15 @@ function serviceIsGranted(config: GoogleRuntimeConfig, scopes: string[], service
 }
 
 export async function getGoogleConnectionStatus(config: GoogleRuntimeConfig) {
+  if (config.simulation) {
+    return {
+      connected: true,
+      status: "connected",
+      account: "Local Workspace simulation",
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      requiresReauthorization: false,
+    };
+  }
   const connection = await env.DB.prepare("SELECT id, google_email, scopes_json, status FROM google_connections WHERE connection_key = ?")
     .bind(config.connectionKey)
     .first<{ id: string; google_email: string; scopes_json: string; status: string }>();
@@ -435,6 +448,7 @@ export async function getGoogleConnectionStatus(config: GoogleRuntimeConfig) {
 }
 
 export async function disconnectGoogleConnection(config: GoogleRuntimeConfig) {
+  if (config.simulation) return { revocationRequested: false };
   const connection = await env.DB.prepare("SELECT id, google_email, refresh_token_ciphertext, status FROM google_connections WHERE connection_key = ?")
     .bind(config.connectionKey)
     .first<ConnectionRow>();
@@ -474,11 +488,14 @@ export async function saveGoogleConnection(config: GoogleRuntimeConfig, tokens: 
 }
 
 export async function getGoogleAccessToken(config: GoogleRuntimeConfig, requiredService?: GoogleService) {
+  if (config.simulation) {
+    throw new GoogleIntegrationError("simulation_has_no_google_token", "Local Workspace simulation never creates or uses Google access tokens.", 409);
+  }
   const connection = await env.DB.prepare("SELECT id, google_email, refresh_token_ciphertext, scopes_json, status FROM google_connections WHERE connection_key = ?")
     .bind(config.connectionKey)
     .first<ConnectionRow>();
   if (!connection || connection.status !== "connected") {
-    throw new GoogleIntegrationError("google_not_connected", "Connect the approved Google account before using this Google service.", 409);
+    throw new GoogleIntegrationError("google_not_connected", "Connect the approved Google Workspace account before using this service.", 409);
   }
   if (requiredService && !serviceIsGranted(config, storedScopes(connection.scopes_json), requiredService)) {
     throw new GoogleIntegrationError("google_scope_reauthorization_required", `Reconnect Google and approve the ${requiredService} permission before continuing.`, 409);

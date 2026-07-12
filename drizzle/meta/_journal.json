@@ -50,6 +50,34 @@
       "when": 1783815161987,
       "tag": "0006_wide_sprite",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1783892883908,
+      "tag": "0007_wonderful_unus",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1783892940280,
+      "tag": "0008_strong_korg",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1783895513859,
+      "tag": "0009_true_risque",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1783897031970,
+      "tag": "0010_groovy_veda",
+      "breakpoints": true
     }
   ]
 }

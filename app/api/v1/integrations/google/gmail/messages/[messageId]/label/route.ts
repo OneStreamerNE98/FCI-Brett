@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateGmailMessageId } from "../../../../../../../../lib/google-gmail";
 import { writeGoogleIntegrationEvent } from "../../../../../../../../lib/google-oauth";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../../lib/workspace-auth";
-import { getTestGmailClient, gmailErrorResponse } from "../../../_route-helpers";
+import { getWorkspaceGmailClient, gmailErrorResponse } from "../../../_route-helpers";
 
 export async function POST(request: NextRequest, context: { params: Promise<{ messageId: string }> }) {
   const originError = requireSameOrigin(request);
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
   try {
     const { messageId } = await context.params;
     const safeMessageId = validateGmailMessageId(messageId);
-    const { config, client } = await getTestGmailClient();
+    const { config, client } = await getWorkspaceGmailClient();
     const result = await client.applyFiledLabel(safeMessageId);
     await writeGoogleIntegrationEvent(
       config,
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
       auth.user.email,
       "gmail-message",
       result.id,
-      "label=FCI/Filed;inbox_retained=true;environment=test",
+      `label=FCI/Filed;inbox_retained=true;mode=${config.environment}`,
     );
     return NextResponse.json(
       { filed: true, message: result },

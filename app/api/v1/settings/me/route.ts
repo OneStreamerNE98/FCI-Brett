@@ -6,17 +6,15 @@ import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-
 const DEFAULT_PREFERENCES = {
   displayTimezone: "America/New_York",
   replySignature: "",
-  personalCalendarDisplay: true,
 };
 
-const PREFERENCE_KEYS = new Set(["displayTimezone", "replySignature", "personalCalendarDisplay"]);
+const PREFERENCE_KEYS = new Set(["displayTimezone", "replySignature"]);
 
 type UserPreferences = typeof DEFAULT_PREFERENCES;
 
 type PreferenceRow = {
   display_timezone: string;
   reply_signature: string;
-  personal_calendar_display: number;
   updated_at: number;
 };
 
@@ -29,12 +27,11 @@ function preferencesFromRow(row: PreferenceRow | null): UserPreferences {
   return {
     displayTimezone: row.display_timezone || DEFAULT_PREFERENCES.displayTimezone,
     replySignature: row.reply_signature || "",
-    personalCalendarDisplay: row.personal_calendar_display === 1,
   };
 }
 
 async function readPreferences(email: string) {
-  const row = await env.DB.prepare("SELECT display_timezone, reply_signature, personal_calendar_display, updated_at FROM user_preferences WHERE user_email = ?")
+  const row = await env.DB.prepare("SELECT display_timezone, reply_signature, updated_at FROM user_preferences WHERE user_email = ?")
     .bind(email)
     .first<PreferenceRow>();
   return { preferences: preferencesFromRow(row), updatedAt: row?.updated_at ?? null };
@@ -73,7 +70,7 @@ export async function PATCH(request: NextRequest) {
 
   const body = await request.json().catch(() => null);
   if (!isRecord(body) || Object.keys(body).length === 0 || Object.keys(body).some((key) => !PREFERENCE_KEYS.has(key))) {
-    return NextResponse.json({ error: "Send one or more valid personal preference fields." }, { status: 400 });
+    return NextResponse.json({ error: "Send one or more valid account preference fields." }, { status: 400 });
   }
 
   const current = await readPreferences(auth.user.email);
@@ -89,16 +86,9 @@ export async function PATCH(request: NextRequest) {
     if (signature === null) return NextResponse.json({ error: "replySignature must be text of 2,000 characters or fewer." }, { status: 400 });
     preferences.replySignature = signature;
   }
-  if (Object.hasOwn(body, "personalCalendarDisplay")) {
-    if (typeof body.personalCalendarDisplay !== "boolean") {
-      return NextResponse.json({ error: "personalCalendarDisplay must be true or false." }, { status: 400 });
-    }
-    preferences.personalCalendarDisplay = body.personalCalendarDisplay;
-  }
-
   const now = Date.now();
-  await env.DB.prepare("INSERT INTO user_preferences (user_email, display_timezone, reply_signature, personal_calendar_display, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_email) DO UPDATE SET display_timezone = excluded.display_timezone, reply_signature = excluded.reply_signature, personal_calendar_display = excluded.personal_calendar_display, updated_at = excluded.updated_at")
-    .bind(auth.user.email, preferences.displayTimezone, preferences.replySignature, preferences.personalCalendarDisplay ? 1 : 0, now)
+  await env.DB.prepare("INSERT INTO user_preferences (user_email, display_timezone, reply_signature, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_email) DO UPDATE SET display_timezone = excluded.display_timezone, reply_signature = excluded.reply_signature, updated_at = excluded.updated_at")
+    .bind(auth.user.email, preferences.displayTimezone, preferences.replySignature, now)
     .run();
   return NextResponse.json({ preferences, updatedAt: now }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -31,7 +31,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   const config = getGoogleRuntimeConfig();
   if (!config.oauthReady) return NextResponse.json({ error: "Google Drive setup is incomplete.", missing: config.missing }, { status: 409 });
   if (!config.provisioningEnabled) {
-    return NextResponse.json({ error: "Drive folder creation is disabled for this connection profile. Enable the profile's explicit provisioning flag after test verification." }, { status: 409 });
+    return NextResponse.json({ error: "Shared Drive folder creation is disabled. Enable Workspace provisioning only after the company drive is verified." }, { status: 409 });
   }
 
   const { projectId } = await context.params;
@@ -40,15 +40,36 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     .first<ProjectRow>();
   if (!project) return NextResponse.json({ error: "Project not found." }, { status: 404 });
 
-  const accessToken = await getGoogleAccessToken(config, "drive");
-  const drive = new GoogleDriveClient(accessToken, config);
   const existing = await env.DB.prepare("SELECT drive_file_id, drive_url FROM drive_folder_mappings WHERE connection_key = ? AND entity_type = 'project' AND entity_id = ? AND folder_key = 'project-root'")
     .bind(config.connectionKey, project.id)
     .first<MappingRow>();
   if (existing) {
-    await drive.assertContained(existing.drive_file_id);
+    if (!config.simulation) {
+      const drive = new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
+      await drive.assertContained(existing.drive_file_id);
+    }
     return NextResponse.json({ created: false, driveFolderId: existing.drive_file_id, driveUrl: existing.drive_url, environment: config.environment });
   }
+  if (config.simulation) {
+    const completedAt = Date.now();
+    const clientFolderId = `sim-client-${project.client_id}`;
+    const projectFolderId = `sim-project-${project.id}`;
+    const clientUrl = `${request.nextUrl.origin}/?workspace-simulation=client&client=${encodeURIComponent(project.client_id)}`;
+    const projectUrl = `${request.nextUrl.origin}/?workspace-simulation=project&project=${encodeURIComponent(project.id)}`;
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO drive_folder_mappings (id, connection_key, entity_type, entity_id, folder_key, drive_file_id, parent_drive_file_id, drive_url, created_at, updated_at) VALUES (?, ?, 'client', ?, 'client-root', ?, NULL, ?, ?, ?) ON CONFLICT(connection_key, entity_type, entity_id, folder_key) DO UPDATE SET drive_file_id = excluded.drive_file_id, drive_url = excluded.drive_url, updated_at = excluded.updated_at")
+        .bind(crypto.randomUUID(), config.connectionKey, project.client_id, clientFolderId, clientUrl, completedAt, completedAt),
+      env.DB.prepare("INSERT INTO drive_folder_mappings (id, connection_key, entity_type, entity_id, folder_key, drive_file_id, parent_drive_file_id, drive_url, created_at, updated_at) VALUES (?, ?, 'project', ?, 'project-root', ?, NULL, ?, ?, ?) ON CONFLICT(connection_key, entity_type, entity_id, folder_key) DO UPDATE SET drive_file_id = excluded.drive_file_id, drive_url = excluded.drive_url, updated_at = excluded.updated_at")
+        .bind(crypto.randomUUID(), config.connectionKey, project.id, projectFolderId, projectUrl, completedAt, completedAt),
+      env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, 'workspace_simulation.folder_provisioned', ?, ?, ?)")
+        .bind(crypto.randomUUID(), project.id, auth.user.email, "Simulated Shared Drive project workspace created; no Google data changed", completedAt),
+    ]);
+    await writeGoogleIntegrationEvent(config, "drive.simulation_project_folder_provisioned", auth.user.email, "project", project.id, "mode=simulation");
+    const sheetSync = await trySyncGoogleDirectory(config, auth.user.email);
+    return NextResponse.json({ created: true, simulated: true, driveFolderId: projectFolderId, driveUrl: projectUrl, environment: config.environment, sheetSync }, { status: 201 });
+  }
+  const accessToken = await getGoogleAccessToken(config, "drive");
+  const drive = new GoogleDriveClient(accessToken, config);
   const now = Date.now();
   const operationKey = `${config.connectionKey}:provision-project:${project.id}`;
   const leaseExpiresAt = now + 5 * 60 * 1000;
@@ -73,9 +94,9 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
       env.DB.prepare("UPDATE google_drive_operations SET status = 'completed', lease_expires_at = NULL, last_error_code = NULL, updated_at = ? WHERE operation_key = ?")
         .bind(completedAt, operationKey),
       env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, 'google_drive.folder_provisioned', ?, ?, ?)")
-        .bind(crypto.randomUUID(), project.id, auth.user.email, `Project workspace created in ${config.environment} Drive profile`, completedAt),
+        .bind(crypto.randomUUID(), project.id, auth.user.email, "Project workspace created in the company Google Shared Drive", completedAt),
     ]);
-    await writeGoogleIntegrationEvent(config, "drive.project_folder_provisioned", auth.user.email, "project", project.id, `environment=${config.environment}`);
+    await writeGoogleIntegrationEvent(config, "drive.project_folder_provisioned", auth.user.email, "project", project.id, "mode=workspace");
     const sheetSync = await trySyncGoogleDirectory(config, auth.user.email);
     return NextResponse.json({ created: true, driveFolderId: provisioned.projectFolder.id, driveUrl: provisioned.projectFolder.url, environment: config.environment, sheetSync }, { status: 201 });
   } catch (error) {

@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return appRedirect(request, "admin-required");
   await ensureWorkspaceSchema();
   const config = getGoogleRuntimeConfig();
+  if (config.simulation) return appRedirect(request, "simulation-ready");
   if (!config.oauthReady) return appRedirect(request, "setup-needed");
 
   const providerError = request.nextUrl.searchParams.get("error");
@@ -36,9 +37,9 @@ export async function GET(request: NextRequest) {
     const drive = new GoogleDriveClient(tokens.accessToken, config);
     await drive.verifyRootFolder();
     await saveGoogleConnection(config, tokens, profile, auth.user.email);
-    await writeGoogleIntegrationEvent(config, "oauth.connected", auth.user.email, "connection", config.connectionKey, `environment=${config.environment}`);
+    await writeGoogleIntegrationEvent(config, "oauth.connected", auth.user.email, "connection", config.connectionKey, "mode=workspace");
     const response = appRedirect(request, "connected");
-    response.cookies.set({ name: OAUTH_NONCE_COOKIE, value: "", httpOnly: true, secure: true, sameSite: "lax", maxAge: 0, path: "/api/v1/integrations/google/callback" });
+    response.cookies.set({ name: OAUTH_NONCE_COOKIE, value: "", httpOnly: true, secure: request.nextUrl.protocol === "https:", sameSite: "lax", maxAge: 0, path: "/api/v1/integrations/google/callback" });
     response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (error) {

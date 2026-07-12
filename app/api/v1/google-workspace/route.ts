@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { env } from "cloudflare:workers";
 import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-workspace";
 import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../lib/google-oauth";
 import { requireOfficeUser } from "../../../lib/workspace-auth";
@@ -13,12 +14,12 @@ export async function GET(request: NextRequest) {
   const connection = await getGoogleConnectionStatus(google);
   const requirements = [
     ...google.missing.map((label) => [label, undefined] as const),
-    ["FCI administrator allowlist", process.env.FCI_ADMIN_EMAILS],
+    ["FCI administrator allowlist", (env as unknown as Record<string, string | undefined>).FCI_ADMIN_EMAILS],
   ];
   const missing = [
     ...requirements.filter(([, value]) => !value).map(([label]) => label),
   ];
-  const credentialsPresent = google.oauthReady && Boolean(process.env.FCI_ADMIN_EMAILS);
+  const credentialsPresent = google.oauthReady && Boolean((env as unknown as Record<string, string | undefined>).FCI_ADMIN_EMAILS);
   return NextResponse.json({
     configured: credentialsPresent,
     credentialsPresent,
@@ -26,11 +27,11 @@ export async function GET(request: NextRequest) {
     missing,
     workspace: {
       mode: workspace.mode,
+      runtimeMode: google.environment,
+      simulation: google.simulation,
       storageLabel: workspace.storageLabel,
       storageName: workspace.storageName,
-      temporary: workspace.isTemporary,
       storageConfigured: Boolean(workspace.rootFolderId),
-      environment: google.environment,
       connectionKey: google.connectionKey,
       connectionStatus: connection.status,
       connectionAccount: connection.account,
@@ -43,14 +44,14 @@ export async function GET(request: NextRequest) {
       gmailEnabled: google.gmailEnabled,
       calendarEnabled: google.calendarEnabled,
       sheetsEnabled: google.sheetsEnabled,
-      clientDirectorySheetConfigured: Boolean(google.clientDirectorySheetId),
+      clientDirectorySheetConfigured: google.simulation || Boolean(google.clientDirectorySheetId),
       clientDirectorySheetIdInvalid: google.clientDirectorySheetIdInvalid,
       enabledServices: google.enabledServices,
       broadScopeAcknowledged: google.broadScopeAcknowledged,
     },
     blueprint: DRIVE_BLUEPRINT,
     requiredEnvironment: requirements.map(([label]) => label),
-    nextStep: connection.requiresReauthorization ? "Reconnect the approved Google account and approve every selected personal-test service." : connection.connected ? "The selected Google services are connected for the active profile." : credentialsPresent ? "An FCI administrator can now connect the approved Google account for the active profile." : "Add the missing active-profile configuration values before authorizing Google.",
+    nextStep: google.simulation ? "Local Workspace simulation is ready. No Google account is connected and no data is sent to Google." : connection.requiresReauthorization ? "Reconnect the approved Workspace account and approve every selected service." : connection.connected ? "Google Workspace services are connected." : credentialsPresent ? "An FCI administrator can now connect Google Workspace." : "Add the missing Workspace configuration values before authorizing Google.",
   });
 }
 

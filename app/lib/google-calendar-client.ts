@@ -1,6 +1,6 @@
 import {
   GoogleIntegrationError,
-  assertGoogleTestService,
+  assertGoogleService,
   getGoogleAccessToken,
   type GoogleRuntimeConfig,
   writeGoogleIntegrationEvent,
@@ -57,13 +57,12 @@ function safeEvent(event: CalendarApiEvent): CalendarEventSummary | null {
 export class GoogleCalendarClient {
   constructor(private readonly accessToken: string, private readonly config: GoogleRuntimeConfig) {}
 
-  private assertTestCalendar() {
-    // Keep the test-only boundary inside the adapter as well as in the route handlers.
-    assertGoogleTestService(this.config, "calendar");
+  private assertWorkspaceCalendar() {
+    assertGoogleService(this.config, "calendar");
   }
 
   private async request<T>(path: string, init: RequestInit = {}) {
-    this.assertTestCalendar();
+    this.assertWorkspaceCalendar();
     let response: Response;
     try {
       response = await fetch(`${CALENDAR_API}/${path}`, {
@@ -85,10 +84,10 @@ export class GoogleCalendarClient {
         throw new GoogleIntegrationError("calendar_reauthorization_required", "Google Calendar authorization needs to be reconnected.", 409);
       }
       if (response.status === 403) {
-        throw new GoogleIntegrationError("calendar_permission_denied", "The approved test account has not granted Google Calendar access. Reconnect it and approve Calendar permission.", 409);
+        throw new GoogleIntegrationError("calendar_permission_denied", "The Google Workspace account has not granted Calendar access. Reconnect it and approve Calendar permission.", 409);
       }
       if (response.status === 404) {
-        throw new GoogleIntegrationError("calendar_not_found", "The primary Google Calendar could not be found for the test account.", 404);
+        throw new GoogleIntegrationError("calendar_not_found", "The configured Workspace calendar could not be found.", 404);
       }
       if (response.status === 429) {
         throw new GoogleIntegrationError("calendar_rate_limited", "Google Calendar is busy. Try again shortly.", 503);
@@ -110,7 +109,8 @@ export class GoogleCalendarClient {
       showDeleted: "false",
       fields: "items(id,summary,status,htmlLink,start,end)",
     });
-    const result = await this.request<{ items?: CalendarApiEvent[] }>(`calendars/primary/events?${query.toString()}`);
+    const calendarId = encodeURIComponent(this.config.clientAppointmentsCalendarId ?? "primary");
+    const result = await this.request<{ items?: CalendarApiEvent[] }>(`calendars/${calendarId}/events?${query.toString()}`);
     return {
       window: { start: timeMin, end: timeMax },
       events: (result.items ?? []).map(safeEvent).filter((event): event is CalendarEventSummary => event !== null),
@@ -120,10 +120,11 @@ export class GoogleCalendarClient {
   async createTestHold(start: Date) {
     const end = new Date(start.getTime() + TEST_HOLD_DURATION_MS);
     const query = new URLSearchParams({ sendUpdates: "none", conferenceDataVersion: "0" });
-    const result = await this.request<CalendarApiEvent>(`calendars/primary/events?${query.toString()}`, {
+    const calendarId = encodeURIComponent(this.config.clientAppointmentsCalendarId ?? "primary");
+    const result = await this.request<CalendarApiEvent>(`calendars/${calendarId}/events?${query.toString()}`, {
       method: "POST",
       body: JSON.stringify({
-        summary: "FCI Operations — Test Appointment",
+        summary: "FCI Operations — Workspace test appointment",
         start: { dateTime: start.toISOString() },
         end: { dateTime: end.toISOString() },
         visibility: "private",
@@ -141,28 +142,28 @@ export class GoogleCalendarClient {
   }
 }
 
-export async function listTestCalendarEvents(config: GoogleRuntimeConfig, actor: string) {
-  assertGoogleTestService(config, "calendar");
+export async function listWorkspaceCalendarEvents(config: GoogleRuntimeConfig, actor: string) {
+  assertGoogleService(config, "calendar");
   const calendar = new GoogleCalendarClient(await getGoogleAccessToken(config, "calendar"), config);
   const result = await calendar.listUpcomingEvents();
   await writeGoogleIntegrationEvent(
     config,
-    "calendar.test_events_listed",
+    "calendar.workspace_events_listed",
     actor,
     "calendar",
-    "primary",
+    config.clientAppointmentsCalendarId ?? "primary",
     `window=${result.window.start}/${result.window.end};count=${result.events.length}`,
   );
   return result;
 }
 
-export async function createTestCalendarHold(config: GoogleRuntimeConfig, actor: string, start: Date) {
-  assertGoogleTestService(config, "calendar");
+export async function createWorkspaceCalendarHold(config: GoogleRuntimeConfig, actor: string, start: Date) {
+  assertGoogleService(config, "calendar");
   const calendar = new GoogleCalendarClient(await getGoogleAccessToken(config, "calendar"), config);
   const event = await calendar.createTestHold(start);
   await writeGoogleIntegrationEvent(
     config,
-    "calendar.test_hold_created",
+    "calendar.workspace_hold_created",
     actor,
     "calendar_event",
     event.id,

@@ -14,7 +14,7 @@ npm run dev
 npm run build
 ```
 
-Copy `.env.example` to `.env.local` before connecting external services. The prototype supports separate **test** and **production** Google connection profiles: test with a dedicated personal Google account/folder first, then create a separate company-account connection for production. OAuth tokens and Drive-folder mappings are kept profile-specific, so a personal test folder is never opened from the production profile.
+Copy `.env.example` to `.env.local`. Keep `GOOGLE_INTEGRATION_MODE=simulation` while developing locally: Gmail, Calendar, Shared Drive, and Sheets use durable sample state and never contact Google. Switch to `workspace` only after the company has a Google Workspace tenant, Shared Drive, mailbox, calendars, Sheet, and administrator-approved OAuth client.
 
 For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your own email and add that same address to `FCI_ADMIN_EMAILS`. The fallback is available only to `npm run dev` on `localhost`; the hosted site still requires ChatGPT sign-in.
 
@@ -22,17 +22,22 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 
 - Client Directory with repeat clients and multiple independent projects
 - Email and file-filing rule configuration under Settings
-- Protected personal-test OAuth connection for Drive, Gmail, and Calendar, plus root verification and explicit project-folder provisioning
-- Separate personal-test and company-production Google profiles
+- One protected company Google Workspace OAuth connection for Drive, Gmail, Calendar, and Sheets
+- Local Workspace simulation with sample mail, calendar events, folders, drafts, and Sheet sync state
 - Google Drive / Shared Drive and Google Sheet organizational blueprint
 - Gmail review queue and Calendar test controls, project scheduling, client/project activity, and AI assistant prototype
-- D1-backed data-model and API foundation for clients, contacts, projects, rules, mail items, and workspace settings
+- Durable project meeting notes with Otter links, summaries, decisions, action items, transcript excerpts, and assistant evidence
+- D1-backed data-model and API foundation for clients, contacts, projects, meetings, rules, mail items, and workspace settings
 
 ## Google Workspace setup
 
 See [`docs/google-workspace-organization.md`](docs/google-workspace-organization.md) for the shared-drive layout, email rules, client-sheet mirror, and administrator checklist.
 
 For the prototype test sequence and the exact Google Cloud / Workspace handoff, see [`docs/testing-and-google-workspace-setup.md`](docs/testing-and-google-workspace-setup.md).
+
+For the implemented project meeting workflow and future Otter automation options, see [`docs/meeting-notes-and-otter.md`](docs/meeting-notes-and-otter.md).
+
+For private GitHub collaboration, app-user access, and secret-handling guidance, see [`docs/collaboration-and-sharing.md`](docs/collaboration-and-sharing.md).
 
 ## Workspace Auth Headers
 

@@ -16,7 +16,7 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
   assert.match(app, /Connected inbox/);
-  assert.match(app, /Connected Gmail/);
+  assert.match(app, /Workspace Gmail/);
   assert.match(app, /Load messages/);
   assert.match(app, /Ask FCI Assistant/);
   assert.match(css, /--cream:#f6f2ed/);
@@ -59,19 +59,19 @@ test("includes migrations and the Floor Coverings International logo asset", asy
   ]);
 });
 
-test("adds a searchable, configurable inbox with draft-only personal replies", async () => {
+test("adds a searchable, configurable inbox with draft-only Workspace replies", async () => {
   const [app, phonePanel, searchApi, settingsApi, ruleApi, replyApi, gmail, manifest] = await Promise.all([
     read("app/FloorOpsApp.tsx"), read("app/PhoneInstallPanel.tsx"), read("app/api/v1/search/route.ts"),
     read("app/api/v1/settings/workspace/route.ts"), read("app/api/v1/filing-rules/[ruleId]/route.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts"),
     read("app/lib/google-gmail.ts"), read("public/manifest.webmanifest"),
   ]);
   assert.match(app, /Search this Gmail mailbox/);
-  assert.match(app, /Save Gmail draft/);
+  assert.match(app, /Save a reply draft/);
   assert.match(app, /Calendar & appointments/);
   assert.match(app, /My account/);
   assert.match(app, /WorkspaceDefaultsPanel/);
-  assert.match(app, /Shared Google test account/);
-  assert.match(app, /reset to its built-in default/);
+  assert.match(app, /Local Workspace simulation/);
+  assert.match(app, /Reset simulation data/);
   assert.match(app, /PhoneInstallPanel/);
   assert.match(searchApi, /contacts ct JOIN clients/);
   assert.match(searchApi, /ESCAPE/);
@@ -80,7 +80,7 @@ test("adds a searchable, configurable inbox with draft-only personal replies", a
   assert.match(ruleApi, /export async function PATCH/);
   assert.match(ruleApi, /export async function DELETE/);
   assert.match(replyApi, /sent: false/);
-  assert.match(replyApi, /validateTestRecipient/);
+  assert.match(replyApi, /getWorkspaceGmailClient/);
   assert.match(gmail, /createReplyDraft/);
   assert.match(gmail, /getReplyContext/);
   assert.match(manifest, /"display": "standalone"/);
@@ -88,9 +88,9 @@ test("adds a searchable, configurable inbox with draft-only personal replies", a
   assert.match(phonePanel, /Add to Home Screen/);
 });
 
-test("keeps personal preferences scoped to the authenticated office user", async () => {
-  const [schema, preferencesApi] = await Promise.all([
-    read("app/api/v1/_workspace-data.ts"), read("app/api/v1/settings/me/route.ts"),
+test("keeps user preferences scoped to the authenticated office user without a personal-calendar profile", async () => {
+  const [schema, preferencesApi, app] = await Promise.all([
+    read("app/api/v1/_workspace-data.ts"), read("app/api/v1/settings/me/route.ts"), read("app/FloorOpsApp.tsx"),
   ]);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS user_preferences/);
   assert.match(schema, /user_email TEXT PRIMARY KEY/);
@@ -100,25 +100,27 @@ test("keeps personal preferences scoped to the authenticated office user", async
   assert.match(preferencesApi, /auth\.user\.email/);
   assert.match(preferencesApi, /displayTimezone/);
   assert.match(preferencesApi, /replySignature/);
-  assert.match(preferencesApi, /personalCalendarDisplay/);
+  assert.doesNotMatch(preferencesApi, /personalCalendarDisplay/);
+  assert.doesNotMatch(app, /personalCalendarDisplay/);
   assert.match(preferencesApi, /length > 2_000/);
   assert.match(preferencesApi, /Intl\.DateTimeFormat/);
 });
 
-test("makes the shared-calendar plan explicit without treating personal calendars as the source of truth", async () => {
+test("makes company shared calendars authoritative without a personal-calendar mode", async () => {
   const [app, settingsApi, guide] = await Promise.all([
     read("app/FloorOpsApp.tsx"), read("app/api/v1/settings/workspace/route.ts"), read("docs/google-workspace-organization.md"),
   ]);
   assert.match(app, /Create two shared FCI calendars/);
-  assert.match(app, /Personal availability policy/);
-  assert.match(app, /Use linked users’ free\/busy time only/);
+  assert.match(app, /Keep company work in two shared FCI Workspace calendars/);
+  assert.match(app, /one for client appointments and one for field scheduling/);
   assert.match(app, /Gmail and Calendar are separate/);
-  assert.match(app, /individual Google account connections are added/);
+  assert.match(app, /company calendar IDs/);
   assert.match(settingsApi, /calendarSetupMode/);
   assert.match(settingsApi, /appointmentCalendarId/);
-  assert.match(settingsApi, /personalAvailabilityPolicy/);
-  assert.match(guide, /Calendar ownership and sync/);
-  assert.match(guide, /Personal calendars are optional free\/busy sources only/);
+  assert.doesNotMatch(settingsApi, /personalAvailabilityPolicy/);
+  assert.doesNotMatch(app, /personalAvailabilityPolicy/);
+  assert.match(guide, /Calendar ownership/);
+  assert.match(guide, /FCI • Client Appointments/);
 });
 
 test("models clients, independent projects, and review-first email filing", async () => {
@@ -173,16 +175,17 @@ test("keeps the app authoritative while mirroring clients and projects to Google
   assert.match(guide, /Project Register/);
 });
 
-test("wires prototype controls and exposes an honest Workspace readiness check", async () => {
-  const [app, workspaceApi, envExample, testGuide] = await Promise.all([
+test("wires prototype controls and exposes Workspace-only live configuration plus local simulation", async () => {
+  const [app, workspaceApi, envExample, testGuide, oauth, driveWorkspace] = await Promise.all([
     read("app/FloorOpsApp.tsx"), read("app/api/v1/google-workspace/route.ts"),
     read(".env.example"), read("docs/testing-and-google-workspace-setup.md"),
+    read("app/lib/google-oauth.ts"), read("app/lib/google-workspace.ts"),
   ]);
   assert.match(app, /workspace-search/);
   assert.match(app, /setNotificationsOpen/);
   assert.match(app, /onAdvance\(lead\.id\)/);
-  assert.match(app, /ShiftModal/);
-  assert.match(app, /Connected Gmail/);
+  assert.match(app, /scheduleDataAvailable/);
+  assert.match(app, /Workspace Gmail/);
   assert.match(app, /Load messages/);
   assert.match(app, /GmailFilingModal/);
   assert.match(app, /sidebarCollapsed/);
@@ -193,26 +196,76 @@ test("wires prototype controls and exposes an honest Workspace readiness check",
   assert.match(workspaceApi, /credentialsPresent/);
   assert.match(workspaceApi, /connected: connection\.connected/);
   assert.match(workspaceApi, /getGoogleRuntimeConfig/);
-  assert.match(app, /Temporary Drive folder configured/);
-  assert.match(app, /Move the workspace to a company Shared Drive/);
-  assert.match(app, /Personal test mode/);
-  assert.match(envExample, /GOOGLE_TEST_TOKEN_ENCRYPTION_KEY/);
-  assert.match(envExample, /GOOGLE_TEST_DRIVE_MODE/);
-  assert.match(envExample, /GOOGLE_PRODUCTION_DRIVE_MODE/);
-  assert.match(envExample, /GOOGLE_TEST_CLIENT_APPOINTMENTS_CALENDAR_ID/);
-  assert.match(testGuide, /Test the prototype before connecting company data/);
+  assert.match(workspaceApi, /runtimeMode: google\.environment/);
+  assert.match(workspaceApi, /simulation: google\.simulation/);
+  assert.match(app, /Local Workspace simulation/);
+  assert.match(app, /Connect Google Workspace/);
+  assert.match(app, /Simulated Shared Drive blueprint/);
+  assert.match(envExample, /GOOGLE_INTEGRATION_MODE=simulation/);
+  assert.match(envExample, /GOOGLE_WORKSPACE_ENABLED_SERVICES=drive,gmail,calendar,sheets/);
+  assert.match(envExample, /GOOGLE_WORKSPACE_SHARED_DRIVE_ID=/);
+  assert.match(testGuide, /Local Workspace simulation/);
+  assert.match(testGuide, /Google Cloud and Google Workspace are separate products/);
+  assert.match(oauth, /GoogleWorkspaceMode = "simulation" \| "workspace"/);
+  assert.match(driveWorkspace, /mode: "shared-drive"/);
+
+  const workspaceOnlySources = [app, workspaceApi, envExample, testGuide, oauth, driveWorkspace].join("\n");
+  assert.doesNotMatch(workspaceOnlySources, /GOOGLE_TEST_/);
+  assert.doesNotMatch(workspaceOnlySources, /GOOGLE_PRODUCTION_/);
+  assert.doesNotMatch(workspaceOnlySources, /my-drive/i);
+  assert.doesNotMatch(workspaceOnlySources, /personal (?:gmail|google|test) (?:account|profile|mode)/i);
 });
 
-test("keeps personal Google testing isolated from company production", async () => {
-  const [oauth, drive, auth, chatAuth, projectsApi, projectDriveApi, schema, guide] = await Promise.all([
-    read("app/lib/google-oauth.ts"), read("app/lib/google-drive.ts"), read("app/lib/workspace-auth.ts"),
-    read("app/chatgpt-auth.ts"), read("app/api/v1/projects/route.ts"), read("app/api/v1/projects/[projectId]/drive/route.ts"),
+test("uses durable live records without hardcoded business demonstrations", async () => {
+  const [app, leadsApi, leadApi, dashboardApi, workspaceSchema, auth] = await Promise.all([
+    read("app/FloorOpsApp.tsx"), read("app/api/v1/leads/route.ts"),
+    read("app/api/v1/leads/[leadId]/route.ts"), read("app/api/v1/dashboard/route.ts"),
+    read("app/api/v1/_workspace-data.ts"), read("app/lib/workspace-auth.ts"),
+  ]);
+
+  assert.doesNotMatch(app, /Hudson Retail Group|Atlas Design Group|Westport Medical Center|One Harbor Plaza/);
+  assert.doesNotMatch(app, /\$511\.7k|\$1\.28m|Saturday, July 11/);
+  assert.match(app, /useState<Lead\[]>\(\[\]\)/);
+  assert.match(app, /useState<Client\[]>\(\[\]\)/);
+  assert.match(app, /useState<Project\[]>\(\[\]\)/);
+  assert.match(app, /getJson\("\/api\/v1\/leads"\)/);
+  assert.match(app, /fetch\(`\/api\/v1\/leads\/\$\{encodeURIComponent\(id\)\}`/);
+  assert.match(app, /Live records could not be loaded/);
+  assert.match(app, /not implemented yet/);
+
+  assert.match(workspaceSchema, /CREATE TABLE IF NOT EXISTS leads/);
+  assert.match(leadsApi, /export async function GET/);
+  assert.match(leadsApi, /export async function POST/);
+  assert.match(leadsApi, /INSERT INTO activity_events/);
+  assert.match(leadApi, /export async function PATCH/);
+  assert.match(leadApi, /Lead stage changed/);
+  assert.match(dashboardApi, /estimated_pipeline_value/);
+  assert.match(dashboardApi, /scheduleDataAvailable: false/);
+  assert.match(auth, /allowedEmails\.length === 0 && allowedDomains\.length === 0\) return false/);
+});
+
+test("keeps local Workspace simulation isolated from the one company Workspace connection", async () => {
+  const [oauth, simulation, resetRoute, authorizeRoute, drive, auth, chatAuth, projectsApi, projectDriveApi, schema, guide] = await Promise.all([
+    read("app/lib/google-oauth.ts"), read("app/lib/workspace-simulation.ts"),
+    read("app/api/v1/integrations/google/simulation/reset/route.ts"), read("app/api/v1/integrations/google/authorize/route.ts"),
+    read("app/lib/google-drive.ts"), read("app/lib/workspace-auth.ts"), read("app/chatgpt-auth.ts"),
+    read("app/api/v1/projects/route.ts"), read("app/api/v1/projects/[projectId]/drive/route.ts"),
     read("db/schema.ts"), read("docs/testing-and-google-workspace-setup.md"),
   ]);
-  assert.match(oauth, /GOOGLE_CONNECTION_ENVIRONMENT/);
+  assert.match(oauth, /GOOGLE_INTEGRATION_MODE/);
+  assert.match(oauth, /connectionKey: simulation \? "workspace-simulation" : "google-workspace"/);
+  assert.match(oauth, /simulation_has_no_google_token/);
   assert.match(oauth, /AES-GCM/);
   assert.match(oauth, /code_challenge_method/);
   assert.match(oauth, /GOOGLE_REVOCATION_URL/);
+  assert.match(simulation, /WorkspaceSimulationGmailClient/);
+  assert.match(simulation, /workspace_simulation_state/);
+  assert.match(simulation, /resetWorkspaceSimulation/);
+  assert.doesNotMatch(simulation, /googleapis\.com|accounts\.google\.com/);
+  assert.match(resetRoute, /requireSameOrigin/);
+  assert.match(resetRoute, /resetWorkspaceSimulation/);
+  assert.match(resetRoute, /Simulation reset is available only/);
+  assert.match(authorizeRoute, /Local Workspace simulation does not connect to a Google account/);
   assert.match(drive, /assertContained/);
   assert.match(drive, /fciProjectId/);
   assert.match(auth, /FCI_ADMIN_EMAILS/);
@@ -224,13 +277,13 @@ test("keeps personal Google testing isolated from company production", async () 
   assert.match(projectDriveApi, /drive_folder_mappings/);
   assert.doesNotMatch(projectDriveApi, /UPDATE projects SET drive_folder_id/);
   assert.match(schema, /drive_folder_mappings_profile_entity_folder_unique/);
-  assert.match(guide, /External\*\* OAuth consent screen in \*\*Testing/);
-  assert.match(guide, /company-owned Google Cloud project and OAuth client/);
-  assert.match(guide, /Google OAuth client ID or client secret is missing/);
-  assert.match(guide, /Use the hosted app on a phone/);
+  assert.match(guide, /creates no Google OAuth attempt, refresh token, API request/);
+  assert.match(guide, /Live Google Workspace prerequisites/);
+  assert.match(guide, /administrator connection account/);
+  assert.match(guide, /Web application OAuth client/);
 });
 
-test("provides explicit, test-only Gmail and Calendar controls", async () => {
+test("provides explicit Gmail and Calendar controls in simulation and Workspace modes", async () => {
   const [oauth, gmail, gmailHelper, gmailLabel, gmailSend, calendar, calendarHold, app, guide] = await Promise.all([
     read("app/lib/google-oauth.ts"), read("app/lib/google-gmail.ts"),
     read("app/api/v1/integrations/google/gmail/_route-helpers.ts"),
@@ -240,21 +293,25 @@ test("provides explicit, test-only Gmail and Calendar controls", async () => {
     read("app/api/v1/integrations/google/calendar/test-hold/route.ts"),
     read("app/FloorOpsApp.tsx"), read("docs/testing-and-google-workspace-setup.md"),
   ]);
-  assert.match(oauth, /ENABLED_SERVICES/);
+  assert.match(oauth, /GOOGLE_WORKSPACE_/);
   assert.match(oauth, /https:\/\/www\.googleapis\.com\/auth\/gmail\.modify/);
   assert.match(oauth, /https:\/\/www\.googleapis\.com\/auth\/calendar\.events/);
-  assert.match(gmailHelper, /assertGoogleTestService\(config, "gmail"\)/);
+  assert.match(gmailHelper, /getWorkspaceGmailClient/);
+  assert.match(gmailHelper, /assertGoogleService\(config, "gmail"\)/);
+  assert.match(gmailHelper, /config\.simulation/);
+  assert.match(gmailHelper, /WorkspaceSimulationGmailClient/);
   assert.match(gmailHelper, /getGoogleAccessToken\(config, "gmail"\)/);
-  assert.match(gmail, /expectedGoogleEmails\.includes\(recipient\)/);
+  assert.match(gmail, /allowedDomains\.includes/);
   assert.match(gmailLabel, /inbox_retained=true/);
   assert.match(gmailSend, /requireSameOrigin/);
   assert.match(calendar, /visibility: "private"/);
   assert.match(calendar, /attendees=none/);
   assert.match(calendarHold, /requireSameOrigin/);
-  assert.match(app, /Gmail & Calendar test controls/);
-  assert.match(app, /Send self-test email/);
+  assert.match(calendarHold, /config\.simulation/);
+  assert.match(app, /Simulation controls/);
+  assert.match(app, /Add sample email/);
   assert.match(app, /Create test hold/);
-  assert.match(guide, /GOOGLE_TEST_ENABLED_SERVICES=drive,gmail,calendar/);
+  assert.match(guide, /GOOGLE_WORKSPACE_ENABLED_SERVICES=drive,gmail,calendar,sheets/);
 });
 
 test("files Gmail only after an explicit single-project review", async () => {
@@ -277,4 +334,49 @@ test("files Gmail only after an explicit single-project review", async () => {
   assert.match(filingRoute, /fciGmailMessageId/);
   assert.match(filingRoute, /applyFiledLabel/);
   assert.match(filingRoute, /inboxRetained: true/);
+});
+
+test("captures durable project meetings and bounded Otter evidence", async () => {
+  const [workspaceSchema, schema, meetingsApi, app, assistantApi] = await Promise.all([
+    read("app/api/v1/_workspace-data.ts"), read("db/schema.ts"),
+    read("app/api/v1/projects/[projectId]/meetings/route.ts"), read("app/FloorOpsApp.tsx"),
+    read("app/api/v1/assistant/route.ts"),
+  ]);
+
+  assert.match(workspaceSchema, /CREATE TABLE IF NOT EXISTS project_meetings/);
+  assert.match(workspaceSchema, /project_meetings_project_date_idx/);
+  assert.match(schema, /export const projectMeetings = sqliteTable\("project_meetings"/);
+  assert.match(schema, /sourceProvider: text\("source_provider"\)/);
+  assert.match(schema, /transcript: text\("transcript"\)/);
+
+  assert.match(meetingsApi, /export async function GET/);
+  assert.match(meetingsApi, /export async function POST/);
+  assert.match(meetingsApi, /requireOfficeUser\(request\)/);
+  assert.match(meetingsApi, /requireSameOrigin\(request\)/);
+  assert.match(meetingsApi, /Meeting title is required and must be 160 characters or fewer/);
+  assert.match(meetingsApi, /optionalText\(body\.transcript, 100_000\)/);
+  assert.match(meetingsApi, /parsed\.protocol !== "https:"/);
+  assert.match(meetingsApi, /hostname === "otter\.ai" \|\| hostname\.endsWith\("\.otter\.ai"\)/);
+  assert.match(meetingsApi, /Add an Otter link, notes, summary, transcript, decision, or action item/);
+  assert.match(meetingsApi, /INSERT INTO project_meetings/);
+  assert.match(meetingsApi, /INSERT INTO activity_events/);
+  assert.match(meetingsApi, /Meeting notes captured/);
+
+  assert.match(app, /<ProjectMeetings project=\{project\} notify=\{notify\} \/>/);
+  assert.match(app, /Recommended Otter workflow/);
+  assert.match(app, /Capture meeting notes/);
+  assert.match(app, /name="sourceUrl"/);
+  assert.match(app, /name="attendees"/);
+  assert.match(app, /name="summary"/);
+  assert.match(app, /name="decisions"/);
+  assert.match(app, /name="actionItems"/);
+  assert.match(app, /name="notes"/);
+  assert.match(app, /name="transcript"/);
+  assert.match(app, /Open source/);
+
+  assert.match(assistantApi, /FROM project_meetings WHERE project_id = \?/);
+  assert.match(assistantApi, /id: `meeting:\$\{meeting\.id\}`/);
+  assert.match(assistantApi, /Source: \$\{meeting\.source_provider\}/);
+  assert.match(assistantApi, /Transcript excerpt: \$\{compact\(meeting\.transcript, 900\)\}/);
+  assert.match(assistantApi, /SELECT COUNT\(\*\) AS total FROM project_meetings/);
 });
