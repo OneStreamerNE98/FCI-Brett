@@ -60,9 +60,9 @@ test("includes migrations and the Floor Coverings International logo asset", asy
 });
 
 test("adds a searchable, configurable inbox with draft-only personal replies", async () => {
-  const [app, searchApi, settingsApi, ruleApi, replyApi, gmail, manifest] = await Promise.all([
-    read("app/FloorOpsApp.tsx"), read("app/api/v1/search/route.ts"), read("app/api/v1/settings/workspace/route.ts"),
-    read("app/api/v1/filing-rules/[ruleId]/route.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts"),
+  const [app, phonePanel, searchApi, settingsApi, ruleApi, replyApi, gmail, manifest] = await Promise.all([
+    read("app/FloorOpsApp.tsx"), read("app/PhoneInstallPanel.tsx"), read("app/api/v1/search/route.ts"),
+    read("app/api/v1/settings/workspace/route.ts"), read("app/api/v1/filing-rules/[ruleId]/route.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts"),
     read("app/lib/google-gmail.ts"), read("public/manifest.webmanifest"),
   ]);
   assert.match(app, /Search this Gmail mailbox/);
@@ -72,6 +72,7 @@ test("adds a searchable, configurable inbox with draft-only personal replies", a
   assert.match(app, /WorkspaceDefaultsPanel/);
   assert.match(app, /Shared Google test account/);
   assert.match(app, /reset to its built-in default/);
+  assert.match(app, /PhoneInstallPanel/);
   assert.match(searchApi, /contacts ct JOIN clients/);
   assert.match(searchApi, /ESCAPE/);
   assert.match(settingsApi, /workspace_settings/);
@@ -83,6 +84,8 @@ test("adds a searchable, configurable inbox with draft-only personal replies", a
   assert.match(gmail, /createReplyDraft/);
   assert.match(gmail, /getReplyContext/);
   assert.match(manifest, /"display": "standalone"/);
+  assert.match(phonePanel, /beforeinstallprompt/);
+  assert.match(phonePanel, /Add to Home Screen/);
 });
 
 test("keeps personal preferences scoped to the authenticated office user", async () => {
@@ -223,6 +226,8 @@ test("keeps personal Google testing isolated from company production", async () 
   assert.match(schema, /drive_folder_mappings_profile_entity_folder_unique/);
   assert.match(guide, /External\*\* OAuth consent screen in \*\*Testing/);
   assert.match(guide, /company-owned Google Cloud project and OAuth client/);
+  assert.match(guide, /Google OAuth client ID or client secret is missing/);
+  assert.match(guide, /Use the hosted app on a phone/);
 });
 
 test("provides explicit, test-only Gmail and Calendar controls", async () => {

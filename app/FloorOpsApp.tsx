@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, Bell, Bot, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, FileText, FolderOpen, FolderTree, HardHat,
@@ -8,6 +8,7 @@ import {
   ListFilter, LogOut, Plus, RefreshCw, Reply, Search, Send, Settings, ShieldCheck, Sparkles, Trash2, Upload, Users, X, Zap,
 } from "lucide-react";
 import { DEFAULT_FILING_RULES, DRIVE_BLUEPRINT, evaluateInboxFilingRules, type FilingRuleDraft } from "./lib/google-workspace";
+import { PhoneInstallPanel } from "./PhoneInstallPanel";
 
 type View = "Overview" | "Leads" | "Clients" | "Projects" | "Schedule" | "Inbox" | "AI Assistant" | "Reports" | "Settings";
 type Lead = { id: string; company: string; contact: string; project: string; value: string; stage: string; source: string; next: string; initials: string; color: string };
@@ -990,7 +991,7 @@ function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calend
 }
 
 function DataSecurityPanel() {
-  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Safety & access</p><h2>Data & security</h2><p>These safeguards are already active in the prototype and identify what must be completed before staff-wide use.</p></div></div><div className="settings-security-list"><div><ShieldCheck size={18} /><span><strong>Review-first email filing</strong><small>Messages retain Inbox; project copies and FCI/Filed occur only after a direct approval.</small></span></div><div><Users size={18} /><span><strong>FCI account and Google account stay distinct</strong><small>Account preferences are tied to the signed-in FCI user. Individual Google connections will be explicitly authorized later; the current test connection is shared and administrator-managed.</small></span></div><div><Building2 size={18} /><span><strong>Separate personal test and company production profiles</strong><small>Personal Google credentials and folders are never promoted to company production.</small></span></div><div><Settings size={18} /><span><strong>Installable web app</strong><small>This site now includes a web-app manifest. In Chrome or Edge, use the browser’s Install app command to add FCI Operations as its own app window. The Google app launcher cannot add an arbitrary personal URL; a true Gmail sidebar requires a separate Workspace Add-on deployment.</small></span></div></div></section>;
+  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Safety & access</p><h2>Data & security</h2><p>These safeguards are already active in the prototype and identify what must be completed before staff-wide use.</p></div></div><div className="settings-security-list"><div><ShieldCheck size={18} /><span><strong>Review-first email filing</strong><small>Messages retain Inbox; project copies and FCI/Filed occur only after a direct approval.</small></span></div><div><Users size={18} /><span><strong>FCI account and Google account stay distinct</strong><small>Account preferences are tied to the signed-in FCI user. Individual Google connections will be explicitly authorized later; the current test connection is shared and administrator-managed.</small></span></div><div><Building2 size={18} /><span><strong>Separate personal test and company production profiles</strong><small>Personal Google credentials and folders are never promoted to company production.</small></span></div><div><Settings size={18} /><span><strong>Installable web app</strong><small>This site now includes a web-app manifest. In Chrome or Edge, use the browser’s Install app command to add FCI Operations as its own app window. The Google app launcher cannot add an arbitrary personal URL; a true Gmail sidebar requires a separate Workspace Add-on deployment.</small></span></div></div><PhoneInstallPanel /></section>;
 }
 
 function formatSyncTime(value: number | null) {
@@ -1054,8 +1055,9 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
   const [filingLoading, setFilingLoading] = useState(false);
   const [filingSubmitting, setFilingSubmitting] = useState(false);
+  const readinessChecked = useRef(false);
 
-  async function checkSetup() {
+  const checkSetup = useCallback(async () => {
     setChecking(true);
     try {
       const response = await fetch("/api/v1/google-workspace");
@@ -1096,7 +1098,14 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
     } finally {
       setChecking(false);
     }
-  }
+  }, [notify]);
+
+  useEffect(() => {
+    if (readinessChecked.current) return;
+    readinessChecked.current = true;
+    const check = window.setTimeout(() => { void checkSetup(); }, 0);
+    return () => window.clearTimeout(check);
+  }, [checkSetup]);
 
   async function connectGoogleDrive() {
     setWorking(true);
@@ -1296,6 +1305,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   const reconnectRequired = workspace?.requiresReauthorization === true;
   const selectedServices = workspace?.enabledServices?.join(", ") ?? "drive";
   const storageName = workspace?.storageName ?? "FCI Operations";
+  const personalCredentialsMissing = testProfile && missing.some((item) => item === "Google OAuth client ID" || item === "Google OAuth client secret");
   const oauthResult = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("google");
   const oauthMessage = oauthResult === "connected"
     ? "Google was connected. Run the readiness check to refresh this panel."
@@ -1314,11 +1324,15 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   return <section className="panel workspace-settings">
     <div className="settings-heading">
       <div>
-        <p className="eyebrow">Google Workspace foundation</p>
-        <h2>Google Workspace</h2>
-        <p>{testProfile ? "Personal Google testing is one administrator-managed test profile. It does not automatically attach to every signed-in FCI user; production will use a separate company connection and individual user authorizations where needed." : "This production profile is reserved for the company Google account and company-owned workspace."}</p>
+        <p className="eyebrow">Google account connection</p>
+        <h2>Google connections</h2>
+        <p>{testProfile ? "Personal Gmail is the active test profile. It will connect your approved personal Gmail, dedicated Drive folder, Calendar, and Sheets together after its Google OAuth credentials are available." : "This production profile is reserved for the company Google account and company-owned workspace."}</p>
       </div>
       <button className="primary-button" onClick={checkSetup} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
+    </div>
+    <div className="google-profile-status" aria-label="Google connection profiles">
+      <div className={testProfile ? "active" : ""}><Mail size={16} /><span><strong>Personal Gmail test</strong><small>{testProfile ? "Active profile · Gmail, Drive, Calendar, and Sheets use your dedicated personal test setup." : "Available only when the personal test profile is selected by an administrator."}</small></span></div>
+      <div className={!testProfile ? "active" : ""}><Building2 size={16} /><span><strong>Company Workspace</strong><small>{!testProfile ? "Active company profile." : "Separate future profile · keep it isolated from personal testing."}</small></span></div>
     </div>
     <div className={`workspace-connection ${connected ? "ready" : ""}`}>
       <div className="integration-logo google"><Mail size={20} /></div>
@@ -1328,6 +1342,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       </div>
       <span>{connected ? "Connected" : reconnectRequired ? "Reconnect" : configured ? "Authorize next" : temporary && workspace?.storageConfigured ? "Storage ready" : "Not connected"}</span>
     </div>
+    {personalCredentialsMissing && <div className="workspace-missing personal-profile-block"><CircleAlert size={16} /><span><strong>Personal Gmail is already selected.</strong> The test Drive folder and approved Gmail address are configured, but this hosted app is missing the personal Google OAuth client ID and client secret. Add those two values to the site’s secure settings, then return here and select <b>Connect personal test Google</b>. Switching to Workspace will not fix this specific error.</span></div>}
     {testProfile && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Personal test mode:</strong> use only self-sent test messages and sample documents. Gmail labels, self-test email, and Calendar holds require your direct click; the app never automatically archives email, removes Inbox, invites guests, or alters existing events.</span></p>}
     {workspace?.sheetsEnabled && <p className="workspace-warning"><FileText size={15} /><span><strong>Google Sheets:</strong> {sheetsReady ? "the Client Directory and Project Register mirror are ready. Use Settings → Client Directory to sync them." : workspace.clientDirectorySheetConfigured ? "reconnect Google to approve Sheets, then use Settings → Client Directory to run the first sync." : "add the Client Directory spreadsheet ID to the active Google profile before syncing."}</span></p>}
     {oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}

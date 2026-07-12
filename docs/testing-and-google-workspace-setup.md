@@ -32,6 +32,8 @@ Keep each project under `02_Projects`, not inside its client folder. The client 
 
 For a safe early prototype, use your personal Google account with one empty My Drive folder dedicated to FCI Operations and put the same structure inside it. Configure the hosted site with `GOOGLE_CONNECTION_ENVIRONMENT=test`, the `GOOGLE_TEST_*` values, and the new Client Directory Sheet ID.
 
+The active hosted test profile is the personal Gmail profile; it is not a company Workspace connection. If **Settings → Google connections → Check readiness** says that the Google OAuth client ID or client secret is missing, the hosted app cannot start Google authorization yet. Add `GOOGLE_TEST_CLIENT_ID` and the secret `GOOGLE_TEST_CLIENT_SECRET` in the hosting provider's secure runtime settings, keep the existing token-encryption secret in place, then run the readiness check again. Do not paste a client secret into chat or source control. Once readiness is complete, select **Connect personal test Google** and approve the connection while signed in to the approved personal Gmail account.
+
 Use only sample/test messages and documents. Do not use the account's My Drive root, share this temporary folder widely, or upload live client records. The personal test profile can request Drive, Sheets, Gmail, and Calendar scopes together when you deliberately set `GOOGLE_TEST_ENABLED_SERVICES=drive,gmail,calendar,sheets` and reconnect.
 
 For personal Gmail testing, use only messages you send to yourself. The Inbox deliberately does not load mail automatically: it first checks the approved Google connection, then requires an explicit **Load messages** action. It can prepare the three FCI test labels, show a small bounded inbox view, create a self-test email, save a reply as an unsent Gmail draft, and apply `FCI/Filed` only after you click the action. It does not automatically archive, remove `INBOX`, or file mail into a project folder. The app sign-in name and the connected Google account are displayed separately; they are not assumed to be the same identity.
@@ -88,7 +90,16 @@ Add these as hosted environment values/secrets, never to source control or chat:
 
 Use **Settings → Google Workspace → Check readiness** to confirm that the prototype has all configuration values. A green status there means only that configuration is present; it does not authorize access to Google data.
 
-## 5. What is available now and what comes next
+## 5. Use the hosted app on a phone
+
+Do not copy this site into Google Drive. Drive stores project files; the phone-friendly app is the hosted website itself. Open `https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/` on the phone, sign in to the same account that has access to the private site, and add it to the home screen:
+
+- **Android:** open the site in Chrome, tap the three-dot menu, then choose **Install app** or **Add to Home screen**.
+- **iPhone/iPad:** open the site in Safari, tap **Share**, then **Add to Home Screen** and **Add**.
+
+The same instructions are shown in **Settings → Data & security → Use FCI Operations like a phone app**. Installation creates a shortcut/app window but does not make the site available offline or bypass the site's sign-in protection.
+
+## 6. What is available now and what comes next
 
 The current release includes a protected personal-test OAuth flow: an approved administrator can connect Drive, Sheets, Gmail, and Calendar together, verify the dedicated Drive root, explicitly create an independent client/project folder tree, sync an app-owned Project Register plus the protected Client Directory fields, prepare test Gmail labels, send a self-test message, and create a private calendar test hold. Refresh tokens are encrypted and test/production folder mappings stay separate.
 
