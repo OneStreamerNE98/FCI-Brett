@@ -29,4 +29,70 @@ Record only the following non-secret decisions in this file or a GitHub issue. L
 
 ## Completion result
 
-This action is complete when the domain, connection account, initial app administrator, and production hostname are known. No password, OAuth secret, encryption key, or token should be recorded here.
+The pilot inputs are complete when the domain, operations connection account, and initial application administrator are known. The production hostname may remain `TBD` until the Cloud Run deployment and employee-login client are prepared. No password, OAuth secret, encryption key, or token should be recorded here.
+
+## Your next steps after completing the inputs
+
+Complete these actions in order. Do not start with employee login; connect and verify the single-user pilot first.
+
+### 1. Create the company Workspace resources
+
+Follow [Google Workspace accounts and resources](01-workspace-resources.md).
+
+- Create or confirm the operations connection account.
+- Create the `FCI Operations` Shared Drive.
+- Create the `FCI Operations Directory` Google Sheet inside that Shared Drive.
+- Create the `FCI • Client Appointments` and `FCI • Field Schedule` calendars.
+- Confirm the operations account can manage each resource.
+- Keep the Shared Drive, spreadsheet, and calendar IDs available for hosted configuration. These are not passwords, but do not paste them into public documentation.
+
+### 2. Create the Google Cloud project and OAuth client
+
+Follow [Google Cloud, OAuth, and API controls](02-google-cloud-and-oauth.md).
+
+- Create `FCI Operations Production` under the company Google organization.
+- Enable the Drive, Gmail, Calendar, and Sheets APIs.
+- Configure the Google Auth audience as **Internal**.
+- Create the `FCI Operations Workspace Connector` web OAuth client.
+- Add the exact hosted callback URI from the instructions.
+- Trust that client through Google Admin API Controls.
+- Store the OAuth client secret securely; never enter it in GitHub.
+
+### 3. Add the hosted application settings
+
+Follow [Hosted pilot configuration and connection](03-hosted-pilot-connection.md).
+
+- Add the company domain, operations account, Shared Drive ID, spreadsheet ID, and calendar IDs to the hosted application configuration.
+- Add the OAuth client secret and token-encryption key only through encrypted secret settings.
+- Keep `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false` during initial verification.
+
+### 4. Connect and test Google Workspace
+
+- Open the [hosted FCI Operations application](https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/).
+- Go to **Settings → Google Workspace → Check readiness**.
+- Resolve every missing item before selecting **Connect Google Workspace**.
+- Authorize only the approved operations connection account.
+- Verify Drive, Gmail, Calendar, and Sheets independently.
+- Enable Drive provisioning only after Shared Drive verification succeeds.
+
+### 5. Run the controlled pilot checklist
+
+Follow [Pilot and production acceptance](05-acceptance-checklist.md) using only records named `FCI TEST — DO NOT USE`.
+
+- Test two projects for one client.
+- Test the Sheet mirror and project folders.
+- Test reviewed Gmail copying and an unsent reply draft.
+- Test the Calendar hold, meeting records, and assistant citations.
+- Do not add employees or real client data yet.
+
+### 6. Begin employee Google login only after the pilot passes
+
+The production login work is documented in [Staff Google login, roles, and permissions](04-staff-login-and-permissions.md). Codex/development must implement users, secure sessions, Admin/Office/Project Manager roles, and project permissions before a second user is admitted.
+
+## What to report back after each topic
+
+You can return to Codex with a status update such as:
+
+> Workspace resources are complete. The operations account can manage the Shared Drive, directory Sheet, and both calendars. No secrets are included. Please update the Action Center and guide me through Google Cloud/OAuth next.
+
+Do not send passwords, OAuth client secrets, token-encryption keys, access tokens, or refresh tokens in the status update.
