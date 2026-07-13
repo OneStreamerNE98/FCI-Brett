@@ -8,15 +8,16 @@ Before changing code, read:
 
 1. `docs/codex-to-codex-handoff.md`
 2. `docs/architecture-decision-production-platform.md`
-3. `docs/ui-and-product-readiness-review.md`
-4. `docs/google-workspace-rollout-guide.md`
-5. `docs/actions/README.md`
-6. `docs/collaboration-and-sharing.md`
+3. `docs/20-user-product-and-architecture-review.md`
+4. `docs/ui-and-product-readiness-review.md`
+5. `docs/google-workspace-rollout-guide.md`
+6. `docs/actions/README.md`
+7. `docs/collaboration-and-sharing.md`
 
 ## Current product boundary
 
 - The Sites/Workers/D1/R2 deployment is a controlled, single-user pilot using test data only.
-- Production will use Cloud Run, Cloud SQL PostgreSQL with `pgvector`, Cloud Tasks/Pub/Sub, Cloud Storage, Secret Manager, and Google Workspace OIDC.
+- Production will use a small regional Cloud Run/Cloud SQL modular monolith, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Gmail Pub/Sub notifications, Calendar HTTPS webhooks, and Google Workspace OIDC. Add `pgvector` only when document indexing is scheduled.
 - Preserve the current pilot, Google Workspace test connector, and existing data unless the owner explicitly approves a migration or destructive change.
 - Do not add scheduling, messaging, or AI document indexing before the production platform and authorization foundation is accepted.
 - Do not admit a second user or store real client data until users, sessions, roles, project permissions, backup restoration, and audit controls pass acceptance.
@@ -54,9 +55,10 @@ npm.cmd run lint
 
 1. Google Cloud production foundation and tested migration/cutover path.
 2. Cloud SQL schema and provider-neutral database/storage boundaries.
-3. Google Workspace employee login, secure sessions, roles, and project permissions.
-4. Client/lead/project editing and archiving, atomic lead conversion, and durable tasks/follow-ups.
-5. Operational modules only after the preceding foundations pass acceptance.
+3. Approved 20-user role model plus cross-system Google access matrix.
+4. Google Workspace employee login, secure sessions, capabilities, roles, and project permissions.
+5. Client/lead/project editing and archiving, atomic lead conversion, and durable tasks/follow-ups.
+6. Operational modules only after the preceding foundations pass acceptance.
 
 ## Handoff requirements
 

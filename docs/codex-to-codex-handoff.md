@@ -81,7 +81,7 @@ The expected result is a read-only orientation report plus a passing baseline. T
 
 After onboarding passes, use this prompt:
 
-> Create and work on `codex/google-cloud-foundation`. The next milestone is the Google Cloud production foundation and tested migration path described in `AGENTS.md` and `docs/architecture-decision-production-platform.md`. Prepare the Cloud Run deployment boundary, Cloud SQL PostgreSQL schema/migrations, provider-neutral database and storage interfaces, secret/configuration plan, and controlled pilot-to-production cutover plan. Preserve the current hosted pilot and Google Workspace connector. Do not build scheduling, messaging, AI document indexing, or perform a production deployment. Work in small tested commits and finish with a pull request containing verification evidence and a data/security impact note.
+> Create and work on `codex/google-cloud-foundation`. First read `AGENTS.md`, `docs/20-user-product-and-architecture-review.md`, `docs/architecture-decision-production-platform.md`, and `docs/actions/README.md`. Build the small-company Google Cloud foundation and tested migration path: one regional Cloud Run modular monolith, Cloud SQL PostgreSQL schema/migrations, provider-neutral database and storage interfaces, Secret Manager plan, Cloud Tasks processing, Gmail Pub/Sub notification boundary, Calendar HTTPS webhook boundary, observability, recovery, and controlled pilot-to-production cutover. Preserve the hosted pilot and Google Workspace connector. Do not build scheduling, messaging, AI document indexing, or perform a production deployment. Work in small tested commits and finish with a pull request containing verification evidence and a data/security impact note.
 
 ## Daily collaboration workflow
 

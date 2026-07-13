@@ -10,7 +10,7 @@ Open the [FCI Operations ChatGPT website](https://groundwork-flooring-ops.jagger
 
 ## Action Center
 
-Open the [Google Workspace and login Action Center](docs/actions/README.md) for topic-by-topic owner tasks, current blockers, hosted configuration, staff-login development, and acceptance checklists. Complete [Setup inputs and decisions](docs/actions/00-setup-inputs.md) first. Never enter passwords, OAuth secrets, encryption keys, or tokens in GitHub.
+Open the [Google Workspace and product-readiness Action Center](docs/actions/README.md) for topic-by-topic owner tasks, current blockers, hosted configuration, the 20-user access model, production migration, staff-login development, operations, interface hardening, and acceptance checklists. Complete [Setup inputs and decisions](docs/actions/00-setup-inputs.md) first. Never enter passwords, OAuth secrets, encryption keys, or tokens in GitHub.
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 - One protected company Google Workspace OAuth connection for Drive, Gmail, Calendar, and Sheets
 - Local Workspace simulation with sample mail, calendar events, folders, drafts, and Sheet sync state
 - Google Drive / Shared Drive and Google Sheet organizational blueprint
-- Gmail review queue and Calendar test controls, project scheduling, client/project activity, and AI assistant prototype
+- Gmail review queue, Calendar test controls, client/project activity, and AI assistant prototype; project scheduling remains planned
 - Durable project meeting notes with Otter links, summaries, decisions, action items, transcript excerpts, and assistant evidence
 - D1-backed data-model and API foundation for clients, contacts, projects, meetings, rules, mail items, and workspace settings
 
@@ -49,7 +49,7 @@ Before real client data is stored, backup restoration, sensitive-action audit co
 
 ## Production architecture
 
-The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains a controlled pilot; production will run on Google Cloud Run with Cloud SQL PostgreSQL, `pgvector`, Cloud Tasks/Pub/Sub, Cloud Storage, Secret Manager, and Google Workspace OIDC. Complete this migration before building scheduling, messaging, or AI document indexing.
+The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains a controlled pilot; production will use a small regional Google Cloud topology centered on Cloud Run, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Defer `pgvector` until permission-filtered document indexing is scheduled. Complete this migration before building scheduling, messaging, or AI document indexing.
 
 Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the migration boundary, cutover requirements, and consequences.
 
@@ -72,7 +72,7 @@ Complete the next product milestone in this order:
 
 After that foundation is accepted, build appointment state management and Calendar reconciliation; workers, crews, shifts, conflicts, publishing, and acknowledgements; provider-neutral messaging with consent and delivery tracking; durable Gmail review queues; and project closeout. Permission-filtered AI indexing, forecasting, retry dashboards, and a Workspace Marketplace add-on come later.
 
-See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page audit and complete roadmap.
+See the [20-user product and architecture review](docs/20-user-product-and-architecture-review.md) for the rollout verdict, architecture, access model, priority findings, and corrected delivery order. See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page UI audit.
 
 ## Google Workspace pilot rollout
 

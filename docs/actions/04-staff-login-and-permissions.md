@@ -17,8 +17,11 @@ This is development work, not a Google Admin switch. Do not add a second user un
 | Project Manager | Only assigned projects and the client/contact context required for those projects |
 
 - [ ] Business owner approves or changes this role policy.
-- [ ] Business owner identifies the initial Admin account.
-- [ ] Business owner decides whether same-domain users require an explicit invitation. Recommended: yes.
+- [ ] Business owner identifies two initial Admin accounts so recovery does not depend on one person.
+- [ ] Business owner requires an explicit invitation for same-domain users. Recommended: yes.
+- [ ] Business owner decides whether Sales/Estimator is part of Office or a separate role.
+- [ ] Business owner decides whether field/crew leads receive a limited application role or expiring links.
+- [ ] Business owner approves the [cross-system Google access matrix](06-20-user-operating-model-and-access.md).
 
 ## Development actions
 
@@ -26,10 +29,13 @@ This is development work, not a Google Admin switch. Do not add a second user un
 - [ ] Verify the Google signature, issuer, audience, expiry, nonce/CSRF protection, `email_verified`, and signed `hd` company-domain claim on the server.
 - [ ] Use Google's immutable `sub` claim as the external identity key, not email.
 - [ ] Add durable users, sessions, roles, disabled status, and project memberships in Cloud SQL.
+- [ ] Add server-enforced capabilities for user administration, connector administration, Gmail filing, Calendar writes, Drive provisioning/sharing, exports, financial data, audit, and recovery.
 - [ ] Issue a Secure, HttpOnly, SameSite session cookie and support expiry, rotation, logout, and revocation.
 - [ ] Replace trust in `oai-authenticated-user-email` for the Cloud Run deployment.
 - [ ] Enforce authorization inside data queries for clients, projects, leads, dashboard, search, meetings, uploads, Gmail filing, and assistant evidence.
 - [ ] Pass the real role to the interface instead of displaying `Administrator` for everyone.
+- [ ] Remove company-wide list/search/dashboard/assistant results for roles limited to assigned projects.
+- [ ] Revoke active sessions immediately when a user is disabled or materially loses access.
 - [ ] Audit login failures, logout, user disablement, role changes, and project assignments without logging tokens.
 
 ## Required tests
@@ -37,12 +43,15 @@ This is development work, not a Google Admin switch. Do not add a second user un
 - [ ] Approved company Admin
 - [ ] Approved Office user
 - [ ] Project Manager assigned to a project
+- [ ] Project Manager removed from a project while signed in
 - [ ] Same-domain but uninvited user
 - [ ] Outside Workspace account
 - [ ] Personal Gmail account
 - [ ] Disabled user
 - [ ] Expired or revoked session
 - [ ] Cross-project reads, search, assistant questions, and writes
+- [ ] Direct API and bookmarked URL access after the interface hides a forbidden action
+- [ ] Google Group/folder/calendar access removal matches the application role change
 
 ## Completion result
 

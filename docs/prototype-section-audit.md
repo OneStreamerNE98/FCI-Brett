@@ -39,8 +39,8 @@ The application now loads leads, clients, projects, dashboard totals, meetings, 
 ## Recommended delivery order
 
 1. **Make data truthful (first remediation completed):** empty/error states, normalized leads, durable stage changes, live dashboard/report totals, collision-safe numbering, and no browser-only save fallback. Lead conversion remains next.
-2. **Complete the project workspace:** project editing, tasks/follow-ups, meeting refinement, documents/images, real activity, dates/progress, and closeout.
-3. **Build scheduling operations:** phases, workers, crews, shifts, conflict detection, controlled publishing, employee messages, and acknowledgement links.
-4. **Productionize Inbox and appointments:** server-side intake queue, structured rules, Gmail watch/history, dual-confirmation appointments, reminders, thread view, scanning, and retries.
-5. **Add permissions and safe AI retrieval:** roles, record permissions, audit/rate controls, approved document indexing, citation evaluation, and cross-project leakage tests.
-6. **Replace Reports and launch checks:** real metric APIs, drilldowns, exports, role-based financial visibility, backup restoration, and full lifecycle acceptance testing.
+2. **Build the production and authorization foundation:** Cloud Run/Cloud SQL migration, invited Workspace identity, secure sessions, roles, capabilities, project memberships, Google access matrix, recovery, and audit controls.
+3. **Complete the project workspace:** project editing, tasks/follow-ups, meeting refinement, documents/images, real activity, dates/progress, closeout, concurrency protection, and assigned-project query scoping.
+4. **Productionize Inbox and appointments:** server-side intake queue, structured rules, Gmail watch/history, dual-confirmation appointments, reminders, thread view, scanning, retries, and exact-project filing integrity.
+5. **Build scheduling operations:** phases, workers, crews, shifts, conflict detection, controlled publishing, employee messages, acknowledgement links, and the approved field-access model.
+6. **Add safe AI retrieval, Reports, and launch checks:** permission-filtered indexing, audit/rate controls, citation evaluation, leakage tests, metric APIs, drilldowns, exports, role-based financial visibility, restore drills, and lifecycle acceptance.

@@ -13,6 +13,8 @@ Local development uses Workspace simulation. It follows the same organization bu
 
 ## Shared Drive blueprint
 
+Shared Drive membership is broader than application project membership: members normally see all content in the drive unless a folder is configured for limited access. Keep Project Managers and field staff off the Shared Drive root when their application role is narrower, and grant only approved project-folder access through role-aligned Google Groups.
+
 ```text
 FCI Operations/
   00_Company Admin/
@@ -74,7 +76,7 @@ FCI Operations remains authoritative. App-created Workspace events are linked ba
 ## Workspace setup checklist
 
 - Subscribe to or trial Google Workspace and verify a company-controlled domain.
-- Create company users and Google Groups for office, project managers, and field leads.
+- Approve the [20-user app-to-Google access matrix](actions/06-20-user-operating-model-and-access.md), then create only the Google Groups required by that matrix.
 - Create the `FCI Operations` Shared Drive.
 - Create the Client Directory Sheet, intake mailbox, and two shared calendars.
 - Create a Google Cloud project and enable Drive, Gmail, Calendar, Sheets, and Pub/Sub APIs.
@@ -90,3 +92,5 @@ FCI Operations remains authoritative. App-created Workspace events are linked ba
 - Complete permission tests for office, project managers, employees, and subcontractors.
 - Validate backup restoration and account revocation.
 - Complete the full lead-to-closeout scenario with non-production Workspace records.
+
+See Google’s guidance for [Shared Drive access levels and limited-access folders](https://support.google.com/a/users/answer/12380484?hl=en), [Shared Drive best practices](https://support.google.com/a/users/answer/13015138?hl=en), and [managing Shared Drives with Google Groups](https://support.google.com/a/users/answer/7212025?hl=en).
