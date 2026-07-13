@@ -6,6 +6,12 @@ Commercial flooring operations software for client intake, independent project d
 
 Open the [FCI Operations ChatGPT website](https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/) to view the current hosted application. Access requires an authorized ChatGPT sign-in. Use only clearly marked test data until the production acceptance checklist in this README passes.
 
+[![Build and test](https://github.com/OneStreamerNE98/FCI-Brett/actions/workflows/ci.yml/badge.svg)](https://github.com/OneStreamerNE98/FCI-Brett/actions/workflows/ci.yml)
+
+## Action Center
+
+Open the [Google Workspace and login Action Center](docs/actions/README.md) for topic-by-topic owner tasks, current blockers, hosted configuration, staff-login development, and acceptance checklists. Complete [Setup inputs and decisions](docs/actions/00-setup-inputs.md) first. Never enter passwords, OAuth secrets, encryption keys, or tokens in GitHub.
+
 ## Prerequisites
 
 - Node.js `>=22.13.0`
