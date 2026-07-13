@@ -281,7 +281,7 @@ export function createPostgresOutboxRepository(
                    + ($2::double precision * interval '1 millisecond'),
                  completed_at = NULL,
                  dead_lettered_at = NULL,
-                 updated_at = pg_catalog.greatest(pg_catalog.now(), event.created_at),
+                 updated_at = GREATEST(pg_catalog.now(), event.created_at),
                  version = event.version + 1
              FROM candidates
              WHERE event.id = candidates.id
@@ -314,9 +314,9 @@ export function createPostgresOutboxRepository(
         const completed = await client.query<TransitionRow>(
           `UPDATE outbox_events
            SET status = 'completed', lease_expires_at = NULL,
-               completed_at = pg_catalog.greatest(pg_catalog.now(), created_at),
+               completed_at = GREATEST(pg_catalog.now(), created_at),
                dead_lettered_at = NULL,
-               updated_at = pg_catalog.greatest(pg_catalog.now(), created_at),
+               updated_at = GREATEST(pg_catalog.now(), created_at),
                version = version + 1
            WHERE id = $1 AND status = 'processing' AND version = $2::bigint
            RETURNING status, version::text AS version, available_at,
@@ -374,7 +374,7 @@ export function createPostgresOutboxRepository(
                END,
                available_at = CASE
                  WHEN event.attempt_count >= $4 THEN event.available_at
-                 ELSE pg_catalog.greatest(
+                 ELSE GREATEST(
                    event.created_at,
                    pg_catalog.now() + ($3::double precision * interval '1 millisecond')
                  )
@@ -385,10 +385,10 @@ export function createPostgresOutboxRepository(
                completed_at = NULL,
                dead_lettered_at = CASE
                  WHEN event.attempt_count >= $4
-                   THEN pg_catalog.greatest(pg_catalog.now(), event.created_at)
+                   THEN GREATEST(pg_catalog.now(), event.created_at)
                  ELSE NULL
                END,
-               updated_at = pg_catalog.greatest(pg_catalog.now(), event.created_at),
+               updated_at = GREATEST(pg_catalog.now(), event.created_at),
                version = event.version + 1
            WHERE event.id = $1 AND event.status = 'processing'
              AND event.version = $2::bigint
@@ -462,7 +462,7 @@ export function createPostgresOutboxRepository(
                  END,
                  available_at = CASE
                    WHEN event.attempt_count >= $3 THEN event.available_at
-                   ELSE pg_catalog.greatest(
+                   ELSE GREATEST(
                      event.created_at,
                      pg_catalog.now() + ($2::double precision * interval '1 millisecond')
                    )
@@ -473,10 +473,10 @@ export function createPostgresOutboxRepository(
                  completed_at = NULL,
                  dead_lettered_at = CASE
                    WHEN event.attempt_count >= $3
-                     THEN pg_catalog.greatest(pg_catalog.now(), event.created_at)
+                     THEN GREATEST(pg_catalog.now(), event.created_at)
                    ELSE NULL
                  END,
-                 updated_at = pg_catalog.greatest(pg_catalog.now(), event.created_at),
+                 updated_at = GREATEST(pg_catalog.now(), event.created_at),
                  version = event.version + 1
              FROM candidates
              WHERE event.id = candidates.id

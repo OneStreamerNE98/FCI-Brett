@@ -38,6 +38,11 @@ function fakePool(workQuery) {
   const client = {
     async query(sql, values = []) {
       queries.push({ sql, values });
+      assert.doesNotMatch(
+        sql,
+        /pg_catalog\.greatest/i,
+        "PostgreSQL GREATEST is special syntax and cannot be schema-qualified",
+      );
       if (sql.includes("set_config('search_path'")) {
         configuredSchema = values[0].split(",", 1)[0];
         return { rows: [], rowCount: 1 };
