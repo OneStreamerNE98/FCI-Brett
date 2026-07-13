@@ -7,7 +7,7 @@ Audience: Business owner, Workspace administrator, product owner, and developers
 
 Development does not need to wait for a live Google Workspace connection. The application already has an isolated Workspace simulation, and the highest-priority production work is the provider-neutral platform, authorization, core-record safety, interface accessibility, and test coverage.
 
-The Workspace administrator can prepare the company resources in parallel. Keep the hosted application as a one-user, test-data pilot, and do not admit staff or store real client data until the production, permission, recovery, and audit gates pass.
+The Workspace administrator can prepare the company resources in parallel. Keep the hosted application as a one-user development environment using test data, and do not admit staff or store real client data until the production, permission, recovery, and audit gates pass.
 
 ## Work that can start now
 
@@ -19,15 +19,15 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 - [ ] Add complete keyboard behavior to global search and navigation popovers.
 - [ ] Split the large client component into route, feature, and shared-component modules.
 - [ ] Add independent loading, error, retry, and last-updated states instead of one all-or-nothing screen state.
-- [ ] Label operational surfaces as Working, Pilot, Setup required, or Planned.
+- [ ] Label operational surfaces as Working, In development, Setup required, or Planned.
 - [ ] Raise very small operational text and verify keyboard use, 200% zoom, 390 px mobile, tablet, and desktop layouts.
 
 ### Production architecture
 
-- [ ] Introduce provider-neutral database, object-storage, secret/configuration, and queued-job interfaces while retaining the existing D1/R2 pilot adapters.
+- [ ] Introduce provider-neutral database, object-storage, secret/configuration, and queued-job interfaces while retaining the existing D1/R2 development adapters.
 - [x] Add the first source-only PostgreSQL core schema and concurrent-runner-safe migration system with immutable checksums, foreign keys, constrained states, timestamps, version columns, idempotency, audit evidence, and an outbox. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
 - [ ] Extend the production model with users, invitations, sessions, roles, capabilities, and project memberships, then connect those identities to the existing append-only audit, idempotency, and outbox records.
-- [ ] Add Cloud Run container and runtime support without changing the hosted pilot.
+- [ ] Add Cloud Run container and runtime support without changing the hosted development environment.
 - [ ] Add reviewable infrastructure definitions for development, staging, and production; do not apply them until owner inputs and deployment approval exist.
 - [ ] Add Cloud Tasks handler contracts, retry/idempotency tests, and Cloud Storage quarantine interfaces using local fixtures.
 - [ ] Add Gmail Pub/Sub and Calendar HTTPS webhook boundaries using fixtures only; do not create live watches or channels yet.
@@ -74,7 +74,7 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 ## Recommended worker sequence
 
 1. **Completed frontend slice:** accessible dialog/drawer foundation and rendered keyboard QA.
-2. **Completed portability slice:** provider-neutral client and project creation services, D1 pilot adapters, safe mirror boundaries, and a centralized versioned D1 pilot schema runner. See [Portable client and project creation](portable-record-creation.md).
+2. **Completed portability slice:** provider-neutral client and project creation services, D1 development adapters, safe mirror boundaries, and a centralized versioned D1 development schema runner. See [Portable client and project creation](portable-record-creation.md).
 3. **Completed PostgreSQL foundation slice:** constrained client/contact/project, activity/audit, idempotency, outbox, and immutable migration-history tables; checksum validation; advisory locking; transactional forward migrations; restore/forward-fix rollback guidance; and PostgreSQL 16 CI coverage. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
 4. **Next database worker:** implement PostgreSQL client/project repository adapters, atomic actor-scoped idempotency claims, transactional activity/outbox writes, and shared repository contract tests. Keep network calls outside database transactions and do not provision or migrate Cloud SQL.
 5. **Authorization worker:** simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
@@ -86,14 +86,14 @@ Do not assign scheduling, outbound messaging, or AI document indexing until the 
 
 ## Completed portable creation assignment
 
-The portable creation worker completed the following bounded slice without changing the established HTTP response or pilot behavior:
+The portable creation worker completed the following bounded slice without changing the established HTTP response or development behavior:
 
 - Client/contact and project normalization, validation, and status rules now live in domain modules with no Next.js, Cloudflare, or Google imports.
 - Client and project repository ports define atomic creation intent; the client operation includes its primary contact and activity entry.
 - A directory-mirror port requests synchronization only after the durable database write succeeds.
-- D1 and synchronous Google mirror adapters preserve the current pilot and are explicitly bounded as pilot-only.
+- D1 and synchronous Google mirror adapters preserve the current development behavior and are explicitly bounded to development use.
 - Behavioral tests cover validation, duplicate/not-found results, atomic record intent, exact authorization capabilities, and a successful database write when the optional mirror fails.
-- The D1 pilot bootstrap is centralized in an ordered, versioned, retryable migration registry with parity tests.
+- The D1 development bootstrap is centralized in an ordered, versioned, retryable migration registry with parity tests.
 
 ## Completed PostgreSQL foundation assignment
 
@@ -108,7 +108,7 @@ The source-only PostgreSQL worker completed the first constrained production sch
 
 ## Next bounded developer assignment
 
-Assign one database worker to connect the existing provider-neutral creation services to the completed production schema without provisioning Cloud resources or changing the hosted pilot:
+Assign one database worker to connect the existing provider-neutral creation services to the completed production schema without provisioning Cloud resources or changing the hosted development environment:
 
 - Implement PostgreSQL client/project repository adapters against the existing provider-neutral contracts and run the same repository behavior suite against both adapters.
 - Claim actor-scoped request-idempotency keys with atomic `INSERT ... ON CONFLICT`, reject fingerprint reuse, and return an accepted prior result without duplicating a record.
@@ -117,4 +117,4 @@ Assign one database worker to connect the existing provider-neutral creation ser
 - Parse PostgreSQL `bigint`/`numeric` values without unsafe JavaScript coercion and generate the documented Unicode-normalized client-name key.
 - Document migration assumptions, identifier preservation, count/hash reconciliation, backup/restore prerequisites, and the owner approval required before any staging rehearsal.
 
-This assignment may add source code, local fixtures, and automated tests only. It must not create Cloud SQL, add credentials, migrate pilot data, alter live Workspace resources, or deploy production.
+This assignment may add source code, local fixtures, and automated tests only. It must not create Cloud SQL, add credentials, migrate development data, alter live Workspace resources, or deploy production.

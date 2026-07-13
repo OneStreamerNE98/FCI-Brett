@@ -5,11 +5,11 @@ Audience: Business owner, Google Workspace administrator, product owner, and dev
 
 ## Executive decision
 
-The current application is a credible single-user test pilot. It is not ready for a 20-person company rollout or real client data.
+The current application is a credible single-user hosted development environment. It is not ready for a 20-person company rollout or real client data.
 
 The strongest parts are the clear client-to-project structure, review-first Gmail workflow, Shared Drive and Sheets plan, records-based assistant citations, and honest placeholders for unfinished scheduling and task features. The rollout blockers are foundational rather than cosmetic:
 
-1. Every authenticated pilot user still has company-wide data access. The interface now shows the server-derived pilot access level (`Admin` or `Office`), but durable roles, capabilities, and project assignments are not implemented.
+1. Every authenticated user in the development environment still has company-wide data access. The interface now shows the current server-derived access level (`Admin` or `Office`), but durable roles, capabilities, and project assignments are not implemented.
 2. The production Google Cloud, PostgreSQL, background-job, backup, and recovery platform exists only as a documented decision.
 3. Application roles and Google Workspace permissions do not yet form one tested access model.
 4. The data model and synchronous Google operations are not safe for concurrent staff activity or transient Google outages.
@@ -19,7 +19,7 @@ Keep the hosted site limited to one authorized tester and clearly marked test re
 
 ## Evidence reviewed
 
-- The current hosted pilot was exercised across Overview, Leads, Clients, project details, Schedule, Inbox, AI Assistant, Reports, and Settings.
+- The current hosted development environment was exercised across Overview, Leads, Clients, project details, Schedule, Inbox, AI Assistant, Reports, and Settings.
 - No browser console errors appeared during the tested desktop workflows.
 - The application, API routes, database schema, Google connector code, tests, deployment configuration, and all repository documentation were reviewed.
 - Desktop interactions were checked at 1280 × 720. Screenshot capture timed out and the in-app browser did not apply the requested mobile viewport, so mobile visual acceptance remains unverified. Responsive CSS and mobile rendering branches were reviewed statically, but that is not a substitute for device testing.
@@ -84,9 +84,9 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 5. Implement backup/restore, audit viewing, file scanning/quarantine, retention, session revocation, key rotation, and connector-account continuity.
 6. Make saved Workspace resource IDs authoritative. Calendar configuration currently has both saved settings and environment values.
 7. Separate Settings loading and errors. A failed request must not silently look like a valid default value.
-8. Give every feature a visible readiness state: Working, Pilot, Setup required, or Planned. Disable or relabel actions that do not persist or send anything.
+8. Give every feature a visible readiness state: Working, In development, Setup required, or Planned. Disable or relabel actions that do not persist or send anything.
 
-### P2 — complete during the staff pilot
+### P2 — complete during development acceptance
 
 1. Replace the single in-memory page switcher with real routes so refresh, Back, bookmarks, and support links work.
 2. Add automatic refetch/invalidation, stale-data timestamps, and conflict handling for multi-user work.
@@ -120,7 +120,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 
 | Gate | Current result |
 | --- | --- |
-| Continue one-user test-data pilot | Go, with current safeguards and test-data cleanup |
+| Continue one-user test-data development | Go, with current safeguards and test-data cleanup |
 | Add a second employee | No-go until P0 identity, permissions, and Gmail integrity work passes |
 | Store real client or employee data | No-go until production platform, restore, audit, scanning, and retention controls pass |
 | Build scheduling or outbound messaging | No-go until platform, permissions, and background-job controls are accepted |

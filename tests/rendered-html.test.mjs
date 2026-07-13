@@ -175,7 +175,7 @@ test("keeps the app authoritative while mirroring clients and projects to Google
   assert.match(guide, /Project Register/);
 });
 
-test("wires prototype controls and exposes Workspace-only live configuration plus local simulation", async () => {
+test("wires development controls and exposes Workspace-only live configuration plus local simulation", async () => {
   const [app, workspaceApi, envExample, testGuide, oauth, driveWorkspace] = await Promise.all([
     read("app/FloorOpsApp.tsx"), read("app/api/v1/google-workspace/route.ts"),
     read(".env.example"), read("docs/testing-and-google-workspace-setup.md"),
@@ -192,6 +192,7 @@ test("wires prototype controls and exposes Workspace-only live configuration plu
   assert.match(app, /Workspace actions/);
   assert.match(app, /SourceDetailModal/);
   assert.match(app, /TestingLaunchPanel/);
+  assert.match(app, /Development environment · Test data only/);
   assert.doesNotMatch(app, /3 email suggestions approved and filed/);
   assert.match(workspaceApi, /credentialsPresent/);
   assert.match(workspaceApi, /connected: connection\.connected/);
@@ -348,10 +349,13 @@ test("labels unfinished features without presenting placeholder controls", async
 
   assert.doesNotMatch(navItems, /Schedule/);
   assert.match(app, /state="Working"/);
-  assert.match(app, /state="Pilot"/);
+  assert.match(app, /state="In development"/);
   assert.match(app, /"Setup required"/);
   assert.match(app, /state="Planned"/);
-  assert.match(badge, /"Working" \| "Pilot" \| "Setup required" \| "Planned"/);
+  assert.match(badge, /"Working" \| "In development" \| "Setup required" \| "Planned"/);
+  for (const retiredLabel of [["pi", "lot"], ["proto", "type"]].map((parts) => parts.join(""))) {
+    assert.doesNotMatch(`${app}\n${badge}`, new RegExp(retiredLabel, "i"));
+  }
   assert.match(app, /\(\["Overview", "Meetings"\] as const\)/);
   assert.match(app, /Planned project capabilities/);
   assert.match(app, /planned-project-updates/);

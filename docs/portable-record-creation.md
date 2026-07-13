@@ -6,7 +6,7 @@ Status: Implemented in source and covered by automated tests. Not deployed.
 
 ## Outcome
 
-Client and project creation now use provider-neutral domain and application services instead of placing business rules directly in Next.js route handlers. The current D1 database and synchronous Google directory mirror remain pilot adapters behind those boundaries, so the hosted pilot can keep its existing HTTP behavior while later production adapters are added deliberately.
+Client and project creation now use provider-neutral domain and application services instead of placing business rules directly in Next.js route handlers. The current D1 database and synchronous Google directory mirror remain development adapters behind those boundaries, so the hosted development environment can keep its existing HTTP behavior while later production adapters are added deliberately.
 
 This is a bounded portability proof. The first [production PostgreSQL foundation](production-postgresql-foundation.md) is now defined separately, but PostgreSQL repository adapters, multi-user authorization, queued Google synchronization, and the live Workspace connection remain incomplete.
 
@@ -15,7 +15,7 @@ This is a bounded portability proof. The first [production PostgreSQL foundation
 1. The API route resolves the signed-in actor and checks the exact required capability before validating or writing data.
 2. A provider-neutral domain module normalizes and validates the request.
 3. An application service calls a repository port using the actor ID supplied by the route.
-4. The D1 pilot adapter writes the primary record and activity evidence in one database batch. Client creation also includes its primary contact in that batch.
+4. The D1 development adapter writes the primary record and activity evidence in one database batch. Client creation also includes its primary contact in that batch.
 5. Only after the durable database write succeeds, the application service asks the optional directory-mirror port to synchronize.
 6. A mirror failure does not roll back the accepted record. The response contains only a safe pending status and a stable error code/message.
 
@@ -27,14 +27,14 @@ The application and domain layers do not import Next.js, Cloudflare bindings, or
 - `ProjectRepository` atomically verifies the client and creates a project plus activity entry.
 - `DirectoryMirror` is optional and runs only after a durable write.
 - `CreationAuthorization` checks `clients:create` or `projects:create` before any creation side effects.
-- D1 repository adapters preserve the current pilot identifiers, client codes, project numbers, duplicate handling, and response status codes.
-- The Google pilot mirror adapter returns an explicitly allowlisted result instead of leaking provider or credential details.
+- D1 repository adapters preserve the current development identifiers, client codes, project numbers, duplicate handling, and response status codes.
+- The Google development mirror adapter returns an explicitly allowlisted result instead of leaking provider or credential details.
 
-## Pilot schema bootstrap
+## Development schema bootstrap
 
-Pilot D1 schema changes now use the checked-in, ordered Drizzle sequence that Sites packages for controlled deployment. Normal API requests execute no schema DDL, and regression tests detect runtime DDL or missing schema/index artifacts.
+Development D1 schema changes now use the checked-in, ordered Drizzle sequence that Sites packages for controlled deployment. Normal API requests execute no schema DDL, and regression tests detect runtime DDL or missing schema/index artifacts.
 
-Read [Pilot D1 deployment migrations](pilot-d1-schema-migrations.md) before deploying this branch. The checked-in Sites/Drizzle sequence is for the one-user D1 test pilot, not the production PostgreSQL migration system. Before any pilot deployment, back up the test database and inspect it for duplicate client codes, client names, or project numbers because the new uniqueness indexes intentionally fail instead of rewriting conflicting records.
+Read [Development D1 deployment migrations](development-d1-schema-migrations.md) before deploying this branch. The checked-in Sites/Drizzle sequence is for the one-user D1 test-data development environment, not the production PostgreSQL migration system. Before any development deployment, back up the test database and inspect it for duplicate client codes, client names, or project numbers because the new uniqueness indexes intentionally fail instead of rewriting conflicting records.
 
 ## Compatibility and safety
 

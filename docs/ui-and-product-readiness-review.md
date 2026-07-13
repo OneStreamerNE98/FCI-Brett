@@ -37,7 +37,7 @@ This review separates three things:
 - Added live-region semantics to loading, error, toast, and assistant-answer feedback.
 - Removed the standalone Gmail Filed-label action and API route; `FCI/Filed` now remains part of the exact-project archive flow only.
 - Replaced the transient project-update composer with a disabled Project updates planned control.
-- Replaced the hardcoded Administrator text with the server-derived pilot access label (`Admin` or `Office`).
+- Replaced the hardcoded Administrator text with the current server-derived access label (`Admin` or `Office`).
 
 ## Known UI work not included in this pass
 
@@ -46,10 +46,10 @@ These are larger structural changes and should be scheduled separately:
 - Use real routes or a URL parameter for views so refresh, Back, bookmarks, and support links preserve the selected page.
 - Create one accessible dialog/drawer primitive with focus trapping, initial focus, focus restoration, Escape handling, and consistent labels.
 - Add full keyboard navigation to global search results.
-- Replace the pilot access label with the durable OIDC application role and capabilities when the production authorization model is implemented.
+- Replace the current access label with the durable OIDC application role and capabilities when the production authorization model is implemented.
 - Consolidate the older sidebar CSS and rename color variables by purpose.
 - Continue increasing very small metadata text as each operational module becomes real.
-- Add explicit Working, Pilot, Setup required, and Planned states so configuration-only or placeholder controls cannot be mistaken for operational features.
+- Add explicit Working, In development, Setup required, and Planned states so configuration-only or placeholder controls cannot be mistaken for operational features.
 - Add independent loading/error states, query invalidation, stale timestamps, and optimistic-concurrency messages for multi-user use.
 
 ## What is genuinely implemented
@@ -65,7 +65,7 @@ These are larger structural changes and should be scheduled separately:
 - Selected-project assistant evidence with citations and a records-only fallback.
 - A guarded file-upload API and an installable PWA manifest.
 
-## What is still a prototype or placeholder
+## What is still in development or a placeholder
 
 - Lead conversion and public lead intake.
 - Client, contact, lead, project, and meeting edit/archive workflows.
@@ -81,15 +81,15 @@ These are larger structural changes and should be scheduled separately:
 
 ## Production architecture decision
 
-The production system will use the approved small-company Google Cloud architecture: one regional Cloud Run modular monolith, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Add `pgvector` only when permission-filtered document indexing is scheduled. The current Sites/Workers/D1/R2 deployment remains a controlled pilot only and will not be promoted in place.
+The production system will use the approved small-company Google Cloud architecture: one regional Cloud Run modular monolith, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Add `pgvector` only when permission-filtered document indexing is scheduled. The current Sites/Workers/D1/R2 deployment remains a controlled development environment and will not be promoted in place.
 
 The migration will happen before scheduling, messaging, and AI indexing are built. Those modules depend on durable jobs, relational transactions, retries, and permission-filtered retrieval; moving now avoids implementing and migrating those foundations twice.
 
-See [`architecture-decision-production-platform.md`](architecture-decision-production-platform.md) for the decision, pilot boundary, migration sequence, and cutover requirements.
+See [`architecture-decision-production-platform.md`](architecture-decision-production-platform.md) for the decision, development boundary, migration sequence, and cutover requirements.
 
 ## Prioritized next steps
 
-### Now: safe single-user pilot
+### Now: safe single-user development environment
 
 1. Build the Google Cloud production foundation and migration path defined in the accepted architecture decision.
 2. Approve the 20-user app-to-Google access matrix, including the field/crew access decision and two initial Administrators.

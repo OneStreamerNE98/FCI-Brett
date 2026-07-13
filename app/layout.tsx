@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Manrope } from "next/font/google";
 import { headers } from "next/headers";
+import { resolveAppEnvironment } from "./lib/app-environment";
 import "./globals.css";
 
 const bodyFont = DM_Sans({ variable: "--font-body", subsets: ["latin"] });
@@ -11,14 +12,16 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "Floor Coverings International | Commercial Operations";
-  const description = "Lead-to-closeout commercial flooring operations for Floor Coverings International.";
+  const environment = resolveAppEnvironment(process.env.FCI_APP_ENVIRONMENT);
+  const development = environment === "development";
+  const title = development ? "FCI Operations | Development" : "Floor Coverings International | Commercial Operations";
+  const description = development ? "Development workspace for the Floor Coverings International operations application." : "Lead-to-closeout commercial flooring operations for Floor Coverings International.";
   return {
     metadataBase: new URL(origin), title, description,
     manifest: "/manifest.webmanifest",
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
-    applicationName: "FCI Operations",
-    appleWebApp: { capable: true, title: "FCI Operations", statusBarStyle: "default" },
+    applicationName: development ? "FCI Operations Dev" : "FCI Operations",
+    appleWebApp: { capable: true, title: development ? "FCI Ops Dev" : "FCI Operations", statusBarStyle: "default" },
     openGraph: { title, description, type: "website" },
     twitter: { card: "summary", title, description },
   };

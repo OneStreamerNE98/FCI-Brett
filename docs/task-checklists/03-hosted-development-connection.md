@@ -1,4 +1,4 @@
-# Task checklist: Configure and connect the hosted pilot
+# Task checklist: Configure and connect the hosted development environment
 
 Owner: Business owner and Codex/developer
 
@@ -26,7 +26,7 @@ GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar-id>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar-id>
 ```
 
-Keep the current ChatGPT pilot identity separately allowlisted through `FCI_OFFICE_EMAILS` and `FCI_ADMIN_EMAILS` until employee Google login is implemented.
+Keep the current ChatGPT development identity separately allowlisted through `FCI_OFFICE_EMAILS` and `FCI_ADMIN_EMAILS` until employee Google login is implemented.
 
 ## Secret hosted values
 

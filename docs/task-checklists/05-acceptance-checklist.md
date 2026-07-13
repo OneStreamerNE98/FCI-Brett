@@ -1,10 +1,10 @@
-# Task checklist: Complete pilot and production acceptance
+# Task checklist: Complete development and production acceptance
 
 Owner: Business owner and Workspace administrator
 
 Status: Blocked by configuration and development
 
-## Controlled pilot acceptance
+## Controlled development acceptance
 
 Use only a client and projects named `FCI TEST — DO NOT USE`.
 
@@ -18,9 +18,9 @@ Use only a client and projects named `FCI TEST — DO NOT USE`.
 - [ ] List Calendar events and create a test hold.
 - [ ] Save a meeting with notes, decisions, and action items.
 - [ ] Ask the assistant about the selected project and inspect every citation.
-- [ ] Confirm an unapproved ChatGPT login is denied during the pilot.
+- [ ] Confirm an unapproved ChatGPT login is denied in the development environment.
 - [ ] Confirm no live control can apply `FCI/Filed` without an exact project archive and audit event.
-- [ ] Remove or rename old test records so every remaining pilot record clearly says `FCI TEST — DO NOT USE`.
+- [ ] Remove or rename old test records so every remaining development record clearly says `FCI TEST — DO NOT USE`.
 
 ## Production acceptance
 

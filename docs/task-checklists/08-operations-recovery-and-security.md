@@ -44,7 +44,7 @@ For a 20-person company, operations must be simple enough that two named people 
 - [ ] Define severity levels, alert recipients, after-hours expectations, and escalation contacts.
 - [ ] Review access quarterly, backups/restore quarterly, connector/key rotation at least annually, and incidents after every material event.
 - [ ] Record service owners and vendor support links in a private operations runbook; do not put secrets in the runbook.
-- [ ] Set Cloud budget thresholds and review actual cost monthly during the pilot.
+- [ ] Set Cloud budget thresholds and review actual cost monthly during development acceptance.
 
 ## Incident drill
 

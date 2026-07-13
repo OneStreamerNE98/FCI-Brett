@@ -1,6 +1,6 @@
 # FCI Operations Task Checklists
 
-This is the owner-facing setup and product-readiness dashboard for the Google Workspace pilot and the later 20-person company rollout. Update the checkboxes as work is completed, but never place passwords, OAuth client secrets, token-encryption keys, refresh tokens, or production client data in GitHub.
+This is the owner-facing setup and product-readiness dashboard for the Google Workspace development environment and the later 20-person company rollout. Update the checkboxes as work is completed, but never place passwords, OAuth client secrets, token-encryption keys, refresh tokens, or production client data in GitHub.
 
 ## Current status
 
@@ -10,7 +10,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Workspace identity inputs | Business owner | Partially complete | Domain is `cherryhillfci.com`; confirm the operations account and initial administrator. |
 | Workspace resources | Workspace administrator | Not started | Create the Shared Drive, directory Sheet, mailbox, and two calendars. |
 | Google Cloud and OAuth | Workspace/Cloud administrator | Not started | Create the Internal Google Auth application and data-connector client. |
-| Hosted pilot connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
+| Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
 | Staff Google login and roles | Codex/developer | Not implemented | Build on Cloud Run/Cloud SQL after identity policy is approved. |
 | 20-user operating/access model | Owner + Workspace administrator | Waiting on owner | Decide staff/field roles and approve the app-to-Google access matrix. |
 | Production foundation and migration | Developer + Cloud administrator | In progress | Review the source-only PostgreSQL foundation, then add repository adapters, request idempotency, and transactional outbox writes. |
@@ -24,9 +24,9 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 1. [Setup inputs and decisions](00-setup-inputs.md)
 2. [Google Workspace accounts and resources](01-workspace-resources.md)
 3. [Google Cloud, OAuth, and API controls](02-google-cloud-and-oauth.md)
-4. [Hosted pilot configuration and connection](03-hosted-pilot-connection.md)
+4. [Hosted development configuration and connection](03-hosted-development-connection.md)
 5. [Staff Google login, roles, and permissions](04-staff-login-and-permissions.md)
-6. [Pilot and production acceptance](05-acceptance-checklist.md)
+6. [Development and production acceptance](05-acceptance-checklist.md)
 7. [20-user operating model and Google access](06-20-user-operating-model-and-access.md)
 8. [Production foundation and migration](07-production-foundation-and-migration.md)
 9. [Operations, recovery, and security](08-operations-recovery-and-security.md)
@@ -39,7 +39,7 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 ## Safety boundary
 
-- The current hosted application remains a single-user, test-data pilot.
+- The current hosted application remains a single-user development environment using test data.
 - Staff login currently uses ChatGPT identity plus an office allowlist.
 - The Google data connector and Google employee login are separate integrations.
 - Do not add a second user until durable users, sessions, roles, and project permissions exist.

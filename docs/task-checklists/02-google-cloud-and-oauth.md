@@ -44,7 +44,7 @@ Do not reuse the broad data-connector client for employee sign-in.
 - [ ] In **Security → Access and data control → API controls**, locate the data-connector client ID.
 - [ ] Mark it Trusted or grant Specific Google data for the exact required services.
 - [ ] Limit the setting to the organizational unit or group that needs it.
-- [ ] Do not configure domain-wide delegation for the pilot.
+- [ ] Do not configure domain-wide delegation for the development environment.
 
 ## Completion result
 

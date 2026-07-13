@@ -24,7 +24,7 @@ Simulation provides:
 - A simulated Client Directory and Project Register Sheet mirror.
 - A reset action under **Settings → Google Workspace**.
 
-Simulation creates no Google OAuth attempt, refresh token, API request, email, calendar event, Drive file, or spreadsheet update. Use only non-production client/project records while validating the prototype.
+Simulation creates no Google OAuth attempt, refresh token, API request, email, calendar event, Drive file, or spreadsheet update. Use only non-production client/project records while validating the development environment.
 
 ## Local lifecycle test
 

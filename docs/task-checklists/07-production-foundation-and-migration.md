@@ -6,7 +6,7 @@ Status: In progress
 
 Depends on: Approved company domain, region, budget alert, production hostname, recovery targets, and [20-user operating model](06-20-user-operating-model-and-access.md)
 
-The current Sites/Workers/D1/R2 deployment remains a one-user test pilot. Production should use the smallest Google Cloud topology that safely supports about 20 staff.
+The current Sites/Workers/D1/R2 deployment remains a one-user development environment using test data. Production should use the smallest Google Cloud topology that safely supports about 20 staff.
 
 ## Owner inputs
 
@@ -32,17 +32,17 @@ The current Sites/Workers/D1/R2 deployment remains a one-user test pilot. Produc
 
 ## Data and code migration
 
-- [x] Move the D1 pilot schema and integrity indexes into the ordered Drizzle/Sites deployment migration sequence, remove schema DDL from normal request paths, and retain an explicit local-only migration command. This pilot migration path does not complete the provider-neutral production database work below.
-- [x] Prove the provider-neutral creation boundary for clients and projects with application services, repository/mirror ports, D1 pilot adapters, capability tests, and preserved HTTP behavior. The production PostgreSQL adapters and model remain open.
+- [x] Move the D1 development schema and integrity indexes into the ordered Drizzle/Sites deployment migration sequence, remove schema DDL from normal request paths, and retain an explicit local-only migration command. This development migration path does not complete the provider-neutral production database work below.
+- [x] Prove the provider-neutral creation boundary for clients and projects with application services, repository/mirror ports, D1 development adapters, capability tests, and preserved HTTP behavior. The production PostgreSQL adapters and model remain open.
 - [x] Add the source-only PostgreSQL core schema for clients, contacts, projects, activity/audit events, actor-scoped idempotency requests, outbox events, and immutable migration history. It is tested but not applied to Cloud SQL. See [Production PostgreSQL foundation](../production-postgresql-foundation.md).
-- [ ] Replace remaining pilot text relationship IDs with PostgreSQL foreign keys; the bounded client/contact/project production foundation now uses indexed foreign keys.
+- [ ] Replace remaining development text relationship IDs with PostgreSQL foreign keys; the bounded client/contact/project production foundation now uses indexed foreign keys.
 - [ ] Add constrained status values, timestamps, version fields, and normalized meeting/action/task records.
 - [ ] Add unique/idempotency constraints for project numbers, Google archives, Drive mappings, Calendar channels, and queued operations.
 - [ ] Wrap lead conversion and other multi-record state changes in database transactions.
 - [ ] Define provider-neutral database and object-storage interfaces before replacing Cloudflare bindings.
 - [x] Add a production migration runner with LF-normalized immutable checksums, a dedicated-connection advisory lock, post-lock prefix validation, one transaction per version, PostgreSQL 16 CI coverage, and a reviewed restore/forward-fix rollback strategy. No environment has been migrated.
-- [ ] Rehearse pilot-to-staging migration using test data, preserving identifiers and audit evidence.
-- [ ] Freeze pilot writes, reconcile counts and hashes, cut over, and retain a time-boxed rollback window only after acceptance.
+- [ ] Rehearse development-to-staging migration using test data, preserving identifiers and audit evidence.
+- [ ] Freeze development writes, reconcile counts and hashes, cut over, and retain a time-boxed rollback window only after acceptance.
 
 ## Multi-user and Google reliability work
 

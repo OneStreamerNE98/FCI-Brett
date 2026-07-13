@@ -10,10 +10,10 @@ The interface is suitable for learning the single-user workflow. It needs explic
 
 ## July 13, 2026 UI audit priorities
 
-These are the eight implementation priorities confirmed against the hosted Sites pilot and the current GitHub source. Keep an item open until its acceptance criteria are covered by source tests and rendered browser verification.
+These are the eight implementation priorities confirmed against the hosted Sites development environment and the current GitHub source. Keep an item open until its acceptance criteria are covered by source tests and rendered browser verification.
 
-- [ ] **P0 — Project-manager data integrity:** correct the inappropriate live pilot value through an authorized admin workflow; replace unrestricted free text with an approved staff identity; validate the identifier and membership on the server; preserve a safe display path for legacy records.
-  - Source complete: creation uses an authorized email identity, raw invalid legacy text is not returned, and an audited Admin correction action exists. Remaining: deploy the change and use that action to correct the hosted pilot record.
+- [ ] **P0 — Project-manager data integrity:** correct the inappropriate live development value through an authorized admin workflow; replace unrestricted free text with an approved staff identity; validate the identifier and membership on the server; preserve a safe display path for legacy records.
+  - Source complete: creation uses an authorized email identity, raw invalid legacy text is not returned, and an audited Admin correction action exists. Remaining: deploy the change and use that action to correct the hosted development record.
 - [x] **P1 — Keyboard and focus accessibility:** make the mobile navigation a true modal drawer, keep its closed controls out of the tab order and accessibility tree, inert the background, restore launcher focus, complete global-search keyboard semantics, and return focus to search after a project drawer closes.
 - [x] **P1 — Truthful feature readiness:** remove unfinished modules from normal production navigation or label them clearly as Planned or Setup required; do not present placeholder project tabs or disabled future actions as available work.
 - [x] **P1 — Deployment-time database migrations:** remove schema DDL from normal request paths and rely on the checked-in, versioned Sites/D1 migration sequence; retain an explicit migration/bootstrap path for controlled environments only.
@@ -27,14 +27,14 @@ These are the eight implementation priorities confirmed against the hosted Sites
 ## P0 integrity fixes
 
 - [x] Remove the live Settings action and standalone API route that applied `FCI/Filed` without an exact project copy.
-- [x] Display the current server-derived pilot access label (`Admin` or `Office`) instead of hardcoding Administrator.
+- [x] Display the current server-derived access label (`Admin` or `Office`) instead of hardcoding Administrator.
 - [ ] Pass the authenticated user, real role, capabilities, and assigned-project scope to the interface.
 - [ ] Hide or disable unauthorized navigation and actions for clarity while also enforcing every rule on the server.
 - [ ] Display a session-expired/disabled state and require reauthentication instead of silently falling back.
 
 ## Truthful feature state
 
-- [x] Label operational modules as Working, Pilot, Setup required, or Planned.
+- [x] Label operational modules as Working, In development, Setup required, or Planned.
 - [x] Replace the transient project-update composer with static Planned information until durable update support exists.
 - [ ] Explain that Calendar/reminder preferences are configuration only until a background worker consumes them.
 - [x] Keep Tasks, Files, Schedule, and activity/update plans explicit without presenting them as active controls.

@@ -1,8 +1,8 @@
-export type FeatureState = "Working" | "Pilot" | "Setup required" | "Planned";
+export type FeatureState = "Working" | "In development" | "Setup required" | "Planned";
 
 const featureStateDescriptions: Record<FeatureState, string> = {
-  Working: "Available with durable pilot records",
-  Pilot: "Available for controlled test-data use",
+  Working: "Available with durable saved records",
+  "In development": "Available for development and test-data validation",
   "Setup required": "Available after the required connection or configuration is completed",
   Planned: "Informational only; the workflow is not implemented yet",
 };

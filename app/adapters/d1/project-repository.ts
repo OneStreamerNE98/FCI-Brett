@@ -1,7 +1,7 @@
 import type { ProjectCreationIntent, ProjectRepository } from "../../ports/project-repository";
-import type { PilotD1Database } from "./pilot-database";
+import type { D1Database } from "./d1-database";
 
-export function createPilotD1ProjectRepository(database: PilotD1Database): ProjectRepository {
+export function createD1ProjectRepository(database: D1Database): ProjectRepository {
   return {
     async create(intent: ProjectCreationIntent) {
       const { project, activity } = intent;

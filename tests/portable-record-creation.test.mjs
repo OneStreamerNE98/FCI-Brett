@@ -18,7 +18,7 @@ const [clientApplication, projectApplication, authorizationModule, clientDomain,
   vite.ssrLoadModule("/app/application/creation-authorization.ts"),
   vite.ssrLoadModule("/app/domain/client-creation.ts"),
   vite.ssrLoadModule("/app/domain/project-creation.ts"),
-  vite.ssrLoadModule("/app/adapters/google/pilot-directory-mirror.ts"),
+  vite.ssrLoadModule("/app/adapters/google/directory-mirror.ts"),
 ]);
 
 after(async () => {
@@ -30,7 +30,7 @@ const { assignProjectManager, createProject } = projectApplication;
 const { creationAuthorizationFor, CREATION_CAPABILITIES } = authorizationModule;
 const { normalizeClientCreation } = clientDomain;
 const { normalizeProjectCreation, normalizeProjectManagerAssignment, normalizeProjectManagerId, PROJECT_MANAGER_IDENTITY_ERROR } = projectDomain;
-const { createPilotDirectoryMirror } = mirrorAdapterModule;
+const { createDirectoryMirror } = mirrorAdapterModule;
 
 function sequence(values) {
   let index = 0;
@@ -138,7 +138,7 @@ test("client creation sends one atomic client, contact, and activity intent befo
       status: " Prospect ",
       primaryContact: { name: "  Pat Person  ", email: " pat@example.test ", phone: "555-0100" },
     },
-    authorized(CREATION_CAPABILITIES.createClient, "pilot-user@cherryhillfci.com"),
+    authorized(CREATION_CAPABILITIES.createClient, "development-user@cherryhillfci.com"),
     {
       repository: {
         async create(intent) {
@@ -151,7 +151,7 @@ test("client creation sends one atomic client, contact, and activity intent befo
         async requestSync(request) {
           assert.deepEqual(events, ["durable-client"]);
           events.push("mirror");
-          assert.deepEqual(request, { actorId: "pilot-user@cherryhillfci.com", cause: "client-created", recordId: "12345678-aaaa-bbbb-cccc-000000000001" });
+          assert.deepEqual(request, { actorId: "development-user@cherryhillfci.com", cause: "client-created", recordId: "12345678-aaaa-bbbb-cccc-000000000001" });
           return sheetSync;
         },
       },
@@ -172,7 +172,7 @@ test("client creation sends one atomic client, contact, and activity intent befo
       name: "FCI TEST Client",
       status: "prospect",
       industry: "Healthcare",
-      createdBy: "pilot-user@cherryhillfci.com",
+      createdBy: "development-user@cherryhillfci.com",
       createdAt: 1_783_914_000_000,
       updatedAt: 1_783_914_000_000,
     },
@@ -191,7 +191,7 @@ test("client creation sends one atomic client, contact, and activity intent befo
       id: "activity-client-1",
       recordId: "12345678-aaaa-bbbb-cccc-000000000001",
       action: "Client created",
-      actor: "pilot-user@cherryhillfci.com",
+      actor: "development-user@cherryhillfci.com",
       detail: "CL-12345678 · FCI TEST Client",
       createdAt: 1_783_914_000_000,
     },
@@ -221,7 +221,7 @@ test("project creation sends one atomic project and activity intent before mirro
       projectManagerId: "  Manager@CherryHillFCI.com  ",
       estimatedValue: 125000,
     },
-    authorized(CREATION_CAPABILITIES.createProject, "pilot-user@cherryhillfci.com"),
+    authorized(CREATION_CAPABILITIES.createProject, "development-user@cherryhillfci.com"),
     {
       repository: {
         async create(value) {
@@ -234,7 +234,7 @@ test("project creation sends one atomic project and activity intent before mirro
         async requestSync(request) {
           assert.deepEqual(events, ["durable-project"]);
           events.push("mirror");
-          assert.deepEqual(request, { actorId: "pilot-user@cherryhillfci.com", cause: "project-created", recordId: "abcdef12-aaaa-bbbb-cccc-000000000001" });
+          assert.deepEqual(request, { actorId: "development-user@cherryhillfci.com", cause: "project-created", recordId: "abcdef12-aaaa-bbbb-cccc-000000000001" });
           return { status: "not-configured", message: "The Google Sheet mirror is not configured yet." };
         },
       },
@@ -254,7 +254,7 @@ test("project creation sends one atomic project and activity intent before mirro
       site: "Cherry Hill, NJ",
       projectManagerId: "manager@cherryhillfci.com",
       estimatedValue: 125000,
-      createdBy: "pilot-user@cherryhillfci.com",
+      createdBy: "development-user@cherryhillfci.com",
       createdAt: Date.UTC(2026, 6, 13, 12),
       updatedAt: Date.UTC(2026, 6, 13, 12),
     },
@@ -262,7 +262,7 @@ test("project creation sends one atomic project and activity intent before mirro
       id: "activity-project-1",
       recordId: "abcdef12-aaaa-bbbb-cccc-000000000001",
       action: "Project created",
-      actor: "pilot-user@cherryhillfci.com",
+      actor: "development-user@cherryhillfci.com",
       detail: "CF-2026-ABCDEF12 · Lobby Flooring",
       createdAt: Date.UTC(2026, 6, 13, 12),
     },
@@ -440,14 +440,14 @@ test("a thrown optional mirror leaves both durable creates successful with a tru
   assert.deepEqual(events, ["durable-client", "mirror-threw", "durable-project", "mirror-threw"]);
 });
 
-test("the pilot mirror adapter exposes only JSON-safe discriminated results", async () => {
-  const pending = createPilotDirectoryMirror(async () => ({
+test("the directory mirror adapter exposes only JSON-safe discriminated results", async () => {
+  const pending = createDirectoryMirror(async () => ({
     status: "pending",
     message: "Saved; sync pending.",
     error: { code: "sheets_unavailable", message: "Try again later.", accessToken: "must-not-leak" },
     internalConnection: "must-not-leak",
   }));
-  const synced = createPilotDirectoryMirror(async () => ({
+  const synced = createDirectoryMirror(async () => ({
     status: "synced",
     message: "Saved and synced.",
     result: {
@@ -459,12 +459,12 @@ test("the pilot mirror adapter exposes only JSON-safe discriminated results", as
     },
   }));
 
-  assert.deepEqual(await pending.requestSync({ actorId: "pilot-user", cause: "client-created", recordId: "client-1" }), {
+  assert.deepEqual(await pending.requestSync({ actorId: "development-user", cause: "client-created", recordId: "client-1" }), {
     status: "pending",
     message: "Saved; sync pending.",
     error: { code: "sheets_unavailable", message: "Try again later." },
   });
-  assert.deepEqual(await synced.requestSync({ actorId: "pilot-user", cause: "project-created", recordId: "project-1" }), {
+  assert.deepEqual(await synced.requestSync({ actorId: "development-user", cause: "project-created", recordId: "project-1" }), {
     status: "synced",
     message: "Saved and synced.",
     result: {

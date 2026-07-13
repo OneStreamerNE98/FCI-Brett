@@ -1,8 +1,8 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
-import type { PilotD1Database } from "../../../adapters/d1/pilot-database";
-import { createPilotD1ProjectRepository } from "../../../adapters/d1/project-repository";
-import { createPilotDirectoryMirror } from "../../../adapters/google/pilot-directory-mirror";
+import type { D1Database } from "../../../adapters/d1/d1-database";
+import { createD1ProjectRepository } from "../../../adapters/d1/project-repository";
+import { createDirectoryMirror } from "../../../adapters/google/directory-mirror";
 import { creationAuthorizationFor, CREATION_CAPABILITIES } from "../../../application/creation-authorization";
 import { assignProjectManager, createProject } from "../../../application/create-project";
 import { normalizeProjectManagerId } from "../../../domain/project-creation";
@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
       capabilities: [CREATION_CAPABILITIES.createProject],
     }),
     {
-      repository: createPilotD1ProjectRepository(env.DB as unknown as PilotD1Database),
-      directoryMirror: createPilotDirectoryMirror((actor) => trySyncGoogleDirectory(getGoogleRuntimeConfig(), actor)),
+      repository: createD1ProjectRepository(env.DB as unknown as D1Database),
+      directoryMirror: createDirectoryMirror((actor) => trySyncGoogleDirectory(getGoogleRuntimeConfig(), actor)),
       resolveProjectManagerId: (candidateId) => authorizedProjectManagerId(candidateId, auth.user.email),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
@@ -88,7 +88,7 @@ export async function PATCH(request: NextRequest) {
     body,
     { actorId: auth.user.email, canManageProjects: true },
     {
-      repository: createPilotD1ProjectRepository(env.DB as unknown as PilotD1Database),
+      repository: createD1ProjectRepository(env.DB as unknown as D1Database),
       resolveProjectManagerId: (candidateId) => authorizedProjectManagerId(candidateId, auth.user.email),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
