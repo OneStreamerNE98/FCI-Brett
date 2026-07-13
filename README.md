@@ -74,7 +74,7 @@ After that foundation is accepted, build appointment state management and Calend
 
 See the [20-user product and architecture review](docs/20-user-product-and-architecture-review.md) for the rollout verdict, architecture, access model, priority findings, and corrected delivery order. See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page UI audit.
 
-Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials. The completed [portable client and project creation slice](docs/portable-record-creation.md) documents the provider-neutral boundaries, pilot compatibility, safety limits, and next production-platform assignment.
+Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials. The completed [portable client and project creation slice](docs/portable-record-creation.md) documents the provider-neutral boundaries and pilot compatibility. The source-only [production PostgreSQL foundation](docs/production-postgresql-foundation.md) documents the first constrained core schema, checksum migration runner, test coverage, and work that still must happen before any Cloud SQL migration.
 
 ## Google Workspace pilot rollout
 
