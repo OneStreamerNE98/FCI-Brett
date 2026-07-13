@@ -2,6 +2,10 @@
 
 Commercial flooring operations software for client intake, independent project delivery, crew scheduling, and Google Workspace organization.
 
+## View the hosted pilot
+
+Open the [FCI Operations ChatGPT website](https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/) to view the current hosted application. Access requires an authorized ChatGPT sign-in. Use only clearly marked test data until the production acceptance checklist in this README passes.
+
 ## Prerequisites
 
 - Node.js `>=22.13.0`
