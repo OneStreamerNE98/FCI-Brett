@@ -6,15 +6,22 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("enforces the office allowlist before rendering the operational app shell", async () => {
-  const [page, auth] = await Promise.all([
+  const [page, auth, app] = await Promise.all([
     read("app/page.tsx"),
     read("app/lib/workspace-auth.ts"),
+    read("app/FloorOpsApp.tsx"),
   ]);
 
   assert.match(auth, /export function officeIdentityForEmail/);
   assert.match(page, /officeIdentityForEmail\(user\.email\)/);
   assert.match(page, /Access not authorized/);
   assert.match(auth, /const user = officeIdentityForEmail\(email\)/);
+  assert.match(page, /const officeUser = officeIdentityForEmail\(user\.email\)/);
+  assert.match(page, /officeUser\.isAdmin \? "Admin" : "Office"/);
+  assert.match(page, /accessLabel=\{accessLabel\}/);
+  assert.match(app, /accessLabel: "Admin" \| "Office"/);
+  assert.match(app, /\{userEmail\} · \{accessLabel\}/);
+  assert.doesNotMatch(app, /Administrator/);
   assert.doesNotMatch(auth, /isLocalDevelopmentIdentity/);
   assert.match(auth, /if \(!email \|\| !isAllowedOfficeEmail\(email\)\) return null/);
   assert.match(auth, /developmentEmail === email/);

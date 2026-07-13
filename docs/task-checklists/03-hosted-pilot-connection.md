@@ -1,4 +1,4 @@
-# Action: Configure and connect the hosted pilot
+# Task checklist: Configure and connect the hosted pilot
 
 Owner: Business owner and Codex/developer
 
@@ -16,7 +16,7 @@ GOOGLE_WORKSPACE_ENABLED_SERVICES=drive,gmail,calendar,sheets
 GOOGLE_WORKSPACE_CLIENT_ID=<data-connector-client-id>
 GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI=https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback
 GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION=1
-GOOGLE_WORKSPACE_ALLOWED_DOMAINS=<company-domain>
+GOOGLE_WORKSPACE_ALLOWED_DOMAINS=cherryhillfci.com
 GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations-account>
 GOOGLE_WORKSPACE_SHARED_DRIVE_ID=<shared-drive-id>
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false

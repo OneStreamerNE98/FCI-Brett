@@ -34,7 +34,7 @@ Google’s OpenID Connect documentation explains that the `hd` request value is 
 For the pilot, create or select these accounts:
 
 - **Workspace super administrator:** used for Google Admin and Cloud configuration. Do not use this account as a daily mailbox if a separate administrator is available.
-- **FCI Operations connection account:** the one account that grants this app access to Gmail, Calendar, Drive, and Sheets. A name such as `operations@yourdomain.com` is ideal.
+- **FCI Operations connection account:** the one account that grants this app access to Gmail, Calendar, Drive, and Sheets. The proposed address is `operations@cherryhillfci.com`; confirm or create it before configuration.
 - **Your normal company account:** your daily Workspace account. For a one-user pilot, this can also be the connection account.
 
 Do not connect a personal `@gmail.com` account in live mode. The application requires an explicitly authorized account from the configured Workspace domain.
@@ -49,7 +49,7 @@ Create these resources before turning on live folder provisioning:
 | Spreadsheet | `FCI Operations Directory` | Client Directory and Project Register mirror |
 | Calendar 1 | `FCI • Client Appointments` | Site visits, measurements, client meetings, and confirmations |
 | Calendar 2 | `FCI • Field Schedule` | Published job assignments and crew schedule |
-| Mailbox | `operations@yourdomain.com` | Company Gmail intake and app connection |
+| Mailbox | `operations@cherryhillfci.com` (proposed) | Company Gmail intake and app connection |
 | Google Cloud project | `FCI Operations Production` | Google APIs, OAuth branding, OAuth clients, and Marketplace configuration |
 
 ## Part 1: set up the Google Workspace organization
@@ -219,12 +219,12 @@ GOOGLE_WORKSPACE_CLIENT_SECRET=<secret>
 GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI=https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback
 GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY=<secret 32-byte base64url value>
 GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION=1
-GOOGLE_WORKSPACE_ALLOWED_DOMAINS=<yourcompanydomain.com>
-GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations@yourcompanydomain.com>
+GOOGLE_WORKSPACE_ALLOWED_DOMAINS=cherryhillfci.com
+GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<approved-connection-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_SHARED_DRIVE_ID=<Shared Drive ID>
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false
 GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<spreadsheet ID>
-GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations@yourcompanydomain.com>
+GOOGLE_WORKSPACE_INTAKE_MAILBOX=<approved-intake-mailbox@cherryhillfci.com>
 GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar ID>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar ID>
 ```
@@ -326,7 +326,7 @@ This is development work, not an Admin-console toggle.
    - `aud`
    - `exp`
    - email verification
-   - expected `hd` Workspace domain
+   - `hd=cherryhillfci.com`
 6. Match the verified Google subject/email to an application `User` record.
 7. Create a secure, HTTP-only, SameSite session cookie.
 8. Replace the existing forwarded ChatGPT identity dependency in both pages and API routes.
@@ -340,7 +340,7 @@ Do not rely only on the email text or the requested `hd` parameter. Google’s [
 
 Do not store real client data until every required item is complete.
 
-- [ ] Workspace domain and users are controlled by the company.
+- [ ] `cherryhillfci.com` and its Workspace users are controlled by the company.
 - [ ] App audience is Internal.
 - [ ] OAuth client has the exact HTTPS callback.
 - [ ] Admin API Controls trust only the intended OAuth client.

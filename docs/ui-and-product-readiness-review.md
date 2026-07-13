@@ -2,6 +2,8 @@
 
 Reviewed: July 2026
 
+For the current company-size verdict, role/access model, live desktop walkthrough findings, production topology, and corrected delivery order, read the [20-user product and architecture review](20-user-product-and-architecture-review.md). This page remains the detailed section-by-section UI inventory.
+
 ## What this review covers
 
 This review separates three things:
@@ -33,6 +35,9 @@ This review separates three things:
 - Kept notification and safety information available on mobile instead of hiding it.
 - Replaced the Mac-only `⌘ K` label with `Ctrl K` for the current Windows deployment.
 - Added live-region semantics to loading, error, toast, and assistant-answer feedback.
+- Removed the standalone Gmail Filed-label action and API route; `FCI/Filed` now remains part of the exact-project archive flow only.
+- Replaced the transient project-update composer with a disabled Project updates planned control.
+- Replaced the hardcoded Administrator text with the server-derived pilot access label (`Admin` or `Office`).
 
 ## Known UI work not included in this pass
 
@@ -41,9 +46,11 @@ These are larger structural changes and should be scheduled separately:
 - Use real routes or a URL parameter for views so refresh, Back, bookmarks, and support links preserve the selected page.
 - Create one accessible dialog/drawer primitive with focus trapping, initial focus, focus restoration, Escape handling, and consistent labels.
 - Add full keyboard navigation to global search results.
-- Replace the hardcoded Administrator label with the user’s real application role.
+- Replace the pilot access label with the durable OIDC application role and capabilities when the production authorization model is implemented.
 - Consolidate the older sidebar CSS and rename color variables by purpose.
 - Continue increasing very small metadata text as each operational module becomes real.
+- Add explicit Working, Pilot, Setup required, and Planned states so configuration-only or placeholder controls cannot be mistaken for operational features.
+- Add independent loading/error states, query invalidation, stale timestamps, and optimistic-concurrency messages for multi-user use.
 
 ## What is genuinely implemented
 
@@ -74,7 +81,7 @@ These are larger structural changes and should be scheduled separately:
 
 ## Production architecture decision
 
-The production system will use the approved Google Cloud architecture: Cloud Run, Cloud SQL PostgreSQL with `pgvector`, Cloud Tasks/Pub/Sub, Cloud Storage, Secret Manager, and Google Workspace OIDC. The current Sites/Workers/D1/R2 deployment remains a controlled pilot only and will not be promoted in place.
+The production system will use the approved small-company Google Cloud architecture: one regional Cloud Run modular monolith, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Add `pgvector` only when permission-filtered document indexing is scheduled. The current Sites/Workers/D1/R2 deployment remains a controlled pilot only and will not be promoted in place.
 
 The migration will happen before scheduling, messaging, and AI indexing are built. Those modules depend on durable jobs, relational transactions, retries, and permission-filtered retrieval; moving now avoids implementing and migrating those foundations twice.
 
@@ -85,8 +92,8 @@ See [`architecture-decision-production-platform.md`](architecture-decision-produ
 ### Now: safe single-user pilot
 
 1. Build the Google Cloud production foundation and migration path defined in the accepted architecture decision.
-2. Decide whether the pilot can continue using ChatGPT sign-in or must switch to Google Workspace sign-in immediately.
-3. Add Admin, Office, and Project Manager roles plus project-level permissions before adding more users.
+2. Approve the 20-user app-to-Google access matrix, including the field/crew access decision and two initial Administrators.
+3. Add invited Google Workspace OIDC users, secure sessions, granular capabilities, roles, and project-level permissions before adding more users.
 4. Add editing and archiving for clients, contacts, leads, projects, and meetings.
 5. Implement lead conversion as one transaction.
 6. Add project dates, tasks/follow-ups, notes, file metadata, photo UI, and activity history.

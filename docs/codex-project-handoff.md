@@ -1,5 +1,7 @@
 # Moving this work into the Floor Coverings International Codex project
 
+For handing the repository from one person's Codex installation to a coworker's Codex installation, use [`codex-to-codex-handoff.md`](codex-to-codex-handoff.md). That guide covers GitHub access, cloning, adding the local Codex project, onboarding verification, branch workflow, prompts, and handback requirements.
+
 ## What “moving the task” means
 
 The application code and this Codex conversation are separate things:
@@ -42,7 +44,7 @@ If you prefer to keep the existing repository location, that is also acceptable.
 
 Copy and paste this into the first task inside the Floor Coverings International operations-app project:
 
-> Continue development of the Floor Coverings International Operations application in this repository. First read `docs/architecture-decision-production-platform.md`, `docs/ui-and-product-readiness-review.md`, `docs/google-workspace-rollout-guide.md`, `docs/meeting-notes-and-otter.md`, and `docs/collaboration-and-sharing.md`. Preserve the current controlled pilot and existing user data. Verify the test suite and build before changing code. The production platform decision is accepted: keep Sites/D1/R2 only for the pilot and migrate production to Cloud Run, Cloud SQL PostgreSQL with pgvector, Cloud Tasks/Pub/Sub, Cloud Storage, Secret Manager, and Google Workspace OIDC before building scheduling, messaging, or AI indexing. The next milestone is the migration foundation and cutover plan. Work in small tested commits and do not deploy a public version without my approval.
+> Continue development of the Floor Coverings International Operations application in this repository. First read `AGENTS.md`, `docs/20-user-product-and-architecture-review.md`, `docs/architecture-decision-production-platform.md`, `docs/task-checklists/README.md`, `docs/ui-and-product-readiness-review.md`, and `docs/google-workspace-rollout-guide.md`. Preserve the current controlled pilot and existing user data. Verify the test suite and build before changing code. The next milestone is the small-company Google Cloud production foundation and tested migration path, followed by invited Google Workspace identity, secure sessions, capabilities, roles, project permissions, and the approved app-to-Google access matrix. Keep Sites/D1/R2 only for the pilot. Do not build scheduling, messaging, or AI indexing and do not deploy a public version without my approval. Work in small tested commits and finish with verification evidence plus a data/security impact note.
 
 ## Sharing with another developer
 

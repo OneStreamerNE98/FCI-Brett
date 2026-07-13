@@ -35,7 +35,7 @@ Simulation creates no Google OAuth attempt, refresh token, API request, email, c
 5. File one sample email to the exact project and confirm Inbox is retained.
 6. Load shared-calendar events and create a simulated hold.
 7. Sync the simulated Client Directory and Project Register.
-8. Add and acknowledge a draft shift.
+8. Open Schedule and confirm it clearly reports that worker, crew, shift, and acknowledgement records are not built yet.
 9. Ask the project assistant a question and inspect every returned source.
 10. Reset simulation data and confirm the seeded mailbox and calendars return.
 
@@ -64,7 +64,7 @@ GOOGLE_WORKSPACE_CLIENT_ID=
 GOOGLE_WORKSPACE_CLIENT_SECRET=
 GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI=
 GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY=
-GOOGLE_WORKSPACE_ALLOWED_DOMAINS=
+GOOGLE_WORKSPACE_ALLOWED_DOMAINS=cherryhillfci.com
 GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=
 GOOGLE_WORKSPACE_SHARED_DRIVE_ID=
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false

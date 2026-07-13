@@ -1,4 +1,4 @@
-# Action: Configure Google Cloud and OAuth
+# Task checklist: Configure Google Cloud and OAuth
 
 Owner: Google Workspace/Cloud administrator
 
