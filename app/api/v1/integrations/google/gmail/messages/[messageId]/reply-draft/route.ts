@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateGmailMessageId, validateReplyDraftBody, validateWorkspaceRecipient } from "../../../../../../../../lib/google-gmail";
+import { validateGmailMessageId, validateReplyDraftBody, validateReplyRecipient } from "../../../../../../../../lib/google-gmail";
 import { writeGoogleIntegrationEvent } from "../../../../../../../../lib/google-oauth";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../../lib/workspace-auth";
 import { getWorkspaceGmailClient, gmailErrorResponse, readBoundedJson } from "../../../_route-helpers";
@@ -20,7 +20,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     const replyBody = validateReplyDraftBody(body.body);
     const { config, client } = await getWorkspaceGmailClient();
     const reply = await client.getReplyContext(safeMessageId);
-    const recipient = validateWorkspaceRecipient(reply.recipient, config);
+    // The address is derived from the source Gmail message, never accepted from
+    // the browser. External customer/vendor recipients are valid here; the
+    // separate test-send endpoint remains restricted to approved Workspace mail.
+    const recipient = validateReplyRecipient(reply.recipient);
     const draft = await client.createReplyDraft({ ...reply, recipient, body: replyBody });
     await writeGoogleIntegrationEvent(
       config,

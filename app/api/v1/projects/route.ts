@@ -8,6 +8,21 @@ import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
 type ProjectBody = { clientId?: string; name?: string; status?: string; site?: string; projectManager?: string; estimatedValue?: number };
 const PROJECT_STATUSES = new Set(["planning", "mobilizing", "installation", "closeout", "completed", "cancelled", "archived"]);
 
+async function readProjectBody(request: NextRequest) {
+  try {
+    const body = await request.json() as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid");
+    const record = body as Record<string, unknown>;
+    for (const field of ["clientId", "name", "status", "site", "projectManager"] as const) {
+      if (record[field] !== undefined && typeof record[field] !== "string") throw new Error("invalid");
+    }
+    if (record.estimatedValue !== undefined && typeof record.estimatedValue !== "number") throw new Error("invalid");
+    return { body: record as ProjectBody };
+  } catch {
+    return { response: NextResponse.json({ error: "Project details must be valid JSON." }, { status: 400 }) };
+  }
+}
+
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
@@ -28,7 +43,9 @@ export async function POST(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const body = await request.json() as ProjectBody;
+  const parsed = await readProjectBody(request);
+  if ("response" in parsed) return parsed.response;
+  const body = parsed.body;
   if (!body.clientId || !body.name?.trim()) return NextResponse.json({ error: "clientId and project name are required" }, { status: 400 });
   const name = body.name.trim();
   if (name.length > 180) return NextResponse.json({ error: "project name is too long" }, { status: 400 });

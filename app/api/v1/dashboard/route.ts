@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { requireOfficeUser } from "../../../lib/workspace-auth";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
 type CountRow = { total: number | string | null };
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return auth.response;
 
   await ensureWorkspaceSchema();
+  const google = getGoogleRuntimeConfig();
 
   const [pipeline, activeProjects, projectStatuses, clients, activities, meetings, filedEmails] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS active_leads, COALESCE(SUM(estimated_value), 0) AS estimated_pipeline_value FROM leads WHERE LOWER(status) = 'active'").first<PipelineRow>(),
@@ -37,7 +39,7 @@ export async function GET(request: NextRequest) {
     env.DB.prepare("SELECT COUNT(*) AS total FROM clients").first<CountRow>(),
     env.DB.prepare("SELECT e.id, e.record_id, e.action, e.actor, e.detail, e.created_at, p.project_number, p.name AS project_name, c.name AS client_name FROM activity_events e LEFT JOIN projects p ON p.id = e.record_id LEFT JOIN clients c ON c.id = p.client_id ORDER BY e.created_at DESC LIMIT 12").all<ActivityRow>(),
     env.DB.prepare("SELECT COUNT(*) AS total FROM project_meetings").first<CountRow>(),
-    env.DB.prepare("SELECT COUNT(*) AS total FROM gmail_file_archives WHERE status = 'filed'").first<CountRow>(),
+    env.DB.prepare("SELECT COUNT(*) AS total FROM gmail_file_archives WHERE connection_key = ? AND status = 'filed'").bind(google.connectionKey).first<CountRow>(),
   ]);
 
   return NextResponse.json({

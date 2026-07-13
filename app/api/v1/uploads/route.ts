@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_MULTIPART_BYTES = 22 * 1024 * 1024;
+
 async function hasAllowedContentSignature(file: File) {
   const bytes = new Uint8Array(await file.slice(0, 512).arrayBuffer());
   const startsWith = (...values: number[]) => values.every((value, index) => bytes[index] === value);
@@ -19,11 +22,34 @@ export async function POST(request: NextRequest) {
   if (originError) return originError;
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!/^multipart\/form-data\b/i.test(contentType) || !/;\s*boundary=(?:"[^"]+"|[^;\s]+)/i.test(contentType)) {
+    return NextResponse.json({ error: "upload must be valid multipart form data with a boundary" }, { status: 400 });
+  }
+  const contentLengthHeader = request.headers.get("content-length");
+  if (contentLengthHeader !== null) {
+    if (!/^\d+$/.test(contentLengthHeader)) {
+      return NextResponse.json({ error: "content-length must be a non-negative integer" }, { status: 400 });
+    }
+    const declaredLength = Number(contentLengthHeader);
+    if (!Number.isSafeInteger(declaredLength)) {
+      return NextResponse.json({ error: "content-length must be a safe non-negative integer" }, { status: 400 });
+    }
+    if (declaredLength > MAX_MULTIPART_BYTES) {
+      return NextResponse.json({ error: "upload request exceeds the multipart size limit" }, { status: 413 });
+    }
+  }
   await ensureWorkspaceSchema();
-  const form = await request.formData();
+  let form: FormData | null = null;
+  try {
+    form = await request.formData();
+  } catch {
+    form = null;
+  }
+  if (!form) return NextResponse.json({ error: "upload must be valid multipart form data" }, { status: 400 });
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "file is required" }, { status: 400 });
-  if (file.size > 20 * 1024 * 1024) return NextResponse.json({ error: "file exceeds 20 MB limit" }, { status: 413 });
+  if (file.size > MAX_FILE_BYTES) return NextResponse.json({ error: "file exceeds 20 MB limit" }, { status: 413 });
   const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain"];
   if (!allowed.includes(file.type)) return NextResponse.json({ error: "file type is not allowed" }, { status: 415 });
   if (!await hasAllowedContentSignature(file)) return NextResponse.json({ error: "file contents do not match the declared type" }, { status: 415 });

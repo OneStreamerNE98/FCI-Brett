@@ -392,14 +392,22 @@ export function createTestMessageRaw(recipient: string, subject: string, body: s
 
 function extractEmailAddress(value: string | null) {
   if (!value) return null;
+  // A Gmail header is untrusted message content. Reject raw control characters
+  // before extracting an address so they can never reach an RFC 822 draft header.
+  if (/[\r\n\u0000-\u001f\u007f]/.test(value)) return null;
   const bracketed = value.match(/<([^<>\s@]+@[^<>\s@]+)>/);
   const candidate = (bracketed?.[1] ?? value.match(/\b[^\s@<>]+@[^\s@<>]+\b/)?.[0] ?? "").trim().toLowerCase();
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? candidate : null;
+  try {
+    return validateReplyRecipient(candidate);
+  } catch {
+    return null;
+  }
 }
 
 function replyHeader(value: string | null) {
   if (!value) return null;
-  const compact = value.replace(/[\r\n\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (/[\r\n\u0000-\u001f\u007f]/.test(value)) return null;
+  const compact = value.replace(/\s+/g, " ").trim();
   return compact && compact.length <= 500 ? compact : null;
 }
 
@@ -415,6 +423,43 @@ export function validateReplyDraftBody(value: unknown) {
     throw new GoogleIntegrationError("invalid_reply_draft", "Reply text is required and must be 6,000 characters or fewer.", 400);
   }
   return body;
+}
+
+/**
+ * Validates a server-derived original sender for a reply draft. Unlike
+ * validateWorkspaceRecipient (which deliberately restricts test messages to the
+ * company Workspace), customer and vendor replies may target an external domain.
+ * The result is a plain address safe to place in a single RFC 822 To header.
+ */
+export function validateReplyRecipient(value: unknown) {
+  if (typeof value !== "string") {
+    throw new GoogleIntegrationError("invalid_reply_recipient", "The original sender does not have a valid reply email address.", 409);
+  }
+  if (/[\r\n\u0000-\u001f\u007f]/.test(value)) {
+    throw new GoogleIntegrationError("invalid_reply_recipient", "The original sender does not have a valid reply email address.", 409);
+  }
+  const recipient = value.trim().toLowerCase();
+  if (recipient.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    throw new GoogleIntegrationError("invalid_reply_recipient", "The original sender does not have a valid reply email address.", 409);
+  }
+  const separator = recipient.lastIndexOf("@");
+  const local = recipient.slice(0, separator);
+  const domain = recipient.slice(separator + 1);
+  const labels = domain.split(".");
+  const validLocal = local.length <= 64
+    && !local.startsWith(".")
+    && !local.endsWith(".")
+    && !local.includes("..")
+    && /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(local);
+  const validDomain = domain.length <= 253
+    && labels.length >= 2
+    && labels.every((label) => label.length >= 1
+      && label.length <= 63
+      && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label));
+  if (!validLocal || !validDomain) {
+    throw new GoogleIntegrationError("invalid_reply_recipient", "The original sender does not have a valid reply email address.", 409);
+  }
+  return recipient;
 }
 
 export function createReplyDraftRaw(input: { recipient: string; subject: string; body: string; inReplyTo: string | null; references: string | null }) {

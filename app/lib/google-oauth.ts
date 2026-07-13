@@ -208,6 +208,7 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown
     ...(!redirectUri ? ["OAuth redirect URI"] : []),
     ...(!isValidEncryptionKey(tokenEncryptionKey) ? ["32-byte Google token encryption key"] : []),
     ...(allowedDomains.length === 0 ? ["Google Workspace allowed domain"] : []),
+    ...(expectedGoogleEmails.length === 0 ? ["approved Google Workspace connection account"] : []),
     ...(gmailEnabled && !intakeMailbox ? ["Google Workspace intake mailbox"] : []),
     ...(calendarEnabled && !clientAppointmentsCalendarId ? ["client appointments calendar ID"] : []),
     ...(calendarEnabled && !fieldScheduleCalendarId ? ["field schedule calendar ID"] : []),
@@ -386,11 +387,16 @@ export async function fetchGoogleUserProfile(accessToken: string) {
 }
 
 export function assertExpectedGoogleAccount(config: GoogleRuntimeConfig, profile: GoogleUserProfile) {
-  const domain = profile.email.split("@")[1] ?? "";
-  const specificallyAllowed = config.expectedGoogleEmails.length > 0 && config.expectedGoogleEmails.includes(profile.email);
-  if (!profile.emailVerified || (!specificallyAllowed && !config.allowedDomains.includes(domain))) {
+  if (!profile.emailVerified || !googleAccountIsAllowed(config, profile.email)) {
     throw new GoogleIntegrationError("unauthorized_google_account", "Use an approved account from the configured Google Workspace domain.", 403);
   }
+}
+
+function googleAccountIsAllowed(config: GoogleRuntimeConfig, value: string) {
+  const email = value.trim().toLowerCase();
+  const domain = email.split("@")[1] ?? "";
+  if (!config.allowedDomains.includes(domain)) return false;
+  return config.expectedGoogleEmails.length > 0 && config.expectedGoogleEmails.includes(email);
 }
 
 type ConnectionRow = {
@@ -429,14 +435,15 @@ export async function getGoogleConnectionStatus(config: GoogleRuntimeConfig) {
     .first<{ id: string; google_email: string; scopes_json: string; status: string }>();
   const email = connection?.google_email ?? null;
   const scopes = storedScopes(connection?.scopes_json);
-  const hasUsableConnection = connection?.status === "connected";
+  const accountAllowed = Boolean(email && googleAccountIsAllowed(config, email));
+  const hasUsableConnection = connection?.status === "connected" && accountAllowed;
   const services = {
     drive: Boolean(hasUsableConnection && serviceIsGranted(config, scopes, "drive")),
     gmail: Boolean(hasUsableConnection && config.gmailEnabled && serviceIsGranted(config, scopes, "gmail")),
     calendar: Boolean(hasUsableConnection && config.calendarEnabled && serviceIsGranted(config, scopes, "calendar")),
     sheets: Boolean(hasUsableConnection && config.sheetsEnabled && serviceIsGranted(config, scopes, "sheets")),
   };
-  const requiresReauthorization = Boolean(hasUsableConnection && config.enabledServices.some((service) => !serviceIsGranted(config, scopes, service)));
+  const requiresReauthorization = Boolean(connection && (!accountAllowed || (hasUsableConnection && config.enabledServices.some((service) => !serviceIsGranted(config, scopes, service)))));
   const status = !connection ? "not-connected" : requiresReauthorization ? "reauthorization-required" : connection.status;
   return {
     connected: status === "connected",
@@ -496,6 +503,12 @@ export async function getGoogleAccessToken(config: GoogleRuntimeConfig, required
     .first<ConnectionRow>();
   if (!connection || connection.status !== "connected") {
     throw new GoogleIntegrationError("google_not_connected", "Connect the approved Google Workspace account before using this service.", 409);
+  }
+  if (!googleAccountIsAllowed(config, connection.google_email)) {
+    await env.DB.prepare("UPDATE google_connections SET status = 'reauthorization-required', last_error_code = 'account_no_longer_allowed', updated_at = ? WHERE id = ?")
+      .bind(Date.now(), connection.id)
+      .run();
+    throw new GoogleIntegrationError("unauthorized_google_account", "The stored Google account is no longer approved for this Workspace configuration. Reconnect the approved mailbox.", 409);
   }
   if (requiredService && !serviceIsGranted(config, storedScopes(connection.scopes_json), requiredService)) {
     throw new GoogleIntegrationError("google_scope_reauthorization_required", `Reconnect Google and approve the ${requiredService} permission before continuing.`, 409);

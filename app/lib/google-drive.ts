@@ -154,13 +154,25 @@ function multipartUploadBody(metadata: Record<string, unknown>, bytes: Uint8Arra
 export class GoogleDriveClient {
   constructor(private readonly accessToken: string, private readonly config: GoogleRuntimeConfig) {}
 
-  private addDriveOptions(parameters: URLSearchParams) {
+  /**
+   * files.list accepts Shared Drive search selectors in addition to the general
+   * supportsAllDrives flag. Do not reuse these selectors for files.get or
+   * files.create: Google defines a different query-parameter contract for each
+   * method and rejects list-only parameters on those endpoints.
+   */
+  private addListOptions(parameters: URLSearchParams) {
     if (this.config.drive.mode === "shared-drive") {
       parameters.set("supportsAllDrives", "true");
       parameters.set("includeItemsFromAllDrives", "true");
       parameters.set("corpora", "drive");
       parameters.set("driveId", this.rootId());
     }
+    return parameters;
+  }
+
+  /** files.get and metadata-only files.create support only this Shared Drive flag. */
+  private addFileOptions(parameters: URLSearchParams) {
+    if (this.config.drive.mode === "shared-drive") parameters.set("supportsAllDrives", "true");
     return parameters;
   }
 
@@ -226,7 +238,7 @@ export class GoogleDriveClient {
   }
 
   private async getFolder(fileId: string) {
-    const parameters = this.addDriveOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
+    const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
     return this.request<DriveFile>(`files/${encodeURIComponent(fileId)}?${parameters.toString()}`);
   }
 
@@ -256,7 +268,7 @@ export class GoogleDriveClient {
       ? ` and appProperties has { key='${driveQueryString(identity.key)}' and value='${driveQueryString(identity.value)}' }`
       : "";
     const q = `'${driveQueryString(parentId)}' in parents and trashed = false and mimeType = '${FOLDER_MIME_TYPE}' and name = '${driveQueryString(name)}'${propertyFilter}`;
-    const parameters = this.addDriveOptions(new URLSearchParams({
+    const parameters = this.addListOptions(new URLSearchParams({
       q,
       fields: "files(id,name,mimeType,parents,trashed,webViewLink,appProperties)",
       pageSize: "10",
@@ -267,7 +279,7 @@ export class GoogleDriveClient {
 
   private async createFolder(parentId: string, name: string, appProperties: Record<string, string> = {}) {
     await this.assertContained(parentId);
-    const parameters = this.addDriveOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
+    const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
     const folder = await this.request<DriveFile>(`files?${parameters.toString()}`, {
       method: "POST",
       body: JSON.stringify({ name, mimeType: FOLDER_MIME_TYPE, parents: [parentId], appProperties }),
@@ -333,7 +345,7 @@ export class GoogleDriveClient {
       .map(([key, value]) => ` and appProperties has { key='${driveQueryString(key)}' and value='${driveQueryString(value)}' }`)
       .join("");
     const q = `'${driveQueryString(input.parentId)}' in parents and trashed = false${propertyFilters}`;
-    const parameters = this.addDriveOptions(new URLSearchParams({
+    const parameters = this.addListOptions(new URLSearchParams({
       q,
       fields: "files(id,name,mimeType,parents,trashed,webViewLink,appProperties,md5Checksum,size)",
       pageSize: "3",

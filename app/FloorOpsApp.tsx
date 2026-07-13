@@ -55,6 +55,7 @@ type ProjectUpdateDraft = { project: Project; subject: string; message: string }
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
 
 const leadStages = ["New inquiry", "Site visit", "Proposal", "Decision"];
+const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
 
 const navItems: { label: View; icon: typeof LayoutDashboard }[] = [
   { label: "Overview", icon: LayoutDashboard }, { label: "Leads", icon: Zap },
@@ -76,6 +77,10 @@ function money(value: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
 }
 
+function isActiveProject(project: Project) {
+  return !terminalProjectStatuses.has(project.status.toLowerCase());
+}
+
 export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: string; userEmail: string; signOutHref: string }) {
   const [view, setView] = useState<View>("Overview");
   const [mobileNav, setMobileNav] = useState(false);
@@ -85,6 +90,7 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
   const [leadModal, setLeadModal] = useState(false);
   const [clientModal, setClientModal] = useState(false);
   const [projectModal, setProjectModal] = useState(false);
+  const [projectModalClientId, setProjectModalClientId] = useState<string | null>(null);
   const [ruleModal, setRuleModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -119,18 +125,19 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
         if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : `Live data request failed (${response.status}).`);
         return data;
       }
-      const [leadData, clientData, projectData, dashboardData, ruleData, mirrorData] = await Promise.all([
+      const optionalRequests = Promise.allSettled([
+        getJson("/api/v1/filing-rules"),
+        getJson("/api/v1/integrations/google/sheets/status"),
+      ]);
+      const [leadData, clientData, projectData, dashboardData] = await Promise.all([
         getJson("/api/v1/leads"),
         getJson("/api/v1/clients"),
         getJson("/api/v1/projects"),
         getJson("/api/v1/dashboard"),
-        getJson("/api/v1/filing-rules"),
-        getJson("/api/v1/integrations/google/sheets/status"),
       ]);
       const leadRows = Array.isArray(leadData.leads) ? leadData.leads as Record<string, unknown>[] : [];
       const clientRows = Array.isArray(clientData.clients) ? clientData.clients as Record<string, unknown>[] : [];
       const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
-      const ruleRows = Array.isArray(ruleData.rules) ? ruleData.rules as Record<string, unknown>[] : [];
       setLeads(leadRows.map((lead) => {
         const estimatedValue = Number(lead.estimatedValue ?? 0);
         return { id: String(lead.id), number: String(lead.leadNumber ?? "Lead"), company: String(lead.company), contact: String(lead.contactName), project: String(lead.projectName), value: money(estimatedValue), estimatedValue, stage: String(lead.stage), source: String(lead.source), next: String(lead.nextAction), site: String(lead.site), status: String(lead.status), initials: recordInitials(String(lead.company)), color: "sage" };
@@ -138,9 +145,20 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
       setClients(clientRows.map((client) => ({ id: String(client.id), code: String(client.client_code), name: String(client.name), contact: String(client.primary_contact_name ?? "Primary contact pending"), email: String(client.primary_contact_email ?? ""), industry: String(client.industry ?? "Commercial"), status: displayStatus(client.status, "Active"), initials: recordInitials(String(client.name)), color: "sage", googleStatus: client.drive_folder_id ? "Ready" as const : "Setup pending" as const, driveFolderId: client.drive_folder_id ? String(client.drive_folder_id) : undefined, driveUrl: client.drive_url ? String(client.drive_url) : undefined })));
       setProjectItems(projectRows.map((project) => ({ id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: project.estimated_value !== null && project.estimated_value !== undefined ? money(Number(project.estimated_value)) : "TBD", site: String(project.site ?? "Site pending"), lead: String(project.project_manager ?? "Unassigned"), date: "Dates not set", accent: "sage", driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined })));
       setDashboard(dashboardData as unknown as DashboardSummary);
-      setFilingRules(ruleRows.map((rule) => ({ id: rule.id ? String(rule.id) : undefined, name: String(rule.name), enabled: Boolean(rule.enabled), priority: Number(rule.priority), matchSummary: String(rule.matchSummary ?? rule.match_summary), action: String(rule.action) as FilingRuleDraft["action"], targetCategory: String(rule.targetCategory ?? rule.target_category), approvalRequired: Boolean(rule.approvalRequired ?? rule.approval_required) })));
-      setSheetMirror(mirrorData.mirror ? mirrorData.mirror as SheetMirrorStatus : null);
       setLiveDataState("ready");
+
+      void optionalRequests.then(([ruleResult, mirrorResult]) => {
+        if (ruleResult.status === "fulfilled") {
+          const ruleRows = Array.isArray(ruleResult.value.rules) ? ruleResult.value.rules as Record<string, unknown>[] : [];
+          setFilingRules(ruleRows.filter((rule) => rule && typeof rule === "object").map((rule) => ({ id: rule.id ? String(rule.id) : undefined, name: String(rule.name), enabled: Boolean(rule.enabled), priority: Number(rule.priority), matchSummary: String(rule.matchSummary ?? rule.match_summary), action: String(rule.action) as FilingRuleDraft["action"], targetCategory: String(rule.targetCategory ?? rule.target_category), approvalRequired: Boolean(rule.approvalRequired ?? rule.approval_required) })));
+        }
+        if (mirrorResult.status === "fulfilled") {
+          setSheetMirror(mirrorResult.value.mirror ? mirrorResult.value.mirror as SheetMirrorStatus : null);
+        }
+      }).catch(() => {
+        // Rules and the Sheet mirror are optional integrations. Their failures
+        // must never replace successfully loaded CRM records with a global error.
+      });
     } catch (error) {
       setLiveDataState("error");
       setLiveDataError(error instanceof Error ? error.message : "Live application data could not be loaded.");
@@ -212,12 +230,14 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
 
   async function addProject(project: Project) {
     try {
-      const response = await fetch("/api/v1/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: project.clientId, name: project.name, status: project.status.toLowerCase(), site: project.site, projectManager: project.lead, estimatedValue: Number(project.value.replace(/[^0-9]/g, "")) || undefined }) });
+      const estimatedValue = project.value === "TBD" ? undefined : Number(project.value.replace(/[^0-9]/g, ""));
+      const response = await fetch("/api/v1/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: project.clientId, name: project.name, status: project.status.toLowerCase(), site: project.site, projectManager: project.lead, estimatedValue }) });
       const errorData = await response.clone().json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(errorData.error ?? "Project could not be saved.");
       const data = await response.json() as { id: string; projectNumber: string; sheetSync?: { status?: string; message?: string } };
       await refreshDirectoryData();
       setProjectModal(false);
+      setProjectModalClientId(null);
       notify(data.sheetSync?.message ?? `${project.name} saved in FCI Operations`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Project could not be saved.");
@@ -370,17 +390,35 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
     setClientOpen(true);
   }
 
+  function openNewProject(clientId: string | null = null) {
+    setProjectModalClientId(clientId);
+    setProjectModal(true);
+  }
+
+  function closeNewProject() {
+    setProjectModal(false);
+    setProjectModalClientId(null);
+  }
+
   async function advanceLead(id: string) {
     const currentLead = leads.find((lead) => lead.id === id);
     if (!currentLead) return;
-    const currentIndex = leadStages.indexOf(currentLead.stage);
+    if (currentLead.status.toLowerCase() !== "active") {
+      notify(`${currentLead.company} is ${displayStatus(currentLead.status, "not active")} and cannot be advanced`);
+      return;
+    }
+    const currentIndex = leadStages.findIndex((stage) => stage.toLowerCase() === currentLead.stage.toLowerCase());
+    if (currentIndex < 0) {
+      notify(`${currentLead.company} uses the custom stage “${currentLead.stage}” and was not changed`);
+      return;
+    }
     const nextStage = leadStages[Math.min(currentIndex + 1, leadStages.length - 1)];
-    if (nextStage === currentLead.stage) {
+    if (nextStage.toLowerCase() === currentLead.stage.toLowerCase()) {
       notify(`${currentLead.company} is already at the final pipeline stage`);
       return;
     }
     try {
-      const response = await fetch(`/api/v1/leads/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: nextStage, nextAction: "Review this stage" }) });
+      const response = await fetch(`/api/v1/leads/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: nextStage }) });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Lead stage could not be updated.");
       await refreshDirectoryData();
@@ -476,8 +514,8 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
           <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData()} />
           {view === "Overview" && <Overview firstName={firstName} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} onView={setView} onProject={openProject} />}
           {view === "Leads" && <LeadsView leads={leads} state={liveDataState} onAdd={() => setLeadModal(true)} onAdvance={advanceLead} />}
-          {view === "Clients" && <ClientsView clients={clients} projects={projectItems} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => setProjectModal(true)} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
-          {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} onNewProject={() => setProjectModal(true)} onProject={openProject} />}
+          {view === "Clients" && <ClientsView clients={clients} projects={projectItems} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
+          {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} onNewProject={() => openNewProject()} onProject={openProject} />}
           {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => { setSettingsArea("Workflow defaults"); setView("Settings"); }} />}
           {view === "Inbox" && <InboxView notify={notify} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
@@ -487,10 +525,10 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
       </main>
       {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
       {clientModal && <ClientModal onClose={() => setClientModal(false)} onSave={addClient} />}
-      {projectModal && <NewProjectModal clients={clients} onClose={() => setProjectModal(false)} onSave={addProject} />}
+      {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} onClose={closeNewProject} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
       {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} />}
-      {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); setProjectModal(true); }} onProject={(project) => { setClientOpen(false); openProject(project); }} />}
+      {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} />}
       {projectUpdate && <ProjectUpdateModal project={projectUpdate} onClose={() => setProjectUpdate(null)} onSave={(draft) => { setProjectUpdate(null); notify(`Update for ${draft.project.name} prepared. Connect Gmail before sending.`); }} />}
       {toast && <div className="toast"><CheckCircle2 size={18} />{toast}</div>}
     </div>
@@ -506,18 +544,20 @@ function LiveDataBanner({ state, error, onRetry }: { state: LiveDataState; error
 function Overview({ firstName, leads, projects, dashboard, state, onView, onProject }: { firstName: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; onView: (v: View) => void; onProject: (p: Project) => void }) {
   const dateLabel = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(new Date());
   const metrics = dashboard?.metrics;
+  const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
+  const activeProjects = projects.filter(isActiveProject);
   return <>
     <div className="page-heading"><div><p className="eyebrow">{dateLabel}</p><h1>Good morning, {firstName}.</h1><p>{state === "ready" ? "Your live operation records are below." : "Connecting to your operation records."}</p></div><button className="soft-button" onClick={() => onView("Schedule")}><CalendarDays size={16} /> Schedule readiness</button></div>
     <section className="metrics-grid">
-      <Metric label="Active pipeline" value={money(metrics?.estimatedPipelineValue ?? 0)} note={`${metrics?.activeLeads ?? leads.length} open opportunities`} trend="Live" icon={Zap} color="orange" />
-      <Metric label="Active projects" value={String(metrics?.activeProjects ?? projects.length)} note="Durable project records" trend="Live" icon={HardHat} color="green" />
+      <Metric label="Active pipeline" value={money(metrics?.estimatedPipelineValue ?? 0)} note={`${metrics?.activeLeads ?? activeLeads.length} open opportunities`} trend="Live" icon={Zap} color="orange" />
+      <Metric label="Active projects" value={String(metrics?.activeProjects ?? activeProjects.length)} note="Durable project records" trend="Live" icon={HardHat} color="green" />
       <Metric label="Project meetings" value={String(metrics?.meetingCount ?? 0)} note="Saved meeting records" trend="Live" icon={MessageSquareText} color="blue" />
       <Metric label="Filed emails" value={String(metrics?.filedEmailCount ?? 0)} note="Approved project archives" trend="Live" icon={Mail} color="violet" />
     </section>
     <section className="dashboard-grid">
       <div className="panel pipeline-panel">
-        <PanelHeader title="Lead pipeline" subtitle={`${leads.length} live records`} action="View all" onAction={() => onView("Leads")} />
-        {leads.length > 0 ? <><div className="pipeline-head"><span>Client / opportunity</span><span>Stage</span><span>Est. value</span><span>Next action</span></div>{leads.slice(0, 4).map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell"><Clock3 size={14} />{lead.next}</div></div>)}</> : state === "ready" ? <div className="empty-table">No leads yet. Add the first opportunity to begin the live pipeline.</div> : null}
+        <PanelHeader title="Lead pipeline" subtitle={`${activeLeads.length} active records`} action="View all" onAction={() => onView("Leads")} />
+        {activeLeads.length > 0 ? <><div className="pipeline-head"><span>Client / opportunity</span><span>Stage</span><span>Est. value</span><span>Next action</span></div>{activeLeads.slice(0, 4).map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell"><Clock3 size={14} />{lead.next}</div></div>)}</> : state === "ready" ? <div className="empty-table">No active leads yet. Add the first opportunity to begin the live pipeline.</div> : null}
       </div>
       <div className="panel schedule-panel">
         <PanelHeader title="Scheduling" subtitle="Data model pending" action="Review setup" onAction={() => onView("Schedule")} />
@@ -525,17 +565,28 @@ function Overview({ firstName, leads, projects, dashboard, state, onView, onProj
       </div>
     </section>
     <section className="dashboard-grid lower-grid">
-      <div className="panel projects-panel"><PanelHeader title="Active projects" subtitle={`${projects.length} total`} action="View projects" onAction={() => onView("Projects")} /><div className="project-cards">{projects.map((project) => <button className="project-card" key={project.number} onClick={() => onProject(project)}><div className="project-card-top"><Status text={project.status} /><MoreHorizontal size={17} /></div><span className="project-number">{project.number}</span><h3>{project.name}</h3><p>{project.client}</p><div className="project-meta"><span><MapPin size={13} />{project.site}</span><span>{project.value}</span></div></button>)}{projects.length === 0 && state === "ready" ? <div className="empty-table">No projects yet. Create a client, then create its first independent project.</div> : null}</div></div>
+      <div className="panel projects-panel"><PanelHeader title="Active projects" subtitle={`${activeProjects.length} active`} action="View projects" onAction={() => onView("Projects")} /><div className="project-cards">{activeProjects.map((project) => <button className="project-card" key={project.number} onClick={() => onProject(project)}><div className="project-card-top"><Status text={project.status} /><MoreHorizontal size={17} /></div><span className="project-number">{project.number}</span><h3>{project.name}</h3><p>{project.client}</p><div className="project-meta"><span><MapPin size={13} />{project.site}</span><span>{project.value}</span></div></button>)}{activeProjects.length === 0 && state === "ready" ? <div className="empty-table">No active projects. Completed, cancelled, and archived work remains available on the Projects page.</div> : null}</div></div>
       <div className="panel inbox-panel"><PanelHeader title="Connected inbox" subtitle="Explicit Workspace Gmail access" action="Open inbox" onAction={() => onView("Inbox")} /><div className="dashboard-inbox-empty"><Mail size={20} /><div><strong>The company inbox stays review-first</strong><p>Filing always requires your project selection and confirmation.</p></div></div><button className="inbox-cta" onClick={() => onView("Inbox")}><Mail size={15} /> Open connected inbox</button></div>
     </section>
   </>;
 }
 
 function LeadsView({ leads, state, onAdd, onAdvance }: { leads: Lead[]; state: LiveDataState; onAdd: () => void; onAdvance: (id: string) => void }) {
-  const pipelineValue = leads.reduce((total, lead) => total + lead.estimatedValue, 0);
-  return <><PageTitle eyebrow="Sales pipeline" title="Leads & opportunities" text={`${leads.length} open opportunities · ${money(pipelineValue)} estimated value`} action={<button className="primary-button" onClick={onAdd}><Plus size={17} /> Add lead</button>} />
-    {leads.length === 0 && state === "ready" ? <section className="panel empty-tab"><div><Zap size={25} /></div><h3>No leads yet</h3><p>Add your first live opportunity. Nothing on this page is demonstration data.</p><button className="primary-button" onClick={onAdd}><Plus size={16} /> Add first lead</button></section> : <div className="board">{leadStages.map((stage) => <section className="board-column" key={stage}><header><span>{stage}</span><b>{leads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()).length}</b><MoreHorizontal size={17} /></header>{leads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()).map((lead) => <article className="lead-card" key={lead.id}><div className="lead-card-head"><Avatar initials={lead.initials} color={lead.color} /><span>{lead.number}</span></div><h3>{lead.company}</h3><p>{lead.project}</p><div className="lead-value">{lead.value}</div><div className="lead-contact"><Users size={14} />{lead.contact}</div><footer><span>{lead.source}</span><button onClick={() => onAdvance(lead.id)} aria-label={`Advance ${lead.company} to the next pipeline stage`}><ChevronRight size={15} /></button></footer></article>)}<button className="add-card" onClick={onAdd}><Plus size={15} /> Add opportunity</button></section>)}</div>}
+  const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
+  const knownStages = new Set(leadStages.map((stage) => stage.toLowerCase()));
+  const standardLeads = activeLeads.filter((lead) => knownStages.has(lead.stage.toLowerCase()));
+  const customStageLeads = activeLeads.filter((lead) => !knownStages.has(lead.stage.toLowerCase()));
+  const inactiveLeads = leads.filter((lead) => lead.status.toLowerCase() !== "active");
+  const pipelineValue = activeLeads.reduce((total, lead) => total + lead.estimatedValue, 0);
+  return <><PageTitle eyebrow="Sales pipeline" title="Leads & opportunities" text={`${activeLeads.length} open opportunities · ${money(pipelineValue)} estimated value`} action={<button className="primary-button" onClick={onAdd}><Plus size={17} /> Add lead</button>} />
+    {activeLeads.length === 0 && state === "ready" ? <section className="panel empty-tab"><div><Zap size={25} /></div><h3>No active leads</h3><p>Add your first live opportunity. Closed and archived records remain listed below.</p><button className="primary-button" onClick={onAdd}><Plus size={16} /> Add first lead</button></section> : standardLeads.length > 0 ? <div className="board">{leadStages.map((stage) => <section className="board-column" key={stage}><header><span>{stage}</span><b>{standardLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()).length}</b><MoreHorizontal size={17} /></header>{standardLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()).map((lead) => <article className="lead-card" key={lead.id}><div className="lead-card-head"><Avatar initials={lead.initials} color={lead.color} /><span>{lead.number}</span></div><h3>{lead.company}</h3><p>{lead.project}</p><div className="lead-value">{lead.value}</div><div className="lead-contact"><Users size={14} />{lead.contact}</div><footer><span>{lead.source}</span><button onClick={() => onAdvance(lead.id)} aria-label={`Advance ${lead.company} to the next pipeline stage`}><ChevronRight size={15} /></button></footer></article>)}<button className="add-card" onClick={onAdd}><Plus size={15} /> Add opportunity</button></section>)}</div> : null}
+    {customStageLeads.length > 0 && <LeadStatusPanel title="Custom pipeline stages" subtitle="These active leads are preserved but cannot be advanced by the standard four-stage control." leads={customStageLeads} />}
+    {inactiveLeads.length > 0 && <LeadStatusPanel title="Closed and archived leads" subtitle="Converted, lost, and archived opportunities are excluded from active pipeline totals." leads={inactiveLeads} showRecordStatus />}
   </>;
+}
+
+function LeadStatusPanel({ title, subtitle, leads, showRecordStatus = false }: { title: string; subtitle: string; leads: Lead[]; showRecordStatus?: boolean }) {
+  return <section className="panel pipeline-panel"><PanelHeader title={title} subtitle={subtitle} /><div className="pipeline-head"><span>Client / opportunity</span><span>{showRecordStatus ? "Status" : "Stage"}</span><span>Est. value</span><span>Next action</span></div>{leads.map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={showRecordStatus ? displayStatus(lead.status, "Inactive") : lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell"><Clock3 size={14} />{lead.next}</div></div>)}</section>;
 }
 
 function sheetStateLabel(mirror: SheetMirrorStatus | null) {
@@ -560,11 +611,11 @@ function ProjectsView({ projects, state, onProject, onNewProject }: { projects: 
   const [filter, setFilter] = useState("Active");
   const filteredProjects = projects.filter((project) => {
     const status = project.status.toLowerCase();
-    return filter === "Active" ? !["archived", "completed", "cancelled"].includes(status) : status === filter.toLowerCase();
+    return filter === "Active" ? !terminalProjectStatuses.has(status) : status === filter.toLowerCase();
   });
-  const filterCount = (stage: string) => stage === "Active" ? projects.filter((project) => !["archived", "completed", "cancelled"].includes(project.status.toLowerCase())).length : projects.filter((project) => project.status.toLowerCase() === stage.toLowerCase()).length;
-  return <><PageTitle eyebrow="Project delivery" title="Active projects" text="Every project is independent, even when a client has repeat work" action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
-    <div className="filterbar"><div className="tabs">{["Active", "Planning", "Closeout", "Archived"].map((stage) => <button className={filter === stage ? "active" : ""} key={stage} onClick={() => setFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
+  const filterCount = (stage: string) => stage === "Active" ? projects.filter(isActiveProject).length : projects.filter((project) => project.status.toLowerCase() === stage.toLowerCase()).length;
+  return <><PageTitle eyebrow="Project delivery" title="Projects" text="Every project is independent, even when a client has repeat work" action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
+    <div className="filterbar"><div className="tabs">{["Active", "Planning", "Closeout", "Completed", "Cancelled", "Archived"].map((stage) => <button className={filter === stage ? "active" : ""} key={stage} onClick={() => setFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
     <div className="projects-table panel"><div className="projects-table-head"><span>Project</span><span>Phase</span><span>Progress</span><span>Schedule</span><span>Value</span><span /></div>{filteredProjects.map((p) => <button className="projects-table-row" key={p.id} onClick={() => onProject(p)}><div><Avatar initials={recordInitials(p.client)} color={p.accent} /><span><strong>{p.name}</strong><small>{p.number} · {p.client}</small></span></div><Status text={p.status} /><div><small>Not tracked yet</small></div><span><strong>{p.date}</strong><small><MapPin size={12} />{p.site}</small></span><strong>{p.value}</strong><ChevronRight size={17} /></button>)}{!filteredProjects.length && <div className="empty-table">{state === "ready" ? `No ${filter.toLowerCase()} projects match this view.` : "Loading projects…"}</div>}</div>
   </>;
 }
@@ -832,12 +883,22 @@ function AssistantView({ projects }: { projects: Project[] }) {
 }
 
 function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Lead[]; projects: Project[]; clients: Client[]; dashboard: DashboardSummary | null; state: LiveDataState }) {
-  const stageValues = leadStages.map((stage) => ({ stage, value: leads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()).reduce((total, lead) => total + lead.estimatedValue, 0) }));
+  const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
+  const stageValues = leadStages.map((stage) => ({ stage, value: activeLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()).reduce((total, lead) => total + lead.estimatedValue, 0) }));
+  const knownActiveLeadCount = activeLeads.filter((lead) => leadStages.some((stage) => stage.toLowerCase() === lead.stage.toLowerCase())).length;
   const maximumStageValue = Math.max(1, ...stageValues.map((item) => item.value));
   const projectStatuses = dashboard?.projectsByStatus ?? [];
   const maximumProjectCount = Math.max(1, ...projectStatuses.map((item) => item.count));
   const metrics = dashboard?.metrics;
-  return <><PageTitle eyebrow="Business performance" title="Reports" text="Live persisted totals only; unsupported forecasting and crew metrics are not estimated" /><section className="metrics-grid"><Metric label="Pipeline value" value={money(metrics?.estimatedPipelineValue ?? 0)} note={`${metrics?.activeLeads ?? leads.length} active leads`} trend="Live" icon={Zap} color="orange" /><Metric label="Active projects" value={String(metrics?.activeProjects ?? projects.length)} note={`${projects.length} project records`} trend="Live" icon={BriefcaseBusiness} color="green" /><Metric label="Clients" value={String(metrics?.clientCount ?? clients.length)} note="Directory records" trend="Live" icon={Users} color="blue" /><Metric label="Project meetings" value={String(metrics?.meetingCount ?? 0)} note="Captured records" trend="Live" icon={MessageSquareText} color="violet" /></section><div className="reports-grid"><section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" />{leads.length > 0 ? <div className="bar-chart">{stageValues.map((item) => <div key={item.stage}><span>{item.stage}</span><div><i style={{ width: `${Math.round((item.value / maximumStageValue) * 100)}%` }} /></div><strong>{money(item.value)}</strong></div>)}</div> : state === "ready" ? <div className="empty-table">No lead records are available for this report.</div> : null}</section><section className="panel report-chart"><PanelHeader title="Projects by status" subtitle={`${projects.length} records`} />{projectStatuses.length > 0 ? <div className="bar-chart">{projectStatuses.map((item) => <div key={item.status}><span>{displayStatus(item.status, "Unknown")}</span><div><i style={{ width: `${Math.round((item.count / maximumProjectCount) * 100)}%` }} /></div><strong>{item.count}</strong></div>)}</div> : state === "ready" ? <div className="empty-table">No project status data is available yet.</div> : null}</section></div><section className="client-directory-banner"><div className="directory-badge"><Activity size={20} /></div><div><strong>Additional operational reports require additional live models</strong><span>Crew utilization, sales-cycle duration, margin, earned revenue, and closeout duration will appear only after those records and dates are implemented.</span></div></section></>;
+  return <>
+    <PageTitle eyebrow="Business performance" title="Reports" text="Live persisted totals only; unsupported forecasting and crew metrics are not estimated" />
+    <section className="metrics-grid"><Metric label="Pipeline value" value={money(metrics?.estimatedPipelineValue ?? 0)} note={`${metrics?.activeLeads ?? activeLeads.length} active leads`} trend="Live" icon={Zap} color="orange" /><Metric label="Active projects" value={String(metrics?.activeProjects ?? projects.filter(isActiveProject).length)} note={`${projects.length} project records`} trend="Live" icon={BriefcaseBusiness} color="green" /><Metric label="Clients" value={String(metrics?.clientCount ?? clients.length)} note="Directory records" trend="Live" icon={Users} color="blue" /><Metric label="Project meetings" value={String(metrics?.meetingCount ?? 0)} note="Captured records" trend="Live" icon={MessageSquareText} color="violet" /></section>
+    <div className="reports-grid">
+      <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" />{knownActiveLeadCount > 0 ? <div className="bar-chart">{stageValues.map((item) => <div key={item.stage}><span>{item.stage}</span><div><i style={{ width: `${Math.round((item.value / maximumStageValue) * 100)}%` }} /></div><strong>{money(item.value)}</strong></div>)}</div> : state === "ready" ? <div className="empty-table">No active leads use the standard pipeline stages yet.</div> : null}</section>
+      <section className="panel report-chart"><PanelHeader title="Projects by status" subtitle={`${projects.length} records`} />{projectStatuses.length > 0 ? <div className="bar-chart">{projectStatuses.map((item) => <div key={item.status}><span>{displayStatus(item.status, "Unknown")}</span><div><i style={{ width: `${Math.round((item.count / maximumProjectCount) * 100)}%` }} /></div><strong>{item.count}</strong></div>)}</div> : state === "ready" ? <div className="empty-table">No project status data is available yet.</div> : null}</section>
+    </div>
+    <section className="client-directory-banner"><div className="directory-badge"><Activity size={20} /></div><div><strong>Additional operational reports require additional live models</strong><span>Crew utilization, sales-cycle duration, margin, earned revenue, and closeout duration will appear only after those records and dates are implemented.</span></div></section>
+  </>;
 }
 
 function SettingsView({ notify, section, onSection, rules, projects, userName, userEmail, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
@@ -1468,10 +1529,11 @@ function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client
   return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Client Directory</p><h2>Add a client</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>Client business name<input name="name" required placeholder="Business name" /></label><div className="form-row"><label>Primary contact<input name="contact" required placeholder="Full name" /></label><label>Work email<input name="email" type="email" required placeholder="name@company.com" /></label></div><div className="form-row"><label>Industry<select name="industry"><option>General contractor</option><option>Healthcare</option><option>Retail</option><option>Hospitality</option><option>Property management</option><option>Other commercial</option></select></label><label>Client status<select name="status"><option>Active</option><option>Prospect</option><option>Inactive</option></select></label></div><p className="form-help"><FolderTree size={14} /> The app saves the client first, then syncs the Client Directory when Google Sheets is connected. The account folder is created with the first project workspace.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add client"}</button></footer></form></div></div>;
 }
 
-function NewProjectModal({ clients, onClose, onSave }: { clients: Client[]; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
+function NewProjectModal({ clients, initialClientId, onClose, onSave }: { clients: Client[]; initialClientId: string | null; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: form.get("value") ? money(Number(form.get("value"))) : "TBD", site: String(form.get("site")), lead: String(form.get("manager")), date: "Dates not set", accent: client.color }); } finally { setSaving(false); } }
-  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>Client<select name="clientId" required>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="Project name" /></label><div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><label>Project manager<input name="manager" required placeholder="Assigned manager" /></label></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value<input name="value" type="number" min="0" placeholder="Estimated amount" /></label></div><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Creating…" : "Create project"}</button></footer></form></div></div>;
+  const selectedClientId = initialClientId && clients.some((client) => client.id === initialClientId) ? initialClientId : clients[0]?.id ?? "";
+  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>Client<select name="clientId" required defaultValue={selectedClientId} disabled={clients.length === 0}>{clients.length === 0 && <option value="">Create a client first</option>}{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="Project name" /></label><div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><label>Project manager<input name="manager" required placeholder="Assigned manager" /></label></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value<input name="value" type="number" min="0" placeholder="Estimated amount" /></label></div><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={saving || clients.length === 0}>{saving ? "Creating…" : clients.length === 0 ? "Add a client first" : "Create project"}</button></footer></form></div></div>;
 }
 
 function RuleModal({ onClose, onSave }: { onClose: () => void; onSave: (rule: FilingRuleDraft) => Promise<void> }) {
