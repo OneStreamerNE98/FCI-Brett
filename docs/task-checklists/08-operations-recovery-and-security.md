@@ -1,4 +1,4 @@
-# Action: Establish operations, recovery, and security controls
+# Task checklist: Establish operations, recovery, and security controls
 
 Owner: Business owner, Workspace administrator, and Codex/developer
 

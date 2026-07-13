@@ -1,4 +1,4 @@
-# Action: Complete pilot and production acceptance
+# Task checklist: Complete pilot and production acceptance
 
 Owner: Business owner and Workspace administrator
 

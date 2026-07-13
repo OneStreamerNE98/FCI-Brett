@@ -11,7 +11,7 @@ Before changing code, read:
 3. `docs/20-user-product-and-architecture-review.md`
 4. `docs/ui-and-product-readiness-review.md`
 5. `docs/google-workspace-rollout-guide.md`
-6. `docs/actions/README.md`
+6. `docs/task-checklists/README.md`
 7. `docs/collaboration-and-sharing.md`
 
 ## Current product boundary

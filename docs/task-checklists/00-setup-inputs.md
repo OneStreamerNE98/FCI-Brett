@@ -1,4 +1,4 @@
-# Action: Confirm setup inputs
+# Task checklist: Confirm setup inputs
 
 Owner: Business owner
 
@@ -93,6 +93,6 @@ The production login work is documented in [Staff Google login, roles, and permi
 
 You can return to Codex with a status update such as:
 
-> Workspace resources are complete. The operations account can manage the Shared Drive, directory Sheet, and both calendars. No secrets are included. Please update the Action Center and guide me through Google Cloud/OAuth next.
+> Workspace resources are complete. The operations account can manage the Shared Drive, directory Sheet, and both calendars. No secrets are included. Please update the Task Checklists and guide me through Google Cloud/OAuth next.
 
 Do not send passwords, OAuth client secrets, token-encryption keys, access tokens, or refresh tokens in the status update.

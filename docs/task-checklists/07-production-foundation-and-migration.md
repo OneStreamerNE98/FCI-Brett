@@ -1,4 +1,4 @@
-# Action: Build the production foundation and migration path
+# Task checklist: Build the production foundation and migration path
 
 Owner: Codex/developer and Google Cloud administrator
 

@@ -1,4 +1,4 @@
-# Action: Harden the interface for multi-user work
+# Task checklist: Harden the interface for multi-user work
 
 Owner: Codex/developer, with workflow decisions from the business owner
 

@@ -1,4 +1,4 @@
-# Action: Approve the 20-user operating model and Google access
+# Task checklist: Approve the 20-user operating model and Google access
 
 Owner: Business owner and Google Workspace administrator
 

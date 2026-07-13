@@ -1,4 +1,4 @@
-# Action: Create Google Workspace resources
+# Task checklist: Create Google Workspace resources
 
 Owner: Google Workspace administrator
 

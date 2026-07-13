@@ -36,7 +36,7 @@ Use explicit invitations even for people in the company Google Workspace domain,
 | Field/Crew Lead | Decide whether this is an internal application role; if so, limit it to assigned schedule and field records | No intake mailbox or company directory; limited project-folder access only when required |
 | Subcontractor or temporary field worker | No full application account by default; use expiring, purpose-specific links after that feature is built | No Shared Drive membership by default |
 
-The owner must decide whether sales/estimating is part of Office Operations, a separate role, or out of the first rollout. The owner must also decide whether field leads receive full accounts or only expiring assignment links. Record those decisions in [20-user operating model and Google access](actions/06-20-user-operating-model-and-access.md).
+The owner must decide whether sales/estimating is part of Office Operations, a separate role, or out of the first rollout. The owner must also decide whether field leads receive full accounts or only expiring assignment links. Record those decisions in [20-user operating model and Google access](task-checklists/06-20-user-operating-model-and-access.md).
 
 ## Recommended production architecture
 
@@ -65,7 +65,7 @@ The initial production service set should be:
 - Cloud Storage as an upload quarantine boundary before approved files are copied to Shared Drive.
 - `pgvector` only when permission-filtered document indexing is actually scheduled; it is not required for launch.
 
-This keeps operating cost and failure modes understandable for a 20-person company while preserving a path to later scale. See [Production platform decision](architecture-decision-production-platform.md) and [Production foundation and migration](actions/07-production-foundation-and-migration.md).
+This keeps operating cost and failure modes understandable for a 20-person company while preserving a path to later scale. See [Production platform decision](architecture-decision-production-platform.md) and [Production foundation and migration](task-checklists/07-production-foundation-and-migration.md).
 
 ## Findings by priority
 
@@ -125,4 +125,4 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 | Store real client or employee data | No-go until production platform, restore, audit, scanning, and retention controls pass |
 | Build scheduling or outbound messaging | No-go until platform, permissions, and background-job controls are accepted |
 
-The executable owner and developer work is tracked in the [Action Center](actions/README.md).
+The executable owner and developer work is tracked in the [Task Checklists](task-checklists/README.md).

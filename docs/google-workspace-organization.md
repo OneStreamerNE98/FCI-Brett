@@ -76,7 +76,7 @@ FCI Operations remains authoritative. App-created Workspace events are linked ba
 ## Workspace setup checklist
 
 - Subscribe to or trial Google Workspace and verify a company-controlled domain.
-- Approve the [20-user app-to-Google access matrix](actions/06-20-user-operating-model-and-access.md), then create only the Google Groups required by that matrix.
+- Approve the [20-user app-to-Google access matrix](task-checklists/06-20-user-operating-model-and-access.md), then create only the Google Groups required by that matrix.
 - Create the `FCI Operations` Shared Drive.
 - Create the Client Directory Sheet, intake mailbox, and two shared calendars.
 - Create a Google Cloud project and enable Drive, Gmail, Calendar, Sheets, and Pub/Sub APIs.

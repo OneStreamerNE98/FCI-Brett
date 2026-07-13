@@ -16,7 +16,7 @@ Official references:
 | --- | --- |
 | Source code and Git history | Existing Codex conversations |
 | `AGENTS.md` repository instructions | Personal Codex settings and memories |
-| Architecture, rollout, and Action Center documents | ChatGPT account or subscription |
+| Architecture, rollout, and task-checklist documents | ChatGPT account or subscription |
 | Branches, commits, pull requests, and CI results | Local `.env.local` or credentials |
 | Safe configuration examples | Hosted secrets and Google tokens |
 
@@ -73,7 +73,7 @@ The root `AGENTS.md` contains repository-wide instructions that Codex should app
 
 Paste this into the coworker's first task:
 
-> Open and follow the repository's `AGENTS.md`. Read `docs/codex-to-codex-handoff.md`, `docs/architecture-decision-production-platform.md`, `docs/ui-and-product-readiness-review.md`, `docs/google-workspace-rollout-guide.md`, and `docs/actions/README.md`. Run `git status --short --branch` and `npm.cmd test`. Summarize the current architecture, pilot safety boundary, active blockers, and recommended first implementation branch. Do not change files, hosted configuration, or external systems in this onboarding task.
+> Open and follow the repository's `AGENTS.md`. Read `docs/codex-to-codex-handoff.md`, `docs/architecture-decision-production-platform.md`, `docs/ui-and-product-readiness-review.md`, `docs/google-workspace-rollout-guide.md`, and `docs/task-checklists/README.md`. Run `git status --short --branch` and `npm.cmd test`. Summarize the current architecture, pilot safety boundary, active blockers, and recommended first implementation branch. Do not change files, hosted configuration, or external systems in this onboarding task.
 
 The expected result is a read-only orientation report plus a passing baseline. The worker should not begin coding until the assigned milestone is confirmed.
 
@@ -81,7 +81,7 @@ The expected result is a read-only orientation report plus a passing baseline. T
 
 After onboarding passes, use this prompt:
 
-> Create and work on `codex/google-cloud-foundation`. First read `AGENTS.md`, `docs/20-user-product-and-architecture-review.md`, `docs/architecture-decision-production-platform.md`, and `docs/actions/README.md`. Build the small-company Google Cloud foundation and tested migration path: one regional Cloud Run modular monolith, Cloud SQL PostgreSQL schema/migrations, provider-neutral database and storage interfaces, Secret Manager plan, Cloud Tasks processing, Gmail Pub/Sub notification boundary, Calendar HTTPS webhook boundary, observability, recovery, and controlled pilot-to-production cutover. Preserve the hosted pilot and Google Workspace connector. Do not build scheduling, messaging, AI document indexing, or perform a production deployment. Work in small tested commits and finish with a pull request containing verification evidence and a data/security impact note.
+> Create and work on `codex/google-cloud-foundation`. First read `AGENTS.md`, `docs/20-user-product-and-architecture-review.md`, `docs/architecture-decision-production-platform.md`, and `docs/task-checklists/README.md`. Build the small-company Google Cloud foundation and tested migration path: one regional Cloud Run modular monolith, Cloud SQL PostgreSQL schema/migrations, provider-neutral database and storage interfaces, Secret Manager plan, Cloud Tasks processing, Gmail Pub/Sub notification boundary, Calendar HTTPS webhook boundary, observability, recovery, and controlled pilot-to-production cutover. Preserve the hosted pilot and Google Workspace connector. Do not build scheduling, messaging, AI document indexing, or perform a production deployment. Work in small tested commits and finish with a pull request containing verification evidence and a data/security impact note.
 
 ## Daily collaboration workflow
 
@@ -122,7 +122,7 @@ What changed and why.
 
 Schema, permissions, secrets, external services, migration, and rollback impact.
 
-## Owner actions
+## Owner tasks
 
 Non-secret configuration or decisions still needed. Never paste secret values here.
 
@@ -135,7 +135,7 @@ Production deployment, hosted secrets, and real client data remained untouched u
 
 Before the coworker ends a task, ask their Codex instance:
 
-> Prepare a handback for another Codex instance. State the branch and commits, summarize every material change, list tests and results, identify schema/configuration/security impact, link the pull request, record unresolved blockers and owner actions, and confirm whether deployment or external state was changed. Put durable project facts in the appropriate repository documentation rather than relying only on this conversation.
+> Prepare a handback for another Codex instance. State the branch and commits, summarize every material change, list tests and results, identify schema/configuration/security impact, link the pull request, record unresolved blockers and owner tasks, and confirm whether deployment or external state was changed. Put durable project facts in the appropriate repository documentation rather than relying only on this conversation.
 
 ## Secrets and local configuration
 

@@ -1,4 +1,4 @@
-# Action: Build staff Google login and permissions
+# Task checklist: Build staff Google login and permissions
 
 Owner: Codex/developer, with policy approval from the business owner
 

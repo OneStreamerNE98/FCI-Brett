@@ -1,10 +1,10 @@
-# FCI Operations Action Center
+# FCI Operations Task Checklists
 
 This is the owner-facing setup and product-readiness dashboard for the Google Workspace pilot and the later 20-person company rollout. Update the checkboxes as work is completed, but never place passwords, OAuth client secrets, token-encryption keys, refresh tokens, or production client data in GitHub.
 
 ## Current status
 
-| Topic | Owner | Status | Next action |
+| Topic | Owner | Status | Next task |
 | --- | --- | --- | --- |
 | Repository verification | Codex/developer | Complete | GitHub CI builds and tests every push and pull request. |
 | Workspace identity inputs | Business owner | Partially complete | Domain is `cherryhillfci.com`; confirm the operations account and initial administrator. |
@@ -19,7 +19,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 
-## Actions by topic
+## Checklists by topic
 
 1. [Setup inputs and decisions](00-setup-inputs.md)
 2. [Google Workspace accounts and resources](01-workspace-resources.md)
@@ -33,7 +33,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 10. [Frontend and multi-user hardening](09-frontend-and-multi-user-hardening.md)
 11. [Codex-to-Codex coworker handoff](../codex-to-codex-handoff.md)
 
-Read the [20-user product and architecture review](../20-user-product-and-architecture-review.md) for the evidence, priority findings, corrected delivery order, and product ideas behind these actions.
+Read the [20-user product and architecture review](../20-user-product-and-architecture-review.md) for the evidence, priority findings, corrected delivery order, and product ideas behind these task checklists.
 
 ## Safety boundary
 

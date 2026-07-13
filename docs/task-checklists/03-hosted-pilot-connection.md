@@ -1,4 +1,4 @@
-# Action: Configure and connect the hosted pilot
+# Task checklist: Configure and connect the hosted pilot
 
 Owner: Business owner and Codex/developer
 
