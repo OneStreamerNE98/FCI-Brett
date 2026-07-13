@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with workflow decisions from the business owner
 
-Status: Not started
+Status: In progress — first integrity and truthfulness fixes implemented in source
 
 Depends on: Approved roles/capabilities and production API contracts
 
@@ -10,7 +10,8 @@ The interface is suitable for learning the single-user workflow. It needs explic
 
 ## P0 integrity fixes
 
-- [ ] Remove the live Settings action that applies `FCI/Filed` without an exact project copy.
+- [x] Remove the live Settings action and standalone API route that applied `FCI/Filed` without an exact project copy.
+- [x] Display the current server-derived pilot access label (`Admin` or `Office`) instead of hardcoding Administrator.
 - [ ] Pass the authenticated user, real role, capabilities, and assigned-project scope to the interface.
 - [ ] Hide or disable unauthorized navigation and actions for clarity while also enforcing every rule on the server.
 - [ ] Display a session-expired/disabled state and require reauthentication instead of silently falling back.
@@ -18,7 +19,7 @@ The interface is suitable for learning the single-user workflow. It needs explic
 ## Truthful feature state
 
 - [ ] Label every module and action as Working, Pilot, Setup required, or Planned.
-- [ ] Disable or relabel Send update until a durable draft/send workflow exists.
+- [x] Remove the transient update composer and show a disabled Project updates planned control until durable Gmail draft support exists.
 - [ ] Explain that Calendar/reminder preferences are configuration only until a background worker consumes them.
 - [ ] Keep Tasks, Files, Schedule, and messaging placeholders explicit until their durable models exist.
 - [ ] Add an Administrator-only indicator when the app is using simulation or test resources.

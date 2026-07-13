@@ -284,10 +284,9 @@ test("keeps local Workspace simulation isolated from the one company Workspace c
 });
 
 test("provides explicit Gmail and Calendar controls in simulation and Workspace modes", async () => {
-  const [oauth, gmail, gmailHelper, gmailLabel, gmailSend, calendar, calendarHold, app, guide] = await Promise.all([
+  const [oauth, gmail, gmailHelper, gmailSend, calendar, calendarHold, app, guide] = await Promise.all([
     read("app/lib/google-oauth.ts"), read("app/lib/google-gmail.ts"),
     read("app/api/v1/integrations/google/gmail/_route-helpers.ts"),
-    read("app/api/v1/integrations/google/gmail/messages/[messageId]/label/route.ts"),
     read("app/api/v1/integrations/google/gmail/send-test/route.ts"),
     read("app/lib/google-calendar-client.ts"),
     read("app/api/v1/integrations/google/calendar/test-hold/route.ts"),
@@ -302,7 +301,6 @@ test("provides explicit Gmail and Calendar controls in simulation and Workspace 
   assert.match(gmailHelper, /WorkspaceSimulationGmailClient/);
   assert.match(gmailHelper, /getGoogleAccessToken\(config, "gmail"\)/);
   assert.match(gmail, /allowedDomains\.includes/);
-  assert.match(gmailLabel, /inbox_retained=true/);
   assert.match(gmailSend, /requireSameOrigin/);
   assert.match(calendar, /visibility: "private"/);
   assert.match(calendar, /attendees=none/);
@@ -319,9 +317,14 @@ test("files Gmail only after an explicit single-project review", async () => {
     read("app/FloorOpsApp.tsx"), read("db/schema.ts"), read("app/lib/google-gmail.ts"),
     read("app/lib/google-drive.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts"),
   ]);
-  assert.match(app, /File to project/);
+  assert.match(app, /Review & copy/);
   assert.match(app, /GmailFilingModal/);
   assert.match(app, /Copy email \+ \$/);
+  assert.doesNotMatch(app, /Label only|labelTestMessageFiled/);
+  await assert.rejects(
+    access(new URL("app/api/v1/integrations/google/gmail/messages/[messageId]/label/route.ts", root)),
+    (error) => error?.code === "ENOENT",
+  );
   assert.match(schema, /gmailFileArchives/);
   assert.match(schema, /gmailFileArchiveArtifacts/);
   assert.match(gmail, /getMessageArchive/);
@@ -334,6 +337,14 @@ test("files Gmail only after an explicit single-project review", async () => {
   assert.match(filingRoute, /fciGmailMessageId/);
   assert.match(filingRoute, /applyFiledLabel/);
   assert.match(filingRoute, /inboxRetained: true/);
+});
+
+test("keeps unfinished project updates visibly planned and non-operational", async () => {
+  const app = await read("app/FloorOpsApp.tsx");
+
+  assert.match(app, /Project updates planned/);
+  assert.match(app, /disabled title="Project updates are planned after durable Gmail draft support is implemented"/);
+  assert.doesNotMatch(app, /ProjectUpdateDraft|ProjectUpdateModal|projectUpdate|Project update composer opened|Send update/);
 });
 
 test("captures durable project meetings and bounded Otter evidence", async () => {

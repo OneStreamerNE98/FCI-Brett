@@ -52,7 +52,6 @@ type SheetMirrorStatus = {
   lastSyncedAt: number | null;
   reason: string | null;
 };
-type ProjectUpdateDraft = { project: Project; subject: string; message: string };
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
 
 const leadStages = ["New inquiry", "Site visit", "Proposal", "Decision"];
@@ -82,7 +81,7 @@ function isActiveProject(project: Project) {
   return !terminalProjectStatuses.has(project.status.toLowerCase());
 }
 
-export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: string; userEmail: string; signOutHref: string }) {
+export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: { userName: string; userEmail: string; accessLabel: "Admin" | "Office"; signOutHref: string }) {
   const [view, setView] = useState<View>("Overview");
   const [mobileNav, setMobileNav] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -110,7 +109,6 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
   const [searchResults, setSearchResults] = useState<WorkspaceSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [projectUpdate, setProjectUpdate] = useState<Project | null>(null);
   const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
   const [sheetSyncing, setSheetSyncing] = useState(false);
   const [displayTimezone, setDisplayTimezone] = useState("America/New_York");
@@ -211,11 +209,6 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
   function notify(message: string) {
     if (message === "Google Drive folder will open after Workspace setup") {
       openGoogleWorkspace();
-      return;
-    }
-    if (message === "Project update composer opened") {
-      setProjectOpen(false);
-      if (selectedProject) setProjectUpdate(selectedProject);
       return;
     }
     setToast(message);
@@ -518,8 +511,8 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
           {workspaceMenuOpen && <div className="sidebar-popover workspace-popover" role="menu"><div className="menu-heading"><strong>FCI Operations</strong><span>Single-company workspace</span></div><button role="menuitem" onClick={() => { setView("Clients"); setWorkspaceMenuOpen(false); }}><ContactRound size={15} /> Client Directory</button><button role="menuitem" onClick={openDirectorySettings}><FolderTree size={15} /> Directory sync</button><button role="menuitem" onClick={openGoogleWorkspace}><Building2 size={15} /> Google Workspace</button><button role="menuitem" onClick={openTestingChecklist}><ShieldCheck size={15} /> Testing & launch</button></div>}
         </div>
         <div className="sidebar-menu-wrap profile-menu-wrap">
-          <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); }} aria-haspopup="menu" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>Administrator</span></div><MoreHorizontal size={18} /></button>
-          {profileMenuOpen && <div className="sidebar-popover profile-popover" role="menu"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · Administrator</span></div><button role="menuitem" onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button><button role="menuitem" onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button><button role="menuitem" onClick={() => { setSettingsArea("My account"); setView("Settings"); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }}><Settings size={15} /> My account</button><button role="menuitem" onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a role="menuitem" href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
+          <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); }} aria-haspopup="menu" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>{accessLabel}</span></div><MoreHorizontal size={18} /></button>
+          {profileMenuOpen && <div className="sidebar-popover profile-popover" role="menu"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button role="menuitem" onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button><button role="menuitem" onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button><button role="menuitem" onClick={() => { setSettingsArea("My account"); setView("Settings"); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }}><Settings size={15} /> My account</button><button role="menuitem" onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a role="menuitem" href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
         </div>
       </aside>
 
@@ -550,7 +543,6 @@ export function FloorOpsApp({ userName, userEmail, signOutHref }: { userName: st
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
       {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} />}
       {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} />}
-      {projectUpdate && <ProjectUpdateModal project={projectUpdate} onClose={() => setProjectUpdate(null)} onSave={(draft) => { setProjectUpdate(null); notify(`Update for ${draft.project.name} prepared. Connect Gmail before sending.`); }} />}
       {toast && <div className="toast" role="status" aria-live="polite"><CheckCircle2 size={18} />{toast}</div>}
     </div>
   );
@@ -1323,19 +1315,6 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
     }
   }
 
-  async function labelTestMessageFiled(messageId: string) {
-    setGmailWorking(true);
-    try {
-      await readApi<{ filed: boolean }>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(messageId)}/label`, { method: "POST" });
-      notify("FCI/Filed was added. The message remains in your inbox.");
-      await refreshTestGmail();
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The Filed label could not be added.");
-    } finally {
-      setGmailWorking(false);
-    }
-  }
-
   function openFilingReview(message: WorkspaceMessage) {
     setFilingMessage(message);
     setFilingProjectId("");
@@ -1492,7 +1471,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
           <div className="test-service-heading"><Mail size={17} /><div><strong>{simulation ? "Simulated Workspace Gmail" : "Workspace Gmail"}</strong><span>{gmailReady ? "Ready for explicit actions" : "Connect Workspace and approve Gmail"}</span></div></div>
           <p>Prepare FCI labels, view up to 20 messages, add a sample email in simulation, and review-file one message into the exact project. Inbox stays intact.</p>
           <div className="workspace-actions"><button className="soft-button" onClick={prepareTestGmailLabels} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</button><button className="soft-button" onClick={refreshTestGmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</button><button className="primary-button" onClick={sendSelfTestEmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : simulation ? "Add sample email" : "Send Workspace test"}</button></div>
-          {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><button className="primary-button" onClick={() => openFilingReview(message)} disabled={gmailWorking}>File to project</button><button className="soft-button" onClick={() => labelTestMessageFiled(message.id)} disabled={gmailWorking}>Label only</button></div></article>)}</div>}
+          {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><button className="primary-button" onClick={() => openFilingReview(message)} disabled={gmailWorking}>Review & copy</button></div></article>)}</div>}
         </section>
         <section className="test-service-card">
           <div className="test-service-heading"><CalendarDays size={17} /><div><strong>{simulation ? "Simulated shared calendars" : "Workspace shared calendars"}</strong><span>{calendarReady ? "Ready for appointment testing" : "Connect Workspace and approve Calendar"}</span></div></div>
@@ -1537,15 +1516,6 @@ function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => void }) {
 
 function SourceDetailModal({ citation, onClose }: { citation: AssistantCitation; onClose: () => void }) {
   return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Assistant source</p><h2>Evidence reference</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><div className="modal-detail"><strong>{citation.label}</strong><p>{citation.detail}</p><p>This is a server-selected project record reference. Meeting notes use saved summaries, decisions, action items, notes, and bounded transcript excerpts. Raw Gmail bodies and Drive files are not returned yet.</p></div><footer className="modal-footer"><button className="primary-button" onClick={onClose}>Done</button></footer></div></div>;
-}
-
-function ProjectUpdateModal({ project, onClose, onSave }: { project: Project; onClose: () => void; onSave: (draft: ProjectUpdateDraft) => void }) {
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    onSave({ project, subject: String(form.get("subject")), message: String(form.get("message")) });
-  }
-  return <div className="modal-backdrop"><div className="modal"><header><div><p className="eyebrow">Project communication</p><h2>Prepare update</h2></div><button onClick={onClose} aria-label="Close"><X size={20} /></button></header><form onSubmit={submit}><label>To<input value={`${project.client} contacts`} readOnly aria-label="Recipients" /></label><label>Subject<input name="subject" required defaultValue={`${project.number} — project update`} /></label><label>Message<textarea name="message" required defaultValue={`Status update for ${project.name}:`} /></label><p className="form-help"><Mail size={14} /> This creates a draft only. Gmail sending will be enabled after OAuth and consent controls are in place.</p><footer><button type="button" className="soft-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Send size={16} /> Prepare update</button></footer></form></div></div>;
 }
 
 function LeadModal({ onClose, onSave }: { onClose: () => void; onSave: (l: Lead) => Promise<void> }) { const [saving, setSaving] = useState(false); async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setSaving(true); const form = new FormData(e.currentTarget); const company = String(form.get("company")); const estimatedValue = Number(form.get("value") ?? 0); try { await onSave({ id: "", number: "", company, contact: String(form.get("contact")), project: String(form.get("project")), value: money(estimatedValue), estimatedValue, stage: "New inquiry", source: String(form.get("source")), next: String(form.get("notes")), site: String(form.get("site")), status: "active", initials: recordInitials(company), color: "sage" }); } finally { setSaving(false); } }
@@ -1599,7 +1569,7 @@ function ProjectDrawer({ project, onClose, notify, onProvisionDrive }: { project
       </div>
       <footer>
         <button className="soft-button" onClick={handleDrive} disabled={provisioning}><FolderOpen size={16} /> {provisioning ? "Creating folder…" : project.driveUrl ? "Open Drive folder" : "Create Drive folder"}</button>
-        <button className="primary-button" onClick={() => notify("Project update composer opened")}><Send size={16} /> Send update</button>
+        <button className="primary-button" disabled title="Project updates are planned after durable Gmail draft support is implemented"><Mail size={16} /> Project updates planned</button>
       </footer>
     </aside>
   </div>;

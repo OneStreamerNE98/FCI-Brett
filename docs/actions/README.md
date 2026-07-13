@@ -15,7 +15,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Waiting on owner | Decide staff/field roles and approve the app-to-Google access matrix. |
 | Production foundation and migration | Developer + Cloud administrator | Not started | Approve region, budget, recovery targets, hostname, and environments. |
 | Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
-| Frontend multi-user hardening | Codex/developer | Not started | Remove the Gmail label-only bypass, then implement role/freshness/error behavior. |
+| Frontend multi-user hardening | Codex/developer | In progress | Integrity bypass and fake update composer are removed; implement real capabilities, freshness, and error behavior next. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 

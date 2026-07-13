@@ -35,6 +35,9 @@ This review separates three things:
 - Kept notification and safety information available on mobile instead of hiding it.
 - Replaced the Mac-only `⌘ K` label with `Ctrl K` for the current Windows deployment.
 - Added live-region semantics to loading, error, toast, and assistant-answer feedback.
+- Removed the standalone Gmail Filed-label action and API route; `FCI/Filed` now remains part of the exact-project archive flow only.
+- Replaced the transient project-update composer with a disabled Project updates planned control.
+- Replaced the hardcoded Administrator text with the server-derived pilot access label (`Admin` or `Office`).
 
 ## Known UI work not included in this pass
 
@@ -43,10 +46,9 @@ These are larger structural changes and should be scheduled separately:
 - Use real routes or a URL parameter for views so refresh, Back, bookmarks, and support links preserve the selected page.
 - Create one accessible dialog/drawer primitive with focus trapping, initial focus, focus restoration, Escape handling, and consistent labels.
 - Add full keyboard navigation to global search results.
-- Replace the hardcoded Administrator label with the user’s real application role.
+- Replace the pilot access label with the durable OIDC application role and capabilities when the production authorization model is implemented.
 - Consolidate the older sidebar CSS and rename color variables by purpose.
 - Continue increasing very small metadata text as each operational module becomes real.
-- Remove the live `FCI/Filed` label-only test control because it bypasses the exact-project archive invariant.
 - Add explicit Working, Pilot, Setup required, and Planned states so configuration-only or placeholder controls cannot be mistaken for operational features.
 - Add independent loading/error states, query invalidation, stale timestamps, and optimistic-concurrency messages for multi-user use.
 

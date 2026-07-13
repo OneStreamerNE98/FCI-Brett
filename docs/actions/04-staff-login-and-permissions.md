@@ -33,7 +33,8 @@ This is development work, not a Google Admin switch. Do not add a second user un
 - [ ] Issue a Secure, HttpOnly, SameSite session cookie and support expiry, rotation, logout, and revocation.
 - [ ] Replace trust in `oai-authenticated-user-email` for the Cloud Run deployment.
 - [ ] Enforce authorization inside data queries for clients, projects, leads, dashboard, search, meetings, uploads, Gmail filing, and assistant evidence.
-- [ ] Pass the real role to the interface instead of displaying `Administrator` for everyone.
+- [x] Display the server-derived pilot access label (`Admin` or `Office`) instead of labeling every allowlisted user Administrator.
+- [ ] Pass the durable OIDC role, capabilities, and project scope to the interface after production users and sessions exist.
 - [ ] Remove company-wide list/search/dashboard/assistant results for roles limited to assigned projects.
 - [ ] Revoke active sessions immediately when a user is disabled or materially loses access.
 - [ ] Audit login failures, logout, user disablement, role changes, and project assignments without logging tokens.

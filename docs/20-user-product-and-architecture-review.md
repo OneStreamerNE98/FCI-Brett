@@ -9,7 +9,7 @@ The current application is a credible single-user test pilot. It is not ready fo
 
 The strongest parts are the clear client-to-project structure, review-first Gmail workflow, Shared Drive and Sheets plan, records-based assistant citations, and honest placeholders for unfinished scheduling and task features. The rollout blockers are foundational rather than cosmetic:
 
-1. Every authenticated user currently has company-wide data access and the interface labels everyone as Administrator.
+1. Every authenticated pilot user still has company-wide data access. The interface now shows the server-derived pilot access level (`Admin` or `Office`), but durable roles, capabilities, and project assignments are not implemented.
 2. The production Google Cloud, PostgreSQL, background-job, backup, and recovery platform exists only as a documented decision.
 3. Application roles and Google Workspace permissions do not yet form one tested access model.
 4. The data model and synchronous Google operations are not safe for concurrent staff activity or transient Google outages.
@@ -72,7 +72,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 ### P0 — complete before a second user
 
 1. **Implement server-enforced identity and authorization.** Add invited users, sessions, roles, disabled status, granular capabilities, project memberships, and query-scoped authorization. The current dashboard, search, project, and assistant routes expose company-wide data to any authenticated user.
-2. **Remove the Gmail label-only filing bypass.** The live Settings test panel can apply `FCI/Filed` without an exact project copy. That contradicts the documented filing invariant. Remove it from normal operation; any repair tool must require an existing archive/project, a reason, and an audit event.
+2. **Resolved in source; verify after deployment: remove the Gmail label-only filing bypass.** The Settings button and standalone API route that could apply `FCI/Filed` without an exact project copy have been removed. Any future repair tool must require an existing archive/project, a reason, and an audit event.
 3. **Build the accepted production platform.** The current application is coupled to Workers, D1, and R2 and has no Cloud Run container, PostgreSQL migration, infrastructure definition, or production migration runner.
 
 ### P1 — complete before real client data
