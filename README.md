@@ -36,7 +36,7 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 - One protected company Google Workspace OAuth connection for Drive, Gmail, Calendar, and Sheets
 - Local Workspace simulation with sample mail, calendar events, folders, drafts, and Sheet sync state
 - Google Drive / Shared Drive and Google Sheet organizational blueprint
-- Gmail review queue, Calendar test controls, client/project activity, and an in-development AI assistant; project scheduling remains planned
+- On-demand Gmail review suggestions, Calendar test controls, client/project activity, and an in-development AI assistant; a durable Gmail queue/watch processor and project scheduling remain planned
 - Durable project meeting notes with Otter links, summaries, decisions, action items, transcript excerpts, and assistant evidence
 - D1-backed data-model and API foundation for clients, contacts, projects, meetings, rules, mail items, and workspace settings
 
@@ -50,9 +50,9 @@ Before real client data is stored, backup restoration, sensitive-action audit co
 
 ## Production architecture
 
-The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains the test-data development environment; production will use a small regional Google Cloud topology centered on Cloud Run, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Defer `pgvector` until permission-filtered document indexing is scheduled. Complete this migration before building scheduling, messaging, or AI document indexing.
+The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains the test-data development environment; production will use a small regional Google Cloud topology centered on Cloud Run, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Scheduler, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Defer `pgvector` until permission-filtered document indexing is scheduled. Complete this migration before building scheduling, messaging, or AI document indexing.
 
-Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the migration boundary, cutover requirements, and consequences.
+Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the migration boundary, cutover requirements, and consequences. The [complete product and Google Cloud architecture audit](docs/complete-product-and-google-cloud-architecture-audit.md) adds the end-to-end capability map, Cloud Scheduler/job design, texting/reminders, integration reliability, security/operations controls, owner decisions, acceptance gates, and ordered build packages.
 
 ## Remaining launch decision
 

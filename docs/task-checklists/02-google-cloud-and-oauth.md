@@ -17,6 +17,8 @@ Depends on: [Setup inputs](00-setup-inputs.md) and [Workspace resources](01-work
 
 - [ ] Configure branding for `FCI Operations` with a monitored company support address.
 - [ ] Set the audience to **Internal**.
+- [ ] Do not treat the External-audience **Testing** publishing status as an Internal-app step; follow the Internal controls shown in Google Auth platform.
+- [ ] Keep explicit application invitations and disabled-user checks; Internal audience does not limit access to the intended 20 employees by itself.
 - [ ] Add approved application, privacy, and terms URLs before wider distribution.
 
 ## OAuth client 1: company data connector

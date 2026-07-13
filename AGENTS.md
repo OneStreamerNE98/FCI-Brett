@@ -9,15 +9,16 @@ Before changing code, read:
 1. `docs/codex-to-codex-handoff.md`
 2. `docs/architecture-decision-production-platform.md`
 3. `docs/20-user-product-and-architecture-review.md`
-4. `docs/ui-and-product-readiness-review.md`
-5. `docs/google-workspace-rollout-guide.md`
-6. `docs/task-checklists/README.md`
-7. `docs/collaboration-and-sharing.md`
+4. `docs/complete-product-and-google-cloud-architecture-audit.md`
+5. `docs/ui-and-product-readiness-review.md`
+6. `docs/google-workspace-rollout-guide.md`
+7. `docs/task-checklists/README.md`
+8. `docs/collaboration-and-sharing.md`
 
 ## Current product boundary
 
 - The Sites/Workers/D1/R2 deployment is the controlled, single-user development environment and uses test data only.
-- Production will use a small regional Cloud Run/Cloud SQL modular monolith, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Gmail Pub/Sub notifications, Calendar HTTPS webhooks, and Google Workspace OIDC. Add `pgvector` only when document indexing is scheduled.
+- Production will use a small regional Cloud Run/Cloud SQL modular monolith, Secret Manager, Cloud Tasks, Cloud Scheduler, application-owned durable failed-job/replay records, Cloud Storage quarantine, Gmail Pub/Sub notifications, Calendar HTTPS webhooks, and Google Workspace OIDC. Add `pgvector` only when document indexing is scheduled.
 - Preserve the current development deployment, Google Workspace test connector, and existing data unless the owner explicitly approves a migration or destructive change.
 - Do not add scheduling, messaging, or AI document indexing before the production platform and authorization foundation is accepted.
 - Do not admit a second user or store real client data until users, sessions, roles, project permissions, backup restoration, and audit controls pass acceptance.

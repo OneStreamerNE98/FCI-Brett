@@ -71,7 +71,7 @@ Use two company-owned calendars:
 - `FCI • Client Appointments`
 - `FCI • Field Schedule`
 
-FCI Operations remains authoritative. App-created Workspace events are linked back to their project or shift. Conflicting edits are flagged for review instead of silently overwriting operational records.
+FCI Operations is intended to remain authoritative. The current development build can create an unlinked Calendar test hold; linked project/appointment/shift events, durable sync cursors, recurring-event behavior, and conflict review are still production work. When implemented, app-created Workspace events must link to their source aggregate, and conflicting edits must be flagged for review instead of silently overwriting operational records.
 
 ## Workspace setup checklist
 

@@ -80,7 +80,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 1. Reconcile application roles with Google Groups, Shared Drive folders, mailbox delegation, calendars, and the directory Sheet. A hidden application control does not revoke direct Google access.
 2. Replace free-text relationships and statuses with foreign keys, constraints, version fields, and normalized child records.
 3. Add optimistic concurrency and background jobs. Current write and full-Sheet-sync patterns can lose updates or race when several employees work at once.
-4. Add timeouts, retry policies, idempotency, dead-letter handling, connector health, and token-refresh single-flight behavior around Google calls.
+4. Add timeouts, retry policies, idempotency, application-owned durable failed-job/dead-letter handling, connector health, and token-refresh single-flight behavior around Google calls.
 5. Implement backup/restore, audit viewing, file scanning/quarantine, retention, session revocation, key rotation, and connector-account continuity.
 6. Make saved Workspace resource IDs authoritative. Calendar configuration currently has both saved settings and environment values.
 7. Separate Settings loading and errors. A failed request must not silently look like a valid default value.

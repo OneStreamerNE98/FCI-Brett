@@ -137,10 +137,10 @@ In the Cloud project, open **Google Auth platform**.
 ### Audience
 
 1. Choose **Internal** so only accounts in your Workspace organization can authorize the app.
-2. Use Testing while you are first configuring the connection.
-3. When development acceptance passes, switch the internal app to In production.
+2. Keep development and production OAuth clients in separate company-owned Cloud projects and restrict application access with explicit invitations and Google Admin API Controls.
+3. Do not use the External-audience **Testing** publishing status as an instruction for this Internal app. Follow the current Internal-audience controls shown in Google Auth platform.
 
-Internal audience is available only to projects under a Google Workspace/Cloud organization. Google documents the current audience behavior in [Manage App Audience](https://support.google.com/cloud/answer/15549945).
+Internal audience is available only to projects under a Google Workspace/Cloud organization. It limits authorization to the organization, but it does not replace the application's invitation, disabled-user, role, or project-permission checks. Google documents the current audience behavior in [Manage App Audience](https://support.google.com/cloud/answer/15549945).
 
 ### Data access scopes
 

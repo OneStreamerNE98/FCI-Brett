@@ -23,7 +23,9 @@ The current Sites/Workers/D1/R2 deployment remains a one-user development enviro
 - [ ] Keep authenticated task and webhook handlers in the modular monolith initially; do not create microservices without an operational reason.
 - [ ] Provision one private Cloud SQL PostgreSQL database per environment with pooling, connection caps, backups, point-in-time recovery, and alerting.
 - [ ] Put OAuth credentials, token-encryption keys, session secrets, and provider credentials in Secret Manager.
-- [ ] Provision Cloud Tasks queues for explicit synchronization, filing, retry, reminder, and webhook work, with idempotency keys and dead-letter handling.
+- [ ] Provision Cloud Tasks queues for explicit synchronization, filing, retry, reminder, and webhook work, with idempotency keys and bounded retry policies.
+- [ ] Persist jobs, execution attempts, terminal failures, alert state, and controlled replay in application-owned records; Cloud Tasks does not provide the durable dead-letter/replay workflow.
+- [ ] Use Cloud Scheduler for outbox dispatch, expired-lease recovery, Gmail/Calendar renewal and reconciliation, cleanup, and materializing long-range reminders into the supported Cloud Tasks scheduling window.
 - [ ] Use Pub/Sub for Gmail push notifications. Renew Gmail watches at least every seven days; daily renewal is safer.
 - [ ] Use expiring HTTPS notification channels for Google Calendar and enqueue processing into Cloud Tasks. Do not design Calendar notifications as Pub/Sub events.
 - [ ] Provision Cloud Storage quarantine for untrusted uploads before an approved file reaches Shared Drive.
@@ -34,7 +36,8 @@ The current Sites/Workers/D1/R2 deployment remains a one-user development enviro
 
 - [x] Move the D1 development schema and integrity indexes into the ordered Drizzle/Sites deployment migration sequence, remove schema DDL from normal request paths, and retain an explicit local-only migration command. This development migration path does not complete the provider-neutral production database work below.
 - [x] Prove the provider-neutral creation boundary for clients and projects with application services, repository/mirror ports, D1 development adapters, capability tests, and preserved HTTP behavior. The production PostgreSQL adapters and model remain open.
-- [x] Add the source-only PostgreSQL core schema for clients, contacts, projects, activity/audit events, actor-scoped idempotency requests, outbox events, and immutable migration history. It is tested but not applied to Cloud SQL. See [Production PostgreSQL foundation](../production-postgresql-foundation.md).
+- [x] Add the source-only PostgreSQL core schema for clients, contacts, projects, business activity events, actor-scoped idempotency requests, outbox events, and immutable migration history. It is tested but not applied to Cloud SQL. See [Production PostgreSQL foundation](../production-postgresql-foundation.md).
+- [ ] Add a separate general append-only security-audit model for authentication, sessions, roles, permissions, exports, files, connectors, jobs, and recovery. The client/project activity timeline cannot provide this coverage.
 - [ ] Replace remaining development text relationship IDs with PostgreSQL foreign keys; the bounded client/contact/project production foundation now uses indexed foreign keys.
 - [ ] Add constrained status values, timestamps, version fields, and normalized meeting/action/task records.
 - [ ] Add unique/idempotency constraints for project numbers, Google archives, Drive mappings, Calendar channels, and queued operations.
@@ -49,6 +52,7 @@ The current Sites/Workers/D1/R2 deployment remains a one-user development enviro
 - [ ] Add optimistic concurrency to editable records and show users a conflict instead of overwriting newer work.
 - [ ] Replace immediate full-Sheet rewrites with an outbox/queued mirror and single-flight synchronization.
 - [ ] Add timeouts, bounded retries with backoff, quota handling, idempotency, and correlation IDs to every Google operation.
+- [ ] Persist Gmail watch/history and Calendar channel/sync-token state, renew it safely, and reconcile periodically because notifications are change hints rather than an authoritative event stream.
 - [ ] Refresh OAuth tokens through a cache/single-flight path and distinguish transient Google failure from required reauthorization.
 - [ ] Remove the dual source of truth for saved versus environment Calendar and Workspace resource IDs.
 - [ ] Store multiple token-encryption key versions during rotation and test decrypt/re-encrypt behavior.

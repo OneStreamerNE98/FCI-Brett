@@ -9,7 +9,8 @@ The controlled development environment may continue on OpenAI Sites with Cloudfl
 
 - One regional Cloud Run service for the web application, API, and authenticated task/webhook handlers.
 - One Cloud SQL PostgreSQL database as the system of record, with connection pooling, constraints, transactions, backups, and point-in-time recovery.
-- Cloud Tasks for explicit reminders, synchronization, webhook follow-up, retries, rate control, and dead-letter handling.
+- Cloud Tasks for explicit reminder delivery, synchronization, webhook follow-up, retries, and rate control. Terminal failures remain in application-owned durable failed-job records with alerts and controlled replay; Cloud Tasks is not the dead-letter system of record.
+- Cloud Scheduler for outbox dispatch, expired-lease recovery, Gmail/Calendar renewal and reconciliation, cleanup, and materializing long-range reminders into the supported Cloud Tasks scheduling window.
 - Pub/Sub where required by the upstream source, beginning with Gmail push notifications.
 - Expiring HTTPS webhook channels for Google Calendar notifications; Calendar does not publish its changes through Pub/Sub.
 - Cloud Storage for application-managed upload quarantine. Approved business documents remain in the company Shared Drive.
@@ -21,7 +22,7 @@ Sites/D1/R2 is therefore a development environment, not the production data plan
 
 The development D1 schema changes use the checked-in [D1 development deployment migrations](development-d1-schema-migrations.md). Sites applies that ordered sequence during controlled deployment, and normal API requests execute no schema DDL. This is deliberately separate from, and does not replace, the required PostgreSQL production migration and rollback system.
 
-The first source-only [production PostgreSQL foundation](production-postgresql-foundation.md) now defines the core client/contact/project, audit, idempotency, outbox, and immutable migration-history tables plus a concurrent-runner-safe migration system. It has not been applied to Cloud SQL and does not include repository adapters, users/roles, infrastructure, credentials, development-data migration, or deployment.
+The first source-only [production PostgreSQL foundation](production-postgresql-foundation.md) now defines the core client/contact/project, business activity evidence, idempotency, outbox, and immutable migration-history tables plus a concurrent-runner-safe migration system. It has not been applied to Cloud SQL and does not include repository adapters, general security audit, users/roles, infrastructure, credentials, development-data migration, or deployment.
 
 ## Why
 
@@ -39,7 +40,7 @@ The production cutover must include:
 2. Port the SQLite/D1 schema to PostgreSQL with explicit foreign keys, constraints, transactions, and audit fields.
 3. Replace Cloudflare bindings with provider-neutral database and object-storage interfaces.
 4. Implement Workspace OIDC, explicit invitations, office-domain restrictions, secure sessions, roles, capabilities, and project-level permissions.
-5. Add Cloud Tasks workers with idempotency, retry limits, and dead-letter handling; route Gmail watches through Pub/Sub and Calendar notifications through HTTPS channels.
+5. Add Cloud Scheduler dispatch/renewal/reconciliation triggers and Cloud Tasks handlers with idempotency and retry limits. Persist attempts, exhausted work, alerts, and controlled replay in the application; route Gmail watches through Pub/Sub and Calendar notifications through HTTPS channels.
 6. Migrate only reviewed records and files, preserving identifiers and audit evidence where required.
 7. Verify backup restoration, retention, audit access, malware scanning, and end-to-end Google Workspace behavior.
 8. Freeze writes to the development environment, perform a final reconciliation, switch the production URL, and retain a time-boxed rollback window.
@@ -55,6 +56,8 @@ The production cutover must include:
 ## Implementation references
 
 - [Google Cloud: Cloud Tasks compared with Pub/Sub](https://docs.cloud.google.com/tasks/docs/comp-pub-sub)
+- [Google Cloud: Cloud Tasks quotas](https://docs.cloud.google.com/tasks/docs/quotas)
+- [Google Cloud: Trigger Cloud Run with Cloud Scheduler](https://docs.cloud.google.com/run/docs/triggering/using-scheduler)
 - [Google Workspace: Gmail push notifications](https://developers.google.com/workspace/gmail/api/guides/push)
 - [Google Workspace: Calendar push notifications](https://developers.google.com/workspace/calendar/api/guides/push)
 - [Google Cloud SQL best practices](https://docs.cloud.google.com/sql/docs/best-practices?hl=en)

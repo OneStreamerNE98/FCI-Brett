@@ -7,6 +7,8 @@ Audience: Business owner, Workspace administrator, product owner, and developers
 
 Development does not need to wait for a live Google Workspace connection. The application already has an isolated Workspace simulation, and the highest-priority production work is the provider-neutral platform, authorization, core-record safety, interface accessibility, and test coverage.
 
+Use the [complete product and Google Cloud architecture audit](complete-product-and-google-cloud-architecture-audit.md) as the broader system blueprint. Its [owner checklist](task-checklists/10-complete-product-and-integration-architecture.md) covers the missing decisions for estimating, procurement, field work, messaging/reminders, closeout, warranty, files, recovery, and authoritative external systems.
+
 The Workspace administrator can prepare the company resources in parallel. Keep the hosted application as a one-user development environment using test data, and do not admit staff or store real client data until the production, permission, recovery, and audit gates pass.
 
 ## Work that can start now
@@ -75,8 +77,8 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 
 1. **Completed frontend slice:** accessible dialog/drawer foundation and rendered keyboard QA.
 2. **Completed portability slice:** provider-neutral client and project creation services, D1 development adapters, safe mirror boundaries, and a centralized versioned D1 development schema runner. See [Portable client and project creation](portable-record-creation.md).
-3. **Completed PostgreSQL foundation slice:** constrained client/contact/project, activity/audit, idempotency, outbox, and immutable migration-history tables; checksum validation; advisory locking; transactional forward migrations; restore/forward-fix rollback guidance; and PostgreSQL 16 CI coverage. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
-4. **Next database worker:** implement PostgreSQL client/project repository adapters, atomic actor-scoped idempotency claims, transactional activity/outbox writes, and shared repository contract tests. Keep network calls outside database transactions and do not provision or migrate Cloud SQL.
+3. **Completed PostgreSQL foundation slice:** constrained client/contact/project, business activity evidence, idempotency, outbox, and immutable migration-history tables; checksum validation; advisory locking; transactional forward migrations; restore/forward-fix rollback guidance; and PostgreSQL 16 CI coverage. General security audit remains a separate required model. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
+4. **Next database review:** review the existing `codex/postgres-repositories` branch for PostgreSQL client/project repository adapters, atomic actor-scoped idempotency claims, transactional activity/outbox writes, bounded outbox claims, and shared repository contract tests before starting overlapping work. Keep network calls outside database transactions and do not provision or migrate Cloud SQL.
 5. **Authorization worker:** simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
 6. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
 7. **Frontend structure worker:** durable URLs, component split, typed feedback, partial-failure states, search keyboard behavior, and responsive/accessibility tests.
@@ -99,7 +101,7 @@ The portable creation worker completed the following bounded slice without chang
 
 The source-only PostgreSQL worker completed the first constrained production schema and migration safety layer without provisioning Cloud SQL, changing route handlers, or applying a live migration:
 
-- Two ordered migrations define only clients, contacts, projects, activity/audit events, actor-scoped idempotency requests, outbox events, and immutable migration history.
+- Two ordered migrations define only clients, contacts, projects, client/project activity events, actor-scoped idempotency requests, outbox events, and immutable migration history. They do not provide the general security-audit coverage required for identity, permissions, files, integrations, jobs, exports, or recovery.
 - Every core foreign key has a supporting index; business identifiers, client-name keys, statuses, JSON shapes, timestamps, version values, and estimated values have named database constraints.
 - The runner uses a dedicated connection, a session advisory lock, a post-lock history read, exact prefix validation, LF-normalized SHA-256 checksums, and one short transaction per version.
 - The outbox has a pending/available partial index, lease/retry state, correlation evidence, and a dead-letter timestamp. The future worker must claim work with `FOR UPDATE SKIP LOCKED` and perform provider calls after committing the claim.
