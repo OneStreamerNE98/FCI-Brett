@@ -1,27 +1,14 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import type { PilotD1Database } from "../../../adapters/d1/pilot-database";
+import { createPilotD1ProjectRepository } from "../../../adapters/d1/project-repository";
+import { createPilotDirectoryMirror } from "../../../adapters/google/pilot-directory-mirror";
+import { creationAuthorizationFor, CREATION_CAPABILITIES } from "../../../application/creation-authorization";
+import { createProject } from "../../../application/create-project";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
-
-type ProjectBody = { clientId?: string; name?: string; status?: string; site?: string; projectManager?: string; estimatedValue?: number };
-const PROJECT_STATUSES = new Set(["planning", "mobilizing", "installation", "closeout", "completed", "cancelled", "archived"]);
-
-async function readProjectBody(request: NextRequest) {
-  try {
-    const body = await request.json() as unknown;
-    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid");
-    const record = body as Record<string, unknown>;
-    for (const field of ["clientId", "name", "status", "site", "projectManager"] as const) {
-      if (record[field] !== undefined && typeof record[field] !== "string") throw new Error("invalid");
-    }
-    if (record.estimatedValue !== undefined && typeof record.estimatedValue !== "number") throw new Error("invalid");
-    return { body: record as ProjectBody };
-  } catch {
-    return { response: NextResponse.json({ error: "Project details must be valid JSON." }, { status: 400 }) };
-  }
-}
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -43,25 +30,29 @@ export async function POST(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const parsed = await readProjectBody(request);
-  if ("response" in parsed) return parsed.response;
-  const body = parsed.body;
-  if (!body.clientId || !body.name?.trim()) return NextResponse.json({ error: "clientId and project name are required" }, { status: 400 });
-  const name = body.name.trim();
-  if (name.length > 180) return NextResponse.json({ error: "project name is too long" }, { status: 400 });
-  const status = body.status?.trim().toLowerCase() || "planning";
-  if (!PROJECT_STATUSES.has(status)) return NextResponse.json({ error: "project status is invalid" }, { status: 400 });
-  if (body.estimatedValue !== undefined && (!Number.isSafeInteger(body.estimatedValue) || body.estimatedValue < 0)) return NextResponse.json({ error: "estimated value must be a non-negative whole number" }, { status: 400 });
-  const client = await env.DB.prepare("SELECT id FROM clients WHERE id = ?").bind(body.clientId).first();
-  if (!client) return NextResponse.json({ error: "client not found" }, { status: 404 });
-  const now = Date.now();
-  const id = crypto.randomUUID();
-  const projectNumber = `CF-${new Date().getUTCFullYear()}-${id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO projects (id, project_number, client_id, name, status, site, project_manager, estimated_value, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id, projectNumber, body.clientId, name, status, body.site?.trim() || null, body.projectManager?.trim() || null, body.estimatedValue ?? null, auth.user.email, now, now),
-    env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), id, "Project created", auth.user.email, `${projectNumber} · ${name}`, now),
-  ]);
-  // A project changes both the Project Register and its parent client's active-project count.
-  const sheetSync = await trySyncGoogleDirectory(getGoogleRuntimeConfig(), auth.user.email);
-  return NextResponse.json({ id, projectNumber, createdAt: now, sheetSync }, { status: 201 });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Project details must be valid JSON." }, { status: 400 });
+  }
+
+  const result = await createProject(
+    body,
+    creationAuthorizationFor({
+      actorId: auth.user.email,
+      capabilities: [CREATION_CAPABILITIES.createProject],
+    }),
+    {
+      repository: createPilotD1ProjectRepository(env.DB as unknown as PilotD1Database),
+      directoryMirror: createPilotDirectoryMirror((actor) => trySyncGoogleDirectory(getGoogleRuntimeConfig(), actor)),
+      newId: () => crypto.randomUUID(),
+      now: () => Date.now(),
+    },
+  );
+  if (!result.ok) {
+    const status = result.kind === "client-not-found" ? 404 : result.kind === "forbidden" ? 403 : 400;
+    return NextResponse.json({ error: result.message }, { status });
+  }
+  return NextResponse.json(result.value, { status: 201 });
 }

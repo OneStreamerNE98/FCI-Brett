@@ -19,6 +19,8 @@ The controlled pilot may continue on OpenAI Sites with Cloudflare Workers, D1, a
 
 Sites/D1/R2 is therefore a pilot environment, not the production data plane. Do not add real client data or expand the pilot to multiple staff until the production access, backup, audit, and restore controls pass acceptance.
 
+The pilot's route-time D1 bootstrap is centralized in the [D1 pilot runtime schema migrations](pilot-d1-schema-migrations.md). That ordered, additive bridge removes duplicated route-local DDL, but it is not a comprehensive drift detector or repair tool. It is deliberately separate from, and does not replace, the required PostgreSQL production migration and rollback system.
+
 ## Why
 
 The remaining product roadmap is dominated by work that benefits from PostgreSQL transactions and durable asynchronous processing: lead conversion, appointment state changes, crew scheduling, Gmail and Calendar reconciliation, messaging retries, audit history, and permission-filtered vector search. Google Cloud also aligns the application's identity and integration boundary with the company's Google Workspace tenant.

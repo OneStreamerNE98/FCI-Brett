@@ -72,23 +72,35 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 
 ## Recommended worker sequence
 
-1. **Current frontend worker:** accessible dialog/drawer foundation and rendered keyboard QA.
-2. **Next platform worker:** prove the provider-neutral pattern with one portable client-creation vertical slice, then expand the accepted pattern into PostgreSQL migrations and the remaining records.
-3. **Authorization worker:** simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
-4. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
-5. **Frontend structure worker:** durable URLs, component split, typed feedback, partial-failure states, search keyboard behavior, and responsive/accessibility tests.
-6. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
+1. **Completed frontend slice:** accessible dialog/drawer foundation and rendered keyboard QA.
+2. **Completed portability slice:** provider-neutral client and project creation services, D1 pilot adapters, safe mirror boundaries, and a centralized versioned D1 pilot schema runner. See [Portable client and project creation](portable-record-creation.md).
+3. **Next platform worker:** extend the accepted repository pattern into the versioned PostgreSQL schema, migration/rollback runner, repository contract tests, idempotency records, and transactional outbox. Keep provisioning and live migration out of this code slice.
+4. **Authorization worker:** simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
+5. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
+6. **Frontend structure worker:** durable URLs, component split, typed feedback, partial-failure states, search keyboard behavior, and responsive/accessibility tests.
+7. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
 
 Do not assign scheduling, outbound messaging, or AI document indexing until the production platform and authorization foundation are accepted.
 
+## Completed portable creation assignment
+
+The portable creation worker completed the following bounded slice without changing the established HTTP response or pilot behavior:
+
+- Client/contact and project normalization, validation, and status rules now live in domain modules with no Next.js, Cloudflare, or Google imports.
+- Client and project repository ports define atomic creation intent; the client operation includes its primary contact and activity entry.
+- A directory-mirror port requests synchronization only after the durable database write succeeds.
+- D1 and synchronous Google mirror adapters preserve the current pilot and are explicitly bounded as pilot-only.
+- Behavioral tests cover validation, duplicate/not-found results, atomic record intent, exact authorization capabilities, and a successful database write when the optional mirror fails.
+- The D1 pilot bootstrap is centralized in an ordered, versioned, retryable migration registry with parity tests.
+
 ## Next bounded developer assignment
 
-After the current accessibility slice is merged, assign one worker to refactor client creation without changing its HTTP response or pilot behavior:
+Assign one platform worker to create the production database foundation without provisioning Cloud resources or changing the hosted pilot:
 
-- Put client/contact normalization, validation, and status rules in a domain module with no Next.js, Cloudflare, or Google imports.
-- Define a client-repository port whose create operation atomically records the client, primary contact, and activity event.
-- Define a directory-mirror port that requests synchronization only after the database write succeeds.
-- Preserve the pilot through a D1 repository adapter and the existing synchronous Google mirror adapter, clearly marked as pilot-only.
-- Add behavioral tests for validation, duplicate conflicts, atomic record intent, required authorization scope, and a successful database write when the optional mirror fails.
+- Define the versioned PostgreSQL tables, foreign keys, constrained states, timestamps, version columns, audit events, outbox records, and idempotency records described in the accepted architecture decision.
+- Add a forward migration runner, reviewed rollback strategy, and tests that start from an empty database and upgrade through every version.
+- Implement PostgreSQL client/project repository adapters against the existing provider-neutral contracts and run the same repository behavior suite against both adapters.
+- Add request-idempotency handling for client/project creation and a transactional outbox boundary for directory synchronization.
+- Document migration assumptions, identifier preservation, count/hash reconciliation, backup/restore prerequisites, and the owner approval required before any staging rehearsal.
 
-This small vertical slice is the template for projects, leads, meetings, authorization scope, and the later PostgreSQL adapter. It must not provision Cloud resources, add credentials, change the hosted schema, or deploy production.
+This assignment may add source code, local fixtures, and automated tests only. It must not create Cloud SQL, add credentials, migrate pilot data, alter live Workspace resources, or deploy production.

@@ -2,7 +2,7 @@
 
 Owner: Codex/developer and Google Cloud administrator
 
-Status: Not started
+Status: In progress
 
 Depends on: Approved company domain, region, budget alert, production hostname, recovery targets, and [20-user operating model](06-20-user-operating-model-and-access.md)
 
@@ -32,6 +32,8 @@ The current Sites/Workers/D1/R2 deployment remains a one-user test pilot. Produc
 
 ## Data and code migration
 
+- [x] Centralize additive runtime D1 pilot bootstrap statements in one ordered, idempotent registry with failure/retry and schema-artifact parity tests. This pilot-only bridge does not complete the provider-neutral database work or production migration runner below.
+- [x] Prove the provider-neutral creation boundary for clients and projects with application services, repository/mirror ports, D1 pilot adapters, capability tests, and preserved HTTP behavior. The production PostgreSQL adapters and model remain open.
 - [ ] Replace text relationship IDs with PostgreSQL foreign keys.
 - [ ] Add constrained status values, timestamps, version fields, and normalized meeting/action/task records.
 - [ ] Add unique/idempotency constraints for project numbers, Google archives, Drive mappings, Calendar channels, and queued operations.

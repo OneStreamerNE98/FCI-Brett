@@ -1,19 +1,12 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
-
-async function ensureSchema() {
-  await env.DB.batch([
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, type TEXT NOT NULL, project_id TEXT, status TEXT NOT NULL DEFAULT 'active', payload TEXT NOT NULL, created_by TEXT NOT NULL DEFAULT 'system', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"),
-    env.DB.prepare("CREATE INDEX IF NOT EXISTS records_type_idx ON records(type, updated_at)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS activity_events (id TEXT PRIMARY KEY, record_id TEXT NOT NULL, action TEXT NOT NULL, actor TEXT NOT NULL, detail TEXT, created_at INTEGER NOT NULL)"),
-  ]);
-}
+import { ensureWorkspaceSchema } from "../_workspace-data";
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
-  await ensureSchema();
+  await ensureWorkspaceSchema();
   const type = request.nextUrl.searchParams.get("type") ?? "lead";
   const result = await env.DB.prepare("SELECT * FROM records WHERE type = ? ORDER BY updated_at DESC LIMIT 100").bind(type).all();
   return NextResponse.json({ records: result.results.map((row) => ({ ...row, payload: JSON.parse(String(row.payload)) })) });
@@ -24,7 +17,7 @@ export async function POST(request: NextRequest) {
   if (originError) return originError;
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
-  await ensureSchema();
+  await ensureWorkspaceSchema();
   const body = await request.json() as { type?: string; projectId?: string; status?: string; payload?: unknown };
   if (!body.type || !body.payload) return NextResponse.json({ error: "type and payload are required" }, { status: 400 });
   const id = crypto.randomUUID();
