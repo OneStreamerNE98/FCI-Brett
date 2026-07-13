@@ -74,6 +74,8 @@ After that foundation is accepted, build appointment state management and Calend
 
 See the [20-user product and architecture review](docs/20-user-product-and-architecture-review.md) for the rollout verdict, architecture, access model, priority findings, and corrected delivery order. See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page UI audit.
 
+Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials.
+
 ## Google Workspace pilot rollout
 
 Use only records named `FCI TEST — DO NOT USE` until the production acceptance checklist passes.
