@@ -26,10 +26,10 @@ after(async () => {
 });
 
 const { createClient } = clientApplication;
-const { createProject } = projectApplication;
+const { assignProjectManager, createProject } = projectApplication;
 const { creationAuthorizationFor, CREATION_CAPABILITIES } = authorizationModule;
 const { normalizeClientCreation } = clientDomain;
-const { normalizeProjectCreation } = projectDomain;
+const { normalizeProjectCreation, normalizeProjectManagerAssignment, normalizeProjectManagerId, PROJECT_MANAGER_IDENTITY_ERROR } = projectDomain;
 const { createPilotDirectoryMirror } = mirrorAdapterModule;
 
 function sequence(values) {
@@ -40,7 +40,7 @@ function sequence(values) {
   };
 }
 
-function authorized(capability, actorId = "simulated-office-user") {
+function authorized(capability, actorId = "simulated-office-user@example.test") {
   return creationAuthorizationFor({ actorId, capabilities: [capability] });
 }
 
@@ -48,6 +48,7 @@ function unusedDependencies() {
   return {
     repository: { create: async () => assert.fail("repository must not be called") },
     directoryMirror: { requestSync: async () => assert.fail("mirror must not be called") },
+    resolveProjectManagerId: async () => assert.fail("manager resolver must not be called"),
     newId: () => assert.fail("ID generator must not be called"),
     now: () => assert.fail("clock must not be called"),
   };
@@ -66,6 +67,19 @@ test("portable domain validation preserves the client and project API messages",
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "x".repeat(181) }), { ok: false, message: "project name is too long" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", status: "unknown" }), { ok: false, message: "project status is invalid" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", estimatedValue: -1 }), { ok: false, message: "estimated value must be a non-negative whole number" });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManager: "Morgan" }), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManagerId: "manager@example.test", projectManager: "other@example.test" }), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });
+  assert.deepEqual(normalizeProjectManagerId("  Manager@CherryHillFCI.com  "), { ok: true, value: "manager@cherryhillfci.com" });
+  assert.deepEqual(normalizeProjectManagerId("manager name"), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });
+  assert.deepEqual(normalizeProjectManagerId(`${"x".repeat(65)}@example.test`), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });
+  assert.deepEqual(normalizeProjectManagerAssignment({ projectId: "project-1", projectManagerId: " MANAGER@Example.Test " }), {
+    ok: true,
+    value: { projectId: "project-1", projectManagerId: "manager@example.test" },
+  });
+  assert.deepEqual(normalizeProjectManagerAssignment({ projectId: "project-1", projectManagerId: "manager@example.test", name: "must not change" }), {
+    ok: false,
+    message: "Only projectId and projectManagerId can be changed here.",
+  });
 
   assert.deepEqual(normalizeClientCreation({ name: "  FCI Test  " }), {
     ok: true,
@@ -78,7 +92,18 @@ test("portable domain validation preserves the client and project API messages",
       name: "FCI Test Project",
       status: "planning",
       site: null,
-      projectManager: null,
+      projectManagerId: null,
+      estimatedValue: null,
+    },
+  });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManager: "  MANAGER@Example.Test " }), {
+    ok: true,
+    value: {
+      clientId: "client-1",
+      name: "Test",
+      status: "planning",
+      site: null,
+      projectManagerId: "manager@example.test",
       estimatedValue: null,
     },
   });
@@ -193,7 +218,7 @@ test("project creation sends one atomic project and activity intent before mirro
       name: "  Lobby Flooring  ",
       status: " Mobilizing ",
       site: "  Cherry Hill, NJ  ",
-      projectManager: "  Morgan  ",
+      projectManagerId: "  Manager@CherryHillFCI.com  ",
       estimatedValue: 125000,
     },
     authorized(CREATION_CAPABILITIES.createProject, "pilot-user@cherryhillfci.com"),
@@ -213,6 +238,7 @@ test("project creation sends one atomic project and activity intent before mirro
           return { status: "not-configured", message: "The Google Sheet mirror is not configured yet." };
         },
       },
+      resolveProjectManagerId: async (candidateId) => candidateId === "manager@cherryhillfci.com" ? candidateId : null,
       newId: sequence(["abcdef12-aaaa-bbbb-cccc-000000000001", "activity-project-1"]),
       now: () => Date.UTC(2026, 6, 13, 12),
     },
@@ -226,7 +252,7 @@ test("project creation sends one atomic project and activity intent before mirro
       name: "Lobby Flooring",
       status: "mobilizing",
       site: "Cherry Hill, NJ",
-      projectManager: "Morgan",
+      projectManagerId: "manager@cherryhillfci.com",
       estimatedValue: 125000,
       createdBy: "pilot-user@cherryhillfci.com",
       createdAt: Date.UTC(2026, 6, 13, 12),
@@ -247,10 +273,109 @@ test("project creation sends one atomic project and activity intent before mirro
     value: {
       id: "abcdef12-aaaa-bbbb-cccc-000000000001",
       projectNumber: "CF-2026-ABCDEF12",
+      projectManagerId: "manager@cherryhillfci.com",
       createdAt: Date.UTC(2026, 6, 13, 12),
       sheetSync: { status: "not-configured", message: "The Google Sheet mirror is not configured yet." },
     },
   });
+});
+
+test("project creation rejects an unlisted manager and defaults an omitted manager to the authorized actor", async () => {
+  const rejected = await createProject(
+    { clientId: "client-1", name: "Rejected", projectManagerId: "outsider@example.test" },
+    authorized(CREATION_CAPABILITIES.createProject, "creator@example.test"),
+    {
+      repository: { create: async () => assert.fail("repository must not be called") },
+      directoryMirror: { requestSync: async () => assert.fail("mirror must not be called") },
+      resolveProjectManagerId: async () => null,
+      newId: () => assert.fail("ID generator must not be called"),
+      now: () => assert.fail("clock must not be called"),
+    },
+  );
+  assert.deepEqual(rejected, { ok: false, kind: "project-manager-not-authorized", message: PROJECT_MANAGER_IDENTITY_ERROR });
+
+  let createdIntent;
+  const defaulted = await createProject(
+    { clientId: "client-1", name: "Creator-managed" },
+    authorized(CREATION_CAPABILITIES.createProject, "CREATOR@Example.Test"),
+    {
+      repository: { create: async (intent) => { createdIntent = intent; return { outcome: "created" }; } },
+      directoryMirror: { requestSync: async () => ({ status: "not-configured", message: "Not configured." }) },
+      resolveProjectManagerId: async (candidateId) => candidateId === "creator@example.test" ? candidateId : null,
+      newId: sequence(["project-default", "activity-default"]),
+      now: () => Date.UTC(2026, 6, 13),
+    },
+  );
+  assert.equal(createdIntent.project.projectManagerId, "creator@example.test");
+  assert.equal(defaulted.ok, true);
+  assert.equal(defaulted.value.projectManagerId, "creator@example.test");
+});
+
+test("admin project-manager correction is narrow, authorized, and audited", async () => {
+  let assignment;
+  const result = await assignProjectManager(
+    { projectId: "project-1", projectManagerId: " MANAGER@Example.Test " },
+    { actorId: "admin@example.test", canManageProjects: true },
+    {
+      repository: { assignManager: async (intent) => { assignment = intent; return { outcome: "updated" }; } },
+      resolveProjectManagerId: async (candidateId) => candidateId === "manager@example.test" ? candidateId : null,
+      newId: () => "manager-activity-1",
+      now: () => 1_784_000_000_000,
+    },
+  );
+  assert.deepEqual(assignment, {
+    projectId: "project-1",
+    projectManagerId: "manager@example.test",
+    updatedAt: 1_784_000_000_000,
+    activity: {
+      id: "manager-activity-1",
+      recordId: "project-1",
+      action: "Project manager assigned",
+      actor: "admin@example.test",
+      detail: "Project manager assigned to manager@example.test",
+      createdAt: 1_784_000_000_000,
+    },
+  });
+  assert.deepEqual(result, {
+    ok: true,
+    value: { projectId: "project-1", projectManagerId: "manager@example.test", updatedAt: 1_784_000_000_000 },
+  });
+
+  const forbidden = await assignProjectManager(
+    { projectId: "project-1", projectManagerId: "manager@example.test" },
+    { actorId: "office@example.test", canManageProjects: false },
+    {
+      repository: { assignManager: async () => assert.fail("repository must not be called") },
+      resolveProjectManagerId: async () => assert.fail("manager resolver must not be called"),
+      newId: () => assert.fail("ID generator must not be called"),
+      now: () => assert.fail("clock must not be called"),
+    },
+  );
+  assert.deepEqual(forbidden, { ok: false, kind: "forbidden", message: "You do not have permission to change project managers." });
+
+  const unlisted = await assignProjectManager(
+    { projectId: "project-1", projectManagerId: "outsider@example.test" },
+    { actorId: "admin@example.test", canManageProjects: true },
+    {
+      repository: { assignManager: async () => assert.fail("repository must not be called") },
+      resolveProjectManagerId: async () => null,
+      newId: () => assert.fail("ID generator must not be called"),
+      now: () => assert.fail("clock must not be called"),
+    },
+  );
+  assert.deepEqual(unlisted, { ok: false, kind: "project-manager-not-authorized", message: PROJECT_MANAGER_IDENTITY_ERROR });
+
+  const missing = await assignProjectManager(
+    { projectId: "missing-project", projectManagerId: "manager@example.test" },
+    { actorId: "admin@example.test", canManageProjects: true },
+    {
+      repository: { assignManager: async () => ({ outcome: "project-not-found" }) },
+      resolveProjectManagerId: async (candidateId) => candidateId,
+      newId: () => "missing-activity",
+      now: () => 1_784_000_000_001,
+    },
+  );
+  assert.deepEqual(missing, { ok: false, kind: "project-not-found", message: "project not found" });
 });
 
 test("duplicate clients and missing project clients map exactly and never request a mirror", async () => {
@@ -264,7 +389,7 @@ test("duplicate clients and missing project clients map exactly and never reques
   const missingClient = await createProject(
     { clientId: "missing", name: "FCI TEST Project" },
     authorized(CREATION_CAPABILITIES.createProject),
-    { repository: { create: async () => ({ outcome: "client-not-found" }) }, directoryMirror: mirror, newId: sequence(["project-id", "activity-id"]), now: () => Date.UTC(2026, 0, 1) },
+    { repository: { create: async () => ({ outcome: "client-not-found" }) }, directoryMirror: mirror, resolveProjectManagerId: async (candidateId) => candidateId, newId: sequence(["project-id", "activity-id"]), now: () => Date.UTC(2026, 0, 1) },
   );
 
   assert.deepEqual(duplicate, { ok: false, kind: "duplicate", message: "A client with this business name already exists." });
@@ -297,6 +422,7 @@ test("a thrown optional mirror leaves both durable creates successful with a tru
     {
       repository: { create: async () => { events.push("durable-project"); return { outcome: "created" }; } },
       directoryMirror: throwingMirror,
+      resolveProjectManagerId: async (candidateId) => candidateId,
       newId: sequence(["project-id", "project-activity"]),
       now: () => Date.UTC(2026, 0, 1),
     },

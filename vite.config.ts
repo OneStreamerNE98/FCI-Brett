@@ -11,6 +11,17 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
+// Rendered regression tests use synthetic, non-production identities. Opt in
+// explicitly so normal local development and hosted builds never receive
+// test-only authorization bindings.
+const e2eRuntimeVars = process.env.FCI_E2E === "true"
+  ? {
+      FCI_OFFICE_EMAILS: process.env.FCI_OFFICE_EMAILS ?? "",
+      FCI_ADMIN_EMAILS: process.env.FCI_ADMIN_EMAILS ?? "",
+      GOOGLE_INTEGRATION_MODE: "simulation",
+    }
+  : undefined;
+
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
@@ -31,6 +42,7 @@ const localBindingConfig = {
         },
       ]
     : [],
+  ...(e2eRuntimeVars ? { vars: e2eRuntimeVars } : {}),
 };
 
 export default defineConfig(async () => {

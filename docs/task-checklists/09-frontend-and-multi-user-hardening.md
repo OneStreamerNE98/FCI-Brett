@@ -2,11 +2,27 @@
 
 Owner: Codex/developer, with workflow decisions from the business owner
 
-Status: In progress — first integrity and truthfulness fixes implemented in source
+Status: In progress — July UI audit remediation implemented and browser-tested in source
 
 Depends on: Approved roles/capabilities and production API contracts
 
 The interface is suitable for learning the single-user workflow. It needs explicit authorization, freshness, error, accessibility, and feature-readiness behavior before about 20 employees can rely on it together.
+
+## July 13, 2026 UI audit priorities
+
+These are the eight implementation priorities confirmed against the hosted Sites pilot and the current GitHub source. Keep an item open until its acceptance criteria are covered by source tests and rendered browser verification.
+
+- [ ] **P0 — Project-manager data integrity:** correct the inappropriate live pilot value through an authorized admin workflow; replace unrestricted free text with an approved staff identity; validate the identifier and membership on the server; preserve a safe display path for legacy records.
+  - Source complete: creation uses an authorized email identity, raw invalid legacy text is not returned, and an audited Admin correction action exists. Remaining: deploy the change and use that action to correct the hosted pilot record.
+- [x] **P1 — Keyboard and focus accessibility:** make the mobile navigation a true modal drawer, keep its closed controls out of the tab order and accessibility tree, inert the background, restore launcher focus, complete global-search keyboard semantics, and return focus to search after a project drawer closes.
+- [x] **P1 — Truthful feature readiness:** remove unfinished modules from normal production navigation or label them clearly as Planned or Setup required; do not present placeholder project tabs or disabled future actions as available work.
+- [x] **P1 — Deployment-time database migrations:** remove schema DDL from normal request paths and rely on the checked-in, versioned Sites/D1 migration sequence; retain an explicit migration/bootstrap path for controlled environments only.
+- [ ] **P2 — Readable type and contrast:** raise meaningful metadata to at least 12 px, keep body and action text at 14–16 px where practical, and meet WCAG AA contrast for normal operational text.
+  - Audited metric, panel, project, status, form, and drawer selectors now use at least 12 px and higher-contrast muted text. A broader legacy typography pass remains open for less-used integration/settings details.
+- [x] **P2 — Mobile project comparison:** retain status, site/date, and value in a compact stacked mobile row instead of hiding decision-useful fields; do not imply that placeholder dates are durable schedule data.
+- [ ] **P2 — Initial-load and bundle performance:** break the monolithic client surface into feature boundaries, dynamically load rare/heavy panels, start critical data earlier where safe, deduplicate shared reads, and bound long record lists.
+  - First pass complete: initial client loading starts immediately; duplicated account/Workspace reads share a TTL cache; the overview clock no longer rerenders the app shell; project counts are one-pass; the phone panel is lazy-loaded; and long rows defer off-screen rendering. Route/feature splitting and server-started core data remain open.
+- [x] **P2 — Rendered regression coverage:** add browser-level coverage for mobile navigation, overlays, search focus/keyboard behavior, feature-state labels, responsive project rows, console health, and primary accessibility checks.
 
 ## P0 integrity fixes
 
@@ -18,10 +34,10 @@ The interface is suitable for learning the single-user workflow. It needs explic
 
 ## Truthful feature state
 
-- [ ] Label every module and action as Working, Pilot, Setup required, or Planned.
-- [x] Remove the transient update composer and show a disabled Project updates planned control until durable Gmail draft support exists.
+- [x] Label operational modules as Working, Pilot, Setup required, or Planned.
+- [x] Replace the transient project-update composer with static Planned information until durable update support exists.
 - [ ] Explain that Calendar/reminder preferences are configuration only until a background worker consumes them.
-- [ ] Keep Tasks, Files, Schedule, and messaging placeholders explicit until their durable models exist.
+- [x] Keep Tasks, Files, Schedule, and activity/update plans explicit without presenting them as active controls.
 - [ ] Add an Administrator-only indicator when the app is using simulation or test resources.
 
 ## Multi-user data behavior
@@ -43,8 +59,8 @@ The interface is suitable for learning the single-user workflow. It needs explic
 ## Accessibility and feedback
 
 - [x] Use one accessible dialog/drawer primitive with `role="dialog"`, an accessible name, initial focus, focus trap, Escape handling, and focus restoration.
-- [ ] Remove the closed off-canvas mobile navigation from the keyboard order and accessibility tree; restore focus to its launcher and support Escape when it is open.
-- [ ] Add Arrow Up/Down, Enter, Escape, and current-selection semantics to global search.
+- [x] Remove the closed off-canvas mobile navigation from the keyboard order and accessibility tree; restore focus to its launcher and support Escape when it is open.
+- [x] Add Arrow Up/Down, Enter, Escape, and current-selection semantics to global search.
 - [ ] Create typed success, warning, and error notifications; use `role="alert"` for errors and offer inline retry where safe.
 - [ ] Clean up notification timers when components unmount.
 - [ ] Raise metadata text to at least 12 px and body/action text to 14–16 px unless a documented exception is tested.
@@ -58,7 +74,7 @@ The interface is suitable for learning the single-user workflow. It needs explic
 - [ ] Test a 20-user concurrency scenario for common reads/writes and Google queue behavior.
 - [ ] Capture approved desktop and mobile screenshots for the pull request after browser capture is reliable.
 - [x] Include lint in CI.
-- [ ] Fail on unhandled console errors in browser smoke tests.
+- [x] Fail on unhandled console errors in browser smoke tests.
 
 ## Completion result
 

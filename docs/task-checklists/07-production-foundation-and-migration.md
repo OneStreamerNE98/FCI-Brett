@@ -32,7 +32,7 @@ The current Sites/Workers/D1/R2 deployment remains a one-user test pilot. Produc
 
 ## Data and code migration
 
-- [x] Centralize additive runtime D1 pilot bootstrap statements in one ordered, idempotent registry with failure/retry and schema-artifact parity tests. This pilot-only bridge does not complete the provider-neutral database work or production migration runner below.
+- [x] Move the D1 pilot schema and integrity indexes into the ordered Drizzle/Sites deployment migration sequence, remove schema DDL from normal request paths, and retain an explicit local-only migration command. This pilot migration path does not complete the provider-neutral production database work below.
 - [x] Prove the provider-neutral creation boundary for clients and projects with application services, repository/mirror ports, D1 pilot adapters, capability tests, and preserved HTTP behavior. The production PostgreSQL adapters and model remain open.
 - [x] Add the source-only PostgreSQL core schema for clients, contacts, projects, activity/audit events, actor-scoped idempotency requests, outbox events, and immutable migration history. It is tested but not applied to Cloud SQL. See [Production PostgreSQL foundation](../production-postgresql-foundation.md).
 - [ ] Replace remaining pilot text relationship IDs with PostgreSQL foreign keys; the bounded client/contact/project production foundation now uses indexed foreign keys.

@@ -90,10 +90,10 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
 
 test("keeps user preferences scoped to the authenticated office user without a personal-calendar profile", async () => {
   const [schema, preferencesApi, app] = await Promise.all([
-    read("app/platform/pilot-schema-migrations.ts"), read("app/api/v1/settings/me/route.ts"), read("app/FloorOpsApp.tsx"),
+    read("db/schema.ts"), read("app/api/v1/settings/me/route.ts"), read("app/FloorOpsApp.tsx"),
   ]);
-  assert.match(schema, /CREATE TABLE IF NOT EXISTS user_preferences/);
-  assert.match(schema, /user_email TEXT PRIMARY KEY/);
+  assert.match(schema, /export const userPreferences = sqliteTable\("user_preferences"/);
+  assert.match(schema, /userEmail: text\("user_email"\)\.primaryKey\(\)/);
   assert.match(preferencesApi, /requireOfficeUser\(request\)/);
   assert.match(preferencesApi, /requireSameOrigin\(request\)/);
   assert.match(preferencesApi, /WHERE user_email = \?/);
@@ -220,7 +220,7 @@ test("uses durable live records without hardcoded business demonstrations", asyn
   const [app, leadsApi, leadApi, dashboardApi, workspaceSchema, auth] = await Promise.all([
     read("app/FloorOpsApp.tsx"), read("app/api/v1/leads/route.ts"),
     read("app/api/v1/leads/[leadId]/route.ts"), read("app/api/v1/dashboard/route.ts"),
-    read("app/platform/pilot-schema-migrations.ts"), read("app/lib/workspace-auth.ts"),
+    read("db/schema.ts"), read("app/lib/workspace-auth.ts"),
   ]);
 
   assert.doesNotMatch(app, /Hudson Retail Group|Atlas Design Group|Westport Medical Center|One Harbor Plaza/);
@@ -231,9 +231,9 @@ test("uses durable live records without hardcoded business demonstrations", asyn
   assert.match(app, /getJson\("\/api\/v1\/leads"\)/);
   assert.match(app, /fetch\(`\/api\/v1\/leads\/\$\{encodeURIComponent\(id\)\}`/);
   assert.match(app, /Live records could not be loaded/);
-  assert.match(app, /not implemented yet/);
+  assert.match(app, /not available as controls yet/);
 
-  assert.match(workspaceSchema, /CREATE TABLE IF NOT EXISTS leads/);
+  assert.match(workspaceSchema, /export const leads = sqliteTable\("leads"/);
   assert.match(leadsApi, /export async function GET/);
   assert.match(leadsApi, /export async function POST/);
   assert.match(leadsApi, /INSERT INTO activity_events/);
@@ -339,24 +339,67 @@ test("files Gmail only after an explicit single-project review", async () => {
   assert.match(filingRoute, /inboxRetained: true/);
 });
 
-test("keeps unfinished project updates visibly planned and non-operational", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
+test("labels unfinished features without presenting placeholder controls", async () => {
+  const [app, badge] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/components/FeatureStateBadge.tsx"),
+  ]);
+  const navItems = app.match(/const navItems:[\s\S]+?= \[([\s\S]+?)\n\];/)?.[1] ?? "";
 
-  assert.match(app, /Project updates planned/);
-  assert.match(app, /disabled title="Project updates are planned after durable Gmail draft support is implemented"/);
+  assert.doesNotMatch(navItems, /Schedule/);
+  assert.match(app, /state="Working"/);
+  assert.match(app, /state="Pilot"/);
+  assert.match(app, /"Setup required"/);
+  assert.match(app, /state="Planned"/);
+  assert.match(badge, /"Working" \| "Pilot" \| "Setup required" \| "Planned"/);
+  assert.match(app, /\(\["Overview", "Meetings"\] as const\)/);
+  assert.match(app, /Planned project capabilities/);
+  assert.match(app, /planned-project-updates/);
+  assert.doesNotMatch(app, /EmptyProjectTab|Project updates planned|disabled title="Project updates/);
   assert.doesNotMatch(app, /ProjectUpdateDraft|ProjectUpdateModal|projectUpdate|Project update composer opened|Send update/);
 });
 
+test("uses authorized project-manager identities and exposes the narrow admin correction", async () => {
+  const app = await read("app/FloorOpsApp.tsx");
+
+  assert.match(app, /managerId: string \| null/);
+  assert.match(app, /project_manager_id === "string"/);
+  assert.match(app, /projectManagerId: project\.managerId/);
+  assert.doesNotMatch(app, /projectManager: project\.lead/);
+  assert.match(app, /assigned-manager-field/);
+  assert.match(app, /signed-in account/);
+  assert.doesNotMatch(app, /name="manager"/);
+  assert.match(app, /method: "PATCH"/);
+  assert.match(app, /JSON\.stringify\(\{ projectId: project\.id, projectManagerId \}\)/);
+  assert.match(app, /canAssignManager=\{accessLabel === "Admin"\}/);
+  assert.match(app, /Assign to me/);
+  assert.match(app, /No authorized manager is assigned/);
+});
+
+test("keeps mobile project status, schedule truth, site, and value visible with readable audited text", async () => {
+  const [app, css] = await Promise.all([read("app/FloorOpsApp.tsx"), read("app/globals.css")]);
+
+  assert.match(app, /project-row-status/);
+  assert.match(app, /project-row-details/);
+  assert.match(app, /project-row-value/);
+  assert.match(app, /Estimated value/);
+  assert.match(css, /\.project-row-details\{grid-column:1\/4;grid-row:2;display:grid!important/);
+  assert.match(css, /\.project-row-value\{grid-column:1\/4;grid-row:3;display:flex!important/);
+  assert.doesNotMatch(css, /projects-table-row>span:nth-child\(3\),\.projects-table-row>strong:nth-child\(4\)\{display:none\}/);
+  assert.match(css, /\.metric-top span,.metric-top small,.metric-card p,.panel-header span/);
+  assert.match(css, /\.projects-table-row strong,.projects-table-row small\{font-size:12px\}/);
+  assert.match(css, /color:#655f59/);
+});
+
 test("captures durable project meetings and bounded Otter evidence", async () => {
-  const [workspaceSchema, schema, meetingsApi, app, assistantApi] = await Promise.all([
-    read("app/platform/pilot-schema-migrations.ts"), read("db/schema.ts"),
+  const [schema, meetingsApi, app, assistantApi] = await Promise.all([
+    read("db/schema.ts"),
     read("app/api/v1/projects/[projectId]/meetings/route.ts"), read("app/FloorOpsApp.tsx"),
     read("app/api/v1/assistant/route.ts"),
   ]);
 
-  assert.match(workspaceSchema, /CREATE TABLE IF NOT EXISTS project_meetings/);
-  assert.match(workspaceSchema, /project_meetings_project_date_idx/);
   assert.match(schema, /export const projectMeetings = sqliteTable\("project_meetings"/);
+  assert.match(schema, /project_meetings_project_date_idx/);
   assert.match(schema, /sourceProvider: text\("source_provider"\)/);
   assert.match(schema, /transcript: text\("transcript"\)/);
 

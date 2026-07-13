@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Activity, Bell, Bot, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, ExternalLink, FileText, FolderOpen, FolderTree, HardHat,
@@ -10,12 +11,13 @@ import {
 import { DEFAULT_FILING_RULES, DRIVE_BLUEPRINT, evaluateInboxFilingRules, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
-import { PhoneInstallPanel } from "./PhoneInstallPanel";
+import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
+import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
 
 type View = "Overview" | "Leads" | "Clients" | "Projects" | "Schedule" | "Inbox" | "AI Assistant" | "Reports" | "Settings";
 type Lead = { id: string; number: string; company: string; contact: string; project: string; value: string; estimatedValue: number; stage: string; source: string; next: string; site: string; status: string; initials: string; color: string };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; driveFolderId?: string; driveUrl?: string };
-type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; site: string; lead: string; date: string; accent: string; driveFolderId?: string; driveUrl?: string };
+type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; site: string; managerId: string | null; lead: string; date: string; accent: string; driveFolderId?: string; driveUrl?: string };
 type DashboardSummary = {
   generatedAt: number;
   metrics: { activeLeads: number; estimatedPipelineValue: number; activeProjects: number; clientCount: number; meetingCount: number; filedEmailCount: number };
@@ -57,12 +59,26 @@ type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: strin
 
 const leadStages = ["New inquiry", "Site visit", "Proposal", "Decision"];
 const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
+const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const PhoneInstallPanel = dynamic(
+  () => import("./PhoneInstallPanel").then((module) => module.PhoneInstallPanel),
+  { ssr: false, loading: () => <div className="phone-install-loading" role="status">Loading install guidance…</div> },
+);
+const focusableControlSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[contenteditable='true']",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
-const navItems: { label: View; icon: typeof LayoutDashboard }[] = [
-  { label: "Overview", icon: LayoutDashboard }, { label: "Leads", icon: Zap },
-  { label: "Clients", icon: ContactRound }, { label: "Projects", icon: BriefcaseBusiness }, { label: "Schedule", icon: CalendarDays },
-  { label: "Inbox", icon: Inbox }, { label: "AI Assistant", icon: Sparkles },
-  { label: "Reports", icon: Activity }, { label: "Settings", icon: Settings },
+const navItems: { label: Exclude<View, "Schedule">; icon: typeof LayoutDashboard; state: FeatureState }[] = [
+  { label: "Overview", icon: LayoutDashboard, state: "Pilot" }, { label: "Leads", icon: Zap, state: "Working" },
+  { label: "Clients", icon: ContactRound, state: "Working" }, { label: "Projects", icon: BriefcaseBusiness, state: "Working" },
+  { label: "Inbox", icon: Inbox, state: "Pilot" }, { label: "AI Assistant", icon: Sparkles, state: "Pilot" },
+  { label: "Reports", icon: Activity, state: "Pilot" }, { label: "Settings", icon: Settings, state: "Pilot" },
 ];
 
 function recordInitials(value: string) {
@@ -75,16 +91,23 @@ function displayStatus(value: unknown, fallback: string) {
 }
 
 function money(value: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+  return currencyFormatter.format(value);
 }
 
 function isActiveProject(project: Project) {
   return !terminalProjectStatuses.has(project.status.toLowerCase());
 }
 
+function projectManagerLabel(managerId: string | null, currentUserEmail: string, currentUserName: string) {
+  if (!managerId) return "Unassigned";
+  if (managerId === currentUserEmail.trim().toLowerCase()) return currentUserName.trim() ? `${currentUserName} (you)` : `${managerId} (you)`;
+  return managerId;
+}
+
 export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: { userName: string; userEmail: string; accessLabel: "Admin" | "Office"; signOutHref: string }) {
   const [view, setView] = useState<View>("Overview");
   const [mobileNav, setMobileNav] = useState(false);
+  const [mobileNavViewport, setMobileNavViewport] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -108,35 +131,45 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
   const [toast, setToast] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<WorkspaceSearchResult[]>([]);
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
   const [searching, setSearching] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
   const [sheetSyncing, setSheetSyncing] = useState(false);
   const [displayTimezone, setDisplayTimezone] = useState("America/New_York");
-  const [currentTime, setCurrentTime] = useState<number | null>(null);
+  const mobileNavigationRef = useRef<HTMLElement>(null);
+  const mobileNavigationCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null);
+  const workspaceSearchRef = useRef<HTMLInputElement>(null);
+  const projectDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
+  const clientDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const firstName = friendlyFirstName(userName, userEmail);
   const userInitials = userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
 
-  const refreshDirectoryData = useCallback(async () => {
-    setLiveDataState("loading");
-    setLiveDataError("");
-    try {
-      async function getJson(path: string) {
-        const response = await fetch(path, { headers: { Accept: "application/json" } });
-        const data = await response.json().catch(() => ({})) as Record<string, unknown>;
-        if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : `Live data request failed (${response.status}).`);
-        return data;
-      }
-      const optionalRequests = Promise.allSettled([
-        getJson("/api/v1/filing-rules"),
-        getJson("/api/v1/integrations/google/sheets/status"),
-      ]);
-      const [leadData, clientData, projectData, dashboardData] = await Promise.all([
-        getJson("/api/v1/leads"),
-        getJson("/api/v1/clients"),
-        getJson("/api/v1/projects"),
-        getJson("/api/v1/dashboard"),
-      ]);
+  const refreshDirectoryData = useCallback(() => {
+    async function getJson(path: string) {
+      const response = await fetch(path, { headers: { Accept: "application/json" } });
+      const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+      if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : `Live data request failed (${response.status}).`);
+      return data;
+    }
+    const optionalRequests = Promise.allSettled([
+      getJson("/api/v1/filing-rules"),
+      getJson("/api/v1/integrations/google/sheets/status"),
+    ]);
+    const directoryRequests = Promise.all([
+      getJson("/api/v1/leads"),
+      getJson("/api/v1/clients"),
+      getJson("/api/v1/projects"),
+      getJson("/api/v1/dashboard"),
+    ]);
+    // Requests start synchronously; loading state moves to a microtask so the
+    // mount effect does not cause a cascading render before I/O begins.
+    void Promise.resolve().then(() => {
+      setLiveDataState("loading");
+      setLiveDataError("");
+    });
+    return directoryRequests.then(([leadData, clientData, projectData, dashboardData]) => {
       const leadRows = Array.isArray(leadData.leads) ? leadData.leads as Record<string, unknown>[] : [];
       const clientRows = Array.isArray(clientData.clients) ? clientData.clients as Record<string, unknown>[] : [];
       const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
@@ -145,7 +178,12 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
         return { id: String(lead.id), number: String(lead.leadNumber ?? "Lead"), company: String(lead.company), contact: String(lead.contactName), project: String(lead.projectName), value: money(estimatedValue), estimatedValue, stage: String(lead.stage), source: String(lead.source), next: String(lead.nextAction), site: String(lead.site), status: String(lead.status), initials: recordInitials(String(lead.company)), color: "sage" };
       }));
       setClients(clientRows.map((client) => ({ id: String(client.id), code: String(client.client_code), name: String(client.name), contact: String(client.primary_contact_name ?? "Primary contact pending"), email: String(client.primary_contact_email ?? ""), industry: String(client.industry ?? "Commercial"), status: displayStatus(client.status, "Active"), initials: recordInitials(String(client.name)), color: "sage", googleStatus: client.drive_folder_id ? "Ready" as const : "Setup pending" as const, driveFolderId: client.drive_folder_id ? String(client.drive_folder_id) : undefined, driveUrl: client.drive_url ? String(client.drive_url) : undefined })));
-      setProjectItems(projectRows.map((project) => ({ id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: project.estimated_value !== null && project.estimated_value !== undefined ? money(Number(project.estimated_value)) : "TBD", site: String(project.site ?? "Site pending"), lead: String(project.project_manager ?? "Unassigned"), date: "Not scheduled", accent: "sage", driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined })));
+      setProjectItems(projectRows.map((project) => {
+        const managerId = typeof project.project_manager_id === "string" && project.project_manager_id.trim()
+          ? project.project_manager_id.trim().toLowerCase()
+          : null;
+        return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: project.estimated_value !== null && project.estimated_value !== undefined ? money(Number(project.estimated_value)) : "TBD", site: String(project.site ?? "Site pending"), managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
+      }));
       setDashboard(dashboardData as unknown as DashboardSummary);
       setLiveDataState("ready");
 
@@ -161,34 +199,97 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
         // Rules and the Sheet mirror are optional integrations. Their failures
         // must never replace successfully loaded CRM records with a global error.
       });
-    } catch (error) {
+    }).catch((error) => {
       setLiveDataState("error");
       setLiveDataError(error instanceof Error ? error.message : "Live application data could not be loaded.");
-    }
-  }, []);
+    });
+  }, [userEmail, userName]);
 
   useEffect(() => {
-    const refresh = window.setTimeout(() => { void refreshDirectoryData(); }, 0);
-    return () => window.clearTimeout(refresh);
+    void refreshDirectoryData();
   }, [refreshDirectoryData]);
 
   useEffect(() => {
     let active = true;
-    const initialClock = window.setTimeout(() => setCurrentTime(Date.now()), 0);
-    void fetch("/api/v1/settings/me", { headers: { Accept: "application/json" } })
-      .then((response) => response.ok ? response.json() : null)
+    void cachedGetJson<{ preferences?: { displayTimezone?: unknown } }>("/api/v1/settings/me")
       .then((data) => {
         const timezone = data?.preferences?.displayTimezone;
         if (active && typeof timezone === "string") setDisplayTimezone(timezone);
       })
       .catch(() => undefined);
-    const clock = window.setInterval(() => setCurrentTime(Date.now()), 60_000);
-    return () => {
-      active = false;
-      window.clearTimeout(initialClock);
-      window.clearInterval(clock);
-    };
+    return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 820px)");
+    const updateMobileNavigationMode = () => {
+      setMobileNavViewport(mediaQuery.matches);
+      if (!mediaQuery.matches) setMobileNav(false);
+    };
+    updateMobileNavigationMode();
+    mediaQuery.addEventListener("change", updateMobileNavigationMode);
+    return () => mediaQuery.removeEventListener("change", updateMobileNavigationMode);
+  }, []);
+
+  const mobileNavActive = mobileNavViewport && mobileNav;
+
+  useEffect(() => {
+    if (!mobileNavActive) return;
+    const panel = mobileNavigationRef.current;
+    if (!panel) return;
+
+    const bodyOverflowBeforeOpen = document.body.style.overflow;
+    const navigationTrigger = mobileNavigationTriggerRef.current;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => mobileNavigationCloseRef.current?.focus());
+    const handleMobileNavigationKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setMobileNav(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(focusableControlSelector)).filter((element) => {
+        const style = window.getComputedStyle(element);
+        return !element.hidden
+          && element.getAttribute("aria-hidden") !== "true"
+          && !element.closest("[inert]")
+          && style.display !== "none"
+          && style.visibility !== "hidden";
+      });
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!activeElement || !panel.contains(activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleMobileNavigationKeyDown, true);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleMobileNavigationKeyDown, true);
+      document.body.style.overflow = bodyOverflowBeforeOpen;
+      if (navigationTrigger?.isConnected && window.matchMedia("(max-width: 820px)").matches) {
+        navigationTrigger.focus();
+      }
+    };
+  }, [mobileNavActive]);
 
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
@@ -200,7 +301,7 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        document.getElementById("workspace-search")?.focus();
+        workspaceSearchRef.current?.focus();
       }
     };
     window.addEventListener("keydown", focusSearch);
@@ -246,7 +347,7 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
   async function addProject(project: Project) {
     try {
       const estimatedValue = project.value === "TBD" ? undefined : Number(project.value.replace(/[^0-9]/g, ""));
-      const response = await fetch("/api/v1/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: project.clientId, name: project.name, status: project.status.toLowerCase(), site: project.site, projectManager: project.lead, estimatedValue }) });
+      const response = await fetch("/api/v1/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: project.clientId, name: project.name, status: project.status.toLowerCase(), site: project.site, projectManagerId: project.managerId, estimatedValue }) });
       const errorData = await response.clone().json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(errorData.error ?? "Project could not be saved.");
       const data = await response.json() as { id: string; projectNumber: string; sheetSync?: { status?: string; message?: string } };
@@ -344,7 +445,13 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
     }
   }
 
-  const clientProjectCounts = useMemo(() => new Map(clients.map((client) => [client.id, projectItems.filter((project) => project.clientId === client.id).length])), [clients, projectItems]);
+  const clientProjectCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const project of projectItems) {
+      counts.set(project.clientId, (counts.get(project.clientId) ?? 0) + 1);
+    }
+    return counts;
+  }, [projectItems]);
 
   function openRules() {
     setSettingsArea("Inbox & file rules");
@@ -393,13 +500,15 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
     setProfileMenuOpen(false);
   }
 
-  function openProject(project: Project) {
+  function openProject(project: Project, returnFocusTarget: HTMLElement | null = null) {
+    projectDrawerReturnFocusRef.current = returnFocusTarget;
     setSelectedProject(project);
     setClientOpen(false);
     setProjectOpen(true);
   }
 
-  function openClient(client: Client) {
+  function openClient(client: Client, returnFocusTarget: HTMLElement | null = null) {
+    clientDrawerReturnFocusRef.current = returnFocusTarget;
     setSelectedClient(client);
     setProjectOpen(false);
     setClientOpen(true);
@@ -447,18 +556,23 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
     const query = searchTerm.trim();
     if (query.length < 2) {
       setSearchResults([]);
+      setActiveSearchIndex(-1);
       notify("Enter at least two characters to search clients, projects, and contacts");
       return;
     }
     setSearching(true);
+    setActiveSearchIndex(-1);
     try {
       const response = await fetch(`/api/v1/search?q=${encodeURIComponent(query)}`);
       const data = await response.json().catch(() => ({})) as { results?: WorkspaceSearchResult[]; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Workspace search could not be completed.");
-      setSearchResults(data.results ?? []);
-      if (!data.results?.length) notify(`No workspace records matched “${query}”`);
+      const results = data.results ?? [];
+      setSearchResults(results);
+      setActiveSearchIndex(results.length > 0 ? 0 : -1);
+      if (!results.length) notify(`No workspace records matched “${query}”`);
     } catch (error) {
       setSearchResults([]);
+      setActiveSearchIndex(-1);
       notify(error instanceof Error ? error.message : "Workspace search could not be completed.");
     } finally {
       setSearching(false);
@@ -467,11 +581,12 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
 
   function openSearchResult(result: WorkspaceSearchResult) {
     setSearchResults([]);
+    setActiveSearchIndex(-1);
     setSearchTerm("");
     if (result.kind === "project") {
       const project = projectItems.find((item) => item.id === result.projectId);
       if (project) {
-        openProject(project);
+        openProject(project, workspaceSearchRef.current);
         notify(`Opened ${project.number}`);
       } else {
         setView("Projects");
@@ -481,7 +596,7 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
     }
     const client = clients.find((item) => item.id === result.clientId);
     if (client) {
-      openClient(client);
+      openClient(client, workspaceSearchRef.current);
       notify(`Opened ${client.name}`);
     } else {
       setView("Clients");
@@ -489,9 +604,73 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
     }
   }
 
+  async function assignProjectToCurrentUser(project: Project) {
+    try {
+      const projectManagerId = userEmail.trim().toLowerCase();
+      const response = await fetch("/api/v1/projects", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: project.id, projectManagerId }) });
+      const data = await response.json().catch(() => ({})) as { projectManagerId?: string; error?: string };
+      if (!response.ok || !data.projectManagerId) throw new Error(data.error ?? "The project manager could not be assigned.");
+      const managerId = data.projectManagerId.toLowerCase();
+      const updateManager = (item: Project) => item.id === project.id
+        ? { ...item, managerId, lead: projectManagerLabel(managerId, userEmail, userName) }
+        : item;
+      setProjectItems((current) => current.map(updateManager));
+      setSelectedProject((current) => current ? updateManager(current) : current);
+      notify(`${project.number} is now assigned to your signed-in account`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The project manager could not be assigned.");
+    }
+  }
+
+  function handleWorkspaceSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape" && searchResults.length > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSearchResults([]);
+      setActiveSearchIndex(-1);
+      return;
+    }
+    if (searchResults.length === 0) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveSearchIndex((current) => current < searchResults.length - 1 ? current + 1 : 0);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveSearchIndex((current) => current > 0 ? current - 1 : searchResults.length - 1);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      setActiveSearchIndex(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      setActiveSearchIndex(searchResults.length - 1);
+      return;
+    }
+    if (event.key === "Enter" && activeSearchIndex >= 0) {
+      event.preventDefault();
+      openSearchResult(searchResults[activeSearchIndex]);
+    }
+  }
+
   return (
     <div className={`app-shell ${sidebarCollapsed ? "sidebar-is-collapsed" : ""}`}>
-      <aside className={`sidebar ${mobileNav ? "open" : ""} ${sidebarCollapsed ? "collapsed" : ""}`}>
+      <aside
+        id="application-navigation"
+        ref={mobileNavigationRef}
+        className={`sidebar ${mobileNav ? "open" : ""} ${sidebarCollapsed ? "collapsed" : ""}`}
+        aria-label="Application navigation"
+        aria-hidden={mobileNavViewport && !mobileNav ? true : undefined}
+        aria-modal={mobileNavActive ? true : undefined}
+        inert={mobileNavViewport && !mobileNav ? true : undefined}
+        role={mobileNavActive ? "dialog" : undefined}
+        tabIndex={mobileNavActive ? -1 : undefined}
+      >
         <div className="sidebar-brand-row">
           <div className="brand">
             {/* eslint-disable-next-line @next/next/no-img-element -- The supplied local brand mark does not need optimizer handling. */}
@@ -500,12 +679,12 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
           </div>
           <button className="sidebar-collapse" onClick={toggleSidebar} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>{sidebarCollapsed ? <ChevronsRight size={17} /> : <ChevronsLeft size={17} />}</button>
         </div>
-        <button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
+        <button ref={mobileNavigationCloseRef} className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <p>Workspace</p>
-          {navItems.slice(0, 7).map(({ label, icon: Icon }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={label} title={label}><Icon size={18} /><span>{label}</span></button>)}
+          {navItems.slice(0, 6).map(({ label, icon: Icon, state }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></button>)}
           <p>Management</p>
-          {navItems.slice(7).map(({ label, icon: Icon }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={label} title={label}><Icon size={18} /><span>{label}</span></button>)}
+          {navItems.slice(6).map(({ label, icon: Icon, state }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></button>)}
         </nav>
         <div className="sidebar-menu-wrap workspace-menu-wrap">
           <button className="workspace-card" onClick={() => { setWorkspaceMenuOpen((current) => !current); setProfileMenuOpen(false); }} aria-haspopup="menu" aria-expanded={workspaceMenuOpen} title="Workspace actions"><div className="workspace-icon"><Building2 size={17} /></div><div><span>Workspace</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></button>
@@ -517,17 +696,58 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
         </div>
       </aside>
 
-      {mobileNav && <button className="sidebar-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
-      <main className="main-area">
+      {mobileNavActive && <div className="sidebar-scrim" role="presentation" aria-hidden="true" onMouseDown={() => setMobileNav(false)} />}
+      <main className="main-area" inert={mobileNavActive ? true : undefined}>
         <header className="topbar">
-          <button className="mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={21} /></button>
-          <form className="search" onSubmit={(event) => { event.preventDefault(); void searchWorkspace(); }}><Search size={18} /><input id="workspace-search" value={searchTerm} onChange={(event) => { setSearchTerm(event.target.value); setSearchResults([]); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchWorkspace(); } }} aria-label="Search workspace" placeholder="Search projects, clients, contacts…" /><button className="search-shortcut" type="submit" disabled={searching} aria-label="Search workspace">{searching ? "…" : "Ctrl K"}</button>{searchResults.length > 0 && <div className="global-search-results" role="listbox" aria-label="Workspace search results">{searchResults.map((result) => <button type="button" key={`${result.kind}-${result.id}`} role="option" aria-selected={false} onClick={() => openSearchResult(result)}><span>{result.kind === "project" ? <BriefcaseBusiness size={14} /> : result.kind === "contact" ? <ContactRound size={14} /> : <Users size={14} />}</span><div><strong>{result.title}</strong><small>{result.kind} · {result.subtitle}</small></div><ChevronRight size={14} /></button>)}</div>}</form>
+          <button
+            ref={mobileNavigationTriggerRef}
+            className="mobile-menu"
+            onClick={() => setMobileNav(true)}
+            aria-label="Open navigation"
+            aria-controls="application-navigation"
+            aria-expanded={mobileNavActive}
+          ><Menu size={21} /></button>
+          <form className="search" onSubmit={(event) => { event.preventDefault(); void searchWorkspace(); }}>
+            <Search size={18} aria-hidden="true" />
+            <input
+              ref={workspaceSearchRef}
+              id="workspace-search"
+              role="combobox"
+              value={searchTerm}
+              onChange={(event) => {
+                setSearchTerm(event.target.value);
+                setSearchResults([]);
+                setActiveSearchIndex(-1);
+              }}
+              onKeyDown={handleWorkspaceSearchKeyDown}
+              aria-label="Search workspace"
+              aria-autocomplete="list"
+              aria-controls="workspace-search-results"
+              aria-expanded={searchResults.length > 0}
+              aria-activedescendant={activeSearchIndex >= 0 ? `workspace-search-option-${activeSearchIndex}` : undefined}
+              aria-busy={searching || undefined}
+              placeholder="Search projects, clients, contacts…"
+            />
+            <button className="search-shortcut" type="submit" disabled={searching} aria-label="Search workspace">{searching ? "…" : "Ctrl K"}</button>
+            {searchResults.length > 0 && <div id="workspace-search-results" className="global-search-results" role="listbox" aria-label="Workspace search results">
+              {searchResults.map((result, index) => <button
+                id={`workspace-search-option-${index}`}
+                type="button"
+                key={`${result.kind}-${result.id}`}
+                role="option"
+                tabIndex={-1}
+                aria-selected={index === activeSearchIndex}
+                onMouseEnter={() => setActiveSearchIndex(index)}
+                onClick={() => openSearchResult(result)}
+              ><span>{result.kind === "project" ? <BriefcaseBusiness size={14} /> : result.kind === "contact" ? <ContactRound size={14} /> : <Users size={14} />}</span><div><strong>{result.title}</strong><small>{result.kind} · {result.subtitle}</small></div><ChevronRight size={14} /></button>)}
+            </div>}
+          </form>
           <div className="top-actions"><div className="notification-wrap"><button className="icon-button" onClick={() => setNotificationsOpen((current) => !current)} aria-label="Notifications" aria-haspopup="menu" aria-expanded={notificationsOpen}><Bell size={19} /></button>{notificationsOpen && <div className="notification-menu" role="menu"><strong>Notifications</strong><button role="menuitem" onClick={() => { setView("Inbox"); setNotificationsOpen(false); }}>Open the Gmail project inbox</button><button role="menuitem" onClick={() => { setView("Schedule"); setNotificationsOpen(false); }}>Schedule alerts will appear after scheduling is connected</button></div>}</div><button className="primary-button" onClick={() => setLeadModal(true)}><Plus size={17} /> Add lead</button></div>
         </header>
 
         <div className="page-wrap">
           <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData()} />
-          {view === "Overview" && <Overview firstName={firstName} currentTime={currentTime} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} onView={setView} onProject={openProject} />}
+          {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} onView={setView} onProject={openProject} />}
           {view === "Leads" && <LeadsView leads={leads} state={liveDataState} onAdd={() => setLeadModal(true)} onAdvance={advanceLead} />}
           {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
           {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} onNewProject={() => openNewProject()} onProject={openProject} />}
@@ -540,10 +760,10 @@ export function FloorOpsApp({ userName, userEmail, accessLabel, signOutHref }: {
       </main>
       {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
       {clientModal && <ClientModal onClose={() => setClientModal(false)} onSave={addClient} />}
-      {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} onClose={closeNewProject} onSave={addProject} />}
+      {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} managerId={userEmail.trim().toLowerCase()} managerLabel={userName.trim() || userEmail} onClose={closeNewProject} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
-      {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} />}
-      {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} />}
+      {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} canAssignManager={accessLabel === "Admin"} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
+      {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
       {toast && <div className="toast" role="status" aria-live="polite"><CheckCircle2 size={18} />{toast}</div>}
     </div>
   );
@@ -555,14 +775,23 @@ function LiveDataBanner({ state, error, onRetry }: { state: LiveDataState; error
   return <section className="schedule-alert" role="alert"><CircleAlert size={19} /><div><strong>Live records could not be loaded</strong><span>{error}</span></div><button onClick={onRetry}>Try again</button></section>;
 }
 
-function Overview({ firstName, currentTime, timezone, leads, projects, dashboard, state, onView, onProject }: { firstName: string | null; currentTime: number | null; timezone: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; onView: (v: View) => void; onProject: (p: Project) => void }) {
+function Overview({ firstName, timezone, leads, projects, dashboard, state, onView, onProject }: { firstName: string | null; timezone: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; onView: (v: View) => void; onProject: (p: Project) => void }) {
+  const [currentTime, setCurrentTime] = useState<number | null>(null);
+  useEffect(() => {
+    const initialClock = window.requestAnimationFrame(() => setCurrentTime(Date.now()));
+    const clock = window.setInterval(() => setCurrentTime(Date.now()), 60_000);
+    return () => {
+      window.cancelAnimationFrame(initialClock);
+      window.clearInterval(clock);
+    };
+  }, []);
   const { greeting, dateLabel } = currentTime ? dashboardTimeContext(currentTime, timezone) : { greeting: "Welcome", dateLabel: "Operations overview" };
   const metrics = dashboard?.metrics;
   const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
   const activeProjects = projects.filter(isActiveProject);
   const recordsReady = state === "ready";
   return <>
-    <div className="page-heading"><div><p className="eyebrow">{dateLabel}</p><h1>{greeting}{firstName ? `, ${firstName}` : ""}.</h1><p>{recordsReady ? "Here’s the latest from your operations workspace." : "Connecting to your operations workspace."}</p></div><button className="soft-button" onClick={() => onView("Schedule")}><CalendarDays size={16} /> Scheduling setup</button></div>
+    <div className="page-heading"><div><div className="page-title-kicker"><p className="eyebrow">{dateLabel}</p><FeatureStateBadge state="Pilot" /></div><h1>{greeting}{firstName ? `, ${firstName}` : ""}.</h1><p>{recordsReady ? "Here’s the latest from your operations workspace." : "Connecting to your operations workspace."}</p></div><button className="soft-button" onClick={() => onView("Schedule")}><CalendarDays size={16} /> Scheduling setup</button></div>
     <section className="metrics-grid">
       <Metric label="Active pipeline" value={recordsReady ? money(metrics?.estimatedPipelineValue ?? 0) : "—"} note={recordsReady ? `${metrics?.activeLeads ?? activeLeads.length} open opportunities` : "Loading current totals"} trend="Current" icon={Zap} color="orange" />
       <Metric label="Active projects" value={recordsReady ? String(metrics?.activeProjects ?? activeProjects.length) : "—"} note={recordsReady ? "Projects currently in progress" : "Loading current totals"} trend="Current" icon={HardHat} color="green" />
@@ -594,7 +823,7 @@ function LeadsView({ leads, state, onAdd, onAdvance }: { leads: Lead[]; state: L
   const inactiveLeads = leads.filter((lead) => lead.status.toLowerCase() !== "active");
   const pipelineValue = activeLeads.reduce((total, lead) => total + lead.estimatedValue, 0);
   const summary = state === "ready" ? `${activeLeads.length} open opportunities · ${money(pipelineValue)} estimated value` : "Loading current pipeline totals…";
-  return <><PageTitle eyebrow="Sales pipeline" title="Leads & opportunities" text={summary} action={<button className="primary-button" onClick={onAdd}><Plus size={17} /> Add lead</button>} />
+  return <><PageTitle eyebrow="Sales pipeline" title="Leads & opportunities" text={summary} state="Working" action={<button className="primary-button" onClick={onAdd}><Plus size={17} /> Add lead</button>} />
     {activeLeads.length === 0 && state === "ready" ? <section className="panel empty-tab"><div><Zap size={25} /></div><h3>No active leads</h3><p>Add your first lead. Inactive records remain listed below.</p><button className="primary-button" onClick={onAdd}><Plus size={16} /> Add first lead</button></section> : standardLeads.length > 0 ? <div className="board">{leadStages.map((stage) => { const stageLeads = standardLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()); return <section className="board-column" key={stage}><header><span>{stage}</span><b>{stageLeads.length}</b></header>{stageLeads.map((lead) => <article className="lead-card" key={lead.id}><div className="lead-card-head"><Avatar initials={lead.initials} color={lead.color} /><span>{lead.number}</span></div><h3>{lead.company}</h3><p>{lead.project}</p><div className="lead-value">{lead.value}</div><div className="lead-contact"><Users size={14} />{lead.contact}</div><footer><span>{lead.source}</span><button onClick={() => onAdvance(lead.id)} aria-label={`Advance ${lead.company} from ${lead.stage}`}><ChevronRight size={15} /></button></footer></article>)}{stageLeads.length === 0 && <p className="board-empty">No leads in this stage.</p>}</section>; })}</div> : null}
     {customStageLeads.length > 0 && <LeadStatusPanel title="Custom pipeline stages" subtitle="These leads use stages outside the current pipeline. Review their stage before advancing them." leads={customStageLeads} />}
     {inactiveLeads.length > 0 && <LeadStatusPanel title="Inactive leads" subtitle="Converted, lost, closed, and archived leads are excluded from active totals." leads={inactiveLeads} showRecordStatus />}
@@ -617,7 +846,7 @@ function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProj
   const syncLabel = sheetStateLabel(sheetMirror);
   const synced = syncLabel === "Synced";
   const needsAttention = syncLabel === "Needs attention";
-  return <><PageTitle eyebrow="Client directory" title="Clients" text="Keep each client’s contacts, account documents, and independent projects together." action={<div className="title-actions"><button className="soft-button" onClick={onNewProject} disabled={clients.length === 0}><BriefcaseBusiness size={16} /> New project</button><button className="primary-button" onClick={onAdd}><Plus size={17} /> Add client</button></div>} />
+  return <><PageTitle eyebrow="Client directory" title="Clients" text="Keep each client’s contacts, account documents, and independent projects together." state="Working" action={<div className="title-actions"><button className="soft-button" onClick={onNewProject} disabled={clients.length === 0}><BriefcaseBusiness size={16} /> New project</button><button className="primary-button" onClick={onAdd}><Plus size={17} /> Add client</button></div>} />
     <section className="client-directory-banner"><div className="directory-badge"><FolderTree size={20} /></div><div><strong>Client records are managed here and mirrored to Google Sheets</strong><span>{sheetMirror?.reason ?? "The Client Directory preserves account notes, while the Project Register is generated from the app."}</span></div><div className="directory-sync-actions"><span className={`directory-status ${needsAttention ? "needs-attention" : ""}`}>{synced ? <CircleCheckBig size={14} /> : <Clock3 size={14} />}{syncLabel}</span><button className="soft-button" onClick={() => void onSyncGoogleSheet()} disabled={syncingSheet}>{syncingSheet ? "Syncing…" : "Sync directory"}</button></div></section>
     <div className="client-directory panel"><div className="client-table-head"><span>Client</span><span>Primary contact</span><span>Independent projects</span><span /></div>{clients.map((client) => { const projectCount = projectCounts.get(client.id) ?? 0; return <button className="client-table-row" key={client.id} onClick={() => onClient(client)}><div className="client-identity"><Avatar initials={client.initials} color={client.color} /><span><strong>{client.name}</strong><small>{client.code} · {client.industry}</small></span></div><span><strong>{client.contact}</strong><small>{client.email || "Email to add"}</small></span><span className="client-project-count"><b>{projectCount}</b><small>{projectCount === 1 ? "project" : "projects"}{projectCount > 1 ? " · independently managed" : ""}</small></span><ChevronRight size={17} /></button>})}{clients.length === 0 && state === "ready" ? <div className="empty-table">No clients yet. Add the first client to create the live directory.</div> : null}</div>
   </>;
@@ -630,14 +859,14 @@ function ProjectsView({ projects, state, onProject, onNewProject }: { projects: 
     return filter === "Active" ? !terminalProjectStatuses.has(status) : status === filter.toLowerCase();
   });
   const filterCount = (stage: string) => stage === "Active" ? projects.filter(isActiveProject).length : projects.filter((project) => project.status.toLowerCase() === stage.toLowerCase()).length;
-  return <><PageTitle eyebrow="Project delivery" title="Projects" text="Track every project separately, including repeat work for the same client." action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
+  return <><PageTitle eyebrow="Project delivery" title="Projects" text="Track every project separately, including repeat work for the same client." state="Working" action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
     <div className="filterbar"><div className="tabs" aria-label="Project status filter">{["Active", "Completed", "Cancelled", "Archived"].map((stage) => <button className={filter === stage ? "active" : ""} aria-pressed={filter === stage} key={stage} onClick={() => setFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
-    <div className="projects-table panel"><div className="projects-table-head"><span>Project</span><span>Status</span><span>Dates</span><span>Value</span><span /></div>{filteredProjects.map((p) => <button className="projects-table-row" key={p.id} onClick={() => onProject(p)}><div><Avatar initials={recordInitials(p.client)} color={p.accent} /><span><strong>{p.name}</strong><small>{p.number} · {p.client}</small></span></div><Status text={p.status} /><span><strong>{p.date}</strong><small><MapPin size={12} />{p.site}</small></span><strong>{p.value}</strong><ChevronRight size={17} /></button>)}{!filteredProjects.length && <div className="empty-table">{state === "ready" ? filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</div>}</div>
+    <div className="projects-table panel"><div className="projects-table-head"><span>Project</span><span>Status</span><span>Dates</span><span>Value</span><span /></div>{filteredProjects.map((p) => <button className="projects-table-row" key={p.id} onClick={() => onProject(p)}><div className="project-row-identity"><Avatar initials={recordInitials(p.client)} color={p.accent} /><span><strong>{p.name}</strong><small>{p.number} · {p.client}</small></span></div><span className="project-row-status"><Status text={p.status} /></span><span className="project-row-details"><strong>{p.date}</strong><small><MapPin size={12} />{p.site}</small></span><strong className="project-row-value"><span>Estimated value</span>{p.value}</strong><ChevronRight size={17} aria-hidden="true" /></button>)}{!filteredProjects.length && <div className="empty-table">{state === "ready" ? filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</div>}</div>
   </>;
 }
 
 function ScheduleView({ dashboard, onSettings }: { dashboard: DashboardSummary | null; onSettings: () => void }) {
-  return <><PageTitle eyebrow="Field operations" title="Schedule & crews" text="Scheduling setup is not complete. Worker, crew, shift, and acknowledgement records still need to be built." action={<button className="soft-button" onClick={onSettings}><Settings size={16} /> Workflow & notification settings</button>} />
+  return <><PageTitle eyebrow="Field operations" title="Schedule & crews" text="Scheduling setup is not complete. Worker, crew, shift, and acknowledgement records still need to be built." state="Planned" action={<button className="soft-button" onClick={onSettings}><Settings size={16} /> Workflow & notification settings</button>} />
     <section className="panel empty-tab"><div><CalendarDays size={27} /></div><h3>Scheduling is not available yet</h3><p>{dashboard?.readiness.scheduleReason ?? "No shifts, conflicts, or assignments are shown until workers, crews, shifts, and assignments have been saved."}</p></section>
     <section className="client-directory-banner"><div className="directory-badge"><ListTodo size={20} /></div><div><strong>Next scheduling milestone</strong><span>Create workers and crews, save project shifts as drafts, detect conflicts, then publish assignments with acknowledgement links.</span></div></section>
   </>;
@@ -696,30 +925,26 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
   const [replySaving, setReplySaving] = useState(false);
   const [replySignature, setReplySignature] = useState("");
 
-  async function checkGmailConnection() {
-    setChecking(true);
-    try {
-      const response = await fetch("/api/v1/google-workspace");
-      if (!response.ok) throw new Error("Google Workspace status could not be checked.");
-      const data = await response.json() as { workspace?: GmailWorkspaceStatus };
+  function checkGmailConnection(force = false) {
+    const request = cachedGetJson<{ workspace?: GmailWorkspaceStatus }>("/api/v1/google-workspace", { force });
+    void Promise.resolve().then(() => setChecking(true));
+    return request.then((data) => {
       setWorkspace(data.workspace ?? null);
       setError(null);
-    } catch (connectionError) {
+    }).catch((connectionError) => {
       setWorkspace(null);
       setError(connectionError instanceof Error ? connectionError.message : "Google Workspace status could not be checked.");
-    } finally {
+    }).finally(() => {
       setChecking(false);
-    }
+    });
   }
 
   useEffect(() => {
-    const check = window.setTimeout(() => { void checkGmailConnection(); }, 0);
-    return () => window.clearTimeout(check);
+    void checkGmailConnection();
   }, []);
 
   useEffect(() => {
-    void fetch("/api/v1/settings/me")
-      .then((response) => response.ok ? response.json() : null)
+    void cachedGetJson<{ preferences?: { replySignature?: unknown } }>("/api/v1/settings/me")
       .then((data) => setReplySignature(typeof data?.preferences?.replySignature === "string" ? data.preferences.replySignature.slice(0, 2_000) : ""))
       .catch(() => undefined);
   }, []);
@@ -741,7 +966,7 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
     } catch (loadError) {
       setMessages([]);
       setError(loadError instanceof Error ? loadError.message : "Your Gmail messages could not be loaded.");
-      await checkGmailConnection();
+      await checkGmailConnection(true);
     } finally {
       setLoading(false);
     }
@@ -848,8 +1073,8 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
 
   const connectionText = workspace?.simulation ? "Local Workspace simulation is ready" : gmailReady ? `Connected Workspace Gmail: ${workspace?.connectionAccount ?? "company mailbox"}` : workspace?.requiresReauthorization ? "Google Workspace needs to be reconnected to approve Gmail access." : "Connect the company Google Workspace account to load messages.";
   return <>
-    <PageTitle eyebrow="Gmail intake" title="Gmail project inbox" text="Search the company Gmail mailbox—or safe simulated messages—then review and copy each message to one independent project." action={<div className="title-actions"><button className="soft-button" onClick={onRules}><ListFilter size={15} /> Inbox & file rules</button>{gmailReady ? <button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>{loading ? "Loading…" : <><RefreshCw size={15} /> Refresh inbox</>}</button> : <button className="primary-button" onClick={onGoogleSetup}><Building2 size={15} /> Google setup</button>}</div>} />
-    <section className={`inbox-connection ${gmailReady ? "ready" : ""}`}><Mail size={18} /><div><strong>{gmailReady ? connectionText : "Workspace Gmail connection required"}</strong><span>{workspace?.simulation ? "Sample messages only. No Google account is connected and nothing is sent to Google." : gmailReady ? "Messages load only after your direct action; filing remains review-first and keeps Inbox." : connectionText}</span></div><button className="soft-button" onClick={() => void checkGmailConnection()} disabled={checking}>{checking ? "Checking…" : "Check connection"}</button></section>
+    <PageTitle eyebrow="Gmail intake" title="Gmail project inbox" text="Search the company Gmail mailbox—or safe simulated messages—then review and copy each message to one independent project." state={gmailReady ? "Pilot" : "Setup required"} action={<div className="title-actions"><button className="soft-button" onClick={onRules}><ListFilter size={15} /> Inbox & file rules</button>{gmailReady ? <button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>{loading ? "Loading…" : <><RefreshCw size={15} /> Refresh inbox</>}</button> : <button className="primary-button" onClick={onGoogleSetup}><Building2 size={15} /> Google setup</button>}</div>} />
+    <section className={`inbox-connection ${gmailReady ? "ready" : ""}`}><Mail size={18} /><div><strong>{gmailReady ? connectionText : "Workspace Gmail connection required"}</strong><span>{workspace?.simulation ? "Sample messages only. No Google account is connected and nothing is sent to Google." : gmailReady ? "Messages load only after your direct action; filing remains review-first and keeps Inbox." : connectionText}</span></div><button className="soft-button" onClick={() => void checkGmailConnection(true)} disabled={checking}>{checking ? "Checking…" : "Check connection"}</button></section>
     <section className="inbox-safety"><ShieldCheck size={18} /><div><strong>Suggestions only—nothing is filed automatically</strong><span>{rules.filter((rule) => rule.enabled).length} enabled rules can suggest a destination. Select the exact project and approve the copy before anything is saved.</span></div><button onClick={onRules}>Manage rules</button></section>
     {error && <p className="workspace-missing">{error}</p>}
     <div className="inbox-layout">
@@ -892,7 +1117,7 @@ function AssistantView({ projects }: { projects: Project[] }) {
       setLoading(false);
     }
   }
-  return <><PageTitle eyebrow="Project-record assistant" title="Ask FCI Assistant" text="Ask about saved projects, clients, contacts, activity, approved email archives, and meeting notes. Every answer stays within the selected project." />
+  return <><PageTitle eyebrow="Project-record assistant" title="Ask FCI Assistant" text="Ask about saved projects, clients, contacts, activity, approved email archives, and meeting notes. Every answer stays within the selected project." state="Pilot" />
     <div className="assistant-layout"><section className="assistant-main panel"><div className="assistant-hero"><div className="ai-orb"><Bot size={29} /></div><h2>What would you like to know?</h2><p>Choose one project so every answer has a clear, reviewable evidence boundary.</p></div>{!projects.length && <div className="assistant-blocker"><CircleAlert size={18} /><div><strong>Create a project first</strong><span>The assistant answers project-specific questions and needs a project record before it can search evidence.</span></div></div>}<div className="prompt-chips">{["What facts are saved for this project?", "Summarize the current project record", "What evidence is still missing?"].map((q) => <button key={q} onClick={() => void ask(q)} disabled={loading || !activeProjectId}>{q}<ChevronRight size={14} /></button>)}</div>{answer && <article className="ai-answer" aria-live="polite"><div><Sparkles size={18} /><strong>{answer.mode === "ai-grounded" ? "AI-grounded answer" : "Project-record summary"}</strong><span className="assistant-mode">{answer.mode === "ai-grounded" ? "OpenAI enabled" : "Records-only mode"}</span></div><p>{answer.answer}</p>{answer.missingEvidence && <p className="assistant-missing"><CircleAlert size={14} /> {answer.missingEvidence}</p>}<h4>Sources</h4>{answer.citations.length ? answer.citations.map((citation, index) => <button key={citation.id} onClick={() => setSourceDetail(citation)}><FileText size={14} /><span>[{index + 1}] {citation.label}</span><ChevronRight size={14} /></button>) : <p className="source-empty">No verified sources were returned for this answer.</p>}</article>}<form className="ask-box" onSubmit={(event) => { event.preventDefault(); void ask(); }}><select value={activeProjectId} onChange={(event) => { setProjectId(event.target.value); setAnswer(null); }} aria-label="Project context" disabled={!projects.length || loading}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name}</option>)}</select><div><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about the selected project record…" aria-label="Ask FCI Assistant" maxLength={2000} disabled={!projects.length || loading} /><button disabled={loading || !question.trim() || !activeProjectId} aria-label="Send question">{loading ? <span className="spinner" /> : <Send size={18} />}</button></div><small><Sparkles size={12} /> Every answer is read-only and cites only server-selected project evidence.</small></form></section><aside className="panel recent-questions"><h3>Suggested questions</h3>{["What is the current project status?", "Who is the primary contact?", "How many email archives are linked?", "What evidence has not been captured yet?"].map((q) => <button key={q} onClick={() => void ask(q)} disabled={loading || !activeProjectId}><MessageSquareText size={15} /><span>{q}<small>Selected project only</small></span></button>)}<div className="privacy-note"><CheckCircle2 size={17} /><p><strong>Office-record scope</strong><br />This first version uses the operational records available to approved office users. Project-specific permissions are the next access-control layer.</p></div></aside></div>
     {sourceDetail && <SourceDetailModal citation={sourceDetail} onClose={() => setSourceDetail(null)} />}
   </>;
@@ -908,7 +1133,7 @@ function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Le
   const maximumProjectCount = Math.max(1, ...projectStatuses.map((item) => item.count));
   const metrics = dashboard?.metrics;
   return <>
-    <PageTitle eyebrow="Business performance" title="Reports" text="Current totals from saved leads, clients, projects, and meeting notes." />
+    <PageTitle eyebrow="Business performance" title="Reports" text="Current totals from saved leads, clients, projects, and meeting notes." state="Pilot" />
     <section className="metrics-grid"><Metric label="Pipeline value" value={state === "ready" ? money(metrics?.estimatedPipelineValue ?? 0) : "—"} note={state === "ready" ? `${metrics?.activeLeads ?? activeLeads.length} active leads` : "Loading current totals"} trend="Current" icon={Zap} color="orange" /><Metric label="Active projects" value={state === "ready" ? String(metrics?.activeProjects ?? projects.filter(isActiveProject).length) : "—"} note={state === "ready" ? `${projects.length} project records` : "Loading current totals"} trend="Current" icon={BriefcaseBusiness} color="green" /><Metric label="Clients" value={state === "ready" ? String(metrics?.clientCount ?? clients.length) : "—"} note={state === "ready" ? "Client accounts" : "Loading current totals"} trend="Current" icon={Users} color="blue" /><Metric label="Project meetings" value={state === "ready" ? String(metrics?.meetingCount ?? 0) : "—"} note={state === "ready" ? "Meeting notes saved" : "Loading current totals"} trend="Current" icon={MessageSquareText} color="violet" /></section>
     <div className="reports-grid">
       <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" />{activeLeads.length > 0 ? <div className="bar-chart">{stageValues.map((item) => <div key={item.stage}><span>{item.stage}</span><div aria-label={`${item.stage}: ${money(item.value)}`}><i style={{ width: `${Math.round((item.value / maximumStageValue) * 100)}%` }} /></div><strong>{money(item.value)}</strong></div>)}</div> : state === "ready" ? <div className="empty-table">No active leads are available for this report.</div> : null}</section>
@@ -920,7 +1145,7 @@ function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Le
 
 function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
   const options = ["My account", "Google Workspace", "Calendar & appointments", "Inbox & file rules", "Client Directory", "Workflow & notifications", "Data & security", "Testing & launch"];
-  return <><PageTitle eyebrow="Control center" title="Settings" text="Keep account preferences, one Google Workspace connection, inbox rules, calendar defaults, and safeguards in one simple place." />
+  return <><PageTitle eyebrow="Control center" title="Settings" text="Keep account preferences, one Google Workspace connection, inbox rules, calendar defaults, and safeguards in one simple place." state="Pilot" />
     <div className="settings-layout"><aside className="settings-nav panel">{options.map((option) => <button className={section === option ? "active" : ""} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
       {section === "My account" && <MyAccountPanel notify={notify} userName={userName} userEmail={userEmail} onGoogleSetup={onGoogleSetup} onTimezoneChange={onTimezoneChange} />}
       {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
@@ -971,8 +1196,8 @@ function MyAccountPanel({ notify, userName, userEmail, onGoogleSetup, onTimezone
   useEffect(() => {
     let active = true;
     void Promise.all([
-      fetch("/api/v1/settings/me").then((response) => response.ok ? response.json() : null),
-      fetch("/api/v1/google-workspace").then((response) => response.ok ? response.json() : null),
+      cachedGetJson<{ preferences?: UserAccountPreferences }>("/api/v1/settings/me").catch(() => null),
+      cachedGetJson<{ workspace?: { connectionAccount?: unknown } }>("/api/v1/google-workspace").catch(() => null),
     ]).then(([preferenceData, googleData]) => {
       if (!active) return;
       if (preferenceData?.preferences) {
@@ -991,6 +1216,7 @@ function MyAccountPanel({ notify, userName, userEmail, onGoogleSetup, onTimezone
       const response = await fetch("/api/v1/settings/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(preferences) });
       const data = await response.json().catch(() => ({})) as { preferences?: UserAccountPreferences; error?: string };
       if (!response.ok || !data.preferences) throw new Error(data.error ?? "Your account preferences could not be saved.");
+      invalidateCachedGet("/api/v1/settings/me");
       setPreferences({ ...defaultUserAccountPreferences, ...data.preferences });
       onTimezoneChange(data.preferences.displayTimezone);
       notify("Your preferences are saved to your signed-in FCI account");
@@ -1009,7 +1235,7 @@ function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calend
   const [calendarAccount, setCalendarAccount] = useState<string | null>(null);
   const [calendarConnected, setCalendarConnected] = useState(false);
   useEffect(() => {
-    void Promise.all([fetch("/api/v1/settings/workspace").then((response) => response.ok ? response.json() : null), fetch("/api/v1/google-workspace").then((response) => response.ok ? response.json() : null)]).then(([settingsData, googleData]) => {
+    void Promise.all([fetch("/api/v1/settings/workspace").then((response) => response.ok ? response.json() : null), cachedGetJson<{ workspace?: { connectionAccount?: unknown; calendarConnected?: boolean; calendarEnabled?: boolean; connectionStatus?: string } }>("/api/v1/google-workspace").catch(() => null)]).then(([settingsData, googleData]) => {
       if (settingsData?.settings) setSettings({ ...defaultWorkspacePreferences, ...settingsData.settings });
       setCalendarAccount(typeof googleData?.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
       setCalendarConnected(googleData?.workspace?.calendarConnected === true && googleData?.workspace?.calendarEnabled === true && googleData?.workspace?.connectionStatus === "connected");
@@ -1165,12 +1391,10 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   const [filingSubmitting, setFilingSubmitting] = useState(false);
   const readinessChecked = useRef(false);
 
-  const checkSetup = useCallback(async () => {
+  const checkSetup = useCallback(async (force = false) => {
     setChecking(true);
     try {
-      const response = await fetch("/api/v1/google-workspace");
-      if (!response.ok) throw new Error("Workspace readiness check failed");
-      const data = await response.json() as {
+      const data = await cachedGetJson<{
         credentialsPresent?: boolean;
         missing?: string[];
         workspace?: {
@@ -1195,7 +1419,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
           enabledServices?: string[];
           broadScopeAcknowledged?: boolean;
         };
-      };
+      }>("/api/v1/google-workspace", { force });
       setMissing(data.missing ?? []);
       setWorkspace(data.workspace ?? null);
       setStatus(data.credentialsPresent ? "credentials" : "missing");
@@ -1211,8 +1435,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   useEffect(() => {
     if (readinessChecked.current) return;
     readinessChecked.current = true;
-    const check = window.setTimeout(() => { void checkSetup(); }, 0);
-    return () => window.clearTimeout(check);
+    void checkSetup();
   }, [checkSetup]);
 
   useEffect(() => {
@@ -1243,7 +1466,8 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       const data = await response.json() as { verified?: boolean; error?: string };
       if (!response.ok || !data.verified) throw new Error(data.error ?? "The Drive workspace could not be verified.");
       notify("The active Drive workspace was verified. You can now enable project-folder testing when ready.");
-      await checkSetup();
+      invalidateCachedGet("/api/v1/google-workspace");
+      await checkSetup(true);
     } catch (error) {
       notify(error instanceof Error ? error.message : "The Drive workspace could not be verified.");
     } finally {
@@ -1258,7 +1482,8 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       const data = await response.json() as { disconnected?: boolean; error?: string };
       if (!response.ok || !data.disconnected) throw new Error(data.error ?? "The Google connection could not be removed.");
       notify("The active Google connection was removed from FCI Operations.");
-      await checkSetup();
+      invalidateCachedGet("/api/v1/google-workspace");
+      await checkSetup(true);
     } catch (error) {
       notify(error instanceof Error ? error.message : "The Google connection could not be removed.");
     } finally {
@@ -1406,7 +1631,8 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       setCalendarEvents([]);
       setGmailLabelsReady(true);
       notify(`Workspace simulation reset with ${data.messages} sample messages and ${data.events} calendar events.`);
-      await checkSetup();
+      invalidateCachedGet("/api/v1/google-workspace");
+      await checkSetup(true);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Workspace simulation could not be reset.");
     } finally {
@@ -1441,7 +1667,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   return <section className="panel workspace-settings">
     <div className="settings-heading">
       <div><p className="eyebrow">Company integration</p><h2>Google Workspace</h2><p>Use one company Workspace connection in live operation. Until that tenant exists, local simulation keeps every prototype workflow testable without Google access.</p></div>
-      <button className="primary-button" onClick={checkSetup} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
+      <button className="primary-button" onClick={() => void checkSetup(true)} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
     </div>
     <div className={`workspace-mode-card ${simulation ? "simulation" : "live"}`}>
       {simulation ? <Zap size={18} /> : <Building2 size={18} />}
@@ -1529,11 +1755,11 @@ function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client
   return <AccessibleOverlay ariaLabel="Add a client" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Client Directory</p><h2>Add a client</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client business name<input data-overlay-initial-focus name="name" required placeholder="Business name" /></label><div className="form-row"><label>Primary contact<input name="contact" required placeholder="Full name" /></label><label>Work email<input name="email" type="email" required placeholder="name@company.com" /></label></div><div className="form-row"><label>Industry<select name="industry"><option>General contractor</option><option>Healthcare</option><option>Retail</option><option>Hospitality</option><option>Property management</option><option>Other commercial</option></select></label><label>Client status<select name="status"><option>Active</option><option>Prospect</option><option>Inactive</option></select></label></div><p className="form-help"><FolderTree size={14} /> The app saves the client first, then syncs the Client Directory when Google Sheets is connected. The account folder is created with the first project workspace.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add client"}</button></footer></form></AccessibleOverlay>;
 }
 
-function NewProjectModal({ clients, initialClientId, onClose, onSave }: { clients: Client[]; initialClientId: string | null; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
+function NewProjectModal({ clients, initialClientId, managerId, managerLabel, onClose, onSave }: { clients: Client[]; initialClientId: string | null; managerId: string; managerLabel: string; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: form.get("value") ? money(Number(form.get("value"))) : "TBD", site: String(form.get("site")), lead: String(form.get("manager")), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: form.get("value") ? money(Number(form.get("value"))) : "TBD", site: String(form.get("site")), managerId, lead: projectManagerLabel(managerId, managerId, managerLabel), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
   const selectedClientId = initialClientId && clients.some((client) => client.id === initialClientId) ? initialClientId : clients[0]?.id ?? "";
-  return <AccessibleOverlay ariaLabel="Create a project" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client<select data-overlay-initial-focus name="clientId" required defaultValue={selectedClientId} disabled={clients.length === 0}>{clients.length === 0 && <option value="">Create a client first</option>}{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="Project name" /></label><div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><label>Project manager<input name="manager" required placeholder="Assigned manager" /></label></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value<input name="value" type="number" min="0" placeholder="Estimated amount" /></label></div><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || clients.length === 0}>{saving ? "Creating…" : clients.length === 0 ? "Add a client first" : "Create project"}</button></footer></form></AccessibleOverlay>;
+  return <AccessibleOverlay ariaLabel="Create a project" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client<select data-overlay-initial-focus name="clientId" required defaultValue={selectedClientId} disabled={clients.length === 0}>{clients.length === 0 && <option value="">Create a client first</option>}{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="Project name" /></label><div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><div className="assigned-manager-field" aria-label={`Project manager: ${managerLabel}, signed-in account`}><span>Project manager</span><strong>{managerLabel}</strong><small>{managerId} · signed-in account</small></div></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value<input name="value" type="number" min="0" placeholder="Estimated amount" /></label></div><p className="form-help"><ShieldCheck size={14} /> The project is assigned to your authorized signed-in account. An administrator can correct an unassigned legacy project from its project drawer.</p><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || clients.length === 0}>{saving ? "Creating…" : clients.length === 0 ? "Add a client first" : "Create project"}</button></footer></form></AccessibleOverlay>;
 }
 
 function RuleModal({ onClose, onSave }: { onClose: () => void; onSave: (rule: FilingRuleDraft) => Promise<void> }) {
@@ -1542,9 +1768,11 @@ function RuleModal({ onClose, onSave }: { onClose: () => void; onSave: (rule: Fi
   return <AccessibleOverlay ariaLabel="Add an email filing rule" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Gmail intake</p><h2>Add an email filing rule</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Rule name<input data-overlay-initial-focus name="name" required placeholder="e.g. Estimator bid invitations" /></label><div className="form-row"><label>Priority<input name="priority" type="number" min="1" defaultValue="10" required /></label><label>Action<select name="action"><option value="suggest">Suggest a project</option><option value="review">Send to review</option><option value="ignore">Ignore</option></select></label></div><label>When this matches<textarea name="matchSummary" required placeholder="Example: sender is estimator@builder.com and subject contains BID" /></label><label>Default Drive destination<input name="targetCategory" required defaultValue="05_Correspondence / Email Archive" /></label><p className="form-help"><ShieldCheck size={14} /> New rules always require review before Gmail labels, email archives, or attachments are changed.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add rule"}</button></footer></form></AccessibleOverlay>;
 }
 
-function ProjectDrawer({ project, onClose, notify, onProvisionDrive }: { project: Project; onClose: () => void; notify: (s: string) => void; onProvisionDrive: (project: Project) => Promise<void> }) {
-  const [tab, setTab] = useState("Overview");
+function ProjectDrawer({ project, onClose, notify, onProvisionDrive, onAssignToMe, canAssignManager, currentUserEmail, returnFocusRef }: { project: Project; onClose: () => void; notify: (s: string) => void; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; canAssignManager: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
+  const [tab, setTab] = useState<"Overview" | "Meetings">("Overview");
   const [provisioning, setProvisioning] = useState(false);
+  const [assigningManager, setAssigningManager] = useState(false);
+  const busy = provisioning || assigningManager;
 
   async function handleDrive() {
     if (project.driveUrl) {
@@ -1556,20 +1784,29 @@ function ProjectDrawer({ project, onClose, notify, onProvisionDrive }: { project
     setProvisioning(false);
   }
 
-  return <AccessibleOverlay variant="drawer" ariaLabel={`${project.number} ${project.name}`} contentClassName="project-drawer" onClose={onClose} busy={provisioning}>
-      <header><button data-overlay-initial-focus onClick={onClose} aria-label="Close project" disabled={provisioning}><X size={20} /></button><Status text={project.status} /><span>{project.number}</span></header>
+  async function handleAssignToMe() {
+    setAssigningManager(true);
+    try {
+      await onAssignToMe(project);
+    } finally {
+      setAssigningManager(false);
+    }
+  }
+
+  return <AccessibleOverlay variant="drawer" ariaLabel={`${project.number} ${project.name}`} contentClassName="project-drawer" onClose={onClose} busy={busy} returnFocusRef={returnFocusRef}>
+      <header><button data-overlay-initial-focus onClick={onClose} aria-label="Close project" disabled={busy}><X size={20} /></button><Status text={project.status} /><span>{project.number}</span></header>
       <div className="drawer-title"><p>{project.client}</p><h2>{project.name}</h2><div><span><MapPin size={14} />{project.site}</span><span><CalendarDays size={14} />{project.date}</span></div></div>
-      <nav>{["Overview", "Meetings", "Tasks", "Files", "Schedule", "Activity"].map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
+      <nav aria-label="Available project views">{(["Overview", "Meetings"] as const).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
       <div className="drawer-body">
         {tab === "Overview" ? <>
           <section className="project-health"><div><span>Delivery progress</span><strong>Not tracked yet</strong></div><p><CheckCircle2 size={15} /> This live project is managed independently from other client work</p></section>
-          <div className="drawer-stats"><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Project manager</span><strong>{project.lead}</strong></div><div><span>Tasks</span><strong>Not connected</strong></div><div><span>Files</span><strong>{project.driveFolderId ? "Drive ready" : "Folder pending"}</strong></div></div>
-          <section className="client-account-notes"><h3>Live project workspace</h3><p>Meetings and Drive folder links are durable now. Tasks, dated shifts, file indexing, and project activity feeds will appear after their storage and APIs are implemented.</p></section>
-        </> : tab === "Meetings" ? <ProjectMeetings project={project} notify={notify} /> : <EmptyProjectTab tab={tab} />}
+          <div className="drawer-stats"><div><span>Estimated value</span><strong>{project.value}</strong></div><div className="project-manager-stat"><span>Project manager</span><strong>{project.lead}</strong>{project.managerId === currentUserEmail ? <small>Assigned to your signed-in account</small> : canAssignManager ? <button className="manager-assignment-button" onClick={() => void handleAssignToMe()} disabled={assigningManager}>{assigningManager ? "Assigning…" : "Assign to me"}</button> : project.managerId ? <small>Authorized office account</small> : <small>No authorized manager is assigned</small>}</div><div><span>Meetings</span><strong>Working</strong></div><div><span>Drive folder</span><strong>{project.driveFolderId ? "Ready" : "Setup required"}</strong></div></div>
+          <section className="project-capability-plan"><header><div><h3>Planned project capabilities</h3><p>These items are informational and are not available as controls yet.</p></div><FeatureStateBadge state="Planned" /></header><ul><li>Durable tasks and follow-ups</li><li>Indexed project files beyond the working Drive folder link</li><li>Crews, shifts, and field schedule</li><li>Project activity feed and outbound updates</li></ul></section>
+        </> : <ProjectMeetings project={project} notify={notify} />}
       </div>
       <footer>
-        <button className="soft-button" onClick={handleDrive} disabled={provisioning}><FolderOpen size={16} /> {provisioning ? "Creating folder…" : project.driveUrl ? "Open Drive folder" : "Create Drive folder"}</button>
-        <button className="primary-button" disabled title="Project updates are planned after durable Gmail draft support is implemented"><Mail size={16} /> Project updates planned</button>
+        <span className="planned-project-updates"><FeatureStateBadge state="Planned" /> Project updates</span>
+        <button className="soft-button" onClick={handleDrive} disabled={busy}><FolderOpen size={16} /> {provisioning ? "Creating folder…" : project.driveUrl ? "Open Drive folder" : "Create Drive folder"}</button>
       </footer>
   </AccessibleOverlay>;
 }
@@ -1699,16 +1936,10 @@ function MeetingModal({ project, onClose, onSaved }: { project: Project; onClose
   </form></AccessibleOverlay>;
 }
 
-function ClientDrawer({ client, projects, onClose, onNewProject, onProject }: { client: Client; projects: Project[]; onClose: () => void; onNewProject: () => void; onProject: (project: Project) => void }) { return <AccessibleOverlay variant="drawer" ariaLabel={`${client.name} client account`} contentClassName="project-drawer client-drawer" onClose={onClose}><header><button data-overlay-initial-focus onClick={onClose} aria-label="Close client"><X size={20} /></button><Status text={client.status} /><span>{client.code}</span></header><div className="drawer-title"><p>Client account</p><h2>{client.name}</h2><div><span><ContactRound size={14} />{client.contact}</span><span><Mail size={14} />{client.email || "Contact email pending"}</span></div></div><div className="client-drawer-body"><section className="client-account-card"><div className="directory-badge"><FolderTree size={19} /></div><div><strong>Client account folder</strong><span>{client.driveUrl ? "Google Drive folder ready" : "Google Drive folder not created yet"}</span></div></section><div className="client-summary-grid"><div><span>Industry</span><strong>{client.industry}</strong></div><div><span>Independent projects</span><strong>{projects.length}</strong></div></div><section className="client-project-section"><header><h3>Projects for this client</h3><button onClick={onNewProject}><Plus size={14} /> New project</button></header>{projects.map((project) => <button type="button" className="client-project-link" key={project.id} onClick={() => onProject(project)}><div><Status text={project.status} /><strong>{project.name}</strong><span>{project.number} · {project.site}</span></div><ChevronRight size={16} /></button>)}{!projects.length && <p className="empty-client-projects">No projects yet. Create the first independent project for this client.</p>}</section><section className="client-account-notes"><h3>Account-level documents</h3><p>Store reusable client documents here. Project-specific documents stay inside their own project folders.</p></section></div></AccessibleOverlay>; }
-
-function EmptyProjectTab({ tab }: { tab: string }) {
-  const Icon = tab === "Tasks" ? ListTodo : tab === "Files" ? FolderOpen : tab === "Schedule" ? CalendarDays : Activity;
-  const description = tab === "Files" ? "The Drive folder link is live, but indexed file records are not implemented yet." : tab === "Tasks" ? "Durable project tasks and follow-ups are not implemented yet." : tab === "Schedule" ? "Durable shifts, crews, and assignments are not implemented yet." : "The project activity feed is not implemented yet.";
-  return <div className="empty-tab"><div><Icon size={25} /></div><h3>{tab} not connected yet</h3><p>{description}</p></div>;
-}
+function ClientDrawer({ client, projects, onClose, onNewProject, onProject, returnFocusRef }: { client: Client; projects: Project[]; onClose: () => void; onNewProject: () => void; onProject: (project: Project) => void; returnFocusRef?: RefObject<HTMLElement | null> }) { return <AccessibleOverlay variant="drawer" ariaLabel={`${client.name} client account`} contentClassName="project-drawer client-drawer" onClose={onClose} returnFocusRef={returnFocusRef}><header><button data-overlay-initial-focus onClick={onClose} aria-label="Close client"><X size={20} /></button><Status text={client.status} /><span>{client.code}</span></header><div className="drawer-title"><p>Client account</p><h2>{client.name}</h2><div><span><ContactRound size={14} />{client.contact}</span><span><Mail size={14} />{client.email || "Contact email pending"}</span></div></div><div className="client-drawer-body"><section className="client-account-card"><div className="directory-badge"><FolderTree size={19} /></div><div><strong>Client account folder</strong><span>{client.driveUrl ? "Google Drive folder ready" : "Google Drive folder not created yet"}</span></div></section><div className="client-summary-grid"><div><span>Industry</span><strong>{client.industry}</strong></div><div><span>Independent projects</span><strong>{projects.length}</strong></div></div><section className="client-project-section"><header><h3>Projects for this client</h3><button onClick={onNewProject}><Plus size={14} /> New project</button></header>{projects.map((project) => <button type="button" className="client-project-link" key={project.id} onClick={() => onProject(project)}><div><Status text={project.status} /><strong>{project.name}</strong><span>{project.number} · {project.site}</span></div><ChevronRight size={16} /></button>)}{!projects.length && <p className="empty-client-projects">No projects yet. Create the first independent project for this client.</p>}</section><section className="client-account-notes"><h3>Account-level documents</h3><p>Store reusable client documents here. Project-specific documents stay inside their own project folders.</p></section></div></AccessibleOverlay>; }
 
 function Metric({ label, value, note, trend, icon: Icon, color }: { label: string; value: string; note: string; trend: string; icon: typeof Zap; color: string }) { return <article className="metric-card"><div className={`metric-icon ${color}`}><Icon size={19} /></div><div className="metric-top"><span>{label}</span><small>{trend}</small></div><strong>{value}</strong><p>{note}</p></article> }
 function PanelHeader({ title, subtitle, action, onAction }: { title: string; subtitle?: string; action?: string; onAction?: () => void }) { return <header className="panel-header"><div><h2>{title}</h2>{subtitle && <span>{subtitle}</span>}</div>{action && <button onClick={onAction}>{action}<ChevronRight size={15} /></button>}</header> }
-function PageTitle({ eyebrow, title, text, action }: { eyebrow: string; title: string; text: string; action?: React.ReactNode }) { return <div className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p>{text}</p></div>{action}</div> }
+function PageTitle({ eyebrow, title, text, state, action }: { eyebrow: string; title: string; text: string; state?: FeatureState; action?: React.ReactNode }) { return <div className="page-heading"><div><div className="page-title-kicker"><p className="eyebrow">{eyebrow}</p>{state && <FeatureStateBadge state={state} />}</div><h1>{title}</h1><p>{text}</p></div>{action}</div> }
 function Avatar({ initials, color }: { initials: string; color: string }) { return <div className={`mini-avatar ${color}`}>{initials}</div> }
 function Status({ text }: { text: string }) { return <span className={`status status-${text.toLowerCase().replaceAll(" ", "-")}`}>{text}</span> }
