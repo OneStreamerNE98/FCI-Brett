@@ -15,7 +15,7 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(app, /floor-coverings-international-logo\.png/);
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
-  assert.match(app, /Connected inbox/);
+  assert.match(app, /Gmail project inbox/);
   assert.match(app, /Workspace Gmail/);
   assert.match(app, /Load messages/);
   assert.match(app, /Ask FCI Assistant/);
@@ -110,7 +110,7 @@ test("makes company shared calendars authoritative without a personal-calendar m
   const [app, settingsApi, guide] = await Promise.all([
     read("app/FloorOpsApp.tsx"), read("app/api/v1/settings/workspace/route.ts"), read("docs/google-workspace-organization.md"),
   ]);
-  assert.match(app, /Create two shared FCI calendars/);
+  assert.match(app, /Plan to create two shared FCI calendars/);
   assert.match(app, /Keep company work in two shared FCI Workspace calendars/);
   assert.match(app, /one for client appointments and one for field scheduling/);
   assert.match(app, /Gmail and Calendar are separate/);
