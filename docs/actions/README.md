@@ -13,6 +13,7 @@ This is the owner-facing setup dashboard for the Google Workspace pilot and the 
 | Hosted pilot connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
 | Staff Google login and roles | Codex/developer | Not implemented | Build on Cloud Run/Cloud SQL after identity policy is approved. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
+| Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 
 ## Actions by topic
 
@@ -22,6 +23,7 @@ This is the owner-facing setup dashboard for the Google Workspace pilot and the 
 4. [Hosted pilot configuration and connection](03-hosted-pilot-connection.md)
 5. [Staff Google login, roles, and permissions](04-staff-login-and-permissions.md)
 6. [Pilot and production acceptance](05-acceptance-checklist.md)
+7. [Codex-to-Codex coworker handoff](../codex-to-codex-handoff.md)
 
 ## Safety boundary
 

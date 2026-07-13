@@ -1,5 +1,7 @@
 # Moving this work into the Floor Coverings International Codex project
 
+For handing the repository from one person's Codex installation to a coworker's Codex installation, use [`codex-to-codex-handoff.md`](codex-to-codex-handoff.md). That guide covers GitHub access, cloning, adding the local Codex project, onboarding verification, branch workflow, prompts, and handback requirements.
+
 ## What “moving the task” means
 
 The application code and this Codex conversation are separate things:

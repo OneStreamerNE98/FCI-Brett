@@ -103,7 +103,7 @@ Keep one canonical development repository outside OneDrive. Use a private, busin
 - Preserve the current Google Workspace test integration and existing user data when continuing development.
 - Do not deploy a public version without owner approval.
 
-See [`docs/codex-project-handoff.md`](docs/codex-project-handoff.md) for the canonical repository recommendation and the complete Codex handoff prompt.
+See [`docs/codex-project-handoff.md`](docs/codex-project-handoff.md) for moving this work between local Codex projects. For coworker collaboration, use the complete [`Codex-to-Codex handoff guide`](docs/codex-to-codex-handoff.md), including GitHub access, cloning, project setup, onboarding prompts, branch workflow, and handback requirements.
 
 ## Workspace Auth Headers
 
