@@ -2,7 +2,7 @@
 
 Owner: Business owner
 
-Status: Waiting on owner
+Status: Partially complete — company domain recorded
 
 Secrets required in GitHub: None
 
@@ -10,9 +10,9 @@ Record only the following non-secret decisions in this file or a GitHub issue. L
 
 ## Required inputs
 
-- [ ] Company Google Workspace primary domain: `TBD`
+- [x] Company Google Workspace primary domain: `cherryhillfci.com`
 - [ ] Google Workspace super administrator contact: `TBD`
-- [ ] Proposed FCI Operations connection account: `operations@TBD`
+- [ ] Proposed FCI Operations connection account: `operations@cherryhillfci.com` — confirm or create
 - [ ] Initial application administrator Workspace email: `TBD`
 - [ ] Additional pilot users: `None — single-user pilot`
 - [ ] Final production hostname or custom domain: `TBD`

@@ -26,7 +26,7 @@ Keep the hosted site limited to one authorized tester and clearly marked test re
 
 ## Target operating model for about 20 employees
 
-Use explicit invitations even for people in the company Google Workspace domain. Maintain at least two trained Administrators so access and the Google connection do not depend on one person.
+Use explicit invitations even for people in the company Google Workspace domain, `cherryhillfci.com`. Maintain at least two trained Administrators so access and the Google connection do not depend on one person.
 
 | User type | Recommended application access | Recommended Google access |
 | --- | --- | --- |

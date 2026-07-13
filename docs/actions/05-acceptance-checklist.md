@@ -24,7 +24,7 @@ Use only a client and projects named `FCI TEST — DO NOT USE`.
 
 ## Production acceptance
 
-- [ ] Company Workspace domain and users are controlled by the business.
+- [ ] `cherryhillfci.com` and its Workspace users are controlled by the business.
 - [ ] Google Auth audience is Internal and API Controls trust is scoped.
 - [ ] Secrets exist only in encrypted hosted/Google secret storage.
 - [ ] Google Workspace employee login and signed-domain validation pass.

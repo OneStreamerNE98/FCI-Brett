@@ -78,7 +78,7 @@ See the [20-user product and architecture review](docs/20-user-product-and-archi
 
 Use only records named `FCI TEST — DO NOT USE` until the production acceptance checklist passes.
 
-1. Select a company-controlled Workspace connection account, ideally `operations@yourdomain.com`.
+1. Select a company-controlled Workspace connection account, ideally `operations@cherryhillfci.com`.
 2. Create the `FCI Operations` Shared Drive, `FCI Operations Directory` spreadsheet, `FCI • Client Appointments` calendar, and `FCI • Field Schedule` calendar.
 3. Create the company Google Cloud project, enable the required APIs, and configure an Internal OAuth application with the exact hosted callback URI.
 4. Store the OAuth secret and token-encryption key only in encrypted hosted secret settings. Never commit, email, document, or place them in Drive.

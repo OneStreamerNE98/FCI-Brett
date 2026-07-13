@@ -26,7 +26,7 @@ This is development work, not a Google Admin switch. Do not add a second user un
 ## Development actions
 
 - [ ] Create a separate Google Identity/OIDC login client using only `openid email profile`.
-- [ ] Verify the Google signature, issuer, audience, expiry, nonce/CSRF protection, `email_verified`, and signed `hd` company-domain claim on the server.
+- [ ] Verify the Google signature, issuer, audience, expiry, nonce/CSRF protection, `email_verified`, and signed `hd=cherryhillfci.com` claim on the server.
 - [ ] Use Google's immutable `sub` claim as the external identity key, not email.
 - [ ] Add durable users, sessions, roles, disabled status, and project memberships in Cloud SQL.
 - [ ] Add server-enforced capabilities for user administration, connector administration, Gmail filing, Calendar writes, Drive provisioning/sharing, exports, financial data, audit, and recovery.
@@ -44,7 +44,7 @@ This is development work, not a Google Admin switch. Do not add a second user un
 - [ ] Approved Office user
 - [ ] Project Manager assigned to a project
 - [ ] Project Manager removed from a project while signed in
-- [ ] Same-domain but uninvited user
+- [ ] Uninvited `cherryhillfci.com` user
 - [ ] Outside Workspace account
 - [ ] Personal Gmail account
 - [ ] Disabled user

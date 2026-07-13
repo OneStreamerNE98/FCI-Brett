@@ -6,11 +6,11 @@ Status: Not started
 
 Depends on: [Setup inputs](00-setup-inputs.md)
 
-Use the company Workspace tenant and proposed operations connection account from the setup inputs.
+Use the `cherryhillfci.com` Workspace tenant and proposed operations connection account from the setup inputs.
 
 ## Accounts and services
 
-- [ ] Confirm the company domain is verified and controlled by the business.
+- [ ] Confirm `cherryhillfci.com` is verified and controlled by the business in Google Admin.
 - [ ] Create or select the operations connection account.
 - [ ] Confirm Gmail, Calendar, Drive and Docs, and Sheets are enabled for its organizational unit.
 - [ ] Confirm the Workspace edition supports Shared Drives.
