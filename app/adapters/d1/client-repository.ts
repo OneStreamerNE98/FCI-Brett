@@ -1,16 +1,16 @@
 import type { ClientCreationIntent, ClientRepository } from "../../ports/client-repository";
-import type { PilotD1Database, PilotD1PreparedStatement } from "./pilot-database";
+import type { D1Database, D1PreparedStatement } from "./d1-database";
 
 function isDuplicateClientError(error: unknown) {
   const detail = error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : String(error);
   return /UNIQUE constraint failed: clients\.(?:name|client_code)/i.test(detail);
 }
 
-export function createPilotD1ClientRepository(database: PilotD1Database): ClientRepository {
+export function createD1ClientRepository(database: D1Database): ClientRepository {
   return {
     async create(intent: ClientCreationIntent) {
       const { client, activity, primaryContact } = intent;
-      const statements: PilotD1PreparedStatement[] = [
+      const statements: D1PreparedStatement[] = [
         database.prepare("INSERT INTO clients (id, client_code, name, status, industry, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM clients WHERE LOWER(name) = LOWER(?) LIMIT 1)")
           .bind(client.id, client.clientCode, client.name, client.status, client.industry, client.createdBy, client.createdAt, client.updatedAt, client.name),
         database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM clients WHERE id = ? AND client_code = ? AND name = ? AND created_by = ? AND created_at = ?)")

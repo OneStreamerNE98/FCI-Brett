@@ -9,7 +9,7 @@ export type FilingRuleDraft = {
   approvalRequired: boolean;
 };
 
-/** The small, explicit set of inbox matchers supported by the first prototype. */
+/** The small, explicit set of inbox matchers supported by the current development build. */
 export type FilingRuleMatcher = "exact-project-number" | "known-contact-one-project" | "multiple-project-client";
 
 export type InboxRuleMessage = {

@@ -38,7 +38,7 @@ test("has a clear page identity, meaningful live render, and healthy browser con
   const response = await page.goto("/");
 
   expect(response?.ok()).toBe(true);
-  await expect(page).toHaveTitle("Floor Coverings International | Commercial Operations");
+  await expect(page).toHaveTitle("FCI Operations | Development");
   await expect(page).toHaveURL("http://localhost:4173/");
   await expect(page.getByRole("img", { name: "Floor Coverings International" })).toBeVisible();
   await expect(page.getByRole("main")).toBeVisible();
@@ -111,13 +111,14 @@ test("global search supports the keyboard and returns focus after opening a proj
   await expect(search).toBeFocused();
 });
 
-test("feature labels distinguish working, pilot, setup-required, and planned experiences", async ({ page }) => {
+test("feature labels distinguish working, in-development, setup-required, and planned experiences", async ({ page }) => {
   await page.goto("/");
   await waitForLiveRecords(page);
 
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
-  await expect(navigation.getByRole("button", { name: "Overview · Pilot" })).toContainText("Pilot");
-  await expect(navigation.getByRole("button", { name: "Projects · Working" })).toContainText("Working");
+  await expect(page.getByRole("status", { name: "Development environment; test data only" })).toContainText("Development environment · Test data only");
+  await expect(navigation.getByRole("button", { name: "Overview · Working" })).toContainText("Working");
+  await expect(navigation.getByRole("button", { name: "Projects · In development" })).toContainText("In development");
 
   await page.getByRole("button", { name: "Scheduling setup" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Schedule & crews" })).toBeVisible();
@@ -125,7 +126,7 @@ test("feature labels distinguish working, pilot, setup-required, and planned exp
   await expect(page.locator(".page-heading .feature-state")).toHaveText("Planned");
   await expect(page.getByRole("button", { name: /publish|assign/i })).toHaveCount(0);
 
-  await navigation.getByRole("button", { name: "Projects · Working" }).click();
+  await navigation.getByRole("button", { name: "Projects · In development" }).click();
   const row = page.getByRole("button", { name: new RegExp(projectName) });
   await row.click();
   const drawer = page.getByRole("dialog", { name: new RegExp(projectNumber) });
@@ -142,7 +143,7 @@ test("390px project rows preserve schedule, site, and value metadata", async ({ 
   await waitForLiveRecords(page);
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Projects · Working" }).click();
+  await page.getByRole("button", { name: "Projects · In development" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
 
   const row = page.getByRole("button", { name: new RegExp(projectName) });

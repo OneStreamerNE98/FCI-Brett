@@ -1,6 +1,6 @@
 # Project meeting notes and Otter
 
-## What the prototype supports now
+## What the development environment supports now
 
 Every durable project has a **Meetings** tab. An office user can save:
 
@@ -29,7 +29,7 @@ Otter documents conversation sharing controls and revocable restricted links in 
 
 ### Option 1 — Manual and review-first (implemented)
 
-Best for the current prototype. It works with any Otter plan that can share or export a conversation, requires no additional secret, and forces the user to choose the exact project.
+Best for the current development environment. It works with any Otter plan that can share or export a conversation, requires no additional secret, and forces the user to choose the exact project.
 
 ### Option 2 — Zapier-assisted import
 

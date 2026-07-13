@@ -1,6 +1,6 @@
 import type { DirectoryMirror, DirectoryMirrorResult } from "../../ports/directory-mirror";
 
-export type PilotDirectorySync = (actorId: string) => Promise<unknown>;
+export type DirectorySync = (actorId: string) => Promise<unknown>;
 
 function record(value: unknown, label: string) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Directory mirror returned invalid ${label}`);
@@ -37,7 +37,7 @@ function publicError(value: unknown) {
   return { code: error.code, message: error.message };
 }
 
-function mapPilotResult(value: unknown): DirectoryMirrorResult {
+function mapDirectorySyncResult(value: unknown): DirectoryMirrorResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Directory mirror returned an invalid result");
   const result = value as Record<string, unknown>;
   if (typeof result.message !== "string") throw new Error("Directory mirror returned an invalid message");
@@ -51,10 +51,10 @@ function mapPilotResult(value: unknown): DirectoryMirrorResult {
   throw new Error("Directory mirror returned an unsupported status");
 }
 
-export function createPilotDirectoryMirror(syncDirectory: PilotDirectorySync): DirectoryMirror {
+export function createDirectoryMirror(syncDirectory: DirectorySync): DirectoryMirror {
   return {
     async requestSync(request) {
-      return mapPilotResult(await syncDirectory(request.actorId));
+      return mapDirectorySyncResult(await syncDirectory(request.actorId));
     },
   };
 }

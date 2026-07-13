@@ -2,7 +2,7 @@
 
 Commercial flooring operations software for client intake, independent project delivery, crew scheduling, and Google Workspace organization.
 
-## View the hosted pilot
+## View the development site
 
 Open the [FCI Operations ChatGPT website](https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/) to view the current hosted application. Access requires an authorized ChatGPT sign-in. Use only clearly marked test data until the production acceptance checklist in this README passes.
 
@@ -16,7 +16,7 @@ Open the [Google Workspace and product-readiness Task Checklists](docs/task-chec
 
 - Node.js `>=22.13.0`
 
-## Local prototype
+## Local development
 
 ```bash
 npm install
@@ -36,13 +36,13 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 - One protected company Google Workspace OAuth connection for Drive, Gmail, Calendar, and Sheets
 - Local Workspace simulation with sample mail, calendar events, folders, drafts, and Sheet sync state
 - Google Drive / Shared Drive and Google Sheet organizational blueprint
-- Gmail review queue, Calendar test controls, client/project activity, and AI assistant prototype; project scheduling remains planned
+- Gmail review queue, Calendar test controls, client/project activity, and an in-development AI assistant; project scheduling remains planned
 - Durable project meeting notes with Otter links, summaries, decisions, action items, transcript excerpts, and assistant evidence
 - D1-backed data-model and API foundation for clients, contacts, projects, meetings, rules, mail items, and workspace settings
 
 ## Current readiness
 
-The application is ready for a controlled, single-user pilot using clearly marked test data. It is not yet approved for real client data or a multi-user company rollout.
+The hosted application is the working, single-user development copy and uses clearly marked test data. It is not yet approved for real client data or a multi-user company rollout.
 
 The current build includes hosted authentication with an office allowlist, durable clients/leads/projects/meetings, review-first Gmail filing, Shared Drive project folders, a one-way Google Sheets mirror, Calendar test controls, and a records-based project assistant. Scheduling, messaging, full record editing, project tasks, closeout, production background workers, and permission-filtered document indexing are not complete.
 
@@ -50,13 +50,13 @@ Before real client data is stored, backup restoration, sensitive-action audit co
 
 ## Production architecture
 
-The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains a controlled pilot; production will use a small regional Google Cloud topology centered on Cloud Run, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Defer `pgvector` until permission-filtered document indexing is scheduled. Complete this migration before building scheduling, messaging, or AI document indexing.
+The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains the test-data development environment; production will use a small regional Google Cloud topology centered on Cloud Run, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Defer `pgvector` until permission-filtered document indexing is scheduled. Complete this migration before building scheduling, messaging, or AI document indexing.
 
 Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the migration boundary, cutover requirements, and consequences.
 
 ## Remaining launch decision
 
-A controlled one-user pilot may continue with the current allowlisted ChatGPT sign-in. Implement Google Workspace OpenID Connect login, application roles, and project permissions before admitting a second user. The Google Workspace data connection does not provide application login.
+The one-user development environment may continue with the current allowlisted ChatGPT sign-in. Implement Google Workspace OpenID Connect login, application roles, and project permissions before admitting a second user. The Google Workspace data connection does not provide application login.
 
 ## Prioritized next work
 
@@ -75,9 +75,9 @@ After that foundation is accepted, build appointment state management and Calend
 
 See the [20-user product and architecture review](docs/20-user-product-and-architecture-review.md) for the rollout verdict, architecture, access model, priority findings, and corrected delivery order. See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page UI audit.
 
-Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials. The completed [portable client and project creation slice](docs/portable-record-creation.md) documents the provider-neutral boundaries and pilot compatibility. The source-only [production PostgreSQL foundation](docs/production-postgresql-foundation.md) documents the first constrained core schema, checksum migration runner, test coverage, and work that still must happen before any Cloud SQL migration.
+Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials. The completed [portable client and project creation slice](docs/portable-record-creation.md) documents the provider-neutral boundaries and development-environment compatibility. The source-only [production PostgreSQL foundation](docs/production-postgresql-foundation.md) documents the first constrained core schema, checksum migration runner, test coverage, and work that still must happen before any Cloud SQL migration.
 
-## Google Workspace pilot rollout
+## Google Workspace development validation
 
 Use only records named `FCI TEST — DO NOT USE` until the production acceptance checklist passes.
 
@@ -88,7 +88,7 @@ Use only records named `FCI TEST — DO NOT USE` until the production acceptance
 5. Deploy the runtime configuration with Drive provisioning disabled.
 6. Connect the exact authorized Workspace account and verify Gmail, Drive, Calendar, and Sheets independently.
 7. Enable Drive provisioning only after Shared Drive verification succeeds, then create and inspect one test project folder.
-8. Run the complete pilot lifecycle: two projects for one test client, Sheets mirroring, reviewed Gmail copy and attachments, a reply draft, Calendar test hold, meeting evidence, assistant citations, and a rejected unauthorized login.
+8. Run the complete development validation lifecycle: two projects for one test client, Sheets mirroring, reviewed Gmail copy and attachments, a reply draft, Calendar test hold, meeting evidence, assistant citations, and a rejected unauthorized login.
 
 The application remains the system of record. The directory spreadsheet is a one-way mirror except for its intentionally spreadsheet-owned Account Notes field. Gmail messages are copied only after explicit review and remain in the Inbox; replies are drafts until a person intentionally sends them.
 

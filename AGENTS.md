@@ -16,9 +16,9 @@ Before changing code, read:
 
 ## Current product boundary
 
-- The Sites/Workers/D1/R2 deployment is a controlled, single-user pilot using test data only.
+- The Sites/Workers/D1/R2 deployment is the controlled, single-user development environment and uses test data only.
 - Production will use a small regional Cloud Run/Cloud SQL modular monolith, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Gmail Pub/Sub notifications, Calendar HTTPS webhooks, and Google Workspace OIDC. Add `pgvector` only when document indexing is scheduled.
-- Preserve the current pilot, Google Workspace test connector, and existing data unless the owner explicitly approves a migration or destructive change.
+- Preserve the current development deployment, Google Workspace test connector, and existing data unless the owner explicitly approves a migration or destructive change.
 - Do not add scheduling, messaging, or AI document indexing before the production platform and authorization foundation is accepted.
 - Do not admit a second user or store real client data until users, sessions, roles, project permissions, backup restoration, and audit controls pass acceptance.
 
@@ -45,7 +45,7 @@ npm.cmd run lint
 
 - Never commit `.env`, `.env.local`, OAuth JSON credentials, client secrets, encryption keys, API keys, access/refresh tokens, production exports, or local databases.
 - Use `.env.example` only for variable names and safe placeholders.
-- Use records named `FCI TEST — DO NOT USE` for pilot verification.
+- Use records named `FCI TEST — DO NOT USE` for development verification.
 - Keep employee login separate from the one company Google Workspace data connector.
 - Enforce authorization on the server and inside data queries; hidden UI controls are not authorization.
 - Treat Google `sub` as the stable external user identity and verify the signed Workspace `hd` claim for production login.

@@ -5,7 +5,7 @@ Decision date: July 12, 2026
 
 ## Decision
 
-The controlled pilot may continue on OpenAI Sites with Cloudflare Workers, D1, and R2. The production system will return to the approved Google Cloud architecture before scheduling, messaging, or AI document indexing is built. For the initial 20-person rollout, use one regional modular monolith rather than a microservice fleet:
+The controlled development environment may continue on OpenAI Sites with Cloudflare Workers, D1, and R2. The production system will return to the approved Google Cloud architecture before scheduling, messaging, or AI document indexing is built. For the initial 20-person rollout, use one regional modular monolith rather than a microservice fleet:
 
 - One regional Cloud Run service for the web application, API, and authenticated task/webhook handlers.
 - One Cloud SQL PostgreSQL database as the system of record, with connection pooling, constraints, transactions, backups, and point-in-time recovery.
@@ -17,11 +17,11 @@ The controlled pilot may continue on OpenAI Sites with Cloudflare Workers, D1, a
 - Google Workspace OIDC with explicit invitations, signed domain verification, roles, capabilities, and project permissions.
 - `pgvector` only when permission-filtered semantic document retrieval is scheduled; it is not required for the first production launch.
 
-Sites/D1/R2 is therefore a pilot environment, not the production data plane. Do not add real client data or expand the pilot to multiple staff until the production access, backup, audit, and restore controls pass acceptance.
+Sites/D1/R2 is therefore a development environment, not the production data plane. Do not add real client data or expand access to multiple staff until the production access, backup, audit, and restore controls pass acceptance.
 
-The pilot's D1 schema changes use the checked-in [D1 pilot deployment migrations](pilot-d1-schema-migrations.md). Sites applies that ordered sequence during controlled deployment, and normal API requests execute no schema DDL. This is deliberately separate from, and does not replace, the required PostgreSQL production migration and rollback system.
+The development D1 schema changes use the checked-in [D1 development deployment migrations](development-d1-schema-migrations.md). Sites applies that ordered sequence during controlled deployment, and normal API requests execute no schema DDL. This is deliberately separate from, and does not replace, the required PostgreSQL production migration and rollback system.
 
-The first source-only [production PostgreSQL foundation](production-postgresql-foundation.md) now defines the core client/contact/project, audit, idempotency, outbox, and immutable migration-history tables plus a concurrent-runner-safe migration system. It has not been applied to Cloud SQL and does not include repository adapters, users/roles, infrastructure, credentials, pilot-data migration, or deployment.
+The first source-only [production PostgreSQL foundation](production-postgresql-foundation.md) now defines the core client/contact/project, audit, idempotency, outbox, and immutable migration-history tables plus a concurrent-runner-safe migration system. It has not been applied to Cloud SQL and does not include repository adapters, users/roles, infrastructure, credentials, development-data migration, or deployment.
 
 ## Why
 
@@ -31,7 +31,7 @@ Keeping D1/R2 for production would be workable for the current single-user surfa
 
 ## Migration boundary
 
-The existing Sites deployment remains available only for controlled pilot validation while the Google Cloud foundation is prepared. Feature work during this period should be limited to portable domain behavior and pilot-critical fixes.
+The existing Sites deployment remains available only for controlled development validation while the Google Cloud foundation is prepared. Feature work during this period should be limited to portable domain behavior and development-critical fixes.
 
 The production cutover must include:
 
@@ -42,13 +42,13 @@ The production cutover must include:
 5. Add Cloud Tasks workers with idempotency, retry limits, and dead-letter handling; route Gmail watches through Pub/Sub and Calendar notifications through HTTPS channels.
 6. Migrate only reviewed records and files, preserving identifiers and audit evidence where required.
 7. Verify backup restoration, retention, audit access, malware scanning, and end-to-end Google Workspace behavior.
-8. Freeze writes to the pilot, perform a final reconciliation, switch the production URL, and retain a time-boxed rollback window.
+8. Freeze writes to the development environment, perform a final reconciliation, switch the production URL, and retain a time-boxed rollback window.
 
 ## Consequences
 
 - Near-term production feature work pauses behind the platform migration.
 - The current UI and domain workflows can be reused, but Cloudflare-specific imports and D1 migrations must be replaced.
-- The pilot is not promoted in place and is not treated as the authoritative production database.
+- The development environment is not promoted in place and is not treated as the authoritative production database.
 - New background-processing and vector-search features are built once on their intended production services.
 - The service count stays intentionally small for a 20-person company; split services only when scaling, deployment isolation, or security evidence justifies the operating cost.
 

@@ -1,8 +1,8 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
-import { createPilotD1ClientRepository } from "../../../adapters/d1/client-repository";
-import type { PilotD1Database } from "../../../adapters/d1/pilot-database";
-import { createPilotDirectoryMirror } from "../../../adapters/google/pilot-directory-mirror";
+import { createD1ClientRepository } from "../../../adapters/d1/client-repository";
+import type { D1Database } from "../../../adapters/d1/d1-database";
+import { createDirectoryMirror } from "../../../adapters/google/directory-mirror";
 import { createClient } from "../../../application/create-client";
 import { creationAuthorizationFor, CREATION_CAPABILITIES } from "../../../application/creation-authorization";
 import { ensureWorkspaceSchema } from "../_workspace-data";
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
       capabilities: [CREATION_CAPABILITIES.createClient],
     }),
     {
-      repository: createPilotD1ClientRepository(env.DB as unknown as PilotD1Database),
-      directoryMirror: createPilotDirectoryMirror((actor) => trySyncGoogleDirectory(getGoogleRuntimeConfig(), actor)),
+      repository: createD1ClientRepository(env.DB as unknown as D1Database),
+      directoryMirror: createDirectoryMirror((actor) => trySyncGoogleDirectory(getGoogleRuntimeConfig(), actor)),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
     },

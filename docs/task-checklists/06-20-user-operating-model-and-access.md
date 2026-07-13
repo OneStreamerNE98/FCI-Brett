@@ -17,7 +17,7 @@ The application role and the person’s direct Google Workspace access must be a
 - [ ] Require an explicit invitation for every app user, even when the user belongs to the company domain.
 - [ ] Define who may view pricing, revenue, margin, and reports.
 - [ ] Define who can create projects, change assignments, file Gmail, create Calendar events, share files, export data, and view the audit log.
-- [ ] Record the approved pilot group and phased staff rollout order.
+- [ ] Record the approved development access group and phased staff rollout order.
 
 ## Proposed application roles
 

@@ -1,17 +1,17 @@
-# D1 pilot deployment migrations
+# D1 development deployment migrations
 
 Status: Implemented in source; not deployed or applied by this change
-Scope: Controlled single-user, test-data pilot only
+Scope: Controlled single-user development environment using test data only
 
 ## Boundary
 
-The pilot uses the checked-in Drizzle migration sequence under `drizzle/` as its only schema-change path. Sites packages that sequence with the built worker and applies pending D1 migrations as part of the controlled deployment flow. Normal API requests do not create tables, create indexes, or otherwise bootstrap schema.
+The development environment uses the checked-in Drizzle migration sequence under `drizzle/` as its only schema-change path. Sites packages that sequence with the built worker and applies pending D1 migrations as part of the controlled deployment flow. Normal API requests do not create tables, create indexes, or otherwise bootstrap schema.
 
 This is **not** the future PostgreSQL production migration system. It does not satisfy the production migration, rollback, backup, restore, foreign-key, transaction, or cutover checklist. Production still requires Cloud SQL PostgreSQL migrations that are reviewed and exercised independently in development and staging.
 
 ## Deployment and local behavior
 
-1. `db/schema.ts` declares the desired pilot schema and named indexes.
+1. `db/schema.ts` declares the desired development schema and named indexes.
 2. `npm run db:generate` creates the next immutable migration and updates Drizzle history metadata.
 3. `npm run build` copies the complete sequence to `dist/.openai/drizzle/` for Sites packaging.
 4. A Sites deployment applies pending migrations before the new worker version serves requests. Do not deploy or apply the hosted migration without owner approval.
@@ -31,13 +31,13 @@ Migration `0011_lazy_big_bertha.sql` moves the remaining runtime-only integrity 
 
 The application runtime contains no `CREATE TABLE` or `CREATE INDEX` statements. This removes the former first-request schema batch from every worker isolate while preserving the portable client/project creation invariants.
 
-## Existing pilot database safety
+## Existing development database safety
 
 The new migration is additive and does not drop, delete, truncate, rewrite, or backfill data. Its unique indexes intentionally fail if existing test records contain duplicate client codes, duplicate client names, or duplicate project numbers.
 
 Before the first hosted deployment containing this migration:
 
-1. back up the pilot D1 database;
+1. back up the development D1 database;
 2. inspect the test records for duplicates in those fields;
 3. correct conflicts only through an approved maintenance procedure; and
 4. apply the migration, verify its recorded success, and smoke-test client and project creation.

@@ -14,9 +14,9 @@ Record only the following non-secret decisions in this file or a GitHub issue. L
 - [ ] Google Workspace super administrator contact: `TBD`
 - [ ] Proposed FCI Operations connection account: `operations@cherryhillfci.com` — confirm or create
 - [ ] Initial application administrator Workspace email: `TBD`
-- [ ] Additional pilot users: `None — single-user pilot`
+- [ ] Additional development users: `None — single-user development environment`
 - [ ] Final production hostname or custom domain: `TBD`
-- [x] Pilot login policy: keep allowlisted ChatGPT sign-in during the single-user pilot
+- [x] Development login policy: keep allowlisted ChatGPT sign-in during the single-user development phase
 - [x] Production login policy: individual Google Workspace accounts; no application passwords
 - [x] Production platform: Google Cloud Run and Cloud SQL PostgreSQL
 
@@ -29,11 +29,11 @@ Record only the following non-secret decisions in this file or a GitHub issue. L
 
 ## Completion result
 
-The pilot inputs are complete when the domain, operations connection account, and initial application administrator are known. The production hostname may remain `TBD` until the Cloud Run deployment and employee-login client are prepared. No password, OAuth secret, encryption key, or token should be recorded here.
+The development inputs are complete when the domain, operations connection account, and initial application administrator are known. The production hostname may remain `TBD` until the Cloud Run deployment and employee-login client are prepared. No password, OAuth secret, encryption key, or token should be recorded here.
 
 ## Your next steps after completing the inputs
 
-Complete these actions in order. Do not start with employee login; connect and verify the single-user pilot first.
+Complete these actions in order. Do not start with employee login; connect and verify the single-user development environment first.
 
 ### 1. Create the company Workspace resources
 
@@ -60,7 +60,7 @@ Follow [Google Cloud, OAuth, and API controls](02-google-cloud-and-oauth.md).
 
 ### 3. Add the hosted application settings
 
-Follow [Hosted pilot configuration and connection](03-hosted-pilot-connection.md).
+Follow [Hosted development configuration and connection](03-hosted-development-connection.md).
 
 - Add the company domain, operations account, Shared Drive ID, spreadsheet ID, and calendar IDs to the hosted application configuration.
 - Add the OAuth client secret and token-encryption key only through encrypted secret settings.
@@ -75,9 +75,9 @@ Follow [Hosted pilot configuration and connection](03-hosted-pilot-connection.md
 - Verify Drive, Gmail, Calendar, and Sheets independently.
 - Enable Drive provisioning only after Shared Drive verification succeeds.
 
-### 5. Run the controlled pilot checklist
+### 5. Run the controlled development checklist
 
-Follow [Pilot and production acceptance](05-acceptance-checklist.md) using only records named `FCI TEST — DO NOT USE`.
+Follow [Development and production acceptance](05-acceptance-checklist.md) using only records named `FCI TEST — DO NOT USE`.
 
 - Test two projects for one client.
 - Test the Sheet mirror and project folders.
@@ -85,7 +85,7 @@ Follow [Pilot and production acceptance](05-acceptance-checklist.md) using only 
 - Test the Calendar hold, meeting records, and assistant citations.
 - Do not add employees or real client data yet.
 
-### 6. Begin employee Google login only after the pilot passes
+### 6. Begin employee Google login only after development acceptance passes
 
 The production login work is documented in [Staff Google login, roles, and permissions](04-staff-login-and-permissions.md). Codex/development must implement users, secure sessions, Admin/Office/Project Manager roles, and project permissions before a second user is admitted.
 

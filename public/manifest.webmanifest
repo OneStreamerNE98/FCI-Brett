@@ -1,7 +1,7 @@
 {
-  "name": "Floor Coverings International Operations",
-  "short_name": "FCI Operations",
-  "description": "Commercial flooring leads, projects, inbox, schedules, and project records.",
+  "name": "FCI Operations Development",
+  "short_name": "FCI Ops Dev",
+  "description": "Development workspace for the Floor Coverings International operations application.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f6f2ed",

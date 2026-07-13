@@ -1,11 +1,11 @@
-# Prototype section audit
+# Development section audit
 
 Audit date: July 12, 2026
 Remediation pass: July 12, 2026
 
 ## Overall assessment
 
-The application now loads leads, clients, projects, dashboard totals, meetings, and reporting summaries from durable data. Hard-coded business examples and browser-only write fallbacks have been removed. Features without durable source records—especially crew scheduling, project tasks, project files, and operational activity tabs—now show explicit readiness states instead of fabricated data. The remaining gaps below are the next product work, not hidden prototype behavior.
+The application now loads leads, clients, projects, dashboard totals, meetings, and reporting summaries from durable data. Hard-coded business examples and browser-only write fallbacks have been removed. Features without durable source records—especially crew scheduling, project tasks, project files, and operational activity tabs—now show explicit readiness states instead of fabricated data. The remaining gaps below are the next product work, not hidden development behavior.
 
 ## Section-by-section audit
 

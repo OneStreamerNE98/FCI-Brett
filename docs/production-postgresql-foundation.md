@@ -6,9 +6,9 @@ Status: Implemented and tested in source. Not provisioned, applied, or deployed.
 
 ## Boundary
 
-The production PostgreSQL foundation is deliberately separate from the current D1 pilot. It defines the first production data model and migration safety controls without changing API routes, D1 migration versions 1–3, the hosted pilot, Google Workspace, or any live data.
+The production PostgreSQL foundation is deliberately separate from the current D1 development environment. It defines the first production data model and migration safety controls without changing API routes, D1 migration versions 1–3, the hosted development environment, Google Workspace, or any live data.
 
-This slice contains schema and migration-runner code only. PostgreSQL repository adapters, application idempotency behavior, outbox workers, users/roles, Cloud SQL, Cloud Run, secrets, and pilot-data migration remain later assignments.
+This slice contains schema and migration-runner code only. PostgreSQL repository adapters, application idempotency behavior, outbox workers, users/roles, Cloud SQL, Cloud Run, secrets, and development-data migration remain later assignments.
 
 ## Core model
 

@@ -35,7 +35,7 @@ function invalidJsonDetails(): ProjectCreationValidation {
 }
 
 /**
- * Office email is the pilot's stable staff identifier. Display names are not
+ * Office email is the development environment's stable staff identifier. Display names are not
  * accepted here because the current office allowlist cannot resolve a name to
  * one unambiguous account.
  */

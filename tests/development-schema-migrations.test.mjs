@@ -16,7 +16,7 @@ const productionMigrationModule = join(
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
 
-const requiredPilotIndexes = [
+const requiredDevelopmentIndexes = [
   "clients_code_unique_idx",
   "clients_name_idx",
   "contacts_client_idx",
@@ -51,7 +51,7 @@ async function migrationFiles(directory) {
 test("keeps the normal request schema helper free of D1 and schema DDL", async () => {
   const source = await readFile(join(appRoot, "api", "v1", "_workspace-data.ts"), "utf8");
 
-  assert.doesNotMatch(source, /cloudflare:workers|pilot-schema-migrations|env\.DB|\.prepare\(|\.batch\(/);
+  assert.doesNotMatch(source, /cloudflare:workers|development-schema-migrations|env\.DB|\.prepare\(|\.batch\(/);
   assert.doesNotMatch(source, /\bCREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\b/i);
   await Promise.all([ensureWorkspaceSchema(), ensureWorkspaceSchema(), ensureWorkspaceSchema()]);
 });
@@ -83,7 +83,7 @@ test("keeps all application runtime modules free of schema DDL", async () => {
   assert.deepEqual(violations, []);
 });
 
-test("keeps pilot integrity and lookup indexes in the versioned Drizzle sequence", async () => {
+test("keeps development data integrity and lookup indexes in the versioned Drizzle sequence", async () => {
   const files = await migrationFiles(drizzleRoot);
   const sources = await Promise.all(files.map((file) => readFile(join(drizzleRoot, file), "utf8")));
   const migrationSql = sources.join("\n");
@@ -92,14 +92,14 @@ test("keeps pilot integrity and lookup indexes in the versioned Drizzle sequence
   const journalTags = journal.entries.map((entry) => entry.tag);
 
   assert.deepEqual(journalTags, files.map((file) => basename(file, ".sql")));
-  for (const indexName of requiredPilotIndexes) {
+  for (const indexName of requiredDevelopmentIndexes) {
     assert.match(migrationSql, new RegExp("CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?`" + indexName + "`"));
     assert.match(schemaSource, new RegExp(`(?:uniqueIndex|index)\\("${indexName}"\\)`));
   }
 
   const latestSql = sources.at(-1);
   assert.doesNotMatch(latestSql, /\b(?:ALTER|DROP|DELETE|TRUNCATE)\b/i);
-  for (const indexName of requiredPilotIndexes) {
+  for (const indexName of requiredDevelopmentIndexes) {
     assert.match(latestSql, new RegExp("INDEX IF NOT EXISTS `" + indexName + "`"));
   }
 });

@@ -1,19 +1,19 @@
 # Google Workspace rollout guide for FCI Operations
 
-This guide is written for a first-time Google Workspace administrator. It describes the current one-user pilot and the later company rollout separately.
+This guide is written for a first-time Google Workspace administrator. It describes the current one-user development environment and the later company rollout separately.
 
 ## Read this distinction first
 
 FCI Operations currently has two different identities:
 
-1. **Application login:** identifies who may open the web application. The hosted prototype currently uses Sign in with ChatGPT and then checks `FCI_OFFICE_EMAILS` or `FCI_OFFICE_DOMAINS`.
+1. **Application login:** identifies who may open the web application. The hosted development environment currently uses Sign in with ChatGPT and then checks `FCI_OFFICE_EMAILS` or `FCI_OFFICE_DOMAINS`.
 2. **Google data connection:** authorizes one administrator-approved Google Workspace account to use Gmail, Calendar, Shared Drive, and Sheets for the company.
 
 Connecting Google Workspace does **not** automatically change the app login to Google. A true “sign in with my company Google account” rollout requires a Google OpenID Connect login implementation in the application.
 
 ## Recommended rollout in two stages
 
-### Stage 1: one-user pilot now
+### Stage 1: one-user development environment now
 
 - Keep the current app login and allow only your email.
 - Connect one company Google Workspace account for Gmail, Calendar, Drive, and Sheets.
@@ -31,11 +31,11 @@ Google’s OpenID Connect documentation explains that the `hd` request value is 
 
 ## Accounts to create
 
-For the pilot, create or select these accounts:
+For development, create or select these accounts:
 
 - **Workspace super administrator:** used for Google Admin and Cloud configuration. Do not use this account as a daily mailbox if a separate administrator is available.
 - **FCI Operations connection account:** the one account that grants this app access to Gmail, Calendar, Drive, and Sheets. The proposed address is `operations@cherryhillfci.com`; confirm or create it before configuration.
-- **Your normal company account:** your daily Workspace account. For a one-user pilot, this can also be the connection account.
+- **Your normal company account:** your daily Workspace account. For the one-user development environment, this can also be the connection account.
 
 Do not connect a personal `@gmail.com` account in live mode. The application requires an explicitly authorized account from the configured Workspace domain.
 
@@ -138,7 +138,7 @@ In the Cloud project, open **Google Auth platform**.
 
 1. Choose **Internal** so only accounts in your Workspace organization can authorize the app.
 2. Use Testing while you are first configuring the connection.
-3. When the pilot passes, switch the internal app to In production.
+3. When development acceptance passes, switch the internal app to In production.
 
 Internal audience is available only to projects under a Google Workspace/Cloud organization. Google documents the current audience behavior in [Manage App Audience](https://support.google.com/cloud/answer/15549945).
 
@@ -189,7 +189,7 @@ Do not upload the client JSON file to Drive, commit it to Git, paste it into doc
 
 Google documents these controls in [Control which apps access Google Workspace data](https://support.google.com/a/answer/7281227).
 
-Do not configure domain-wide delegation for this pilot. The current application uses an interactive OAuth connection for one approved account. Domain-wide delegation is a different and much more powerful architecture.
+Do not configure domain-wide delegation for this development environment. The current application uses an interactive OAuth connection for one approved account. Domain-wide delegation is a different and much more powerful architecture.
 
 ## Part 9: create the token-encryption key
 
@@ -229,7 +229,7 @@ GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar ID>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar ID>
 ```
 
-For the current pilot, `FCI_OFFICE_EMAILS` is the ChatGPT sign-in email. It is deliberately separate from `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, which is the company Google account allowed to connect data.
+For the current development environment, `FCI_OFFICE_EMAILS` is the ChatGPT sign-in email. It is deliberately separate from `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, which is the company Google account allowed to connect data.
 
 Mark the client secret and token-encryption key as secrets. Keep folder provisioning `false` until Drive verification passes.
 
@@ -253,7 +253,7 @@ Mark the client secret and token-encryption key as secrets. Keep folder provisio
 12. After Shared Drive verification, set `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=true` and deploy the environment update.
 13. Create one test project folder and confirm it is inside the correct Shared Drive.
 
-## Part 12: test the complete current pilot
+## Part 12: test the complete current development environment
 
 Use a client and projects named `FCI TEST — DO NOT USE`.
 
@@ -275,7 +275,7 @@ Use a client and projects named `FCI TEST — DO NOT USE`.
 
 ## Part 13: make the app easy to open
 
-### Best option for the one-user pilot: install the PWA
+### Best option for the one-user development environment: install the PWA
 
 - On a computer, open the app in Chrome or Edge and use the browser’s Install app command.
 - On iPhone/iPad, open it in Safari, select Share, then Add to Home Screen.
@@ -390,4 +390,4 @@ Do not store real client data until every required item is complete.
 
 ### The app opens but employees cannot use Google login
 
-- That is expected in the current prototype. Google data OAuth and app-user login are separate. Complete Part 14 before relying on Workspace identity for application access.
+- That is expected in the current development environment. Google data OAuth and app-user login are separate. Complete Part 14 before relying on Workspace identity for application access.
