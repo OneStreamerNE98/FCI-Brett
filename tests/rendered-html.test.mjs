@@ -90,7 +90,7 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
 
 test("keeps user preferences scoped to the authenticated office user without a personal-calendar profile", async () => {
   const [schema, preferencesApi, app] = await Promise.all([
-    read("app/api/v1/_workspace-data.ts"), read("app/api/v1/settings/me/route.ts"), read("app/FloorOpsApp.tsx"),
+    read("app/platform/pilot-schema-migrations.ts"), read("app/api/v1/settings/me/route.ts"), read("app/FloorOpsApp.tsx"),
   ]);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS user_preferences/);
   assert.match(schema, /user_email TEXT PRIMARY KEY/);
@@ -220,7 +220,7 @@ test("uses durable live records without hardcoded business demonstrations", asyn
   const [app, leadsApi, leadApi, dashboardApi, workspaceSchema, auth] = await Promise.all([
     read("app/FloorOpsApp.tsx"), read("app/api/v1/leads/route.ts"),
     read("app/api/v1/leads/[leadId]/route.ts"), read("app/api/v1/dashboard/route.ts"),
-    read("app/api/v1/_workspace-data.ts"), read("app/lib/workspace-auth.ts"),
+    read("app/platform/pilot-schema-migrations.ts"), read("app/lib/workspace-auth.ts"),
   ]);
 
   assert.doesNotMatch(app, /Hudson Retail Group|Atlas Design Group|Westport Medical Center|One Harbor Plaza/);
@@ -349,7 +349,7 @@ test("keeps unfinished project updates visibly planned and non-operational", asy
 
 test("captures durable project meetings and bounded Otter evidence", async () => {
   const [workspaceSchema, schema, meetingsApi, app, assistantApi] = await Promise.all([
-    read("app/api/v1/_workspace-data.ts"), read("db/schema.ts"),
+    read("app/platform/pilot-schema-migrations.ts"), read("db/schema.ts"),
     read("app/api/v1/projects/[projectId]/meetings/route.ts"), read("app/FloorOpsApp.tsx"),
     read("app/api/v1/assistant/route.ts"),
   ]);

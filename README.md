@@ -74,7 +74,7 @@ After that foundation is accepted, build appointment state management and Calend
 
 See the [20-user product and architecture review](docs/20-user-product-and-architecture-review.md) for the rollout verdict, architecture, access model, priority findings, and corrected delivery order. See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page UI audit.
 
-Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials.
+Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials. The completed [portable client and project creation slice](docs/portable-record-creation.md) documents the provider-neutral boundaries, pilot compatibility, safety limits, and next production-platform assignment.
 
 ## Google Workspace pilot rollout
 
@@ -169,7 +169,7 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
-- `npm test`: build the application and run source-level prototype checks
+- `npm test`: build the application and run the API, portable-service, migration, and product-contract checks
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
 ## Learn More
