@@ -72,20 +72,19 @@ These are larger structural changes and should be scheduled separately:
 - Backup restoration validation, audit viewer, retention, export, and malware scanning.
 - Production background workers for reminders, Gmail watches, synchronization, and retries.
 
-## Architecture decision required
+## Production architecture decision
 
-The approved plan named Google Cloud Run, Cloud SQL PostgreSQL with `pgvector`, Cloud Tasks/Pub/Sub, and Secret Manager. The current prototype runs on Cloudflare Sites/Workers with D1 and R2.
+The production system will use the approved Google Cloud architecture: Cloud Run, Cloud SQL PostgreSQL with `pgvector`, Cloud Tasks/Pub/Sub, Cloud Storage, Secret Manager, and Google Workspace OIDC. The current Sites/Workers/D1/R2 deployment remains a controlled pilot only and will not be promoted in place.
 
-For a controlled one-user pilot, the existing Cloudflare architecture is practical. Before building scheduling, messaging, and AI indexing, choose one of these directions:
+The migration will happen before scheduling, messaging, and AI indexing are built. Those modules depend on durable jobs, relational transactions, retries, and permission-filtered retrieval; moving now avoids implementing and migrating those foundations twice.
 
-1. **Keep Cloudflare for the first production release.** Continue with D1/R2 and add a real background-job strategy.
-2. **Move to the approved Google Cloud architecture.** Migrate before building the large operational modules, because moving later will require reworking schema, queries, migrations, jobs, file handling, and deployment.
+See [`architecture-decision-production-platform.md`](architecture-decision-production-platform.md) for the decision, pilot boundary, migration sequence, and cutover requirements.
 
 ## Prioritized next steps
 
 ### Now: safe single-user pilot
 
-1. Choose the long-term architecture.
+1. Build the Google Cloud production foundation and migration path defined in the accepted architecture decision.
 2. Decide whether the pilot can continue using ChatGPT sign-in or must switch to Google Workspace sign-in immediately.
 3. Add Admin, Office, and Project Manager roles plus project-level permissions before adding more users.
 4. Add editing and archiving for clients, contacts, leads, projects, and meetings.

@@ -29,6 +29,10 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 - Durable project meeting notes with Otter links, summaries, decisions, action items, transcript excerpts, and assistant evidence
 - D1-backed data-model and API foundation for clients, contacts, projects, meetings, rules, mail items, and workspace settings
 
+## Production architecture
+
+The current Sites/Workers/D1/R2 deployment is a controlled pilot. Production will run on Google Cloud Run with Cloud SQL PostgreSQL, `pgvector`, Cloud Tasks/Pub/Sub, Cloud Storage, Secret Manager, and Google Workspace OIDC. Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) before adding production modules or data.
+
 ## Google Workspace setup
 
 See [`docs/google-workspace-organization.md`](docs/google-workspace-organization.md) for the shared-drive layout, email rules, client-sheet mirror, and administrator checklist.

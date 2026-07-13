@@ -44,7 +44,7 @@ The tracked `.openai/hosting.json` contains non-secret project and storage bindi
 
 The current hosted app and the GitHub repository have different access controls. Add source editors in GitHub. Add app users through the hosting access policy and the app's `FCI_OFFICE_EMAILS` or `FCI_OFFICE_DOMAINS` allowlist.
 
-Until native Google Workspace sign-in is implemented, the hosted Sites build uses Sign in with ChatGPT for identity and the server-side office allowlist for data access. The eventual Google Cloud production deployment should use the company's Google Workspace identities and domain restrictions.
+Until native Google Workspace sign-in is implemented, the hosted Sites pilot uses Sign in with ChatGPT for identity and the server-side office allowlist for data access. The accepted production architecture uses Google Cloud with the company's Google Workspace identities and domain restrictions; see `docs/architecture-decision-production-platform.md`.
 
 ## Optional Drive copy
 
