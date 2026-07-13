@@ -35,6 +35,8 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 
 Read the [20-user product and architecture review](../20-user-product-and-architecture-review.md) for the evidence, priority findings, corrected delivery order, and product ideas behind these task checklists.
 
+Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) to separate work that can be built with simulation now from owner decisions and live-connection tasks that require Workspace resources or credentials.
+
 ## Safety boundary
 
 - The current hosted application remains a single-user, test-data pilot.

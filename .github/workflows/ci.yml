@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   test:
-    name: Node 22 build and tests
+    name: Node 22 lint, build, and tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -33,6 +33,9 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Lint
+        run: npm run lint
 
       - name: Build and test
         run: npm test

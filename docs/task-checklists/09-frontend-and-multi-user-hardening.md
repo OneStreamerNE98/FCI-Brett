@@ -42,7 +42,8 @@ The interface is suitable for learning the single-user workflow. It needs explic
 
 ## Accessibility and feedback
 
-- [ ] Use one accessible dialog/drawer primitive with `role="dialog"`, an accessible name, initial focus, focus trap, Escape handling, and focus restoration.
+- [x] Use one accessible dialog/drawer primitive with `role="dialog"`, an accessible name, initial focus, focus trap, Escape handling, and focus restoration.
+- [ ] Remove the closed off-canvas mobile navigation from the keyboard order and accessibility tree; restore focus to its launcher and support Escape when it is open.
 - [ ] Add Arrow Up/Down, Enter, Escape, and current-selection semantics to global search.
 - [ ] Create typed success, warning, and error notifications; use `role="alert"` for errors and offer inline retry where safe.
 - [ ] Clean up notification timers when components unmount.
@@ -56,7 +57,8 @@ The interface is suitable for learning the single-user workflow. It needs explic
 - [ ] Test offline/reconnect, stale responses, simultaneous edits, API partial failure, OAuth expiry, and queued Google work.
 - [ ] Test a 20-user concurrency scenario for common reads/writes and Google queue behavior.
 - [ ] Capture approved desktop and mobile screenshots for the pull request after browser capture is reliable.
-- [ ] Include lint in CI and fail on unhandled console errors in browser smoke tests.
+- [x] Include lint in CI.
+- [ ] Fail on unhandled console errors in browser smoke tests.
 
 ## Completion result
 
