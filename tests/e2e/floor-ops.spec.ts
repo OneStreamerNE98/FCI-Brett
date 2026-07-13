@@ -49,6 +49,34 @@ test("has a clear page identity, meaningful live render, and healthy browser con
   expectHealthyBrowser(issues);
 });
 
+test("desktop sidebar collapse control stays fully clickable and expands again", async ({ page }) => {
+  const issues = monitorBrowserHealth(page);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/");
+  await waitForLiveRecords(page);
+
+  await page.getByRole("button", { name: "Collapse navigation" }).click();
+  const sidebar = page.locator("#application-navigation");
+  const expand = page.getByRole("button", { name: "Expand navigation" });
+  await expect(expand).toBeVisible();
+  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(78);
+
+  const box = await expand.boundingBox();
+  if (!box) throw new Error("Expand navigation control has no rendered bounds");
+  const rightEdge = { x: box.x + box.width - 1, y: box.y + box.height / 2 };
+  const rightEdgeHitsControl = await page.evaluate(({ x, y }) => {
+    const control = document.querySelector<HTMLButtonElement>(".sidebar-collapse");
+    const hit = document.elementFromPoint(x, y);
+    return Boolean(control && hit && (hit === control || control.contains(hit)));
+  }, rightEdge);
+
+  expect(rightEdgeHitsControl).toBe(true);
+  await page.mouse.click(rightEdge.x, rightEdge.y);
+  await expect(page.getByRole("button", { name: "Collapse navigation" })).toBeVisible();
+  await expect(page.locator(".app-shell")).not.toHaveClass(/sidebar-is-collapsed/);
+  expectHealthyBrowser(issues);
+});
+
 test("mobile navigation traps focus and restores the menu trigger on every close path", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
