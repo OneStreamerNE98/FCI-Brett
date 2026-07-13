@@ -20,6 +20,7 @@ Open the [Google Workspace and product-readiness Task Checklists](docs/task-chec
 
 ```bash
 npm install
+npm run db:migrate:local
 npm run dev
 npm run build
 ```
@@ -171,6 +172,7 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm run build`: verify the vinext build output
 - `npm test`: build the application and run the API, portable-service, migration, and product-contract checks
 - `npm run db:generate`: generate Drizzle migrations after schema changes
+- `npm run db:migrate:local`: explicitly apply checked-in Drizzle migrations to the local D1 database before development
 
 ## Learn More
 

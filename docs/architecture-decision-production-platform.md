@@ -19,7 +19,7 @@ The controlled pilot may continue on OpenAI Sites with Cloudflare Workers, D1, a
 
 Sites/D1/R2 is therefore a pilot environment, not the production data plane. Do not add real client data or expand the pilot to multiple staff until the production access, backup, audit, and restore controls pass acceptance.
 
-The pilot's route-time D1 bootstrap is centralized in the [D1 pilot runtime schema migrations](pilot-d1-schema-migrations.md). That ordered, additive bridge removes duplicated route-local DDL, but it is not a comprehensive drift detector or repair tool. It is deliberately separate from, and does not replace, the required PostgreSQL production migration and rollback system.
+The pilot's D1 schema changes use the checked-in [D1 pilot deployment migrations](pilot-d1-schema-migrations.md). Sites applies that ordered sequence during controlled deployment, and normal API requests execute no schema DDL. This is deliberately separate from, and does not replace, the required PostgreSQL production migration and rollback system.
 
 The first source-only [production PostgreSQL foundation](production-postgresql-foundation.md) now defines the core client/contact/project, audit, idempotency, outbox, and immutable migration-history tables plus a concurrent-runner-safe migration system. It has not been applied to Cloud SQL and does not include repository adapters, users/roles, infrastructure, credentials, pilot-data migration, or deployment.
 

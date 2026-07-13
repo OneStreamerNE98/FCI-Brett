@@ -1,56 +1,57 @@
-# D1 pilot runtime schema migrations
+# D1 pilot deployment migrations
 
 Status: Implemented in source; not deployed or applied by this change
 Scope: Controlled single-user, test-data pilot only
 
 ## Boundary
 
-The runtime migration registry in `app/platform/pilot-schema-migrations.ts` replaces route-local `CREATE TABLE` and `CREATE INDEX` statements. It preserves the existing Cloudflare D1/SQLite pilot while the accepted Google Cloud production foundation is built.
+The pilot uses the checked-in Drizzle migration sequence under `drizzle/` as its only schema-change path. Sites packages that sequence with the built worker and applies pending D1 migrations as part of the controlled deployment flow. Normal API requests do not create tables, create indexes, or otherwise bootstrap schema.
 
 This is **not** the future PostgreSQL production migration system. It does not satisfy the production migration, rollback, backup, restore, foreign-key, transaction, or cutover checklist. Production still requires Cloud SQL PostgreSQL migrations that are reviewed and exercised independently in development and staging.
 
-## Runtime behavior
+## Deployment and local behavior
 
-1. `ensureWorkspaceSchema()` keeps its existing public role for API callers.
-2. Concurrent first requests in one runtime isolate share one ensure attempt.
-3. The runner creates `pilot_schema_migrations` if it is missing, then checks the ordered registry one version at a time. An applied version must retain its original migration name.
-4. Every pending migration uses one transactional D1 batch. Its version marker is the final statement in that same batch, so a failed table or index statement cannot leave the version marked as applied.
-5. A failed ensure attempt is forgotten so a later request can retry safely.
-6. Version-marker inserts are idempotent for concurrent first requests in separate isolates.
+1. `db/schema.ts` declares the desired pilot schema and named indexes.
+2. `npm run db:generate` creates the next immutable migration and updates Drizzle history metadata.
+3. `npm run build` copies the complete sequence to `dist/.openai/drizzle/` for Sites packaging.
+4. A Sites deployment applies pending migrations before the new worker version serves requests. Do not deploy or apply the hosted migration without owner approval.
+5. `ensureWorkspaceSchema()` remains temporarily as a DDL-free compatibility helper while route callers are removed. It does not import the D1 binding or query the database.
+6. A developer explicitly runs `npm run db:migrate:local` before local development or after pulling a new migration. The command is fixed to the placeholder local D1 database and cannot target the hosted database.
 
-The current pilot versions baseline:
+## July 2026 request-time bootstrap removal
 
-| Version | Pilot scope |
-| --- | --- |
-| 1 | Core clients, contacts, leads, projects, meetings, settings, events, generic webhook receipts, and required indexes |
-| 2 | Google Workspace connector, Gmail archive, Drive mapping, Sheet state, integration-event, and local-simulation tables |
-| 3 | The legacy generic `records` endpoint table and index |
+Migration `0011_lazy_big_bertha.sql` moves the remaining runtime-only integrity and lookup indexes into the versioned Sites/D1 sequence:
 
-## Existing pilot databases and limits
+- unique client code and client name;
+- client-contact lookup;
+- project number uniqueness and client-project lookup;
+- filing-rule priority and mail-status lookup;
+- Google integration event chronology; and
+- generic-record type lookup.
 
-All schema statements use `IF NOT EXISTS`; the runner does not drop, delete, truncate, or rewrite data. For a database whose business tables predate `pilot_schema_migrations`, the runner attempts each additive statement and records the version only when the transactional D1 batch succeeds.
+The application runtime contains no `CREATE TABLE` or `CREATE INDEX` statements. This removes the former first-request schema batch from every worker isolate while preserving the portable client/project creation invariants.
 
-`IF NOT EXISTS` only creates a missing named object or accepts that an object with that name already exists. It does **not** prove that an existing table has every expected column or altered constraint, repair a mismatched table, or compare statement checksums. A successful version marker therefore means the registered batch completed without a D1 error; it is not comprehensive schema-drift validation.
+## Existing pilot database safety
 
-Two named unique indexes intentionally verify invariants that were not guaranteed by every historical Drizzle-created table:
+The new migration is additive and does not drop, delete, truncate, rewrite, or backfill data. Its unique indexes intentionally fail if existing test records contain duplicate client codes, duplicate client names, or duplicate project numbers.
 
-- `clients_code_unique_idx` on `clients.client_code`
-- `projects_number_unique_idx` on `projects.project_number`
+Before the first hosted deployment containing this migration:
 
-If existing test data conflicts with a required unique index—including duplicate client codes, client names, or project numbers—D1 rejects the index, the transactional migration version remains unapplied, and the request reports the underlying migration conflict. Review and correct the duplicate **test data** through an approved, backed-up maintenance procedure before retrying. The runner never deletes or automatically rewrites those records.
+1. back up the pilot D1 database;
+2. inspect the test records for duplicates in those fields;
+3. correct conflicts only through an approved maintenance procedure; and
+4. apply the migration, verify its recorded success, and smoke-test client and project creation.
 
-## Canonical-source bridge
+Do not weaken the unique indexes or automatically discard records to make deployment pass.
 
-- `app/platform/pilot-schema-migrations.ts` is the canonical source for route-time D1 pilot bootstrap SQL.
-- `db/schema.ts` and `drizzle/*.sql` remain schema-generation and historical migration artifacts. A parity test confirms that their declared tables and named indexes are represented in the runtime bridge; routes do not execute those files.
-- The future Cloud SQL PostgreSQL schema and migration/rollback runner is a separate production system governed by the accepted platform decision.
+## Canonical sources and developer rules
 
-## Developer rules
+- `db/schema.ts` is the desired SQLite/D1 schema definition.
+- `drizzle/*.sql` and `drizzle/meta/` are the immutable, ordered deployment history.
+- `.openai/hosting.json` declares the logical `DB` binding; Sites owns the hosted D1 resource and deployment wiring.
+- `wrangler.local.jsonc` exists only for explicit local migration and uses the non-routable placeholder database identifier.
+- Never add schema DDL to route handlers or other application runtime modules.
+- Never edit an applied migration. Change `db/schema.ts`, generate a new migration, inspect its SQL, and commit the migration and metadata together.
+- Never apply a real migration, change hosted configuration, or deploy without owner approval.
 
-- Add future pilot-only runtime DDL as the next ordered registry entry; do not put DDL back into routes.
-- Keep pilot statements additive and idempotent.
-- Never edit an already applied version; add a new version. Migration names are verified, but statement checksums are not yet stored.
-- Do not use this runner to apply production PostgreSQL schema changes.
-- Do not run a real migration, change hosted configuration, or deploy without owner approval.
-
-Behavior tests cover migration order, already-applied versions, transactional marker placement, failed-batch retries, concurrent ensures, destructive-SQL guards, unique identifier indexes, the webhook-receipt baseline, and the rule that runtime DDL exists only in the pilot migration module.
+Regression tests verify that request helpers and runtime modules contain no schema DDL, required indexes exist in both the schema and migration history, the Drizzle journal is complete, the local command cannot target a remote database, and the build packages the full migration sequence for Sites.

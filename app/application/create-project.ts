@@ -1,4 +1,4 @@
-import { normalizeProjectCreation } from "../domain/project-creation";
+import { normalizeProjectCreation, normalizeProjectManagerAssignment, normalizeProjectManagerId, PROJECT_MANAGER_IDENTITY_ERROR } from "../domain/project-creation";
 import type { DirectoryMirror } from "../ports/directory-mirror";
 import type { ProjectRepository } from "../ports/project-repository";
 import { canCreate, CREATION_CAPABILITIES, type CreationAuthorizationContext } from "./creation-authorization";
@@ -6,7 +6,7 @@ import { mirrorAfterDurableCreate } from "./mirror-after-create";
 
 export type CreateProjectFailure = {
   ok: false;
-  kind: "forbidden" | "invalid" | "client-not-found";
+  kind: "forbidden" | "invalid" | "project-manager-not-authorized" | "client-not-found";
   message: string;
 };
 
@@ -15,6 +15,7 @@ export type CreateProjectSuccess = {
   value: {
     id: string;
     projectNumber: string;
+    projectManagerId: string;
     createdAt: number;
     sheetSync: Awaited<ReturnType<typeof mirrorAfterDurableCreate>>;
   };
@@ -23,8 +24,25 @@ export type CreateProjectSuccess = {
 export type CreateProjectResult = CreateProjectFailure | CreateProjectSuccess;
 
 export type CreateProjectDependencies = {
-  repository: ProjectRepository;
+  repository: Pick<ProjectRepository, "create">;
   directoryMirror: DirectoryMirror;
+  resolveProjectManagerId: (candidateId: string) => string | null | Promise<string | null>;
+  newId: () => string;
+  now: () => number;
+};
+
+export type AssignProjectManagerResult =
+  | { ok: false; kind: "forbidden" | "invalid" | "project-manager-not-authorized" | "project-not-found"; message: string }
+  | { ok: true; value: { projectId: string; projectManagerId: string; updatedAt: number } };
+
+export type AssignProjectManagerAuthorization = {
+  actorId: string;
+  canManageProjects: boolean;
+};
+
+export type AssignProjectManagerDependencies = {
+  repository: Pick<ProjectRepository, "assignManager">;
+  resolveProjectManagerId: (candidateId: string) => string | null | Promise<string | null>;
   newId: () => string;
   now: () => number;
 };
@@ -41,6 +59,16 @@ export async function createProject(
   const normalized = normalizeProjectCreation(input);
   if (!normalized.ok) return { ok: false, kind: "invalid", message: normalized.message };
 
+  const managerCandidate = normalizeProjectManagerId(normalized.value.projectManagerId ?? authorization.actorId);
+  if (!managerCandidate.ok) {
+    return { ok: false, kind: "project-manager-not-authorized", message: PROJECT_MANAGER_IDENTITY_ERROR };
+  }
+  const resolvedManager = await dependencies.resolveProjectManagerId(managerCandidate.value);
+  const projectManagerId = normalizeProjectManagerId(resolvedManager);
+  if (!projectManagerId.ok || projectManagerId.value !== managerCandidate.value) {
+    return { ok: false, kind: "project-manager-not-authorized", message: PROJECT_MANAGER_IDENTITY_ERROR };
+  }
+
   const createdAt = dependencies.now();
   const id = dependencies.newId();
   const projectNumber = `CF-${new Date(createdAt).getUTCFullYear()}-${id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
@@ -53,7 +81,7 @@ export async function createProject(
       name: normalized.value.name,
       status: normalized.value.status,
       site: normalized.value.site,
-      projectManager: normalized.value.projectManager,
+      projectManagerId: projectManagerId.value,
       estimatedValue: normalized.value.estimatedValue,
       createdBy: authorization.actorId,
       createdAt,
@@ -78,5 +106,45 @@ export async function createProject(
     cause: "project-created",
     recordId: id,
   });
-  return { ok: true, value: { id, projectNumber, createdAt, sheetSync } };
+  return { ok: true, value: { id, projectNumber, projectManagerId: projectManagerId.value, createdAt, sheetSync } };
+}
+
+export async function assignProjectManager(
+  input: unknown,
+  authorization: AssignProjectManagerAuthorization,
+  dependencies: AssignProjectManagerDependencies,
+): Promise<AssignProjectManagerResult> {
+  if (!authorization.canManageProjects || !authorization.actorId.trim()) {
+    return { ok: false, kind: "forbidden", message: "You do not have permission to change project managers." };
+  }
+  const normalized = normalizeProjectManagerAssignment(input);
+  if (!normalized.ok) return { ok: false, kind: "invalid", message: normalized.message };
+
+  const resolvedManager = await dependencies.resolveProjectManagerId(normalized.value.projectManagerId);
+  const projectManagerId = normalizeProjectManagerId(resolvedManager);
+  if (!projectManagerId.ok || projectManagerId.value !== normalized.value.projectManagerId) {
+    return { ok: false, kind: "project-manager-not-authorized", message: PROJECT_MANAGER_IDENTITY_ERROR };
+  }
+
+  const updatedAt = dependencies.now();
+  const repositoryResult = await dependencies.repository.assignManager({
+    projectId: normalized.value.projectId,
+    projectManagerId: projectManagerId.value,
+    updatedAt,
+    activity: {
+      id: dependencies.newId(),
+      recordId: normalized.value.projectId,
+      action: "Project manager assigned",
+      actor: authorization.actorId,
+      detail: `Project manager assigned to ${projectManagerId.value}`,
+      createdAt: updatedAt,
+    },
+  });
+  if (repositoryResult.outcome === "project-not-found") {
+    return { ok: false, kind: "project-not-found", message: "project not found" };
+  }
+  return {
+    ok: true,
+    value: { projectId: normalized.value.projectId, projectManagerId: projectManagerId.value, updatedAt },
+  };
 }

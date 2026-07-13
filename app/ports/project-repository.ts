@@ -8,7 +8,7 @@ export type ProjectCreationIntent = {
     name: string;
     status: ProjectStatus;
     site: string | null;
-    projectManager: string | null;
+    projectManagerId: string;
     estimatedValue: number | null;
     createdBy: string;
     createdAt: number;
@@ -26,6 +26,23 @@ export type ProjectCreationIntent = {
 
 export type ProjectCreationRepositoryResult = { outcome: "created" } | { outcome: "client-not-found" };
 
+export type ProjectManagerAssignmentIntent = {
+  projectId: string;
+  projectManagerId: string;
+  updatedAt: number;
+  activity: {
+    id: string;
+    recordId: string;
+    action: "Project manager assigned";
+    actor: string;
+    detail: string;
+    createdAt: number;
+  };
+};
+
+export type ProjectManagerAssignmentRepositoryResult = { outcome: "updated" } | { outcome: "project-not-found" };
+
 export interface ProjectRepository {
   create(intent: ProjectCreationIntent): Promise<ProjectCreationRepositoryResult>;
+  assignManager(intent: ProjectManagerAssignmentIntent): Promise<ProjectManagerAssignmentRepositoryResult>;
 }

@@ -35,7 +35,11 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /event\.key !== "Tab"/);
   assert.match(overlay, /overlayStack\[overlayStack\.length - 1\] !== token/);
   assert.match(overlay, /document\.body\.style\.overflow = "hidden"/);
-  assert.match(overlay, /previouslyFocused\?\.isConnected/);
+  assert.match(overlay, /inertOutsideState = new Map/);
+  assert.match(overlay, /const restoreOutsideInteraction = inertOutside\(backdrop\)/);
+  assert.match(overlay, /restoreOutsideInteraction\(\)/);
+  assert.match(overlay, /preferredReturnTarget\?\.isConnected/);
+  assert.match(overlay, /returnFocusRef\?: RefObject<HTMLElement \| null>/);
   assert.match(overlay, /event\.target !== event\.currentTarget/);
   assert.match(overlay, /!closeOnBackdropRef\.current \|\| busyRef\.current/);
 
@@ -47,6 +51,40 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(app, /busy=\{saving\}/);
   assert.equal(app.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 5);
   assert.equal(app.match(/onClick=\{onClose\} disabled=\{saving\}>Cancel/g)?.length, 6);
-  assert.match(app, /aria-label="Close project" disabled=\{provisioning\}/);
+  assert.match(app, /aria-label="Close project" disabled=\{busy\}/);
   assert.match(css, /\.accessible-overlay-backdrop,\.accessible-overlay-panel\{overscroll-behavior:contain\}/);
+});
+
+test("keeps mobile navigation and workspace search keyboard-operable", async () => {
+  const [app, css] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/globals.css"),
+  ]);
+
+  assert.match(app, /window\.matchMedia\("\(max-width: 820px\)"\)/);
+  assert.match(app, /aria-controls="application-navigation"/);
+  assert.match(app, /aria-expanded=\{mobileNavActive\}/);
+  assert.match(app, /aria-hidden=\{mobileNavViewport && !mobileNav \? true : undefined\}/);
+  assert.match(app, /inert=\{mobileNavViewport && !mobileNav \? true : undefined\}/);
+  assert.match(app, /<main className="main-area" inert=\{mobileNavActive \? true : undefined\}>/);
+  assert.match(app, /document\.addEventListener\("keydown", handleMobileNavigationKeyDown, true\)/);
+  assert.match(app, /mobileNavigationCloseRef\.current\?\.focus\(\)/);
+  assert.match(app, /navigationTrigger\.focus\(\)/);
+  assert.match(app, /<div className="sidebar-scrim" role="presentation" aria-hidden="true"/);
+  assert.doesNotMatch(app, /<button className="sidebar-scrim"/);
+
+  assert.match(app, /role="combobox"/);
+  assert.match(app, /aria-autocomplete="list"/);
+  assert.match(app, /aria-activedescendant=/);
+  assert.match(app, /event\.key === "ArrowDown"/);
+  assert.match(app, /event\.key === "ArrowUp"/);
+  assert.match(app, /tabIndex=\{-1\}/);
+  assert.match(app, /openProject\(project, workspaceSearchRef\.current\)/);
+  assert.match(app, /openClient\(client, workspaceSearchRef\.current\)/);
+  assert.match(app, /returnFocusRef=\{projectDrawerReturnFocusRef\}/);
+  assert.match(app, /returnFocusRef=\{clientDrawerReturnFocusRef\}/);
+
+  assert.match(css, /visibility:hidden;pointer-events:none/);
+  assert.match(css, /\.sidebar\.open\{transform:translateX\(0\);visibility:visible;pointer-events:auto\}/);
+  assert.match(css, /button\[aria-selected="true"\]/);
 });

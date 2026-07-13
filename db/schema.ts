@@ -9,7 +9,9 @@ export const records = sqliteTable("records", {
   createdBy: text("created_by").notNull().default("system"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  index("records_type_idx").on(table.type, table.updatedAt),
+]);
 
 export const activityEvents = sqliteTable("activity_events", {
   id: text("id").primaryKey(),
@@ -37,7 +39,10 @@ export const clients = sqliteTable("clients", {
   createdBy: text("created_by").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  uniqueIndex("clients_code_unique_idx").on(table.clientCode),
+  uniqueIndex("clients_name_idx").on(table.name),
+]);
 
 export const contacts = sqliteTable("contacts", {
   id: text("id").primaryKey(),
@@ -49,7 +54,9 @@ export const contacts = sqliteTable("contacts", {
   isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  index("contacts_client_idx").on(table.clientId),
+]);
 
 /** Durable sales opportunities captured before they become client projects. */
 export const leads = sqliteTable("leads", {
@@ -91,7 +98,10 @@ export const projects = sqliteTable("projects", {
   createdBy: text("created_by").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  uniqueIndex("projects_number_unique_idx").on(table.projectNumber),
+  index("projects_client_idx").on(table.clientId, table.updatedAt),
+]);
 
 /** Project-specific meeting notes, including manual or Otter-derived evidence. */
 export const projectMeetings = sqliteTable("project_meetings", {
@@ -127,7 +137,9 @@ export const filingRules = sqliteTable("filing_rules", {
   createdBy: text("created_by").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  index("filing_rules_priority_idx").on(table.priority),
+]);
 
 export const workspaceSettings = sqliteTable("workspace_settings", {
   id: text("id").primaryKey(),
@@ -158,7 +170,9 @@ export const mailItems = sqliteTable("mail_items", {
   emailDriveFileId: text("email_drive_file_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  index("mail_items_status_idx").on(table.status, table.updatedAt),
+]);
 
 /**
  * A review-approved archive of one Gmail message into exactly one project.
@@ -295,7 +309,9 @@ export const googleIntegrationEvents = sqliteTable("google_integration_events", 
   entityId: text("entity_id"),
   detail: text("detail"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-});
+}, (table) => [
+  index("google_integration_events_created_idx").on(table.createdAt),
+]);
 
 /** Durable local-only fixtures used by Workspace simulation mode. */
 export const workspaceSimulationState = sqliteTable("workspace_simulation_state", {

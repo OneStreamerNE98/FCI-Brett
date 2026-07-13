@@ -78,6 +78,13 @@
       "when": 1783897031970,
       "tag": "0010_groovy_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1783923986786,
+      "tag": "0011_lazy_big_bertha",
+      "breakpoints": true
     }
   ]
 }

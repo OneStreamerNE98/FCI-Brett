@@ -56,3 +56,46 @@ jobs:
         run: npm test
         env:
           TEST_POSTGRES_URL: postgresql://fci_test:test-only-password@127.0.0.1:5432/fci_test
+
+  browser:
+    name: Chromium rendered regression tests
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: true
+      FCI_E2E: true
+      FCI_LOCAL_DEV_USER_EMAIL: e2e-admin@example.test
+      FCI_OFFICE_EMAILS: e2e-admin@example.test
+      FCI_ADMIN_EMAILS: e2e-admin@example.test
+      GOOGLE_INTEGRATION_MODE: simulation
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.13.0"
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run rendered regression tests
+        run: npm run test:e2e
+
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-browser-diagnostics
+          path: |
+            work/playwright-report
+            work/playwright-results
+          if-no-files-found: ignore
+          retention-days: 7

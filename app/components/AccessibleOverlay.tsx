@@ -1,6 +1,6 @@
 "use client";
 
-import { type MouseEvent, type ReactNode, useEffect, useRef } from "react";
+import { type MouseEvent, type ReactNode, type RefObject, useEffect, useRef } from "react";
 import { tabBoundaryTarget } from "./overlay-focus";
 
 type AccessibleOverlayProps = {
@@ -11,6 +11,7 @@ type AccessibleOverlayProps = {
   closeOnBackdrop?: boolean;
   contentClassName: string;
   onClose: () => void;
+  returnFocusRef?: RefObject<HTMLElement | null>;
   variant?: "modal" | "drawer";
 };
 
@@ -27,6 +28,7 @@ const FOCUSABLE_SELECTOR = [
 const overlayStack: symbol[] = [];
 let bodyLockCount = 0;
 let bodyOverflowBeforeLock = "";
+const inertOutsideState = new Map<HTMLElement, { count: number; wasInert: boolean }>();
 
 function lockBodyScroll() {
   if (bodyLockCount === 0) {
@@ -46,7 +48,52 @@ function focusableElements(panel: HTMLElement) {
     !element.hidden
     && element.getAttribute("aria-hidden") !== "true"
     && !element.closest("[inert]")
+    && element.getClientRects().length > 0
   ));
+}
+
+function acquireInert(element: HTMLElement) {
+  const existing = inertOutsideState.get(element);
+  if (existing) {
+    existing.count += 1;
+    return;
+  }
+
+  inertOutsideState.set(element, { count: 1, wasInert: element.hasAttribute("inert") });
+  element.setAttribute("inert", "");
+}
+
+function releaseInert(element: HTMLElement) {
+  const state = inertOutsideState.get(element);
+  if (!state) return;
+  state.count -= 1;
+  if (state.count > 0) return;
+
+  inertOutsideState.delete(element);
+  if (!state.wasInert) element.removeAttribute("inert");
+}
+
+function inertOutside(backdrop: HTMLElement) {
+  const acquired: HTMLElement[] = [];
+  let branch: HTMLElement | null = backdrop;
+
+  while (branch && branch !== document.body) {
+    const parent = branch.parentElement;
+    if (!parent) break;
+    for (const sibling of Array.from(parent.children)) {
+      if (sibling !== branch && sibling instanceof HTMLElement) {
+        acquireInert(sibling);
+        acquired.push(sibling);
+      }
+    }
+    branch = parent;
+  }
+
+  return () => {
+    for (let index = acquired.length - 1; index >= 0; index -= 1) {
+      releaseInert(acquired[index]);
+    }
+  };
 }
 
 export function AccessibleOverlay({
@@ -57,8 +104,10 @@ export function AccessibleOverlay({
   closeOnBackdrop = true,
   contentClassName,
   onClose,
+  returnFocusRef,
   variant = "modal",
 }: AccessibleOverlayProps) {
+  const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const tokenRef = useRef(Symbol("accessible-overlay"));
   const busyRef = useRef(busy);
@@ -72,13 +121,16 @@ export function AccessibleOverlay({
   }, [busy, closeOnBackdrop, onClose]);
 
   useEffect(() => {
+    const backdrop = backdropRef.current;
     const panel = panelRef.current;
-    if (!panel) return;
+    if (!backdrop || !panel) return;
 
     const token = tokenRef.current;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const preferredReturnTarget = returnFocusRef?.current;
     overlayStack.push(token);
     const unlockBodyScroll = lockBodyScroll();
+    const restoreOutsideInteraction = inertOutside(backdrop);
 
     const focusFrame = window.requestAnimationFrame(() => {
       const focusable = focusableElements(panel);
@@ -122,9 +174,15 @@ export function AccessibleOverlay({
       const stackIndex = overlayStack.lastIndexOf(token);
       if (stackIndex >= 0) overlayStack.splice(stackIndex, 1);
       unlockBodyScroll();
-      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+      restoreOutsideInteraction();
+      const returnTarget = preferredReturnTarget?.isConnected
+        ? preferredReturnTarget
+        : previouslyFocused?.isConnected
+          ? previouslyFocused
+          : null;
+      if (returnTarget && !returnTarget.closest("[inert]")) returnTarget.focus();
     };
-  }, []);
+  }, [returnFocusRef]);
 
   function closeFromBackdrop(event: MouseEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget) return;
@@ -134,7 +192,7 @@ export function AccessibleOverlay({
   }
 
   const baseBackdropClass = variant === "drawer" ? "drawer-backdrop" : "modal-backdrop";
-  return <div className={`${baseBackdropClass} accessible-overlay-backdrop ${backdropClassName}`.trim()} role="presentation" onMouseDown={closeFromBackdrop}>
+  return <div ref={backdropRef} className={`${baseBackdropClass} accessible-overlay-backdrop ${backdropClassName}`.trim()} role="presentation" onMouseDown={closeFromBackdrop}>
     <div
       ref={panelRef}
       className={`${contentClassName} accessible-overlay-panel`}

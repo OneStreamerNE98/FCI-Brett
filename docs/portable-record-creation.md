@@ -32,9 +32,9 @@ The application and domain layers do not import Next.js, Cloudflare bindings, or
 
 ## Pilot schema bootstrap
 
-Runtime D1 bootstrap statements are now centralized in one ordered, versioned registry. Migration statements and their version marker share a transactional D1 batch, failed work is retryable, and schema-artifact parity tests detect route-local DDL or missing registered tables/indexes.
+Pilot D1 schema changes now use the checked-in, ordered Drizzle sequence that Sites packages for controlled deployment. Normal API requests execute no schema DDL, and regression tests detect runtime DDL or missing schema/index artifacts.
 
-Read [Pilot D1 schema migrations](pilot-d1-schema-migrations.md) before deploying this branch. The runner is an additive bridge for the one-user D1 test pilot, not the production PostgreSQL migration system. Before any pilot deployment, back up the test database and inspect it for duplicate client codes or project numbers because the new uniqueness indexes intentionally fail instead of rewriting conflicting records.
+Read [Pilot D1 deployment migrations](pilot-d1-schema-migrations.md) before deploying this branch. The checked-in Sites/Drizzle sequence is for the one-user D1 test pilot, not the production PostgreSQL migration system. Before any pilot deployment, back up the test database and inspect it for duplicate client codes, client names, or project numbers because the new uniqueness indexes intentionally fail instead of rewriting conflicting records.
 
 ## Compatibility and safety
 
