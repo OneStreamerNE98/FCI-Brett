@@ -48,7 +48,11 @@ export async function POST(request: NextRequest) {
     },
   );
   if (!result.ok) {
-    const status = result.kind === "duplicate" ? 409 : result.kind === "forbidden" ? 403 : 400;
+    const status = result.kind === "identifier-collision"
+      ? 503
+      : result.kind === "duplicate" || result.kind === "idempotency-conflict" || result.kind === "in-progress"
+      ? 409
+      : result.kind === "forbidden" ? 403 : 400;
     return NextResponse.json({ error: result.message }, { status });
   }
   return NextResponse.json(result.value, { status: 201 });

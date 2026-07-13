@@ -26,6 +26,7 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 
 - [ ] Introduce provider-neutral database, object-storage, secret/configuration, and queued-job interfaces while retaining the existing D1/R2 development adapters.
 - [x] Add the first source-only PostgreSQL core schema and concurrent-runner-safe migration system with immutable checksums, foreign keys, constrained states, timestamps, version columns, idempotency, audit evidence, and an outbox. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
+- [x] Add source-only PostgreSQL client/project adapters, atomic actor-scoped request replay, transactional activity/outbox writes, worker-safe outbox transitions, guarded PostgreSQL value parsing, and PostgreSQL 16 repository coverage. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
 - [ ] Extend the production model with users, invitations, sessions, roles, capabilities, and project memberships, then connect those identities to the existing append-only audit, idempotency, and outbox records.
 - [ ] Add Cloud Run container and runtime support without changing the hosted development environment.
 - [ ] Add reviewable infrastructure definitions for development, staging, and production; do not apply them until owner inputs and deployment approval exist.
@@ -76,8 +77,8 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 1. **Completed frontend slice:** accessible dialog/drawer foundation and rendered keyboard QA.
 2. **Completed portability slice:** provider-neutral client and project creation services, D1 development adapters, safe mirror boundaries, and a centralized versioned D1 development schema runner. See [Portable client and project creation](portable-record-creation.md).
 3. **Completed PostgreSQL foundation slice:** constrained client/contact/project, activity/audit, idempotency, outbox, and immutable migration-history tables; checksum validation; advisory locking; transactional forward migrations; restore/forward-fix rollback guidance; and PostgreSQL 16 CI coverage. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
-4. **Next database worker:** implement PostgreSQL client/project repository adapters, atomic actor-scoped idempotency claims, transactional activity/outbox writes, and shared repository contract tests. Keep network calls outside database transactions and do not provision or migrate Cloud SQL.
-5. **Authorization worker:** simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
+4. **Completed PostgreSQL repository slice:** client/project adapters, atomic actor-scoped idempotency and truthful replay, transactional activity/outbox intent, guarded exact-value parsing, version-fenced outbox claim/complete/retry/recovery, and PostgreSQL 16 repository tests. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
+5. **Next authorization worker:** simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
 6. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
 7. **Frontend structure worker:** durable URLs, component split, typed feedback, partial-failure states, search keyboard behavior, and responsive/accessibility tests.
 8. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
@@ -106,15 +107,25 @@ The source-only PostgreSQL worker completed the first constrained production sch
 - Unit tests run everywhere; GitHub CI adds a PostgreSQL 16 service for real migration, concurrency, rollback, index, and constraint coverage.
 - Rollback is restore/forward-fix based. No destructive automatic down migration was added.
 
+## Completed PostgreSQL repository assignment
+
+The source-only repository worker connected the portable creation services to the production schema without wiring a production runtime or changing D1/Sites behavior:
+
+- Actor/operation/key request claims use one atomic insert; a same-fingerprint retry returns the winning stored record, and fingerprint reuse is rejected.
+- Client/contact or project creation, append-only activity evidence, outbox intent, and the completed replay response commit in one short transaction.
+- The documented Unicode client-name key is centralized, PostgreSQL `bigint` versions remain strings, and constrained `numeric` values use guarded safe-integer conversion.
+- Outbox claims use small ordered `FOR UPDATE SKIP LOCKED` batches; version-fenced complete/retry/recovery prevents stale-worker writes, and terminal dead letters append activity evidence atomically.
+- Fast tests run without PostgreSQL; GitHub CI supplies PostgreSQL 16 for real concurrency, rollback, replay, exact-value, and outbox lifecycle coverage.
+- No provider callback is accepted inside a repository transaction, and no Cloud, Workspace, migration, deployment, credential, or live-data state changed.
+
 ## Next bounded developer assignment
 
-Assign one database worker to connect the existing provider-neutral creation services to the completed production schema without provisioning Cloud resources or changing the hosted development environment:
+After the PostgreSQL repository pull request is reviewed and merged, assign one authorization worker to build the provider-neutral multi-user security foundation using simulated identities:
 
-- Implement PostgreSQL client/project repository adapters against the existing provider-neutral contracts and run the same repository behavior suite against both adapters.
-- Claim actor-scoped request-idempotency keys with atomic `INSERT ... ON CONFLICT`, reject fingerprint reuse, and return an accepted prior result without duplicating a record.
-- Write the client/contact or project, activity evidence, and outbox row in one short PostgreSQL transaction with optimistic-concurrency versions.
-- Add an outbox claim/complete/retry repository using small `FOR UPDATE SKIP LOCKED` batches; keep Google/network calls outside transactions and do not add a live worker yet.
-- Parse PostgreSQL `bigint`/`numeric` values without unsafe JavaScript coercion and generate the documented Unicode-normalized client-name key.
-- Document migration assumptions, identifier preservation, count/hash reconciliation, backup/restore prerequisites, and the owner approval required before any staging rehearsal.
+- Add forward-only production migrations for users, invitations, sessions, roles, capabilities, role assignments, and project memberships; do not edit the applied migration definitions.
+- Connect stable actor identities to audit, idempotency, and outbox evidence while retaining explicit external-identity fields for the later Google OIDC adapter.
+- Build server-enforced capability and project-scope policies that can run against simulated identities before Workspace credentials exist.
+- Add denial coverage for disabled users, expired/revoked sessions, missing capabilities, outside-domain identity fixtures, and cross-project access.
+- Preserve the one-user D1/Sites development environment and do not admit a second user or implement live Google login in this slice.
 
-This assignment may add source code, local fixtures, and automated tests only. It must not create Cloud SQL, add credentials, migrate development data, alter live Workspace resources, or deploy production.
+Final company role presets still require owner approval of the access matrix. This assignment may add source, migrations, fixtures, and automated tests only; it must not create Cloud resources, add credentials, migrate data, alter Workspace resources, deploy, or merge without review.

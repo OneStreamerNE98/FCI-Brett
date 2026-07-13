@@ -13,7 +13,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
 | Staff Google login and roles | Codex/developer | Not implemented | Build on Cloud Run/Cloud SQL after identity policy is approved. |
 | 20-user operating/access model | Owner + Workspace administrator | Waiting on owner | Decide staff/field roles and approve the app-to-Google access matrix. |
-| Production foundation and migration | Developer + Cloud administrator | In progress | Review the source-only PostgreSQL foundation, then add repository adapters, request idempotency, and transactional outbox writes. |
+| Production foundation and migration | Developer + Cloud administrator | In progress | Review the completed source-only PostgreSQL schema/repository slices; next add the simulated authorization model and production runtime composition. |
 | Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
 | Frontend multi-user hardening | Codex/developer | In progress | Integrity bypass and fake update composer are removed; implement real capabilities, freshness, and error behavior next. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |

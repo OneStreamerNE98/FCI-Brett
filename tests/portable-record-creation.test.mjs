@@ -397,6 +397,42 @@ test("duplicate clients and missing project clients map exactly and never reques
   assert.equal(mirrorCalls, 0);
 });
 
+test("generated PostgreSQL identifier collisions return a safe retry result without mirroring", async () => {
+  const mirror = { requestSync: async () => assert.fail("identifier collisions must not request a mirror") };
+  const client = await createClient(
+    { name: "FCI TEST Client" },
+    authorized(CREATION_CAPABILITIES.createClient),
+    {
+      repository: { create: async () => ({ outcome: "identifier-collision" }) },
+      directoryMirror: mirror,
+      newId: sequence(["client-id", "activity-id"]),
+      now: () => 1,
+    },
+  );
+  const project = await createProject(
+    { clientId: "client-id", name: "FCI TEST Project" },
+    authorized(CREATION_CAPABILITIES.createProject),
+    {
+      repository: { create: async () => ({ outcome: "identifier-collision" }) },
+      directoryMirror: mirror,
+      resolveProjectManagerId: async (candidateId) => candidateId,
+      newId: sequence(["project-id", "activity-id"]),
+      now: () => Date.UTC(2026, 0, 1),
+    },
+  );
+
+  assert.deepEqual(client, {
+    ok: false,
+    kind: "identifier-collision",
+    message: "A client identifier collision occurred. Retry the request.",
+  });
+  assert.deepEqual(project, {
+    ok: false,
+    kind: "identifier-collision",
+    message: "A project identifier collision occurred. Retry the request.",
+  });
+});
+
 test("a thrown optional mirror leaves both durable creates successful with a truthful pending result", async () => {
   const events = [];
   const throwingMirror = {
@@ -438,6 +474,121 @@ test("a thrown optional mirror leaves both durable creates successful with a tru
     });
   }
   assert.deepEqual(events, ["durable-client", "mirror-threw", "durable-project", "mirror-threw"]);
+});
+
+test("an idempotent PostgreSQL replay returns the stored record without repeating the mirror", async () => {
+  const mirror = { requestSync: async () => assert.fail("a replayed outbox request must not call the development mirror") };
+  const client = await createClient(
+    { name: "Retry generated name" },
+    authorized(CREATION_CAPABILITIES.createClient),
+    {
+      repository: {
+        create: async () => ({
+          outcome: "accepted",
+          replayed: true,
+          value: {
+            id: "11111111-1111-4111-8111-111111111111",
+            clientCode: "CL-11111111",
+            name: "Original accepted client",
+            createdAt: 1_784_100_000_000,
+            version: "2",
+          },
+        }),
+      },
+      directoryMirror: mirror,
+      newId: sequence(["retry-client-id", "retry-client-activity"]),
+      now: () => 1_784_200_000_000,
+    },
+  );
+  const project = await createProject(
+    { clientId: "retry-client-id", name: "Retry generated project" },
+    authorized(CREATION_CAPABILITIES.createProject),
+    {
+      repository: {
+        create: async () => ({
+          outcome: "accepted",
+          replayed: true,
+          value: {
+            id: "22222222-2222-4222-8222-222222222222",
+            projectNumber: "CF-2026-22222222",
+            projectManagerId: "simulated-office-user@example.test",
+            createdAt: 1_784_100_000_000,
+            estimatedValue: 125000,
+            version: "3",
+          },
+        }),
+      },
+      directoryMirror: mirror,
+      resolveProjectManagerId: async (candidateId) => candidateId,
+      newId: sequence(["retry-project-id", "retry-project-activity"]),
+      now: () => 1_784_200_000_000,
+    },
+  );
+
+  assert.deepEqual(client, {
+    ok: true,
+    value: {
+      id: "11111111-1111-4111-8111-111111111111",
+      clientCode: "CL-11111111",
+      name: "Original accepted client",
+      createdAt: 1_784_100_000_000,
+      version: "2",
+      sheetSync: {
+        status: "queued",
+        message: "Saved in FCI Operations; directory synchronization is queued for background processing.",
+      },
+    },
+  });
+  assert.deepEqual(project, {
+    ok: true,
+    value: {
+      id: "22222222-2222-4222-8222-222222222222",
+      projectNumber: "CF-2026-22222222",
+      projectManagerId: "simulated-office-user@example.test",
+      createdAt: 1_784_100_000_000,
+      version: "3",
+      sheetSync: {
+        status: "queued",
+        message: "Saved in FCI Operations; directory synchronization is queued for background processing.",
+      },
+    },
+  });
+});
+
+test("creation services expose typed idempotency conflict and in-progress outcomes", async () => {
+  const mirror = { requestSync: async () => assert.fail("idempotency failures must not mirror") };
+  const client = await createClient(
+    { name: "Conflict" },
+    authorized(CREATION_CAPABILITIES.createClient),
+    {
+      repository: { create: async () => ({ outcome: "idempotency-conflict" }) },
+      directoryMirror: mirror,
+      newId: sequence(["client-id", "activity-id"]),
+      now: () => 1,
+    },
+  );
+  const project = await createProject(
+    { clientId: "client-id", name: "In progress" },
+    authorized(CREATION_CAPABILITIES.createProject),
+    {
+      repository: { create: async () => ({ outcome: "in-progress" }) },
+      directoryMirror: mirror,
+      resolveProjectManagerId: async (candidateId) => candidateId,
+      newId: sequence(["project-id", "activity-id"]),
+      now: () => Date.UTC(2026, 0, 1),
+    },
+  );
+
+  assert.deepEqual(client, {
+    ok: false,
+    kind: "idempotency-conflict",
+    message: "This request key was already used for different client details.",
+  });
+  assert.deepEqual(project, {
+    ok: false,
+    kind: "in-progress",
+    message: "This project request is already being processed. Retry with the same request key.",
+  });
 });
 
 test("the directory mirror adapter exposes only JSON-safe discriminated results", async () => {

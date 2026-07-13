@@ -33,11 +33,12 @@ The current Sites/Workers/D1/R2 deployment remains a one-user development enviro
 ## Data and code migration
 
 - [x] Move the D1 development schema and integrity indexes into the ordered Drizzle/Sites deployment migration sequence, remove schema DDL from normal request paths, and retain an explicit local-only migration command. This development migration path does not complete the provider-neutral production database work below.
-- [x] Prove the provider-neutral creation boundary for clients and projects with application services, repository/mirror ports, D1 development adapters, capability tests, and preserved HTTP behavior. The production PostgreSQL adapters and model remain open.
+- [x] Prove the provider-neutral creation boundary for clients and projects with application services, repository/mirror ports, D1 development adapters, capability tests, and preserved HTTP behavior. The production runtime composition remains open.
 - [x] Add the source-only PostgreSQL core schema for clients, contacts, projects, activity/audit events, actor-scoped idempotency requests, outbox events, and immutable migration history. It is tested but not applied to Cloud SQL. See [Production PostgreSQL foundation](../production-postgresql-foundation.md).
+- [x] Add source-only PostgreSQL client/project adapters with atomic actor-scoped idempotency, transactional activity/outbox writes, safe `bigint`/`numeric` handling, version-fenced outbox transitions, and PostgreSQL 16 repository tests. They are not wired to a production runtime. See [Production PostgreSQL repositories](../production-postgresql-repositories.md).
 - [ ] Replace remaining development text relationship IDs with PostgreSQL foreign keys; the bounded client/contact/project production foundation now uses indexed foreign keys.
 - [ ] Add constrained status values, timestamps, version fields, and normalized meeting/action/task records.
-- [ ] Add unique/idempotency constraints for project numbers, Google archives, Drive mappings, Calendar channels, and queued operations.
+- [ ] Extend the completed client/project request-idempotency constraints to Google archives, Drive mappings, Calendar channels, and later queued operations.
 - [ ] Wrap lead conversion and other multi-record state changes in database transactions.
 - [ ] Define provider-neutral database and object-storage interfaces before replacing Cloudflare bindings.
 - [x] Add a production migration runner with LF-normalized immutable checksums, a dedicated-connection advisory lock, post-lock prefix validation, one transaction per version, PostgreSQL 16 CI coverage, and a reviewed restore/forward-fix rollback strategy. No environment has been migrated.
@@ -47,7 +48,7 @@ The current Sites/Workers/D1/R2 deployment remains a one-user development enviro
 ## Multi-user and Google reliability work
 
 - [ ] Add optimistic concurrency to editable records and show users a conflict instead of overwriting newer work.
-- [ ] Replace immediate full-Sheet rewrites with an outbox/queued mirror and single-flight synchronization.
+- [ ] Wire the completed transactional outbox repository to a live queued mirror and add single-flight synchronization.
 - [ ] Add timeouts, bounded retries with backoff, quota handling, idempotency, and correlation IDs to every Google operation.
 - [ ] Refresh OAuth tokens through a cache/single-flight path and distinguish transient Google failure from required reauthorization.
 - [ ] Remove the dual source of truth for saved versus environment Calendar and Workspace resource IDs.

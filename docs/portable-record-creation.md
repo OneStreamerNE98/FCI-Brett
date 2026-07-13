@@ -6,9 +6,9 @@ Status: Implemented in source and covered by automated tests. Not deployed.
 
 ## Outcome
 
-Client and project creation now use provider-neutral domain and application services instead of placing business rules directly in Next.js route handlers. The current D1 database and synchronous Google directory mirror remain development adapters behind those boundaries, so the hosted development environment can keep its existing HTTP behavior while later production adapters are added deliberately.
+Client and project creation now use provider-neutral domain and application services instead of placing business rules directly in Next.js route handlers. The current D1 database and synchronous Google directory mirror remain development adapters behind those boundaries, so the hosted development environment keeps its existing HTTP behavior while production adapters are developed separately.
 
-This is a bounded portability proof. The first [production PostgreSQL foundation](production-postgresql-foundation.md) is now defined separately, but PostgreSQL repository adapters, multi-user authorization, queued Google synchronization, and the live Workspace connection remain incomplete.
+This is a bounded portability proof. The first [production PostgreSQL foundation](production-postgresql-foundation.md) and the source-only [PostgreSQL repository slice](production-postgresql-repositories.md) are now implemented separately. Production runtime composition, multi-user authorization, live queued Google synchronization, and the Workspace connection remain incomplete.
 
 ## Creation flow
 
@@ -19,6 +19,8 @@ This is a bounded portability proof. The first [production PostgreSQL foundation
 5. Only after the durable database write succeeds, the application service asks the optional directory-mirror port to synchronize.
 6. A mirror failure does not roll back the accepted record. The response contains only a safe pending status and a stable error code/message.
 
+The unwired PostgreSQL adapters use the same application services with an atomic record/activity/outbox/idempotency transaction. Their accepted or replayed result reports synchronization as queued and returns the persisted winning record; it never invokes the synchronous development mirror.
+
 The application and domain layers do not import Next.js, Cloudflare bindings, or Google connector code.
 
 ## Implemented boundaries
@@ -28,6 +30,7 @@ The application and domain layers do not import Next.js, Cloudflare bindings, or
 - `DirectoryMirror` is optional and runs only after a durable write.
 - `CreationAuthorization` checks `clients:create` or `projects:create` before any creation side effects.
 - D1 repository adapters preserve the current development identifiers, client codes, project numbers, duplicate handling, and response status codes.
+- PostgreSQL adapters preserve the ports while adding atomic actor-scoped request replay, transactionally queued delivery intent, and exact persisted version values.
 - The Google development mirror adapter returns an explicitly allowlisted result instead of leaking provider or credential details.
 
 ## Development schema bootstrap
@@ -45,13 +48,11 @@ Read [Development D1 deployment migrations](development-d1-schema-migrations.md)
 
 ## Remaining production work
 
-The next platform assignment should extend the accepted ports rather than adding production behavior back into route handlers:
+The next platform assignments should extend the accepted ports rather than adding production behavior back into route handlers:
 
-- Implement PostgreSQL repository adapters against the completed source-only schema and run repository contract tests against PostgreSQL 16.
 - Add users, sessions, roles, and project memberships, then connect those identities to the existing append-only audit, idempotency, and outbox records.
-- Implement request-idempotency behavior so a retry after a lost response cannot create a second project.
-- Replace synchronous mirroring with a transactional outbox and queued worker before multi-user rollout.
+- Compose the PostgreSQL adapters into the approved production runtime after authorization and platform inputs are accepted.
+- Wire the transactional outbox to a live queued worker before multi-user rollout; keep provider calls outside repository transactions.
 - Add a real D1 integration test for batch rollback, uniqueness conflicts, and concurrent writes; keep the current source/behavior tests as fast coverage.
-- Store a normalized database key for client-name uniqueness rather than relying on SQLite `LOWER`, which is not a complete Unicode normalization strategy.
 
 Do not provision or migrate the production environment as part of this assignment. Infrastructure inputs, credentials, restore targets, and owner approval remain required first.

@@ -32,7 +32,22 @@ export type ClientCreationIntent = {
   };
 };
 
-export type ClientCreationRepositoryResult = { outcome: "created" } | { outcome: "duplicate" };
+export type AcceptedClientCreation = {
+  id: string;
+  clientCode: string;
+  name: string;
+  createdAt: number;
+  /** PostgreSQL bigint values stay strings so callers cannot lose precision. */
+  version: string;
+};
+
+export type ClientCreationRepositoryResult =
+  | { outcome: "created" }
+  | { outcome: "accepted"; value: AcceptedClientCreation; replayed: boolean }
+  | { outcome: "duplicate" }
+  | { outcome: "identifier-collision" }
+  | { outcome: "idempotency-conflict" }
+  | { outcome: "in-progress" };
 
 export interface ClientRepository {
   create(intent: ClientCreationIntent): Promise<ClientCreationRepositoryResult>;

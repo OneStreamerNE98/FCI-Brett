@@ -8,7 +8,7 @@ Status: Implemented and tested in source. Not provisioned, applied, or deployed.
 
 The production PostgreSQL foundation is deliberately separate from the current D1 development environment. It defines the first production data model and migration safety controls without changing API routes, D1 migration versions 1–3, the hosted development environment, Google Workspace, or any live data.
 
-This slice contains schema and migration-runner code only. PostgreSQL repository adapters, application idempotency behavior, outbox workers, users/roles, Cloud SQL, Cloud Run, secrets, and development-data migration remain later assignments.
+This document describes the earlier schema and migration-runner slice. The later source-only [PostgreSQL repository slice](production-postgresql-repositories.md) now implements client/project adapters, application idempotency, and worker-safe outbox state transitions. Production runtime composition, a live outbox worker, users/roles, Cloud SQL, Cloud Run, secrets, and development-data migration remain later assignments.
 
 ## Core model
 
@@ -26,9 +26,9 @@ The initial registry creates only these production tables:
 
 Every relationship in this bounded model uses a named foreign key and has an index on its referencing column. Identifiers supplied by the application use PostgreSQL `uuid`; actor identifiers remain text until the user/identity schema is approved. Time values use `timestamptz`, structured payloads use `jsonb`, and all table/check/foreign-key/unique identifiers are explicit lowercase snake case.
 
-`projects.estimated_value` is exact PostgreSQL `numeric` with a database check that rejects fractions, negative values, and values above JavaScript’s safe-integer ceiling. `version` fields use `bigint`; a future repository adapter must read them as strings or use a guarded parser and must never silently coerce an out-of-range value to JavaScript `number`.
+`projects.estimated_value` is exact PostgreSQL `numeric` with a database check that rejects fractions, negative values, and values above JavaScript’s safe-integer ceiling. `version` fields use `bigint`; the repository adapter validates and returns them as canonical decimal strings rather than silently coercing an out-of-range value to JavaScript `number`.
 
-The repository worker must produce `clients.normalized_name_key` with this exact application-side algorithm before inserting: `name.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase()`. In words: Unicode NFKC normalization, trim outer whitespace, collapse internal Unicode whitespace to one ASCII space, then apply JavaScript's locale-independent lowercase conversion. Centralize that function and test composed/decomposed Unicode plus whitespace variants; never reimplement it per route. The database enforces a trimmed lowercase, nonempty, unique key, but PostgreSQL `lower()` alone is not a complete Unicode normalization algorithm.
+The repository produces `clients.normalized_name_key` with this exact application-side algorithm before inserting: `name.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase()`. In words: Unicode NFKC normalization, trim outer whitespace, collapse internal Unicode whitespace to one ASCII space, then apply JavaScript's locale-independent lowercase conversion. The function is centralized and tested with composed/decomposed Unicode plus whitespace variants. The database enforces a trimmed lowercase, nonempty, unique key, but PostgreSQL `lower()` alone is not a complete Unicode normalization algorithm.
 
 ## Migration safety
 
@@ -48,11 +48,11 @@ The runner:
 
 Do not use `CREATE INDEX CONCURRENTLY` inside these migration transactions. If a future large-table index requires concurrent creation, design and review a separate resumable maintenance procedure rather than weakening this runner.
 
-## Idempotency and outbox contract for the next slice
+## Implemented idempotency and outbox contract
 
-The schema provides the constraints needed for atomic request claiming, but no route uses them yet. The PostgreSQL repository adapter should claim an idempotency key with one statement such as `INSERT ... ON CONFLICT (actor_id, operation, idempotency_key) DO NOTHING RETURNING ...`; do not implement a separate select-then-insert check.
+The later [PostgreSQL repository slice](production-postgresql-repositories.md) uses the schema constraints for atomic actor/operation/key claims. Client/project creation, activity evidence, matching outbox intent, and the completed replay response commit in one short transaction. Deterministic 404/409 failures also retain the key binding. A same-fingerprint retry returns the stored winning response or failure; a changed normalized request is rejected.
 
-Client/project creation and its matching outbox row must be committed in the same database transaction; the schema rejects a `client.created` event aimed at a project or a `project.created` event aimed at a client. A worker should claim a small ordered batch using the `outbox_events_pending_available_idx` partial index and `FOR UPDATE SKIP LOCKED`, update the claim/lease, and commit immediately. Google or other network work must happen after that claim transaction commits. A later short transaction records completion or returns the row to `pending` with a future `available_at`; exhausted work moves to `dead` with `dead_lettered_at` and audit evidence. The `outbox_events_expired_lease_idx` partial index supports a separate short recovery pass for crashed `processing` claims whose lease has expired.
+The outbox adapter claims small ordered batches with `FOR UPDATE SKIP LOCKED` and commits before any provider work. Version-fenced completion, retry/dead-letter, and expired-lease recovery prevent stale workers from overwriting a newer claim. A live queue worker and provider calls remain deliberately unwired.
 
 ## Rollback strategy
 
@@ -69,7 +69,7 @@ The restore and cutover procedure must be rehearsed with test data before produc
 
 Fast unit tests run without PostgreSQL and cover registry validation, LF-normalized checksums, advisory-lock ordering, post-lock history reads, atomic version markers, rollback, unlock/release behavior, bounded table scope, named constraints, and foreign-key index declarations.
 
-The GitHub workflow starts a PostgreSQL 16 service with test-only credentials and runs the integration suite against an isolated random schema. Integration coverage applies all versions concurrently from empty state, verifies no-op reruns, checks rollback of a failed version, exercises foreign keys/status/value/JSON/idempotency constraints, verifies the partial outbox index, and checks for missing foreign-key indexes. When `TEST_POSTGRES_URL` is present, connection or migration failure fails the suite; it cannot silently skip. Local `npm test` remains usable when that variable is absent.
+The GitHub workflow starts a PostgreSQL 16 service with test-only credentials and runs the integration suites against isolated random schemas. Foundation coverage applies all versions concurrently from empty state, verifies no-op reruns, checks rollback of a failed version, exercises foreign keys/status/value/JSON/idempotency constraints, verifies the partial outbox index, and checks for missing foreign-key indexes. Repository coverage exercises concurrent idempotent replay, atomic rollback, Unicode uniqueness, exact numeric/version handling, audited project assignment, disjoint outbox claims, fenced transitions, dead-letter evidence, and lease recovery. When `TEST_POSTGRES_URL` is present, connection or migration failure fails the suite; it cannot silently skip. Local `npm test` remains usable when that variable is absent.
 
 Never point `TEST_POSTGRES_URL` at a shared, staging, or production database. The integration test creates and drops its own schema.
 
@@ -78,7 +78,7 @@ Never point `TEST_POSTGRES_URL` at a shared, staging, or production database. Th
 - Create separate migration-owner and application-runtime database roles, with the runtime role limited to required DML and no schema-change privileges.
 - Configure private Cloud SQL networking, connection pooling/caps, SSL requirements, backups, point-in-time recovery, monitoring, and Secret Manager references.
 - Run migration and restore rehearsals in development and staging before production.
-- Add repository adapters and contract tests, then transactional client/project writes with idempotency and outbox rows.
+- Wire the completed repository adapters into an approved production runtime and implement the live queue/provider worker only after runtime and authorization review.
 - Add users, secure sessions, roles/capabilities, and project memberships before a second employee is admitted.
 
 No role grants, login credentials, Cloud resources, production connections, live migrations, deployments, or Workspace changes are part of this source-only foundation.
