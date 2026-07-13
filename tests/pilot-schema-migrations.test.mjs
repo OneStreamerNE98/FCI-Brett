@@ -13,6 +13,12 @@ import {
 const root = fileURLToPath(new URL("../", import.meta.url));
 const appRoot = join(root, "app");
 const migrationModule = join(appRoot, "platform", "pilot-schema-migrations.ts");
+const productionMigrationModule = join(
+  appRoot,
+  "platform",
+  "postgres",
+  "production-schema-migrations.ts",
+);
 const versionInsertPattern = /^INSERT INTO pilot_schema_migrations\b/i;
 
 class FakeStatement {
@@ -269,12 +275,12 @@ async function runtimeSourceFiles(directory) {
   return files;
 }
 
-test("keeps runtime CREATE TABLE and CREATE INDEX SQL in the pilot migration module only", async () => {
+test("keeps pilot runtime DDL out of routes and isolated from production PostgreSQL DDL", async () => {
   const files = await runtimeSourceFiles(appRoot);
   const violations = [];
 
   for (const path of files) {
-    if (path === migrationModule) continue;
+    if (path === migrationModule || path === productionMigrationModule) continue;
     const source = await readFile(path, "utf8");
     if (/\bCREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\b/i.test(source)) {
       violations.push(relative(root, path).replaceAll("\\", "/"));

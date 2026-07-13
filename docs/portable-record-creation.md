@@ -8,7 +8,7 @@ Status: Implemented in source and covered by automated tests. Not deployed.
 
 Client and project creation now use provider-neutral domain and application services instead of placing business rules directly in Next.js route handlers. The current D1 database and synchronous Google directory mirror remain pilot adapters behind those boundaries, so the hosted pilot can keep its existing HTTP behavior while later production adapters are added deliberately.
 
-This is a bounded portability proof. It does not complete the PostgreSQL production model, multi-user authorization, queued Google synchronization, or the live Workspace connection.
+This is a bounded portability proof. The first [production PostgreSQL foundation](production-postgresql-foundation.md) is now defined separately, but PostgreSQL repository adapters, multi-user authorization, queued Google synchronization, and the live Workspace connection remain incomplete.
 
 ## Creation flow
 
@@ -47,9 +47,9 @@ Read [Pilot D1 schema migrations](pilot-d1-schema-migrations.md) before deployin
 
 The next platform assignment should extend the accepted ports rather than adding production behavior back into route handlers:
 
-- Add the versioned PostgreSQL schema plus forward/rollback runner and repository contract tests.
-- Add users, sessions, roles, project memberships, append-only audit events, outbox records, and idempotency records.
-- Add request idempotency so a retry after a lost response cannot create a second project.
+- Implement PostgreSQL repository adapters against the completed source-only schema and run repository contract tests against PostgreSQL 16.
+- Add users, sessions, roles, and project memberships, then connect those identities to the existing append-only audit, idempotency, and outbox records.
+- Implement request-idempotency behavior so a retry after a lost response cannot create a second project.
 - Replace synchronous mirroring with a transactional outbox and queued worker before multi-user rollout.
 - Add a real D1 integration test for batch rollback, uniqueness conflicts, and concurrent writes; keep the current source/behavior tests as fast coverage.
 - Store a normalized database key for client-name uniqueness rather than relying on SQLite `LOWER`, which is not a complete Unicode normalization strategy.

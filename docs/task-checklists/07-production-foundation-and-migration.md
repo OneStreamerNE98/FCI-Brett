@@ -34,12 +34,13 @@ The current Sites/Workers/D1/R2 deployment remains a one-user test pilot. Produc
 
 - [x] Centralize additive runtime D1 pilot bootstrap statements in one ordered, idempotent registry with failure/retry and schema-artifact parity tests. This pilot-only bridge does not complete the provider-neutral database work or production migration runner below.
 - [x] Prove the provider-neutral creation boundary for clients and projects with application services, repository/mirror ports, D1 pilot adapters, capability tests, and preserved HTTP behavior. The production PostgreSQL adapters and model remain open.
-- [ ] Replace text relationship IDs with PostgreSQL foreign keys.
+- [x] Add the source-only PostgreSQL core schema for clients, contacts, projects, activity/audit events, actor-scoped idempotency requests, outbox events, and immutable migration history. It is tested but not applied to Cloud SQL. See [Production PostgreSQL foundation](../production-postgresql-foundation.md).
+- [ ] Replace remaining pilot text relationship IDs with PostgreSQL foreign keys; the bounded client/contact/project production foundation now uses indexed foreign keys.
 - [ ] Add constrained status values, timestamps, version fields, and normalized meeting/action/task records.
 - [ ] Add unique/idempotency constraints for project numbers, Google archives, Drive mappings, Calendar channels, and queued operations.
 - [ ] Wrap lead conversion and other multi-record state changes in database transactions.
 - [ ] Define provider-neutral database and object-storage interfaces before replacing Cloudflare bindings.
-- [ ] Add a production migration runner and a reviewed rollback strategy.
+- [x] Add a production migration runner with LF-normalized immutable checksums, a dedicated-connection advisory lock, post-lock prefix validation, one transaction per version, PostgreSQL 16 CI coverage, and a reviewed restore/forward-fix rollback strategy. No environment has been migrated.
 - [ ] Rehearse pilot-to-staging migration using test data, preserving identifiers and audit evidence.
 - [ ] Freeze pilot writes, reconcile counts and hashes, cut over, and retain a time-boxed rollback window only after acceptance.
 
