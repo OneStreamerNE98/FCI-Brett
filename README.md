@@ -29,19 +29,71 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 - Durable project meeting notes with Otter links, summaries, decisions, action items, transcript excerpts, and assistant evidence
 - D1-backed data-model and API foundation for clients, contacts, projects, meetings, rules, mail items, and workspace settings
 
+## Current readiness
+
+The application is ready for a controlled, single-user pilot using clearly marked test data. It is not yet approved for real client data or a multi-user company rollout.
+
+The current build includes hosted authentication with an office allowlist, durable clients/leads/projects/meetings, review-first Gmail filing, Shared Drive project folders, a one-way Google Sheets mirror, Calendar test controls, and a records-based project assistant. Scheduling, messaging, full record editing, project tasks, closeout, production background workers, and permission-filtered document indexing are not complete.
+
+Before real client data is stored, backup restoration, sensitive-action audit coverage, project permissions, and the complete test lifecycle must pass.
+
 ## Production architecture
 
-The current Sites/Workers/D1/R2 deployment is a controlled pilot. Production will run on Google Cloud Run with Cloud SQL PostgreSQL, `pgvector`, Cloud Tasks/Pub/Sub, Cloud Storage, Secret Manager, and Google Workspace OIDC. Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) before adding production modules or data.
+The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains a controlled pilot; production will run on Google Cloud Run with Cloud SQL PostgreSQL, `pgvector`, Cloud Tasks/Pub/Sub, Cloud Storage, Secret Manager, and Google Workspace OIDC. Complete this migration before building scheduling, messaging, or AI document indexing.
 
-## Google Workspace setup
+Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the migration boundary, cutover requirements, and consequences.
 
-See [`docs/google-workspace-organization.md`](docs/google-workspace-organization.md) for the shared-drive layout, email rules, client-sheet mirror, and administrator checklist.
+## Remaining launch decision
 
-For the prototype test sequence and the exact Google Cloud / Workspace handoff, see [`docs/testing-and-google-workspace-setup.md`](docs/testing-and-google-workspace-setup.md).
+A controlled one-user pilot may continue with the current allowlisted ChatGPT sign-in. Implement Google Workspace OpenID Connect login, application roles, and project permissions before admitting a second user. The Google Workspace data connection does not provide application login.
 
-For the implemented project meeting workflow and future Otter automation options, see [`docs/meeting-notes-and-otter.md`](docs/meeting-notes-and-otter.md).
+## Prioritized next work
 
-For private GitHub collaboration, app-user access, and secret-handling guidance, see [`docs/collaboration-and-sharing.md`](docs/collaboration-and-sharing.md).
+Complete the next product milestone in this order:
+
+1. Build the Google Cloud production foundation and tested migration/cutover path.
+2. Add Google Workspace OIDC plus Admin, Office, and Project Manager roles with server-enforced project permissions.
+3. Add editing and archiving for clients, contacts, leads, projects, and meetings.
+4. Implement lead conversion as one atomic transaction.
+5. Add project dates, durable tasks/follow-ups, notes, file metadata, photo UI, and activity history.
+6. Make saved Calendar IDs and settings authoritative in the live integration.
+7. Connect uploads to project Files and Shared Drive, including scanning and quarantine.
+8. Add route, integration, and browser-behavior tests; validate backup restoration; and add an administrator audit viewer.
+
+After that foundation is accepted, build appointment state management and Calendar reconciliation; workers, crews, shifts, conflicts, publishing, and acknowledgements; provider-neutral messaging with consent and delivery tracking; durable Gmail review queues; and project closeout. Permission-filtered AI indexing, forecasting, retry dashboards, and a Workspace Marketplace add-on come later.
+
+See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page audit and complete roadmap.
+
+## Google Workspace pilot rollout
+
+Use only records named `FCI TEST — DO NOT USE` until the production acceptance checklist passes.
+
+1. Select a company-controlled Workspace connection account, ideally `operations@yourdomain.com`.
+2. Create the `FCI Operations` Shared Drive, `FCI Operations Directory` spreadsheet, `FCI • Client Appointments` calendar, and `FCI • Field Schedule` calendar.
+3. Create the company Google Cloud project, enable the required APIs, and configure an Internal OAuth application with the exact hosted callback URI.
+4. Store the OAuth secret and token-encryption key only in encrypted hosted secret settings. Never commit, email, document, or place them in Drive.
+5. Deploy the runtime configuration with Drive provisioning disabled.
+6. Connect the exact authorized Workspace account and verify Gmail, Drive, Calendar, and Sheets independently.
+7. Enable Drive provisioning only after Shared Drive verification succeeds, then create and inspect one test project folder.
+8. Run the complete pilot lifecycle: two projects for one test client, Sheets mirroring, reviewed Gmail copy and attachments, a reply draft, Calendar test hold, meeting evidence, assistant citations, and a rejected unauthorized login.
+
+The application remains the system of record. The directory spreadsheet is a one-way mirror except for its intentionally spreadsheet-owned Account Notes field. Gmail messages are copied only after explicit review and remain in the Inbox; replies are drafts until a person intentionally sends them.
+
+See [`docs/google-workspace-rollout-guide.md`](docs/google-workspace-rollout-guide.md) for the exact administrator procedure, runtime values, troubleshooting, and production acceptance checklist. Also see [`docs/meeting-notes-and-otter.md`](docs/meeting-notes-and-otter.md) and [`docs/collaboration-and-sharing.md`](docs/collaboration-and-sharing.md).
+
+## Repository and development handoff
+
+Keep one canonical development repository outside OneDrive. Use a private, business-owned GitHub repository for collaboration and backup; use OneDrive for business documents, exports, training material, and a repository link rather than a second editable source tree.
+
+- Protect `main` as the last accepted release.
+- Use `codex/<short-feature-name>` feature branches and pull requests.
+- Require passing tests, a production build, UI screenshots when applicable, and a short data/security impact note before merging.
+- Give developers Write access rather than Admin access and use separate development OAuth credentials where needed.
+- Share `.env.example`, never `.env.local`, OAuth credentials, encryption keys, tokens, `node_modules`, build caches, or production client exports.
+- Preserve the current Google Workspace test integration and existing user data when continuing development.
+- Do not deploy a public version without owner approval.
+
+See [`docs/codex-project-handoff.md`](docs/codex-project-handoff.md) for the canonical repository recommendation and the complete Codex handoff prompt.
 
 ## Workspace Auth Headers
 
