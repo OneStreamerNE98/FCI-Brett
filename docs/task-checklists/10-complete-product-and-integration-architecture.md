@@ -2,7 +2,7 @@
 
 Owner: Business owner with developer, operations lead, Google administrator, and accounting/field representatives
 
-Status: Audit complete; PR #11 source runtime boundary approved; broader product decisions and implementation remain open
+Status: Audit complete; PR #11 source runtime boundary merged; broader product decisions and implementation remain open
 
 Depends on: [Setup inputs](00-setup-inputs.md) and the [complete architecture audit](../complete-product-and-google-cloud-architecture-audit.md)
 
@@ -46,6 +46,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 
 ## Texting, email, and reminders
 
+- [x] Prefer Workspace email and Calendar workflows for the first reminder release; defer paid SMS until its business, compliance, provider, and cost decisions pass.
 - [ ] Separate operational appointment/project messages from marketing messages and approve the allowed purposes for each channel.
 - [ ] Select the initial SMS provider and sender route; do not acquire or register a production sender until the policy is approved.
 - [ ] Approve consent capture/evidence, sender identification, STOP/START/HELP, suppression, and opt-out wording with appropriate legal/compliance review.
@@ -65,13 +66,15 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 
 ## Google Cloud and operations
 
-- [ ] Approve the company Cloud organization/billing account, primary region, separate development/staging/production projects, hostname, and DNS owner.
-- [ ] Approve monthly budget thresholds and recipients; define separate SMS/provider spend caps.
+- [x] Approve separate development/staging/production project, credential, and data boundaries, with Sites development and on-demand staging rather than three continuously running stacks.
+- [ ] Approve the company Cloud organization/billing account, primary region, hostname, and DNS owner.
+- [ ] Name recipients for the default `$50/month` pre-production accidental-spend alert and approve an estimate-based production alert budget; define separate SMS/provider spend caps before SMS.
 - [ ] Set availability expectations, RPO, RTO, production HA choice, maintenance window, and regional-outage policy.
 - [ ] Name deployment approver, rollback owner, security incident owner, primary recovery administrator, and second trained recovery administrator.
 - [x] Approve one regional Cloud Run/Cloud SQL modular monolith as the initial employee-application runtime boundary. The source foundation remains fail-closed and undeployed.
-- [ ] Decide whether the isolated malware scanner is the only initial service split after the file policy and scanner requirements are approved.
-- [ ] Approve least-privilege runtime, task, Scheduler, Pub/Sub, migration, scanner, and deployment identities.
+- [x] Approve a cost-controlled rollout: minimum production core first, standalone and HA Cloud SQL priced before selection, and optional service modules disabled by default.
+- [x] Defer the isolated malware scanner and quarantine resources until untrusted uploads are scheduled and the file policy is approved.
+- [ ] Approve least-privilege runtime, migration, and deployment identities; approve task, Scheduler, Pub/Sub, and scanner identities only when those modules are activated.
 
 ## Developer foundation before live Workspace access
 
@@ -80,7 +83,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 - [ ] Add users, identities, invitations, secure sessions, roles/capabilities, project memberships, and general append-only security audit.
 - [ ] Add access-context query scoping and negative cross-project authorization tests.
 - [x] Add the owner-approved source-only Node/Cloud Run foundation with validated runtime configuration, capped PostgreSQL pools, separate migration/rehearsal commands, and process/database health endpoints without provisioning resources. Employee application paths still return `503`; see [Google Cloud runtime foundation](../google-cloud-runtime-foundation.md).
-- [ ] Add reviewable development, staging, and production infrastructure definitions for private networking, service identities, backups/PITR, scaling, monitoring, and budgets. Keep every definition unapplied until the owner supplies the non-secret inputs and separately approves provisioning.
+- [ ] Add costed, reviewable infrastructure definitions that preserve Sites development, support on-demand staging, provide standalone and HA production database profiles, configure zero-minimum/bounded-maximum Cloud Run, and keep optional service modules disabled. Keep every definition unapplied until separate provisioning approval.
 - [ ] Define and test provider-neutral jobs, attempts, application-owned failed jobs, replay/cancel, outbox-relay, future Scheduler/reminder, and fake Cloud Tasks contracts. Do not add operational scheduling or delivery before the production platform and authorization gates pass.
 - [ ] Add Gmail watch/history and Calendar channel/sync-token state machines with duplicate, delay, expiry, dropped-notification, and full-resync fixtures.
 - [ ] Add file metadata and quarantine/scan/release contracts with fake storage/scanner implementations and permission tests.
@@ -92,6 +95,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 ## Live configuration hold
 
 - [ ] Do not create or apply Google Cloud resources until the owner approves the environment, budget, IAM, and recovery inputs.
+- [ ] Do not treat reserved environment boundaries or source definitions as permission to create three running stacks.
 - [ ] Do not create live Gmail watches, Calendar channels, Workspace tokens, phone numbers, or outbound messages during source-only development.
 - [ ] Do not deploy, migrate data, change the existing hosted configuration, or alter the current Workspace test connector without owner approval.
 - [ ] Do not admit a second employee or real client data before the identity, authorization, restore, audit, and acceptance gates pass.
@@ -103,7 +107,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 - [ ] Security audit is separate from the client/project activity timeline and covers identity, permissions, exports, files, jobs, integrations, and recovery.
 - [ ] Restore and point-in-time recovery pass in a separate environment with data reconciliation and an application smoke test.
 - [ ] Representative Admin, Office, Project Manager, Sales/Estimator, and Field access scenarios pass if those roles are approved.
-- [ ] Gmail, Calendar, Drive, Sheets, files, and messaging pass normal, duplicate, delayed, expired, revoked, partial-failure, and reconciliation scenarios.
+- [ ] Every integration enabled for launch passes its applicable normal, duplicate, delayed, expired, revoked, partial-failure, and reconciliation scenarios; dormant modules remain unprovisioned.
 - [ ] The owner signs off on the staging migration rehearsal, production cutover plan, second-user gate, and real-data gate.
 
 ## Completion result

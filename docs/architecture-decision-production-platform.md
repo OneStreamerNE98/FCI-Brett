@@ -5,7 +5,7 @@ Decision date: July 12, 2026
 
 ## Decision
 
-The controlled development environment may continue on OpenAI Sites with Cloudflare Workers, D1, and R2. The production system will return to the approved Google Cloud architecture before scheduling, messaging, or AI document indexing is built. For the initial 20-person rollout, use one regional modular monolith rather than a microservice fleet:
+The controlled development environment may continue on OpenAI Sites with Cloudflare Workers, D1, and R2. The production system will return to the approved Google Cloud architecture before scheduling, messaging, or AI document indexing is built. For the initial 20-person rollout, use one regional modular monolith rather than a microservice fleet. The list below is the target capability set, not a requirement to provision every service for launch; activation follows the [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md):
 
 - One regional Cloud Run service for the web application, API, and authenticated task/webhook handlers.
 - One Cloud SQL PostgreSQL database as the system of record, with connection pooling, constraints, transactions, backups, and point-in-time recovery.
@@ -24,6 +24,8 @@ The development D1 schema changes use the checked-in [D1 development deployment 
 
 The source-only [production PostgreSQL foundation](production-postgresql-foundation.md) and [repository slice](production-postgresql-repositories.md) now define the core client/contact/project, business activity evidence, idempotency, outbox, immutable migration-history, and provider-neutral repository boundaries. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) adds validated private Cloud SQL composition, bounded pools, a separate migration job command, exact readiness, least-privilege source policy, and a bounded test-data rehearsal. None of this has been provisioned, applied to Cloud SQL, connected to Workspace, migrated with live data, or deployed. General security audit, users/roles, the remaining application schema/routes, object storage, infrastructure resources, and complete cutover still remain.
 
+Provisioning and service activation follow the [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md). That supplemental decision changes rollout timing and cost gates, not this production architecture. It keeps Sites as development, staging on demand, and optional services disabled until their features are scheduled; the continuously provisioned launch core is limited to the approved Cloud Run, Cloud SQL, Secret Manager, identity/authorization, monitoring, backup, and restore boundary.
+
 ## Why
 
 The remaining product roadmap is dominated by work that benefits from PostgreSQL transactions and durable asynchronous processing: lead conversion, appointment state changes, crew scheduling, Gmail and Calendar reconciliation, messaging retries, audit history, and permission-filtered vector search. Google Cloud also aligns the application's identity and integration boundary with the company's Google Workspace tenant.
@@ -36,13 +38,13 @@ The existing Sites deployment remains available only for controlled development 
 
 The production cutover must include:
 
-1. Provision separate development, staging, and production Google Cloud environments.
+1. Reserve isolated development, staging, and production project, credential, secret, and data boundaries. Continue using Sites for development, and create billable staging resources from reviewed definitions only when an approved rehearsal or release requires them.
 2. Port the SQLite/D1 schema to PostgreSQL with explicit foreign keys, constraints, transactions, and audit fields.
 3. Replace Cloudflare bindings with provider-neutral database and object-storage interfaces.
 4. Implement Workspace OIDC, explicit invitations, office-domain restrictions, secure sessions, roles, capabilities, and project-level permissions.
-5. Add Cloud Scheduler dispatch/renewal/reconciliation triggers and Cloud Tasks handlers with idempotency and retry limits. Persist attempts, exhausted work, alerts, and controlled replay in the application; route Gmail watches through Pub/Sub and Calendar notifications through HTTPS channels.
+5. Add provider-neutral durable job and integration state first. Activate Cloud Scheduler, Cloud Tasks, Gmail Pub/Sub, and Calendar HTTPS channels only when their associated background features are approved; then apply idempotency, retry, reconciliation, failed-job, alert, and controlled-replay requirements.
 6. Migrate only reviewed records and files, preserving identifiers and audit evidence where required.
-7. Verify backup restoration, retention, audit access, malware scanning, and end-to-end Google Workspace behavior.
+7. Verify backup restoration, retention, audit access, and end-to-end behavior for every integration enabled at launch; require malware scanning evidence only if untrusted uploads are enabled.
 8. Freeze writes to the development environment, perform a final reconciliation, switch the production URL, and retain a time-boxed rollback window.
 
 ## Consequences
@@ -50,7 +52,7 @@ The production cutover must include:
 - Near-term production feature work pauses behind the platform migration.
 - The current UI and domain workflows can be reused, but Cloudflare-specific imports and D1 migrations must be replaced.
 - The development environment is not promoted in place and is not treated as the authoritative production database.
-- New background-processing and vector-search features are built once on their intended production services.
+- New background-processing and vector-search features are built once on their intended production boundaries, but their Google Cloud modules remain disabled until the feature and cost gates pass.
 - The service count stays intentionally small for a 20-person company; split services only when scaling, deployment isolation, or security evidence justifies the operating cost.
 
 ## Implementation references

@@ -29,6 +29,12 @@ Connecting Google Workspace does **not** automatically change the app login to G
 
 Google’s OpenID Connect documentation explains that the `hd` request value is only a user-interface hint; the server must verify the returned `hd` claim. See [Google OpenID Connect](https://developers.google.com/identity/openid-connect/openid-connect).
 
+## Cost-aware production boundary
+
+Reuse the company's existing Workspace subscription for employee accounts, Groups, the operations mailbox, Shared Drive, calendars, Docs, and derived Sheets reporting. This reduces duplicate products and licenses, but Workspace does not replace Cloud SQL, application authorization, security audit, backups, or recovery testing. Sheets is not the transactional database, and AppSheet or Apps Script must not become an unreviewed second system of record.
+
+The current Sites application remains the development environment. Separate Google Cloud project boundaries are still required, but staging is created only for approved migration, restore, or release exercises and optional services stay disabled until their features are scheduled. See the accepted [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md).
+
 ## Accounts to create
 
 For development, create or select these accounts:
@@ -50,7 +56,7 @@ Create these resources before turning on live folder provisioning:
 | Calendar 1 | `FCI • Client Appointments` | Site visits, measurements, client meetings, and confirmations |
 | Calendar 2 | `FCI • Field Schedule` | Published job assignments and crew schedule |
 | Mailbox | `operations@cherryhillfci.com` (proposed) | Company Gmail intake and app connection |
-| Google Cloud projects | `FCI Operations Development`, later separate staging and production projects | Environment-isolated Google APIs, OAuth clients, secrets, and production configuration |
+| Google Cloud projects | `FCI Operations Development`, plus reserved staging and production projects later | Isolated Google APIs, OAuth clients, secrets, and data; staging billable resources are created on demand rather than left running |
 
 ## Part 1: set up the Google Workspace organization
 

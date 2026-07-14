@@ -10,7 +10,9 @@ Status: Architecture baseline and ordered roadmap; the source runtime boundary i
 
 ## Executive verdict
 
-The accepted Google Cloud runtime direction is appropriate. Keep one regional Cloud Run modular monolith with Cloud SQL PostgreSQL, Cloud Tasks, Cloud Scheduler, Secret Manager, Cloud Storage quarantine, Gmail Pub/Sub notifications, Calendar HTTPS webhooks, and Google Workspace OpenID Connect. The proposed small isolated malware-scanner service is the only additional service split because file scanning has a different security and resource profile; that split still requires the file-policy decision tracked below. Do not create a fleet of product microservices for a 20-person company.
+The accepted Google Cloud runtime direction is appropriate. Keep one regional Cloud Run modular monolith with Cloud SQL PostgreSQL, Secret Manager, and Google Workspace OpenID Connect as the minimum production core. Cloud Tasks, Cloud Scheduler, Cloud Storage quarantine/scanning, Gmail Pub/Sub notifications, Calendar HTTPS webhooks, SMS, and `pgvector` remain part of the target architecture but are provisioned only when their associated features are approved. Do not create a fleet of product microservices for a 20-person company.
+
+The accepted [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) amends provisioning order: reuse existing Workspace, keep Sites as development, keep staging on demand, compare standalone and regional-HA Cloud SQL before selection, and leave optional modules disabled by default. This reduces idle cost without weakening identity, authorization, audit, backup, restore, or real-data gates.
 
 The current Sites/Workers/D1/R2 application remains useful as a controlled, single-user development environment with test data. It is not yet a production Google Cloud application. Source now includes the PostgreSQL client/project schema and repositories plus an owner-approved, fail-closed Node/Cloud Run foundation with validated private Cloud SQL configuration, bounded pools, exact readiness, separate migration/rehearsal commands, least-privilege SQL policy, and a bounded core test-data rehearsal. Employee application routes, infrastructure definitions and provisioning, identity/authorization, the full schema, durable workers, secure files, complete migration/restore rehearsal, and recovery proof remain open.
 
@@ -52,15 +54,15 @@ flowchart LR
     Links["Purpose-scoped external links"] --> App
     App --> SQL["Cloud SQL PostgreSQL system of record"]
     App --> Secrets["Secret Manager"]
-    App --> Tasks["Cloud Tasks delivery queues"]
+    App --> Tasks["Cloud Tasks delivery queues (feature-gated)"]
     Tasks -->|"authenticated task route"| App
-    Scheduler["Cloud Scheduler"] --> App
-    Gmail["Gmail push notifications"] --> PubSub["Pub/Sub authenticated push"] --> App
-    Calendar["Calendar HTTPS notifications"] --> App
-    Twilio["SMS provider webhooks"] --> App
+    Scheduler["Cloud Scheduler (feature-gated)"] --> App
+    Gmail["Gmail push notifications"] --> PubSub["Pub/Sub authenticated push (feature-gated)"] --> App
+    Calendar["Calendar HTTPS notifications (feature-gated)"] --> App
+    Twilio["SMS provider webhooks (feature-gated)"] --> App
     App --> Drive["Shared Drive released documents"]
     App --> Sheets["Derived Google Sheets projection"]
-    App --> Quarantine["Private Cloud Storage quarantine"]
+    App --> Quarantine["Private Cloud Storage quarantine (feature-gated)"]
     Quarantine --> Scanner["Isolated malware scanner"]
     Scanner -->|"signed scan result"| App
     App --> Logging["Cloud Logging, metrics, and alerts"]
@@ -69,11 +71,12 @@ flowchart LR
 ### Important topology rules
 
 - Keep the web/API/task/webhook application in one deployable service initially. Split a domain service only when isolation, scaling, or deployment evidence justifies it.
+- Treat the diagram as the target capability map, not the day-one bill of materials. The launch core is Cloud Run, the selected Cloud SQL profile, Secret Manager integration, and required IAM/networking/monitoring; feature-gated nodes remain absent until approved.
 - Use a private Cloud SQL connection in the same region and cap `Cloud Run maximum instances × pool size` below the database connection budget.
 - Cloud Run has no permanent background loop. Cloud Scheduler should trigger outbox sweeps, expired-lease recovery, long-horizon reminder materialization, Gmail watch renewal, Calendar channel renewal, reconciliation, and cleanup.
 - Cloud Tasks provides controlled delivery and retries, but the application must own durable execution attempts, terminal failures, operator alerts, and safe replay.
 - Public webhook and internal task endpoints require different validation even when they share one Cloud Run service.
-- Use separate development, staging, and production Google Cloud projects, databases, secrets, buckets, queues, OAuth clients, and Workspace test resources.
+- Use separate development, staging, and production project, OAuth, secret, credential, and data boundaries. Continue using Sites/D1/R2 for development; create staging databases and other billable resources on demand; create only the active production resources required by approved features.
 - Decide before production whether the data model is permanently single-company/single-office or needs an `organization_id` and `office_id` boundary for credible future multi-office use.
 
 ## Trust boundaries and endpoint authentication
@@ -258,7 +261,7 @@ For a US sender, the owner will need to choose an approved messaging route such 
 - Source now provides process liveness and exact database migration/privilege readiness without secret leakage. Connector health, employee-application readiness, and the remaining operational health surfaces still need implementation.
 - Use structured logs with correlation, actor, aggregate, job, and provider request IDs; never log tokens, secrets, sensitive message bodies, or raw client documents.
 - Monitor error rate, latency, Cloud SQL connections/storage/CPU, outbox age, oldest ready job, failed jobs, provider exceptions, watch/channel expiration, sync lag, scan backlog, and budget thresholds.
-- Budget alerts notify; they do not automatically cap spend. Add application/provider quotas and a small initial Cloud Run maximum-instance limit.
+- Budget alerts notify; they do not automatically cap spend. Use `$50/month` as the default pre-production accidental-spend alert, name recipients, size the production alert after official standalone-versus-HA estimates, and start Cloud Run at zero minimum instances with a small connection-budgeted maximum.
 - Define RPO/RTO, availability target, maintenance window, HA choice, retention, regional failure policy, and two trained recovery administrators.
 - Enable backups and point-in-time recovery, but do not call recovery complete until a separate environment restore, integrity reconciliation, and application smoke test pass.
 - Use keyless CI-to-Google authentication, a separate migration job/identity, least-privilege runtime identity, protected production approvals, and a documented rollback owner.
@@ -284,7 +287,7 @@ Design/contracts/fixtures for scheduling and communications may proceed, but ope
 
 ## Work that still requires an owner or administrator
 
-- Create company-owned development, staging, and production Google Cloud projects, billing, region, IAM, budgets, DNS, and live resources.
+- Reserve company-owned development, staging, and production project boundaries and approve billing, region, IAM, budgets, and DNS. Provision only the approved production core plus temporary staging resources when an exercise is authorized; do not create every target service in every project.
 - Create separate Internal employee-login and company-data-connector OAuth clients, exact redirect URIs, API Controls trust, and production secrets.
 - Provision the operations mailbox, Shared Drive, directory Sheet, calendars, groups, and access rules.
 - Run final `cherryhillfci.com` OIDC, Gmail, Calendar, Drive, and Sheets acceptance with company accounts and test records.
@@ -297,8 +300,8 @@ Design/contracts/fixtures for scheduling and communications may proceed, but ope
 | Order | Suggested branch | Bounded outcome | Gate |
 | --- | --- | --- | --- |
 | 1 | `codex/postgres-repositories` | **Completed and merged:** PostgreSQL client/project adapters, atomic idempotency, activity/outbox transaction, bounded outbox claims | PR #8 merged |
-| 2 | `codex/google-cloud-runtime-foundation` | **Completed and owner-approved in source:** fail-closed Node container/build, validated config, bounded pools, migration/rehearsal commands, exact readiness | Merge pending; no live provisioning |
-| 3 | `codex/google-cloud-infrastructure-definitions` | Reviewable development/staging/production definitions, private networking, identities, backups/PITR, scaling, monitoring, and budgets | Next after non-secret owner inputs; keep unapplied |
+| 2 | `codex/google-cloud-runtime-foundation` | **Completed and merged in PR #11:** fail-closed Node container/build, validated config, bounded pools, migration/rehearsal commands, exact readiness | No live provisioning |
+| 3 | `codex/google-cloud-infrastructure-definitions` | Costed, unapplied definitions that preserve Sites development, create staging on demand, compare standalone/HA Cloud SQL, bound Cloud Run, and default optional modules off | Next; use safe variables for open owner inputs and keep unapplied |
 | 4 | `codex/identity-audit-schema` | Users, identities, invitations, sessions, roles/capabilities, memberships, general security audit | Owner approves role direction |
 | 5 | `codex/authorization-simulation` | Access-context policy, repository scoping, simulated principals, denial tests | Identity schema accepted |
 | 6 | `codex/jobs-scheduler-contracts` | Provider-neutral job/attempt/failure, outbox-relay, future Scheduler/reminder, task-fixture, and replay contracts/tests only | Platform and authorization gates before operational delivery |
@@ -337,15 +340,15 @@ Do not deploy or provision during these source-only branches. Keep each pull req
 
 ### Gate B: staging and recovery
 
-- A clean staging environment is reproducibly provisioned with least-privilege identities and non-production resources.
+- A clean staging environment is reproducibly created on demand with least-privilege identities and non-production resources, then safely scaled down or removed after evidence is captured.
 - Test-data migration preserves identifiers, reports duplicates, and reconciles counts/hashes.
-- Backup restoration, point-in-time recovery, forward-fix/rollback, alerts, and runbooks pass with recorded evidence.
+- Backup restoration, point-in-time recovery, forward-fix/rollback, alerts, and runbooks pass with recorded evidence; failover evidence is additionally required if regional HA is selected.
 
 ### Gate C: Google and communication integrations
 
 - Employee OIDC and invitation enforcement pass with company accounts.
-- Gmail history/watch and Calendar channel/sync recovery pass normal, duplicate, delayed, dropped, expired, and full-resync cases.
-- Drive/Sheets reconciliation and file quarantine/release pass.
+- Every Gmail history/watch or Calendar channel/sync feature enabled at launch passes normal, duplicate, delayed, dropped, expired, and full-resync cases.
+- Drive/Sheets reconciliation passes for each enabled launch integration; file quarantine/release passes only if untrusted uploads are enabled.
 - Messaging consent, quiet hours, STOP/START, signed callbacks, unknown outcome, retries, suppression, and replay controls pass before the first live recipient.
 
 ### Gate D: second user and real data

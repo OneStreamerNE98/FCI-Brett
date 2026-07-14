@@ -39,22 +39,22 @@ For a 20-person company, operations must be simple enough that two named people 
 
 ## Monitoring and routine checks
 
-- [ ] Create alerts for application errors, failed login spikes, database saturation/storage, queue age/depth, application-owned failed jobs/dead letters, failed Google calls, expiring Gmail watches, expiring Calendar channels, low storage, and backup failures.
+- [ ] Create alerts for application errors, failed login spikes, database saturation/storage, and backup failures. Add queue, failed-job, Gmail-watch, Calendar-channel, quarantine, and scanner alerts only when those modules are activated.
 - [ ] Create a Workspace health view with the connection account, enabled services, last success/failure, watch/channel expiry, queue health, and required owner action.
 - [ ] Define severity levels, alert recipients, after-hours expectations, and escalation contacts.
 - [ ] Review access quarterly, backups/restore quarterly, connector/key rotation at least annually, and incidents after every material event.
 - [ ] Record service owners and vendor support links in a private operations runbook; do not put secrets in the runbook.
-- [ ] Set Cloud budget thresholds and review actual cost monthly during development acceptance.
+- [ ] Configure the default `$50/month` pre-production accidental-spend alert with named recipients; approve the estimate-based production alert separately and review actual cost monthly. Budgets alert but do not cap spend.
 
 ## Incident drill
 
 - [ ] Disable a user and prove existing sessions stop working.
 - [ ] Remove a Project Manager from a project and prove app and direct Google access are removed.
 - [ ] Simulate Google API timeout/quota failure and prove work retries once without duplicate files/events.
-- [ ] Expire a Gmail watch and Calendar channel and prove monitoring and renewal recover them.
+- [ ] If Gmail watches or Calendar channels are released, expire each one and prove monitoring and renewal recover it.
 - [ ] Restore the database into staging and reconcile record and audit counts.
 - [ ] Rotate the OAuth client secret and token-encryption key using the written procedure.
-- [ ] Quarantine a harmless antivirus test file and prove it never reaches Shared Drive.
+- [ ] If untrusted uploads are released, quarantine a harmless antivirus test file and prove it never reaches Shared Drive.
 
 ## Completion result
 

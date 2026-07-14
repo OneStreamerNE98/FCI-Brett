@@ -14,6 +14,8 @@ This slice creates the reviewable Cloud Run and Cloud SQL runtime foundation wit
 
 The last behavior is deliberate. The current page and API tree still imports `cloudflare:workers`, uses D1/R2 bindings, and depends on the Sites identity boundary. This source image is not yet the employee web application and must not be deployed as though it were. The production checklist item “Containerize the Next.js application” remains open until the remaining routes, object storage, and Workspace OIDC boundary are ported.
 
+The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) controls how this source foundation may later be provisioned. Development remains on Sites, staging is created on demand, standalone and regional-HA Cloud SQL profiles must be priced before selection, and optional service modules remain disabled. Nothing in this document authorizes a continuously running development or staging database.
+
 ## What is implemented
 
 - A dedicated Node/Cloud Run build that never loads the Sites plugin, Wrangler, Worker entry point, or D1/R2 configuration.
@@ -85,7 +87,13 @@ The initial runtime pool defaults to five connections per Cloud Run instance. Mi
 ≤ usable Cloud SQL connection budget
 ```
 
-For a company of about 20 staff, an initial service maximum of three instances gives a normal ceiling of 15 runtime connections. A rollout can temporarily have old and new revisions alive together, so provisioning must include revision-overlap and safety margin rather than treating the source default as a complete connection guarantee.
+For a company of about 20 staff, use zero minimum instances and a planning starting maximum of two instances. With a five-connection pool, two simultaneously active revisions could consume up to 20 runtime connections (`2 revisions × 2 instances × 5 connections`) before migration, rehearsal, administrator, and monitoring reserve. The infrastructure worker must validate the actual Cloud Run revision behavior and selected Cloud SQL connection limit rather than treating this planning value or the source default as a complete guarantee.
+
+## Cost and availability gate
+
+Before provisioning, the infrastructure worker must produce reviewable official-calculator inputs for both a standalone/zonal and a regional-HA Cloud SQL profile. The owner then selects a profile only after accepting RPO/RTO and reviewing restore evidence and expected monthly cost. Use a `$50/month` pre-production accidental-spend alert as the default planning guardrail, with owner-approved recipients; it is an alert, not a cap. The production alert budget remains open until the profile and expected traffic are selected.
+
+Keep Cloud Run minimum instances at zero and optional Cloud Tasks, Scheduler, Pub/Sub, quarantine/scanning, SMS, and `pgvector` modules disabled unless a separately approved feature requires them. Infrastructure definitions remain unapplied until explicit provisioning approval.
 
 ## Database role boundary
 
@@ -123,8 +131,8 @@ This is evidence that the bounded core path can be rehearsed. It is not evidence
 
 ## What remains before any deployment
 
-1. The owner approves the Google Cloud organization/billing account, region, environments, hostname/DNS owner, budget alerts, RPO/RTO, deployment approver, and rollback owner.
-2. Infrastructure definitions or an equivalently repeatable provisioning procedure are reviewed for private networking, Cloud SQL, service identities, Secret Manager, backups/PITR, Cloud Run scaling/probes, monitoring, and an isolated staging environment.
+1. The owner approves the Google Cloud organization/billing account, region, hostname/DNS owner, alert recipients, RPO/RTO, deployment approver, and rollback owner. The isolated project boundaries, Sites development environment, and on-demand staging posture are already accepted.
+2. Costed, unapplied infrastructure definitions are reviewed for private networking, separate standalone and regional-HA Cloud SQL profiles, service identities, Secret Manager, backups/PITR, zero-minimum/bounded-maximum Cloud Run scaling, monitoring, the `$50/month` pre-production alert, and an on-demand staging lifecycle. Optional service modules must default to disabled.
 3. The administrator creates environment-specific login/IAM principals, applies the reviewed capability-role policy, and verifies grants with denial tests.
 4. A staging migration and bounded rehearsal run with only test data; restore, reconciliation, rollback/forward-fix, and revision-overlap connection evidence are recorded.
 5. Users/sessions/roles/project permissions, the remaining PostgreSQL schema and repositories, provider-neutral object storage, Google integration state, and Workspace OIDC are implemented.

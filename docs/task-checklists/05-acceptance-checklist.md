@@ -34,12 +34,12 @@ Use only a client and projects named `FCI TEST — DO NOT USE`.
 - [ ] Backup restoration is tested and documented.
 - [ ] Point-in-time recovery, RPO, RTO, cutover, and rollback procedures are tested and approved.
 - [ ] Sensitive actions have audit events and an administrator viewer.
-- [ ] File scanning/quarantine and retention controls pass.
+- [ ] Retention controls pass; if untrusted uploads are released, file scanning/quarantine controls also pass.
 - [ ] Session revocation, connector-account recovery, and token-encryption key rotation pass.
 - [ ] Concurrent record edits produce a conflict instead of a lost update.
 - [ ] Google timeouts, quota errors, retries, and duplicate webhook delivery do not create duplicate files, events, or records.
-- [ ] Gmail watch and Calendar channel renewal/expiry monitoring pass.
-- [ ] Security headers, request limits, rate limits, correlation IDs, logging, queue alerts, database alerts, and budget alerts pass.
+- [ ] If Gmail watches or Calendar channels are released, renewal/expiry monitoring passes.
+- [ ] Security headers, request limits, rate limits, correlation IDs, logging, database alerts, and budget alerts pass; queue/module alerts pass for every optional service enabled at launch.
 - [ ] Keyboard, screen-reader, 200% zoom, mobile, tablet, and desktop acceptance passes for every released workflow.
 - [ ] A 20-user representative load/concurrency test passes within approved response-time and cost limits.
 - [ ] The full lead-to-closeout lifecycle passes with non-production records.

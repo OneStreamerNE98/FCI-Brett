@@ -8,18 +8,20 @@ Before changing code, read:
 
 1. `docs/codex-to-codex-handoff.md`
 2. `docs/architecture-decision-production-platform.md`
-3. `docs/20-user-product-and-architecture-review.md`
-4. `docs/complete-product-and-google-cloud-architecture-audit.md`
-5. `docs/google-cloud-runtime-foundation.md`
-6. `docs/ui-and-product-readiness-review.md`
-7. `docs/google-workspace-rollout-guide.md`
-8. `docs/task-checklists/README.md`
-9. `docs/collaboration-and-sharing.md`
+3. `docs/architecture-decision-workspace-first-cost-controlled-rollout.md`
+4. `docs/20-user-product-and-architecture-review.md`
+5. `docs/complete-product-and-google-cloud-architecture-audit.md`
+6. `docs/google-cloud-runtime-foundation.md`
+7. `docs/ui-and-product-readiness-review.md`
+8. `docs/google-workspace-rollout-guide.md`
+9. `docs/task-checklists/README.md`
+10. `docs/collaboration-and-sharing.md`
 
 ## Current product boundary
 
 - The Sites/Workers/D1/R2 deployment is the controlled, single-user development environment and uses test data only.
-- Production will use a small regional Cloud Run/Cloud SQL modular monolith, Secret Manager, Cloud Tasks, Cloud Scheduler, application-owned durable failed-job/replay records, Cloud Storage quarantine, Gmail Pub/Sub notifications, Calendar HTTPS webhooks, and Google Workspace OIDC. Add `pgvector` only when document indexing is scheduled.
+- Production will use a small regional Cloud Run/Cloud SQL modular monolith, Secret Manager, Google Workspace OIDC, and application-owned authorization and audit controls. Cloud Tasks, Cloud Scheduler, Gmail Pub/Sub, Calendar HTTPS webhooks, Cloud Storage quarantine/scanning, SMS, and `pgvector` are feature-gated capabilities, not day-one provisioning requirements.
+- Follow the [Workspace-first, cost-controlled rollout](docs/architecture-decision-workspace-first-cost-controlled-rollout.md): reuse existing Workspace services, keep Sites as development, keep staging on demand, define both standalone and HA Cloud SQL profiles, and leave optional infrastructure modules disabled and unapplied until approved.
 - Preserve the current development deployment, Google Workspace test connector, and existing data unless the owner explicitly approves a migration or destructive change.
 - Do not add scheduling, messaging, or AI document indexing before the production platform and authorization foundation is accepted.
 - Do not admit a second user or store real client data until users, sessions, roles, project permissions, backup restoration, and audit controls pass acceptance.
@@ -55,7 +57,7 @@ npm.cmd run lint
 
 ## Current implementation order
 
-1. Google Cloud production foundation and tested migration/cutover path.
+1. Costed, unapplied Google Cloud foundation definitions and tested migration/cutover path; do not provision optional services early.
 2. Cloud SQL schema and provider-neutral database/storage boundaries.
 3. Approved 20-user role model plus cross-system Google access matrix.
 4. Google Workspace employee login, secure sessions, capabilities, roles, and project permissions.
