@@ -50,13 +50,15 @@ Follow [Google Workspace accounts and resources](01-workspace-resources.md).
 
 Follow [Google Cloud, OAuth, and API controls](02-google-cloud-and-oauth.md).
 
-- Create `FCI Operations Production` under the company Google organization.
+- Create `FCI Operations Development` under the company Google organization for the current one-user test connector.
 - Enable the Drive, Gmail, Calendar, and Sheets APIs.
+- Keep Pub/Sub disabled until the Gmail background-processing worker is implemented.
 - Configure the Google Auth audience as **Internal**.
-- Create the `FCI Operations Workspace Connector` web OAuth client.
+- Create the `FCI Operations Workspace Connector — Development` web OAuth client.
 - Add the exact hosted callback URI from the instructions.
 - Trust that client through Google Admin API Controls.
 - Store the OAuth client secret securely; never enter it in GitHub.
+- Create the separate production project and OAuth client only after the production hostname is approved; never reuse the development callback or credentials.
 
 ### 3. Add the hosted application settings
 

@@ -50,7 +50,8 @@ Before switching modes:
 - Create a Shared Drive named `FCI Operations`.
 - Create `FCI • Client Appointments` and `FCI • Field Schedule` calendars.
 - Create the Client Directory spreadsheet and choose the intake mailbox.
-- Enable Drive, Gmail, Calendar, Sheets, and Pub/Sub APIs in the Google Cloud project.
+- Enable the Drive, Gmail, Calendar, and Sheets APIs in the development Google Cloud project.
+- Keep Pub/Sub disabled until the Gmail background-processing worker is implemented.
 - Configure the OAuth consent screen and a Web application OAuth client.
 - Register the exact HTTPS callback URL for the deployed application.
 - Keep client secrets and token-encryption keys in secure runtime settings, never source control.
