@@ -81,11 +81,11 @@ These are larger structural changes and should be scheduled separately:
 
 ## Production architecture decision
 
-The production system will use the approved small-company Google Cloud architecture: one regional Cloud Run modular monolith, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Add `pgvector` only when permission-filtered document indexing is scheduled. The current Sites/Workers/D1/R2 deployment remains a controlled development environment and will not be promoted in place.
+The production system will use the approved small-company Google Cloud architecture. The minimum launch core is one regional Cloud Run modular monolith, the selected Cloud SQL PostgreSQL profile, Secret Manager integration, Google Workspace OIDC, and required identity/authorization/audit/backup controls. Cloud Tasks, Cloud Scheduler, Cloud Storage quarantine/scanning, Gmail Pub/Sub, Calendar HTTPS webhooks, SMS, and `pgvector` are feature-gated and remain disabled until approved. The current Sites/Workers/D1/R2 deployment remains a controlled development environment and will not be promoted in place.
 
 The migration will happen before scheduling, messaging, and AI indexing are built. Those modules depend on durable jobs, relational transactions, retries, and permission-filtered retrieval; moving now avoids implementing and migrating those foundations twice.
 
-See [`architecture-decision-production-platform.md`](architecture-decision-production-platform.md) for the decision, development boundary, migration sequence, and cutover requirements.
+See [`architecture-decision-production-platform.md`](architecture-decision-production-platform.md) for the production boundary and the [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) for the provisioning and cost gates.
 
 ## Prioritized next steps
 

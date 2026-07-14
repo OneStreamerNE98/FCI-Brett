@@ -56,18 +56,18 @@ flowchart LR
     R --> O["Cloud Storage quarantine"]
 ```
 
-The initial production service set should be:
+The target production service set is phased. The minimum launch core is Cloud Run, the selected Cloud SQL profile, Secret Manager integration, Workspace OIDC, and required IAM/networking/monitoring/backup controls. The remaining bullets are activated only with their associated features:
 
 - One Cloud Run service for the web application, API, and authenticated task/webhook handlers.
 - One Cloud SQL PostgreSQL database with foreign keys, constraints, transactions, audit fields, connection pooling, and point-in-time recovery.
 - Secret Manager for OAuth credentials, token-encryption keys, session secrets, and service credentials.
-- Cloud Tasks for explicit background jobs, bounded retries, and rate-controlled Google operations. Persist terminal failures and replay controls in application-owned PostgreSQL records rather than treating Cloud Tasks as a durable dead-letter store.
-- Cloud Scheduler for authenticated time-based dispatch, watch/channel renewal, reconciliation, and reminder materialization.
-- Pub/Sub only where the upstream integration requires it, beginning with Gmail push notifications. Google Calendar uses expiring HTTPS notification channels rather than Pub/Sub.
-- Cloud Storage as an upload quarantine boundary before approved files are copied to Shared Drive.
+- Feature-gated Cloud Tasks for approved background jobs, bounded retries, and rate-controlled Google operations. Persist terminal failures and replay controls in application-owned PostgreSQL records rather than treating Cloud Tasks as a durable dead-letter store.
+- Feature-gated Cloud Scheduler for approved time-based dispatch, watch/channel renewal, reconciliation, and reminder materialization.
+- Feature-gated Pub/Sub only where an approved upstream integration requires it, beginning with Gmail push notifications. Google Calendar uses expiring HTTPS notification channels rather than Pub/Sub.
+- Feature-gated Cloud Storage quarantine before any approved untrusted-upload workflow copies files to Shared Drive.
 - `pgvector` only when permission-filtered document indexing is actually scheduled; it is not required for launch.
 
-This keeps operating cost and failure modes understandable for a 20-person company while preserving a path to later scale. See [Production platform decision](architecture-decision-production-platform.md) and [Production foundation and migration](task-checklists/07-production-foundation-and-migration.md).
+This keeps operating cost and failure modes understandable for a 20-person company while preserving a path to later scale. Development remains on Sites, staging is created on demand, and standalone versus regional-HA Cloud SQL remains an owner choice after cost and recovery review. See the [Production platform decision](architecture-decision-production-platform.md), [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md), and [Production foundation and migration](task-checklists/07-production-foundation-and-migration.md).
 
 ## Findings by priority
 
@@ -102,7 +102,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 ## Corrected delivery order
 
 1. **Owner decisions and access design:** finish setup inputs, staff/field policy, Google Groups, and the cross-system access matrix.
-2. **Production foundation:** establish development, staging, and production; PostgreSQL; secrets; jobs; storage quarantine; observability; migration and rollback.
+2. **Production foundation:** preserve Sites development, define on-demand staging, cost the minimum production Cloud Run/Cloud SQL/Secret Manager core, and prove migration/restore/rollback. Keep jobs, quarantine, and other optional modules off until their features are approved.
 3. **Identity and authorization:** Google Workspace OIDC, explicit invitations, sessions, roles, capabilities, project memberships, and negative permission tests.
 4. **Core records:** safe editing/archive, atomic lead conversion, project dates, tasks/follow-ups, file metadata, notes, activity, and concurrent-write protection.
 5. **Google operations:** authoritative resource settings, durable Gmail review queue, asynchronous filing, Calendar reconciliation, connector recovery, and exact-project integrity.

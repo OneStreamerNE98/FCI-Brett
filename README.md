@@ -50,11 +50,13 @@ Before real client data is stored, backup restoration, sensitive-action audit co
 
 ## Production architecture
 
-The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains the test-data development environment; production will use a small regional Google Cloud topology centered on Cloud Run, Cloud SQL PostgreSQL, Secret Manager, bounded Cloud Tasks delivery, Cloud Scheduler, application-owned durable failed-job/replay records, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Defer `pgvector` until permission-filtered document indexing is scheduled. Complete this migration before building scheduling, messaging, or AI document indexing.
+The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains the test-data development environment. The minimum production core is one regional Cloud Run application, one selected Cloud SQL PostgreSQL profile, Secret Manager integration, Google Workspace OIDC, and the required identity, authorization, audit, monitoring, backup, and restore controls. Cloud Tasks, Cloud Scheduler, Cloud Storage quarantine/scanning, Gmail Pub/Sub, Calendar HTTPS channels, SMS, and `pgvector` are activated only when their associated features and acceptance gates are approved.
+
+The [Workspace-first, cost-controlled rollout decision](docs/architecture-decision-workspace-first-cost-controlled-rollout.md) explains how the company will reuse its existing Workspace subscription, keep staging on demand, compare standalone and HA Cloud SQL before choosing, use budget alerts, and keep optional infrastructure disabled by default. Three isolated project boundaries do not mean three continuously running stacks, and Sheets remains a derived projection rather than the operational database.
 
 The first [Google Cloud runtime foundation](docs/google-cloud-runtime-foundation.md) is now reviewable in source: a separate fail-closed Cloud Run image, private Cloud SQL connector and bounded pools, a one-off migration command, exact migration-aware health checks, least-privilege role policy, and a test-only bounded core rehearsal. It has not been provisioned or deployed, and normal application paths intentionally return `503` until the Cloudflare-bound routes, storage, and identity boundary are ported.
 
-Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the migration boundary, cutover requirements, and consequences. The [complete product and Google Cloud architecture audit](docs/complete-product-and-google-cloud-architecture-audit.md) adds the capability map, durable job/reminder design, integration reliability requirements, owner decisions, acceptance gates, and ordered source-only roadmap.
+Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the production boundary and the [cost-controlled rollout decision](docs/architecture-decision-workspace-first-cost-controlled-rollout.md) for provisioning phases, Workspace responsibilities, cost gates, and the next worker assignment. The [complete product and Google Cloud architecture audit](docs/complete-product-and-google-cloud-architecture-audit.md) adds the capability map, durable job/reminder design, integration reliability requirements, owner decisions, acceptance gates, and ordered source-only roadmap.
 
 ## Remaining launch decision
 
@@ -64,8 +66,8 @@ The one-user development environment may continue with the current allowlisted C
 
 Complete the next product milestone in this order:
 
-1. Merge the approved source-only Google Cloud runtime foundation; approve the 20-user role/Google access matrix in parallel.
-2. Complete the owner Cloud inputs, add reviewable infrastructure definitions, and prepare isolated development/staging resources without changing the current hosted app.
+1. Approve the 20-user role/Google access matrix and complete the remaining non-secret Cloud owner inputs in parallel.
+2. Add costed, unapplied infrastructure definitions: preserve Sites development, make staging on demand, define the minimum production core, compare standalone and HA Cloud SQL, and default optional modules to disabled.
 3. With separate approval, run the staging migration, bounded test-data rehearsal, restore test, reconciliation, and rollback/forward-fix exercise.
 4. Add Google Workspace OIDC plus Admin, Office, and Project Manager roles with server-enforced project permissions.
 5. Port the remaining routes and object-storage boundary so the full application—not only its fail-closed foundation—runs on Cloud Run.

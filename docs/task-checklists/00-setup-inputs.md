@@ -2,7 +2,7 @@
 
 Owner: Business owner
 
-Status: Partially complete — company domain recorded
+Status: Partially complete — company domain, login/platform direction, and cost-controlled rollout posture recorded
 
 Secrets required in GitHub: None
 
@@ -26,6 +26,22 @@ Record only the following non-secret decisions in this file or a GitHub issue. L
 - Use the proposed operations account for the Gmail, Calendar, Drive, and Sheets connection. It should be a normal company-controlled account, not a personal Gmail account.
 - Give the operations account only the Workspace permissions required by the documented workflow.
 - Use individual employee Workspace identities for application login. Never share the operations-account password with employees.
+
+## Production cost and Cloud inputs
+
+These non-secret decisions are tracked in detail in [Production foundation and migration](07-production-foundation-and-migration.md). They are not required to finish the one-user Workspace test connector, but they must be complete before production resources are provisioned.
+
+- [x] Reuse existing Workspace for employee identity and collaboration; keep Cloud SQL as the application system of record.
+- [x] Keep Sites as development, reserve isolated environment boundaries, and make billable staging resources on demand.
+- [x] Keep optional Tasks, Scheduler, Pub/Sub, quarantine/scanning, SMS, and `pgvector` infrastructure disabled until its feature is approved.
+- [x] Use `$50/month` as the default pre-production accidental-spend alert planning value; it is an alert, not a cap.
+- [ ] Select the Google Cloud organization/billing owner and primary US region.
+- [ ] Name the pre-production budget-alert recipients.
+- [ ] Review official estimates for standalone/zonal and regional-HA Cloud SQL.
+- [ ] Approve RPO, RTO, the database profile, and the estimate-based production alert budget.
+- [ ] Name the deployment approver and emergency rollback owner.
+
+See the accepted [Workspace-first, cost-controlled rollout](../architecture-decision-workspace-first-cost-controlled-rollout.md) for the complete decision, tradeoffs, and service-activation gates.
 
 ## Completion result
 
