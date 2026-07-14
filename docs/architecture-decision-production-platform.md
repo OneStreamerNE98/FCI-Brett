@@ -21,7 +21,7 @@ Sites/D1/R2 is therefore a development environment, not the production data plan
 
 The development D1 schema changes use the checked-in [D1 development deployment migrations](development-d1-schema-migrations.md). Sites applies that ordered sequence during controlled deployment, and normal API requests execute no schema DDL. This is deliberately separate from, and does not replace, the required PostgreSQL production migration and rollback system.
 
-The first source-only [production PostgreSQL foundation](production-postgresql-foundation.md) now defines the core client/contact/project, audit, idempotency, outbox, and immutable migration-history tables plus a concurrent-runner-safe migration system. It has not been applied to Cloud SQL and does not include repository adapters, users/roles, infrastructure, credentials, development-data migration, or deployment.
+The source-only [production PostgreSQL foundation](production-postgresql-foundation.md) and [repository slice](production-postgresql-repositories.md) now define the core client/contact/project, audit, idempotency, outbox, immutable migration-history, and provider-neutral repository boundaries. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) adds validated private Cloud SQL composition, bounded pools, a separate migration job command, exact readiness, least-privilege source policy, and a bounded test-data rehearsal. None of this has been provisioned, applied to Cloud SQL, connected to Workspace, migrated with live data, or deployed. Users/roles, the remaining application schema/routes, object storage, infrastructure resources, and complete cutover still remain.
 
 ## Why
 

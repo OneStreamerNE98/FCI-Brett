@@ -13,7 +13,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
 | Staff Google login and roles | Codex/developer | Not implemented | Build on Cloud Run/Cloud SQL after identity policy is approved. |
 | 20-user operating/access model | Owner + Workspace administrator | Waiting on owner | Decide staff/field roles and approve the app-to-Google access matrix. |
-| Production foundation and migration | Developer + Cloud administrator | In progress | Next add the source-only Cloud Run/Cloud SQL runtime and tested migration path; approve the access model in parallel. |
+| Production foundation and migration | Developer + Cloud administrator | In progress | Review the source-only runtime foundation, complete the non-secret Cloud inputs, then add unapplied infrastructure definitions and run a staging rehearsal. |
 | Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
 | Frontend multi-user hardening | Codex/developer | In progress | Typed feedback and Settings failure safety are complete; implement real capabilities, freshness, durable URLs, and conflict handling next. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |

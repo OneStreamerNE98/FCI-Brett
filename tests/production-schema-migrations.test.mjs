@@ -16,18 +16,21 @@ class FakePostgresClient {
     failAfterEffectPattern,
     lockAvailable = true,
     schemaExists = true,
+    schemaOwner = "fci_migration",
   } = {}) {
     this.history = history.map((row) => ({ ...row }));
     this.failPattern = failPattern;
     this.failAfterEffectPattern = failAfterEffectPattern;
     this.lockAvailable = lockAvailable;
     this.schemaExists = schemaExists;
+    this.schemaOwner = schemaOwner;
     this.queries = [];
     this.pendingMarker = null;
     this.inTransaction = false;
     this.released = false;
     this.releaseError = undefined;
     this.searchPath = '"$user", public';
+    this.currentRole = "migration_login";
   }
 
   async query(sql, values = []) {
@@ -35,10 +38,23 @@ class FakePostgresClient {
     this.queries.push({ sql: normalized, values: [...values] });
 
     if (this.failPattern?.test(normalized)) throw new Error("simulated PostgreSQL failure");
-    if (/^SELECT pg_catalog\.to_regnamespace/i.test(normalized)) {
+    if (/^SET ROLE /i.test(normalized)) {
+      this.currentRole = normalized.slice('SET ROLE "'.length, -1);
+      return { rows: [], rowCount: null };
+    }
+    if (normalized === "SELECT CURRENT_USER AS current_user") {
+      return { rows: [{ current_user: this.currentRole }], rowCount: 1 };
+    }
+    if (normalized === "RESET ROLE") {
+      this.currentRole = "migration_login";
+      return { rows: [], rowCount: null };
+    }
+    if (/^SELECT namespace\.oid::text AS schema_oid/i.test(normalized)) {
       return {
-        rows: [{ schema_oid: this.schemaExists ? "16384" : null }],
-        rowCount: 1,
+        rows: this.schemaExists
+          ? [{ schema_oid: "16384", schema_owner: this.schemaOwner }]
+          : [],
+        rowCount: this.schemaExists ? 1 : 0,
       };
     }
     if (/^SELECT pg_catalog\.pg_try_advisory_lock/i.test(normalized)) {
@@ -198,7 +214,7 @@ test("uses one dedicated connection, locks before history, and commits each vers
 
   const bootstrapIndex = queryIndex(client, /^CREATE TABLE IF NOT EXISTS production_schema_migrations/);
   const lockIndex = queryIndex(client, /^SELECT pg_catalog\.pg_try_advisory_lock/);
-  const schemaIndex = queryIndex(client, /^SELECT pg_catalog\.to_regnamespace/);
+  const schemaIndex = queryIndex(client, /^SELECT namespace\.oid::text AS schema_oid/);
   const searchPathIndex = queryIndex(client, /^SELECT pg_catalog\.set_config/);
   const historyIndex = queryIndex(client, /^SELECT version, name, checksum/);
   const unlockIndex = queryIndex(client, /^SELECT pg_catalog\.pg_advisory_unlock/);
@@ -210,7 +226,7 @@ test("uses one dedicated connection, locks before history, and commits each vers
   );
   assert.ok(unlockIndex > historyIndex);
   assert.deepEqual(client.queries[lockIndex].values, [PRODUCTION_MIGRATION_LOCK_ID]);
-  assert.deepEqual(client.queries[searchPathIndex].values, ["public, pg_catalog"]);
+  assert.deepEqual(client.queries[searchPathIndex].values, ["public, pg_catalog, pg_temp"]);
   assert.deepEqual(client.queries[unlockIndex].values, [PRODUCTION_MIGRATION_LOCK_ID]);
   assert.deepEqual(
     client.queries.filter(({ sql }) => /^SELECT pg_catalog\.set_config/.test(sql)).at(-1).values,
@@ -257,20 +273,85 @@ test("validates and selects an explicit production schema without ambient search
   assert.equal(missingClient.queries.some(({ sql }) => /^SELECT pg_catalog\.pg_advisory_unlock/.test(sql)), true);
   assert.equal(missingClient.released, true);
 
-  const client = new FakePostgresClient({
-    history: PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({
-      version,
-      name,
-      checksum,
-    })),
-  });
+  const client = new FakePostgresClient();
   await runProductionSchemaMigrations(
     new FakePostgresPool(client),
     PRODUCTION_SCHEMA_MIGRATIONS,
-    { schema: "fci_app" },
+    {
+      schema: "fci_app",
+      transactionLockTimeoutMs: 3_456,
+      statementTimeoutMs: 45_678,
+    },
   );
   const searchPath = client.queries.find(({ sql }) => /^SELECT pg_catalog\.set_config/.test(sql));
-  assert.deepEqual(searchPath.values, ["fci_app, pg_catalog"]);
+  assert.deepEqual(searchPath.values, ["fci_app, pg_catalog, pg_temp"]);
+  assert.equal(
+    client.queries.some(({ sql }) => sql === "SET LOCAL lock_timeout = '3456ms'"),
+    true,
+  );
+  assert.equal(
+    client.queries.some(({ sql }) => sql === "SET LOCAL statement_timeout = '45678ms'"),
+    true,
+  );
+});
+
+test("rejects invalid per-transaction migration timeouts before connecting", async () => {
+  for (const options of [
+    { transactionLockTimeoutMs: 99 },
+    { statementTimeoutMs: 999 },
+    { statementTimeoutMs: 300_001 },
+  ]) {
+    const pool = new FakePostgresPool(new FakePostgresClient());
+    await assert.rejects(
+      runProductionSchemaMigrations(pool, PRODUCTION_SCHEMA_MIGRATIONS, options),
+      /Production migration .* timeout must be an integer/,
+    );
+    assert.equal(pool.connectCount, 0);
+  }
+});
+
+test("sets and verifies an explicit migration owner role before DDL, then resets it", async () => {
+  const invalidPool = new FakePostgresPool(new FakePostgresClient());
+  await assert.rejects(
+    runProductionSchemaMigrations(invalidPool, PRODUCTION_SCHEMA_MIGRATIONS, {
+      role: 'unsafe"role',
+    }),
+    /migration role must be a lowercase PostgreSQL identifier/,
+  );
+  assert.equal(invalidPool.connectCount, 0);
+
+  const client = new FakePostgresClient();
+  await runProductionSchemaMigrations(
+    new FakePostgresPool(client),
+    PRODUCTION_SCHEMA_MIGRATIONS,
+    { role: "fci_migration" },
+  );
+
+  const setRoleIndex = queryIndex(client, /^SET ROLE "fci_migration"$/);
+  const verifyRoleIndex = queryIndex(client, /^SELECT CURRENT_USER AS current_user$/);
+  const lockIndex = queryIndex(client, /^SELECT pg_catalog\.pg_try_advisory_lock/);
+  const resetRoleIndex = queryIndex(client, /^RESET ROLE$/);
+  assert.ok(setRoleIndex >= 0 && setRoleIndex < verifyRoleIndex);
+  assert.ok(verifyRoleIndex < lockIndex);
+  assert.ok(resetRoleIndex > queryIndex(client, /^SELECT pg_catalog\.pg_advisory_unlock/));
+  assert.equal(client.currentRole, "migration_login");
+  assert.equal(client.released, true);
+});
+
+test("refuses DDL when the target schema is not owned by the activated migration role", async () => {
+  const client = new FakePostgresClient({ schemaOwner: "unexpected_owner" });
+  await assert.rejects(
+    runProductionSchemaMigrations(
+      new FakePostgresPool(client),
+      PRODUCTION_SCHEMA_MIGRATIONS,
+      { role: "fci_migration" },
+    ),
+    /must be owned by the activated role fci_migration/,
+  );
+
+  assert.equal(client.queries.some(({ sql }) => /^CREATE TABLE/.test(sql)), false);
+  assert.equal(client.queries.some(({ sql }) => sql === "RESET ROLE"), true);
+  assert.equal(client.released, true);
 });
 
 test("bounds advisory-lock acquisition and discards an unconfirmed session", async () => {
@@ -367,6 +448,20 @@ test("attempts rollback when BEGIN succeeds but its response is lost", async () 
   assert.equal(client.queries.some(({ sql }) => sql === "ROLLBACK"), true);
   assert.equal(client.inTransaction, false);
   assert.equal(client.released, true);
+});
+
+test("discards the dedicated connection when rollback fails without masking the migration error", async () => {
+  const client = new FakePostgresClient({
+    failPattern: /^(?:CREATE TABLE projects|ROLLBACK$)/,
+  });
+
+  await assert.rejects(
+    runProductionSchemaMigrations(new FakePostgresPool(client)),
+    /migration 1 \(core_records\) did not complete cleanly/,
+  );
+
+  assert.equal(client.queries.some(({ sql }) => sql === "ROLLBACK"), true);
+  assert.ok(client.releaseError instanceof Error);
 });
 
 test("preserves a primary migration failure when advisory unlock also fails", async () => {

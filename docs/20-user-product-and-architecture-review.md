@@ -73,7 +73,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 
 1. **Implement server-enforced identity and authorization.** Add invited users, sessions, roles, disabled status, granular capabilities, project memberships, and query-scoped authorization. The current dashboard, search, project, and assistant routes expose company-wide data to any authenticated user.
 2. **Resolved in source; verify after deployment: remove the Gmail label-only filing bypass.** The Settings button and standalone API route that could apply `FCI/Filed` without an exact project copy have been removed. Any future repair tool must require an existing archive/project, a reason, and an audit event.
-3. **Build the accepted production platform.** The current application is coupled to Workers, D1, and R2 and has no Cloud Run container, PostgreSQL migration, infrastructure definition, or production migration runner.
+3. **Complete the accepted production platform.** The current application is still coupled to Workers, D1, and R2. Source now includes a fail-closed Cloud Run foundation, PostgreSQL schema/repositories, immutable migration command, least-privilege policy, and bounded core rehearsal, but it is not the full application and no Google Cloud infrastructure, staging migration/restore exercise, or production cutover exists yet.
 
 ### P1 — complete before real client data
 

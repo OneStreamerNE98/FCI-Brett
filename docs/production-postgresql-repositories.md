@@ -2,11 +2,11 @@
 
 Reviewed: July 13, 2026
 
-Status: Implemented and tested in source. Not wired to a production runtime, provisioned, migrated, or deployed.
+Status: Implemented and tested in source. Composed into the fail-closed Google Cloud runtime foundation, but not wired to employee-facing routes, provisioned, migrated, or deployed.
 
 ## Boundary
 
-This slice connects the provider-neutral client and project creation contracts to the completed source-only PostgreSQL schema. It adds repository and delivery-state code only. The current Sites/D1 development routes, synchronous development mirror, hosted configuration, test data, and Workspace connection remain unchanged.
+This slice connects the provider-neutral client and project creation contracts to the completed source-only PostgreSQL schema. The later [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) now creates bounded pool-backed repository factories, but intentionally exposes no employee-facing production route. The current Sites/D1 development routes, synchronous development mirror, hosted configuration, test data, and Workspace connection remain unchanged.
 
 No PostgreSQL URL, Cloud SQL instance, Cloud Run service, credential, live worker, production data, or external provider call is part of this implementation.
 
@@ -72,10 +72,10 @@ Never point `TEST_POSTGRES_URL` at development, staging, production, or any shar
 
 ## Work intentionally deferred
 
-- Production composition and request-header wiring for the PostgreSQL adapters.
-- Cloud Run, Cloud SQL, pooling configuration, runtime `pg` packaging, roles/grants, secrets, networking, backups, and monitoring. The application runtime role must have no `CREATE` privilege on the target schema or any earlier search-path schema.
+- Employee-facing request/authentication wiring for the source-composed PostgreSQL adapters and the remaining application modules.
+- Provisioned Cloud Run, Cloud SQL, roles/grants, secrets, private networking, backups, and monitoring. Source now validates bounded pools and requires the application runtime role to have no `CREATE` privilege, but no environment has applied that policy.
 - Users, invitations, secure sessions, roles, capabilities, and project memberships. That identity slice must distinguish the system worker performing a dead-letter transition from the employee who originated the event while retaining both pieces of audit evidence.
 - A live Cloud Tasks worker and provider-specific delivery/idempotency logic.
-- Development-data migration, reconciliation, restore rehearsal, cutover, and rollback approval.
+- Complete development-data migration, staging reconciliation/restore rehearsal, cutover, and rollback approval. The source-only bounded core fixture rehearsal is not full cutover evidence.
 
 Do not admit another user or store real client data until authorization, restore, audit, permissions, and acceptance controls pass.

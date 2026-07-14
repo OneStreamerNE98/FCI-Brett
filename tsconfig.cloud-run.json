@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "incremental": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true
+  },
+  "include": [
+    "vite.cloud-run.config.ts",
+    "production-runtime/src/**/*.ts",
+    "app/platform/google-cloud/**/*.ts",
+    "app/platform/postgres/**/*.ts",
+    "app/adapters/postgres/**/*.ts",
+    "app/ports/**/*.ts",
+    "app/domain/client-name-key.ts"
+  ],
+  "exclude": ["node_modules", "dist", "work"]
+}

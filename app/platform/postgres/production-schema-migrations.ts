@@ -398,7 +398,7 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
   },
 ];
 
-interface AppliedProductionMigrationRow extends Record<string, unknown> {
+export interface AppliedProductionMigrationRow extends Record<string, unknown> {
   version: number | string;
   name: string;
   checksum: string;
@@ -453,7 +453,7 @@ export function validateProductionMigrationRegistry(
   }
 }
 
-function assertHistoryIsKnownPrefix(
+export function assertProductionMigrationHistoryIsKnownPrefix(
   appliedRows: readonly AppliedProductionMigrationRow[],
   migrations: readonly ProductionSchemaMigration[],
 ) {
@@ -477,12 +477,15 @@ function assertHistoryIsKnownPrefix(
   }
 }
 
-async function rollbackQuietly(client: PostgresMigrationClient) {
+async function rollbackForDiscardSafety(client: PostgresMigrationClient) {
   try {
     await client.query("ROLLBACK");
-  } catch {
-    // Preserve the migration failure. Releasing the dedicated connection lets
-    // the pool discard it if PostgreSQL considers the session unusable.
+    return undefined;
+  } catch (error) {
+    // Preserve the primary migration failure, but retain rollback ambiguity so
+    // the connection is explicitly discarded rather than returned to a pool
+    // with a transaction that may still be open.
+    return cleanupFailure(error);
   }
 }
 
@@ -493,7 +496,18 @@ export type ProductionMigrationRunResult = {
 
 export type ProductionMigrationOptions = {
   schema?: string;
+  /** Maximum time to wait for the cross-process advisory lock. */
   lockTimeoutMs?: number;
+  /** Per-migration PostgreSQL lock timeout inside the DDL transaction. */
+  transactionLockTimeoutMs?: number;
+  /** Per-migration PostgreSQL statement timeout inside the DDL transaction. */
+  statementTimeoutMs?: number;
+  /**
+   * Optional NOLOGIN owner role used by the dedicated migration principal.
+   * PostgreSQL object ownership follows CURRENT_USER, so inherited membership
+   * alone is not sufficient for deterministic migration ownership.
+   */
+  role?: string;
 };
 
 function productionSchemaName(value: string | undefined) {
@@ -510,6 +524,27 @@ function productionLockTimeout(value: number | undefined) {
     throw new Error("Production migration lock timeout must be an integer from 0 to 300000 ms");
   }
   return timeout;
+}
+
+function productionTransactionTimeout(
+  value: number | undefined,
+  fallback: number,
+  minimum: number,
+  label: string,
+) {
+  const timeout = value ?? fallback;
+  if (!Number.isSafeInteger(timeout) || timeout < minimum || timeout > 300_000) {
+    throw new Error(`${label} must be an integer from ${minimum} to 300000 ms`);
+  }
+  return timeout;
+}
+
+function productionMigrationRole(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (!/^[a-z][a-z0-9_]*$/.test(value)) {
+    throw new Error("Production migration role must be a lowercase PostgreSQL identifier");
+  }
+  return value;
 }
 
 async function tryAcquireProductionMigrationLock(
@@ -543,15 +578,43 @@ export async function runProductionSchemaMigrations(
   validateProductionMigrationRegistry(migrations);
   const schema = productionSchemaName(options.schema);
   const lockTimeoutMs = productionLockTimeout(options.lockTimeoutMs);
+  const transactionLockTimeoutMs = productionTransactionTimeout(
+    options.transactionLockTimeoutMs,
+    5_000,
+    100,
+    "Production migration transaction lock timeout",
+  );
+  const statementTimeoutMs = productionTransactionTimeout(
+    options.statementTimeoutMs,
+    30_000,
+    1_000,
+    "Production migration statement timeout",
+  );
+  const role = productionMigrationRole(options.role);
 
   const client = await pool.connect();
   let lockHeld = false;
   let originalSearchPath: string | undefined;
   let searchPathChanged = false;
+  let roleMayHaveChanged = false;
   let lockAcquisitionFailed = false;
+  let rollbackFailure: Error | undefined;
   let primaryError: unknown;
 
   try {
+    if (role !== undefined) {
+      // Identifiers cannot be query parameters. The strict lowercase validator
+      // above makes the quoted role name safe and keeps credentials out of SQL.
+      roleMayHaveChanged = true;
+      await client.query(`SET ROLE "${role}"`);
+      const activeRole = await client.query<{ current_user: unknown }>(
+        "SELECT CURRENT_USER AS current_user",
+      );
+      if (activeRole.rowCount !== 1 || activeRole.rows[0]?.current_user !== role) {
+        throw new Error(`Production migration role ${role} was not activated`);
+      }
+    }
+
     try {
       const acquired = await tryAcquireProductionMigrationLock(client, lockTimeoutMs);
       if (!acquired) {
@@ -568,12 +631,25 @@ export async function runProductionSchemaMigrations(
       throw error;
     }
 
-    const schemaLookup = await client.query<{ schema_oid: string | null }>(
-      "SELECT pg_catalog.to_regnamespace($1)::text AS schema_oid",
+    const schemaLookup = await client.query<{
+      schema_oid: string;
+      schema_owner: string;
+    }>(
+      `SELECT namespace.oid::text AS schema_oid,
+              owner_role.rolname AS schema_owner
+       FROM pg_catalog.pg_namespace AS namespace
+       JOIN pg_catalog.pg_roles AS owner_role ON owner_role.oid = namespace.nspowner
+       WHERE namespace.nspname = $1`,
       [schema],
     );
-    if (!schemaLookup.rows[0]?.schema_oid) {
+    const schemaRow = schemaLookup.rows[0];
+    if (schemaLookup.rowCount !== 1 || !schemaRow?.schema_oid) {
       throw new Error(`Production migration schema ${schema} does not exist`);
+    }
+    if (role !== undefined && schemaRow.schema_owner !== role) {
+      throw new Error(
+        `Production migration schema ${schema} must be owned by the activated role ${role}`,
+      );
     }
     const searchPathLookup = await client.query<{ search_path: string }>(
       "SELECT pg_catalog.current_setting('search_path') AS search_path",
@@ -583,7 +659,7 @@ export async function runProductionSchemaMigrations(
       throw new Error("Production migration connection did not report its search_path");
     }
     await client.query("SELECT pg_catalog.set_config('search_path', $1, false)", [
-      `${schema}, pg_catalog`,
+      `${schema}, pg_catalog, pg_temp`,
     ]);
     searchPathChanged = true;
 
@@ -596,7 +672,7 @@ export async function runProductionSchemaMigrations(
     const history = await client.query<AppliedProductionMigrationRow>(
       "SELECT version, name, checksum FROM production_schema_migrations ORDER BY version",
     );
-    assertHistoryIsKnownPrefix(history.rows, migrations);
+    assertProductionMigrationHistoryIsKnownPrefix(history.rows, migrations);
 
     const appliedVersions: number[] = [];
     for (const migration of migrations.slice(history.rows.length)) {
@@ -605,8 +681,8 @@ export async function runProductionSchemaMigrations(
         // but the client loses the response, the catch path still attempts a
         // rollback before the connection can return to its pool.
         await client.query("BEGIN");
-        await client.query("SET LOCAL lock_timeout = '5s'");
-        await client.query("SET LOCAL statement_timeout = '30s'");
+        await client.query(`SET LOCAL lock_timeout = '${transactionLockTimeoutMs}ms'`);
+        await client.query(`SET LOCAL statement_timeout = '${statementTimeoutMs}ms'`);
         for (const statement of migration.statements) await client.query(statement);
         await client.query(
           `INSERT INTO production_schema_migrations (version, name, checksum)
@@ -616,7 +692,7 @@ export async function runProductionSchemaMigrations(
         await client.query("COMMIT");
         appliedVersions.push(migration.version);
       } catch (error) {
-        await rollbackQuietly(client);
+        rollbackFailure ??= await rollbackForDiscardSafety(client);
         throw new Error(
           `Production schema migration ${migration.version} (${migration.name}) did not complete cleanly; retry only through the locked runner so committed history can be rechecked`,
           { cause: error },
@@ -652,8 +728,17 @@ export async function runProductionSchemaMigrations(
           cleanupError ??= error;
         }
       }
+      if (roleMayHaveChanged) {
+        try {
+          await client.query("RESET ROLE");
+        } catch (error) {
+          cleanupError ??= error;
+        }
+      }
     } finally {
-      const discardError = cleanupError ?? (lockAcquisitionFailed ? primaryError : undefined);
+      const discardError = cleanupError
+        ?? rollbackFailure
+        ?? (lockAcquisitionFailed ? primaryError : undefined);
       client.release(discardError ? cleanupFailure(discardError) : undefined);
     }
     if (!primaryError && cleanupError) throw cleanupError;

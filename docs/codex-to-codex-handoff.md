@@ -79,13 +79,17 @@ Paste this into the coworker's first task:
 
 The expected result is a read-only orientation report plus a passing baseline. The worker should not begin coding until the assigned milestone is confirmed.
 
+## Completed production-runtime worker assignment
+
+The source-only `codex/google-cloud-runtime-foundation` assignment now provides the fail-closed container/runtime boundary, validated private Cloud SQL configuration, bounded pools, separate migration and rehearsal commands, exact readiness, least-privilege source policies, and strict test-data core rehearsal. It does not containerize the employee application, provision infrastructure, apply roles or migrations, connect Workspace, or deploy. See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md).
+
 ## Recommended next worker assignment
 
-After onboarding passes and PR #8 is merged, use this prompt:
+First review and merge the runtime-foundation pull request, and have the owner complete the non-secret inputs in `docs/task-checklists/07-production-foundation-and-migration.md`. Then use this prompt:
 
-> Create and work on `codex/google-cloud-runtime-foundation`. First read `AGENTS.md`, `docs/20-user-product-and-architecture-review.md`, `docs/architecture-decision-production-platform.md`, `docs/production-postgresql-foundation.md`, `docs/production-postgresql-repositories.md`, and `docs/task-checklists/07-production-foundation-and-migration.md`. Add the reviewable source-only Cloud Run container/runtime boundary, production configuration validation, bounded pooled PostgreSQL composition, a separate migration command/job using the existing immutable runner, health/readiness behavior, least-privilege database role/grant definitions, and a test-data migration/reconciliation rehearsal harness. Keep the current D1/Sites development runtime unchanged and require explicit environment selection; never run production migrations during normal requests. Add automated tests and document rollback evidence. Do not provision Cloud resources, add credentials, apply migrations, connect Workspace, deploy, migrate data, or merge. Finish with a pull request containing verification evidence and a data/security impact note.
+> Create and work on `codex/google-cloud-infrastructure-definitions`. First read `AGENTS.md`, `docs/architecture-decision-production-platform.md`, `docs/google-cloud-runtime-foundation.md`, `docs/task-checklists/07-production-foundation-and-migration.md`, and `docs/task-checklists/08-operations-recovery-and-security.md`. Add reviewable development, staging, and production infrastructure definitions for regional Cloud Run, private Cloud SQL/networking, Secret Manager references, environment-specific service identities, backups/PITR, probes, bounded scaling, monitoring, and budget alerts. Document the connection budget, revision-overlap reserve, isolated staging procedure, role/grant denial checks, restore exercise, migration rehearsal, and forward-fix/rollback evidence. Keep all definitions unapplied. Do not provision resources, add credentials, apply roles or migrations, connect Workspace, migrate data, deploy, or merge. Finish with a pull request containing verification evidence and a data/security impact note.
 
-In parallel, the owner should complete `docs/task-checklists/06-20-user-operating-model-and-access.md`. The authorization worker starts only after the production runtime/migration foundation is accepted and the role/access matrix is approved.
+In parallel, the owner should complete `docs/task-checklists/06-20-user-operating-model-and-access.md`. The authorization worker starts only after the runtime-foundation pull request is accepted and the role/access matrix is approved.
 
 ## Daily collaboration workflow
 

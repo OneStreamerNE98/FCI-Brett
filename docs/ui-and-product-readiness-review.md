@@ -91,7 +91,7 @@ See [`architecture-decision-production-platform.md`](architecture-decision-produ
 
 ### Now: safe single-user development environment
 
-1. Build the Google Cloud production foundation and migration path defined in the accepted architecture decision.
+1. Review the source-only Google Cloud runtime foundation, complete the owner Cloud inputs, add unapplied infrastructure definitions, and prove the migration/restore path in isolated staging before any deployment.
 2. Approve the 20-user app-to-Google access matrix, including the field/crew access decision and two initial Administrators.
 3. Add invited Google Workspace OIDC users, secure sessions, granular capabilities, roles, and project-level permissions before adding more users.
 4. Add editing and archiving for clients, contacts, leads, projects, and meetings.

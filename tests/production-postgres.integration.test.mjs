@@ -352,3 +352,50 @@ test(
     }
   },
 );
+
+test(
+  "PostgreSQL 16 migration search path prevents a reused session's temp history shadow",
+  {
+    skip: postgresTestUrl ? false : "TEST_POSTGRES_URL is not configured",
+    timeout: 30_000,
+  },
+  async () => {
+    const { Pool } = await import("pg");
+    const pool = new Pool({ connectionString: postgresTestUrl, max: 1 });
+    const schema = `fci_shadow_${randomUUID().replaceAll("-", "")}`;
+    await pool.query(`CREATE SCHEMA ${schema}`);
+    const client = await pool.connect();
+    try {
+      await client.query(
+        `CREATE TEMP TABLE production_schema_migrations (
+           version integer PRIMARY KEY,
+           name text NOT NULL,
+           checksum text NOT NULL
+         )`,
+      );
+    } finally {
+      client.release();
+    }
+
+    try {
+      const result = await runProductionSchemaMigrations(
+        pool,
+        PRODUCTION_SCHEMA_MIGRATIONS,
+        { schema },
+      );
+      assert.deepEqual(result, { appliedVersions: [1, 2], currentVersion: 2 });
+
+      const targetHistory = await pool.query(
+        `SELECT count(*)::integer AS count FROM ${schema}.production_schema_migrations`,
+      );
+      const temporaryHistory = await pool.query(
+        "SELECT count(*)::integer AS count FROM pg_temp.production_schema_migrations",
+      );
+      assert.equal(targetHistory.rows[0].count, 2);
+      assert.equal(temporaryHistory.rows[0].count, 0);
+    } finally {
+      await pool.query(`DROP SCHEMA ${schema} CASCADE`);
+      await pool.end();
+    }
+  },
+);
