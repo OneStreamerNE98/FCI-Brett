@@ -4,6 +4,16 @@ import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-wor
 import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../lib/google-oauth";
 import { requireOfficeUser } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
+import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+
+const MAX_FOLDER_PLAN_BODY_BYTES = 8_000;
+
+function folderPlanText(value: unknown, maximum: number) {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!text || text.length > maximum || /[\u0000-\u001f\u007f]/.test(text)) return null;
+  return text;
+}
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -58,7 +68,19 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
-  const body = await request.json() as { clientCode?: string; clientName?: string; projectNumber?: string; projectName?: string };
-  if (!body.clientCode || !body.clientName || !body.projectNumber || !body.projectName) return NextResponse.json({ error: "client and project details are required" }, { status: 400 });
-  return NextResponse.json({ plan: buildProjectFolderPlan(body) });
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_FOLDER_PLAN_BODY_BYTES,
+    invalidMessage: "Client and project details must be valid JSON.",
+    tooLargeMessage: "Client and project details are too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const body = {
+    clientCode: folderPlanText(parsed.body.clientCode, 80),
+    clientName: folderPlanText(parsed.body.clientName, 180),
+    projectNumber: folderPlanText(parsed.body.projectNumber, 80),
+    projectName: folderPlanText(parsed.body.projectName, 180),
+  };
+  const { clientCode, clientName, projectNumber, projectName } = body;
+  if (!clientCode || !clientName || !projectNumber || !projectName) return NextResponse.json({ error: "client and project details are required" }, { status: 400 });
+  return NextResponse.json({ plan: buildProjectFolderPlan({ clientCode, clientName, projectNumber, projectName }) });
 }

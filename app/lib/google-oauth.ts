@@ -1,5 +1,8 @@
 import { env } from "cloudflare:workers";
+import { GoogleIntegrationError } from "./google-integration-error";
 import { resolveDriveWorkspace } from "./google-workspace";
+
+export { GoogleIntegrationError } from "./google-integration-error";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -64,12 +67,6 @@ export type GoogleUserProfile = {
   email: string;
   emailVerified: boolean;
 };
-
-export class GoogleIntegrationError extends Error {
-  constructor(public readonly code: string, message: string, public readonly status = 409) {
-    super(message);
-  }
-}
 
 function list(value: string | undefined) {
   return (value ?? "")
@@ -332,7 +329,21 @@ export async function consumeGoogleOauthAttempt(config: GoogleRuntimeConfig, sta
   return decryptGoogleSecret(attempt.pkce_verifier_ciphertext, config.tokenEncryptionKey, `google-oauth-attempt:${attempt.id}`);
 }
 
-async function tokenRequest(body: URLSearchParams) {
+type GoogleTokenRequestPurpose = "authorization-code" | "refresh-token";
+
+class GoogleTokenRequestError extends GoogleIntegrationError {
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    public readonly requiresReauthorization = false,
+  ) {
+    super(code, message, status);
+    this.name = "GoogleTokenRequestError";
+  }
+}
+
+async function tokenRequest(body: URLSearchParams, purpose: GoogleTokenRequestPurpose) {
   let response: Response;
   try {
     response = await fetch(GOOGLE_TOKEN_URL, {
@@ -344,10 +355,22 @@ async function tokenRequest(body: URLSearchParams) {
     throw new GoogleIntegrationError("token_service_unavailable", "Google authorization is temporarily unavailable. Try again.", 503);
   }
   const data = await response.json().catch(() => null) as Record<string, unknown> | null;
-  if (!response.ok || !data || typeof data.access_token !== "string") {
-    throw new GoogleIntegrationError("token_exchange_failed", "Google authorization could not be completed. Start again.", 409);
+  if (response.ok && data && typeof data.access_token === "string") {
+    return data;
   }
-  return data;
+  const providerError = typeof data?.error === "string" ? data.error : null;
+  if (purpose === "refresh-token" && providerError === "invalid_grant") {
+    throw new GoogleTokenRequestError(
+      "refresh_token_rejected",
+      "Google authorization needs to be reconnected.",
+      409,
+      true,
+    );
+  }
+  if (response.status === 429 || response.status >= 500 || !data) {
+    throw new GoogleIntegrationError("token_service_unavailable", "Google authorization is temporarily unavailable. Try again.", 503);
+  }
+  throw new GoogleIntegrationError("token_exchange_failed", "Google authorization could not be completed. Start again.", 409);
 }
 
 function tokenSet(data: Record<string, unknown>): GoogleTokenSet {
@@ -370,7 +393,7 @@ export async function exchangeGoogleAuthorizationCode(config: GoogleRuntimeConfi
     grant_type: "authorization_code",
     code_verifier: verifier,
   });
-  return tokenSet(await tokenRequest(body));
+  return tokenSet(await tokenRequest(body, "authorization-code"));
 }
 
 export async function fetchGoogleUserProfile(accessToken: string) {
@@ -520,17 +543,24 @@ export async function getGoogleAccessToken(config: GoogleRuntimeConfig, required
       client_secret: config.clientSecret ?? "",
       refresh_token: refreshToken,
       grant_type: "refresh_token",
-    }));
+    }), "refresh-token");
     await env.DB.prepare("UPDATE google_connections SET last_success_at = ?, last_error_code = NULL, updated_at = ? WHERE id = ?")
       .bind(Date.now(), Date.now(), connection.id)
       .run();
     return String(data.access_token);
   } catch (error) {
-    await env.DB.prepare("UPDATE google_connections SET status = 'reauthorization-required', last_error_code = 'refresh_failed', updated_at = ? WHERE id = ?")
-      .bind(Date.now(), connection.id)
-      .run();
+    const errorCode = error instanceof GoogleIntegrationError ? error.code : "refresh_failed";
+    if (error instanceof GoogleTokenRequestError && error.requiresReauthorization) {
+      await env.DB.prepare("UPDATE google_connections SET status = 'reauthorization-required', last_error_code = ?, updated_at = ? WHERE id = ?")
+        .bind(errorCode, Date.now(), connection.id)
+        .run();
+    } else {
+      await env.DB.prepare("UPDATE google_connections SET last_error_code = ?, updated_at = ? WHERE id = ?")
+        .bind(errorCode, Date.now(), connection.id)
+        .run();
+    }
     if (error instanceof GoogleIntegrationError) throw error;
-    throw new GoogleIntegrationError("refresh_failed", "Google authorization needs to be reconnected.", 409);
+    throw new GoogleIntegrationError("refresh_failed", "Google authorization is temporarily unavailable. Try again.", 503);
   }
 }
 

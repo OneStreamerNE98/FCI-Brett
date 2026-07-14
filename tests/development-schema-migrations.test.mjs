@@ -15,6 +15,7 @@ const productionMigrationModule = join(
 );
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
+const integrityIndexMigration = "0011_lazy_big_bertha.sql";
 
 const requiredDevelopmentIndexes = [
   "clients_code_unique_idx",
@@ -87,6 +88,7 @@ test("keeps development data integrity and lookup indexes in the versioned Drizz
   const files = await migrationFiles(drizzleRoot);
   const sources = await Promise.all(files.map((file) => readFile(join(drizzleRoot, file), "utf8")));
   const migrationSql = sources.join("\n");
+  const integrityIndexSql = await readFile(join(drizzleRoot, integrityIndexMigration), "utf8");
   const schemaSource = await readFile(join(root, "db", "schema.ts"), "utf8");
   const journal = JSON.parse(await readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8"));
   const journalTags = journal.entries.map((entry) => entry.tag);
@@ -97,10 +99,10 @@ test("keeps development data integrity and lookup indexes in the versioned Drizz
     assert.match(schemaSource, new RegExp(`(?:uniqueIndex|index)\\("${indexName}"\\)`));
   }
 
-  const latestSql = sources.at(-1);
-  assert.doesNotMatch(latestSql, /\b(?:ALTER|DROP|DELETE|TRUNCATE)\b/i);
+  assert.ok(files.includes(integrityIndexMigration));
+  assert.doesNotMatch(integrityIndexSql, /\b(?:ALTER|DROP|DELETE|TRUNCATE)\b/i);
   for (const indexName of requiredDevelopmentIndexes) {
-    assert.match(latestSql, new RegExp("INDEX IF NOT EXISTS `" + indexName + "`"));
+    assert.match(integrityIndexSql, new RegExp("INDEX IF NOT EXISTS `" + indexName + "`"));
   }
 });
 
