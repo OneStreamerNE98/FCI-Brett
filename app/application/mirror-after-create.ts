@@ -1,6 +1,11 @@
 import type { DirectoryMirror, DirectoryMirrorRequest, DirectoryMirrorResult } from "../ports/directory-mirror";
 
 const FAILED_MIRROR_MESSAGE = "Saved in FCI Operations; Google Sheet sync needs attention: the directory mirror request did not complete.";
+const QUEUED_MIRROR_MESSAGE = "Saved in FCI Operations; directory synchronization is queued for background processing.";
+
+export function queuedMirrorAfterDurableCreate(): DirectoryMirrorResult {
+  return { status: "queued", message: QUEUED_MIRROR_MESSAGE };
+}
 
 export async function mirrorAfterDurableCreate(mirror: DirectoryMirror, request: DirectoryMirrorRequest): Promise<DirectoryMirrorResult> {
   try {

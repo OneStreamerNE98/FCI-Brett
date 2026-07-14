@@ -24,7 +24,23 @@ export type ProjectCreationIntent = {
   };
 };
 
-export type ProjectCreationRepositoryResult = { outcome: "created" } | { outcome: "client-not-found" };
+export type AcceptedProjectCreation = {
+  id: string;
+  projectNumber: string;
+  projectManagerId: string;
+  createdAt: number;
+  estimatedValue: number | null;
+  /** PostgreSQL bigint values stay strings so callers cannot lose precision. */
+  version: string;
+};
+
+export type ProjectCreationRepositoryResult =
+  | { outcome: "created" }
+  | { outcome: "accepted"; value: AcceptedProjectCreation; replayed: boolean }
+  | { outcome: "client-not-found" }
+  | { outcome: "identifier-collision" }
+  | { outcome: "idempotency-conflict" }
+  | { outcome: "in-progress" };
 
 export type ProjectManagerAssignmentIntent = {
   projectId: string;

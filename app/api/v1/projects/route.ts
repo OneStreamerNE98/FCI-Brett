@@ -8,6 +8,7 @@ import { assignProjectManager, createProject } from "../../../application/create
 import { normalizeProjectManagerId } from "../../../domain/project-creation";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
+import { projectCreationHttpResult } from "../../../lib/creation-http-result";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
 
@@ -64,11 +65,8 @@ export async function POST(request: NextRequest) {
       now: () => Date.now(),
     },
   );
-  if (!result.ok) {
-    const status = result.kind === "client-not-found" ? 404 : result.kind === "forbidden" ? 403 : 400;
-    return NextResponse.json({ error: result.message }, { status });
-  }
-  return NextResponse.json(result.value, { status: 201 });
+  const httpResult = projectCreationHttpResult(result);
+  return NextResponse.json(httpResult.body, { status: httpResult.status });
 }
 
 export async function PATCH(request: NextRequest) {

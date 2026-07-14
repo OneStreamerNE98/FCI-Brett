@@ -2,11 +2,11 @@ import { normalizeClientCreation } from "../domain/client-creation";
 import type { ClientRepository } from "../ports/client-repository";
 import type { DirectoryMirror } from "../ports/directory-mirror";
 import { canCreate, CREATION_CAPABILITIES, type CreationAuthorizationContext } from "./creation-authorization";
-import { mirrorAfterDurableCreate } from "./mirror-after-create";
+import { mirrorAfterDurableCreate, queuedMirrorAfterDurableCreate } from "./mirror-after-create";
 
 export type CreateClientFailure = {
   ok: false;
-  kind: "forbidden" | "invalid" | "duplicate";
+  kind: "forbidden" | "invalid" | "duplicate" | "identifier-collision" | "idempotency-conflict" | "in-progress";
   message: string;
 };
 
@@ -17,6 +17,7 @@ export type CreateClientSuccess = {
     clientCode: string;
     name: string;
     createdAt: number;
+    version?: string;
     sheetSync: Awaited<ReturnType<typeof mirrorAfterDurableCreate>>;
   };
 };
@@ -80,6 +81,29 @@ export async function createClient(
 
   if (repositoryResult.outcome === "duplicate") {
     return { ok: false, kind: "duplicate", message: "A client with this business name already exists." };
+  }
+  if (repositoryResult.outcome === "identifier-collision") {
+    return { ok: false, kind: "identifier-collision", message: "A client identifier collision occurred. Retry the request." };
+  }
+  if (repositoryResult.outcome === "idempotency-conflict") {
+    return { ok: false, kind: "idempotency-conflict", message: "This request key was already used for different client details." };
+  }
+  if (repositoryResult.outcome === "in-progress") {
+    return { ok: false, kind: "in-progress", message: "This client request is already being processed. Retry with the same request key." };
+  }
+
+  if (repositoryResult.outcome === "accepted") {
+    return {
+      ok: true,
+      value: {
+        id: repositoryResult.value.id,
+        clientCode: repositoryResult.value.clientCode,
+        name: repositoryResult.value.name,
+        createdAt: repositoryResult.value.createdAt,
+        version: repositoryResult.value.version,
+        sheetSync: queuedMirrorAfterDurableCreate(),
+      },
+    };
   }
 
   const sheetSync = await mirrorAfterDurableCreate(dependencies.directoryMirror, {

@@ -14,18 +14,19 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 ### Product and interface
 
 - [x] Finish the shared accessible dialog/drawer foundation for every existing form and review workflow.
-- [ ] Add typed success, information, warning, and error feedback; errors must not use a success icon.
+- [x] Add typed success, information, warning, and error feedback; persistent errors use an alert icon, explicit dismissal, and retry where the operation is safe to repeat.
 - [ ] Give each major page a durable URL so refresh, Back, bookmarks, and support links preserve context.
-- [ ] Add complete keyboard behavior to global search and navigation popovers.
+- [x] Give global search full keyboard behavior and make disclosure popovers close on Escape/outside click without false menu semantics.
 - [ ] Split the large client component into route, feature, and shared-component modules.
 - [ ] Add independent loading, error, retry, and last-updated states instead of one all-or-nothing screen state.
-- [ ] Label operational surfaces as Working, In development, Setup required, or Planned.
+- [x] Label operational surfaces as Working, In development, Setup required, or Planned.
 - [ ] Raise very small operational text and verify keyboard use, 200% zoom, 390 px mobile, tablet, and desktop layouts.
 
 ### Production architecture
 
 - [ ] Introduce provider-neutral database, object-storage, secret/configuration, and queued-job interfaces while retaining the existing D1/R2 development adapters.
 - [x] Add the first source-only PostgreSQL core schema and concurrent-runner-safe migration system with immutable checksums, foreign keys, constrained states, timestamps, version columns, idempotency, audit evidence, and an outbox. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
+- [x] Add source-only PostgreSQL client/project adapters, atomic actor-scoped request replay, transactional activity/outbox writes, worker-safe outbox transitions, guarded PostgreSQL value parsing, and PostgreSQL 16 repository coverage. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
 - [ ] Extend the production model with users, invitations, sessions, roles, capabilities, and project memberships, then connect those identities to the existing append-only audit, idempotency, and outbox records.
 - [ ] Add Cloud Run container and runtime support without changing the hosted development environment.
 - [ ] Add reviewable infrastructure definitions for development, staging, and production; do not apply them until owner inputs and deployment approval exist.
@@ -48,7 +49,8 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 - [x] Add PostgreSQL 16 core constraint/migration integration coverage in CI while allowing the normal local suite to run without PostgreSQL.
 - [ ] Add route/repository integration tests, permission-denial tests, application retry/idempotency tests, and partial-API-failure tests.
 - [x] Run lint as an explicit CI step.
-- [ ] Fail browser smoke tests on unhandled console errors.
+- [ ] Fail every browser smoke path on unhandled console errors.
+  - Primary page/sidebar smoke coverage currently enforces console health; extend the guard to the remaining Playwright paths.
 - [ ] Keep each milestone on a `codex/<short-feature-name>` branch and merge only through a reviewed, green pull request.
 
 ## Owner decisions that can happen before connection
@@ -73,14 +75,16 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 
 ## Recommended worker sequence
 
-1. **Completed frontend slice:** accessible dialog/drawer foundation and rendered keyboard QA.
+1. **Completed frontend correctness slices:** accessible dialog/drawer foundation, rendered keyboard QA, typed persistent notifications, safe retry behavior, protected Settings loading, and OAuth query cleanup.
 2. **Completed portability slice:** provider-neutral client and project creation services, D1 development adapters, safe mirror boundaries, and a centralized versioned D1 development schema runner. See [Portable client and project creation](portable-record-creation.md).
 3. **Completed PostgreSQL foundation slice:** constrained client/contact/project, activity/audit, idempotency, outbox, and immutable migration-history tables; checksum validation; advisory locking; transactional forward migrations; restore/forward-fix rollback guidance; and PostgreSQL 16 CI coverage. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
-4. **Next database worker:** implement PostgreSQL client/project repository adapters, atomic actor-scoped idempotency claims, transactional activity/outbox writes, and shared repository contract tests. Keep network calls outside database transactions and do not provision or migrate Cloud SQL.
-5. **Authorization worker:** simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
-6. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
-7. **Frontend structure worker:** durable URLs, component split, typed feedback, partial-failure states, search keyboard behavior, and responsive/accessibility tests.
-8. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
+4. **Completed PostgreSQL repository slice:** client/project adapters, atomic actor-scoped idempotency and truthful replay, transactional activity/outbox intent, guarded exact-value parsing, version-fenced outbox claim/complete/retry/recovery, and PostgreSQL 16 repository tests. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
+5. **Next production runtime worker:** add the source-only Cloud Run container/runtime, pooled Cloud SQL composition, separate migration command, health/readiness behavior, least-privilege grants, and a test-data migration/reconciliation rehearsal without provisioning or deployment.
+6. **Owner approval in parallel:** approve the 20-user role model and cross-system Google access matrix.
+7. **Authorization worker after both gates:** after the runtime/migration foundation is accepted and the access matrix is approved, add simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
+8. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
+9. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
+10. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
 
 Do not assign scheduling, outbound messaging, or AI document indexing until the production platform and authorization foundation are accepted.
 
@@ -106,15 +110,26 @@ The source-only PostgreSQL worker completed the first constrained production sch
 - Unit tests run everywhere; GitHub CI adds a PostgreSQL 16 service for real migration, concurrency, rollback, index, and constraint coverage.
 - Rollback is restore/forward-fix based. No destructive automatic down migration was added.
 
+## Completed PostgreSQL repository assignment
+
+The source-only repository worker connected the portable creation services to the production schema without wiring a production runtime or changing D1/Sites behavior:
+
+- Actor/operation/key request claims use one atomic insert; a same-fingerprint retry returns the winning stored record, and fingerprint reuse is rejected.
+- Client/contact or project creation, append-only activity evidence, outbox intent, and the completed replay response commit in one short transaction.
+- The documented Unicode client-name key is centralized, PostgreSQL `bigint` versions remain strings, and constrained `numeric` values use guarded safe-integer conversion.
+- Outbox claims use small ordered `FOR UPDATE SKIP LOCKED` batches; version-fenced complete/retry/recovery prevents stale-worker writes, and terminal dead letters append activity evidence atomically.
+- Fast tests run without PostgreSQL; GitHub CI supplies PostgreSQL 16 for real concurrency, rollback, replay, exact-value, and outbox lifecycle coverage.
+- No provider callback is accepted inside a repository transaction, and no Cloud, Workspace, migration, deployment, credential, or live-data state changed.
+
 ## Next bounded developer assignment
 
-Assign one database worker to connect the existing provider-neutral creation services to the completed production schema without provisioning Cloud resources or changing the hosted development environment:
+After the PostgreSQL repository pull request is reviewed and merged, assign one production-runtime worker to continue the Google Cloud foundation without touching external infrastructure:
 
-- Implement PostgreSQL client/project repository adapters against the existing provider-neutral contracts and run the same repository behavior suite against both adapters.
-- Claim actor-scoped request-idempotency keys with atomic `INSERT ... ON CONFLICT`, reject fingerprint reuse, and return an accepted prior result without duplicating a record.
-- Write the client/contact or project, activity evidence, and outbox row in one short PostgreSQL transaction with optimistic-concurrency versions.
-- Add an outbox claim/complete/retry repository using small `FOR UPDATE SKIP LOCKED` batches; keep Google/network calls outside transactions and do not add a live worker yet.
-- Parse PostgreSQL `bigint`/`numeric` values without unsafe JavaScript coercion and generate the documented Unicode-normalized client-name key.
-- Document migration assumptions, identifier preservation, count/hash reconciliation, backup/restore prerequisites, and the owner approval required before any staging rehearsal.
+- Add the reviewable Cloud Run container and runtime entry point while preserving the one-user D1/Sites development entry point.
+- Add validated, provider-neutral production configuration and bounded pooled PostgreSQL composition for the completed repository adapters.
+- Keep production migration execution in a separate command/job using the immutable runner; never apply schema changes during normal application requests.
+- Define least-privilege migration/runtime database roles and grants, health/readiness behavior, and safe connection limits.
+- Add a test-data-only migration/reconciliation rehearsal harness with identifier/count/hash evidence and documented restore/forward-fix rollback behavior.
+- Add automated tests, but do not provision Cloud resources, add credentials, apply migrations, migrate data, connect Workspace, deploy, or merge.
 
-This assignment may add source code, local fixtures, and automated tests only. It must not create Cloud SQL, add credentials, migrate development data, alter live Workspace resources, or deploy production.
+The owner should approve the 20-user role model and cross-system Google access matrix in parallel. Authorization begins only after both the runtime/migration foundation and owner policy gate are complete.

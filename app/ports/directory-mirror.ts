@@ -33,6 +33,10 @@ export type DirectoryMirrorResult =
       message: string;
     }
   | {
+      status: "queued";
+      message: string;
+    }
+  | {
       status: "pending";
       message: string;
       error: DirectoryMirrorPublicError;

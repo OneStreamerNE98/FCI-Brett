@@ -7,6 +7,7 @@ import { createClient } from "../../../application/create-client";
 import { creationAuthorizationFor, CREATION_CAPABILITIES } from "../../../application/creation-authorization";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
+import { clientCreationHttpResult } from "../../../lib/creation-http-result";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
 
@@ -47,9 +48,6 @@ export async function POST(request: NextRequest) {
       now: () => Date.now(),
     },
   );
-  if (!result.ok) {
-    const status = result.kind === "duplicate" ? 409 : result.kind === "forbidden" ? 403 : 400;
-    return NextResponse.json({ error: result.message }, { status });
-  }
-  return NextResponse.json(result.value, { status: 201 });
+  const httpResult = clientCreationHttpResult(result);
+  return NextResponse.json(httpResult.body, { status: httpResult.status });
 }

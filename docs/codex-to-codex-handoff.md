@@ -4,6 +4,8 @@ This guide lets a coworker use their own Codex installation against the same FCI
 
 OpenAI describes a Codex project as a project linked to a folder on the user's computer. The repository is therefore the shared collaboration layer: each coworker clones it locally and adds that local folder as their own Codex project. Conversation history and personal Codex settings do not automatically travel with the repository.
 
+The GitHub repository is currently **public**, so anyone can read its source and documentation or fork it to propose a pull request. A coworker still needs explicit collaborator access to push an assigned branch directly to this repository as an authorized company contributor. The owner should decide whether to return it to private before operational configuration begins; public or private, secrets and real company/client data never belong in Git.
+
 Official references:
 
 - [Working with ChatGPT Codex](https://openai.com/academy/working-with-codex/)
@@ -24,8 +26,8 @@ Never share one ChatGPT login. Every coworker signs in to Codex with their own a
 
 ## Owner: prepare the handoff
 
-- [ ] Invite the coworker's GitHub account to `OneStreamerNE98/FCI-Brett`.
-- [ ] Confirm they can see the private repository before sending setup instructions.
+- [ ] Invite the coworker's GitHub account to `OneStreamerNE98/FCI-Brett` with contributor access so they can push assigned branches.
+- [ ] Confirm they can clone the repository and that their intended write access works before sending the assignment.
 - [ ] Give contributor access, not repository-administrator access, unless administration is part of their job.
 - [ ] Assign one bounded milestone and name the expected branch.
 - [ ] Keep production secrets and deployment authority with the owner or approved administrator.
@@ -79,9 +81,11 @@ The expected result is a read-only orientation report plus a passing baseline. T
 
 ## Recommended next worker assignment
 
-After onboarding passes, use this prompt:
+After onboarding passes and PR #8 is merged, use this prompt:
 
-> Create and work on `codex/postgres-repositories`. First read `AGENTS.md`, `docs/20-user-product-and-architecture-review.md`, `docs/architecture-decision-production-platform.md`, `docs/production-postgresql-foundation.md`, and `docs/task-checklists/README.md`. Implement PostgreSQL client/project repository adapters against the existing provider-neutral ports and completed source-only schema. Add atomic actor-scoped request idempotency, activity evidence and outbox insertion in the same short record transaction, worker-safe outbox claim/complete/retry repository contracts, safe `bigint`/`numeric` parsing, Unicode-normalized client-name keys, and repository behavior tests against PostgreSQL 16. Keep provider/network calls outside transactions. Preserve the hosted D1 development environment and existing HTTP behavior. Do not provision Cloud SQL/Cloud Run, add credentials, migrate data, connect Workspace, build scheduling/messaging/AI, deploy, or merge. Finish with a pull request containing verification evidence and a data/security impact note.
+> Create and work on `codex/google-cloud-runtime-foundation`. First read `AGENTS.md`, `docs/20-user-product-and-architecture-review.md`, `docs/architecture-decision-production-platform.md`, `docs/production-postgresql-foundation.md`, `docs/production-postgresql-repositories.md`, and `docs/task-checklists/07-production-foundation-and-migration.md`. Add the reviewable source-only Cloud Run container/runtime boundary, production configuration validation, bounded pooled PostgreSQL composition, a separate migration command/job using the existing immutable runner, health/readiness behavior, least-privilege database role/grant definitions, and a test-data migration/reconciliation rehearsal harness. Keep the current D1/Sites development runtime unchanged and require explicit environment selection; never run production migrations during normal requests. Add automated tests and document rollback evidence. Do not provision Cloud resources, add credentials, apply migrations, connect Workspace, deploy, migrate data, or merge. Finish with a pull request containing verification evidence and a data/security impact note.
+
+In parallel, the owner should complete `docs/task-checklists/06-20-user-operating-model-and-access.md`. The authorization worker starts only after the production runtime/migration foundation is accepted and the role/access matrix is approved.
 
 ## Daily collaboration workflow
 
@@ -153,11 +157,11 @@ A shared ChatGPT Project may be used separately for collaborative chats and uplo
 
 ## Troubleshooting
 
-### The repository link shows 404
+### The repository link shows 404 or a push is denied
 
-- Confirm the coworker accepted the GitHub invitation.
-- Confirm they are signed in to the invited GitHub account.
-- Confirm the repository remains private and the invitation has not expired.
+- Confirm the repository URL is exact and the coworker is signed in to the intended GitHub account.
+- For a push denial, confirm the coworker accepted the collaborator invitation and has contributor access.
+- If the owner later makes the repository private, confirm the invitation has not expired.
 
 ### Codex cannot see the project instructions
 
