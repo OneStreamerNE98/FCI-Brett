@@ -2,6 +2,9 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
+import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+
+const MAX_RECORD_BODY_BYTES = 64_000;
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -17,9 +20,15 @@ export async function POST(request: NextRequest) {
   if (originError) return originError;
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
-  await ensureWorkspaceSchema();
-  const body = await request.json() as { type?: string; projectId?: string; status?: string; payload?: unknown };
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_RECORD_BODY_BYTES,
+    invalidMessage: "Record details must be valid JSON.",
+    tooLargeMessage: "Record details are too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const body = parsed.body as { type?: string; projectId?: string; status?: string; payload?: unknown };
   if (!body.type || !body.payload) return NextResponse.json({ error: "type and payload are required" }, { status: 400 });
+  await ensureWorkspaceSchema();
   const id = crypto.randomUUID();
   const now = Date.now();
   const actor = auth.user.email;

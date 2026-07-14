@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../lib/google-drive";
+import { mapGoogleIntegrationError } from "../../../../../lib/google-integration-error";
 import { GoogleIntegrationError, getGoogleAccessToken, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth";
 import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
@@ -17,9 +18,15 @@ type ProjectRow = {
 
 type MappingRow = { drive_file_id: string; drive_url: string };
 
+function noStore(body: unknown, init: ResponseInit = {}) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 function errorResponse(error: unknown) {
-  if (error instanceof GoogleIntegrationError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
-  return NextResponse.json({ error: "The project Drive workspace could not be created. Try again." }, { status: 503 });
+  const mapped = mapGoogleIntegrationError(error, "The project Drive workspace could not be created. Try again.");
+  return noStore(mapped.body, { status: mapped.status });
 }
 
 export async function POST(request: NextRequest, context: { params: Promise<{ projectId: string }> }) {
@@ -29,26 +36,30 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const config = getGoogleRuntimeConfig();
-  if (!config.oauthReady) return NextResponse.json({ error: "Google Drive setup is incomplete.", missing: config.missing }, { status: 409 });
+  if (!config.oauthReady) return noStore({ error: "Google Drive setup is incomplete.", missing: config.missing }, { status: 409 });
   if (!config.provisioningEnabled) {
-    return NextResponse.json({ error: "Shared Drive folder creation is disabled. Enable Workspace provisioning only after the company drive is verified." }, { status: 409 });
+    return noStore({ error: "Shared Drive folder creation is disabled. Enable Workspace provisioning only after the company drive is verified." }, { status: 409 });
   }
 
   const { projectId } = await context.params;
   const project = await env.DB.prepare("SELECT p.id, p.project_number, p.name, p.client_id, c.client_code, c.name AS client_name FROM projects p JOIN clients c ON c.id = p.client_id WHERE p.id = ?")
     .bind(projectId)
     .first<ProjectRow>();
-  if (!project) return NextResponse.json({ error: "Project not found." }, { status: 404 });
+  if (!project) return noStore({ error: "Project not found." }, { status: 404 });
 
   const existing = await env.DB.prepare("SELECT drive_file_id, drive_url FROM drive_folder_mappings WHERE connection_key = ? AND entity_type = 'project' AND entity_id = ? AND folder_key = 'project-root'")
     .bind(config.connectionKey, project.id)
     .first<MappingRow>();
   if (existing) {
-    if (!config.simulation) {
-      const drive = new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
-      await drive.assertContained(existing.drive_file_id);
+    try {
+      if (!config.simulation) {
+        const drive = new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
+        await drive.assertContained(existing.drive_file_id);
+      }
+      return noStore({ created: false, driveFolderId: existing.drive_file_id, driveUrl: existing.drive_url, environment: config.environment });
+    } catch (error) {
+      return errorResponse(error);
     }
-    return NextResponse.json({ created: false, driveFolderId: existing.drive_file_id, driveUrl: existing.drive_url, environment: config.environment });
   }
   if (config.simulation) {
     const completedAt = Date.now();
@@ -66,9 +77,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     ]);
     await writeGoogleIntegrationEvent(config, "drive.simulation_project_folder_provisioned", auth.user.email, "project", project.id, "mode=simulation");
     const sheetSync = await trySyncGoogleDirectory(config, auth.user.email);
-    return NextResponse.json({ created: true, simulated: true, driveFolderId: projectFolderId, driveUrl: projectUrl, environment: config.environment, sheetSync }, { status: 201 });
+    return noStore({ created: true, simulated: true, driveFolderId: projectFolderId, driveUrl: projectUrl, environment: config.environment, sheetSync }, { status: 201 });
   }
-  const accessToken = await getGoogleAccessToken(config, "drive");
+  let accessToken: string;
+  try {
+    accessToken = await getGoogleAccessToken(config, "drive");
+  } catch (error) {
+    return errorResponse(error);
+  }
   const drive = new GoogleDriveClient(accessToken, config);
   const now = Date.now();
   const operationKey = `${config.connectionKey}:provision-project:${project.id}`;
@@ -77,7 +93,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     .bind(crypto.randomUUID(), config.connectionKey, operationKey, project.id, leaseExpiresAt, auth.user.email, now, now, now)
     .run();
   if (operation.meta.changes !== 1) {
-    return NextResponse.json({ error: "A Drive folder request is already in progress for this project. Try again shortly." }, { status: 409 });
+    return noStore({ error: "A Drive folder request is already in progress for this project. Try again shortly." }, { status: 409 });
   }
 
   try {
@@ -98,7 +114,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     ]);
     await writeGoogleIntegrationEvent(config, "drive.project_folder_provisioned", auth.user.email, "project", project.id, "mode=workspace");
     const sheetSync = await trySyncGoogleDirectory(config, auth.user.email);
-    return NextResponse.json({ created: true, driveFolderId: provisioned.projectFolder.id, driveUrl: provisioned.projectFolder.url, environment: config.environment, sheetSync }, { status: 201 });
+    return noStore({ created: true, driveFolderId: provisioned.projectFolder.id, driveUrl: provisioned.projectFolder.url, environment: config.environment, sheetSync }, { status: 201 });
   } catch (error) {
     const code = error instanceof GoogleIntegrationError ? error.code : "provision_failed";
     await env.DB.prepare("UPDATE google_drive_operations SET status = 'failed', lease_expires_at = NULL, last_error_code = ?, updated_at = ? WHERE operation_key = ?")

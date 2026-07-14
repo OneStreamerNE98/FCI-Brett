@@ -54,15 +54,28 @@ function safeEvent(event: CalendarApiEvent): CalendarEventSummary | null {
   };
 }
 
+function requireWorkspaceCalendarId(config: GoogleRuntimeConfig) {
+  assertGoogleService(config, "calendar");
+  const calendarId = config.clientAppointmentsCalendarId?.trim();
+  if (!config.oauthReady || !calendarId) {
+    throw new GoogleIntegrationError(
+      "calendar_configuration_required",
+      "Complete the Google Workspace Calendar setup before using appointments.",
+      409,
+    );
+  }
+  return calendarId;
+}
+
 export class GoogleCalendarClient {
   constructor(private readonly accessToken: string, private readonly config: GoogleRuntimeConfig) {}
 
-  private assertWorkspaceCalendar() {
-    assertGoogleService(this.config, "calendar");
+  private workspaceCalendarId() {
+    return requireWorkspaceCalendarId(this.config);
   }
 
   private async request<T>(path: string, init: RequestInit = {}) {
-    this.assertWorkspaceCalendar();
+    this.workspaceCalendarId();
     let response: Response;
     try {
       response = await fetch(`${CALENDAR_API}/${path}`, {
@@ -109,7 +122,7 @@ export class GoogleCalendarClient {
       showDeleted: "false",
       fields: "items(id,summary,status,htmlLink,start,end)",
     });
-    const calendarId = encodeURIComponent(this.config.clientAppointmentsCalendarId ?? "primary");
+    const calendarId = encodeURIComponent(this.workspaceCalendarId());
     const result = await this.request<{ items?: CalendarApiEvent[] }>(`calendars/${calendarId}/events?${query.toString()}`);
     return {
       window: { start: timeMin, end: timeMax },
@@ -120,7 +133,7 @@ export class GoogleCalendarClient {
   async createTestHold(start: Date) {
     const end = new Date(start.getTime() + TEST_HOLD_DURATION_MS);
     const query = new URLSearchParams({ sendUpdates: "none", conferenceDataVersion: "0" });
-    const calendarId = encodeURIComponent(this.config.clientAppointmentsCalendarId ?? "primary");
+    const calendarId = encodeURIComponent(this.workspaceCalendarId());
     const result = await this.request<CalendarApiEvent>(`calendars/${calendarId}/events?${query.toString()}`, {
       method: "POST",
       body: JSON.stringify({
@@ -143,7 +156,7 @@ export class GoogleCalendarClient {
 }
 
 export async function listWorkspaceCalendarEvents(config: GoogleRuntimeConfig, actor: string) {
-  assertGoogleService(config, "calendar");
+  const calendarId = requireWorkspaceCalendarId(config);
   const calendar = new GoogleCalendarClient(await getGoogleAccessToken(config, "calendar"), config);
   const result = await calendar.listUpcomingEvents();
   await writeGoogleIntegrationEvent(
@@ -151,14 +164,14 @@ export async function listWorkspaceCalendarEvents(config: GoogleRuntimeConfig, a
     "calendar.workspace_events_listed",
     actor,
     "calendar",
-    config.clientAppointmentsCalendarId ?? "primary",
+    calendarId,
     `window=${result.window.start}/${result.window.end};count=${result.events.length}`,
   );
   return result;
 }
 
 export async function createWorkspaceCalendarHold(config: GoogleRuntimeConfig, actor: string, start: Date) {
-  assertGoogleService(config, "calendar");
+  requireWorkspaceCalendarId(config);
   const calendar = new GoogleCalendarClient(await getGoogleAccessToken(config, "calendar"), config);
   const event = await calendar.createTestHold(start);
   await writeGoogleIntegrationEvent(

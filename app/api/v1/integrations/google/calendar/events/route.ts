@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
   if (!config.calendarEnabled) {
     return noStore({ error: "Enable Calendar for the Google Workspace connection before using appointments." }, { status: 409 });
   }
+  if (!config.oauthReady) {
+    return noStore({ error: "Google Calendar setup is incomplete.", code: "calendar_configuration_required", missing: config.missing }, { status: 409 });
+  }
 
   try {
     return noStore(config.simulation ? await listSimulationCalendarEvents() : await listWorkspaceCalendarEvents(config, auth.user.email));
