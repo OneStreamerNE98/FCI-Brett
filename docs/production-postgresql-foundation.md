@@ -20,9 +20,11 @@ The initial registry creates only these production tables:
 | `clients` | Unique client code and normalized client-name key, constrained state, audit actors/timestamps, and optimistic-concurrency version. |
 | `contacts` | Client-owned contacts with a real foreign key and at most one primary contact per client. |
 | `projects` | Client-owned projects with unique project numbers, constrained state, whole-number nonnegative estimated value, and a version field. |
-| `activity_events` | Append-only client- or project-scoped activity/audit evidence with actor, correlation ID, result, optional reason, structured detail, and occurrence time. |
+| `activity_events` | Append-only client- or project-scoped business activity evidence with actor, correlation ID, result, optional reason, structured detail, and occurrence time. It is not the general security-audit store. |
 | `idempotency_requests` | Actor-scoped operation/request keys, request fingerprints, response state, expiry, and a version field. |
 | `outbox_events` | Transactional delivery intent with actor/correlation evidence, an event-type-to-record constraint, retry availability, lease state, dead-letter time, and a version field. |
+
+A future general append-only `audit_events` model must cover authentication failures, sessions, invitations, roles/capabilities, memberships, exports, files, connector administration, jobs, and recovery. It should have separate access and retention rules from the user-facing client/project activity timeline.
 
 Every relationship in this bounded model uses a named foreign key and has an index on its referencing column. Identifiers supplied by the application use PostgreSQL `uuid`; actor identifiers remain text until the user/identity schema is approved. Time values use `timestamptz`, structured payloads use `jsonb`, and all table/check/foreign-key/unique identifiers are explicit lowercase snake case.
 

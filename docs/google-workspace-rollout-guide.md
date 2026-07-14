@@ -50,7 +50,7 @@ Create these resources before turning on live folder provisioning:
 | Calendar 1 | `FCI • Client Appointments` | Site visits, measurements, client meetings, and confirmations |
 | Calendar 2 | `FCI • Field Schedule` | Published job assignments and crew schedule |
 | Mailbox | `operations@cherryhillfci.com` (proposed) | Company Gmail intake and app connection |
-| Google Cloud project | `FCI Operations Production` | Google APIs, OAuth branding, OAuth clients, and Marketplace configuration |
+| Google Cloud projects | `FCI Operations Development`, later separate staging and production projects | Environment-isolated Google APIs, OAuth clients, secrets, and production configuration |
 
 ## Part 1: set up the Google Workspace organization
 
@@ -112,7 +112,7 @@ Google Cloud and Google Workspace are separate products. The Workspace tenant ow
 
 1. Open [Google Cloud Console](https://console.cloud.google.com/).
 2. Select the Workspace organization at the top.
-3. Create a project named `FCI Operations Production`.
+3. For the current one-user test connector, create a project named `FCI Operations Development`.
 4. Record the project ID.
 5. Under **APIs & Services → Library**, enable:
    - Google Drive API
@@ -121,7 +121,7 @@ Google Cloud and Google Workspace are separate products. The Workspace tenant ow
    - Google Sheets API
 6. Pub/Sub can remain disabled until background Gmail/Calendar processing is actually built.
 
-Use a separate Cloud project for development/testing if you expect to test scope or consent changes regularly.
+Reserve separate staging and production projects for their own OAuth clients, secrets, APIs, and resources. Do not add the current Sites development callback or credentials to the production project.
 
 ## Part 6: configure the Google Auth platform
 
@@ -137,10 +137,10 @@ In the Cloud project, open **Google Auth platform**.
 ### Audience
 
 1. Choose **Internal** so only accounts in your Workspace organization can authorize the app.
-2. Use Testing while you are first configuring the connection.
-3. When development acceptance passes, switch the internal app to In production.
+2. Keep development and production OAuth clients in separate company-owned Cloud projects and restrict application access with explicit invitations and Google Admin API Controls.
+3. Confirm Google Auth platform treats the application as **Internal**. Do not add test users or follow the External **Testing**/**In production** publishing workflow for this Internal application. If **Internal** is unavailable, stop and attach the project to the company Cloud organization rather than continuing as External.
 
-Internal audience is available only to projects under a Google Workspace/Cloud organization. Google documents the current audience behavior in [Manage App Audience](https://support.google.com/cloud/answer/15549945).
+Internal audience is available only to projects under a Google Workspace/Cloud organization. Google's current behavior table lists publishing status as not applicable for Internal apps; test-user allowlists and seven-day refresh-token expiry are External Testing behavior. Internal audience still does not replace the application's invitation, disabled-user, role, or project-permission checks. See Google's [OAuth app state overview](https://developers.google.com/identity/protocols/oauth2/production-readiness/overview) and [Manage App Audience](https://support.google.com/cloud/answer/15549945).
 
 ### Data access scopes
 
@@ -162,16 +162,18 @@ These are broad scopes. Keep the app internal, limit the authorized account, and
 1. In the Cloud project, go to **Google Auth platform → Clients**.
 2. Select **Create Client**.
 3. Choose **Web application**.
-4. Name it `FCI Operations Workspace Connector`.
+4. Name it `FCI Operations Workspace Connector — Development`.
 5. Add this authorized redirect URI exactly:
 
 ```text
 https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback
 ```
 
-6. If you later add a custom domain, add its exact HTTPS callback as a second authorized redirect URI before changing the application setting.
+6. If this development environment later receives a development-only custom hostname, add its exact HTTPS callback before changing the development application setting. Never add the future production callback to this client.
 7. Save the client.
 8. Record the client ID and client secret securely.
+
+This client and callback are development-only. Create the production data-connector client in the production project only after the production hostname is approved, and give it only the exact production HTTPS callback.
 
 Google requires an exact server-side redirect URI match. See [Create Google Workspace credentials](https://developers.google.com/workspace/guides/create-credentials).
 
@@ -205,7 +207,7 @@ Store the result as a secret. Do not place it in `.env.example`, Git, Drive, scr
 
 ## Part 10: configure hosted runtime values
 
-The code expects the following values. Hosted values belong in the hosting environment, not in source control.
+The code expects the following values for the current hosted development connector. Hosted values belong in the hosting environment, not in source control.
 
 ```dotenv
 FCI_OFFICE_EMAILS=jason.grass@gmail.com
@@ -298,9 +300,9 @@ Google’s current instructions are in [Automatically install web apps](https://
 
 ### Google apps launcher / Marketplace option
 
-After Google Workspace login is implemented:
+After the production hostname and Google Workspace login implementation are approved:
 
-1. Enable the **Google Workspace Marketplace SDK** in the Cloud project.
+1. Enable the **Google Workspace Marketplace SDK** in the isolated production Cloud project, not `FCI Operations Development`.
 2. Configure a **Web app** integration.
 3. Use the production app URL as the Universal navigation URL.
 4. Choose **Private** visibility for your organization.
@@ -342,8 +344,9 @@ Do not store real client data until every required item is complete.
 
 - [ ] `cherryhillfci.com` and its Workspace users are controlled by the company.
 - [ ] App audience is Internal.
-- [ ] OAuth client has the exact HTTPS callback.
-- [ ] Admin API Controls trust only the intended OAuth client.
+- [ ] The production data-connector client has only the exact production HTTPS callback and no development callback.
+- [ ] The separate production employee-login client has only the exact production origins/callbacks; OIDC verifies that client as the audience and verifies the signed `hd` claim.
+- [ ] Admin API Controls trust only the intended production data-connector client.
 - [ ] Authorized account and allowed domain are exact.
 - [ ] Shared Drive is verified and external sharing is reviewed.
 - [ ] Both calendars exist and their IDs are verified.

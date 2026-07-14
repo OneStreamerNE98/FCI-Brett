@@ -13,11 +13,12 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
 | Staff Google login and roles | Codex/developer | Not implemented | Build on Cloud Run/Cloud SQL after identity policy is approved. |
 | 20-user operating/access model | Owner + Workspace administrator | Waiting on owner | Decide staff/field roles and approve the app-to-Google access matrix. |
-| Production foundation and migration | Developer + Cloud administrator | In progress | Review the source-only runtime foundation, complete the non-secret Cloud inputs, then add unapplied infrastructure definitions and run a staging rehearsal. |
+| Production foundation and migration | Developer + Cloud administrator | In progress | Merge the approved runtime-foundation PR, complete the non-secret Cloud inputs, then add unapplied infrastructure definitions and prepare the isolated staging rehearsal. |
 | Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
 | Frontend multi-user hardening | Codex/developer | In progress | Typed feedback and Settings failure safety are complete; implement real capabilities, freshness, durable URLs, and conflict handling next. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
+| Complete product/integration architecture | Owner + developer + operations | Runtime boundary approved; broader decisions open | Approve system boundaries, roles, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Checklists by topic
 
@@ -31,9 +32,12 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 8. [Production foundation and migration](07-production-foundation-and-migration.md)
 9. [Operations, recovery, and security](08-operations-recovery-and-security.md)
 10. [Frontend and multi-user hardening](09-frontend-and-multi-user-hardening.md)
-11. [Codex-to-Codex coworker handoff](../codex-to-codex-handoff.md)
+11. [Complete product and integration architecture](10-complete-product-and-integration-architecture.md)
+12. [Codex-to-Codex coworker handoff](../codex-to-codex-handoff.md)
 
 Read the [20-user product and architecture review](../20-user-product-and-architecture-review.md) for the evidence, priority findings, corrected delivery order, and product ideas behind these task checklists.
+
+Read the [complete product and Google Cloud architecture audit](../complete-product-and-google-cloud-architecture-audit.md) for the capability map, Google Cloud topology, texting/reminder design, integration reliability requirements, owner decisions, acceptance gates, and branch-sized implementation order.
 
 Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) to separate work that can be built with simulation now from owner decisions and live-connection tasks that require Workspace resources or credentials.
 
