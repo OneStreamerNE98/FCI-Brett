@@ -57,7 +57,7 @@ export function parsePostgresUuid(value: unknown, label = "PostgreSQL UUID") {
 export function parsePostgresBigint(value: unknown, label = "PostgreSQL bigint") {
   let canonical: string;
   if (typeof value === "string") {
-    if (!POSTGRES_BIGINT_PATTERN.test(value)) {
+    if (value.length > 20 || !POSTGRES_BIGINT_PATTERN.test(value)) {
       throw parsingError(label, "a canonical signed 64-bit integer");
     }
     canonical = value;

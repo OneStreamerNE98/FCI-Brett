@@ -68,11 +68,23 @@ test("validates schema names and UUIDs before SQL use", () => {
 test("keeps bigint values canonical and never coerces unsafe versions", () => {
   assert.equal(parsePostgresBigint("0"), "0");
   assert.equal(parsePostgresBigint(-9_223_372_036_854_775_808n), "-9223372036854775808");
+  assert.equal(parsePostgresBigint("-9223372036854775808"), "-9223372036854775808");
   assert.equal(parsePostgresBigint("9223372036854775807"), "9223372036854775807");
   assert.equal(parsePostgresBigint(42), "42");
   assert.equal(parsePostgresPositiveBigint("9007199254740992"), "9007199254740992");
 
-  for (const invalid of ["01", "+1", "1.0", "1e3", " 1", "9223372036854775808", Number.MAX_SAFE_INTEGER + 1]) {
+  for (const invalid of [
+    "01",
+    "+1",
+    "1.0",
+    "1e3",
+    " 1",
+    "-9223372036854775809",
+    "9223372036854775808",
+    "1".repeat(1_000),
+    Number.MIN_SAFE_INTEGER - 1,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
     assert.throws(() => parsePostgresBigint(invalid), /signed 64-bit integer/);
   }
   for (const invalid of ["0", "-1"]) {

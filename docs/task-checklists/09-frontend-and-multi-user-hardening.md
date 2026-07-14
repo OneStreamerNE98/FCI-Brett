@@ -61,8 +61,8 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [x] Use one accessible dialog/drawer primitive with `role="dialog"`, an accessible name, initial focus, focus trap, Escape handling, and focus restoration.
 - [x] Remove the closed off-canvas mobile navigation from the keyboard order and accessibility tree; restore focus to its launcher and support Escape when it is open.
 - [x] Add Arrow Up/Down, Enter, Escape, and current-selection semantics to global search.
-- [ ] Create typed success, warning, and error notifications; use `role="alert"` for errors and offer inline retry where safe.
-- [ ] Clean up notification timers when components unmount.
+- [x] Create typed success, information, warning, and error notifications; use `role="alert"` for persistent errors and offer inline retry where safe.
+- [x] Clean up notification timers when components unmount or a newer notification replaces them.
 - [ ] Raise metadata text to at least 12 px and body/action text to 14–16 px unless a documented exception is tested.
 - [ ] Test keyboard-only use, screen-reader names, reduced motion, 200% zoom, contrast, 390 px mobile, tablet, and desktop widths.
 
@@ -74,7 +74,8 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [ ] Test a 20-user concurrency scenario for common reads/writes and Google queue behavior.
 - [ ] Capture approved desktop and mobile screenshots for the pull request after browser capture is reliable.
 - [x] Include lint in CI.
-- [x] Fail on unhandled console errors in browser smoke tests.
+- [ ] Fail on unhandled console errors in every browser smoke path.
+  - Primary page/sidebar tests enforce console health; the remaining Playwright paths still need the same guard.
 
 ## Completion result
 

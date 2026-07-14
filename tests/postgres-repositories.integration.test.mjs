@@ -188,6 +188,43 @@ async function insertPendingOutbox(pool, schema, {
   );
 }
 
+async function insertProcessingOutbox(pool, schema, {
+  id,
+  eventType,
+  clientId = null,
+  projectId = null,
+  actorId,
+  createdAt,
+  availableAt = createdAt,
+  leaseExpiresAt,
+  attemptCount = 1,
+  version = "2",
+}) {
+  await pool.query(
+    `INSERT INTO ${schema}.outbox_events (
+       id, event_key, event_type, client_id, project_id, actor_id,
+       correlation_id, payload, status, available_at, attempt_count,
+       lease_expires_at, created_at, updated_at, version
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 'processing',
+       $9, $10, $11, $12, $12, $13::bigint)`,
+    [
+      id,
+      `repository-test:${id}`,
+      eventType,
+      clientId,
+      projectId,
+      actorId,
+      `repository-test:${id}`,
+      JSON.stringify({ testRecord: "FCI TEST — DO NOT USE" }),
+      new Date(availableAt),
+      attemptCount,
+      new Date(leaseExpiresAt),
+      new Date(createdAt),
+      version,
+    ],
+  );
+}
+
 test(
   "PostgreSQL 16 repositories preserve idempotency, atomic evidence, exact values, and worker-safe outbox transitions",
   {
@@ -386,6 +423,36 @@ test(
         outbox_events: 0,
         requests: 1,
       });
+      assert.deepEqual(
+        await createPostgresClientRepository(pool, {
+          schema,
+          request: unicodeDuplicateRequest,
+        }).create(unicodeDuplicateIntent),
+        { outcome: "duplicate" },
+        "the stored duplicate failure must replay without attempting another write",
+      );
+      const unicodeDuplicateReplayState = await oneRow(
+        pool,
+        `SELECT
+           (SELECT count(*)::integer FROM ${schema}.clients WHERE id = $1) AS clients,
+           (SELECT count(*)::integer FROM ${schema}.activity_events WHERE id = $2) AS activities,
+           (SELECT count(*)::integer FROM ${schema}.outbox_events WHERE id = $3) AS outbox_events,
+           (SELECT count(*)::integer FROM ${schema}.idempotency_requests WHERE id = $4) AS requests,
+           (SELECT version::text FROM ${schema}.idempotency_requests WHERE id = $4) AS request_version`,
+        [
+          unicodeDuplicateIntent.client.id,
+          unicodeDuplicateIntent.activity.id,
+          unicodeDuplicateRequest.outboxEventId,
+          unicodeDuplicateRequest.idempotencyRequestId,
+        ],
+      );
+      assert.deepEqual(unicodeDuplicateReplayState, {
+        clients: 0,
+        activities: 0,
+        outbox_events: 0,
+        requests: 1,
+        request_version: "2",
+      });
 
       const collisionOutboxId = randomUUID();
       const collisionCreatedAt = Date.now();
@@ -483,6 +550,36 @@ test(
         outbox_events: 0,
         requests: 1,
         request_status: "failed",
+      });
+      assert.deepEqual(
+        await createPostgresProjectRepository(pool, {
+          schema,
+          request: missingProjectRequest,
+        }).create(missingProjectIntent),
+        { outcome: "client-not-found" },
+        "the stored missing-client failure must replay without another project write",
+      );
+      const missingProjectReplayState = await oneRow(
+        pool,
+        `SELECT
+           (SELECT count(*)::integer FROM ${schema}.projects WHERE id = $1) AS projects,
+           (SELECT count(*)::integer FROM ${schema}.activity_events WHERE id = $2) AS activities,
+           (SELECT count(*)::integer FROM ${schema}.outbox_events WHERE id = $3) AS outbox_events,
+           (SELECT count(*)::integer FROM ${schema}.idempotency_requests WHERE id = $4) AS requests,
+           (SELECT version::text FROM ${schema}.idempotency_requests WHERE id = $4) AS request_version`,
+        [
+          missingProjectIntent.project.id,
+          missingProjectIntent.activity.id,
+          missingProjectRequest.outboxEventId,
+          missingProjectRequest.idempotencyRequestId,
+        ],
+      );
+      assert.deepEqual(missingProjectReplayState, {
+        projects: 0,
+        activities: 0,
+        outbox_events: 0,
+        requests: 1,
+        request_version: "2",
       });
 
       const changedMissingProjectIntent = projectIntent({
@@ -633,14 +730,51 @@ test(
       })));
 
       const outboxRepository = createPostgresOutboxRepository(pool, { schema });
+      const lockClient = await pool.connect();
+      let lockedOutboxId;
+      let skipLockedClaims;
+      try {
+        await lockClient.query("BEGIN");
+        const lockedCandidate = await lockClient.query(
+          `SELECT id::text AS id
+           FROM ${schema}.outbox_events
+           WHERE status = 'pending' AND available_at <= pg_catalog.now()
+           ORDER BY available_at, created_at, id
+           LIMIT 1
+           FOR UPDATE`,
+        );
+        assert.equal(lockedCandidate.rowCount, 1);
+        lockedOutboxId = lockedCandidate.rows[0].id;
+        const boundedOutboxRepository = createPostgresOutboxRepository(pool, {
+          schema,
+          lockTimeoutMs: 1_000,
+          statementTimeoutMs: 2_000,
+        });
+        skipLockedClaims = await boundedOutboxRepository.claimAvailable({
+          batchSize: 1,
+          leaseDurationMs: 60_000,
+        });
+        assert.equal(skipLockedClaims.length, 1);
+        assert.notEqual(
+          skipLockedClaims[0].id,
+          lockedOutboxId,
+          "a held lock on the oldest event must not block another worker",
+        );
+      } finally {
+        await lockClient.query("ROLLBACK");
+        lockClient.release();
+      }
+
       const [firstClaims, secondClaims] = await Promise.all([
-        outboxRepository.claimAvailable({ batchSize: 3, leaseDurationMs: 60_000 }),
+        outboxRepository.claimAvailable({ batchSize: 2, leaseDurationMs: 60_000 }),
         outboxRepository.claimAvailable({ batchSize: 2, leaseDurationMs: 60_000 }),
       ]);
-      assert.equal(firstClaims.length + secondClaims.length, 5);
-      const firstClaimIds = new Set(firstClaims.map((event) => event.id));
+      assert.equal(skipLockedClaims.length + firstClaims.length + secondClaims.length, 5);
+      const firstClaimIds = new Set([...skipLockedClaims, ...firstClaims].map((event) => event.id));
       assert.ok(secondClaims.every((event) => !firstClaimIds.has(event.id)));
-      const claimedById = new Map([...firstClaims, ...secondClaims].map((event) => [event.id, event]));
+      const claimedById = new Map(
+        [...skipLockedClaims, ...firstClaims, ...secondClaims].map((event) => [event.id, event]),
+      );
       assert.deepEqual(new Set(claimedById.keys()), new Set(outboxIds));
       for (const id of outboxIds) {
         const claimed = claimedById.get(id);
@@ -792,6 +926,116 @@ test(
       assert.ok(activeRow.lease_expires_at instanceof Date);
       assert.equal(activeRow.last_error_code, null);
       assert.equal(activeRow.version, "2");
+
+      const recoveryContentionIds = [randomUUID(), randomUUID()];
+      const recoveryContentionCreatedAt = Date.now() - 180_000;
+      const recoveryContentionLeaseAt = Date.now() - 60_000;
+      await Promise.all(recoveryContentionIds.map((id) => insertProcessingOutbox(pool, schema, {
+        id,
+        eventType: "client.created",
+        clientId: winningClientId,
+        actorId: actorA,
+        createdAt: recoveryContentionCreatedAt,
+        leaseExpiresAt: recoveryContentionLeaseAt,
+      })));
+      const recoveryLockClient = await pool.connect();
+      let lockedRecoveryId;
+      let skipLockedRecovery;
+      try {
+        await recoveryLockClient.query("BEGIN");
+        const lockedRecoveryCandidate = await recoveryLockClient.query(
+          `SELECT id::text AS id
+           FROM ${schema}.outbox_events
+           WHERE status = 'processing' AND lease_expires_at <= pg_catalog.now()
+           ORDER BY lease_expires_at, id
+           LIMIT 1
+           FOR UPDATE`,
+        );
+        assert.equal(lockedRecoveryCandidate.rowCount, 1);
+        lockedRecoveryId = lockedRecoveryCandidate.rows[0].id;
+        const boundedRecoveryRepository = createPostgresOutboxRepository(pool, {
+          schema,
+          lockTimeoutMs: 1_000,
+          statementTimeoutMs: 2_000,
+        });
+        skipLockedRecovery = await boundedRecoveryRepository.recoverExpiredLeases({
+          batchSize: 1,
+          retryDelayMs: 0,
+          maxAttempts: 3,
+        });
+        assert.equal(skipLockedRecovery.length, 1);
+        assert.notEqual(
+          skipLockedRecovery[0].id,
+          lockedRecoveryId,
+          "a held expired lease must not block recovery of another event",
+        );
+      } finally {
+        await recoveryLockClient.query("ROLLBACK");
+        recoveryLockClient.release();
+      }
+      const remainingRecovery = await outboxRepository.recoverExpiredLeases({
+        batchSize: 1,
+        retryDelayMs: 0,
+        maxAttempts: 3,
+      });
+      assert.deepEqual(
+        remainingRecovery.map(({ id, outcome, version }) => ({ id, outcome, version })),
+        [{ id: lockedRecoveryId, outcome: "retry", version: "3" }],
+      );
+
+      const rollbackDeadLetterEventId = randomUUID();
+      const rollbackDeadLetterCreatedAt = Date.now() - 120_000;
+      await insertProcessingOutbox(pool, schema, {
+        id: rollbackDeadLetterEventId,
+        eventType: "client.created",
+        clientId: winningClientId,
+        actorId: actorA,
+        createdAt: rollbackDeadLetterCreatedAt,
+        leaseExpiresAt: Date.now() + 60_000,
+      });
+      const conflictingDeadLetterActivityId = deadLetterActivityId(rollbackDeadLetterEventId);
+      await pool.query(
+        `INSERT INTO ${schema}.activity_events (
+           id, client_id, action, actor_id, correlation_id, result, detail, occurred_at
+         ) VALUES ($1, $2, 'FCI TEST dead-letter collision seed', $3, $4,
+           'succeeded', '{}'::jsonb, $5)`,
+        [
+          conflictingDeadLetterActivityId,
+          winningClientId,
+          actorA,
+          `repository-test:dead-letter-collision:${rollbackDeadLetterEventId}`,
+          new Date(rollbackDeadLetterCreatedAt),
+        ],
+      );
+      await assert.rejects(
+        outboxRepository.retryOrDeadLetter({
+          eventId: rollbackDeadLetterEventId,
+          expectedVersion: "2",
+          retryDelayMs: 0,
+          maxAttempts: 1,
+          errorCode: "forced_activity_collision",
+          errorMessage: "FCI TEST — DO NOT USE terminal rollback proof.",
+        }),
+        (error) => error?.code === "23505",
+      );
+      const rolledBackDeadLetter = await oneRow(
+        pool,
+        `SELECT status, attempt_count, lease_expires_at IS NOT NULL AS has_lease,
+                last_error_code, last_error_message, completed_at,
+                dead_lettered_at, version::text AS version
+         FROM ${schema}.outbox_events WHERE id = $1`,
+        [rollbackDeadLetterEventId],
+      );
+      assert.deepEqual(rolledBackDeadLetter, {
+        status: "processing",
+        attempt_count: 1,
+        has_lease: true,
+        last_error_code: null,
+        last_error_message: null,
+        completed_at: null,
+        dead_lettered_at: null,
+        version: "2",
+      });
     } finally {
       if (schemaCreated) await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();

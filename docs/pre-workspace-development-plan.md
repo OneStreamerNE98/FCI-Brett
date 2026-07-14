@@ -14,12 +14,12 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 ### Product and interface
 
 - [x] Finish the shared accessible dialog/drawer foundation for every existing form and review workflow.
-- [ ] Add typed success, information, warning, and error feedback; errors must not use a success icon.
+- [x] Add typed success, information, warning, and error feedback; persistent errors use an alert icon, explicit dismissal, and retry where the operation is safe to repeat.
 - [ ] Give each major page a durable URL so refresh, Back, bookmarks, and support links preserve context.
-- [ ] Add complete keyboard behavior to global search and navigation popovers.
+- [x] Give global search full keyboard behavior and make disclosure popovers close on Escape/outside click without false menu semantics.
 - [ ] Split the large client component into route, feature, and shared-component modules.
 - [ ] Add independent loading, error, retry, and last-updated states instead of one all-or-nothing screen state.
-- [ ] Label operational surfaces as Working, In development, Setup required, or Planned.
+- [x] Label operational surfaces as Working, In development, Setup required, or Planned.
 - [ ] Raise very small operational text and verify keyboard use, 200% zoom, 390 px mobile, tablet, and desktop layouts.
 
 ### Production architecture
@@ -49,7 +49,8 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 - [x] Add PostgreSQL 16 core constraint/migration integration coverage in CI while allowing the normal local suite to run without PostgreSQL.
 - [ ] Add route/repository integration tests, permission-denial tests, application retry/idempotency tests, and partial-API-failure tests.
 - [x] Run lint as an explicit CI step.
-- [ ] Fail browser smoke tests on unhandled console errors.
+- [ ] Fail every browser smoke path on unhandled console errors.
+  - Primary page/sidebar smoke coverage currently enforces console health; extend the guard to the remaining Playwright paths.
 - [ ] Keep each milestone on a `codex/<short-feature-name>` branch and merge only through a reviewed, green pull request.
 
 ## Owner decisions that can happen before connection
@@ -74,14 +75,16 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 
 ## Recommended worker sequence
 
-1. **Completed frontend slice:** accessible dialog/drawer foundation and rendered keyboard QA.
+1. **Completed frontend correctness slices:** accessible dialog/drawer foundation, rendered keyboard QA, typed persistent notifications, safe retry behavior, protected Settings loading, and OAuth query cleanup.
 2. **Completed portability slice:** provider-neutral client and project creation services, D1 development adapters, safe mirror boundaries, and a centralized versioned D1 development schema runner. See [Portable client and project creation](portable-record-creation.md).
 3. **Completed PostgreSQL foundation slice:** constrained client/contact/project, activity/audit, idempotency, outbox, and immutable migration-history tables; checksum validation; advisory locking; transactional forward migrations; restore/forward-fix rollback guidance; and PostgreSQL 16 CI coverage. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
 4. **Completed PostgreSQL repository slice:** client/project adapters, atomic actor-scoped idempotency and truthful replay, transactional activity/outbox intent, guarded exact-value parsing, version-fenced outbox claim/complete/retry/recovery, and PostgreSQL 16 repository tests. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
-5. **Next authorization worker:** simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
-6. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
-7. **Frontend structure worker:** durable URLs, component split, typed feedback, partial-failure states, search keyboard behavior, and responsive/accessibility tests.
-8. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
+5. **Next production runtime worker:** add the source-only Cloud Run container/runtime, pooled Cloud SQL composition, separate migration command, health/readiness behavior, least-privilege grants, and a test-data migration/reconciliation rehearsal without provisioning or deployment.
+6. **Owner approval in parallel:** approve the 20-user role model and cross-system Google access matrix.
+7. **Authorization worker after both gates:** after the runtime/migration foundation is accepted and the access matrix is approved, add simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
+8. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
+9. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
+10. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
 
 Do not assign scheduling, outbound messaging, or AI document indexing until the production platform and authorization foundation are accepted.
 
@@ -120,12 +123,13 @@ The source-only repository worker connected the portable creation services to th
 
 ## Next bounded developer assignment
 
-After the PostgreSQL repository pull request is reviewed and merged, assign one authorization worker to build the provider-neutral multi-user security foundation using simulated identities:
+After the PostgreSQL repository pull request is reviewed and merged, assign one production-runtime worker to continue the Google Cloud foundation without touching external infrastructure:
 
-- Add forward-only production migrations for users, invitations, sessions, roles, capabilities, role assignments, and project memberships; do not edit the applied migration definitions.
-- Connect stable actor identities to audit, idempotency, and outbox evidence while retaining explicit external-identity fields for the later Google OIDC adapter.
-- Build server-enforced capability and project-scope policies that can run against simulated identities before Workspace credentials exist.
-- Add denial coverage for disabled users, expired/revoked sessions, missing capabilities, outside-domain identity fixtures, and cross-project access.
-- Preserve the one-user D1/Sites development environment and do not admit a second user or implement live Google login in this slice.
+- Add the reviewable Cloud Run container and runtime entry point while preserving the one-user D1/Sites development entry point.
+- Add validated, provider-neutral production configuration and bounded pooled PostgreSQL composition for the completed repository adapters.
+- Keep production migration execution in a separate command/job using the immutable runner; never apply schema changes during normal application requests.
+- Define least-privilege migration/runtime database roles and grants, health/readiness behavior, and safe connection limits.
+- Add a test-data-only migration/reconciliation rehearsal harness with identifier/count/hash evidence and documented restore/forward-fix rollback behavior.
+- Add automated tests, but do not provision Cloud resources, add credentials, apply migrations, migrate data, connect Workspace, deploy, or merge.
 
-Final company role presets still require owner approval of the access matrix. This assignment may add source, migrations, fixtures, and automated tests only; it must not create Cloud resources, add credentials, migrate data, alter Workspace resources, deploy, or merge without review.
+The owner should approve the 20-user role model and cross-system Google access matrix in parallel. Authorization begins only after both the runtime/migration foundation and owner policy gate are complete.

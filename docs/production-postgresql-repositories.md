@@ -64,16 +64,17 @@ Fast tests run without PostgreSQL and cover:
 - Unicode client keys plus bigint, numeric, timestamp, UUID, schema, and JSON parsing;
 - client/project transaction order, success/failure replay truthfulness, generated-identifier collision mapping, locked missing clients, and manager audit behavior;
 - outbox claim ordering, version fencing, safe provider-error evidence, distinct dead-letter IDs, retry/dead-letter/recovery SQL, and rollback when dead-letter activity fails.
+- portable client/project HTTP status and error-body mapping for accepted, validation, authorization, replay-conflict, duplicate/not-found, and retryable identifier outcomes.
 
-When `TEST_POSTGRES_URL` is present, the PostgreSQL 16 integration suite uses isolated random schemas and covers an eight-request idempotency race, adapter-derived fingerprint and actor/operation scoping, replayable deterministic failures, atomic row counts, Unicode duplicates, late-transaction rollback, temporary-table shadow resistance on a reused connection, maximum-safe numeric values, versions above JavaScript's safe integer, audited manager assignment, disjoint worker claims, fenced completion/retry, dead-letter audit evidence, and expired-lease recovery. GitHub Actions supplies PostgreSQL 16; normal local tests skip only the real-database cases when no test server is configured.
+When `TEST_POSTGRES_URL` is present, the PostgreSQL 16 integration suite uses isolated random schemas and covers an eight-request idempotency race, adapter-derived fingerprint and actor/operation scoping, exact deterministic-failure replay, atomic row counts, Unicode duplicates, late-transaction rollback, temporary-table shadow resistance on a reused connection, maximum-safe numeric values, versions above JavaScript's safe integer, audited manager assignment, held-lock `SKIP LOCKED` claim and recovery behavior, fenced completion/retry, real terminal-transition rollback, dead-letter audit evidence, and expired-lease recovery. GitHub Actions supplies PostgreSQL 16; normal local tests skip only the real-database cases when no test server is configured.
 
 Never point `TEST_POSTGRES_URL` at development, staging, production, or any shared database. The integration test creates and drops its own schema.
 
 ## Work intentionally deferred
 
 - Production composition and request-header wiring for the PostgreSQL adapters.
-- Cloud Run, Cloud SQL, pooling configuration, runtime `pg` packaging, roles/grants, secrets, networking, backups, and monitoring.
-- Users, invitations, secure sessions, roles, capabilities, and project memberships.
+- Cloud Run, Cloud SQL, pooling configuration, runtime `pg` packaging, roles/grants, secrets, networking, backups, and monitoring. The application runtime role must have no `CREATE` privilege on the target schema or any earlier search-path schema.
+- Users, invitations, secure sessions, roles, capabilities, and project memberships. That identity slice must distinguish the system worker performing a dead-letter transition from the employee who originated the event while retaining both pieces of audit evidence.
 - A live Cloud Tasks worker and provider-specific delivery/idempotency logic.
 - Development-data migration, reconciliation, restore rehearsal, cutover, and rollback approval.
 
