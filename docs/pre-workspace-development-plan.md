@@ -7,6 +7,8 @@ Audience: Business owner, Workspace administrator, product owner, and developers
 
 Development does not need to wait for a live Google Workspace connection. The application already has an isolated Workspace simulation, and the highest-priority production work is the provider-neutral platform, authorization, core-record safety, interface accessibility, and test coverage.
 
+Use the [complete product and Google Cloud architecture audit](complete-product-and-google-cloud-architecture-audit.md) as the broader system blueprint. Its [owner checklist](task-checklists/10-complete-product-and-integration-architecture.md) covers decisions for estimating, procurement, field work, messaging/reminders, closeout, warranty, files, recovery, and authoritative external systems.
+
 The Workspace administrator can prepare the company resources in parallel. Keep the hosted application as a one-user development environment using test data, and do not admit staff or store real client data until the production, permission, recovery, and audit gates pass.
 
 ## Work that can start now
@@ -27,12 +29,12 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 - [ ] Introduce provider-neutral database, object-storage, secret/configuration, and queued-job interfaces while retaining the existing D1/R2 development adapters.
 - [x] Add the first source-only PostgreSQL core schema and concurrent-runner-safe migration system with immutable checksums, foreign keys, constrained states, timestamps, version columns, idempotency, audit evidence, and an outbox. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
 - [x] Add source-only PostgreSQL client/project adapters, atomic actor-scoped request replay, transactional activity/outbox writes, worker-safe outbox transitions, guarded PostgreSQL value parsing, and PostgreSQL 16 repository coverage. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
-- [ ] Extend the production model with users, invitations, sessions, roles, capabilities, and project memberships, then connect those identities to the existing append-only audit, idempotency, and outbox records.
-- [ ] Add Cloud Run container and runtime support without changing the hosted development environment.
+- [ ] Extend the production model with users, invitations, sessions, roles, capabilities, project memberships, and a separate general append-only security audit; the existing client/project activity timeline is not the security-audit store.
+- [x] Add the source-only fail-closed Cloud Run container/runtime, private Cloud SQL connector composition, bounded pools, separate migration/rehearsal commands, exact readiness, and least-privilege source policy without changing the hosted development environment. See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md). The full employee application is not yet containerized.
 - [ ] Add reviewable infrastructure definitions for development, staging, and production; do not apply them until owner inputs and deployment approval exist.
 - [ ] Add Cloud Tasks handler contracts, retry/idempotency tests, and Cloud Storage quarantine interfaces using local fixtures.
 - [ ] Add Gmail Pub/Sub and Calendar HTTPS webhook boundaries using fixtures only; do not create live watches or channels yet.
-- [ ] Add structured errors, correlation IDs, security headers, request limits, and health/readiness endpoints.
+- [ ] Add structured errors, correlation IDs, security headers, request limits, connector health, and employee-application readiness integration. Source-only process liveness and exact database/migration/privilege readiness already exist.
 
 ### Authorization and core records
 
@@ -77,14 +79,15 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 
 1. **Completed frontend correctness slices:** accessible dialog/drawer foundation, rendered keyboard QA, typed persistent notifications, safe retry behavior, protected Settings loading, and OAuth query cleanup.
 2. **Completed portability slice:** provider-neutral client and project creation services, D1 development adapters, safe mirror boundaries, and a centralized versioned D1 development schema runner. See [Portable client and project creation](portable-record-creation.md).
-3. **Completed PostgreSQL foundation slice:** constrained client/contact/project, activity/audit, idempotency, outbox, and immutable migration-history tables; checksum validation; advisory locking; transactional forward migrations; restore/forward-fix rollback guidance; and PostgreSQL 16 CI coverage. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
+3. **Completed PostgreSQL foundation slice:** constrained client/contact/project, business activity evidence, idempotency, outbox, and immutable migration-history tables; checksum validation; advisory locking; transactional forward migrations; restore/forward-fix rollback guidance; and PostgreSQL 16 CI coverage. General security audit remains a separate required model. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
 4. **Completed PostgreSQL repository slice:** client/project adapters, atomic actor-scoped idempotency and truthful replay, transactional activity/outbox intent, guarded exact-value parsing, version-fenced outbox claim/complete/retry/recovery, and PostgreSQL 16 repository tests. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
-5. **Next production runtime worker:** add the source-only Cloud Run container/runtime, pooled Cloud SQL composition, separate migration command, health/readiness behavior, least-privilege grants, and a test-data migration/reconciliation rehearsal without provisioning or deployment.
-6. **Owner approval in parallel:** approve the 20-user role model and cross-system Google access matrix.
-7. **Authorization worker after both gates:** after the runtime/migration foundation is accepted and the access matrix is approved, add simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests.
-8. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
-9. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
-10. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
+5. **Completed production runtime foundation:** a separate fail-closed Cloud Run image, private Cloud SQL connector composition, bounded runtime/migration/rehearsal pools, exact health/readiness, explicit migration ownership, least-privilege source policy, and a bounded core test-data rehearsal. See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md).
+6. **Owner approval in parallel:** approve the 20-user role model and cross-system Google access matrix plus Cloud organization/billing, region, hostname, budget, recovery, deployment, and rollback inputs.
+7. **Next infrastructure-definition worker:** after the owner supplies the non-secret Cloud inputs, add reviewable development/staging/production infrastructure definitions and staging procedures without applying them.
+8. **Source-only authorization worker after both gates:** after the runtime-foundation pull request is merged and the access matrix is approved, add simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests without enabling employee login or live data. Google Workspace OIDC and live authorization rollout wait for the accepted production foundation, tested migration/cutover path, and provider-neutral database/storage boundaries.
+9. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
+10. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
+11. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
 
 Do not assign scheduling, outbound messaging, or AI document indexing until the production platform and authorization foundation are accepted.
 
@@ -103,10 +106,10 @@ The portable creation worker completed the following bounded slice without chang
 
 The source-only PostgreSQL worker completed the first constrained production schema and migration safety layer without provisioning Cloud SQL, changing route handlers, or applying a live migration:
 
-- Two ordered migrations define only clients, contacts, projects, activity/audit events, actor-scoped idempotency requests, outbox events, and immutable migration history.
+- Two ordered migrations define only clients, contacts, projects, client/project business activity events, actor-scoped idempotency requests, outbox events, and immutable migration history. They do not provide the general security-audit coverage required for identity, permissions, files, integrations, jobs, exports, or recovery.
 - Every core foreign key has a supporting index; business identifiers, client-name keys, statuses, JSON shapes, timestamps, version values, and estimated values have named database constraints.
 - The runner uses a dedicated connection, a session advisory lock, a post-lock history read, exact prefix validation, LF-normalized SHA-256 checksums, and one short transaction per version.
-- The outbox has a pending/available partial index, lease/retry state, correlation evidence, and a dead-letter timestamp. The future worker must claim work with `FOR UPDATE SKIP LOCKED` and perform provider calls after committing the claim.
+- The outbox has a pending/available partial index, lease/retry state, correlation evidence, and a dead-letter timestamp. The completed repository slice now claims work with `FOR UPDATE SKIP LOCKED`, commits the claim before provider calls, and version-fences completion, retry, and recovery updates.
 - Unit tests run everywhere; GitHub CI adds a PostgreSQL 16 service for real migration, concurrency, rollback, index, and constraint coverage.
 - Rollback is restore/forward-fix based. No destructive automatic down migration was added.
 
@@ -121,15 +124,25 @@ The source-only repository worker connected the portable creation services to th
 - Fast tests run without PostgreSQL; GitHub CI supplies PostgreSQL 16 for real concurrency, rollback, replay, exact-value, and outbox lifecycle coverage.
 - No provider callback is accepted inside a repository transaction, and no Cloud, Workspace, migration, deployment, credential, or live-data state changed.
 
+## Completed production runtime assignment
+
+The source-only production-runtime worker completed the next bounded foundation without changing any external system:
+
+- A separate fail-closed Cloud Run image exposes process liveness and exact database readiness while all employee application paths remain unavailable until their Cloudflare dependencies are ported.
+- Validated private Cloud SQL connector composition provides one bounded runtime pool per instance and single-connection migration/rehearsal pools.
+- Migrations run only through a separate command/job with immutable history checks and explicit schema-owner role activation.
+- Source-only least-privilege role definitions keep the runtime from creating schema objects or mutating migration history.
+- A strict test-data-only core rehearsal preserves identifiers and verifies counts plus content/identifier hashes inside an isolated non-production schema.
+- No Cloud resources, credentials, database roles, migrations, rehearsal data, Workspace connections, hosted configuration, or deployments were created or changed.
+
+See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) for the exact boundary and acceptance gates.
+
 ## Next bounded developer assignment
 
-After the PostgreSQL repository pull request is reviewed and merged, assign one production-runtime worker to continue the Google Cloud foundation without touching external infrastructure:
+The owner should first complete the non-secret Google Cloud inputs in [Production foundation and migration](task-checklists/07-production-foundation-and-migration.md) and approve the 20-user role model and cross-system Google access matrix. After those inputs exist, assign one infrastructure-definition worker to:
 
-- Add the reviewable Cloud Run container and runtime entry point while preserving the one-user D1/Sites development entry point.
-- Add validated, provider-neutral production configuration and bounded pooled PostgreSQL composition for the completed repository adapters.
-- Keep production migration execution in a separate command/job using the immutable runner; never apply schema changes during normal application requests.
-- Define least-privilege migration/runtime database roles and grants, health/readiness behavior, and safe connection limits.
-- Add a test-data-only migration/reconciliation rehearsal harness with identifier/count/hash evidence and documented restore/forward-fix rollback behavior.
-- Add automated tests, but do not provision Cloud resources, add credentials, apply migrations, migrate data, connect Workspace, deploy, or merge.
+- Add reviewable development, staging, and production infrastructure definitions for regional Cloud Run, private Cloud SQL, private networking, Secret Manager, environment-specific service identities, backups/PITR, probes, scaling, monitoring, and budget alerts.
+- Document the connection budget, revision-overlap allowance, isolated staging procedure, role bootstrap/grant verification, restore exercise, migration rehearsal, and forward-fix/rollback evidence.
+- Keep every definition unapplied. Do not provision resources, add credentials, apply roles or migrations, connect Workspace, migrate data, deploy, or merge.
 
-The owner should approve the 20-user role model and cross-system Google access matrix in parallel. Authorization begins only after both the runtime/migration foundation and owner policy gate are complete.
+A source-only authorization worker may begin simulated identity and denial-test work only after the approved runtime-foundation pull request is merged and the owner approves the role/access matrix. Employee Google Workspace OIDC, live sessions, and production authorization rollout remain blocked until the production foundation, tested migration/cutover path, and provider-neutral database/storage boundaries pass acceptance.

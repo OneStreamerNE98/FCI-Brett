@@ -35,11 +35,11 @@ For a 20-person company, operations must be simple enough that two named people 
 - [x] Remove the live Gmail `FCI/Filed` label-only action and standalone API route. Any future repair action must reference an existing archive and exact project, capture a reason, and create an audit event.
 - [ ] Preserve Inbox retention and human review before project filing.
 - [ ] Keep replies as drafts until a person intentionally sends them.
-- [ ] Before outbound SMS/email automation, implement consent, opt-out/STOP, provider-neutral delivery state, retries, dead letters, and a human exception queue.
+- [ ] Before outbound SMS/email automation, implement consent, opt-out/STOP, provider-neutral delivery state, retries, application-owned durable failed jobs/dead letters, and a human exception queue.
 
 ## Monitoring and routine checks
 
-- [ ] Create alerts for application errors, failed login spikes, database saturation/storage, queue age/depth, dead letters, failed Google calls, expiring Gmail watches, expiring Calendar channels, low storage, and backup failures.
+- [ ] Create alerts for application errors, failed login spikes, database saturation/storage, queue age/depth, application-owned failed jobs/dead letters, failed Google calls, expiring Gmail watches, expiring Calendar channels, low storage, and backup failures.
 - [ ] Create a Workspace health view with the connection account, enabled services, last success/failure, watch/channel expiry, queue health, and required owner action.
 - [ ] Define severity levels, alert recipients, after-hours expectations, and escalation contacts.
 - [ ] Review access quarterly, backups/restore quarterly, connector/key rotation at least annually, and incidents after every material event.

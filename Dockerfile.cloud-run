@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+FROM node:22.13.0-bookworm-slim AS build
+
+WORKDIR /workspace
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.json tsconfig.cloud-run.json vite.cloud-run.config.ts ./
+COPY app ./app
+COPY production-runtime ./production-runtime
+RUN ./node_modules/.bin/tsc --project tsconfig.cloud-run.json --noEmit
+RUN ./node_modules/.bin/vite build --config vite.cloud-run.config.ts
+RUN npm prune --omit=dev
+
+FROM node:22.13.0-bookworm-slim AS runtime
+
+ENV NODE_ENV=production \
+    PORT=8080
+WORKDIR /app
+
+COPY --from=build --chown=node:node /workspace/package.json /workspace/package-lock.json ./
+COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
+COPY --from=build --chown=node:node /workspace/work/cloud-run ./runtime
+
+USER node
+EXPOSE 8080
+STOPSIGNAL SIGTERM
+
+# Cloud Run Jobs use this same immutable image with one of these command overrides:
+# ["node", "runtime/run-migrations.mjs"]
+# ["node", "runtime/run-core-rehearsal.mjs", "--snapshot", "/path/to/test-snapshot.json"]
+# The service command never imports either job entry. Core rehearsal additionally
+# refuses the production deployment stage at runtime.
+CMD ["node", "runtime/cloud-run-server.mjs"]

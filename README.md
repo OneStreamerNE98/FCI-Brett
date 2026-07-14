@@ -36,7 +36,7 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 - One protected company Google Workspace OAuth connection for Drive, Gmail, Calendar, and Sheets
 - Local Workspace simulation with sample mail, calendar events, folders, drafts, and Sheet sync state
 - Google Drive / Shared Drive and Google Sheet organizational blueprint
-- Gmail review queue, Calendar test controls, client/project activity, and an in-development AI assistant; project scheduling remains planned
+- On-demand Gmail review suggestions, Calendar test controls, client/project activity, and an in-development AI assistant; a durable Gmail queue/watch processor and project scheduling remain planned
 - Durable project meeting notes with Otter links, summaries, decisions, action items, transcript excerpts, and assistant evidence
 - D1-backed data-model and API foundation for clients, contacts, projects, meetings, rules, mail items, and workspace settings
 
@@ -50,9 +50,11 @@ Before real client data is stored, backup restoration, sensitive-action audit co
 
 ## Production architecture
 
-The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains the test-data development environment; production will use a small regional Google Cloud topology centered on Cloud Run, Cloud SQL PostgreSQL, Secret Manager, Cloud Tasks, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Defer `pgvector` until permission-filtered document indexing is scheduled. Complete this migration before building scheduling, messaging, or AI document indexing.
+The architecture decision is accepted. The current Sites/Workers/D1/R2 deployment remains the test-data development environment; production will use a small regional Google Cloud topology centered on Cloud Run, Cloud SQL PostgreSQL, Secret Manager, bounded Cloud Tasks delivery, Cloud Scheduler, application-owned durable failed-job/replay records, Cloud Storage quarantine, Google Workspace OIDC, Gmail Pub/Sub notifications, and Calendar HTTPS webhooks. Defer `pgvector` until permission-filtered document indexing is scheduled. Complete this migration before building scheduling, messaging, or AI document indexing.
 
-Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the migration boundary, cutover requirements, and consequences.
+The first [Google Cloud runtime foundation](docs/google-cloud-runtime-foundation.md) is now reviewable in source: a separate fail-closed Cloud Run image, private Cloud SQL connector and bounded pools, a one-off migration command, exact migration-aware health checks, least-privilege role policy, and a test-only bounded core rehearsal. It has not been provisioned or deployed, and normal application paths intentionally return `503` until the Cloudflare-bound routes, storage, and identity boundary are ported.
+
+Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the migration boundary, cutover requirements, and consequences. The [complete product and Google Cloud architecture audit](docs/complete-product-and-google-cloud-architecture-audit.md) adds the capability map, durable job/reminder design, integration reliability requirements, owner decisions, acceptance gates, and ordered source-only roadmap.
 
 ## Remaining launch decision
 
@@ -62,20 +64,20 @@ The one-user development environment may continue with the current allowlisted C
 
 Complete the next product milestone in this order:
 
-1. Build the Google Cloud production foundation and tested migration/cutover path.
-2. Add Google Workspace OIDC plus Admin, Office, and Project Manager roles with server-enforced project permissions.
-3. Add editing and archiving for clients, contacts, leads, projects, and meetings.
-4. Implement lead conversion as one atomic transaction.
-5. Add project dates, durable tasks/follow-ups, notes, file metadata, photo UI, and activity history.
-6. Make saved Calendar IDs and settings authoritative in the live integration.
-7. Connect uploads to project Files and Shared Drive, including scanning and quarantine.
-8. Add route, integration, and browser-behavior tests; validate backup restoration; and add an administrator audit viewer.
+1. Merge the approved source-only Google Cloud runtime foundation; approve the 20-user role/Google access matrix in parallel.
+2. Complete the owner Cloud inputs, add reviewable infrastructure definitions, and prepare isolated development/staging resources without changing the current hosted app.
+3. With separate approval, run the staging migration, bounded test-data rehearsal, restore test, reconciliation, and rollback/forward-fix exercise.
+4. Add Google Workspace OIDC plus Admin, Office, and Project Manager roles with server-enforced project permissions.
+5. Port the remaining routes and object-storage boundary so the full application—not only its fail-closed foundation—runs on Cloud Run.
+6. Add editing and archiving, atomic lead conversion, project dates, durable tasks/follow-ups, notes, file metadata, photo UI, and activity history.
+7. Make saved Calendar IDs authoritative and connect quarantined project uploads to approved Shared Drive destinations.
+8. Expand route, authorization, integration, restore, audit-viewer, and browser-behavior acceptance coverage.
 
-After that foundation is accepted, build appointment state management and Calendar reconciliation; workers, crews, shifts, conflicts, publishing, and acknowledgements; provider-neutral messaging with consent and delivery tracking; durable Gmail review queues; and project closeout. Permission-filtered AI indexing, forecasting, retry dashboards, and a Workspace Marketplace add-on come later.
+Only after the full production platform and server-enforced authorization foundation pass acceptance should the product add appointment state management and Calendar reconciliation; workers, crews, shifts, conflicts, publishing, and acknowledgements; provider-neutral messaging with consent and delivery tracking; durable Gmail review queues; and project closeout. Permission-filtered AI indexing, forecasting, retry dashboards, and a Workspace Marketplace add-on come later.
 
 See the [20-user product and architecture review](docs/20-user-product-and-architecture-review.md) for the rollout verdict, architecture, access model, priority findings, and corrected delivery order. See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page UI audit.
 
-Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials. The completed [portable client and project creation slice](docs/portable-record-creation.md) documents the provider-neutral boundaries and development-environment compatibility. The source-only [production PostgreSQL foundation](docs/production-postgresql-foundation.md) documents the first constrained core schema, checksum migration runner, test coverage, and work that still must happen before any Cloud SQL migration.
+Development can continue safely before the live Google connection. Follow the [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) for the parallel owner decisions, portable platform work, interface improvements, authorization foundations, and tasks that must wait for Workspace resources or credentials. The completed [portable client and project creation slice](docs/portable-record-creation.md) documents the provider-neutral boundaries and development-environment compatibility. The source-only [production PostgreSQL foundation](docs/production-postgresql-foundation.md), [PostgreSQL repository slice](docs/production-postgresql-repositories.md), and [Google Cloud runtime foundation](docs/google-cloud-runtime-foundation.md) document the constrained core schema, immutable runner, repository/runtime composition, safety controls, and work that still must happen before a complete Cloud SQL cutover.
 
 ## Google Workspace development validation
 
@@ -170,9 +172,12 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
-- `npm test`: build the application and run the API, portable-service, migration, and product-contract checks
+- `npm run build:cloud-run`: type-check and build the separate fail-closed Google Cloud service, migration, and rehearsal entry points
+- `npm test`: build both runtime targets and run the API, portable-service, migration, Cloud foundation, and product-contract checks
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 - `npm run db:migrate:local`: explicitly apply checked-in Drizzle migrations to the local D1 database before development
+- `npm run db:migrate:postgres`: build and run the separate PostgreSQL migration command; use only in an explicitly approved environment
+- `npm run db:rehearse:postgres-core -- --snapshot <test-file>`: run the bounded non-production core rehearsal; it never proves full cutover readiness
 
 ## Learn More
 

@@ -2,14 +2,14 @@
 
 ## Source of truth
 
-FCI Operations owns clients, contacts, independent projects, schedules, tasks, filing decisions, and audit history. Google Workspace is the company collaboration layer:
+The proposed production boundary, subject to the ownership decisions in [Complete product and integration architecture](task-checklists/10-complete-product-and-integration-architecture.md), makes FCI Operations authoritative for clients, contacts, independent projects, schedules, tasks, filing decisions, and application audit history. Google Workspace remains the company collaboration layer:
 
 - **Sheets:** generated Client Directory and Project Register views.
 - **Shared Drive:** account documents, independent project folders, photos, archived emails, and attachments.
 - **Gmail:** one controlled intake mailbox with broad FCI labels.
 - **Calendar:** shared Client Appointments and Field Schedule calendars.
 
-Local development uses Workspace simulation. It follows the same organization but creates no Google data.
+The current development environment implements only part of that boundary. Workspace simulation follows the same organization but creates no Google data; the scheduling, task, and complete audit systems remain planned.
 
 ## Shared Drive blueprint
 
@@ -71,7 +71,7 @@ Use two company-owned calendars:
 - `FCI • Client Appointments`
 - `FCI • Field Schedule`
 
-FCI Operations remains authoritative. App-created Workspace events are linked back to their project or shift. Conflicting edits are flagged for review instead of silently overwriting operational records.
+FCI Operations is intended to remain authoritative. The current development build can create an unlinked Calendar test hold; linked project/appointment/shift events, durable sync cursors, recurring-event behavior, and conflict review are still production work. When implemented, app-created Workspace events must link to their source aggregate, and conflicting edits must be flagged for review instead of silently overwriting operational records.
 
 ## Workspace setup checklist
 
@@ -79,10 +79,10 @@ FCI Operations remains authoritative. App-created Workspace events are linked ba
 - Approve the [20-user app-to-Google access matrix](task-checklists/06-20-user-operating-model-and-access.md), then create only the Google Groups required by that matrix.
 - Create the `FCI Operations` Shared Drive.
 - Create the Client Directory Sheet, intake mailbox, and two shared calendars.
-- Create a Google Cloud project and enable Drive, Gmail, Calendar, Sheets, and Pub/Sub APIs.
+- Create the approved development Google Cloud project and enable Drive, Gmail, Calendar, and Sheets for the test connector. Leave Pub/Sub unprovisioned until Gmail push processing is implemented and approved.
 - Create the OAuth consent configuration and Web client for the deployed application.
 - Restrict the app to approved Workspace domains and administrators.
-- Configure only `GOOGLE_WORKSPACE_*` runtime values and keep secrets outside source control.
+- Configure the documented environment-specific connector and access values (`GOOGLE_WORKSPACE_*`, `GOOGLE_INTEGRATION_MODE`, and applicable `FCI_*` values), and keep secrets outside source control.
 - Verify the Shared Drive before enabling project-folder provisioning.
 
 ## Before staff launch

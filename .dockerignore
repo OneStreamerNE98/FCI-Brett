@@ -1,0 +1,11 @@
+**
+!Dockerfile.cloud-run
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.cloud-run.json
+!vite.cloud-run.config.ts
+!app/
+!app/**
+!production-runtime/
+!production-runtime/**
