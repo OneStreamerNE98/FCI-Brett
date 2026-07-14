@@ -86,7 +86,6 @@ function timeoutPromise<T>(promise: Promise<T>, timeoutMs: number, label: string
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${label} exceeded ${timeoutMs} ms`)), timeoutMs);
-    timer.unref?.();
   });
   return Promise.race([promise, timeout]).finally(() => {
     if (timer) clearTimeout(timer);
