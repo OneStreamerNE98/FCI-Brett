@@ -2,7 +2,8 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
-import { LeadRow, leadResponse, readBoundedJson, validateLeadValues } from "../route";
+import { MAX_LEAD_BODY_BYTES, type LeadRow, leadResponse, validateLeadValues } from "../../../../domain/lead";
+import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 
 type RouteContext = { params: Promise<{ leadId: string }> };
 
@@ -15,8 +16,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if ("response" in auth) return auth.response;
   const { leadId } = await context.params;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(leadId)) return NextResponse.json({ error: "Invalid lead." }, { status: 400 });
-  const parsed = await readBoundedJson(request);
-  if ("response" in parsed) return parsed.response;
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_LEAD_BODY_BYTES,
+    invalidMessage: "Lead details must be valid JSON.",
+    tooLargeMessage: "Lead details are too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   const suppliedKeys = Object.keys(parsed.body);
   if (suppliedKeys.length === 0 || suppliedKeys.some((key) => !MUTABLE_KEYS.has(key))) {
     return NextResponse.json({ error: "Only supported lead fields can be updated." }, { status: 400 });

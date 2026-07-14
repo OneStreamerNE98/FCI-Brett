@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import {
   Activity, Bell, Bot, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, ExternalLink, FileText, FolderOpen, FolderTree, HardHat,
-  Inbox, LayoutDashboard, ListTodo, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal,
+  Inbox, Info, LayoutDashboard, ListTodo, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal,
   ListFilter, LogOut, Plus, RefreshCw, Reply, Search, Send, Settings, ShieldCheck, Sparkles, Trash2, Users, X, Zap,
 } from "lucide-react";
 import type { AppEnvironment } from "./lib/app-environment";
@@ -27,6 +27,11 @@ type DashboardSummary = {
   readiness: { scheduleDataAvailable: boolean; scheduleReason: string; reportsUseLiveProjectLeadTotals: boolean };
 };
 type LiveDataState = "loading" | "ready" | "error";
+type LoadState = "loading" | "ready" | "error";
+type NotificationKind = "success" | "info" | "warning" | "error";
+type NotificationAction = { label: string; run: () => void };
+type AppNotification = { message: string; kind: NotificationKind; action?: NotificationAction };
+type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
 type ProjectMeeting = {
   id: string;
   projectId: string;
@@ -129,7 +134,7 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
   const [liveDataState, setLiveDataState] = useState<LiveDataState>("loading");
   const [liveDataError, setLiveDataError] = useState("");
   const [settingsArea, setSettingsArea] = useState("My account");
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<AppNotification | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<WorkspaceSearchResult[]>([]);
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
@@ -142,6 +147,10 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
   const mobileNavigationCloseRef = useRef<HTMLButtonElement>(null);
   const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null);
   const workspaceSearchRef = useRef<HTMLInputElement>(null);
+  const workspaceMenuRef = useRef<HTMLDivElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const notificationsMenuRef = useRef<HTMLDivElement>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const projectDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const clientDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const firstName = friendlyFirstName(userName, userEmail);
@@ -299,6 +308,7 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
         setMobileNav(false);
         setWorkspaceMenuOpen(false);
         setProfileMenuOpen(false);
+        setNotificationsOpen(false);
         return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -310,14 +320,43 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
     return () => window.removeEventListener("keydown", focusSearch);
   }, []);
 
-  function notify(message: string) {
-    if (message === "Google Drive folder will open after Workspace setup") {
-      openGoogleWorkspace();
-      return;
+  useEffect(() => {
+    if (!workspaceMenuOpen && !profileMenuOpen && !notificationsOpen) return;
+    const closeOpenPopovers = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (workspaceMenuOpen && !workspaceMenuRef.current?.contains(target)) setWorkspaceMenuOpen(false);
+      if (profileMenuOpen && !profileMenuRef.current?.contains(target)) setProfileMenuOpen(false);
+      if (notificationsOpen && !notificationsMenuRef.current?.contains(target)) setNotificationsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOpenPopovers);
+    return () => document.removeEventListener("pointerdown", closeOpenPopovers);
+  }, [notificationsOpen, profileMenuOpen, workspaceMenuOpen]);
+
+  const dismissNotification = useCallback(() => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
     }
-    setToast(message);
-    window.setTimeout(() => setToast(""), 3200);
-  }
+    setToast(null);
+  }, []);
+
+  const notify = useCallback<Notify>((message, kind = "info", action) => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = null;
+    setToast({ message, kind, action });
+    if (kind !== "error") {
+      const duration = kind === "warning" ? 8_000 : kind === "info" ? 5_000 : 3_200;
+      toastTimerRef.current = window.setTimeout(() => {
+        toastTimerRef.current = null;
+        setToast(null);
+      }, duration);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+  }, []);
 
   async function addLead(lead: Lead) {
     try {
@@ -326,9 +365,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       if (!response.ok) throw new Error(data.error ?? "Lead could not be saved.");
       await refreshDirectoryData();
       setLeadModal(false);
-      notify(`${lead.company} added to your live pipeline`);
+      notify(`${lead.company} added to your live pipeline`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Lead could not be saved.");
+      notify(error instanceof Error ? error.message : "Lead could not be saved.", "error");
     }
   }
 
@@ -340,9 +379,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       const data = await response.json() as { id: string; clientCode: string; sheetSync?: { status?: string; message?: string } };
       await refreshDirectoryData();
       setClientModal(false);
-      notify(data.sheetSync?.message ?? `${client.name} saved in FCI Operations`);
+      notify(data.sheetSync?.message ?? `${client.name} saved in FCI Operations`, data.sheetSync?.status === "pending" ? "warning" : data.sheetSync?.status === "not-configured" ? "info" : "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Client could not be saved.");
+      notify(error instanceof Error ? error.message : "Client could not be saved.", "error");
     }
   }
 
@@ -356,9 +395,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       await refreshDirectoryData();
       setProjectModal(false);
       setProjectModalClientId(null);
-      notify(data.sheetSync?.message ?? `${project.name} saved in FCI Operations`);
+      notify(data.sheetSync?.message ?? `${project.name} saved in FCI Operations`, data.sheetSync?.status === "pending" ? "warning" : data.sheetSync?.status === "not-configured" ? "info" : "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Project could not be saved.");
+      notify(error instanceof Error ? error.message : "Project could not be saved.", "error");
     }
   }
 
@@ -370,9 +409,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       if (data.mirror) setSheetMirror(data.mirror);
       if (!response.ok) throw new Error(data.error ?? "Google Sheet sync could not be completed.");
       await refreshDirectoryData();
-      notify(`Google Sheet synced: ${data.result?.clients?.total ?? 0} clients and ${data.result?.projects?.total ?? 0} projects`);
+      notify(`Google Sheet synced: ${data.result?.clients?.total ?? 0} clients and ${data.result?.projects?.total ?? 0} projects`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Google Sheet sync could not be completed.");
+      notify(error instanceof Error ? error.message : "Google Sheet sync could not be completed.", "error");
     } finally {
       setSheetSyncing(false);
     }
@@ -386,9 +425,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       const updated = { ...project, driveFolderId: data.driveFolderId, driveUrl: data.driveUrl };
       setProjectItems((current) => current.map((item) => item.id === project.id ? updated : item));
       setSelectedProject((current) => current?.id === project.id ? updated : current);
-      notify(data.created ? `${project.name} now has a ${data.environment ?? "test"} Drive workspace` : `${project.name} already has a Drive workspace`);
+      notify(data.created ? `${project.name} now has a ${data.environment ?? "test"} Drive workspace` : `${project.name} already has a Drive workspace`, data.created ? "success" : "info");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The project Drive workspace could not be created.");
+      notify(error instanceof Error ? error.message : "The project Drive workspace could not be created.", "error");
     }
   }
 
@@ -399,9 +438,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       if (!response.ok || !data.id) throw new Error(data.error ?? "Rule could not be saved.");
       setFilingRules((current) => [...current, { ...rule, id: data.id }].sort((a, b) => a.priority - b.priority));
       setRuleModal(false);
-      notify(`Email rule “${rule.name}” added`);
+      notify(`Email rule “${rule.name}” added`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Rule could not be saved.");
+      notify(error instanceof Error ? error.message : "Rule could not be saved.", "error");
     }
   }
 
@@ -413,9 +452,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
         const data = await response.json().catch(() => ({})) as { id?: string; error?: string };
         if (!response.ok || !data.id) throw new Error(data.error ?? "Rule could not be saved.");
         setFilingRules((current) => current.map((item) => item.name === rule.name ? { ...override, id: data.id } : item).sort((left, right) => left.priority - right.priority));
-        notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`);
+        notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`, "success");
       } catch (error) {
-        notify(error instanceof Error ? error.message : "Rule could not be updated.");
+        notify(error instanceof Error ? error.message : "Rule could not be updated.", "error");
       }
       return;
     }
@@ -424,15 +463,15 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Rule could not be updated.");
       setFilingRules((current) => current.map((item) => item.id === rule.id ? { ...item, ...patch } : item).sort((left, right) => left.priority - right.priority));
-      notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`);
+      notify(`Email rule “${rule.name}” ${patch.enabled === false ? "paused" : "updated"}`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Rule could not be updated.");
+      notify(error instanceof Error ? error.message : "Rule could not be updated.", "error");
     }
   }
 
   async function deleteRule(rule: FilingRuleDraft) {
     if (!rule.id) {
-      notify("Starter rules stay available for reference. Add custom rules to manage your own routing.");
+      notify("Starter rules stay available for reference. Add custom rules to manage your own routing.", "info");
       return;
     }
     try {
@@ -441,9 +480,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       if (!response.ok) throw new Error(data.error ?? "Rule could not be deleted.");
       const defaultRule = DEFAULT_FILING_RULES.find((item) => item.name === rule.name);
       setFilingRules((current) => defaultRule ? current.map((item) => item.id === rule.id ? defaultRule : item).sort((left, right) => left.priority - right.priority) : current.filter((item) => item.id !== rule.id));
-      notify(defaultRule ? `Email rule “${rule.name}” reset to its built-in default` : `Email rule “${rule.name}” deleted`);
+      notify(defaultRule ? `Email rule “${rule.name}” reset to its built-in default` : `Email rule “${rule.name}” deleted`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Rule could not be deleted.");
+      notify(error instanceof Error ? error.message : "Rule could not be deleted.", "error");
     }
   }
 
@@ -469,7 +508,7 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
     setView("Settings");
     setWorkspaceMenuOpen(false);
     setProfileMenuOpen(false);
-    notify("Google Workspace setup opened");
+    notify("Google Workspace setup opened", "info");
   }
 
   function openDirectorySettings() {
@@ -489,9 +528,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
   async function copySignedInEmail() {
     try {
       await navigator.clipboard.writeText(userEmail);
-      notify("Signed-in email copied");
+      notify("Signed-in email copied", "success");
     } catch {
-      notify(`Signed in as ${userEmail}`);
+      notify(`Signed in as ${userEmail}`, "info");
     }
     setProfileMenuOpen(false);
   }
@@ -530,17 +569,17 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
     const currentLead = leads.find((lead) => lead.id === id);
     if (!currentLead) return;
     if (currentLead.status.toLowerCase() !== "active") {
-      notify(`${currentLead.company} is ${displayStatus(currentLead.status, "not active")} and cannot be advanced`);
+      notify(`${currentLead.company} is ${displayStatus(currentLead.status, "not active")} and cannot be advanced`, "warning");
       return;
     }
     const currentIndex = leadStages.findIndex((stage) => stage.toLowerCase() === currentLead.stage.toLowerCase());
     if (currentIndex < 0) {
-      notify(`${currentLead.company} uses the custom stage “${currentLead.stage}” and was not changed`);
+      notify(`${currentLead.company} uses the custom stage “${currentLead.stage}” and was not changed`, "warning");
       return;
     }
     const nextStage = leadStages[Math.min(currentIndex + 1, leadStages.length - 1)];
     if (nextStage.toLowerCase() === currentLead.stage.toLowerCase()) {
-      notify(`${currentLead.company} is already at the final pipeline stage`);
+      notify(`${currentLead.company} is already at the final pipeline stage`, "info");
       return;
     }
     try {
@@ -548,9 +587,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Lead stage could not be updated.");
       await refreshDirectoryData();
-      notify(`${currentLead.company} moved to ${nextStage}`);
+      notify(`${currentLead.company} moved to ${nextStage}`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Lead stage could not be updated.");
+      notify(error instanceof Error ? error.message : "Lead stage could not be updated.", "error");
     }
   }
 
@@ -559,7 +598,7 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
     if (query.length < 2) {
       setSearchResults([]);
       setActiveSearchIndex(-1);
-      notify("Enter at least two characters to search clients, projects, and contacts");
+      notify("Enter at least two characters to search clients, projects, and contacts", "warning");
       return;
     }
     setSearching(true);
@@ -571,11 +610,14 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       const results = data.results ?? [];
       setSearchResults(results);
       setActiveSearchIndex(results.length > 0 ? 0 : -1);
-      if (!results.length) notify(`No workspace records matched “${query}”`);
+      if (!results.length) notify(`No workspace records matched “${query}”`, "info");
     } catch (error) {
       setSearchResults([]);
       setActiveSearchIndex(-1);
-      notify(error instanceof Error ? error.message : "Workspace search could not be completed.");
+      notify(error instanceof Error ? error.message : "Workspace search could not be completed.", "error", {
+        label: "Retry",
+        run: () => void searchWorkspace(),
+      });
     } finally {
       setSearching(false);
     }
@@ -589,20 +631,20 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       const project = projectItems.find((item) => item.id === result.projectId);
       if (project) {
         openProject(project, workspaceSearchRef.current);
-        notify(`Opened ${project.number}`);
+        notify(`Opened ${project.number}`, "info");
       } else {
         setView("Projects");
-        notify("Project found. Refresh the directory if it is not listed yet.");
+        notify("Project found. Refresh the directory if it is not listed yet.", "warning");
       }
       return;
     }
     const client = clients.find((item) => item.id === result.clientId);
     if (client) {
       openClient(client, workspaceSearchRef.current);
-      notify(`Opened ${client.name}`);
+      notify(`Opened ${client.name}`, "info");
     } else {
       setView("Clients");
-      notify("Client found. Refresh the directory if it is not listed yet.");
+      notify("Client found. Refresh the directory if it is not listed yet.", "warning");
     }
   }
 
@@ -618,9 +660,9 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
         : item;
       setProjectItems((current) => current.map(updateManager));
       setSelectedProject((current) => current ? updateManager(current) : current);
-      notify(`${project.number} is now assigned to your signed-in account`);
+      notify(`${project.number} is now assigned to your signed-in account`, "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The project manager could not be assigned.");
+      notify(error instanceof Error ? error.message : "The project manager could not be assigned.", "error");
     }
   }
 
@@ -688,13 +730,13 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
           <p>Management</p>
           {navItems.slice(6).map(({ label, icon: Icon, state }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></button>)}
         </nav>
-        <div className="sidebar-menu-wrap workspace-menu-wrap">
-          <button className="workspace-card" onClick={() => { setWorkspaceMenuOpen((current) => !current); setProfileMenuOpen(false); }} aria-haspopup="menu" aria-expanded={workspaceMenuOpen} title="Workspace actions"><div className="workspace-icon"><Building2 size={17} /></div><div><span>{development ? "Development workspace" : "Production workspace"}</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></button>
-          {workspaceMenuOpen && <div className="sidebar-popover workspace-popover" role="menu"><div className="menu-heading"><strong>FCI Operations</strong><span>{development ? "Working development environment" : "Company production environment"}</span></div><button role="menuitem" onClick={() => { setView("Clients"); setWorkspaceMenuOpen(false); }}><ContactRound size={15} /> Client Directory</button><button role="menuitem" onClick={openDirectorySettings}><FolderTree size={15} /> Directory sync</button><button role="menuitem" onClick={openGoogleWorkspace}><Building2 size={15} /> Google Workspace</button><button role="menuitem" onClick={openTestingChecklist}><ShieldCheck size={15} /> Testing & launch</button></div>}
+        <div ref={workspaceMenuRef} className="sidebar-menu-wrap workspace-menu-wrap">
+          <button className="workspace-card" onClick={() => { setWorkspaceMenuOpen((current) => !current); setProfileMenuOpen(false); setNotificationsOpen(false); }} aria-controls="workspace-actions-popover" aria-expanded={workspaceMenuOpen} title="Workspace actions"><div className="workspace-icon"><Building2 size={17} /></div><div><span>{development ? "Development workspace" : "Production workspace"}</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></button>
+          {workspaceMenuOpen && <div id="workspace-actions-popover" className="sidebar-popover workspace-popover"><div className="menu-heading"><strong>FCI Operations</strong><span>{development ? "Working development environment" : "Company production environment"}</span></div><button onClick={() => { setView("Clients"); setWorkspaceMenuOpen(false); }}><ContactRound size={15} /> Client Directory</button><button onClick={openDirectorySettings}><FolderTree size={15} /> Directory sync</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google Workspace</button><button onClick={openTestingChecklist}><ShieldCheck size={15} /> Testing & launch</button></div>}
         </div>
-        <div className="sidebar-menu-wrap profile-menu-wrap">
-          <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); }} aria-haspopup="menu" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>{accessLabel}</span></div><MoreHorizontal size={18} /></button>
-          {profileMenuOpen && <div className="sidebar-popover profile-popover" role="menu"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button role="menuitem" onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button><button role="menuitem" onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button><button role="menuitem" onClick={() => { setSettingsArea("My account"); setView("Settings"); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }}><Settings size={15} /> My account</button><button role="menuitem" onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a role="menuitem" href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
+        <div ref={profileMenuRef} className="sidebar-menu-wrap profile-menu-wrap">
+          <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); setNotificationsOpen(false); }} aria-controls="account-actions-popover" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>{accessLabel}</span></div><MoreHorizontal size={18} /></button>
+          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button><button onClick={() => { setSettingsArea("My account"); setView("Settings"); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }}><Settings size={15} /> My account</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
         </div>
       </aside>
 
@@ -744,7 +786,7 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
               ><span>{result.kind === "project" ? <BriefcaseBusiness size={14} /> : result.kind === "contact" ? <ContactRound size={14} /> : <Users size={14} />}</span><div><strong>{result.title}</strong><small>{result.kind} · {result.subtitle}</small></div><ChevronRight size={14} /></button>)}
             </div>}
           </form>
-          <div className="top-actions"><div className="notification-wrap"><button className="icon-button" onClick={() => setNotificationsOpen((current) => !current)} aria-label="Notifications" aria-haspopup="menu" aria-expanded={notificationsOpen}><Bell size={19} /></button>{notificationsOpen && <div className="notification-menu" role="menu"><strong>Notifications</strong><button role="menuitem" onClick={() => { setView("Inbox"); setNotificationsOpen(false); }}>Open the Gmail project inbox</button><button role="menuitem" onClick={() => { setView("Schedule"); setNotificationsOpen(false); }}>Schedule alerts will appear after scheduling is connected</button></div>}</div><button className="primary-button" onClick={() => setLeadModal(true)}><Plus size={17} /> Add lead</button></div>
+          <div className="top-actions"><div ref={notificationsMenuRef} className="notification-wrap"><button className="icon-button" onClick={() => { setNotificationsOpen((current) => !current); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label="Notifications" aria-controls="notifications-popover" aria-expanded={notificationsOpen}><Bell size={19} /></button>{notificationsOpen && <div id="notifications-popover" className="notification-menu"><strong>Notifications</strong><button onClick={() => { setView("Inbox"); setNotificationsOpen(false); }}>Open the Gmail project inbox</button><button onClick={() => { setView("Schedule"); setNotificationsOpen(false); }}>Schedule alerts will appear after scheduling is connected</button></div>}</div><button className="primary-button" onClick={() => setLeadModal(true)}><Plus size={17} /> Add lead</button></div>
         </header>
 
         <div className="page-wrap">
@@ -767,7 +809,12 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
       {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} canAssignManager={accessLabel === "Admin"} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
       {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
-      {toast && <div className="toast" role="status" aria-live="polite"><CheckCircle2 size={18} />{toast}</div>}
+      {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"} aria-atomic="true">
+        {toast.kind === "success" ? <CheckCircle2 size={18} aria-hidden="true" /> : toast.kind === "info" ? <Info size={18} aria-hidden="true" /> : <CircleAlert size={18} aria-hidden="true" />}
+        <span>{toast.message}</span>
+        {toast.action && <button type="button" className="toast-action" onClick={() => { const action = toast.action; dismissNotification(); action?.run(); }}>{toast.action.label}</button>}
+        <button type="button" className="toast-dismiss" onClick={dismissNotification} aria-label="Dismiss notification"><X size={16} aria-hidden="true" /></button>
+      </div>}
     </div>
   );
 }
@@ -909,7 +956,7 @@ function inboxProjectSuggestion(message: WorkspaceMessage, projects: Project[], 
   return { kind: "intake", text: "FCI/Intake: no enabled built-in rule matched; choose a project before filing", reason: decision.reason };
 }
 
-function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }: { notify: (s: string) => void; onRules: () => void; projects: Project[]; clients: Client[]; rules: FilingRuleDraft[]; onGoogleSetup: () => void }) {
+function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }: { notify: Notify; onRules: () => void; projects: Project[]; clients: Client[]; rules: FilingRuleDraft[]; onGoogleSetup: () => void }) {
   const [workspace, setWorkspace] = useState<GmailWorkspaceStatus | null>(null);
   const [messages, setMessages] = useState<WorkspaceMessage[]>([]);
   const [bucket, setBucket] = useState<InboxBucket>("inbox");
@@ -965,7 +1012,7 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
       if (!response.ok) throw new Error(data.error ?? "Your Gmail messages could not be loaded.");
       setMessages(data.messages ?? []);
       setLabelReady(Boolean(data.labelReady));
-      notify(`Loaded ${data.messages?.length ?? 0} message${(data.messages?.length ?? 0) === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`);
+      notify(`Loaded ${data.messages?.length ?? 0} message${(data.messages?.length ?? 0) === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`, "info");
     } catch (loadError) {
       setMessages([]);
       setError(loadError instanceof Error ? loadError.message : "Your Gmail messages could not be loaded.");
@@ -982,10 +1029,12 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "FCI Gmail labels could not be prepared.");
       setLabelReady(true);
-      notify("FCI Gmail labels are ready. No messages were moved or archived.");
+      notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
       await loadMessages();
     } catch (prepareError) {
-      setError(prepareError instanceof Error ? prepareError.message : "FCI Gmail labels could not be prepared.");
+      const message = prepareError instanceof Error ? prepareError.message : "FCI Gmail labels could not be prepared.";
+      setError(message);
+      notify(message, "error");
     } finally {
       setLoading(false);
     }
@@ -1006,7 +1055,7 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
 
   async function previewGmailFiling() {
     if (!filingMessage || !filingProjectId) {
-      notify("Choose the exact independent project before reviewing this email filing.");
+      notify("Choose the exact independent project before reviewing this email filing.", "warning");
       return;
     }
     setFilingLoading(true);
@@ -1015,10 +1064,10 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
       const data = await response.json().catch(() => ({})) as GmailFilingPreview & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "The Gmail filing preview could not be loaded.");
       setFilingPreview(data);
-      notify(`Review the Drive filing for ${data.project.number}. Nothing has been copied yet.`);
+      notify(`Review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
     } catch (previewError) {
       setFilingPreview(null);
-      notify(previewError instanceof Error ? previewError.message : "The Gmail filing preview could not be loaded.");
+      notify(previewError instanceof Error ? previewError.message : "The Gmail filing preview could not be loaded.", "error");
     } finally {
       setFilingLoading(false);
     }
@@ -1031,13 +1080,13 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
       const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: filingProjectId }) });
       const data = await response.json().catch(() => ({})) as { filed?: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number }; error?: string };
       if (!response.ok) throw new Error(data.error ?? "The Gmail filing could not be completed.");
-      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`);
+      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`, data.alreadyFiled ? "info" : "success");
       setFilingMessage(null);
       setFilingProjectId("");
       setFilingPreview(null);
       await loadMessages();
     } catch (filingError) {
-      notify(filingError instanceof Error ? filingError.message : "The Gmail filing could not be completed.");
+      notify(filingError instanceof Error ? filingError.message : "The Gmail filing could not be completed.", "error");
     } finally {
       setFilingSubmitting(false);
     }
@@ -1056,7 +1105,7 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
 
   async function saveReplyDraft() {
     if (!replyMessage || !replyBody.trim()) {
-      notify("Write a reply before saving a Gmail draft.");
+      notify("Write a reply before saving a Gmail draft.", "warning");
       return;
     }
     setReplySaving(true);
@@ -1064,11 +1113,11 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
       const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(replyMessage.id)}/reply-draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: replyBody }) });
       const data = await response.json().catch(() => ({})) as { draftSaved?: boolean; recipient?: string; error?: string };
       if (!response.ok || !data.draftSaved) throw new Error(data.error ?? "Gmail draft could not be saved.");
-      notify(`Reply draft saved in Gmail for ${data.recipient ?? "the original sender"}. It was not sent.`);
+      notify(`Reply draft saved in Gmail for ${data.recipient ?? "the original sender"}. It was not sent.`, "success");
       setReplyMessage(null);
       setReplyBody("");
     } catch (replyError) {
-      notify(replyError instanceof Error ? replyError.message : "Gmail draft could not be saved.");
+      notify(replyError instanceof Error ? replyError.message : "Gmail draft could not be saved.", "error");
     } finally {
       setReplySaving(false);
     }
@@ -1146,7 +1195,7 @@ function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Le
   </>;
 }
 
-function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: (s: string) => void; section: string; onSection: (section: string) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
+function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: string; onSection: (section: string) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
   const options = ["My account", "Google Workspace", "Calendar & appointments", "Inbox & file rules", "Client Directory", "Workflow & notifications", "Data & security", "Testing & launch"];
   return <><PageTitle eyebrow="Control center" title="Settings" text="Keep account preferences, one Google Workspace connection, inbox rules, calendar defaults, and safeguards in one simple place." state="In development" />
     <div className="settings-layout"><aside className="settings-nav panel">{options.map((option) => <button className={section === option ? "active" : ""} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
@@ -1154,7 +1203,7 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, rules, pro
       {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
       {section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} />}
       {section === "Inbox & file rules" && <section className="panel rule-settings"><div className="settings-heading"><div><p className="eyebrow">Gmail intake rules</p><h2>Inbox & file rules</h2><p>Rules run in priority order. Paused rules do not influence suggestions, and every filing still requires approval.</p></div><button className="primary-button" onClick={onAddRule}><Plus size={16} /> Add rule</button></div><div className="rule-callout"><ShieldCheck size={19} /><p><strong>Multi-project protection</strong><br />A project number is the safest match. A client with multiple independent projects is always kept in review until you choose the exact job.</p></div><div className="rules-table"><div className="rules-table-head"><span>Priority</span><span>Rule</span><span>When it matches</span><span>Action</span><span>Destination</span></div>{rules.map((rule) => <div className="rule-row" key={rule.id ?? rule.name}><span className="rule-priority">{rule.priority}</span><span><strong>{rule.name}</strong><small>{rule.enabled ? "Enabled" : "Paused"} · approval required</small><div className="rule-inline-actions"><button className="soft-button" onClick={() => void onUpdateRule(rule, { enabled: !rule.enabled })}>{rule.enabled ? "Pause" : "Enable"}</button>{rule.id && <button className="icon-text-button danger" aria-label={`Delete ${rule.name}`} onClick={() => { if (window.confirm(`Delete the email rule “${rule.name}”?`)) void onDeleteRule(rule); }}><Trash2 size={14} /> Delete</button>}</div></span><span>{rule.matchSummary}</span><Status text={rule.action === "review" ? "Needs review" : rule.action === "ignore" ? "Ignored" : "Suggest"} /><span>{rule.targetCategory}</span></div>)}</div><div className="rule-footnote"><Mail size={15} /><span>Custom rules are saved as review-first policies until a supported matcher is added. Keep Gmail simple: use only <b>{DRIVE_BLUEPRINT.gmailLabels.join(", ")}</b>. The project’s Drive folder—not a Gmail label per project—is the permanent filing location.</span></div></section>}
-      {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets"); }} />}
+      {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets", "info"); }} />}
       {section === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} />}
       {section === "Data & security" && <DataSecurityPanel />}
       {section === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
@@ -1191,29 +1240,54 @@ const defaultWorkspacePreferences: WorkspacePreferenceValues = {
   officeNotificationEmail: "",
 };
 
-function MyAccountPanel({ notify, userName, userEmail, onGoogleSetup, onTimezoneChange }: { notify: (message: string) => void; userName: string; userEmail: string; onGoogleSetup: () => void; onTimezoneChange: (timezone: string) => void }) {
+function SettingsDataNotice({ state, error, onRetry }: { state: Exclude<LoadState, "ready">; error: string; onRetry: () => void }) {
+  const failed = state === "error";
+  return <div className={`settings-data-notice ${failed ? "error" : "loading"}`} role={failed ? "alert" : "status"} aria-live={failed ? "assertive" : "polite"}>
+    {failed ? <CircleAlert size={19} aria-hidden="true" /> : <RefreshCw size={19} aria-hidden="true" />}
+    <div><strong>{failed ? "Saved settings could not be loaded" : "Loading saved settings…"}</strong><span>{failed ? error : "Editing and saving will be available after the server values arrive."}</span></div>
+    {failed && <button type="button" className="soft-button" onClick={onRetry}><RefreshCw size={14} /> Retry</button>}
+  </div>;
+}
+
+function MyAccountPanel({ notify, userName, userEmail, onGoogleSetup, onTimezoneChange }: { notify: Notify; userName: string; userEmail: string; onGoogleSetup: () => void; onTimezoneChange: (timezone: string) => void }) {
   const [preferences, setPreferences] = useState<UserAccountPreferences>(defaultUserAccountPreferences);
   const [connectionAccount, setConnectionAccount] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    let active = true;
-    void Promise.all([
-      cachedGetJson<{ preferences?: UserAccountPreferences }>("/api/v1/settings/me").catch(() => null),
-      cachedGetJson<{ workspace?: { connectionAccount?: unknown } }>("/api/v1/google-workspace").catch(() => null),
-    ]).then(([preferenceData, googleData]) => {
-      if (!active) return;
-      if (preferenceData?.preferences) {
-        const nextPreferences = { ...defaultUserAccountPreferences, ...preferenceData.preferences };
-        setPreferences(nextPreferences);
-        onTimezoneChange(nextPreferences.displayTimezone);
-      }
-      setConnectionAccount(typeof googleData?.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
-    }).catch(() => undefined).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+  const loadRequestRef = useRef(0);
+
+  const loadAccountSettings = useCallback(async (force = false) => {
+    const requestId = ++loadRequestRef.current;
+    setLoadState("loading");
+    setLoadError("");
+    try {
+      const [preferenceData, googleData] = await Promise.all([
+        cachedGetJson<{ preferences?: UserAccountPreferences }>("/api/v1/settings/me", { force }),
+        cachedGetJson<{ workspace?: { connectionAccount?: unknown } }>("/api/v1/google-workspace", { force }),
+      ]);
+      if (requestId !== loadRequestRef.current) return;
+      if (!preferenceData.preferences) throw new Error("The server returned no saved account preferences.");
+      const nextPreferences = { ...defaultUserAccountPreferences, ...preferenceData.preferences };
+      setPreferences(nextPreferences);
+      setConnectionAccount(typeof googleData.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
+      onTimezoneChange(nextPreferences.displayTimezone);
+      setLoadState("ready");
+    } catch (error) {
+      if (requestId !== loadRequestRef.current) return;
+      setLoadError(error instanceof Error ? error.message : "Your saved account preferences could not be loaded.");
+      setLoadState("error");
+    }
   }, [onTimezoneChange]);
+
+  useEffect(() => {
+    void Promise.resolve().then(() => loadAccountSettings());
+    return () => { loadRequestRef.current += 1; };
+  }, [loadAccountSettings]);
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loadState !== "ready") return;
     setSaving(true);
     try {
       const response = await fetch("/api/v1/settings/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(preferences) });
@@ -1222,42 +1296,78 @@ function MyAccountPanel({ notify, userName, userEmail, onGoogleSetup, onTimezone
       invalidateCachedGet("/api/v1/settings/me");
       setPreferences({ ...defaultUserAccountPreferences, ...data.preferences });
       onTimezoneChange(data.preferences.displayTimezone);
-      notify("Your preferences are saved to your signed-in FCI account");
+      notify("Your preferences are saved to your signed-in FCI account", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Your account preferences could not be saved.");
+      notify(error instanceof Error ? error.message : "Your account preferences could not be saved.", "error");
     } finally {
       setSaving(false);
     }
   }
-  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Signed-in account</p><h2>My account</h2><p>Your timezone and reply signature are saved to this FCI account and follow you between browsers.</p></div></div><div className="account-identity"><div className="avatar">{userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC"}</div><div><strong>{userName}</strong><span>{userEmail}</span></div></div><form onSubmit={save}><div className="form-row"><label>My display timezone<select value={preferences.displayTimezone} onChange={(event) => setPreferences((current) => ({ ...current, displayTimezone: event.target.value }))} disabled={loading || saving}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label><label>Workspace connection<input value={connectionAccount ?? "Not connected"} readOnly /></label></div><label>Default reply signature<textarea value={preferences.replySignature} onChange={(event) => setPreferences((current) => ({ ...current, replySignature: event.target.value }))} placeholder="Name, title, phone, and company" maxLength={2000} disabled={loading || saving} /></label><p className="form-help"><Reply size={14} /> Local simulation never connects a Google account. When the company Workspace is ready, one administrator-approved connection supplies Gmail, Calendar, Shared Drive, and Sheets.</p><footer><button type="button" className="soft-button" onClick={onGoogleSetup}><Building2 size={15} /> Manage Google Workspace</button><button type="submit" className="primary-button" disabled={loading || saving}>{saving ? "Saving…" : <><Check size={15} /> Save my preferences</>}</button></footer></form></section>;
+
+  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Signed-in account</p><h2>My account</h2><p>Your timezone and reply signature are saved to this FCI account and follow you between browsers.</p></div></div><div className="account-identity"><div className="avatar">{userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC"}</div><div><strong>{userName}</strong><span>{userEmail}</span></div></div>{loadState !== "ready" ? <SettingsDataNotice state={loadState} error={loadError} onRetry={() => void loadAccountSettings(true)} /> : <form onSubmit={save}><div className="form-row"><label>My display timezone<select value={preferences.displayTimezone} onChange={(event) => setPreferences((current) => ({ ...current, displayTimezone: event.target.value }))} disabled={saving}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label><label>Workspace connection<input value={connectionAccount ?? "Not connected"} readOnly /></label></div><label>Default reply signature<textarea value={preferences.replySignature} onChange={(event) => setPreferences((current) => ({ ...current, replySignature: event.target.value }))} placeholder="Name, title, phone, and company" maxLength={2000} disabled={saving} /></label><p className="form-help"><Reply size={14} /> Local simulation never connects a Google account. When the company Workspace is ready, one administrator-approved connection supplies Gmail, Calendar, Shared Drive, and Sheets.</p><footer><button type="button" className="soft-button" onClick={onGoogleSetup}><Building2 size={15} /> Manage Google Workspace</button><button type="submit" className="primary-button" disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save my preferences</>}</button></footer></form>}</section>;
 }
 
-function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calendar" | "workflow"; notify: (message: string) => void; onGoogleSetup: () => void }) {
+function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calendar" | "workflow"; notify: Notify; onGoogleSetup: () => void }) {
   const [settings, setSettings] = useState<WorkspacePreferenceValues>(defaultWorkspacePreferences);
   const [saving, setSaving] = useState(false);
   const [calendarAccount, setCalendarAccount] = useState<string | null>(null);
   const [calendarConnected, setCalendarConnected] = useState(false);
-  useEffect(() => {
-    void Promise.all([fetch("/api/v1/settings/workspace").then((response) => response.ok ? response.json() : null), cachedGetJson<{ workspace?: { connectionAccount?: unknown; calendarConnected?: boolean; calendarEnabled?: boolean; connectionStatus?: string } }>("/api/v1/google-workspace").catch(() => null)]).then(([settingsData, googleData]) => {
-      if (settingsData?.settings) setSettings({ ...defaultWorkspacePreferences, ...settingsData.settings });
-      setCalendarAccount(typeof googleData?.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
-      setCalendarConnected(googleData?.workspace?.calendarConnected === true && googleData?.workspace?.calendarEnabled === true && googleData?.workspace?.connectionStatus === "connected");
-    }).catch(() => undefined);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [loadError, setLoadError] = useState("");
+  const loadRequestRef = useRef(0);
+
+  const loadWorkspaceSettings = useCallback(async (force = false) => {
+    const requestId = ++loadRequestRef.current;
+    setLoadState("loading");
+    setLoadError("");
+    try {
+      const [settingsData, googleData] = await Promise.all([
+        cachedGetJson<{ settings?: WorkspacePreferenceValues }>("/api/v1/settings/workspace", { force }),
+        cachedGetJson<{ workspace?: { connectionAccount?: unknown; calendarConnected?: boolean; calendarEnabled?: boolean; connectionStatus?: string } }>("/api/v1/google-workspace", { force }),
+      ]);
+      if (requestId !== loadRequestRef.current) return;
+      if (!settingsData.settings) throw new Error("The server returned no saved Workspace defaults.");
+      setSettings({ ...defaultWorkspacePreferences, ...settingsData.settings });
+      setCalendarAccount(typeof googleData.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
+      setCalendarConnected(googleData.workspace?.calendarConnected === true && googleData.workspace?.calendarEnabled === true && googleData.workspace?.connectionStatus === "connected");
+      setLoadState("ready");
+    } catch (error) {
+      if (requestId !== loadRequestRef.current) return;
+      setLoadError(error instanceof Error ? error.message : "The saved Workspace defaults could not be loaded.");
+      setLoadState("error");
+    }
   }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(() => loadWorkspaceSettings());
+    return () => { loadRequestRef.current += 1; };
+  }, [loadWorkspaceSettings]);
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loadState !== "ready") return;
     setSaving(true);
     try {
       const response = await fetch("/api/v1/settings/workspace", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
       const data = await response.json().catch(() => ({})) as { settings?: WorkspacePreferenceValues; error?: string };
       if (!response.ok || !data.settings) throw new Error(data.error ?? "Settings could not be saved.");
+      invalidateCachedGet("/api/v1/settings/workspace");
       setSettings({ ...defaultWorkspacePreferences, ...data.settings });
-      notify(mode === "calendar" ? "Calendar defaults saved" : "Workflow and notification defaults saved");
+      notify(mode === "calendar" ? "Calendar defaults saved" : "Workflow and notification defaults saved", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Settings could not be saved.");
+      notify(error instanceof Error ? error.message : "Settings could not be saved.", "error");
     } finally {
       setSaving(false);
     }
+  }
+  if (loadState !== "ready") {
+    return <section className="panel settings-form-panel">
+      <div className="settings-heading">
+        <div><p className="eyebrow">{mode === "calendar" ? "Organization calendar plan" : "Operating defaults"}</p><h2>{mode === "calendar" ? "Calendar & appointments" : "Workflow & notifications"}</h2><p>{mode === "calendar" ? "Keep company work in two shared FCI Workspace calendars: one for client appointments and one for field scheduling." : "Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled."}</p></div>
+        <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
+      </div>
+      <SettingsDataNotice state={loadState} error={loadError} onRetry={() => void loadWorkspaceSettings(true)} />
+    </section>;
   }
   if (mode === "calendar") {
     return <section className="panel settings-form-panel">
@@ -1306,7 +1416,7 @@ function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calend
           <div><strong>Gmail relationship</strong><span>Gmail and Calendar are separate. When a message becomes an appointment, the app will link the thread to the appointment; Gmail-generated travel or reservation events are never imported into the company schedule automatically.</span></div>
         </div>
         <p className="form-help"><CalendarDays size={14} /> Local simulation stores safe sample holds without contacting Google. Live mode uses the configured company calendar IDs and keeps FCI Operations authoritative.</p>
-        <footer><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : <><Check size={15} /> Save calendar plan</>}</button></footer>
+        <footer><button type="submit" className="primary-button" disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save calendar plan</>}</button></footer>
       </form>
     </section>;
   }
@@ -1322,7 +1432,7 @@ function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calend
       </div>
       <label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label>
       <div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div>
-      <footer><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</button></footer>
+      <footer><button type="submit" className="primary-button" disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</button></footer>
     </form>
   </section>;
 }
@@ -1355,7 +1465,7 @@ type GmailFilingPreview = {
   inboxRetained: boolean;
 };
 
-function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => void; projects: Project[] }) {
+function GoogleWorkspacePanel({ notify, projects }: { notify: Notify; projects: Project[] }) {
   const [checking, setChecking] = useState(false);
   const [working, setWorking] = useState(false);
   const [status, setStatus] = useState<"unknown" | "missing" | "credentials">("unknown");
@@ -1392,6 +1502,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
   const [filingLoading, setFilingLoading] = useState(false);
   const [filingSubmitting, setFilingSubmitting] = useState(false);
+  const [oauthResult, setOauthResult] = useState<string | null>(null);
   const readinessChecked = useRef(false);
 
   const checkSetup = useCallback(async (force = false) => {
@@ -1426,10 +1537,10 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       setMissing(data.missing ?? []);
       setWorkspace(data.workspace ?? null);
       setStatus(data.credentialsPresent ? "credentials" : "missing");
-      notify(data.workspace?.simulation ? "Local Workspace simulation is ready. No Google account is connected." : data.credentialsPresent ? "Workspace configuration is present. Finish OAuth authorization before Google data can be accessed." : `Workspace setup still needs ${Math.max(1, data.missing?.length ?? 0)} item(s)`);
+      notify(data.workspace?.simulation ? "Local Workspace simulation is ready. No Google account is connected." : data.credentialsPresent ? "Workspace configuration is present. Finish OAuth authorization before Google data can be accessed." : `Workspace setup still needs ${Math.max(1, data.missing?.length ?? 0)} item(s)`, data.workspace?.simulation || data.credentialsPresent ? "info" : "warning");
     } catch {
       setStatus("missing");
-      notify("Workspace readiness could not be checked. Confirm the app is running and try again.");
+      notify("Workspace readiness could not be checked. Confirm the app is running and try again.", "error");
     } finally {
       setChecking(false);
     }
@@ -1442,12 +1553,13 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   }, [checkSetup]);
 
   useEffect(() => {
-    if (workspace?.simulation !== true) return;
     const current = new URL(window.location.href);
-    if (!current.searchParams.has("google")) return;
+    const result = current.searchParams.get("google");
+    if (result === null) return;
+    void Promise.resolve().then(() => setOauthResult(result));
     current.searchParams.delete("google");
-    window.history.replaceState(null, "", `${current.pathname}${current.search}${current.hash}`);
-  }, [workspace?.simulation]);
+    window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
+  }, []);
 
   async function connectGoogleDrive() {
     setWorking(true);
@@ -1457,7 +1569,7 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       if (!response.ok || !data.authorizationUrl) throw new Error(data.error ?? "Google Drive could not be authorized.");
       window.location.assign(data.authorizationUrl);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Google Drive could not be authorized.");
+      notify(error instanceof Error ? error.message : "Google Drive could not be authorized.", "error");
       setWorking(false);
     }
   }
@@ -1468,11 +1580,11 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       const response = await fetch("/api/v1/integrations/google/drive/verify", { method: "POST" });
       const data = await response.json() as { verified?: boolean; error?: string };
       if (!response.ok || !data.verified) throw new Error(data.error ?? "The Drive workspace could not be verified.");
-      notify("The active Drive workspace was verified. You can now enable project-folder testing when ready.");
+      notify("The active Drive workspace was verified. You can now enable project-folder testing when ready.", "success");
       invalidateCachedGet("/api/v1/google-workspace");
       await checkSetup(true);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Drive workspace could not be verified.");
+      notify(error instanceof Error ? error.message : "The Drive workspace could not be verified.", "error");
     } finally {
       setWorking(false);
     }
@@ -1484,11 +1596,11 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       const response = await fetch("/api/v1/integrations/google/connection", { method: "DELETE" });
       const data = await response.json() as { disconnected?: boolean; error?: string };
       if (!response.ok || !data.disconnected) throw new Error(data.error ?? "The Google connection could not be removed.");
-      notify("The active Google connection was removed from FCI Operations.");
+      notify("The active Google connection was removed from FCI Operations.", "success");
       invalidateCachedGet("/api/v1/google-workspace");
       await checkSetup(true);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Google connection could not be removed.");
+      notify(error instanceof Error ? error.message : "The Google connection could not be removed.", "error");
     } finally {
       setWorking(false);
     }
@@ -1506,9 +1618,9 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
     try {
       await readApi<{ prepared: boolean }>("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
       setGmailLabelsReady(true);
-      notify("FCI Gmail labels are ready. No messages were moved or archived.");
+      notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Gmail labels could not be prepared.");
+      notify(error instanceof Error ? error.message : "Gmail labels could not be prepared.", "error");
     } finally {
       setGmailWorking(false);
     }
@@ -1520,9 +1632,9 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       const data = await readApi<{ messages?: WorkspaceMessage[]; labelReady?: boolean }>("/api/v1/integrations/google/gmail/messages?label=inbox");
       setGmailMessages(data.messages ?? []);
       setGmailLabelsReady((current) => current || Boolean(data.labelReady));
-      notify(`Loaded ${data.messages?.length ?? 0} Workspace inbox message(s).`);
+      notify(`Loaded ${data.messages?.length ?? 0} Workspace inbox message(s).`, "info");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The test inbox could not be loaded.");
+      notify(error instanceof Error ? error.message : "The test inbox could not be loaded.", "error");
     } finally {
       setGmailWorking(false);
     }
@@ -1536,9 +1648,9 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      notify(workspace?.simulation ? "A sample email was added to the simulated Workspace inbox." : "A test email was sent only to the configured Workspace mailbox.");
+      notify(workspace?.simulation ? "A sample email was added to the simulated Workspace inbox." : "A test email was sent only to the configured Workspace mailbox.", "success");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The self-test email could not be sent.");
+      notify(error instanceof Error ? error.message : "The self-test email could not be sent.", "error");
     } finally {
       setGmailWorking(false);
     }
@@ -1559,17 +1671,17 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
 
   async function previewGmailFiling() {
     if (!filingMessage || !filingProjectId) {
-      notify("Choose the exact independent project before reviewing this email filing.");
+      notify("Choose the exact independent project before reviewing this email filing.", "warning");
       return;
     }
     setFilingLoading(true);
     try {
       const data = await readApi<GmailFilingPreview>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
       setFilingPreview(data);
-      notify(`Ready to review the Drive filing for ${data.project.number}. Nothing has been copied yet.`);
+      notify(`Ready to review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
     } catch (error) {
       setFilingPreview(null);
-      notify(error instanceof Error ? error.message : "The Gmail filing preview could not be loaded.");
+      notify(error instanceof Error ? error.message : "The Gmail filing preview could not be loaded.", "error");
     } finally {
       setFilingLoading(false);
     }
@@ -1584,13 +1696,13 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: filingProjectId }),
       });
-      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`);
+      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`, data.alreadyFiled ? "info" : "success");
       setFilingMessage(null);
       setFilingProjectId("");
       setFilingPreview(null);
       await refreshTestGmail();
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Gmail filing could not be completed.");
+      notify(error instanceof Error ? error.message : "The Gmail filing could not be completed.", "error");
     } finally {
       setFilingSubmitting(false);
     }
@@ -1601,9 +1713,9 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
     try {
       const data = await readApi<{ events?: Array<{ id: string; title: string; start: string; end: string; url?: string }> }>("/api/v1/integrations/google/calendar/events");
       setCalendarEvents(data.events ?? []);
-      notify(`Loaded ${data.events?.length ?? 0} upcoming Workspace Calendar event(s).`);
+      notify(`Loaded ${data.events?.length ?? 0} upcoming Workspace Calendar event(s).`, "info");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The Workspace Calendar could not be loaded.");
+      notify(error instanceof Error ? error.message : "The Workspace Calendar could not be loaded.", "error");
     } finally {
       setCalendarWorking(false);
     }
@@ -1617,10 +1729,10 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      notify(workspace?.simulation ? "A 30-minute hold was added to the simulated Workspace calendar." : "A private 30-minute Workspace test hold was created with no attendees or notifications.");
+      notify(workspace?.simulation ? "A 30-minute hold was added to the simulated Workspace calendar." : "A private 30-minute Workspace test hold was created with no attendees or notifications.", "success");
       await refreshTestCalendar();
     } catch (error) {
-      notify(error instanceof Error ? error.message : "The test calendar hold could not be created.");
+      notify(error instanceof Error ? error.message : "The test calendar hold could not be created.", "error");
     } finally {
       setCalendarWorking(false);
     }
@@ -1633,11 +1745,11 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
       setGmailMessages([]);
       setCalendarEvents([]);
       setGmailLabelsReady(true);
-      notify(`Workspace simulation reset with ${data.messages} sample messages and ${data.events} calendar events.`);
+      notify(`Workspace simulation reset with ${data.messages} sample messages and ${data.events} calendar events.`, "success");
       invalidateCachedGet("/api/v1/google-workspace");
       await checkSetup(true);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "Workspace simulation could not be reset.");
+      notify(error instanceof Error ? error.message : "Workspace simulation could not be reset.", "error");
     } finally {
       setWorking(false);
     }
@@ -1652,7 +1764,6 @@ function GoogleWorkspacePanel({ notify, projects }: { notify: (s: string) => voi
   const reconnectRequired = workspace?.requiresReauthorization === true;
   const selectedServices = workspace?.enabledServices?.join(", ") ?? "drive";
   const storageName = workspace?.storageName ?? "FCI Operations";
-  const oauthResult = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("google");
   const oauthMessage = oauthResult === "connected"
     ? "Google was connected. Run the readiness check to refresh this panel."
     : oauthResult === "authorization-cancelled"
@@ -1771,7 +1882,7 @@ function RuleModal({ onClose, onSave }: { onClose: () => void; onSave: (rule: Fi
   return <AccessibleOverlay ariaLabel="Add an email filing rule" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Gmail intake</p><h2>Add an email filing rule</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Rule name<input data-overlay-initial-focus name="name" required placeholder="e.g. Estimator bid invitations" /></label><div className="form-row"><label>Priority<input name="priority" type="number" min="1" defaultValue="10" required /></label><label>Action<select name="action"><option value="suggest">Suggest a project</option><option value="review">Send to review</option><option value="ignore">Ignore</option></select></label></div><label>When this matches<textarea name="matchSummary" required placeholder="Example: sender is estimator@builder.com and subject contains BID" /></label><label>Default Drive destination<input name="targetCategory" required defaultValue="05_Correspondence / Email Archive" /></label><p className="form-help"><ShieldCheck size={14} /> New rules always require review before Gmail labels, email archives, or attachments are changed.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add rule"}</button></footer></form></AccessibleOverlay>;
 }
 
-function ProjectDrawer({ project, onClose, notify, onProvisionDrive, onAssignToMe, canAssignManager, currentUserEmail, returnFocusRef }: { project: Project; onClose: () => void; notify: (s: string) => void; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; canAssignManager: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
+function ProjectDrawer({ project, onClose, notify, onProvisionDrive, onAssignToMe, canAssignManager, currentUserEmail, returnFocusRef }: { project: Project; onClose: () => void; notify: Notify; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; canAssignManager: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
   const [tab, setTab] = useState<"Overview" | "Meetings">("Overview");
   const [provisioning, setProvisioning] = useState(false);
   const [assigningManager, setAssigningManager] = useState(false);
@@ -1831,7 +1942,7 @@ async function fetchProjectMeetings(projectId: string) {
   return data.meetings ?? [];
 }
 
-function ProjectMeetings({ project, notify }: { project: Project; notify: (message: string) => void }) {
+function ProjectMeetings({ project, notify }: { project: Project; notify: Notify }) {
   const [meetings, setMeetings] = useState<ProjectMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1866,7 +1977,7 @@ function ProjectMeetings({ project, notify }: { project: Project; notify: (messa
   function savedMeeting(meeting: ProjectMeeting) {
     setMeetings((current) => [meeting, ...current]);
     setAdding(false);
-    notify(`${meeting.title} saved to ${project.number}`);
+    notify(`${meeting.title} saved to ${project.number}`, "success");
   }
 
   return <section className="project-meetings">

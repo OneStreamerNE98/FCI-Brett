@@ -48,6 +48,9 @@ export async function POST(request: NextRequest) {
   if (!config.calendarEnabled) {
     return noStore({ error: "Enable Calendar for the Google Workspace connection before testing appointments." }, { status: 409 });
   }
+  if (!config.oauthReady) {
+    return noStore({ error: "Google Calendar setup is incomplete.", code: "calendar_configuration_required", missing: config.missing }, { status: 409 });
+  }
 
   let body: Record<string, unknown> = {};
   try {
