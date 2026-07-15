@@ -6,29 +6,23 @@ For handing the repository from one person's Codex installation to a coworker's 
 
 The application code and this Codex conversation are separate things:
 
-- The **code** is the Git repository currently stored at `C:\Users\JasonGrass\Documents\Codex\2026-07-11\i-wa`.
-- The **Floor Coverings International Codex project** is currently associated with `C:\Users\JasonGrass\OneDrive - Archetype Consulting\Documents\Floor Coverings International`.
+- The **code** and the **Floor Coverings International Codex project** currently use the same repository root: `C:\Users\JasonGrass\OneDrive - Archetype Consulting\Documents\Floor Coverings International`.
+- The **shared Git history** is in [`OneStreamerNE98/FCI-Brett`](https://github.com/OneStreamerNE98/FCI-Brett), which is currently public.
 - The **task** is this conversation and its history.
 
-Codex does not currently provide a reliable one-click way to move this existing conversation into a different local project. Preserve the work by committing the repository, choosing one canonical code location, and starting the next task from the target project with the handoff prompt below.
+Codex conversations do not replace the repository handoff. Preserve durable work by committing it, pushing the assigned branch, and starting the next task from one canonical local clone with the handoff prompt below.
 
-## Recommended repository location
+## Canonical repository location
 
-Keep the live development repository outside OneDrive. Node/Next.js repositories contain thousands of frequently changing files, symbolic links, build caches, and secrets that do not sync well through OneDrive.
+The current OneDrive-based repository root above is the owner's selected canonical local clone. Do not move it or create a second editable copy during an active task. OneDrive synchronization can conflict with Git or build output, so stop and reconcile the working tree if unexpected duplicate, lock, or conflict files appear.
 
-Recommended canonical location:
-
-`C:\Users\JasonGrass\Documents\Floor Coverings International\flooring-operations-app`
-
-Use GitHub as the collaboration and backup mechanism. Use the OneDrive project folder for business documents, exported reports, training material, and a shortcut or text file containing the repository URL.
-
-If you prefer to keep the existing repository location, that is also acceptable. Add the existing folder as a Codex project rather than copying it into OneDrive.
+GitHub is the collaboration and handoff layer. A coworker should clone the existing repository once to a normal local development folder and select that repository root in Codex. The coworker does not need the owner's absolute local path.
 
 ## Safe handoff procedure
 
 1. Finish and commit all changes in the current repository.
-2. Create a private GitHub repository owned by the business, for example `floor-coverings-international/flooring-operations-app`.
-3. Push the current Git repository to that private repository.
+2. Confirm the remote is the existing [`OneStreamerNE98/FCI-Brett`](https://github.com/OneStreamerNE98/FCI-Brett) repository.
+3. Push the assigned branch to that repository and open a pull request. Because the repository is public, anyone may read it, but only an authorized collaborator may push. The owner should decide whether to make it private before operational configuration begins.
 4. In Codex, open **Projects** and add the canonical local repository folder as a project.
 5. Name the project **Floor Coverings International — Operations App**.
 6. Add the business planning folder as project context only if needed; do not make two editable copies of the source code.
@@ -48,7 +42,7 @@ Copy and paste this into the first task inside the Floor Coverings International
 
 ## Sharing with another developer
 
-1. Invite the developer to the private GitHub repository with **Write** access, not Admin access.
+1. Invite the developer to `OneStreamerNE98/FCI-Brett` with **Write** access, not Admin access. Public read access does not grant push access.
 2. Ask them to clone the repository to their computer; do not email a ZIP and do not share `node_modules`.
 3. Give them `.env.example`, never `.env.local`, OAuth client secrets, encryption keys, or production tokens.
 4. Create separate development OAuth credentials for local callbacks if the developer needs Google integration.

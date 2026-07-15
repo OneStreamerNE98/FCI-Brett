@@ -36,7 +36,7 @@ Never share one ChatGPT login. Every coworker signs in to Codex with their own a
 ## Coworker: install and clone
 
 1. Install the Codex app and sign in with the coworker's own ChatGPT account.
-2. Clone the repository to a normal local development folder outside OneDrive:
+2. Clone the repository once to a normal local development folder. Prefer a non-synchronized folder for a new clone, but the important rule is to keep one canonical editable clone:
 
    ```powershell
    cd "$HOME\Documents"
@@ -65,7 +65,7 @@ Do not continue implementation if the baseline build or tests fail. Record the o
 
 1. Open Codex.
 2. Select **Add project** or create a new project from a folder.
-3. Select the local `FCI-Brett` repository folder—not its parent and not a OneDrive copy.
+3. Select the local `FCI-Brett` repository root—not its parent and not a duplicate synchronized copy.
 4. Name it **Floor Coverings International — Operations App**.
 5. Start a new task inside that project.
 
@@ -89,7 +89,7 @@ The infrastructure worker may begin with safe variables for open owner inputs. T
 
 > Create and work on `codex/google-cloud-infrastructure-definitions`. First read `AGENTS.md`, `docs/architecture-decision-production-platform.md`, `docs/architecture-decision-workspace-first-cost-controlled-rollout.md`, `docs/complete-product-and-google-cloud-architecture-audit.md`, `docs/google-cloud-runtime-foundation.md`, `docs/task-checklists/07-production-foundation-and-migration.md`, and `docs/task-checklists/08-operations-recovery-and-security.md`. Preserve the current Sites development environment. Add costed, reviewable, unapplied definitions for isolated project/credential/data boundaries, on-demand staging, a minimum production core, zero-minimum/bounded-maximum Cloud Run, private networking, Secret Manager references, service identities, backups/PITR, probes, monitoring, and budget alerts. Provide separate standalone/zonal and regional-HA Cloud SQL profiles without selecting one. Put Tasks, Scheduler, Pub/Sub, quarantine/scanning, SMS, and `pgvector` behind disabled-by-default feature flags or modules. Document official calculator inputs, the connection and revision-overlap budget, staging creation/teardown, role/grant denial checks, restore, migration rehearsal, and rollback/forward-fix evidence. Use safe variables for open owner inputs and make them apply-time blockers. Do not provision resources, add credentials, apply roles or migrations, connect Workspace, migrate data, deploy, or merge. Finish with a pull request containing verification evidence and a data/security impact note.
 
-In parallel, the owner should complete `docs/task-checklists/06-20-user-operating-model-and-access.md`. PR #11 has merged the runtime foundation, so approval of the role/access matrix is the remaining owner gate for a source-only authorization worker to add simulated identities, scoped-query boundaries, and denial tests without enabling employee login or live data. Google Workspace OIDC and live authorization rollout must wait until the production foundation, tested migration/cutover path, and provider-neutral database/storage boundaries pass acceptance.
+In parallel, the owner should complete `docs/task-checklists/06-20-user-operating-model-and-access.md`. After the infrastructure definitions are reviewed, complete one production persistence boundary covering the remaining database/storage work plus generic identity and security-audit persistence. That boundary and the separately approved access matrix gate source-only authorization simulation, scoped-query, and denial-test work. Google Workspace OIDC and live authorization rollout must wait until the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
 
 ## Daily collaboration workflow
 
@@ -183,7 +183,7 @@ A shared ChatGPT Project may be used separately for collaborative chats and uplo
 ## Handoff is complete when
 
 - [ ] The coworker has their own Codex and GitHub accounts.
-- [ ] The repository is cloned outside OneDrive.
+- [ ] One canonical local clone is selected and its Git working tree is clean.
 - [ ] Codex is attached to the local repository root.
 - [ ] `AGENTS.md` and required project documents were read.
 - [ ] The baseline build and tests pass.

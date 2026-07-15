@@ -33,7 +33,7 @@ Google’s OpenID Connect documentation explains that the `hd` request value is 
 
 Reuse the company's existing Workspace subscription for employee accounts, Groups, the operations mailbox, Shared Drive, calendars, Docs, and derived Sheets reporting. This reduces duplicate products and licenses, but Workspace does not replace Cloud SQL, application authorization, security audit, backups, or recovery testing. Sheets is not the transactional database, and AppSheet or Apps Script must not become an unreviewed second system of record.
 
-The current Sites application remains the development environment. Separate Google Cloud project boundaries are still required, but staging is created only for approved migration, restore, or release exercises and optional services stay disabled until their features are scheduled. See the accepted [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md).
+The current Sites application remains the development environment. Separate Google Cloud project boundaries must be defined, but the development project is the only one needed for the current connector. Staging and production projects are created only after the applicable owner gate; staging billable resources are created only for approved migration, restore, or release exercises, and optional services stay disabled until their features are scheduled. See the accepted [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md).
 
 ## Accounts to create
 
@@ -56,7 +56,7 @@ Create these resources before turning on live folder provisioning:
 | Calendar 1 | `FCI • Client Appointments` | Site visits, measurements, client meetings, and confirmations |
 | Calendar 2 | `FCI • Field Schedule` | Published job assignments and crew schedule |
 | Mailbox | `operations@cherryhillfci.com` (proposed) | Company Gmail intake and app connection |
-| Google Cloud projects | `FCI Operations Development`, plus reserved staging and production projects later | Isolated Google APIs, OAuth clients, secrets, and data; staging billable resources are created on demand rather than left running |
+| Google Cloud projects | `FCI Operations Development` now, plus defined staging and production boundaries later | Isolated Google APIs, OAuth clients, secrets, and data; later project creation remains owner-controlled, and staging billable resources are created on demand rather than left running |
 
 ## Part 1: set up the Google Workspace organization
 
@@ -112,22 +112,28 @@ Google’s current steps are in [Create a new calendar](https://support.google.c
 
 Do not create one company calendar per employee. Keep the two company calendars authoritative, and invite assigned people to events later.
 
-## Part 5: create the Google Cloud project
+## Part 5: verify or create the Google Cloud project
 
 Google Cloud and Google Workspace are separate products. The Workspace tenant owns the users and company data; the Cloud project owns API and OAuth configuration.
 
-1. Open [Google Cloud Console](https://console.cloud.google.com/).
-2. Select the Workspace organization at the top.
-3. For the current one-user test connector, create a project named `FCI Operations Development`.
-4. Record the project ID.
-5. Under **APIs & Services → Library**, enable:
+1. Open [Google Cloud Console](https://console.cloud.google.com/) with a managed company account.
+2. Select Brett's reported company-account project candidate. Treat it as a candidate until the Google Cloud identifiers, parent, development purpose, IAM, billing status, and API inventory are verified. `FCI Operations Development` is the recommended display name, not a reason to create a duplicate if Brett used a different name.
+3. Open **IAM & Admin → Manage resources** and confirm the project's parent is the `cherryhillfci.com` company organization or an approved folder beneath it—not **No organization**.
+4. Confirm the project is intended only for the current one-user test connector and is administered by company-controlled individual accounts. Review personal Gmail accounts, unknown principals, unexpected service accounts, and broad basic roles before continuing.
+5. Record the non-secret project display name, project ID, project number, parent organization, and billing-linked yes/no status. Do not record credentials, payment information, or the billing-account number in GitHub.
+6. Confirm whether the project is linked to an active company-controlled Cloud Billing account. A billing link is separate from the Workspace subscription and does not authorize provisioning.
+7. Inventory the enabled APIs without changing them and record whether each of these is enabled or missing:
    - Google Drive API
    - Gmail API
    - Google Calendar API
    - Google Sheets API
-6. Pub/Sub can remain disabled until background Gmail/Calendar processing is actually built.
+8. Record whether Pub/Sub is disabled. It is not needed until Gmail background processing is built; Calendar background notifications will use HTTPS webhook channels rather than Pub/Sub.
+9. Stop and give the non-secret inventory to the owner. Do not change APIs, IAM, billing, Auth settings, OAuth clients, or Admin API Controls until the owner approves the exact changes.
+10. After approval, enable only the missing Drive, Gmail, Calendar, and Sheets APIs and keep Pub/Sub disabled.
 
-Reserve separate staging and production projects for their own OAuth clients, secrets, APIs, and resources. Do not add the current Sites development callback or credentials to the production project.
+Define separate staging and production project boundaries for their own OAuth clients, secrets, APIs, and resources. Creating those projects remains owner-controlled and does not authorize billable resources. Do not add the current Sites development callback or credentials to the future production project.
+
+Parts 6 through 8 change Google Cloud or Google Admin configuration. Complete them only after the Part 5 inventory has been reviewed and the owner has approved the exact changes.
 
 ## Part 6: configure the Google Auth platform
 
@@ -165,19 +171,18 @@ These are broad scopes. Keep the app internal, limit the authorized account, and
 
 ## Part 7: create the server-side OAuth client
 
-1. In the Cloud project, go to **Google Auth platform → Clients**.
-2. Select **Create Client**.
-3. Choose **Web application**.
-4. Name it `FCI Operations Workspace Connector — Development`.
-5. Add this authorized redirect URI exactly:
+1. In the verified development project, go to **Google Auth platform → Clients**.
+2. Look for `FCI Operations Workspace Connector — Development`.
+3. If it exists, open it and confirm it is a **Web application**. If it does not exist, select **Create Client**, choose **Web application**, and use that name.
+4. Confirm this authorized redirect URI exists exactly; add it only if it is missing:
 
 ```text
 https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback
 ```
 
-6. If this development environment later receives a development-only custom hostname, add its exact HTTPS callback before changing the development application setting. Never add the future production callback to this client.
-7. Save the client.
-8. Record the client ID and client secret securely.
+5. If this development environment later receives a development-only custom hostname, add its exact HTTPS callback before changing the development application setting. Never add the future production callback to this client.
+6. Save only reviewed changes.
+7. Record the client ID and confirm the approved secret custodian. Do not reveal, regenerate, download, or share an existing client secret merely to complete the inventory; handle any required rotation as a separate controlled action.
 
 This client and callback are development-only. Create the production data-connector client in the production project only after the production hostname is approved, and give it only the exact production HTTPS callback.
 

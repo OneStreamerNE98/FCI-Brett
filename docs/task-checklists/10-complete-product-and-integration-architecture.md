@@ -80,7 +80,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 
 - [x] Review and merge the PostgreSQL repository work without duplicating its scope.
 - [x] Complete PostgreSQL adapters, atomic idempotency, activity/outbox transactions, bounded version-fenced claims, and shared PostgreSQL 16 repository tests.
-- [ ] Add users, identities, invitations, secure sessions, roles/capabilities, project memberships, and general append-only security audit.
+- [ ] Complete one production-persistence slice covering the remaining PostgreSQL schema/repositories, generic users/identities/invitations/sessions and roles/capabilities/project-membership structures, general append-only security audit, integration/file metadata, and provider-neutral object-storage ports for routes that still depend on D1/R2. The approved access matrix gates authorization behavior, not these provider-neutral structures.
 - [ ] Add access-context query scoping and negative cross-project authorization tests.
 - [x] Add the owner-approved source-only Node/Cloud Run foundation with validated runtime configuration, capped PostgreSQL pools, separate migration/rehearsal commands, and process/database health endpoints without provisioning resources. Employee application paths still return `503`; see [Google Cloud runtime foundation](../google-cloud-runtime-foundation.md).
 - [ ] Add costed, reviewable infrastructure definitions that preserve Sites development, support on-demand staging, provide standalone and HA production database profiles, configure zero-minimum/bounded-maximum Cloud Run, and keep optional service modules disabled. Keep every definition unapplied until separate provisioning approval.
@@ -94,11 +94,13 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 
 ## Live configuration hold
 
-- [ ] Do not create or apply Google Cloud resources until the owner approves the environment, budget, IAM, and recovery inputs.
-- [ ] Do not treat reserved environment boundaries or source definitions as permission to create three running stacks.
-- [ ] Do not create live Gmail watches, Calendar channels, Workspace tokens, phone numbers, or outbound messages during source-only development.
-- [ ] Do not deploy, migrate data, change the existing hosted configuration, or alter the current Workspace test connector without owner approval.
-- [ ] Do not admit a second employee or real client data before the identity, authorization, restore, audit, and acceptance gates pass.
+Checked items in this section are accepted guardrails currently in force; they do not authorize provisioning, configuration, deployment, migration, or access expansion.
+
+- [x] Do not create or apply Google Cloud resources until the owner approves the environment, budget, IAM, and recovery inputs.
+- [x] Do not treat defined environment boundaries or source definitions as permission to create three running stacks.
+- [x] Do not create live Gmail watches, Calendar channels, Workspace tokens, phone numbers, or outbound messages during source-only development.
+- [x] Do not deploy, migrate data, change the existing hosted configuration, or alter the current Workspace test connector without owner approval.
+- [x] Do not admit a second employee or real client data before the identity, authorization, restore, audit, and acceptance gates pass.
 
 ## Acceptance evidence
 

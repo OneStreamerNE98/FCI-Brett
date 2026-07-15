@@ -105,7 +105,7 @@ flowchart LR
 | Workforce and scheduling | Planned only | Employees/subcontractors/crews, skills, certifications/insurance, availability, shifts, conflicts, publish, acknowledge/decline | After P0 |
 | Field operations | Not modeled | Mobile workflow, daily logs, installed quantities, readings, photos, safety/quality issues, customer signoff, explicit offline policy | After P0 |
 | Communications | Gmail review/copy and draft reply | Unified permitted timeline, consent, templates, quiet hours, email/SMS delivery workflow, inbound replies, suppressions, exception handling | After P0 |
-| Files | R2 upload and Gmail artifacts | Durable metadata, typed association, quarantine/scan/release, checksum/version, Drive mapping, retention/legal hold, permissioned download | P0 |
+| Files | R2 upload and Gmail artifacts | Durable metadata, typed association, checksum/version, Drive mapping, retention/legal hold, and permissioned download; quarantine/scan/release before untrusted file intake is enabled | P0 when file intake is enabled |
 | Financial boundary | Estimated value only | Contract/deposit/invoice/payment/retainage/cost/margin summaries and external IDs, or an explicitly approved app-owned ledger | P1 decision |
 | Closeout | Not modeled | Punch list, QA/final inspection, completion approval, care/warranty documents, required billing/document gates | P1 |
 | Warranty/service | Not modeled | Installed product/lot evidence, coverage, claim triage, service visits, resolution, customer approval | P1 |
@@ -272,8 +272,8 @@ For a US sender, the owner will need to choose an approved messaging route such 
 The following work is safe when it changes source, local fixtures, and tests only:
 
 1. **Completed:** PostgreSQL repositories now provide actor-scoped idempotency, atomic activity/outbox writes, and bounded version-fenced outbox claims.
-2. Add the full identity, invitation, secure-session, role/capability, project-membership, and general security-audit schema.
-3. Implement a simulated authorization policy and negative cross-project tests across list, search, dashboard, files, Gmail evidence, meetings, and assistant evidence.
+2. Complete the remaining production PostgreSQL and provider-neutral object-storage boundaries, including the identity, invitation, secure-session, role/capability, project-membership, general security-audit, integration, and file metadata required by production-owned routes.
+3. After the owner approves the access matrix, implement simulated authorization policy and negative cross-project tests across list, search, dashboard, files, Gmail evidence, meetings, and assistant evidence.
 4. **Completed in the approved source boundary:** the Node/Cloud Run kernel, validated configuration, capped PostgreSQL pools, separate migration/rehearsal commands, and process/database health endpoints exist without provisioning Google Cloud. The employee application port remains open.
 5. Define durable job/attempt/failed-job and future Scheduler/reminder-materialization schemas, contracts, state machines, fakes, and tests. Do not add an operational Scheduler, reminder planner, or delivery handler before the production platform and authorization foundation are accepted.
 6. Model and test Gmail watch/history and Calendar channel/sync-token state machines entirely with fixtures.
@@ -287,7 +287,7 @@ Design/contracts/fixtures for scheduling and communications may proceed, but ope
 
 ## Work that still requires an owner or administrator
 
-- Reserve company-owned development, staging, and production project boundaries and approve billing, region, IAM, budgets, and DNS. Provision only the approved production core plus temporary staging resources when an exercise is authorized; do not create every target service in every project.
+- Verify the company-owned development project, define the separate staging and production boundaries, and approve billing, region, IAM, budgets, and DNS. Creating those later projects or provisioning resources remains separately approved; provision only the approved production core plus temporary staging resources when an exercise is authorized.
 - Create separate Internal employee-login and company-data-connector OAuth clients, exact redirect URIs, API Controls trust, and production secrets.
 - Provision the operations mailbox, Shared Drive, directory Sheet, calendars, groups, and access rules.
 - Run final `cherryhillfci.com` OIDC, Gmail, Calendar, Drive, and Sheets acceptance with company accounts and test records.
@@ -301,17 +301,19 @@ Design/contracts/fixtures for scheduling and communications may proceed, but ope
 | --- | --- | --- | --- |
 | 1 | `codex/postgres-repositories` | **Completed and merged:** PostgreSQL client/project adapters, atomic idempotency, activity/outbox transaction, bounded outbox claims | PR #8 merged |
 | 2 | `codex/google-cloud-runtime-foundation` | **Completed and merged in PR #11:** fail-closed Node container/build, validated config, bounded pools, migration/rehearsal commands, exact readiness | No live provisioning |
-| 3 | `codex/google-cloud-infrastructure-definitions` | Costed, unapplied definitions that preserve Sites development, create staging on demand, compare standalone/HA Cloud SQL, bound Cloud Run, and default optional modules off | Next; use safe variables for open owner inputs and keep unapplied |
-| 4 | `codex/identity-audit-schema` | Users, identities, invitations, sessions, roles/capabilities, memberships, general security audit | Owner approves role direction |
-| 5 | `codex/authorization-simulation` | Access-context policy, repository scoping, simulated principals, denial tests | Identity schema accepted |
-| 6 | `codex/jobs-scheduler-contracts` | Provider-neutral job/attempt/failure, outbox-relay, future Scheduler/reminder, task-fixture, and replay contracts/tests only | Platform and authorization gates before operational delivery |
-| 7 | `codex/google-sync-state-machines` | Gmail and Calendar durable cursors/renewal/reconciliation with fixtures | No live watches/channels |
-| 8 | `codex/file-quarantine-contracts` | File metadata, quarantine/scan/release ports and permission tests | File policy approved |
-| 9 | `codex/http-observability` | Request context, typed errors, headers/limits, structured logs, connector health metrics | Redaction policy approved |
-| 10 | `codex/core-record-concurrency` | Edit/archive, atomic conversion, dates/tasks/notes, version conflicts | Authorization enforced |
-| 11 | `codex/frontend-routes-features` | Durable routes, feature split, query/failure/conflict behavior | Core API contracts stable |
-| 12 | `codex/migration-rehearsal` | **Partial source evidence exists:** bounded core count/content/ID hashes; complete transform, duplicate, restore, and cutover evidence remain | Isolated staging resources later |
-| 13 | Domain branches | Estimate, procurement, schedule/field, messaging, closeout/warranty slices | Each owner decision approved |
+| 3 | `codex/google-cloud-infrastructure-definitions` | Costed, unapplied definitions that preserve Sites development, create staging on demand, compare standalone/HA Cloud SQL, bound Cloud Run, and default optional modules off | Next; verify the reported project candidate, use safe variables for open owner inputs, and keep definitions unapplied |
+| 4 | `codex/production-persistence-boundaries` | Remaining production PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, and provider-neutral object-storage ports for routes still coupled to D1/R2 | Infrastructure definitions reviewed; no route or data cutover |
+| 5 | `codex/authorization-simulation` | Access-context policy, repository scoping, simulated principals, and denial tests | Production persistence boundary and owner access matrix accepted |
+| 6 | `codex/cloud-run-application-composition` | Port remaining employee routes through the production database/storage and authorization boundaries; replace the foundation `503` only for composed routes | Persistence and authorization accepted; no deployment |
+| 7 | `codex/migration-rehearsal` | **Partial source evidence exists:** complete transform, duplicate, restore, reconciliation, and cutover tooling/evidence contract | Production-owned schema/routes complete; isolated staging execution requires separate approval |
+| 8 | `codex/workspace-oidc-sessions` | Employee-login OIDC and secure-session adapter; live company client and second-user rollout remain disabled | Recorded staging proof and authorization accepted before live verification |
+| 9 | `codex/jobs-scheduler-contracts` | Provider-neutral job/attempt/failure, outbox-relay, future Scheduler/reminder, task-fixture, and replay contracts/tests only | Platform and authorization gates before operational delivery |
+| 10 | `codex/google-sync-state-machines` | Gmail and Calendar durable cursors/renewal/reconciliation with fixtures | No live watches/channels |
+| 11 | `codex/file-quarantine-contracts` | File metadata, quarantine/scan/release ports and permission tests | Required before untrusted file intake; file policy approved |
+| 12 | `codex/http-observability` | Request context, typed errors, headers/limits, structured logs, connector health metrics | Redaction policy approved |
+| 13 | `codex/core-record-concurrency` | Edit/archive, atomic conversion, dates/tasks/notes, version conflicts | Authorization enforced |
+| 14 | `codex/frontend-routes-features` | Durable routes, feature split, query/failure/conflict behavior | Core API contracts stable |
+| 15 | Domain branches | Estimate, procurement, schedule/field, messaging, closeout/warranty slices | Each owner decision approved |
 
 Do not deploy or provision during these source-only branches. Keep each pull request independently reviewable and include data/security impact plus tests.
 

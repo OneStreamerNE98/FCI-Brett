@@ -14,7 +14,7 @@ Record only the following non-secret decisions in this file or a GitHub issue. L
 - [ ] Google Workspace super administrator contact: `TBD`
 - [ ] Proposed FCI Operations connection account: `operations@cherryhillfci.com` — confirm or create
 - [ ] Initial application administrator Workspace email: `TBD`
-- [ ] Additional development users: `None — single-user development environment`
+- [x] Additional development users: `None — single-user development environment`
 - [ ] Final production hostname or custom domain: `TBD`
 - [x] Development login policy: keep allowlisted ChatGPT sign-in during the single-user development phase
 - [x] Production login policy: individual Google Workspace accounts; no application passwords
@@ -32,7 +32,7 @@ Record only the following non-secret decisions in this file or a GitHub issue. L
 These non-secret decisions are tracked in detail in [Production foundation and migration](07-production-foundation-and-migration.md). They are not required to finish the one-user Workspace test connector, but they must be complete before production resources are provisioned.
 
 - [x] Reuse existing Workspace for employee identity and collaboration; keep Cloud SQL as the application system of record.
-- [x] Keep Sites as development, reserve isolated environment boundaries, and make billable staging resources on demand.
+- [x] Keep Sites as development, define isolated environment boundaries, and make billable staging resources on demand.
 - [x] Keep optional Tasks, Scheduler, Pub/Sub, quarantine/scanning, SMS, and `pgvector` infrastructure disabled until its feature is approved.
 - [x] Use `$50/month` as the default pre-production accidental-spend alert planning value; it is an alert, not a cap.
 - [ ] Select the Google Cloud organization/billing owner and primary US region.
@@ -62,11 +62,14 @@ Follow [Google Workspace accounts and resources](01-workspace-resources.md).
 - Confirm the operations account can manage each resource.
 - Keep the Shared Drive, spreadsheet, and calendar IDs available for hosted configuration. These are not passwords, but do not paste them into public documentation.
 
-### 2. Create the Google Cloud project and OAuth client
+### 2. Verify the Google Cloud project and create the OAuth client
 
 Follow [Google Cloud, OAuth, and API controls](02-google-cloud-and-oauth.md).
 
-- Create `FCI Operations Development` under the company Google organization for the current one-user test connector.
+- Inventory Brett's reported company-account project candidate; verify that it is a Google Cloud development project under the company organization before calling it the FCI development project.
+- Stop after the read-only inventory and report the non-secret findings for owner review. Do not change APIs, IAM, billing, Auth settings, OAuth clients, or Admin API Controls until the owner approves the exact changes.
+- After approval, reuse the verified candidate. `FCI Operations Development` is the recommended display name, not a reason to create a duplicate if Brett used a different name.
+- Record only its non-secret project name, project ID, project number, parent organization, and billing-linked yes/no status. Never record credentials or payment details.
 - Enable the Drive, Gmail, Calendar, and Sheets APIs.
 - Keep Pub/Sub disabled until the Gmail background-processing worker is implemented.
 - Configure the Google Auth audience as **Internal**.

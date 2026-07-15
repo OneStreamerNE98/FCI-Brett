@@ -64,16 +64,17 @@ The one-user development environment may continue with the current allowlisted C
 
 ## Prioritized next work
 
-Complete the next product milestone in this order:
+Complete the Cloud and application source work in this order. In parallel, the owner should approve the 20-user role/Google access matrix and complete the remaining non-secret Cloud inputs before the relevant persistence, authorization, or provisioning gate:
 
-1. Approve the 20-user role/Google access matrix and complete the remaining non-secret Cloud owner inputs in parallel.
-2. Add costed, unapplied infrastructure definitions: preserve Sites development, make staging on demand, define the minimum production core, compare standalone and HA Cloud SQL, and default optional modules to disabled.
-3. With separate approval, run the staging migration, bounded test-data rehearsal, restore test, reconciliation, and rollback/forward-fix exercise.
-4. Add Google Workspace OIDC plus Admin, Office, and Project Manager roles with server-enforced project permissions.
-5. Port the remaining routes and object-storage boundary so the full application—not only its fail-closed foundation—runs on Cloud Run.
-6. Add editing and archiving, atomic lead conversion, project dates, durable tasks/follow-ups, notes, file metadata, photo UI, and activity history.
-7. Make saved Calendar IDs authoritative and connect quarantined project uploads to approved Shared Drive destinations.
-8. Expand route, authorization, integration, restore, audit-viewer, and browser-behavior acceptance coverage.
+1. Add costed, unapplied infrastructure definitions and reviewable migration/restore/cutover procedures: preserve Sites development, make staging on demand, define the minimum production core, compare standalone and HA Cloud SQL, and default optional modules to disabled.
+2. Complete one production-persistence boundary covering the remaining provider-neutral PostgreSQL repositories, generic identity/security-audit schema, integration metadata, and object-storage ports.
+3. Add simulated access contexts, capability and project-scoped queries, and negative authorization tests on that accepted persistence boundary.
+4. Port the remaining application routes so the full application—not only its fail-closed foundation—runs through the production database and storage boundaries.
+5. With separate approval, run the on-demand staging migration, bounded test-data rehearsal, restore test, reconciliation, and rollback/forward-fix exercise.
+6. Add Google Workspace OIDC for employee login only after the production foundation and authorization boundaries pass their source and staging gates.
+7. Add editing and archiving, atomic lead conversion, project dates, durable tasks/follow-ups, notes, file metadata, photo UI, and activity history.
+8. Make saved Calendar IDs authoritative and connect approved project-file workflows to Shared Drive destinations.
+9. Expand route, authorization, integration, restore, audit-viewer, and browser-behavior acceptance coverage.
 
 Only after the full production platform and server-enforced authorization foundation pass acceptance should the product add appointment state management and Calendar reconciliation; workers, crews, shifts, conflicts, publishing, and acknowledgements; provider-neutral messaging with consent and delivery tracking; durable Gmail review queues; and project closeout. Permission-filtered AI indexing, forecasting, retry dashboards, and a Workspace Marketplace add-on come later.
 
@@ -87,7 +88,7 @@ Use only records named `FCI TEST — DO NOT USE` until the production acceptance
 
 1. Select a company-controlled Workspace connection account, ideally `operations@cherryhillfci.com`.
 2. Create the `FCI Operations` Shared Drive, `FCI Operations Directory` spreadsheet, `FCI • Client Appointments` calendar, and `FCI • Field Schedule` calendar.
-3. Create the company Google Cloud project, enable the required APIs, and configure an Internal OAuth application with the exact hosted callback URI.
+3. Inventory the reported company-account project candidate and verify its Google Cloud identifiers, parent organization, purpose, IAM, billing status, and enabled APIs. After the owner reviews that inventory, reuse the verified development project and approve any required API or Internal OAuth changes; do not create a duplicate.
 4. Store the OAuth secret and token-encryption key only in encrypted hosted secret settings. Never commit, email, document, or place them in Drive.
 5. Deploy the runtime configuration with Drive provisioning disabled.
 6. Connect the exact authorized Workspace account and verify Gmail, Drive, Calendar, and Sheets independently.
@@ -100,7 +101,7 @@ See [`docs/google-workspace-rollout-guide.md`](docs/google-workspace-rollout-gui
 
 ## Repository and development handoff
 
-Keep one canonical development repository outside OneDrive. Use a private, business-owned GitHub repository for collaboration and backup; use OneDrive for business documents, exports, training material, and a repository link rather than a second editable source tree.
+Use this GitHub repository as the canonical collaboration history and keep one active local clone. The owner's current clone is in a OneDrive-synchronized folder and the GitHub repository is public; do not create a second editable copy, watch for synchronization conflicts, and never commit secrets or real business/client data. The owner may make the repository private before operational configuration begins.
 
 - Protect `main` as the last accepted release.
 - Use `codex/<short-feature-name>` feature branches and pull requests.

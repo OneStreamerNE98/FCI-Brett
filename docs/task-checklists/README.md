@@ -9,7 +9,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Repository verification | Codex/developer | Complete | GitHub CI builds and tests every push and pull request. |
 | Workspace identity inputs | Business owner | Partially complete | Domain is `cherryhillfci.com`; confirm the operations account and initial administrator. |
 | Workspace resources | Workspace administrator | Not started | Create the Shared Drive, directory Sheet, mailbox, and two calendars. |
-| Google Cloud and OAuth | Workspace/Cloud administrator | Not started | Create the Internal Google Auth application and data-connector client. |
+| Google Cloud and OAuth | Workspace/Cloud administrator | Company-account project candidate reported; Cloud verification pending | Inventory Brett's candidate and bring the non-secret findings back for approval before any API, IAM, billing, OAuth, or Admin-console change. |
 | Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
 | Staff Google login and roles | Codex/developer | Not implemented | Build on Cloud Run/Cloud SQL after identity policy is approved. |
 | 20-user operating/access model | Owner + Workspace administrator | Waiting on owner | Decide staff/field roles and approve the app-to-Google access matrix. |
