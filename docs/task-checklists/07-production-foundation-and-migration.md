@@ -32,8 +32,8 @@ The accepted [Workspace-first, cost-controlled rollout](../architecture-decision
 
 - [ ] Containerize the Next.js application for one regional Cloud Run service.
 - [ ] Keep authenticated task and webhook handlers in the modular monolith initially; do not create microservices without an operational reason.
-- [ ] Define separate standalone/zonal and regional-HA Cloud SQL production profiles with private connectivity, pooling, connection caps, backups, PITR, and alerting; provide official cost estimates and keep both unapplied until the owner selects one.
-- [ ] Define an isolated staging database that is created only for approved migration, restore, release, or rollback exercises and safely scaled down or removed afterward. Do not create a Google Cloud development database while Sites remains the active development environment.
+- [ ] Define separate standalone/zonal and regional-HA Cloud SQL production profiles with private connectivity, pooling, connection caps, backups, PITR, and alerting; provide official cost estimates and keep both unapplied until the owner selects one. The [source-only Terraform definitions](../../infrastructure/google-cloud/README.md) and [dated rate-based illustration](../../infrastructure/google-cloud/cost/README.md) now exist and are unapplied; the approved region, backup location, calculator export, all-service estimate, and profile selection remain open.
+- [x] Define an isolated staging database that is created only for approved migration, restore, release, or rollback exercises and safely scaled down or removed afterward. The staging root defaults off, development is inert, and the [staging lifecycle runbook](../runbooks/google-cloud/staging-lifecycle.md) requires separate approval and teardown evidence. No staging or development database was created.
 - [ ] Put OAuth credentials, token-encryption keys, session secrets, and provider credentials in Secret Manager.
 - [ ] Define disabled Cloud Tasks queue modules for future synchronization, filing, retry, reminder, and webhook work, with idempotency keys and bounded retry policies. Provision only when the associated feature is scheduled and approved.
 - [ ] Persist jobs, execution attempts, terminal failures, alert state, and controlled replay in application-owned records; Cloud Tasks is not the durable dead-letter/replay system of record.
@@ -75,7 +75,7 @@ The accepted [Workspace-first, cost-controlled rollout](../architecture-decision
 
 ## Infrastructure and delivery controls
 
-- [ ] Define costed infrastructure as code or an equivalently reviewable, repeatable procedure with Sites development preserved, staging on demand, zero-minimum/bounded-maximum Cloud Run, separate database profiles, and optional modules disabled by default.
+- [ ] Define costed infrastructure as code or an equivalently reviewable, repeatable procedure with Sites development preserved, staging on demand, zero-minimum/bounded-maximum Cloud Run, separate database profiles, and optional modules disabled by default. The [Google Cloud source definitions](../../infrastructure/google-cloud/README.md), mocked plan tests, lifecycle locks, and dated Cloud SQL comparison are complete and unapplied; approved all-service calculator evidence and final cost review remain before this item can close.
 - [ ] Use least-privilege service accounts and keep production deployment access separate from routine development.
 - [ ] Complete production observability. Source-only process liveness and exact database readiness exist; structured logs, trace/correlation IDs, queue-depth alerts, database alerts, connector health, and budget alerts remain.
 - [ ] Add security headers, request-size limits, authentication rate limits, and sensitive-route rate limits.

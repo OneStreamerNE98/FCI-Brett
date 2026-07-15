@@ -1,0 +1,6 @@
+# Placeholder only; this source does not define or approve a state bucket.
+# Before replacement, separately verify staging isolation, UBLA, public-access
+# prevention, versioning/retention, encryption decision, keyless least-privilege
+# IAM, recovery access, and audit logs. Never reuse the production backend.
+bucket = "OWNER_APPROVED_STAGING_TERRAFORM_STATE_BUCKET"
+prefix = "fci-operations/staging"

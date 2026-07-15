@@ -1,0 +1,3 @@
+# Availability profile only. Review the matching sizing and dated cost sheet;
+# this file does not approve a region, project, budget, RPO/RTO, or apply.
+cloud_sql_profile = "standalone"
