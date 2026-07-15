@@ -203,7 +203,7 @@ test("uses one dedicated connection, locks before history, and commits each vers
 
   const result = await runProductionSchemaMigrations(pool);
 
-  assert.deepEqual(result, { appliedVersions: [1, 2], currentVersion: 2 });
+  assert.deepEqual(result, { appliedVersions: [1, 2, 3], currentVersion: 3 });
   assert.equal(pool.connectCount, 1);
   assert.equal(client.released, true);
   assert.deepEqual(client.history, PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({
@@ -234,10 +234,10 @@ test("uses one dedicated connection, locks before history, and commits each vers
   );
   assert.equal(client.searchPath, '"$user", public');
 
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 2);
-  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 2);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 2);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 2);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 3);
+  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 3);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 3);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 3);
 
   for (const migration of PRODUCTION_SCHEMA_MIGRATIONS) {
     const marker = client.queries.findIndex(
@@ -382,8 +382,8 @@ test("applies only the missing suffix of a known history prefix", async () => {
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result.appliedVersions, [2]);
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 1);
+  assert.deepEqual(result.appliedVersions, [2, 3]);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 2);
 });
 
 test("re-reads applied history after the lock and makes a completed rerun a no-op", async () => {
@@ -396,7 +396,7 @@ test("re-reads applied history after the lock and makes a completed rerun a no-o
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result, { appliedVersions: [], currentVersion: 2 });
+  assert.deepEqual(result, { appliedVersions: [], currentVersion: 3 });
   assert.equal(client.queries.some(({ sql }) => sql === "BEGIN"), false);
   assert.equal(client.released, true);
 });
@@ -408,7 +408,7 @@ test("fails closed on changed, unknown, or non-prefix migration history", async 
     [{ version: 2, name: PRODUCTION_SCHEMA_MIGRATIONS[1].name, checksum: PRODUCTION_SCHEMA_MIGRATIONS[1].checksum }],
     [
       ...PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({ version, name, checksum })),
-      { version: 3, name: "future", checksum: "sha256:" + "1".repeat(64) },
+      { version: 4, name: "future", checksum: "sha256:" + "1".repeat(64) },
     ],
   ];
 
@@ -477,7 +477,7 @@ test("preserves a primary migration failure when advisory unlock also fails", as
   assert.ok(client.releaseError instanceof Error);
 });
 
-test("defines only the bounded core schema with named constraints and worker indexes", () => {
+test("defines the bounded production persistence schema with named constraints and indexes", () => {
   const versionedSql = PRODUCTION_SCHEMA_MIGRATIONS.flatMap(({ statements }) => statements).join("\n");
   const allSql = `${PRODUCTION_SCHEMA_HISTORY_SQL}\n${versionedSql}`;
 
@@ -491,6 +491,27 @@ test("defines only the bounded core schema with named constraints and worker ind
       "activity_events",
       "idempotency_requests",
       "outbox_events",
+      "users",
+      "external_identities",
+      "invitations",
+      "sessions",
+      "roles",
+      "capabilities",
+      "role_capabilities",
+      "user_roles",
+      "project_memberships",
+      "audit_events",
+      "integration_connections",
+      "integration_credentials",
+      "integration_connection_scopes",
+      "integration_oauth_attempts",
+      "integration_resources",
+      "integration_cursors",
+      "integration_events",
+      "files",
+      "file_versions",
+      "storage_objects",
+      "file_links",
     ],
   );
   assert.doesNotMatch(versionedSql, /\bIF NOT EXISTS\b/i);
@@ -510,6 +531,17 @@ test("defines only the bounded core schema with named constraints and worker ind
   assert.match(versionedSql, /activity_events_correlation_id_check/);
   assert.match(versionedSql, /activity_events_result_check/);
   assert.match(versionedSql, /activity_events_append_only_trigger/);
+  assert.match(versionedSql, /external_identities_issuer_subject_key UNIQUE \(issuer, subject\)/);
+  assert.match(versionedSql, /invitations_token_hash_check/);
+  assert.match(versionedSql, /sessions_csrf_hash_check/);
+  assert.match(versionedSql, /audit_events_append_only_trigger/);
+  assert.match(versionedSql, /integration_credentials_status_evidence_check/);
+  assert.match(versionedSql, /integration_oauth_attempts_state_evidence_check/);
+  assert.match(versionedSql, /integration_events_append_only_trigger/);
+  assert.match(versionedSql, /files_current_version_fkey[\s\S]*DEFERRABLE INITIALLY DEFERRED/);
+  assert.match(versionedSql, /file_links_target_check CHECK/);
+  assert.doesNotMatch(versionedSql, /\b(?:access_token|refresh_token|session_token|invitation_token|oauth_state|browser_nonce)\b/i);
+  assert.doesNotMatch(versionedSql, /notification_channels|file_scans|retention_holds/);
 
   for (const foreignKey of [
     ["contacts_client_id_fkey", "contacts_client_id_idx"],

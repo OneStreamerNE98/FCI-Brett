@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import {
+  EXPECTED_RUNTIME_TABLE_ACCESS,
+} from "../app/platform/google-cloud/database-readiness.ts";
+
 const sqlUrl = new URL("../infrastructure/postgres/least-privilege.sql", import.meta.url);
 const rehearsalTemplateUrl = new URL(
   "../infrastructure/postgres/rehearsal-importer-template.sql",
@@ -49,19 +53,67 @@ test("least-privilege source defines credential-free capability roles and revoke
 
 test("runtime grants are exact and explicitly exclude destructive or schema privileges", () => {
   const runtimeGrants = sql.match(/^GRANT .* TO fci_runtime;$/gm) ?? [];
+  const expectedTableGrants = EXPECTED_RUNTIME_TABLE_ACCESS
+    .filter(({ privileges }) => privileges.length > 0)
+    .flatMap(({ table, privileges }) => {
+      const tableGrant = `GRANT ${privileges.join(", ")} ON TABLE fci_app.${table} TO fci_runtime;`;
+      return table === "users"
+        ? [tableGrant, "GRANT UPDATE (id) ON TABLE fci_app.users TO fci_runtime;"]
+        : [tableGrant];
+    });
   assert.deepEqual(runtimeGrants, [
     "GRANT USAGE ON SCHEMA fci_app TO fci_runtime;",
-    "GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.clients TO fci_runtime;",
-    "GRANT INSERT ON TABLE fci_app.contacts TO fci_runtime;",
-    "GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.projects TO fci_runtime;",
-    "GRANT INSERT ON TABLE fci_app.activity_events TO fci_runtime;",
-    "GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.idempotency_requests TO fci_runtime;",
-    "GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.outbox_events TO fci_runtime;",
-    "GRANT SELECT ON TABLE fci_app.production_schema_migrations TO fci_runtime;",
+    ...expectedTableGrants,
+    "GRANT EXECUTE ON FUNCTION fci_app.read_production_schema_history() TO fci_runtime;",
   ]);
-  assert.ok(runtimeGrants.every((grant) => !/DELETE|TRUNCATE|REFERENCES|TRIGGER|CREATE|EXECUTE/.test(grant)));
-  assert.match(sql, /FOR KEY SHARE[\s\S]*requires UPDATE privilege/);
-  assert.match(sql, /sole migration-history privilege/);
+  assert.ok(runtimeGrants.every((grant) => !/TRUNCATE|REFERENCES|TRIGGER|CREATE/.test(grant)));
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS
+      .filter(({ privileges }) => privileges.includes("DELETE"))
+      .map(({ table }) => table),
+    [],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "audit_events")?.privileges,
+    ["INSERT"],
+  );
+  for (const deniedTable of [
+    "production_schema_migrations",
+    "integration_credentials",
+    "integration_connection_scopes",
+    "integration_cursors",
+    "integration_events",
+  ]) {
+    assert.deepEqual(
+      EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === deniedTable)?.privileges,
+      [],
+    );
+    assert.doesNotMatch(
+      sql,
+      new RegExp(`^GRANT .* ON TABLE fci_app\\.${deniedTable} TO fci_runtime;$`, "m"),
+    );
+  }
+  assert.match(sql, /FOR SHARE on users[\s\S]*UPDATE\(id\) column grant/);
+  assert.match(sql, /integration_credentials intentionally has no runtime table grant/);
+});
+
+test("readiness gets migration metadata only through a fixed security-definer boundary", () => {
+  assert.match(
+    sql,
+    /CREATE OR REPLACE FUNCTION fci_app\.read_production_schema_history\(\)[\s\S]*?SECURITY DEFINER[\s\S]*?SET search_path = pg_catalog, pg_temp/,
+  );
+  assert.match(
+    sql,
+    /FROM fci_app\.production_schema_migrations AS history[\s\S]*ORDER BY history\.version/,
+  );
+  assert.match(
+    sql,
+    /REVOKE ALL ON FUNCTION fci_app\.read_production_schema_history\(\)[\s\S]*FROM PUBLIC, fci_runtime, fci_rehearsal_importer;/,
+  );
+  assert.equal(
+    (sql.match(/^GRANT EXECUTE ON FUNCTION .* TO fci_runtime;$/gm) ?? []).length,
+    1,
+  );
 });
 
 test("rehearsal importer is isolated from fci_app and receives only prefix-validated temporary grants", () => {

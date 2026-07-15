@@ -7,12 +7,10 @@ import { ensureWorkspaceSchema } from "../app/api/v1/_workspace-data.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const appRoot = join(root, "app");
-const productionMigrationModule = join(
-  appRoot,
-  "platform",
-  "postgres",
-  "production-schema-migrations.ts",
-);
+const productionMigrationModules = new Set([
+  join(appRoot, "platform", "postgres", "production-schema-migrations.ts"),
+  join(appRoot, "platform", "postgres", "production-persistence-schema.ts"),
+]);
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
 const integrityIndexMigration = "0011_lazy_big_bertha.sql";
@@ -74,7 +72,7 @@ test("keeps all application runtime modules free of schema DDL", async () => {
   const violations = [];
 
   for (const path of files) {
-    if (path === productionMigrationModule) continue;
+    if (productionMigrationModules.has(path)) continue;
     const source = await readFile(path, "utf8");
     if (/\bCREATE\s+(?:UNIQUE\s+)?(?:TABLE|INDEX)\b/i.test(source)) {
       violations.push(relative(root, path).replaceAll("\\", "/"));

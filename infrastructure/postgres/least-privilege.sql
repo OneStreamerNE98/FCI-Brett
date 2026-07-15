@@ -101,10 +101,14 @@ REVOKE ALL ON ALL TABLES IN SCHEMA fci_app FROM fci_rehearsal_importer;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA fci_app FROM fci_rehearsal_importer;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA fci_app FROM fci_rehearsal_importer;
 
--- Cloud Run runtime. No DELETE, TRUNCATE, REFERENCES, TRIGGER, schema CREATE,
--- sequence, or function privilege is granted. UPDATE on clients is currently
--- required because project creation uses SELECT ... FOR KEY SHARE on clients;
--- PostgreSQL requires UPDATE privilege for that locking clause.
+-- Cloud Run runtime. Every table grant below is an exact capability boundary;
+-- objects omitted from the list remain inaccessible after the reset above.
+-- UPDATE on clients is currently required because protected writes use
+-- SELECT ... FOR KEY SHARE. Session issuance uses FOR SHARE on users, whose
+-- locking requirement is met by an exact UPDATE(id) column grant instead of
+-- table-wide access to identity/security fields. No runtime table receives DELETE, TRUNCATE,
+-- REFERENCES, TRIGGER, or grant options; reviewed revocation methods can add
+-- narrower capabilities with atomic audit evidence in a later slice.
 GRANT USAGE ON SCHEMA fci_app TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.clients TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.contacts TO fci_runtime;
@@ -112,10 +116,48 @@ GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.projects TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.activity_events TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.idempotency_requests TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.outbox_events TO fci_runtime;
+GRANT SELECT, INSERT ON TABLE fci_app.users TO fci_runtime;
+GRANT UPDATE (id) ON TABLE fci_app.users TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.external_identities TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.invitations TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.sessions TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.roles TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.capabilities TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.role_capabilities TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.user_roles TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.project_memberships TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.audit_events TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.integration_connections TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.integration_oauth_attempts TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.integration_resources TO fci_runtime;
+GRANT SELECT, INSERT ON TABLE fci_app.files TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.file_versions TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.storage_objects TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.file_links TO fci_runtime;
 
--- Readiness may compare the immutable migration history. This is the runtime's
--- sole migration-history privilege; it receives no INSERT, UPDATE, or DELETE.
-GRANT SELECT ON TABLE fci_app.production_schema_migrations TO fci_runtime;
+-- The runtime receives no direct production_schema_migrations table access.
+-- Readiness crosses this one narrow, argument-free SECURITY DEFINER boundary
+-- to compare non-secret migration metadata. The fixed system-only search path
+-- keeps pg_temp last, and the qualified relation prevents object shadowing.
+CREATE OR REPLACE FUNCTION fci_app.read_production_schema_history()
+RETURNS TABLE (version integer, name text, checksum text)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $production_schema_history_reader$
+  SELECT history.version, history.name, history.checksum
+  FROM fci_app.production_schema_migrations AS history
+  ORDER BY history.version
+$production_schema_history_reader$;
+
+REVOKE ALL ON FUNCTION fci_app.read_production_schema_history()
+  FROM PUBLIC, fci_runtime, fci_rehearsal_importer;
+GRANT EXECUTE ON FUNCTION fci_app.read_production_schema_history() TO fci_runtime;
+
+-- integration_credentials intentionally has no runtime table grant. A future
+-- connector must introduce and review a separately named credential boundary
+-- instead of making ciphertext available to the general application role.
 
 -- The rehearsal role deliberately receives no fci_app access. Its temporary,
 -- prefix-validated grants belong only to an isolated fci_rehearsal_* schema;

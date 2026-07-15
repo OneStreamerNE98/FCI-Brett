@@ -1,12 +1,12 @@
 # Complete product and Google Cloud architecture audit
 
-Audit date: July 13, 2026
+Audit date: July 15, 2026
 
 Scope: FCI Operations for one company and approximately 20 employees
 
 Production target: Google Cloud with Google Workspace-centered identity and collaboration
 
-Status: Architecture baseline and ordered roadmap; the source runtime boundary is owner-approved, while broader product and operating decisions remain open
+Status: Architecture baseline and ordered roadmap; runtime, infrastructure-definition, and persistence boundaries exist in source, while authorization, recovery proof, and broader product decisions remain open
 
 ## Executive verdict
 
@@ -14,7 +14,7 @@ The accepted Google Cloud runtime direction is appropriate. Keep one regional Cl
 
 The accepted [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) amends provisioning order: reuse existing Workspace, keep Sites as development, keep staging on demand, compare standalone and regional-HA Cloud SQL before selection, and leave optional modules disabled by default. This reduces idle cost without weakening identity, authorization, audit, backup, restore, or real-data gates.
 
-The current Sites/Workers/D1/R2 application remains useful as a controlled, single-user development environment with test data. It is not yet a production Google Cloud application. Source now includes the PostgreSQL client/project schema and repositories plus an owner-approved, fail-closed Node/Cloud Run foundation with validated private Cloud SQL configuration, bounded pools, exact readiness, separate migration/rehearsal commands, least-privilege SQL policy, and a bounded core test-data rehearsal. Employee application routes, infrastructure definitions and provisioning, identity/authorization, the full schema, durable workers, secure files, complete migration/restore rehearsal, and recovery proof remain open.
+The current Sites/Workers/D1/R2 application remains useful as a controlled, single-user development environment with test data. It is not yet a production Google Cloud application. Source now includes the PostgreSQL client/project repositories, the generic identity/security-audit/integration/file persistence boundary, a provider-neutral object-storage contract, an owner-approved fail-closed Node/Cloud Run foundation, exact privilege-aware readiness, separate migration/rehearsal commands, least-privilege SQL policy, a bounded core test-data rehearsal, and zero-resource-by-default Google Cloud definitions. Employee authorization behavior and routes, live storage/integration adapters, provisioning, staging migration/restore, recovery proof, and cutover remain open.
 
 Google Workspace access is not the next development blocker. Most of the foundation can be built with simulated identities, provider interfaces, fixtures, and local PostgreSQL. Live OAuth clients, company resources, watches, webhook channels, phone numbers, and production infrastructure should wait for the administrator and owner gates in this document.
 
@@ -23,12 +23,12 @@ The product is currently a CRM and Google-integration prototype rather than a co
 ## Evidence from the current repository
 
 - The main interface is a 2,059-line client component with in-memory view switching rather than durable routes and feature modules.
-- The development D1 model has 21 product and integration tables; the production PostgreSQL registry has only the first seven tables including migration history.
+- The development D1 model has 21 product and integration tables; the production PostgreSQL registry now defines 28 tables including migration history, with unapproved operational modules explicitly deferred.
 - Twenty-two application files are coupled to `cloudflare:workers`, and 20 access `env.DB` directly.
-- The source-only Cloud Run foundation has a separate container/build, configuration validator, bounded PostgreSQL pool, migration/rehearsal commands, process liveness, and exact database readiness. Every employee application path still fails closed with `503`, and infrastructure definitions, provisioning, and the full application port remain open.
-- The current allowlist and `isAdmin` flag are appropriate only behind the controlled development host. Durable users, invitations, sessions, roles, capabilities, and project memberships do not exist.
-- The current production `activity_events` record requires a client or project. It cannot audit login failures, session revocation, role changes, connector administration, exports, files, jobs, or recovery actions.
-- Uploads currently write directly to R2 without a durable file record or quarantine, scan, release, checksum, retention, and download-authorization lifecycle.
+- The source-only Cloud Run foundation has a separate container/build, configuration validator, bounded PostgreSQL pool, migration/rehearsal commands, process liveness, and exact database/privilege readiness. Every employee application path still fails closed with `503`; source infrastructure definitions exist but provisioning and the full application port remain open.
+- The current allowlist and `isAdmin` flag are appropriate only behind the controlled development host. Durable production user/session/role/membership structures now exist, but access-context resolution and authorization behavior do not.
+- General append-only `audit_events` now exists separately from client/project `activity_events`, with executor/originator evidence and insert-only runtime access. Coverage is not operational until authorized routes use it.
+- Development uploads still write directly to R2. The production boundary now has logical file/version/storage/link metadata and an opaque storage contract, but quarantine provider composition, scanning, release, retention enforcement, and authorized download remain open.
 - Gmail suggestions are generated on demand; there is no durable watch/history processor or durable review queue. Calendar can create an unlinked test hold; it does not yet provide authoritative linked appointments or conflict reconciliation.
 - PR #8 merged the PostgreSQL repository/idempotency/outbox slice into `main`; the source runtime composes those repositories without changing the current D1/Sites application behavior.
 
@@ -272,7 +272,7 @@ For a US sender, the owner will need to choose an approved messaging route such 
 The following work is safe when it changes source, local fixtures, and tests only:
 
 1. **Completed:** PostgreSQL repositories now provide actor-scoped idempotency, atomic activity/outbox writes, and bounded version-fenced outbox claims.
-2. Complete the remaining production PostgreSQL and provider-neutral object-storage boundaries, including the identity, invitation, secure-session, role/capability, project-membership, general security-audit, integration, and file metadata required by production-owned routes.
+2. **Completed in source; unapplied:** the production persistence boundary now covers identity, invitation, secure-session, role/capability, project-membership, general security-audit, integration/file metadata, transactional repositories, and an opaque provider-neutral object-storage contract. See [Production persistence boundary](production-persistence-boundary.md).
 3. After the owner approves the access matrix, implement simulated authorization policy and negative cross-project tests across list, search, dashboard, files, Gmail evidence, meetings, and assistant evidence.
 4. **Completed in the approved source boundary:** the Node/Cloud Run kernel, validated configuration, capped PostgreSQL pools, separate migration/rehearsal commands, and process/database health endpoints exist without provisioning Google Cloud. The employee application port remains open.
 5. Define durable job/attempt/failed-job and future Scheduler/reminder-materialization schemas, contracts, state machines, fakes, and tests. Do not add an operational Scheduler, reminder planner, or delivery handler before the production platform and authorization foundation are accepted.
@@ -301,8 +301,8 @@ Design/contracts/fixtures for scheduling and communications may proceed, but ope
 | --- | --- | --- | --- |
 | 1 | `codex/postgres-repositories` | **Completed and merged:** PostgreSQL client/project adapters, atomic idempotency, activity/outbox transaction, bounded outbox claims | PR #8 merged |
 | 2 | `codex/google-cloud-runtime-foundation` | **Completed and merged in PR #11:** fail-closed Node container/build, validated config, bounded pools, migration/rehearsal commands, exact readiness | No live provisioning |
-| 3 | `codex/google-cloud-infrastructure-definitions` | Costed, unapplied definitions that preserve Sites development, create staging on demand, compare standalone/HA Cloud SQL, bound Cloud Run, and default optional modules off | Next; verify the reported project candidate, use safe variables for open owner inputs, and keep definitions unapplied |
-| 4 | `codex/production-persistence-boundaries` | Remaining production PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, and provider-neutral object-storage ports for routes still coupled to D1/R2 | Infrastructure definitions reviewed; no route or data cutover |
+| 3 | `codex/google-cloud-infrastructure-definitions` | **Completed in source and unapplied:** Sites-preserving, on-demand staging/production profiles, bounded Cloud Run, and disabled optional modules | Owner inputs, calculator evidence, and any apply remain open |
+| 4 | `codex/production-persistence-boundary` | **Completed in source and unapplied:** remaining PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, and provider-neutral object storage | Owner acceptance; no route or data cutover |
 | 5 | `codex/authorization-simulation` | Access-context policy, repository scoping, simulated principals, and denial tests | Production persistence boundary and owner access matrix accepted |
 | 6 | `codex/cloud-run-application-composition` | Port remaining employee routes through the production database/storage and authorization boundaries; replace the foundation `503` only for composed routes | Persistence and authorization accepted; no deployment |
 | 7 | `codex/migration-rehearsal` | **Partial source evidence exists:** complete transform, duplicate, restore, reconciliation, and cutover tooling/evidence contract | Production-owned schema/routes complete; isolated staging execution requires separate approval |
@@ -338,7 +338,7 @@ Do not deploy or provision during these source-only branches. Keep each pull req
 
 - PostgreSQL schema and repositories cover every production-owned record or have an explicit migration/exclusion mapping.
 - Idempotency, optimistic concurrency, outbox/jobs/failures, files, identity, authorization, and security audit have automated behavior and negative tests.
-- The Cloud Run runtime is reproducible in source and remains unapplied; reviewable infrastructure definitions still need to be added before any approved provisioning.
+- The Cloud Run runtime and reviewable infrastructure definitions are reproducible in source and remain unapplied; owner inputs and explicit approval are still required before provisioning.
 
 ### Gate B: staging and recovery
 

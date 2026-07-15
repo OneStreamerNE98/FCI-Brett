@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
+
 export interface ProductionSchemaMigration {
   version: number;
   name: string;
@@ -395,6 +397,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "delivery_controls",
     checksum: "sha256:18e19555f53bc5f7f793e0fc5a2960ead8124cc67debff1db24785732bea5aea",
     statements: DELIVERY_CONTROL_STATEMENTS,
+  },
+  {
+    version: 3,
+    name: "production_persistence_boundary",
+    checksum: "sha256:12d02573feec218e2ed411ec55ab5d9a08e5b5f20fdbbb58103305a7ef3dcb7f",
+    statements: PRODUCTION_PERSISTENCE_STATEMENTS,
   },
 ];
 

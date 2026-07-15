@@ -108,7 +108,7 @@ Use [`infrastructure/postgres/rehearsal-importer-template.sql`](../infrastructur
 
 The environment-specific migration login must have permission to set the owner role, and the migration command verifies `CURRENT_USER` after `SET ROLE`. Inherited membership alone would leave new objects owned by the login and would not apply the owner role’s default privileges.
 
-Runtime readiness receives `SELECT` on migration history only so it can compare immutable version/name/checksum metadata. It receives no ability to modify that history. Every future migration must update and test the explicit access policy; no default grant gives the runtime access to every future table.
+Runtime readiness receives no direct migration-history table access. It compares immutable version/name/checksum metadata through one owner-checked, fixed-search-path security-definer reader and verifies the complete expected table/column privilege matrix, sequence denial, grant options, schema rights, executable-function boundary, and that the runtime login cannot assume the migration-owner or rehearsal roles. Every future migration must update and test that explicit matrix; no default grant gives the runtime access to every future table.
 
 ## Bounded core rehearsal
 
@@ -135,7 +135,7 @@ This is evidence that the bounded core path can be rehearsed. It is not evidence
 2. Costed, unapplied infrastructure definitions are reviewed for private networking, separate standalone and regional-HA Cloud SQL profiles, service identities, Secret Manager, backups/PITR, zero-minimum/bounded-maximum Cloud Run scaling, monitoring, the `$50/month` pre-production alert, and an on-demand staging lifecycle. Optional service modules must default to disabled.
 3. The administrator creates environment-specific login/IAM principals, applies the reviewed capability-role policy, and verifies grants with denial tests.
 4. A staging migration and bounded rehearsal run with only test data; restore, reconciliation, rollback/forward-fix, and revision-overlap connection evidence are recorded.
-5. Users/sessions/roles/project permissions, the remaining PostgreSQL schema and repositories, provider-neutral object storage, Google integration state, and Workspace OIDC are implemented.
+5. The source-only [production persistence boundary](production-persistence-boundary.md) is accepted; then access-context/session behavior, approved roles and project scoping, live provider adapters, and Workspace OIDC are implemented in their gated order.
 6. The full application runs in the container, application paths stop returning the foundation `503`, route/browser/security tests pass, and the owner separately approves deployment.
 
 Current Google guidance requires the ingress container to listen on `0.0.0.0:$PORT`, recommends bounded database pooling, supports startup/liveness/readiness probes, treats jobs as run-to-completion processes, and recommends Secret Manager for sensitive values. See [Cloud Run’s container contract](https://docs.cloud.google.com/run/docs/container-contract), [Cloud Run health checks](https://docs.cloud.google.com/run/docs/configuring/healthchecks), [Cloud Run jobs](https://cloud.google.com/run/docs/create-jobs), [Cloud SQL connections from Cloud Run](https://docs.cloud.google.com/sql/docs/postgres/connect-run), [Cloud SQL connection management](https://docs.cloud.google.com/sql/docs/postgres/manage-connections), and [Cloud Run secrets](https://docs.cloud.google.com/run/docs/configuring/services/secrets).

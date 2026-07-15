@@ -261,7 +261,7 @@ test("closes connector state when connector or pool construction fails", async (
   assert.deepEqual(poolFailureEvents, ["connector.close"]);
 });
 
-test("composes one outbox and request-scoped client/project repository factories", async () => {
+test("composes singleton persistence repositories and request-scoped creation factories", async () => {
   const config = loadProductionConfig(cloudEnvironment());
   const events = [];
   const rawPool = new FakeRawPool(events);
@@ -285,6 +285,10 @@ test("composes one outbox and request-scoped client/project repository factories
   };
 
   assert.equal(composition.repositories.outbox, composition.repositories.outbox);
+  assert.equal(composition.repositories.securityAudit, composition.repositories.securityAudit);
+  assert.equal(composition.repositories.identity, composition.repositories.identity);
+  assert.equal(composition.repositories.integrations, composition.repositories.integrations);
+  assert.equal(composition.repositories.files, composition.repositories.files);
   assert.notEqual(composition.repositories.clients(firstRequest), composition.repositories.clients(firstRequest));
   assert.notEqual(composition.repositories.clients(firstRequest), composition.repositories.clients(secondRequest));
   assert.notEqual(composition.repositories.projects(firstRequest), composition.repositories.projects(secondRequest));
@@ -314,6 +318,10 @@ test("creates and closes a runtime composition through injected pool dependencie
   assert.equal(typeof composition.repositories.clients, "function");
   assert.equal(typeof composition.repositories.projects, "function");
   assert.equal(typeof composition.repositories.outbox.claimAvailable, "function");
+  assert.equal(typeof composition.repositories.securityAudit.append, "function");
+  assert.equal(typeof composition.repositories.identity.registerExternalIdentity, "function");
+  assert.equal(typeof composition.repositories.integrations.registerConnection, "function");
+  assert.equal(typeof composition.repositories.files.reserveProjectUpload, "function");
   await composition.close();
   assert.deepEqual(events, ["pool.end", "connector.close"]);
 });

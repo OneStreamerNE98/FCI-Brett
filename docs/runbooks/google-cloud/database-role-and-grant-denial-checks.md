@@ -55,6 +55,8 @@ or a future-table wildcard.
   `fci_migration_owner` after the explicit role change.
 - [ ] Verify the runtime can read exact migration version/name/checksum history
   but cannot change it.
+- [ ] Verify the runtime login cannot `SET ROLE fci_migration_owner` or
+  `SET ROLE fci_rehearsal_importer` and has no application-schema sequence access.
 - [ ] Verify the rehearsal importer has no `fci_app` grant and is a member only
   for the approved exercise window.
 
@@ -83,7 +85,8 @@ database URLs or row content.
 ## 5. Readiness and cleanup
 
 - [ ] `/readyz` succeeds with the exact runtime boundary: schema `USAGE`, no
-  schema `CREATE`, and exact migration history.
+  schema `CREATE`, no privileged-role assumption or sequence access, and exact
+  migration history.
 - [ ] Prove readiness fails when schema `USAGE` is absent, schema `CREATE` is
   present, or migration history is missing, changed, reordered, or ahead.
 - [ ] Roll back/remove every disposable object and row.

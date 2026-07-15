@@ -21,7 +21,7 @@ For a 20-person company, operations must be simple enough that two named people 
 
 ## Audit, privacy, and retention
 
-- [ ] Create one append-only audit event model with actor, action, entity type/ID, timestamp, result, reason, request/correlation ID, and safe metadata.
+- [x] Create one append-only audit event model with executor/originator, action, entity type/ID, timestamp, result, reason, request/correlation ID, and bounded safe metadata. The source migration, mutation-blocking trigger, insert-only grant, and atomic repository helper exist but remain unapplied; operational route coverage is tracked separately. See [Production persistence boundary](../production-persistence-boundary.md).
 - [ ] Audit login outcomes, session revocation, role/project changes, connector changes, Gmail preview/file/draft actions, Drive sharing/provisioning, Calendar writes, exports, and recovery actions.
 - [ ] Build an Administrator audit viewer with filters and export controls.
 - [ ] Approve retention periods for client records, email copies, attachments, meeting transcripts, field photos, audit events, and backups.

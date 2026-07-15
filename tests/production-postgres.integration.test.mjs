@@ -53,16 +53,16 @@ test(
       ]);
       assert.deepEqual(
         concurrentResults.flatMap(({ appliedVersions }) => appliedVersions).sort(),
-        [1, 2],
+        [1, 2, 3],
       );
-      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [2, 2]);
+      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [3, 3]);
 
       const rerun = await runProductionSchemaMigrations(
         pool,
         PRODUCTION_SCHEMA_MIGRATIONS,
         migrationOptions,
       );
-      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 2 });
+      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 3 });
 
       const history = await pool.query(
         `SELECT version, name, checksum
@@ -89,12 +89,33 @@ test(
         tableNames.rows.map(({ table_name }) => table_name),
         [
           "activity_events",
+          "audit_events",
+          "capabilities",
           "clients",
           "contacts",
+          "external_identities",
+          "file_links",
+          "file_versions",
+          "files",
           "idempotency_requests",
+          "integration_connection_scopes",
+          "integration_connections",
+          "integration_credentials",
+          "integration_cursors",
+          "integration_events",
+          "integration_oauth_attempts",
+          "integration_resources",
+          "invitations",
           "outbox_events",
           "production_schema_migrations",
+          "project_memberships",
           "projects",
+          "role_capabilities",
+          "roles",
+          "sessions",
+          "storage_objects",
+          "user_roles",
+          "users",
         ],
       );
 
@@ -305,24 +326,168 @@ test(
       );
       assert.match(expiredLeaseIndex.rows[0].predicate, /status = 'processing'/);
 
+      const firstUserId = randomUUID();
+      const secondUserId = randomUUID();
+      for (const [id, email, name] of [
+        [firstUserId, "fci-test-one@example.com", "FCI TEST — DO NOT USE One"],
+        [secondUserId, "fci-test-two@example.com", "FCI TEST — DO NOT USE Two"],
+      ]) {
+        await pool.query(
+          `INSERT INTO ${schema}.users (
+             id, email, email_key, display_name, status,
+             authorization_version, sessions_valid_after,
+             created_at, updated_at, version
+           ) VALUES ($1, $2, lower($2), $3, 'active', 1, now(), now(), now(), 1)`,
+          [id, email, name],
+        );
+      }
+      await pool.query(
+        `INSERT INTO ${schema}.external_identities (
+           id, user_id, provider, issuer, subject, email, hosted_domain,
+           email_verified, first_seen_at, last_authenticated_at, updated_at, version
+         ) VALUES ($1, $2, 'google', 'https://accounts.google.com', 'stable-subject',
+           'old-address@example.com', 'example.com', true, now(), now(), now(), 1)`,
+        [randomUUID(), firstUserId],
+      );
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.external_identities (
+             id, user_id, provider, issuer, subject, email, hosted_domain,
+             email_verified, first_seen_at, last_authenticated_at, updated_at, version
+           ) VALUES ($1, $2, 'google', 'https://accounts.google.com', 'stable-subject',
+             'changed-address@example.com', 'example.com', true, now(), now(), now(), 1)`,
+          [randomUUID(), secondUserId],
+        ),
+        "23505",
+        "external_identities_issuer_subject_key",
+      );
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.invitations (
+             id, email, email_key, token_hash, status,
+             invited_by_actor_key, expires_at, purge_after, created_at, updated_at
+           ) VALUES ($1, 'test@example.com', 'test@example.com', 'plaintext-token',
+             'pending', 'system', now() + interval '1 hour',
+             now() + interval '2 hours', now(), now())`,
+          [randomUUID()],
+        ),
+        "23514",
+        "invitations_token_hash_check",
+      );
+
+      const auditId = randomUUID();
+      await pool.query(
+        `INSERT INTO ${schema}.audit_events (
+           id, executor_type, executor_key, action, result,
+           correlation_id, source, metadata, occurred_at,
+           retention_policy_key
+         ) VALUES ($1, 'system', 'migration-test', 'security.persistence_test',
+           'succeeded', 'persistence-test', 'integration_test',
+           '{"fixture":"FCI TEST — DO NOT USE"}'::jsonb, now(), 'security_audit')`,
+        [auditId],
+      );
+      await expectPostgresError(
+        pool.query(`UPDATE ${schema}.audit_events SET result = 'failed' WHERE id = $1`, [auditId]),
+        "55000",
+      );
+      await expectPostgresError(
+        pool.query(`DELETE FROM ${schema}.audit_events WHERE id = $1`, [auditId]),
+        "55000",
+      );
+
+      const connectionId = randomUUID();
+      await pool.query(
+        `INSERT INTO ${schema}.integration_connections (
+           id, provider, connection_key, status,
+           created_by_actor_key, updated_by_actor_key,
+           created_at, updated_at, version
+         ) VALUES ($1, 'google_workspace', 'company_workspace', 'pending',
+           'migration-test', 'migration-test', now(), now(), 1)`,
+        [connectionId],
+      );
+      const integrationEventId = randomUUID();
+      await pool.query(
+        `INSERT INTO ${schema}.integration_events (
+           id, connection_id, event_key, event_type,
+           executor_type, executor_key, result, correlation_id,
+           metadata, occurred_at, retention_policy_key
+         ) VALUES ($1, $2, 'connection-created', 'connection.registered',
+           'system', 'migration-test', 'succeeded', 'connector-test',
+           '{}'::jsonb, now(), 'integration_event')`,
+        [integrationEventId, connectionId],
+      );
+      await expectPostgresError(
+        pool.query(`DELETE FROM ${schema}.integration_events WHERE id = $1`, [integrationEventId]),
+        "55000",
+      );
+
+      const fileId = randomUUID();
+      const fileVersionId = randomUUID();
+      const fileClient = await pool.connect();
+      try {
+        await fileClient.query("BEGIN");
+        await fileClient.query(
+          `INSERT INTO ${schema}.files (
+             id, category, status, current_version_number,
+             retention_policy_key, created_by_actor_key,
+             created_at, updated_at, version
+           ) VALUES ($1, 'project_document', 'active', 1,
+             'business_record', 'migration-test', now(), now(), 1)`,
+          [fileId],
+        );
+        await fileClient.query(
+          `INSERT INTO ${schema}.file_versions (
+             id, file_id, version_number, status, source_key,
+             original_filename, declared_media_type,
+             created_by_actor_key, created_at, updated_at, row_version
+           ) VALUES ($1, $2, 1, 'registered', $3,
+             'FCI TEST — DO NOT USE.pdf', 'application/pdf',
+             'migration-test', now(), now(), 1)`,
+          [fileVersionId, fileId, `file/${fileId}`],
+        );
+        await fileClient.query("COMMIT");
+      } catch (error) {
+        await fileClient.query("ROLLBACK");
+        throw error;
+      } finally {
+        fileClient.release();
+      }
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.file_links (
+             id, file_id, relationship_key, linked_by_actor_key, linked_at
+           ) VALUES ($1, $2, 'project_document', 'migration-test', now())`,
+          [randomUUID(), fileId],
+        ),
+        "23514",
+        "file_links_target_check",
+      );
+
       const missingForeignKeyIndexes = await pool.query(
         `SELECT c.conname
          FROM pg_constraint c
-         CROSS JOIN LATERAL unnest(c.conkey) AS key(attnum)
          WHERE c.contype = 'f'
            AND c.connamespace = $1::regnamespace
            AND NOT EXISTS (
              SELECT 1
              FROM pg_index i
              WHERE i.indrelid = c.conrelid
-               AND key.attnum = ANY(i.indkey)
+               AND i.indisvalid
+               AND i.indisready
+               AND i.indnkeyatts >= cardinality(c.conkey)
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM generate_subscripts(c.conkey, 1) AS key_position
+                 WHERE c.conkey[key_position]
+                   <> (i.indkey::smallint[])[key_position - 1]
+               )
            )`,
         [schema],
       );
       assert.deepEqual(missingForeignKeyIndexes.rows, []);
 
       const rollbackProbe = {
-        version: 3,
+        version: 4,
         name: "rollback_probe",
         checksum: "",
         statements: [
@@ -337,7 +502,7 @@ test(
           [...PRODUCTION_SCHEMA_MIGRATIONS, rollbackProbe],
           migrationOptions,
         ),
-        /migration 3 \(rollback_probe\) did not complete cleanly/,
+        /migration 4 \(rollback_probe\) did not complete cleanly/,
       );
       const rollbackState = await pool.query(
         `SELECT to_regclass('${schema}.rollback_probe') AS relation,
@@ -345,7 +510,7 @@ test(
                  FROM ${schema}.production_schema_migrations) AS migration_count`,
       );
       assert.equal(rollbackState.rows[0].relation, null);
-      assert.equal(rollbackState.rows[0].migration_count, 2);
+      assert.equal(rollbackState.rows[0].migration_count, 3);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();
@@ -383,7 +548,7 @@ test(
         PRODUCTION_SCHEMA_MIGRATIONS,
         { schema },
       );
-      assert.deepEqual(result, { appliedVersions: [1, 2], currentVersion: 2 });
+      assert.deepEqual(result, { appliedVersions: [1, 2, 3], currentVersion: 3 });
 
       const targetHistory = await pool.query(
         `SELECT count(*)::integer AS count FROM ${schema}.production_schema_migrations`,
@@ -391,7 +556,7 @@ test(
       const temporaryHistory = await pool.query(
         "SELECT count(*)::integer AS count FROM pg_temp.production_schema_migrations",
       );
-      assert.equal(targetHistory.rows[0].count, 2);
+      assert.equal(targetHistory.rows[0].count, 3);
       assert.equal(temporaryHistory.rows[0].count, 0);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);
