@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DATABASE_TABLE_PRIVILEGES,
   createDatabaseReadinessProbe,
   EXPECTED_PRODUCTION_SCHEMA_HISTORY,
+  EXPECTED_RUNTIME_TABLE_ACCESS,
 } from "../app/platform/google-cloud/database-readiness.ts";
 import {
   PRODUCTION_SCHEMA_MIGRATIONS,
@@ -12,13 +14,34 @@ function result(rows) {
   return { rows, rowCount: rows.length };
 }
 
+function expectedRuntimePrivilegeRows() {
+  return EXPECTED_RUNTIME_TABLE_ACCESS.flatMap(({ table, privileges }) =>
+    DATABASE_TABLE_PRIVILEGES.map((privilege) => {
+      const shouldHave = privileges.includes(privilege);
+      const supportsColumnGrant = ["SELECT", "INSERT", "UPDATE", "REFERENCES"].includes(privilege);
+      const hasReviewedColumnOnlyGrant = table === "users" && privilege === "UPDATE";
+      return {
+        tableName: table,
+        privilege,
+        shouldHave,
+        relationExists: true,
+        hasPrivilege: shouldHave,
+        hasColumnPrivilege: supportsColumnGrant
+          ? shouldHave || hasReviewedColumnOnlyGrant
+          : false,
+        hasGrantOption: false,
+        hasColumnGrantOption: false,
+      };
+    }));
+}
+
 function readyDatabase(overrides = {}) {
   const queries = [];
   const releases = [];
   const client = {
     async query(sql, values = []) {
       queries.push({ sql, values: [...values] });
-      assert.match(sql.trim(), /^(?:BEGIN READ ONLY|SET LOCAL statement_timeout|SELECT\b|COMMIT|ROLLBACK)/);
+      assert.match(sql.trim(), /^(?:BEGIN READ ONLY|SET LOCAL statement_timeout|SELECT\b|WITH\b|COMMIT|ROLLBACK)/);
       assert.doesNotMatch(sql.trim(), /^(?:CREATE|ALTER|DROP|TRUNCATE|INSERT|UPDATE|DELETE|GRANT|REVOKE)\b/i);
       if (/^(?:BEGIN READ ONLY|SET LOCAL statement_timeout|COMMIT|ROLLBACK)/.test(sql.trim())) {
         return result([]);
@@ -26,8 +49,24 @@ function readyDatabase(overrides = {}) {
       if (sql.includes("has_schema_privilege")) {
         return result([{
           has_usage: overrides.hasUsage ?? true,
+          has_usage_grant_option: overrides.hasUsageGrantOption ?? false,
           has_create: overrides.hasCreate ?? false,
+          can_set_migration_owner: overrides.canSetMigrationOwner ?? false,
+          can_set_rehearsal_importer: overrides.canSetRehearsalImporter ?? false,
+          has_sequence_access: overrides.hasSequenceAccess ?? false,
+          has_user_lock_column_update: overrides.hasUserLockColumnUpdate ?? true,
+          has_other_user_column_update: overrides.hasOtherUserColumnUpdate ?? false,
+          history_reader_exists: overrides.historyReaderExists ?? true,
+          history_reader_security_definer: overrides.historyReaderSecurityDefiner ?? true,
+          history_reader_owner: overrides.historyReaderOwner ?? true,
+          history_reader_fixed_search_path: overrides.historyReaderFixedSearchPath ?? true,
+          has_history_reader_execute: overrides.hasHistoryReaderExecute ?? true,
+          has_history_reader_grant_option: overrides.hasHistoryReaderGrantOption ?? false,
+          has_unreviewed_function_execute: overrides.hasUnreviewedFunctionExecute ?? false,
         }]);
+      }
+      if (sql.includes("has_table_privilege")) {
+        return result(overrides.runtimePrivileges ?? expectedRuntimePrivilegeRows());
       }
       return result(overrides.history ?? EXPECTED_PRODUCTION_SCHEMA_HISTORY.map((row) => ({ ...row })));
     },
@@ -54,7 +93,7 @@ test("keeps read-only readiness metadata equal to the immutable migration regist
   );
 });
 
-test("requires runtime USAGE without CREATE and an exact complete migration history", async () => {
+test("requires exact runtime privileges and complete migration history through the narrow reader", async () => {
   const { database, queries, releases } = readyDatabase();
   const probe = createDatabaseReadinessProbe({
     database,
@@ -66,29 +105,102 @@ test("requires runtime USAGE without CREATE and an exact complete migration hist
   assert.deepEqual(queries.map(({ sql }) => sql.trim().split("\n")[0]), [
     "BEGIN READ ONLY",
     "SET LOCAL statement_timeout = '1500ms'",
-    "SELECT",
+    "WITH history_reader AS (",
+    "WITH expected(table_name, privilege, should_have, ordinal) AS (",
     "SELECT version, name, checksum",
     "COMMIT",
   ]);
   assert.deepEqual(queries[2].values, ["fci_app"]);
-  assert.match(queries[3].sql, /FROM "fci_app"\.production_schema_migrations/);
-  assert.match(queries[3].sql, /ORDER BY version/);
+  assert.match(queries[2].sql, /pg_has_role\(SESSION_USER, role\.oid, 'SET'\)/);
+  assert.match(queries[2].sql, /has_sequence_privilege\(CURRENT_USER, sequence\.oid, 'USAGE'\)/);
+  assert.deepEqual(queries[3].values, [
+    "fci_app",
+    expectedRuntimePrivilegeRows().map(({ tableName }) => tableName),
+    expectedRuntimePrivilegeRows().map(({ privilege }) => privilege),
+    expectedRuntimePrivilegeRows().map(({ shouldHave }) => shouldHave),
+    EXPECTED_RUNTIME_TABLE_ACCESS.map(({ table }) => table),
+    DATABASE_TABLE_PRIVILEGES,
+  ]);
+  assert.match(queries[3].sql, /has_table_privilege/);
+  assert.match(queries[4].sql, /FROM "fci_app"\.read_production_schema_history\(\)/);
+  assert.doesNotMatch(queries[4].sql, /FROM "fci_app"\.production_schema_migrations/);
+  assert.match(queries[4].sql, /ORDER BY version/);
   assert.deepEqual(releases, [undefined]);
 });
 
 test("fails readiness when schema privilege is too weak or too broad", async () => {
   for (const permissions of [
     { hasUsage: false, hasCreate: false },
+    { hasUsage: true, hasUsageGrantOption: true, hasCreate: false },
     { hasUsage: true, hasCreate: true },
+    { canSetMigrationOwner: true },
+    { canSetRehearsalImporter: true },
+    { hasSequenceAccess: true },
+    { hasUserLockColumnUpdate: false },
+    { hasOtherUserColumnUpdate: true },
   ]) {
     const { database, queries } = readyDatabase(permissions);
     const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
     assert.equal(await probe.check(), false);
     assert.equal(
-      queries.filter(({ sql }) => /production_schema_migrations/.test(sql)).length,
+      queries.filter(({ sql }) => /has_table_privilege|read_production_schema_history\(\)/.test(sql)).length,
       0,
-      "history must not be read for an invalid runtime role",
+      "table grants and history must not be read for an invalid runtime role",
     );
+  }
+});
+
+test("fails readiness when the schema-history reader is missing, unavailable, or delegable", async () => {
+  for (const permissions of [
+    { historyReaderExists: false },
+    { historyReaderSecurityDefiner: false },
+    { historyReaderOwner: false },
+    { historyReaderFixedSearchPath: false },
+    { hasHistoryReaderExecute: false },
+    { hasHistoryReaderGrantOption: true },
+    { hasUnreviewedFunctionExecute: true },
+  ]) {
+    const { database, queries } = readyDatabase(permissions);
+    const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
+    assert.equal(await probe.check(), false);
+    assert.equal(queries.some(({ sql }) => sql.includes("has_table_privilege")), false);
+    assert.equal(queries.some(({ sql }) => /FROM "fci_app"\.read_production_schema_history/.test(sql)), false);
+  }
+});
+
+test("fails readiness for missing, overbroad, delegable, or unexpected table access", async () => {
+  const base = expectedRuntimePrivilegeRows();
+  const deniedAuditSelect = base.findIndex(
+    ({ tableName, privilege }) => tableName === "audit_events" && privilege === "SELECT",
+  );
+  const requiredUserSelect = base.findIndex(
+    ({ tableName, privilege }) => tableName === "users" && privilege === "SELECT",
+  );
+
+  const cases = [
+    base.map((row, index) => index === requiredUserSelect ? { ...row, relationExists: false } : row),
+    base.map((row, index) => index === requiredUserSelect ? { ...row, hasPrivilege: false } : row),
+    base.map((row, index) => index === deniedAuditSelect ? { ...row, hasPrivilege: true } : row),
+    base.map((row, index) => index === deniedAuditSelect ? { ...row, hasColumnPrivilege: true } : row),
+    base.map((row, index) => index === requiredUserSelect ? { ...row, hasGrantOption: true } : row),
+    base.map((row, index) => index === requiredUserSelect ? { ...row, hasColumnGrantOption: true } : row),
+    [...base, {
+      tableName: "unreviewed_table",
+      privilege: "SELECT",
+      shouldHave: false,
+      relationExists: true,
+      hasPrivilege: false,
+      hasColumnPrivilege: false,
+      hasGrantOption: false,
+      hasColumnGrantOption: false,
+    }],
+  ];
+
+  for (const runtimePrivileges of cases) {
+    const { database, queries } = readyDatabase({ runtimePrivileges });
+    const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
+    assert.equal(await probe.check(), false);
+    assert.equal(queries.some(({ sql }) => /FROM "fci_app"\.read_production_schema_history/.test(sql)), false);
   }
 });
 
@@ -98,7 +210,11 @@ test("fails readiness for missing, changed, reordered, or future migration histo
     expected.slice(0, 1),
     expected.map((row, index) => index === 0 ? { ...row, checksum: `sha256:${"0".repeat(64)}` } : row),
     [...expected].reverse(),
-    [...expected, { version: 3, name: "future", checksum: `sha256:${"1".repeat(64)}` }],
+    [...expected, {
+      version: expected.at(-1).version + 1,
+      name: "future",
+      checksum: `sha256:${"1".repeat(64)}`,
+    }],
   ];
 
   for (const history of histories) {
@@ -122,9 +238,28 @@ test("coalesces concurrent checks, caches briefly, and never exposes query failu
           if (sql.includes("has_schema_privilege")) {
             permissionQueries += 1;
             await permissionGate;
-            return result([{ has_usage: true, has_create: false }]);
+            return result([{
+              has_usage: true,
+              has_usage_grant_option: false,
+              has_create: false,
+              can_set_migration_owner: false,
+              can_set_rehearsal_importer: false,
+              has_sequence_access: false,
+              has_user_lock_column_update: true,
+              has_other_user_column_update: false,
+              history_reader_exists: true,
+              history_reader_security_definer: true,
+              history_reader_owner: true,
+              history_reader_fixed_search_path: true,
+              has_history_reader_execute: true,
+              has_history_reader_grant_option: false,
+              has_unreviewed_function_execute: false,
+            }]);
           }
-          if (sql.includes("production_schema_migrations")) {
+          if (sql.includes("has_table_privilege")) {
+            return result(expectedRuntimePrivilegeRows());
+          }
+          if (sql.includes("read_production_schema_history")) {
             return result(EXPECTED_PRODUCTION_SCHEMA_HISTORY.map((row) => ({ ...row })));
           }
           return result([]);
@@ -201,7 +336,7 @@ test("rolls back a failed readiness transaction and discards a client when rollb
       "BEGIN READ ONLY",
       "SET LOCAL statement_timeout = '800ms'",
     ]);
-    assert.match(queries[2], /^SELECT/);
+    assert.match(queries[2], /^(?:SELECT|WITH)/);
     assert.equal(queries.at(-1), "ROLLBACK");
     assert.deepEqual(releases, [rollbackFails ? rollbackFailure : undefined]);
   }

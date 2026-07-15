@@ -2,16 +2,32 @@ import {
   createPostgresClientRepository,
 } from "../../adapters/postgres/client-repository";
 import {
+  createPostgresFileMetadataRepository,
+} from "../../adapters/postgres/file-metadata-repository";
+import {
+  createPostgresIdentityPersistenceRepository,
+} from "../../adapters/postgres/identity-persistence-repository";
+import {
+  createPostgresIntegrationMetadataRepository,
+} from "../../adapters/postgres/integration-metadata-repository";
+import {
   createPostgresOutboxRepository,
 } from "../../adapters/postgres/outbox-repository";
 import type { PostgresPool } from "../../adapters/postgres/postgres-database";
 import {
   createPostgresProjectRepository,
 } from "../../adapters/postgres/project-repository";
+import {
+  createPostgresSecurityAuditRepository,
+} from "../../adapters/postgres/security-audit-repository";
 import type { PostgresCreationRequestMetadata } from "../../adapters/postgres/creation-idempotency";
 import type { ClientRepository } from "../../ports/client-repository";
+import type { FileMetadataRepository } from "../../ports/file-metadata";
+import type { IdentityPersistenceRepository } from "../../ports/identity-persistence";
+import type { IntegrationMetadataRepository } from "../../ports/integration-metadata";
 import type { OutboxRepository } from "../../ports/outbox-repository";
 import type { ProjectRepository } from "../../ports/project-repository";
+import type { SecurityAuditRepository } from "../../ports/security-audit";
 import {
   createProductionPostgresPool,
   type ProductionPostgresPoolDependencies,
@@ -21,6 +37,10 @@ import type { ProductionConfig } from "./production-config";
 
 export type ProductionRepositoryFactories = Readonly<{
   outbox: OutboxRepository;
+  securityAudit: SecurityAuditRepository;
+  identity: IdentityPersistenceRepository;
+  integrations: IntegrationMetadataRepository;
+  files: FileMetadataRepository;
   clients(request: PostgresCreationRequestMetadata): ClientRepository;
   projects(request?: PostgresCreationRequestMetadata): ProjectRepository;
 }>;
@@ -51,8 +71,21 @@ export function composeProductionRepositories(
     lockTimeoutMs: config.postgres.pool.lockTimeoutMs,
     statementTimeoutMs: config.postgres.pool.statementTimeoutMs,
   });
+  const sharedRepositoryOptions = {
+    schema: config.postgres.schema,
+    lockTimeoutMs: config.postgres.pool.lockTimeoutMs,
+    statementTimeoutMs: config.postgres.pool.statementTimeoutMs,
+  };
+  const securityAudit = createPostgresSecurityAuditRepository(postgres, sharedRepositoryOptions);
+  const identity = createPostgresIdentityPersistenceRepository(postgres, sharedRepositoryOptions);
+  const integrations = createPostgresIntegrationMetadataRepository(postgres, sharedRepositoryOptions);
+  const files = createPostgresFileMetadataRepository(postgres, sharedRepositoryOptions);
   const repositories: ProductionRepositoryFactories = Object.freeze({
     outbox,
+    securityAudit,
+    identity,
+    integrations,
+    files,
     clients(request) {
       return createPostgresClientRepository(postgres, {
         schema: config.postgres.schema,

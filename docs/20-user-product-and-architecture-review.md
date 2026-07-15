@@ -75,7 +75,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 
 1. **Implement server-enforced identity and authorization.** Add invited users, sessions, roles, disabled status, granular capabilities, project memberships, and query-scoped authorization. The current dashboard, search, project, and assistant routes expose company-wide data to any authenticated user.
 2. **Resolved in source; verify after deployment: remove the Gmail label-only filing bypass.** The Settings button and standalone API route that could apply `FCI/Filed` without an exact project copy have been removed. Any future repair tool must require an existing archive/project, a reason, and an audit event.
-3. **Complete the accepted production platform.** The current application is still coupled to Workers, D1, and R2. Source now includes a fail-closed Cloud Run foundation, PostgreSQL schema/repositories, immutable migration command, least-privilege policy, and bounded core rehearsal, but it is not the full application and no Google Cloud infrastructure, staging migration/restore exercise, or production cutover exists yet.
+3. **Complete the accepted production platform.** The current application is still coupled to Workers, D1, and R2. Source now includes a fail-closed Cloud Run foundation, the production persistence boundary, immutable migrations, exact least-privilege readiness, a bounded core rehearsal, and zero-resource-by-default Google Cloud definitions, but it is not the full application and no Google Cloud resources, staging migration/restore exercise, or production cutover exists yet.
 
 ### P1 — complete before real client data
 
@@ -103,8 +103,8 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 
 The owner completes setup inputs, staff/field policy, Google Groups, and the cross-system access matrix in parallel; those decisions gate the relevant persistence, authorization, and provisioning work below.
 
-1. **Infrastructure definitions:** preserve Sites development, define on-demand staging, cost the minimum production Cloud Run/Cloud SQL/Secret Manager core, document the migration/restore/cutover procedures, and keep optional modules off until their features are approved.
-2. **Production persistence boundary:** complete one PostgreSQL/repository and provider-neutral object-storage slice that includes generic identity/security-audit persistence and the remaining production-owned integration/file metadata.
+1. **Infrastructure definitions — complete in source, unapplied:** Sites development is preserved; on-demand staging, alternative Cloud SQL profiles, the minimum core, and disabled optional modules are reviewable. Owner inputs, approved calculator evidence, and any apply remain open.
+2. **Production persistence boundary — complete in source, unapplied:** PostgreSQL migration/repository structures now cover generic identity/security audit and production-owned integration/file metadata, with an opaque provider-neutral object-storage contract. See [Production persistence boundary](production-persistence-boundary.md).
 3. **Authorization simulation:** add access contexts, capability and project scoping, and negative permission tests on the accepted persistence boundary.
 4. **Cloud Run composition:** port the remaining employee application routes through those production database/storage boundaries.
 5. **Staging and recovery proof:** with separate approval, create staging on demand and prove migration, restore, reconciliation, rollback/forward-fix, and the complete application smoke path.
