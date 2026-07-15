@@ -30,8 +30,8 @@ For a 20-person company, operations must be simple enough that two named people 
 
 ## Files and messaging safety
 
-- [ ] Quarantine uploads, validate type and size, scan for malware, and release approved files before Shared Drive copy.
-- [ ] Apply the same controls to Gmail attachments and direct project uploads.
+- [ ] If launch accepts untrusted files, quarantine uploads, validate type and size, scan for malware, and release approved files before Shared Drive copy.
+- [ ] If launch accepts Gmail attachments or direct project uploads, apply the same quarantine, scanning, release, and authorized-download controls to those sources.
 - [x] Remove the live Gmail `FCI/Filed` label-only action and standalone API route. Any future repair action must reference an existing archive and exact project, capture a reason, and create an audit event.
 - [ ] Preserve Inbox retention and human review before project filing.
 - [ ] Keep replies as drafts until a person intentionally sends them.

@@ -38,7 +38,7 @@ The existing Sites deployment remains available only for controlled development 
 
 The production cutover must include:
 
-1. Reserve isolated development, staging, and production project, credential, secret, and data boundaries. Continue using Sites for development, and create billable staging resources from reviewed definitions only when an approved rehearsal or release requires them.
+1. Define isolated development, staging, and production project, credential, secret, and data boundaries; creating a project or provisioning resources remains separately approved. Continue using Sites for development, and create billable staging resources from reviewed definitions only when an approved rehearsal or release requires them.
 2. Port the SQLite/D1 schema to PostgreSQL with explicit foreign keys, constraints, transactions, and audit fields.
 3. Replace Cloudflare bindings with provider-neutral database and object-storage interfaces.
 4. Implement Workspace OIDC, explicit invitations, office-domain restrictions, secure sessions, roles, capabilities, and project-level permissions.

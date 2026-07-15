@@ -83,7 +83,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 2. Replace free-text relationships and statuses with foreign keys, constraints, version fields, and normalized child records.
 3. Add optimistic concurrency and background jobs. Current write and full-Sheet-sync patterns can lose updates or race when several employees work at once.
 4. Add timeouts, retry policies, idempotency, application-owned durable failed-job/dead-letter handling, connector health, and token-refresh single-flight behavior around Google calls.
-5. Implement backup/restore, audit viewing, file scanning/quarantine, retention, session revocation, key rotation, and connector-account continuity.
+5. Implement backup/restore, audit viewing, retention, session revocation, key rotation, and connector-account continuity. Before accepting untrusted direct uploads or Gmail attachments, also implement file metadata, quarantine, scanning, release, and authorized download controls.
 6. Make saved Workspace resource IDs authoritative. Calendar configuration currently has both saved settings and environment values.
 7. **Resolved in source; verify after deployment:** Settings loading retains known data and presents typed failures instead of silently replacing failed requests with valid-looking defaults.
 8. **Resolved in source; verify after deployment:** unfinished features have visible Working, In development, Setup required, or Planned states, and non-persisting actions are disabled or relabeled.
@@ -101,13 +101,18 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 
 ## Corrected delivery order
 
-1. **Owner decisions and access design:** finish setup inputs, staff/field policy, Google Groups, and the cross-system access matrix.
-2. **Production foundation:** preserve Sites development, define on-demand staging, cost the minimum production Cloud Run/Cloud SQL/Secret Manager core, and prove migration/restore/rollback. Keep jobs, quarantine, and other optional modules off until their features are approved.
-3. **Identity and authorization:** Google Workspace OIDC, explicit invitations, sessions, roles, capabilities, project memberships, and negative permission tests.
-4. **Core records:** safe editing/archive, atomic lead conversion, project dates, tasks/follow-ups, file metadata, notes, activity, and concurrent-write protection.
-5. **Google operations:** authoritative resource settings, durable Gmail review queue, asynchronous filing, Calendar reconciliation, connector recovery, and exact-project integrity.
-6. **Scheduling and field operations:** workers, crews, shifts, conflicts, publish/acknowledge, and the approved field-access model.
-7. **Messaging, closeout, reports, and intelligence:** add only after consent, permissions, audit, and job controls are proven.
+The owner completes setup inputs, staff/field policy, Google Groups, and the cross-system access matrix in parallel; those decisions gate the relevant persistence, authorization, and provisioning work below.
+
+1. **Infrastructure definitions:** preserve Sites development, define on-demand staging, cost the minimum production Cloud Run/Cloud SQL/Secret Manager core, document the migration/restore/cutover procedures, and keep optional modules off until their features are approved.
+2. **Production persistence boundary:** complete one PostgreSQL/repository and provider-neutral object-storage slice that includes generic identity/security-audit persistence and the remaining production-owned integration/file metadata.
+3. **Authorization simulation:** add access contexts, capability and project scoping, and negative permission tests on the accepted persistence boundary.
+4. **Cloud Run composition:** port the remaining employee application routes through those production database/storage boundaries.
+5. **Staging and recovery proof:** with separate approval, create staging on demand and prove migration, restore, reconciliation, rollback/forward-fix, and the complete application smoke path.
+6. **Live employee identity:** add Google Workspace OIDC only after the platform, persistence, authorization, and staging gates pass.
+7. **Core records:** safe editing/archive, atomic lead conversion, project dates, tasks/follow-ups, file metadata, notes, activity, and concurrent-write protection.
+8. **Google operations:** authoritative resource settings, durable Gmail review queue, asynchronous filing, Calendar reconciliation, connector recovery, and exact-project integrity.
+9. **Scheduling and field operations:** workers, crews, shifts, conflicts, publish/acknowledge, and the approved field-access model.
+10. **Messaging, closeout, reports, and intelligence:** add only after consent, permissions, audit, and job controls are proven.
 
 ## Product ideas to evaluate later
 
@@ -124,7 +129,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 | --- | --- |
 | Continue one-user test-data development | Go, with current safeguards and test-data cleanup |
 | Add a second employee | No-go until P0 identity, permissions, and Gmail integrity work passes |
-| Store real client or employee data | No-go until production platform, restore, audit, scanning, and retention controls pass |
+| Store real client or employee data | No-go until production platform, restore, audit, and retention controls pass, plus quarantine/scanning when untrusted uploads or Gmail attachments are accepted |
 | Build scheduling or outbound messaging | No-go until platform, permissions, and background-job controls are accepted |
 
 The executable owner and developer work is tracked in the [Task Checklists](task-checklists/README.md).

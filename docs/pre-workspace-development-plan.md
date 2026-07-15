@@ -88,10 +88,13 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 6. **Accepted cost posture:** reuse Workspace, preserve Sites development, keep staging on demand, price standalone and HA Cloud SQL before selection, and default optional service modules to disabled.
 7. **Owner approval in parallel:** approve the 20-user role model and cross-system Google access matrix plus Cloud organization/billing, region, hostname, alert recipients, recovery, deployment, and rollback inputs.
 8. **Next infrastructure-definition worker:** begin with safe placeholders and add costed, unapplied core/profile definitions and an on-demand staging procedure. Missing owner inputs must remain explicit variables and provisioning blockers.
-9. **Source-only authorization worker after both gates:** after the runtime-foundation pull request is merged and the access matrix is approved, add simulated identities, sessions, roles/capabilities, project memberships, scoped queries, and denial tests without enabling employee login or live data. Google Workspace OIDC and live authorization rollout wait for the accepted production foundation, tested migration/cutover path, and provider-neutral database/storage boundaries.
-10. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
-11. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
-12. **Workspace integration worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
+9. **Production persistence-boundary worker:** after the infrastructure definitions are reviewed, complete one slice covering the remaining PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, and provider-neutral object-storage ports without changing Sites behavior.
+10. **Source-only authorization worker:** after that persistence boundary and the access matrix are approved, add simulated access contexts, scoped queries, capabilities/project permissions, and denial tests without enabling employee login or live data.
+11. **Cloud Run composition and staging-proof workers:** port the remaining application routes, then create staging only with separate approval to prove migration, restore, reconciliation, rollback/forward-fix, and the application smoke path.
+12. **Workspace OIDC worker:** implement and verify live employee login only after the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
+13. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
+14. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
+15. **Workspace data-connector worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
 
 Do not assign scheduling, outbound messaging, or AI document indexing until the production platform and authorization foundation are accepted.
 
@@ -151,4 +154,4 @@ Assign one infrastructure-definition worker now. The worker must use safe variab
 - Document official calculator inputs, connection/revision-overlap budgets, the on-demand staging lifecycle, role bootstrap/grant verification, restore exercise, migration rehearsal, and forward-fix/rollback evidence.
 - Keep every definition unapplied. Do not provision resources, add credentials, apply roles or migrations, connect Workspace, migrate data, deploy, or merge.
 
-PR #11 has merged the runtime foundation, so a source-only authorization worker may begin simulated identity and denial-test work after the owner approves the role/access matrix. Employee Google Workspace OIDC, live sessions, and production authorization rollout remain blocked until the production foundation, tested migration/cutover path, and provider-neutral database/storage boundaries pass acceptance.
+PR #11 has merged the runtime foundation. After the infrastructure-definition worker, complete one production persistence boundary that includes the remaining database/storage work plus generic identity and security-audit persistence. That boundary and the separately approved access matrix gate authorization simulation. Employee Google Workspace OIDC, live sessions, and production authorization rollout remain blocked until the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.

@@ -4,29 +4,21 @@ Source-code access and app access are separate. A developer needs the source rep
 
 ## Recommended source-code workflow
 
-Use a private GitHub repository, preferably owned by the company. Do not use a synchronized Google Drive or OneDrive folder as the active Git repository; file sync can conflict with Git and can accidentally copy local credentials, build output, or databases.
+Use the existing [`OneStreamerNE98/FCI-Brett`](https://github.com/OneStreamerNE98/FCI-Brett) repository as the canonical collaboration history. It is currently public: anyone may read it, while an authorized collaborator still needs Write access to push an assigned branch. The owner should decide whether to make it private before operational configuration begins.
 
-1. Create an empty private GitHub repository.
-2. Push this repository's `main` branch after the current release is committed.
-3. Invite the developer with **Write** access, not **Admin** access.
-4. Protect `main` and require a pull request before changes are merged.
-5. Have each developer clone the repository and create their own uncommitted `.env.local` from `.env.example`.
-6. Keep `GOOGLE_INTEGRATION_MODE=simulation` in local development. Production Google Workspace settings belong only in the hosting environment or Google Secret Manager.
+1. Keep one canonical editable clone per developer. The owner's current clone is in OneDrive; do not create a second editable copy, and stop to reconcile Git if synchronization creates conflicts or duplicate files.
+2. Invite the developer with **Write** access, not **Admin** access.
+3. Protect `main` and require a pull request before changes are merged.
+4. Have each developer clone the repository and create their own uncommitted `.env.local` from `.env.example`.
+5. Keep `GOOGLE_INTEGRATION_MODE=simulation` in local development. Production Google Workspace settings belong only in the hosting environment or Google Secret Manager.
 
-Example commands after the private repository is created:
-
-```powershell
-git remote add origin https://github.com/YOUR-COMPANY/fci-operations.git
-git push -u origin main
-```
-
-The invited developer can then use:
+Example commands for a new contributor:
 
 ```powershell
-git clone https://github.com/YOUR-COMPANY/fci-operations.git
-cd fci-operations
+git clone https://github.com/OneStreamerNE98/FCI-Brett.git
+cd FCI-Brett
 Copy-Item .env.example .env.local
-npm install
+npm.cmd ci
 npm.cmd run dev
 ```
 

@@ -57,12 +57,14 @@ npm.cmd run lint
 
 ## Current implementation order
 
-1. Costed, unapplied Google Cloud foundation definitions and tested migration/cutover path; do not provision optional services early.
-2. Cloud SQL schema and provider-neutral database/storage boundaries.
-3. Approved 20-user role model plus cross-system Google access matrix.
-4. Google Workspace employee login, secure sessions, capabilities, roles, and project permissions.
-5. Client/lead/project editing and archiving, atomic lead conversion, and durable tasks/follow-ups.
-6. Operational modules only after the preceding foundations pass acceptance.
+1. Costed, unapplied Google Cloud foundation definitions plus reviewable and testable migration, restore, and cutover procedures; do not provision optional services early.
+2. One production-persistence boundary for the remaining Cloud SQL schema/repositories, generic identity/security-audit persistence, integration/file metadata, and provider-neutral object storage.
+3. Approved 20-user role model plus cross-system Google access matrix. The owner may complete this in parallel, but it must be accepted before authorization behavior is implemented.
+4. Simulated access contexts, secure sessions, capabilities, roles, project-scoped queries, denial tests, and composition of the employee application on the production database/storage boundaries.
+5. With separate owner approval, on-demand staging migration, restore, reconciliation, rollback/forward-fix, and application smoke evidence.
+6. Google Workspace employee OIDC and live authorization verification only after the platform, persistence, authorization, and staging gates pass; do not admit a second user yet.
+7. Client/lead/project editing and archiving, atomic lead conversion, and durable tasks/follow-ups.
+8. Operational modules only after the preceding foundations pass acceptance.
 
 ## Handoff requirements
 

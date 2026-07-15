@@ -76,7 +76,7 @@ These are larger structural changes and should be scheduled separately:
 - CSV preview/import.
 - Application roles beyond the admin flag and project-level permissions.
 - Drive/email document indexing and permission-filtered semantic retrieval.
-- Backup restoration validation, audit viewer, retention, export, and malware scanning.
+- Backup restoration validation, audit viewer, retention, and export, plus malware scanning when untrusted uploads or Gmail attachments are enabled.
 - Production background workers for reminders, Gmail watches, synchronization, and retries.
 
 ## Production architecture decision
@@ -91,16 +91,20 @@ See [`architecture-decision-production-platform.md`](architecture-decision-produ
 
 ### Now: safe single-user development environment
 
-1. Review the source-only Google Cloud runtime foundation, complete the owner Cloud inputs, add unapplied infrastructure definitions, and prove the migration/restore path in isolated staging before any deployment.
-2. Approve the 20-user app-to-Google access matrix, including the field/crew access decision and two initial Administrators.
-3. Add invited Google Workspace OIDC users, secure sessions, granular capabilities, roles, and project-level permissions before adding more users.
-4. Add editing and archiving for clients, contacts, leads, projects, and meetings.
-5. Implement lead conversion as one transaction.
-6. Add project dates, tasks/follow-ups, notes, file metadata, photo UI, and activity history.
-7. Make saved Calendar settings control the live integration.
-8. Connect uploads to project Files and Shared Drive, then add scanning/quarantine.
-9. Replace source-contract tests with more route, integration, and browser behavior tests.
-10. Validate backup restoration and add an admin audit viewer before real client data.
+The owner should complete the Cloud inputs and approve the app-to-Google access matrix, including the field/crew decision and two initial Administrators, in parallel with the ordered source work below.
+
+1. Add costed, unapplied infrastructure definitions and reviewable migration/restore/cutover procedures for the minimum core and on-demand staging boundary.
+2. Complete one production-persistence boundary covering the remaining provider-neutral PostgreSQL repositories, generic identity/security-audit schema, integration metadata, and object-storage ports.
+3. Add simulated access contexts, capability and project-scoped queries, and negative authorization tests.
+4. Compose the remaining employee application routes for Cloud Run, then—with separate approval—prove migration, restore, reconciliation, and rollback/forward-fix in isolated on-demand staging.
+5. Add live Google Workspace OIDC only after those platform and authorization gates pass; do not add more users before project permissions are enforced.
+6. Add editing and archiving for clients, contacts, leads, projects, and meetings.
+7. Implement lead conversion as one transaction.
+8. Add project dates, tasks/follow-ups, notes, file metadata, photo UI, and activity history.
+9. Make saved Calendar settings control the live integration.
+10. Before accepting untrusted uploads or Gmail attachments, add quarantine, scanning, release, and authorized download controls; copy only approved files to Shared Drive.
+11. Replace source-contract tests with more route, integration, and browser behavior tests.
+12. Validate backup restoration and add an admin audit viewer before real client data.
 
 ### Next: lead-to-closeout operations
 

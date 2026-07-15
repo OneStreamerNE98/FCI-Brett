@@ -16,7 +16,7 @@ The target architecture describes capabilities the application may need over tim
 
 - Reuse the company's existing Google Workspace Business environment for employee identities, Google Groups, the operations mailbox, Shared Drive, shared calendars, Docs, and derived Sheets reporting.
 - Keep the existing Sites deployment as the active development environment. Do not add a persistent development Cloud SQL instance now.
-- Maintain separate development, staging, and production project, OAuth, secret, and data boundaries. A separate boundary does not require continuously running resources.
+- Define and maintain separate development, staging, and production project, OAuth, secret, and data boundaries. The verified development project may exist now; staging and production project creation remains owner-controlled, and a separate boundary does not require continuously running resources.
 - Keep staging normally unprovisioned or scaled down. Create it from reviewed definitions only when migration, restore, release, or rollback evidence is needed, then remove or scale down billable resources under the approved runbook.
 - Provision only the minimum approved production foundation continuously: one Cloud Run application, the selected Cloud SQL PostgreSQL profile, Secret Manager integration, required monitoring, backups/PITR, and budget alerts.
 - Configure the production Cloud Run service with zero minimum instances and use two as the initial planning maximum, subject to the documented connection/revision-overlap budget and adjustment from measured demand.
