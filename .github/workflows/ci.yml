@@ -16,6 +16,67 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  infrastructure:
+    name: Terraform source validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive infrastructure/google-cloud
+
+      - name: Validate inert development boundary
+        working-directory: infrastructure/google-cloud/environments/development
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Test infrastructure approval gates
+        working-directory: infrastructure/google-cloud/modules/foundation
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test
+
+      - name: Prove activation lock blocks a post-apply off-plan
+        working-directory: infrastructure/google-cloud/modules/foundation
+        shell: bash
+        run: |
+          set +e
+          lock_output="$(terraform test -test-directory=expected-failure-tests -no-color 2>&1)"
+          lock_status=$?
+          set -e
+          printf '%s\n' "$lock_output"
+
+          if [ "$lock_status" -eq 0 ]; then
+            echo "Expected lifecycle.prevent_destroy to reject the off-plan."
+            exit 1
+          fi
+          grep -Fq "Resource terraform_data.core_activation_lock[0] has" <<< "$lock_output"
+          grep -Fq "lifecycle.prevent_destroy" <<< "$lock_output"
+
+      - name: Validate and test staging definitions
+        working-directory: infrastructure/google-cloud/environments/staging
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test
+
+      - name: Validate and test production definitions
+        working-directory: infrastructure/google-cloud/environments/production
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform test
+
   test:
     name: Node 22 lint, build, and tests
     runs-on: ubuntu-latest

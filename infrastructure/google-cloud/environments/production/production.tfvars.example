@@ -1,0 +1,56 @@
+# Non-secret example shape only. Copy to an ignored .tfvars file after every
+# value is owner-approved. Never place credentials or secret payloads here.
+enable_core       = false
+enable_guardrails = false
+cloud_sql_profile = null
+budget_amount_usd = 0
+
+owner_inputs = {
+  approval_reference   = ""
+  project_id           = ""
+  project_number       = ""
+  project_parent       = ""
+  billing_account_id   = ""
+  region               = ""
+  hostname             = ""
+  dns_owner            = ""
+  alert_emails         = []
+  rpo_hours            = 0
+  rto_hours            = 0
+  deployment_approver  = ""
+  rollback_owner       = ""
+  guardrail_verification_reference = ""
+  network_approval_reference       = ""
+  regional_outage_policy                  = ""
+  regional_ha_exercise_approval_reference = ""
+  regional_ha_failover_evidence_reference = ""
+  maintenance_day_utc  = 0
+  maintenance_hour_utc = 0
+}
+
+# Example values only. Replace them only after the network review referenced
+# above confirms no collision with company, project, peered, or future ranges.
+network_config = {
+  cloud_run_subnet_cidr               = "10.40.0.0/26"
+  private_service_range_address       = "10.41.0.0"
+  private_service_range_prefix_length = 16
+}
+
+# Keep this false until the full application, authorization, staging proof,
+# immutable image digest, and pinned secret version pass their separate gates.
+cloud_run_config = {
+  deploy_service           = false
+  image                    = ""
+  runtime_database_user    = ""
+  postgres_secret_version  = ""
+  cpu                      = "1"
+  memory                   = "512Mi"
+  request_concurrency      = 40
+  min_instances            = 0
+  max_instances            = 2
+  runtime_pool_max         = 5
+  overlapping_revisions    = 2
+  migration_connections    = 1
+  rehearsal_connections    = 1
+  admin_monitoring_reserve = 10
+}
