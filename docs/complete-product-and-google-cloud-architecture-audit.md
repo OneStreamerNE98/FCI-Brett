@@ -6,7 +6,7 @@ Scope: FCI Operations for one company and approximately 20 employees
 
 Production target: Google Cloud with Google Workspace-centered identity and collaboration
 
-Status: Architecture baseline and ordered roadmap; runtime, infrastructure-definition, and persistence boundaries exist in source, while authorization, recovery proof, and broader product decisions remain open
+Status: Architecture baseline and ordered roadmap; runtime, infrastructure-definition, persistence, and source-only authorization-simulation boundaries exist, while route composition, recovery proof, and broader product decisions remain open
 
 ## Executive verdict
 
@@ -14,7 +14,7 @@ The accepted Google Cloud runtime direction is appropriate. Keep one regional Cl
 
 The accepted [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) amends provisioning order: reuse existing Workspace, keep Sites as development, keep staging on demand, compare standalone and regional-HA Cloud SQL before selection, and leave optional modules disabled by default. This reduces idle cost without weakening identity, authorization, audit, backup, restore, or real-data gates.
 
-The current Sites/Workers/D1/R2 application remains useful as a controlled, single-user development environment with test data. It is not yet a production Google Cloud application. Source now includes the PostgreSQL client/project repositories, the generic identity/security-audit/integration/file persistence boundary, a provider-neutral object-storage contract, an owner-approved fail-closed Node/Cloud Run foundation, exact privilege-aware readiness, separate migration/rehearsal commands, least-privilege SQL policy, a bounded core test-data rehearsal, and zero-resource-by-default Google Cloud definitions. Employee authorization behavior and routes, live storage/integration adapters, provisioning, staging migration/restore, recovery proof, and cutover remain open.
+The current Sites/Workers/D1/R2 application remains useful as a controlled, single-user development environment with test data. It is not yet a production Google Cloud application. Source now includes the PostgreSQL client/project repositories, the generic identity/security-audit/integration/file persistence boundary, a provider-neutral object-storage contract, an owner-approved fail-closed Node/Cloud Run foundation, exact privilege-aware readiness, separate migration/rehearsal commands, least-privilege SQL policy, a bounded core test-data rehearsal, zero-resource-by-default Google Cloud definitions, and the first-rollout authorization simulation. Final Office/Project Manager responsibilities, employee HTTP/cookie and route composition, Field Lead link issuance, live storage/integration adapters, the audit reader, provisioning, staging migration/restore, recovery proof, and cutover remain open.
 
 Google Workspace access is not the next development blocker. Most of the foundation can be built with simulated identities, provider interfaces, fixtures, and local PostgreSQL. Live OAuth clients, company resources, watches, webhook channels, phone numbers, and production infrastructure should wait for the administrator and owner gates in this document.
 
@@ -26,7 +26,7 @@ The product is currently a CRM and Google-integration prototype rather than a co
 - The development D1 model has 21 product and integration tables; the production PostgreSQL registry now defines 28 tables including migration history, with unapproved operational modules explicitly deferred.
 - Twenty-two application files are coupled to `cloudflare:workers`, and 20 access `env.DB` directly.
 - The source-only Cloud Run foundation has a separate container/build, configuration validator, bounded PostgreSQL pool, migration/rehearsal commands, process liveness, and exact database/privilege readiness. Every employee application path still fails closed with `503`; source infrastructure definitions exist but provisioning and the full application port remain open.
-- The current allowlist and `isAdmin` flag are appropriate only behind the controlled development host. Durable production user/session/role/membership structures now exist, but access-context resolution and authorization behavior do not.
+- The current allowlist and `isAdmin` flag are appropriate only behind the controlled development host. Durable production user/session/role/membership structures and source-only access-context/query authorization now exist, but the hosted and production employee HTTP routes do not use them.
 - General append-only `audit_events` now exists separately from client/project `activity_events`, with executor/originator evidence and insert-only runtime access. Coverage is not operational until authorized routes use it.
 - Development uploads still write directly to R2. The production boundary now has logical file/version/storage/link metadata and an opaque storage contract, but quarantine provider composition, scanning, release, retention enforcement, and authorized download remain open.
 - Gmail suggestions are generated on demand; there is no durable watch/history processor or durable review queue. Calendar can create an unlinked test hold; it does not yet provide authoritative linked appointments or conflict reconciliation.
@@ -170,7 +170,7 @@ Employee login and the one company Google data connector are separate OAuth clie
 4. Issue secure server sessions with rotation, inactivity/absolute expiry, revocation, CSRF/same-origin defenses, and no provider token in the browser.
 5. Resolve capabilities and project scope into an access context used inside repository queries. A hidden button is never authorization.
 6. Recheck disabled status and critical permission changes promptly; audit login, logout, failure, invitation, session revocation, role/capability, membership, export, and administrative actions.
-7. Start with Admin, Office Operations, and Project Manager; decide whether Sales/Estimator and Field Lead need separate roles.
+7. Start with Administrator, Office Operations, and Project Manager. Sales/Estimator is excluded; Field Leads use exact-assignment expiring links rather than employee accounts; subcontractors receive no accounts.
 8. Prefer purpose-scoped expiring links for subcontractors or clients unless the owner approves full accounts.
 
 ## Durable work, reminders, and texting
@@ -273,7 +273,7 @@ The following work is safe when it changes source, local fixtures, and tests onl
 
 1. **Completed:** PostgreSQL repositories now provide actor-scoped idempotency, atomic activity/outbox writes, and bounded version-fenced outbox claims.
 2. **Completed in source; unapplied:** the production persistence boundary now covers identity, invitation, secure-session, role/capability, project-membership, general security-audit, integration/file metadata, transactional repositories, and an opaque provider-neutral object-storage contract. See [Production persistence boundary](production-persistence-boundary.md).
-3. After the owner approves the access matrix, implement simulated authorization policy and negative cross-project tests across list, search, dashboard, files, Gmail evidence, meetings, and assistant evidence.
+3. **Completed in source; not route-composed:** the first-rollout authorization simulation now covers recorded Administrator-only decisions, conservative fake-role scopes, secure-session denial behavior, per-role capability and project-scoped PostgreSQL queries, fixed-operation provider callbacks, and negative permission evidence. Final Office/Project Manager responsibilities remain open. See [Authorization simulation](authorization-simulation.md).
 4. **Completed in the approved source boundary:** the Node/Cloud Run kernel, validated configuration, capped PostgreSQL pools, separate migration/rehearsal commands, and process/database health endpoints exist without provisioning Google Cloud. The employee application port remains open.
 5. Define durable job/attempt/failed-job and future Scheduler/reminder-materialization schemas, contracts, state machines, fakes, and tests. Do not add an operational Scheduler, reminder planner, or delivery handler before the production platform and authorization foundation are accepted.
 6. Model and test Gmail watch/history and Calendar channel/sync-token state machines entirely with fixtures.
@@ -291,7 +291,7 @@ Design/contracts/fixtures for scheduling and communications may proceed, but ope
 - Create separate Internal employee-login and company-data-connector OAuth clients, exact redirect URIs, API Controls trust, and production secrets.
 - Provision the operations mailbox, Shared Drive, directory Sheet, calendars, groups, and access rules.
 - Run final `cherryhillfci.com` OIDC, Gmail, Calendar, Drive, and Sheets acceptance with company accounts and test records.
-- Approve the operational source-of-truth boundaries, roles, data retention, recovery targets, field access, and messaging policy.
+- Approve the remaining operational source-of-truth boundaries, direct Google access, rollout assignments, data retention, recovery targets, field-link lifecycle, and messaging policy. The initial application roles and named sensitive-action policy are approved.
 - Select and register the SMS sender/provider, approve consent/opt-out language and templates, and authorize the first live test.
 - Approve staging migration rehearsal, production cutover, deployment, second-user access, and any real client data.
 
@@ -303,7 +303,7 @@ Design/contracts/fixtures for scheduling and communications may proceed, but ope
 | 2 | `codex/google-cloud-runtime-foundation` | **Completed and merged in PR #11:** fail-closed Node container/build, validated config, bounded pools, migration/rehearsal commands, exact readiness | No live provisioning |
 | 3 | `codex/google-cloud-infrastructure-definitions` | **Completed in source and unapplied:** Sites-preserving, on-demand staging/production profiles, bounded Cloud Run, and disabled optional modules | Owner inputs, calculator evidence, and any apply remain open |
 | 4 | `codex/production-persistence-boundary` | **Completed in source and unapplied:** remaining PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, and provider-neutral object storage | Owner acceptance; no route or data cutover |
-| 5 | `codex/authorization-simulation` | Access-context policy, repository scoping, simulated principals, and denial tests | Production persistence boundary and owner access matrix accepted |
+| 5 | `codex/authorization-simulation` | Completed in source: access-context policy, repository scoping, simulated principals, provider gates, and denial tests | Not route-composed, applied, or deployed |
 | 6 | `codex/cloud-run-application-composition` | Port remaining employee routes through the production database/storage and authorization boundaries; replace the foundation `503` only for composed routes | Persistence and authorization accepted; no deployment |
 | 7 | `codex/migration-rehearsal` | **Partial source evidence exists:** complete transform, duplicate, restore, reconciliation, and cutover tooling/evidence contract | Production-owned schema/routes complete; isolated staging execution requires separate approval |
 | 8 | `codex/workspace-oidc-sessions` | Employee-login OIDC and secure-session adapter; live company client and second-user rollout remain disabled | Recorded staging proof and authorization accepted before live verification |
@@ -326,7 +326,7 @@ Do not deploy or provision during these source-only branches. Keep each pull req
 - Which accounting system owns invoices, payments, tax, retainage, commissions, and financial reconciliation?
 - Are field workers employees, subcontractors, or both, and which insurance, certification, time, and compliance records are required?
 - Is true offline field work required for the first release, or is online-only with an explicit degraded/offline state acceptable?
-- Which staff receive Admin, Office Operations, Project Manager, Sales/Estimator, or Field Lead capabilities?
+- Which invited employees beyond the two initial Administrators receive Office Operations or Project Manager access, and in what rollout order? Sales/Estimator is excluded, Field Leads use links, and subcontractors receive no accounts.
 - Which external client/subcontractor actions need expiring links or a portal?
 - Which appointment, project, employee, and marketing messages may be automated, from which sender, during which hours, with which human approval and escalation?
 - What are retention/deletion rules for mail copies, texts, call notes, photos, files, audit records, and backups?

@@ -106,12 +106,13 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA fci_app FROM fci_rehearsal_importer;
 -- UPDATE on clients is currently required because protected writes use
 -- SELECT ... FOR KEY SHARE. Session issuance uses FOR SHARE on users, whose
 -- locking requirement is met by an exact UPDATE(id) column grant instead of
--- table-wide access to identity/security fields. No runtime table receives DELETE, TRUNCATE,
--- REFERENCES, TRIGGER, or grant options; reviewed revocation methods can add
--- narrower capabilities with atomic audit evidence in a later slice.
+-- table-wide access to identity/security fields. Session revocation can only
+-- update the six revocation/credential columns used by the atomic logout
+-- repository. No runtime table receives DELETE, TRUNCATE, REFERENCES, TRIGGER,
+-- or grant options.
 GRANT USAGE ON SCHEMA fci_app TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.clients TO fci_runtime;
-GRANT INSERT ON TABLE fci_app.contacts TO fci_runtime;
+GRANT SELECT, INSERT ON TABLE fci_app.contacts TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.projects TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.activity_events TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.idempotency_requests TO fci_runtime;
@@ -119,13 +120,13 @@ GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.outbox_events TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.users TO fci_runtime;
 GRANT UPDATE (id) ON TABLE fci_app.users TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.external_identities TO fci_runtime;
-GRANT INSERT ON TABLE fci_app.invitations TO fci_runtime;
-GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.sessions TO fci_runtime;
-GRANT INSERT ON TABLE fci_app.roles TO fci_runtime;
-GRANT INSERT ON TABLE fci_app.capabilities TO fci_runtime;
-GRANT INSERT ON TABLE fci_app.role_capabilities TO fci_runtime;
-GRANT INSERT ON TABLE fci_app.user_roles TO fci_runtime;
-GRANT INSERT ON TABLE fci_app.project_memberships TO fci_runtime;
+GRANT SELECT, INSERT ON TABLE fci_app.sessions TO fci_runtime;
+GRANT UPDATE (token_hash, csrf_hash, revoked_at, revoked_by_actor_key, revocation_reason_code, version) ON TABLE fci_app.sessions TO fci_runtime;
+GRANT SELECT ON TABLE fci_app.roles TO fci_runtime;
+GRANT SELECT ON TABLE fci_app.capabilities TO fci_runtime;
+GRANT SELECT ON TABLE fci_app.role_capabilities TO fci_runtime;
+GRANT SELECT ON TABLE fci_app.user_roles TO fci_runtime;
+GRANT SELECT, INSERT ON TABLE fci_app.project_memberships TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.audit_events TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.integration_connections TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.integration_oauth_attempts TO fci_runtime;

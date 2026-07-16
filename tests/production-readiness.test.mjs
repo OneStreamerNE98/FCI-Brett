@@ -19,7 +19,8 @@ function expectedRuntimePrivilegeRows() {
     DATABASE_TABLE_PRIVILEGES.map((privilege) => {
       const shouldHave = privileges.includes(privilege);
       const supportsColumnGrant = ["SELECT", "INSERT", "UPDATE", "REFERENCES"].includes(privilege);
-      const hasReviewedColumnOnlyGrant = table === "users" && privilege === "UPDATE";
+      const hasReviewedColumnOnlyGrant = privilege === "UPDATE" &&
+        (table === "users" || table === "sessions");
       return {
         tableName: table,
         privilege,
@@ -56,6 +57,9 @@ function readyDatabase(overrides = {}) {
           has_sequence_access: overrides.hasSequenceAccess ?? false,
           has_user_lock_column_update: overrides.hasUserLockColumnUpdate ?? true,
           has_other_user_column_update: overrides.hasOtherUserColumnUpdate ?? false,
+          has_session_revocation_column_updates:
+            overrides.hasSessionRevocationColumnUpdates ?? true,
+          has_other_session_column_update: overrides.hasOtherSessionColumnUpdate ?? false,
           history_reader_exists: overrides.historyReaderExists ?? true,
           history_reader_security_definer: overrides.historyReaderSecurityDefiner ?? true,
           history_reader_owner: overrides.historyReaderOwner ?? true,
@@ -113,6 +117,18 @@ test("requires exact runtime privileges and complete migration history through t
   assert.deepEqual(queries[2].values, ["fci_app"]);
   assert.match(queries[2].sql, /pg_has_role\(SESSION_USER, role\.oid, 'SET'\)/);
   assert.match(queries[2].sql, /has_sequence_privilege\(CURRENT_USER, sequence\.oid, 'USAGE'\)/);
+  assert.match(queries[2].sql, /has_session_revocation_column_updates/);
+  for (const column of [
+    "token_hash",
+    "csrf_hash",
+    "revoked_at",
+    "revoked_by_actor_key",
+    "revocation_reason_code",
+    "version",
+  ]) {
+    assert.match(queries[2].sql, new RegExp(`'${column}'`));
+  }
+  assert.match(queries[2].sql, /has_other_session_column_update/);
   assert.deepEqual(queries[3].values, [
     "fci_app",
     expectedRuntimePrivilegeRows().map(({ tableName }) => tableName),
@@ -138,6 +154,8 @@ test("fails readiness when schema privilege is too weak or too broad", async () 
     { hasSequenceAccess: true },
     { hasUserLockColumnUpdate: false },
     { hasOtherUserColumnUpdate: true },
+    { hasSessionRevocationColumnUpdates: false },
+    { hasOtherSessionColumnUpdate: true },
   ]) {
     const { database, queries } = readyDatabase(permissions);
     const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
@@ -247,6 +265,8 @@ test("coalesces concurrent checks, caches briefly, and never exposes query failu
               has_sequence_access: false,
               has_user_lock_column_update: true,
               has_other_user_column_update: false,
+              has_session_revocation_column_updates: true,
+              has_other_session_column_update: false,
               history_reader_exists: true,
               history_reader_security_definer: true,
               history_reader_owner: true,

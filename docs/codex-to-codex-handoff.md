@@ -79,7 +79,7 @@ Paste this into the coworker's first task:
 
 The expected result is a read-only orientation report plus a passing baseline. The worker should not begin coding until the assigned milestone is confirmed.
 
-## Completed production-runtime worker assignment
+## Completed source-only platform assignments
 
 The source-only `codex/google-cloud-runtime-foundation` assignment now provides the fail-closed container/runtime boundary, validated private Cloud SQL configuration, bounded pools, separate migration and rehearsal commands, exact readiness, least-privilege source policies, and strict test-data core rehearsal. It does not containerize the employee application, provision infrastructure, apply roles or migrations, connect Workspace, or deploy. See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md).
 
@@ -87,13 +87,15 @@ The source-only infrastructure-definition assignment now provides zero-resource-
 
 The source-only `codex/production-persistence-boundary` assignment now provides migration version 3, generic identity/security-audit/integration/file metadata, aggregate PostgreSQL repositories, exact runtime privilege readiness, and a provider-neutral object-storage contract. It does not seed roles, implement authorization behavior, replace D1/R2 routes, migrate data, connect live Workspace identity, apply the migration, or deploy. See [Production persistence boundary](production-persistence-boundary.md).
 
+The source-only `codex/authorization-simulation` assignment now provides a pure simulated-admission helper, the owner-approved Administrator-only capability decisions, conservative fake Office/Project Manager read defaults pending final responsibility approval, secure-session denial rules, project-scoped PostgreSQL reads with financial redaction, fixed-operation provider-action gates, and minimized append-only authorization evidence. It does not bind durable invitations, seed users or roles, issue cookies or Field Lead links, implement employee HTTP/login/logout routes, connect live Google services, grant the runtime audit reader, add a second user, migrate data, apply infrastructure, or deploy. See [Authorization simulation](authorization-simulation.md).
+
 ## Recommended next worker assignment
 
-The owner should first accept the production persistence boundary and complete `docs/task-checklists/06-20-user-operating-model-and-access.md`. After both are accepted, the next source-only assignment is authorization simulation. Use this prompt:
+After the authorization-simulation pull request is accepted and merged, the next source-only assignment is production employee-route composition. Use this prompt:
 
-> Create and work on `codex/authorization-simulation`. First read `AGENTS.md`, `docs/production-persistence-boundary.md`, `docs/architecture-decision-production-platform.md`, `docs/complete-product-and-google-cloud-architecture-audit.md`, and the owner-approved `docs/task-checklists/06-20-user-operating-model-and-access.md`. Add simulated access contexts, secure-session mechanics, capabilities, approved role mappings, project-scoped repository queries, server-side denial behavior, and negative cross-project tests on the production database/storage boundaries. Keep employee OIDC, live Workspace authorization, route cutover, a second user, real data, infrastructure apply, migration apply, and deployment disabled. Do not seed or infer role semantics that the owner has not approved. Preserve the current Sites/D1/R2 development environment and Google test connector. Finish with a pull request containing verification and security-impact evidence.
+> Create and work on `codex/cloud-run-employee-routes`. First read `AGENTS.md`, `docs/authorization-simulation.md`, `docs/production-persistence-boundary.md`, `docs/google-cloud-runtime-foundation.md`, and the approved access checklist. Compose the currently supported employee dashboard, search, project, client, file, Gmail, and Calendar request paths through the production database/storage ports and authorization service. Add route-level denial, cross-project, disabled/revoked/expired-session, callback-not-invoked, and refresh/logout transport tests without adding a production authentication bypass. Keep live Workspace OIDC, Google provider configuration, Field Lead link issuance, staging, a second user, real data, migration/infrastructure apply, route cutover, and deployment disabled. Preserve the Sites/D1/R2 development environment and Google test connector. Finish with a pull request containing verification and security-impact evidence.
 
-Brett's Google Cloud and Workspace inputs remain necessary for cost approval, resource application, staging, and later live integration, but they do not block local source-only authorization work once the owner access matrix is accepted. Google Workspace OIDC and live authorization rollout must still wait until the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
+Brett's Google Cloud and Workspace inputs remain necessary for cost approval, resource application, staging, direct Google access, and later live integration, but they do not block local source-only route composition. Google Workspace OIDC and live authorization rollout must still wait until the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
 
 ## Daily collaboration workflow
 

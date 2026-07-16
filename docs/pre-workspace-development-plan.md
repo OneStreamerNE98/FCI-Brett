@@ -59,10 +59,11 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 
 ## Owner decisions that can happen before connection
 
-- [ ] Confirm the operations connection account, super-administrator contact, initial application administrator, and second trained administrator.
-- [ ] Approve Admin, Office Operations, and Project Manager responsibilities; decide whether Sales/Estimator is separate.
-- [ ] Decide whether field leads receive limited accounts or expiring links and keep subcontractors account-free by default.
-- [ ] Approve who may see financial values, file Gmail, create Calendar events, share files, export data, and view audit/recovery tools.
+- [ ] Confirm the proposed `operations@cherryhillfci.com` connection account exists and identify the Workspace super-administrator contact. The two owner-selected initial application Administrators are `admincrm@cherryhillfci.com` and `brett@cherryhillfci.com`; verify that each is an individual managed account assigned to one named person and never a shared staff login.
+- [x] Record the two initial Administrators, Administrator-only sensitive actions, Sales/Estimator exclusion, Field Lead link-only direction, no subcontractor accounts, and explicit-invitation requirement.
+- [ ] Approve complete Office Operations and Project Manager responsibilities and project/cross-project visibility; conservative fake read scopes are used only for local simulation meanwhile.
+- [x] Field leads use expiring links rather than employee accounts, and subcontractors receive no accounts.
+- [x] Restrict financial values, Gmail filing, Calendar creation, file sharing, exports, and audit viewing to Administrators for the first rollout. Recovery controls remain unapproved and denied.
 - [x] Approve isolated development/staging/production project, credential, and data boundaries, with Sites development and on-demand staging.
 - [ ] Approve the Google Cloud organization/billing account, primary region, hostname, and DNS owner.
 - [ ] Name recipients for the default `$50/month` pre-production alert; approve the estimate-based production budget, recovery objectives, retention periods, deployment approver, and rollback owner.
@@ -86,10 +87,10 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 4. **Completed PostgreSQL repository slice:** client/project adapters, atomic actor-scoped idempotency and truthful replay, transactional activity/outbox intent, guarded exact-value parsing, version-fenced outbox claim/complete/retry/recovery, and PostgreSQL 16 repository tests. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
 5. **Completed production runtime foundation:** a separate fail-closed Cloud Run image, private Cloud SQL connector composition, bounded runtime/migration/rehearsal pools, exact health/readiness, explicit migration ownership, least-privilege source policy, and a bounded core test-data rehearsal. See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md).
 6. **Accepted cost posture:** reuse Workspace, preserve Sites development, keep staging on demand, price standalone and HA Cloud SQL before selection, and default optional service modules to disabled.
-7. **Owner approval in parallel:** approve the 20-user role model and cross-system Google access matrix plus Cloud organization/billing, region, hostname, alert recipients, recovery, deployment, and rollback inputs.
+7. **Owner decisions in parallel:** the local authorization simulator records the named Administrator-only sensitive-capability matrix and uses conservative Office/Project Manager read defaults. Final role responsibilities, rollout order, direct Google read access, Cloud organization/billing, region, hostname, alert recipients, recovery, deployment, rollback, and Google Group/lifecycle inputs remain open.
 8. **Completed in source; unapplied infrastructure definitions:** safe variables, costed core/profile definitions, and an on-demand staging procedure now exist. Missing owner inputs remain explicit provisioning blockers.
 9. **Completed in source; unapplied production persistence boundary:** remaining PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, exact runtime privileges, and provider-neutral object storage now exist without changing Sites behavior.
-10. **Next source-only authorization worker:** after the persistence boundary and access matrix are approved, add simulated access contexts, scoped queries, capabilities/project permissions, and denial tests without enabling employee login or live data.
+10. **Completed source-only authorization simulation:** the approved Administrator-only capability decisions, conservative fake-role read defaults, secure-session denial rules, scoped queries, fixed-operation provider-action gates, and denial evidence now exist without enabling durable invitation admission, employee login, route composition, or live data. See [Authorization simulation](authorization-simulation.md).
 11. **Cloud Run composition and staging-proof workers:** port the remaining application routes, then create staging only with separate approval to prove migration, restore, reconciliation, rollback/forward-fix, and the application smoke path.
 12. **Workspace OIDC worker:** implement and verify live employee login only after the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
 13. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
@@ -146,7 +147,7 @@ See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) for th
 
 ## Next bounded developer assignment
 
-After the owner accepts the persistence boundary and completes the role/cross-system access matrix, assign one authorization-simulation worker. Open Google Cloud and Workspace inputs remain blockers to applying definitions and live integration, not to this local source task.
+After the authorization-simulation pull request is accepted, assign production employee-route composition as the next source-only worker. Open Google Cloud and Workspace inputs remain blockers to applying definitions and live integration, not to local route work.
 
 - Use simulated principals and the owner-approved role/capability/project matrix.
 - Add access contexts, secure-session mechanics, project-scoped repository queries, and denial tests across list/search/dashboard/file/integration evidence.
@@ -154,4 +155,4 @@ After the owner accepts the persistence boundary and completes the role/cross-sy
 - Preserve Sites development and the Google test connector.
 - Keep employee OIDC, live Workspace configuration, a second user, real data, migration apply, route cutover, infrastructure apply, and deployment disabled.
 
-The runtime foundation, infrastructure definitions, and production persistence boundary now exist in source. The separately approved access matrix remains the immediate gate for authorization simulation. Employee Google Workspace OIDC, live sessions, and production authorization rollout remain blocked until the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
+The runtime foundation, infrastructure definitions, production persistence boundary, recorded first-rollout decisions, and conservative authorization simulation now exist in source. Final Office/Project Manager responsibilities, employee-route composition, Google Workspace OIDC, live sessions, and production authorization rollout remain blocked or incomplete until their production foundation, tested migration/cutover path, provider-neutral database/storage, and authorization acceptance gates pass.

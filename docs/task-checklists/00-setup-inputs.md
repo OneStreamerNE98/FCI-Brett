@@ -2,7 +2,7 @@
 
 Owner: Business owner
 
-Status: Partially complete — company domain, login/platform direction, and cost-controlled rollout posture recorded
+Status: Partially complete — access-policy inputs and platform direction recorded; account verification and Cloud/Workspace setup remain open
 
 Secrets required in GitHub: None
 
@@ -12,8 +12,9 @@ Record only the following non-secret decisions in this file or a GitHub issue. L
 
 - [x] Company Google Workspace primary domain: `cherryhillfci.com`
 - [ ] Google Workspace super administrator contact: `TBD`
-- [ ] Proposed FCI Operations connection account: `operations@cherryhillfci.com` — confirm or create
-- [ ] Initial application administrator Workspace email: `TBD`
+- [ ] Proposed FCI Operations connection account: `operations@cherryhillfci.com` — confirm or create it and assign it to an approved custodian before connection
+- [x] Owner-selected initial application Administrators: `admincrm@cherryhillfci.com` and `brett@cherryhillfci.com`
+- [ ] Verify both Administrator identities are individual managed accounts assigned to named people; `admincrm@cherryhillfci.com` must not be a shared password or generic staff login
 - [x] Additional development users: `None — single-user development environment`
 - [ ] Final production hostname or custom domain: `TBD`
 - [x] Development login policy: keep allowlisted ChatGPT sign-in during the single-user development phase

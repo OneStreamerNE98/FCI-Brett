@@ -1,6 +1,8 @@
+import { AUTHORIZATION_CAPABILITIES } from "./authorization-capabilities";
+
 export const CREATION_CAPABILITIES = {
-  createClient: "clients:create",
-  createProject: "projects:create",
+  createClient: AUTHORIZATION_CAPABILITIES.clientsCreate,
+  createProject: AUTHORIZATION_CAPABILITIES.projectsCreate,
 } as const;
 
 export type CreationCapability = typeof CREATION_CAPABILITIES[keyof typeof CREATION_CAPABILITIES];

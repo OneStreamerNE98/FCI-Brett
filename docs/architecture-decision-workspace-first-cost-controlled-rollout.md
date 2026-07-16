@@ -37,7 +37,7 @@ The target architecture describes capabilities the application may need over tim
 
 AppSheet Core may be evaluated for a narrow, non-authoritative internal workflow if it is already included in the company's Workspace edition. It is not a replacement for the core app, Cloud SQL, query-scoped authorization, audit controls, or migration/recovery evidence.
 
-Field leads may use expiring, purpose-scoped links initially, and subcontractors should receive no application or Shared Drive account by default. Those recommendations still require the owner to approve the final role and access matrix.
+The owner approved expiring, purpose-scoped links instead of Field Lead employee accounts and no subcontractor application accounts for the first rollout. Link issuance and lifecycle remain unimplemented, and any direct Shared Drive access or future subcontractor link still requires separate approval.
 
 ## Phased service activation
 

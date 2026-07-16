@@ -7,15 +7,15 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Topic | Owner | Status | Next task |
 | --- | --- | --- | --- |
 | Repository verification | Codex/developer | Complete | GitHub CI builds and tests every push and pull request. |
-| Workspace identity inputs | Business owner | Partially complete | Domain is `cherryhillfci.com`; confirm the operations account and initial administrator. |
+| Workspace identity inputs | Business owner | Partially complete | Domain and two initial Administrator identities are recorded; confirm the proposed operations connector account, named individual account ownership, resource setup, and super-administrator contact. |
 | Workspace resources | Workspace administrator | Not started | Create the Shared Drive, directory Sheet, mailbox, and two calendars. |
 | Google Cloud and OAuth | Workspace/Cloud administrator | Company-account project candidate reported; Cloud verification pending | Inventory Brett's candidate and bring the non-secret findings back for approval before any API, IAM, billing, OAuth, or Admin-console change. |
 | Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
-| Staff Google login and roles | Codex/developer | Not implemented | Build on Cloud Run/Cloud SQL after identity policy is approved. |
-| 20-user operating/access model | Owner + Workspace administrator | Waiting on owner | Decide staff/field roles and approve the app-to-Google access matrix. |
-| Production foundation and migration | Developer + Cloud administrator | In progress | Accept the source-only persistence boundary, finish the owner access matrix and approved calculator evidence, obtain open owner inputs, then complete authorization simulation before any staging apply. |
+| Staff Google login and roles | Codex/developer | Source-only authorization simulation implemented; routes/OIDC pending | After acceptance, compose production employee routes through the authorization boundary; keep live OIDC and additional users gated. |
+| 20-user operating/access model | Owner + Workspace administrator | Initial decisions recorded; complete role/Google policy pending | Approve Office/Project Manager responsibilities and visibility, decide rollout/direct reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
+| Production foundation and migration | Developer + Cloud administrator | In progress | Accept the authorization simulation, finish approved calculator evidence, and obtain the remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
-| Frontend multi-user hardening | Codex/developer | In progress | Typed feedback and Settings failure safety are complete; implement real capabilities, freshness, durable URLs, and conflict handling next. |
+| Frontend multi-user hardening | Codex/developer | In progress | Typed feedback and Settings failure safety are complete; compose the source-only capabilities into routes, then add freshness, durable URLs, and conflict handling. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime boundary approved; broader decisions open | Approve system boundaries, roles, state machines, messaging/file policy, and authoritative external systems. |

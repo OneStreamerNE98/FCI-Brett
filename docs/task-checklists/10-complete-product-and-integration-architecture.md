@@ -20,11 +20,13 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 ## Roles and access
 
 - [ ] Approve Admin, Office Operations, and Project Manager responsibilities.
-- [ ] Decide whether Sales/Estimator and Field Lead are distinct roles.
-- [ ] Decide whether subcontractors and clients receive accounts, expiring purpose-scoped links, or no direct access.
+- [x] Sales/Estimator is excluded from the first rollout, and Field Lead uses a future expiring assignment link rather than an employee role.
+- [x] Subcontractors receive no application accounts or access in the first rollout.
+- [ ] Decide whether clients receive accounts, purpose-scoped links, or no direct access, and whether subcontractors may ever receive a separately approved future link.
 - [ ] Approve project membership and cross-project visibility rules.
-- [ ] Approve who may see cost/margin, approve discounts/change orders, send messages, file Gmail, create Calendar events, share/download files, export data, view security audit, retry jobs, and perform recovery.
-- [ ] Confirm that Internal Google OAuth still requires an explicit app invitation and active user.
+- [x] Restrict pricing/revenue/margin, project creation/assignment changes, Gmail filing, Calendar creation, file sharing, exports, and security-audit viewing to Administrators for the first rollout.
+- [ ] Decide discounts/change orders, message sending, mailbox/calendar reads, file view/download, job retry, routine non-Admin writes, and recovery authority; deny them in simulation until approved.
+- [x] Require an explicit application invitation for every employee in the local policy; durable invitation binding and Internal Google OAuth verification remain unimplemented.
 
 ## CRM, estimating, and project workflow
 
@@ -80,8 +82,8 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 
 - [x] Review and merge the PostgreSQL repository work without duplicating its scope.
 - [x] Complete PostgreSQL adapters, atomic idempotency, activity/outbox transactions, bounded version-fenced claims, and shared PostgreSQL 16 repository tests.
-- [x] Complete one production-persistence slice covering the remaining PostgreSQL schema/repositories, generic users/identities/invitations/sessions and roles/capabilities/project-membership structures, general append-only security audit, integration/file metadata, and provider-neutral object-storage ports for routes that still depend on D1/R2. It is source-only, unapplied, and not routed; the approved access matrix still gates authorization behavior. See [Production persistence boundary](../production-persistence-boundary.md).
-- [ ] Add access-context query scoping and negative cross-project authorization tests.
+- [x] Complete one production-persistence slice covering the remaining PostgreSQL schema/repositories, generic users/identities/invitations/sessions and roles/capabilities/project-membership structures, general append-only security audit, integration/file metadata, and provider-neutral object-storage ports for routes that still depend on D1/R2. It is source-only, unapplied, and not routed; recorded Administrator-only decisions and deny-by-default handling govern the simulator while final Office/Project Manager responsibilities remain open. See [Production persistence boundary](../production-persistence-boundary.md).
+- [x] Add source-only access-context query scoping and negative cross-project authorization tests, including an isolated real-PostgreSQL suite that runs only when `TEST_POSTGRES_URL` is supplied. Local runs without that variable skip the database suite and do not count as real-database evidence.
 - [x] Add the owner-approved source-only Node/Cloud Run foundation with validated runtime configuration, capped PostgreSQL pools, separate migration/rehearsal commands, and process/database health endpoints without provisioning resources. Employee application paths still return `503`; see [Google Cloud runtime foundation](../google-cloud-runtime-foundation.md).
 - [ ] Add costed, reviewable infrastructure definitions that preserve Sites development, support on-demand staging, provide standalone and HA production database profiles, configure zero-minimum/bounded-maximum Cloud Run, and keep optional service modules disabled. The [source-only Terraform definitions](../../infrastructure/google-cloud/README.md) default to zero resources, use lifecycle locks, require explicit approval inputs, and remain unapplied; approved all-service calculator evidence is still open.
 - [ ] Define and test provider-neutral jobs, attempts, application-owned failed jobs, replay/cancel, outbox-relay, future Scheduler/reminder, and fake Cloud Tasks contracts. Do not add operational scheduling or delivery before the production platform and authorization gates pass.
@@ -108,7 +110,7 @@ Checked items in this section are accepted guardrails currently in force; they d
 - [ ] Every background provider operation is idempotent, bounded, observable, and recoverable through an application-owned exception record.
 - [ ] Security audit is separate from the client/project activity timeline and covers identity, permissions, exports, files, jobs, integrations, and recovery.
 - [ ] Restore and point-in-time recovery pass in a separate environment with data reconciliation and an application smoke test.
-- [ ] Representative Admin, Office, Project Manager, Sales/Estimator, and Field access scenarios pass if those roles are approved.
+- [ ] Representative Admin, Office, Project Manager, and exact-assignment Field-link access scenarios pass; Sales/Estimator remains excluded rather than simulated as a role.
 - [ ] Every integration enabled for launch passes its applicable normal, duplicate, delayed, expired, revoked, partial-failure, and reconciliation scenarios; dormant modules remain unprovisioned.
 - [ ] The owner signs off on the staging migration rehearsal, production cutover plan, second-user gate, and real-data gate.
 

@@ -286,6 +286,8 @@ test("composes singleton persistence repositories and request-scoped creation fa
 
   assert.equal(composition.repositories.outbox, composition.repositories.outbox);
   assert.equal(composition.repositories.securityAudit, composition.repositories.securityAudit);
+  assert.equal(composition.repositories.authorization, composition.repositories.authorization);
+  assert.equal(typeof composition.repositories.authorization.findSessionByTokenHash, "function");
   assert.equal(composition.repositories.identity, composition.repositories.identity);
   assert.equal(composition.repositories.integrations, composition.repositories.integrations);
   assert.equal(composition.repositories.files, composition.repositories.files);
