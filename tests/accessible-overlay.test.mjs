@@ -40,6 +40,9 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /restoreOutsideInteraction\(\)/);
   assert.match(overlay, /preferredReturnTarget\?\.isConnected/);
   assert.match(overlay, /returnFocusRef\?: RefObject<HTMLElement \| null>/);
+  assert.match(overlay, /fallbackFocusRef\?: RefObject<HTMLElement \| null>/);
+  assert.match(overlay, /fallbackReturnTarget\?\.isConnected/);
+  assert.match(overlay, /previouslyFocused\?\.isConnected[\s\S]*fallbackReturnTarget\?\.isConnected/);
   assert.match(overlay, /event\.target !== event\.currentTarget/);
   assert.match(overlay, /!closeOnBackdropRef\.current \|\| busyRef\.current/);
 

@@ -103,6 +103,18 @@ function actorIntent(overrides = {}) {
   };
 }
 
+function readerScope(overrides = {}) {
+  return {
+    kind: "company",
+    sessionId: ACTOR_SESSION_ID,
+    sessionVersion: "3",
+    userId: ACTOR_ID,
+    authorizationVersion: "7",
+    includeFinancial: true,
+    ...overrides,
+  };
+}
+
 function setUserAccessIntent(overrides = {}) {
   return {
     ...actorIntent(),
@@ -127,7 +139,7 @@ function fakeDatabase(
       const normalized = sql.trim();
       queries.push({ sql: normalized, values: [...values] });
       if (
-        normalized === "BEGIN"
+        normalized.startsWith("BEGIN")
         || normalized === "COMMIT"
         || normalized === "ROLLBACK"
         || normalized.startsWith("SET LOCAL")
@@ -176,7 +188,7 @@ function fakeDatabase(
 
 function workQueries(fake) {
   return fake.queries.filter(({ sql }) =>
-    sql !== "BEGIN"
+    !sql.startsWith("BEGIN")
     && sql !== "COMMIT"
     && sql !== "ROLLBACK"
     && !sql.startsWith("SET LOCAL")
@@ -242,6 +254,182 @@ test("admin-access intent validation fails before borrowing a database connectio
     /lowercase PostgreSQL identifier/,
   );
   assert.equal(unused.connectCount, 0);
+});
+
+test("access overview rechecks one Administrator session and returns only the bounded projection", async () => {
+  const roleRows = [
+    { role_key: "administrator", display_name: "Administrator", description: "Company-wide administration." },
+    { role_key: "office_operations", display_name: "Office Operations", description: "Company-wide nonfinancial operations." },
+    { role_key: "project_manager", display_name: "Project Manager", description: "Assigned-project nonfinancial operations." },
+  ];
+  const fake = fakeDatabase(async (sql) => {
+    if (sql.startsWith("SELECT role_key, display_name, description")) {
+      return result(roleRows, roleRows.length);
+    }
+    if (sql.startsWith("WITH bounded_people AS MATERIALIZED")) {
+      return result([{
+        id: ACTOR_ID,
+        email: "AdminCRM@CherryHillFCI.com",
+        display_name: "FCI TEST — DO NOT USE Administrator",
+        status: "active",
+        role_key: "administrator",
+        role_status: "active",
+        project_ids: [],
+        last_signed_in_at: new Date(CREATED_AT - 1_000),
+        version: "4",
+      }], 1);
+    }
+    if (sql.startsWith("SELECT invitation.id::text AS id")) {
+      return result([{
+        id: INVITATION_ID,
+        email: "Pending.PM@CherryHillFCI.com",
+        role_key: "project_manager",
+        role_status: "active",
+        project_ids: [PROJECT_A_ID],
+        created_at: new Date(CREATED_AT - 1_000),
+        expires_at: new Date(CREATED_AT + SEVEN_DAYS_MS),
+        version: "2",
+      }], 1);
+    }
+    if (sql.startsWith("SELECT id::text AS id, project_number")) {
+      return result([{
+        id: PROJECT_A_ID,
+        project_number: "CF-2026-TEST0001",
+        name: "FCI TEST — DO NOT USE Project",
+        status: "planning",
+      }], 1);
+    }
+    assert.fail(`unexpected work query: ${sql}`);
+  });
+  const repository = createPostgresAdminAccessPersistenceRepository(fake.pool, {
+    schema: "fci_test",
+  });
+
+  assert.deepEqual(await repository.getAccessOverview(readerScope(), CREATED_AT), {
+    outcome: "accepted",
+    overview: {
+      summary: {
+        activePeopleCount: 1,
+        activeAdministratorCount: 1,
+        pendingInvitationCount: 1,
+      },
+      roles: roleRows.map(({ role_key: key, display_name: displayName, description }) => ({
+        key,
+        displayName,
+        description,
+      })),
+      people: [{
+        id: ACTOR_ID,
+        email: "admincrm@cherryhillfci.com",
+        displayName: "FCI TEST — DO NOT USE Administrator",
+        status: "active",
+        role: "administrator",
+        projectIds: [],
+        lastSignedInAt: CREATED_AT - 1_000,
+        version: "4",
+      }],
+      invitations: [{
+        id: INVITATION_ID,
+        email: "pending.pm@cherryhillfci.com",
+        role: "project_manager",
+        status: "pending",
+        projectIds: [PROJECT_A_ID],
+        createdAt: CREATED_AT - 1_000,
+        expiresAt: CREATED_AT + SEVEN_DAYS_MS,
+        version: "2",
+      }],
+      projects: [{
+        id: PROJECT_A_ID,
+        projectNumber: "CF-2026-TEST0001",
+        name: "FCI TEST — DO NOT USE Project",
+        status: "planning",
+      }],
+      generatedAt: CREATED_AT,
+    },
+  });
+
+  assert.equal(fake.queries[0].sql, "BEGIN ISOLATION LEVEL REPEATABLE READ");
+  const [actor, roles, people, invitations, projects] = workQueries(fake);
+  assert.match(actor.sql, /actor_capability\.capability_key = \$5/);
+  assert.match(actor.sql, /idle_expires_at > pg_catalog\.statement_timestamp\(\)/);
+  assert.match(actor.sql, /FOR SHARE OF actor_session, actor_user$/);
+  assert.deepEqual(actor.values, [ACTOR_SESSION_ID, "3", ACTOR_ID, "7", "access_admin.read"]);
+  assert.deepEqual(roles.values, [["administrator", "office_operations", "project_manager"]]);
+  assert.match(people.sql, /^WITH bounded_people AS MATERIALIZED/);
+  assert.match(people.sql, /LIMIT \$1\s+\),/);
+  assert.match(people.sql, /project_scopes AS/);
+  assert.match(people.sql, /last_sign_ins AS/);
+  assert.match(people.sql, /pg_catalog\.max\(sign_in\.issued_at\) AS last_signed_in_at/);
+  assert.match(people.sql, /LEFT JOIN user_roles/);
+  assert.match(invitations.sql, /status = 'pending'/);
+  assert.match(invitations.sql, /expires_at > pg_catalog\.statement_timestamp\(\)/);
+  assert.deepEqual(projects.values, [501]);
+  assert.equal(fake.queries.at(-1).sql, "COMMIT");
+  assert.doesNotMatch(JSON.stringify(await repository.getAccessOverview(readerScope(), CREATED_AT)), /token|csrf|authorizationVersion|sessionId/i);
+});
+
+test("access overview returns an actor-change result before any projection query", async () => {
+  const fake = fakeDatabase(undefined, { actorAuthorized: false });
+  const repository = createPostgresAdminAccessPersistenceRepository(fake.pool, {
+    schema: "fci_test",
+  });
+
+  assert.deepEqual(await repository.getAccessOverview(readerScope(), CREATED_AT), {
+    outcome: "actor_authorization_changed",
+  });
+  assert.equal(workQueries(fake).length, 1);
+  assert.match(workQueries(fake)[0].sql, /FOR SHARE OF actor_session, actor_user$/);
+
+  const invalid = fakeDatabase();
+  const invalidRepository = createPostgresAdminAccessPersistenceRepository(invalid.pool, {
+    schema: "fci_test",
+  });
+  await assert.rejects(
+    invalidRepository.getAccessOverview(
+      readerScope({ kind: "assigned_projects", includeFinancial: false }),
+      CREATED_AT,
+    ),
+    /requires company Administrator scope/,
+  );
+  assert.equal(invalid.connectCount, 0);
+});
+
+test("access overview fails closed instead of silently truncating people", async () => {
+  const roles = [
+    { role_key: "administrator", display_name: "Administrator", description: "Company-wide administration." },
+    { role_key: "office_operations", display_name: "Office Operations", description: "Company-wide nonfinancial operations." },
+    { role_key: "project_manager", display_name: "Project Manager", description: "Assigned-project nonfinancial operations." },
+  ];
+  const people = Array.from({ length: 101 }, (_, index) => ({
+    id: randomUUID(),
+    email: `person${index}@cherryhillfci.com`,
+    display_name: `FCI TEST — DO NOT USE Person ${index}`,
+    status: "active",
+    role_key: "office_operations",
+    role_status: "active",
+    project_ids: [],
+    last_signed_in_at: null,
+    version: "1",
+  }));
+  const fake = fakeDatabase(async (sql) => {
+    if (sql.startsWith("SELECT role_key, display_name, description")) {
+      return result(roles, roles.length);
+    }
+    if (sql.startsWith("WITH bounded_people AS MATERIALIZED")) {
+      return result(people, people.length);
+    }
+    assert.fail(`unexpected work query: ${sql}`);
+  });
+  const repository = createPostgresAdminAccessPersistenceRepository(fake.pool, {
+    schema: "fci_test",
+  });
+
+  await assert.rejects(
+    repository.getAccessOverview(readerScope(), CREATED_AT),
+    /people projection exceeds its bounded projection limit/,
+  );
+  assert.equal(fake.queries.at(-1).sql, "ROLLBACK");
+  assert.equal(workQueries(fake).length, 3);
 });
 
 test("invitation creation binds the normalized exact email to a fixed role and audit", async () => {
@@ -502,6 +690,50 @@ test("role and exact Project Manager assignments change atomically and invalidat
     "access_review",
   ]);
   assert.equal(fake.queries.at(-1).sql, "COMMIT");
+});
+
+test("an unchanged role and project scope is denied before sessions or access state mutate", async () => {
+  const fake = fakeDatabase(async (sql, values) => {
+    if (sql.startsWith("SELECT employee.status")) {
+      return result([{
+        status: "active",
+        version: "4",
+        authorization_version: "7",
+        role_key: "project_manager",
+      }], 1);
+    }
+    if (sql.startsWith("SELECT id::text AS id") && sql.includes("FROM roles")) {
+      return result([{ id: ROLE_ID }], 1);
+    }
+    if (sql.startsWith("SELECT id::text AS id FROM projects")) {
+      return result(values[0].map((id) => ({ id })), values[0].length);
+    }
+    if (sql.startsWith("INSERT INTO audit_events")) return auditInsert(values);
+    assert.fail(`unexpected work query: ${sql}`);
+  }, { currentProjects: [PROJECT_A_ID, PROJECT_B_ID] });
+  const repository = createPostgresAdminAccessPersistenceRepository(fake.pool, {
+    schema: "fci_test",
+  });
+
+  assert.deepEqual(await repository.setUserAccess(setUserAccessIntent()), {
+    outcome: "conflict",
+  });
+  assert.equal(
+    workQueries(fake).some(({ sql }) =>
+      sql.startsWith("INSERT INTO user_roles")
+      || sql.startsWith("UPDATE project_memberships")
+      || sql.startsWith("INSERT INTO project_memberships")
+      || sql.startsWith("UPDATE users")),
+    false,
+  );
+  const audit = workQueries(fake).at(-1);
+  assert.deepEqual(audit.values.slice(6, 11), [
+    "authorization.user_access_changed",
+    "user",
+    USER_ID,
+    "denied",
+    "unchanged_access",
+  ]);
 });
 
 test("access-change audit retains exact revoke and reactivation scope history", async () => {
@@ -1142,6 +1374,196 @@ test(
         { result: "denied", reason_code: "final_active_administrator" },
         { result: "succeeded", reason_code: "concurrent_test" },
       ]);
+    });
+  },
+);
+
+test(
+  "PostgreSQL access overview independently aggregates bounded people, projects, sessions, and live invitations",
+  {
+    skip: postgresTestUrl ? false : "TEST_POSTGRES_URL is not configured",
+    timeout: 60_000,
+  },
+  async () => {
+    await withMigratedAdminAccessSchema(async ({ pool, schema }) => {
+      const administratorRoleId = await fixedRoleId(pool, schema, "administrator");
+      const projectManagerRoleId = await fixedRoleId(pool, schema, "project_manager");
+      const actorUserId = randomUUID();
+      const targetUserId = randomUUID();
+      const actorSessionId = randomUUID();
+      const earlierTargetSessionId = randomUUID();
+      const laterTargetSessionId = randomUUID();
+      const clientId = randomUUID();
+      const projectAId = randomUUID();
+      const projectBId = randomUUID();
+      const liveInvitationId = randomUUID();
+      const expiredInvitationId = randomUUID();
+      const operationAt = Date.now();
+      const createdAt = new Date(operationAt - 5 * 60_000);
+      const earlierSignInAt = new Date(operationAt - 2 * 60_000);
+      const laterSignInAt = new Date(operationAt - 60_000);
+      const idleExpiresAt = new Date(operationAt + 15 * 60_000);
+      const absoluteExpiresAt = new Date(operationAt + 8 * 60 * 60_000);
+      const purgeAfter = new Date(operationAt + 9 * 60 * 60_000);
+      const actorKey = `user:${actorUserId}`;
+      const orderedProjectIds = [projectAId, projectBId].sort();
+
+      await pool.query(
+        `INSERT INTO ${schema}.users (
+           id, email, email_key, display_name, status, authorization_version,
+           sessions_valid_after, created_at, updated_at, version
+         ) VALUES
+           ($1, 'admin-overview@cherryhillfci.com', 'admin-overview@cherryhillfci.com',
+            'FCI TEST — DO NOT USE A Administrator', 'active', 1, $3, $3, $3, 1),
+           ($2, 'pm-overview@cherryhillfci.com', 'pm-overview@cherryhillfci.com',
+            'FCI TEST — DO NOT USE Z Project Manager', 'active', 1, $3, $3, $3, 1)`,
+        [actorUserId, targetUserId, createdAt],
+      );
+      await pool.query(
+        `INSERT INTO ${schema}.user_roles (
+           user_id, role_id, assigned_by_user_id, assigned_by_actor_key,
+           assigned_at, expires_at, version
+         ) VALUES
+           ($1, $3, NULL, 'system:integration_test', $5, NULL, 1),
+           ($2, $4, $1, $6, $5, NULL, 1)`,
+        [actorUserId, targetUserId, administratorRoleId, projectManagerRoleId, createdAt, actorKey],
+      );
+      await pool.query(
+        `INSERT INTO ${schema}.sessions (
+           id, user_id, token_hash, csrf_hash, authorization_version,
+           rotated_from_session_id, issued_at, last_seen_at, idle_expires_at,
+           absolute_expires_at, revoked_at, revoked_by_actor_key,
+           revocation_reason_code, purge_after, version
+         ) VALUES
+           ($1, $4, $6, $7, 1, NULL, $12, $12, $15, $16, NULL, NULL, NULL, $17, 1),
+           ($2, $5, $8, $9, 1, NULL, $13, $13, $15, $16, NULL, NULL, NULL, $17, 1),
+           ($3, $5, $10, $11, 1, NULL, $14, $14, $15, $16, NULL, NULL, NULL, $17, 1)`,
+        [
+          actorSessionId,
+          earlierTargetSessionId,
+          laterTargetSessionId,
+          actorUserId,
+          targetUserId,
+          `sha256:${"9".repeat(64)}`,
+          `sha256:${"a".repeat(64)}`,
+          `sha256:${"b".repeat(64)}`,
+          `sha256:${"c".repeat(64)}`,
+          `sha256:${"d".repeat(64)}`,
+          `sha256:${"e".repeat(64)}`,
+          createdAt,
+          earlierSignInAt,
+          laterSignInAt,
+          idleExpiresAt,
+          absoluteExpiresAt,
+          purgeAfter,
+        ],
+      );
+      await pool.query(
+        `INSERT INTO ${schema}.clients (
+           id, client_code, name, normalized_name_key, status,
+           created_by, updated_by, created_at, updated_at, version
+         ) VALUES
+           ($1, 'CL-TESTOV01', 'FCI TEST — DO NOT USE Overview Client',
+            'fci test overview client', 'active', $2, $2, $3, $3, 1)`,
+        [clientId, actorKey, createdAt],
+      );
+      await pool.query(
+        `INSERT INTO ${schema}.projects (
+           id, project_number, client_id, name, status, created_by,
+           updated_by, created_at, updated_at, version
+         ) VALUES
+           ($1, 'CF-2026-OVERVW01', $3, 'FCI TEST — DO NOT USE Overview A',
+            'planning', $4, $4, $5, $5, 1),
+           ($2, 'CF-2026-OVERVW02', $3, 'FCI TEST — DO NOT USE Overview B',
+            'installation', $4, $4, $5, $5, 1)`,
+        [projectAId, projectBId, clientId, actorKey, createdAt],
+      );
+      await pool.query(
+        `INSERT INTO ${schema}.project_memberships (
+           project_id, user_id, assigned_by_user_id, assigned_by_actor_key,
+           assigned_at, expires_at, status, revoked_by_user_id,
+           revoked_by_actor_key, revoked_at, revocation_reason_code, version
+         ) VALUES
+           ($1, $3, $4, $5, $6, NULL, 'active', NULL, NULL, NULL, NULL, 1),
+           ($2, $3, $4, $5, $6, NULL, 'active', NULL, NULL, NULL, NULL, 1)`,
+        [projectAId, projectBId, targetUserId, actorUserId, actorKey, createdAt],
+      );
+      await pool.query(
+        `INSERT INTO ${schema}.invitations (
+           id, email, email_key, token_hash, role_id, status,
+           invited_by_user_id, invited_by_actor_key, expires_at, purge_after,
+           created_at, updated_at, version
+         ) VALUES
+           ($1, 'pending-overview@cherryhillfci.com', 'pending-overview@cherryhillfci.com',
+            $3, $5, 'pending', $6, $7, $8, $9, $10, $10, 1),
+           ($2, 'expired-overview@cherryhillfci.com', 'expired-overview@cherryhillfci.com',
+            $4, $5, 'pending', $6, $7, $11, $9, $12, $12, 1)`,
+        [
+          liveInvitationId,
+          expiredInvitationId,
+          `sha256:${"f".repeat(64)}`,
+          `sha256:${"1".repeat(64)}`,
+          projectManagerRoleId,
+          actorUserId,
+          actorKey,
+          new Date(operationAt + SEVEN_DAYS_MS),
+          new Date(operationAt + 2 * SEVEN_DAYS_MS),
+          createdAt,
+          new Date(operationAt - 60_000),
+          new Date(operationAt - 8 * 24 * 60 * 60_000),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO ${schema}.invitation_project_assignments (
+           invitation_id, project_id, assigned_at
+         ) VALUES ($1, $2, $4), ($1, $3, $4)`,
+        [liveInvitationId, projectAId, projectBId, createdAt],
+      );
+
+      const repository = createPostgresAdminAccessPersistenceRepository(pool, { schema });
+      const scope = {
+        kind: "company",
+        sessionId: actorSessionId,
+        sessionVersion: "1",
+        userId: actorUserId,
+        authorizationVersion: "1",
+        includeFinancial: true,
+      };
+      const result = await repository.getAccessOverview(scope, operationAt);
+      assert.equal(result.outcome, "accepted");
+      assert.deepEqual(result.overview.people.map(({ displayName }) => displayName), [
+        "FCI TEST — DO NOT USE A Administrator",
+        "FCI TEST — DO NOT USE Z Project Manager",
+      ]);
+      const projectManager = result.overview.people.find(({ id }) => id === targetUserId);
+      assert.deepEqual(projectManager.projectIds, orderedProjectIds);
+      assert.equal(projectManager.lastSignedInAt, laterSignInAt.getTime());
+      assert.deepEqual(result.overview.invitations.map(({ id, projectIds }) => ({ id, projectIds })), [{
+        id: liveInvitationId,
+        projectIds: orderedProjectIds,
+      }]);
+      assert.deepEqual(result.overview.projects.map(({ projectNumber }) => projectNumber), [
+        "CF-2026-OVERVW01",
+        "CF-2026-OVERVW02",
+      ]);
+      assert.deepEqual(result.overview.roles.map(({ key }) => key), [
+        "administrator",
+        "office_operations",
+        "project_manager",
+      ]);
+
+      await pool.query(
+        `UPDATE ${schema}.sessions
+         SET revoked_at = $2,
+             revoked_by_actor_key = 'system:integration_test',
+             revocation_reason_code = 'integration_test',
+             version = version + 1
+         WHERE id = $1`,
+        [actorSessionId, new Date(operationAt)],
+      );
+      assert.deepEqual(await repository.getAccessOverview(scope, operationAt + 1), {
+        outcome: "actor_authorization_changed",
+      });
     });
   },
 );

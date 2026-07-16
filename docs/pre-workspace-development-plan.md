@@ -149,14 +149,13 @@ See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) for th
 
 ## Next bounded developer assignments
 
-After the source-only administration core is accepted, continue the administration surface according to the [Administration and Access plan](administration-and-access-plan.md):
+After the source-only administration page is accepted, continue the administration surface according to the [Administration and Access plan](administration-and-access-plan.md):
 
-1. `codex/admin-access-page`: add the bounded Administrator read projection and build **Management -> People & Access** with one people/invitation list, a read-only three-role guide, five workflows, and direct-route, responsive/accessibility, and rendered browser evidence.
-2. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged, projection-limited Activity reader and tab.
-3. `codex/admin-field-links`: when field assignments are scheduled, add a separate hashed exact-project Field Link lifecycle and later tab.
+1. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged, projection-limited Activity reader and tab.
+2. `codex/admin-field-links`: when field assignments are scheduled, add a separate hashed exact-project Field Link lifecycle and later tab.
 
 Do not add custom roles, permission toggles, per-user grants, editable invitation/session policy, per-device session management, user deletion, or re-enablement in the first release.
 
 Each branch remains source-only. Preserve Sites development and the Google test connector; keep employee OIDC, live Workspace configuration, a second user, real data, migration apply, route cutover, infrastructure apply, and deployment disabled.
 
-The runtime foundation, infrastructure definitions, production persistence boundary, owner-approved role/capability/project policy, authorization simulation, employee route composition, and fixed administration persistence/commands now exist in source. Invitation fulfillment and session issuance, the People & Access read projection and UI, Field Links, Google Workspace OIDC, live provider adapters, migration and recovery proof, and production authorization rollout remain blocked or incomplete until their acceptance gates pass.
+The runtime foundation, infrastructure definitions, production persistence boundary, owner-approved role/capability/project policy, authorization simulation, employee route composition, fixed administration persistence/commands, and People & Access read projection/UI now exist in source. Invitation fulfillment and session issuance/UI bootstrap, the Activity audit reader, Field Links, Google Workspace OIDC, live provider adapters, migration and recovery proof, and production authorization rollout remain blocked or incomplete until their acceptance gates pass.

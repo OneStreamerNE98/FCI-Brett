@@ -83,6 +83,7 @@ type RouteMatch = Readonly<{
     | "files_share"
     | "gmail_file"
     | "calendar_create"
+    | "admin_access_view"
     | "admin_invitation_create"
     | "admin_invitation_revoke"
     | "admin_user_access_change"
@@ -136,6 +137,14 @@ function route(path: string): RouteMatch | null {
   }
   if (path === "/api/v1/session/logout") {
     return { kind: "logout", method: "POST", projectId: null, fileId: null };
+  }
+  if (path === "/api/v1/admin/access") {
+    return {
+      kind: "admin_access_view",
+      method: "GET",
+      projectId: null,
+      fileId: null,
+    };
   }
   if (path === "/api/v1/admin/invitations") {
     return {
@@ -746,6 +755,23 @@ export function createEmployeeRequestRouter(
         );
         if (!result.allowed) throw denialFailure(result.reason);
         jsonResponse(request, response, 200, { data: result.value });
+        return;
+      }
+
+      if (matched.kind === "admin_access_view") {
+        requireEmptyBody(request);
+        const result = await dependencies.authorization.performAccessAdminView(
+          requestTrace,
+          (context) => dependencies.adminAccess.getAccessOverview(
+            context.recordScope,
+            now(),
+          ),
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        if (result.value.outcome === "actor_authorization_changed") {
+          throw new HttpFailure(401, "authentication_required", true);
+        }
+        jsonResponse(request, response, 200, { data: result.value.overview });
         return;
       }
 

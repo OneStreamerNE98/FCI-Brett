@@ -45,9 +45,9 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 ## Recommended next source branches
 
-1. Review and merge `codex/admin-access-core`, which adds the fixed three-role catalog and five audited/versioned Administrator commands in source without applying migration version 4 or admitting users.
-2. Build `codex/admin-access-page` under Management → People & Access with a bounded Administrator read projection, one people/invitation list, a read-only role guide, and direct-route, responsive/accessibility, and rendered browser evidence.
-3. Before second-user or real-data acceptance, build `codex/admin-audit-viewer`. Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
+1. Review and merge `codex/admin-access-page`, which adds the source-only bounded Administrator read projection and compact Management → People & Access screen without applying migration version 4 or admitting users.
+2. Before second-user or real-data acceptance, build `codex/admin-audit-viewer` with its separately privileged minimized Activity reader.
+3. Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
 None of these steps authorizes OIDC, session issuance, a migration or infrastructure apply, deployment, a second user, or real data.
 

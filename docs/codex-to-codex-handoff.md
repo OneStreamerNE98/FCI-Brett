@@ -93,13 +93,14 @@ The current source-only `codex/cloud-run-employee-routes` assignment composes se
 
 The current source-only `codex/admin-access-core` assignment adds unapplied migration version 4, immutable three-role/capability seeds, durable invitation role and Project Manager project bindings, and the five fixed Administrator commands. It enforces exact request schemas, CSRF, reasons, post-lock actor-session/capability fencing, version fences, transactionally coupled exact-scope audit, expired-invitation replacement, session invalidation, and concurrent final-active-Administrator protection. Migration 4 fails before writing if version-3 role/access data is populated, so any future populated upgrade requires a reviewed backfill. It does not add the read/list page projection, fulfill invitations, seed users, apply a migration, connect Workspace, deploy, add a second user, or use real data.
 
+The source-only `codex/admin-access-page` assignment adds the bounded Administrator read projection plus the compact `/management/access` screen with one People table, pending invitations, three read-only role explanations, and the five fixed workflows. The projection rechecks the exact current Administrator session and fails closed on stale authorization, malformed scope data, or bounded-list overflow. Browser coverage includes direct-route denials, stale/final-Administrator handling, keyboard focus, responsive reflow, and accessibility. The current Sites route is only a presentation/test adapter; production employee-session/CSRF bootstrap, invitation delivery, migration/apply, and deployment remain absent.
+
 ## Recommended next worker assignments
 
-After the administration-core pull request is accepted and merged, continue the simplified [Administration and Access plan](administration-and-access-plan.md):
+After the administration-page pull request is accepted and merged, continue the simplified [Administration and Access plan](administration-and-access-plan.md):
 
-1. `codex/admin-access-page`: add the bounded Administrator read projection and Management → People & Access with one people/invitation list, a read-only three-role guide, the five immediate workflows, and direct-route, responsive, accessibility, and rendered browser tests.
-2. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged, minimized, keyset-paginated Activity reader and tab.
-3. `codex/admin-field-links`: when field assignments are scheduled, add a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.
+1. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged, minimized, keyset-paginated Activity reader and tab.
+2. `codex/admin-field-links`: when field assignments are scheduled, add a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.
 
 Do not build custom roles, a permission-toggle matrix, per-user overrides, editable session/invitation policy, user deletion/re-enablement, or a per-device session console for the first rollout.
 

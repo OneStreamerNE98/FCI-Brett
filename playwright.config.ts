@@ -46,7 +46,7 @@ export default defineConfig({
       ...inheritedEnvironment,
       FCI_E2E: "true",
       FCI_LOCAL_DEV_USER_EMAIL: process.env.FCI_LOCAL_DEV_USER_EMAIL ?? testUserEmail,
-      FCI_OFFICE_EMAILS: process.env.FCI_OFFICE_EMAILS ?? testUserEmail,
+      FCI_OFFICE_EMAILS: process.env.FCI_OFFICE_EMAILS ?? `${testUserEmail},e2e-office@example.test`,
       FCI_ADMIN_EMAILS: process.env.FCI_ADMIN_EMAILS ?? testUserEmail,
       GOOGLE_INTEGRATION_MODE: "simulation",
       WRANGLER_LOG_PATH: ".wrangler/playwright.log",
