@@ -1559,6 +1559,8 @@ test(
       await pool.query(
         `UPDATE ${schema}.sessions
          SET revoked_at = $2,
+             token_hash = NULL,
+             csrf_hash = NULL,
              revoked_by_actor_key = 'system:integration_test',
              revocation_reason_code = 'integration_test',
              version = version + 1
