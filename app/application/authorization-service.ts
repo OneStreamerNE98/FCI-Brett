@@ -43,11 +43,27 @@ export type AuthorizationServiceDecision =
       reason: AuthorizationDenialReason;
     }>;
 
+export type EmployeeOperationResult<T> =
+  | Extract<AuthorizationServiceDecision, Readonly<{ allowed: false }>>
+  | Readonly<{
+      allowed: true;
+      context: EmployeeAccessContext;
+      value: T;
+    }>;
+
 export type FieldAuthorizationRequest = Omit<AuthorizationRequest, "tokenHash">;
 
 export type FieldAuthorizationDecision =
   | Readonly<{ allowed: true; context: FieldLinkAccessContext }>
   | Readonly<{ allowed: false; reason: OperationDenialReason | FieldLinkDenialReason }>;
+
+export type FieldOperationResult<T> =
+  | Extract<FieldAuthorizationDecision, Readonly<{ allowed: false }>>
+  | Readonly<{
+      allowed: true;
+      context: FieldLinkAccessContext;
+      value: T;
+    }>;
 
 export type LogoutRequest = Readonly<{
   tokenHash: string;
@@ -260,9 +276,10 @@ export function createAuthorizationService(
 
     if (
       operation.sensitive &&
-      !await dependencies.repository.administratorCapabilityIsCurrent(
+      !await dependencies.repository.capabilityIsCurrentForScope(
         session.context.recordScope,
         operation.capability,
+        stableRequest.projectId,
         checkedAt,
       )
     ) {
@@ -348,7 +365,7 @@ export function createAuthorizationService(
       retentionPolicyKey: "security_audit",
       retentionUntil: null,
     };
-    await dependencies.sessions.revokeSession({
+    const revocation = await dependencies.sessions.revokeSession({
       sessionId: snapshot.sessionId,
       expectedVersion: snapshot.sessionVersion,
       revokedAt,
@@ -356,6 +373,18 @@ export function createAuthorizationService(
       reasonCode: "logout",
       audit,
     });
+    if (revocation.outcome !== "accepted") {
+      // A concurrent logout is successful only when the credential no longer
+      // resolves. Never report success while a reusable session survived a
+      // stale-version or conflict result.
+      const remaining = await dependencies.repository.findSessionByTokenHash(
+        stableRequest.tokenHash,
+        revokedAt,
+      );
+      if (remaining && remaining.revokedAt === null) {
+        throw new Error("Session logout could not confirm revocation");
+      }
+    }
     // Logout is deliberately idempotent: a concurrent revocation and an
     // unknown credential produce the same external result.
     return { outcome: "logged_out" };
@@ -365,11 +394,7 @@ export function createAuthorizationService(
     operation: string,
     request: AuthorizationTraceRequest & Readonly<{ projectId: string | null }>,
     work: (context: EmployeeAccessContext) => Promise<T>,
-  ): Promise<AuthorizationServiceDecision | Readonly<{
-    allowed: true;
-    context: EmployeeAccessContext;
-    value: T;
-  }>> {
+  ): Promise<EmployeeOperationResult<T>> {
     // `operation` is supplied only by the named wrappers below. It is written
     // after the caller-controlled fields so a forged runtime property cannot
     // relabel the protected action.
@@ -384,11 +409,7 @@ export function createAuthorizationService(
     operation: string,
     request: FieldAuthorizationTraceRequest,
     work: (authorized: FieldLinkAccessContext) => Promise<T>,
-  ): Promise<FieldAuthorizationDecision | Readonly<{
-    allowed: true;
-    context: FieldLinkAccessContext;
-    value: T;
-  }>> {
+  ): Promise<FieldOperationResult<T>> {
     const decision = await authorizeFieldLink(snapshot, { ...request, operation });
     if (!decision.allowed) return decision;
     const value = await work(decision.context);
@@ -486,6 +507,18 @@ export function createAuthorizationService(
       work: (context: EmployeeAccessContext) => Promise<T>,
     ) {
       return performEmployeeOperation(AUTHORIZATION_OPERATIONS.filesShare, request, work);
+    },
+    performFilesView<T>(
+      request: ProjectAuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(AUTHORIZATION_OPERATIONS.filesView, request, work);
+    },
+    performFilesUpload<T>(
+      request: ProjectAuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(AUTHORIZATION_OPERATIONS.filesUpload, request, work);
     },
     performDataExport<T>(
       request: OptionalProjectAuthorizationTraceRequest,

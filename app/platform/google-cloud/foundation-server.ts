@@ -17,6 +17,11 @@ export type FoundationServerOptions = {
    * before it closes its Cloud SQL connector.
    */
   closeDatabase: () => Promise<void>;
+  /** Handles every non-health request after the foundation's drain check. */
+  applicationHandler?: (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ) => void | Promise<void>;
   readinessTimeoutMs?: number;
   shutdownTimeoutMs?: number;
 };
@@ -156,6 +161,19 @@ export function createFoundationServer(
           ready ? 200 : 503,
           { status: ready ? "ready" : "unavailable" },
         );
+        return;
+      }
+
+      if (draining) {
+        jsonResponse(request, response, 503, { error: "service_unavailable" });
+        return;
+      }
+
+      if (options.applicationHandler) {
+        await options.applicationHandler(request, response);
+        if (!response.writableEnded) {
+          throw new Error("Foundation application handler did not complete its response");
+        }
         return;
       }
 

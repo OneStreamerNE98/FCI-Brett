@@ -14,8 +14,10 @@ const vite = await createServer({
 });
 
 const {
+  AUTHORIZATION_ACCESS_DEFAULTS,
   AUTHORIZATION_CAPABILITIES,
   AUTHORIZATION_DOMAIN,
+  AUTHORIZATION_INITIAL_ADMIN_EMAILS,
   AUTHORIZATION_OPERATIONS,
   AUTHORIZATION_ROLES,
   approvedCapabilitiesForRole,
@@ -63,15 +65,60 @@ function allowedContext(overrides = {}) {
 test("approved role matrix grants only owner-approved capabilities", () => {
   const adminCapabilities = [
     AUTHORIZATION_CAPABILITIES.recordsRead,
+    AUTHORIZATION_CAPABILITIES.leadsCreate,
+    AUTHORIZATION_CAPABILITIES.leadsUpdate,
+    AUTHORIZATION_CAPABILITIES.clientsCreate,
+    AUTHORIZATION_CAPABILITIES.clientsUpdate,
+    AUTHORIZATION_CAPABILITIES.contactsCreate,
+    AUTHORIZATION_CAPABILITIES.contactsUpdate,
     AUTHORIZATION_CAPABILITIES.financialRead,
     AUTHORIZATION_CAPABILITIES.projectsCreate,
     AUTHORIZATION_CAPABILITIES.projectsAssign,
+    AUTHORIZATION_CAPABILITIES.projectsStatusUpdate,
+    AUTHORIZATION_CAPABILITIES.tasksUpdate,
+    AUTHORIZATION_CAPABILITIES.meetingsUpdate,
+    AUTHORIZATION_CAPABILITIES.notesUpdate,
     AUTHORIZATION_CAPABILITIES.gmailFile,
     AUTHORIZATION_CAPABILITIES.calendarCreate,
+    AUTHORIZATION_CAPABILITIES.filesRead,
+    AUTHORIZATION_CAPABILITIES.filesUpload,
     AUTHORIZATION_CAPABILITIES.filesShare,
     AUTHORIZATION_CAPABILITIES.dataExport,
     AUTHORIZATION_CAPABILITIES.auditRead,
+    AUTHORIZATION_CAPABILITIES.accessAdminRead,
+    AUTHORIZATION_CAPABILITIES.invitationsCreate,
+    AUTHORIZATION_CAPABILITIES.invitationsRevoke,
+    AUTHORIZATION_CAPABILITIES.usersDisable,
+    AUTHORIZATION_CAPABILITIES.rolesAssign,
+    AUTHORIZATION_CAPABILITIES.sessionsRevoke,
+    AUTHORIZATION_CAPABILITIES.fieldLinksCreate,
+    AUTHORIZATION_CAPABILITIES.fieldLinksRevoke,
+    AUTHORIZATION_CAPABILITIES.rolePermissionsUpdate,
   ].sort();
+  const officeCapabilities = [
+    AUTHORIZATION_CAPABILITIES.recordsRead,
+    AUTHORIZATION_CAPABILITIES.leadsCreate,
+    AUTHORIZATION_CAPABILITIES.leadsUpdate,
+    AUTHORIZATION_CAPABILITIES.clientsCreate,
+    AUTHORIZATION_CAPABILITIES.clientsUpdate,
+    AUTHORIZATION_CAPABILITIES.contactsCreate,
+    AUTHORIZATION_CAPABILITIES.contactsUpdate,
+    AUTHORIZATION_CAPABILITIES.projectsStatusUpdate,
+    AUTHORIZATION_CAPABILITIES.tasksUpdate,
+    AUTHORIZATION_CAPABILITIES.meetingsUpdate,
+    AUTHORIZATION_CAPABILITIES.notesUpdate,
+    AUTHORIZATION_CAPABILITIES.filesRead,
+    AUTHORIZATION_CAPABILITIES.filesUpload,
+  ];
+  const projectManagerCapabilities = [
+    AUTHORIZATION_CAPABILITIES.recordsRead,
+    AUTHORIZATION_CAPABILITIES.projectsStatusUpdate,
+    AUTHORIZATION_CAPABILITIES.tasksUpdate,
+    AUTHORIZATION_CAPABILITIES.meetingsUpdate,
+    AUTHORIZATION_CAPABILITIES.notesUpdate,
+    AUTHORIZATION_CAPABILITIES.filesRead,
+    AUTHORIZATION_CAPABILITIES.filesUpload,
+  ];
 
   assert.deepEqual(
     [...approvedCapabilitiesForRole(AUTHORIZATION_ROLES.administrator)].sort(),
@@ -79,18 +126,16 @@ test("approved role matrix grants only owner-approved capabilities", () => {
   );
   assert.deepEqual(
     approvedCapabilitiesForRole(AUTHORIZATION_ROLES.officeOperations),
-    [AUTHORIZATION_CAPABILITIES.recordsRead],
+    officeCapabilities,
   );
   assert.deepEqual(
     approvedCapabilitiesForRole(AUTHORIZATION_ROLES.projectManager),
-    [AUTHORIZATION_CAPABILITIES.recordsRead],
+    projectManagerCapabilities,
   );
 
   const explicitlyUnapproved = [
-    AUTHORIZATION_CAPABILITIES.clientsCreate,
     AUTHORIZATION_CAPABILITIES.gmailRead,
     AUTHORIZATION_CAPABILITIES.calendarRead,
-    AUTHORIZATION_CAPABILITIES.filesRead,
     AUTHORIZATION_CAPABILITIES.recordsWrite,
     AUTHORIZATION_CAPABILITIES.jobsRetry,
     AUTHORIZATION_CAPABILITIES.recoveryManage,
@@ -101,6 +146,23 @@ test("approved role matrix grants only owner-approved capabilities", () => {
   for (const capability of explicitlyUnapproved) {
     assert.equal(adminCapabilities.includes(capability), false, capability);
   }
+});
+
+test("approved access defaults fix initial administrators and bounded credential lifetimes", () => {
+  assert.deepEqual(AUTHORIZATION_INITIAL_ADMIN_EMAILS, [
+    "admincrm@cherryhillfci.com",
+    "brett@cherryhillfci.com",
+  ]);
+  assert.deepEqual(AUTHORIZATION_ACCESS_DEFAULTS, {
+    invitationLifetimeMs: 7 * 24 * 60 * 60 * 1_000,
+    sessionIdleLifetimeMs: 30 * 60 * 1_000,
+    sessionAbsoluteLifetimeMs: 8 * 60 * 60 * 1_000,
+    fieldLinkDefaultLifetimeMs: 7 * 24 * 60 * 60 * 1_000,
+    fieldLinkMaximumLifetimeMs: 14 * 24 * 60 * 60 * 1_000,
+    invitationSingleUse: true,
+    fieldLinksReadOnly: true,
+    perUserCapabilityOverrides: false,
+  });
 });
 
 test("employee admission requires the exact Workspace domain, verification, invitation, and approved role", () => {
@@ -143,6 +205,7 @@ test("employee admission requires the exact Workspace domain, verification, invi
 test("session resolution rejects missing, revoked, disabled, stale, invalidated, and expired sessions", () => {
   const deniedCases = [
     ["missing", null, "invalid_session"],
+    ["no employee role", sessionSnapshot({ roleGrants: [] }), "role_not_approved"],
     ["revoked", sessionSnapshot({ revokedAt: NOW - 1 }), "session_revoked"],
     ["disabled", sessionSnapshot({ userStatus: "disabled" }), "user_disabled"],
     ["outside-domain session", sessionSnapshot({ email: "user@example.com" }), "outside_domain"],
@@ -220,6 +283,22 @@ test("session resolution rejects missing, revoked, disabled, stale, invalidated,
       }),
       "role_not_approved",
     ],
+    [
+      "multiple supported employee roles",
+      sessionSnapshot({
+        roleGrants: [
+          {
+            roleKey: AUTHORIZATION_ROLES.officeOperations,
+            capabilityKeys: [AUTHORIZATION_CAPABILITIES.recordsRead],
+          },
+          {
+            roleKey: AUTHORIZATION_ROLES.projectManager,
+            capabilityKeys: [AUTHORIZATION_CAPABILITIES.recordsRead],
+          },
+        ],
+      }),
+      "role_not_approved",
+    ],
   ];
 
   for (const [label, snapshot, reason] of deniedCases) {
@@ -238,21 +317,24 @@ test("session context intersects persisted grants with policy and applies role-s
   assert.equal(admin.recordScope.sessionVersion, admin.sessionVersion);
   assert.equal(admin.recordScope.includeFinancial, true);
   assert.equal(admin.capabilities.has(AUTHORIZATION_CAPABILITIES.gmailRead), false);
-  assert.equal(admin.capabilities.has(AUTHORIZATION_CAPABILITIES.clientsCreate), false);
+  assert.equal(admin.capabilities.has(AUTHORIZATION_CAPABILITIES.clientsCreate), true);
+  assert.equal(admin.capabilities.has(AUTHORIZATION_CAPABILITIES.rolePermissionsUpdate), true);
   assert.equal(typeof admin.capabilities.add, "undefined");
 
   const office = allowedContext({
     roleGrants: [{
       roleKey: AUTHORIZATION_ROLES.officeOperations,
-      capabilityKeys: [
-        AUTHORIZATION_CAPABILITIES.recordsRead,
-        AUTHORIZATION_CAPABILITIES.financialRead,
-      ],
+      capabilityKeys: Object.values(AUTHORIZATION_CAPABILITIES),
     }],
   });
   assert.equal(office.recordScope.kind, "company");
   assert.equal(office.recordScope.includeFinancial, false);
-  assert.deepEqual([...office.capabilities], [AUTHORIZATION_CAPABILITIES.recordsRead]);
+  assert.deepEqual(
+    [...office.capabilities],
+    approvedCapabilitiesForRole(AUTHORIZATION_ROLES.officeOperations),
+  );
+  assert.equal(office.capabilities.has(AUTHORIZATION_CAPABILITIES.projectsCreate), false);
+  assert.equal(office.capabilities.has(AUTHORIZATION_CAPABILITIES.accessAdminRead), false);
 
   const projectManager = allowedContext({
     roleGrants: [{
@@ -262,7 +344,12 @@ test("session context intersects persisted grants with policy and applies role-s
   });
   assert.equal(projectManager.recordScope.kind, "assigned_projects");
   assert.equal(projectManager.recordScope.includeFinancial, false);
-  assert.deepEqual([...projectManager.capabilities], [AUTHORIZATION_CAPABILITIES.recordsRead]);
+  assert.deepEqual(
+    [...projectManager.capabilities],
+    approvedCapabilitiesForRole(AUTHORIZATION_ROLES.projectManager),
+  );
+  assert.equal(projectManager.capabilities.has(AUTHORIZATION_CAPABILITIES.clientsUpdate), false);
+  assert.equal(projectManager.capabilities.has(AUTHORIZATION_CAPABILITIES.filesShare), false);
 
   const missingPersistedGrant = allowedContext({
     roleGrants: [{
@@ -274,42 +361,30 @@ test("session context intersects persisted grants with policy and applies role-s
   assert.equal(missingPersistedGrant.recordScope.includeFinancial, false);
 });
 
-test("capabilities cannot be laundered across separate persisted role grants", () => {
-  const officeWithoutRead = allowedContext({
-    roleGrants: [
-      {
-        roleKey: AUTHORIZATION_ROLES.officeOperations,
-        capabilityKeys: [AUTHORIZATION_CAPABILITIES.financialRead],
-      },
-      {
-        roleKey: AUTHORIZATION_ROLES.projectManager,
-        capabilityKeys: [AUTHORIZATION_CAPABILITIES.recordsRead],
-      },
-    ],
-  });
-  assert.deepEqual(officeWithoutRead.roles, [AUTHORIZATION_ROLES.projectManager]);
-  assert.equal(officeWithoutRead.recordScope.kind, "assigned_projects");
-  assert.equal(officeWithoutRead.recordScope.includeFinancial, false);
-
+test("a single role cannot gain capabilities outside its approved matrix", () => {
   const misgrantedFinancial = allowedContext({
-    roleGrants: [
-      {
-        roleKey: AUTHORIZATION_ROLES.administrator,
-        capabilityKeys: [AUTHORIZATION_CAPABILITIES.recordsRead],
-      },
-      {
-        roleKey: AUTHORIZATION_ROLES.officeOperations,
-        capabilityKeys: [
-          AUTHORIZATION_CAPABILITIES.recordsRead,
-          AUTHORIZATION_CAPABILITIES.financialRead,
-        ],
-      },
-    ],
+    roleGrants: [{
+      roleKey: AUTHORIZATION_ROLES.officeOperations,
+      capabilityKeys: [
+        AUTHORIZATION_CAPABILITIES.recordsRead,
+        AUTHORIZATION_CAPABILITIES.financialRead,
+        AUTHORIZATION_CAPABILITIES.projectsCreate,
+        AUTHORIZATION_CAPABILITIES.rolePermissionsUpdate,
+      ],
+    }],
   });
   assert.equal(misgrantedFinancial.recordScope.kind, "company");
   assert.equal(misgrantedFinancial.recordScope.includeFinancial, false);
   assert.equal(
     misgrantedFinancial.capabilities.has(AUTHORIZATION_CAPABILITIES.financialRead),
+    false,
+  );
+  assert.equal(
+    misgrantedFinancial.capabilities.has(AUTHORIZATION_CAPABILITIES.projectsCreate),
+    false,
+  );
+  assert.equal(
+    misgrantedFinancial.capabilities.has(AUTHORIZATION_CAPABILITIES.rolePermissionsUpdate),
     false,
   );
 });
@@ -319,7 +394,7 @@ test("operations enforce required targets, approved capabilities, and deny unkno
   const projectManager = allowedContext({
     roleGrants: [{
       roleKey: AUTHORIZATION_ROLES.projectManager,
-      capabilityKeys: [AUTHORIZATION_CAPABILITIES.recordsRead],
+      capabilityKeys: Object.values(AUTHORIZATION_CAPABILITIES),
     }],
   });
 
@@ -339,6 +414,12 @@ test("operations enforce required targets, approved capabilities, and deny unkno
     sensitive: false,
     requiresProjectCheck: true,
     capability: AUTHORIZATION_CAPABILITIES.recordsRead,
+  });
+  assert.deepEqual(authorizeOperation(projectManager, AUTHORIZATION_OPERATIONS.filesView, "project-1"), {
+    allowed: true,
+    sensitive: true,
+    requiresProjectCheck: true,
+    capability: AUTHORIZATION_CAPABILITIES.filesRead,
   });
 
   for (const operation of [
@@ -366,7 +447,6 @@ test("operations enforce required targets, approved capabilities, and deny unkno
   for (const operation of [
     AUTHORIZATION_OPERATIONS.gmailRead,
     AUTHORIZATION_OPERATIONS.calendarRead,
-    AUTHORIZATION_OPERATIONS.filesView,
     AUTHORIZATION_OPERATIONS.recordsWrite,
     AUTHORIZATION_OPERATIONS.jobsRetry,
     AUTHORIZATION_OPERATIONS.recoveryManage,

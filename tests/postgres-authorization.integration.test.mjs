@@ -320,6 +320,14 @@ test(
         roleKey: "project_manager",
         capabilityKeys: ["records.read"],
       }]);
+      assert.equal(
+        await repository.sessionCsrfHashMatches(hash("a"), hash("d"), now),
+        true,
+      );
+      assert.equal(
+        await repository.sessionCsrfHashMatches(hash("a"), hash("e"), now),
+        false,
+      );
 
       const projectManagerProjects = await repository.listProjectsForScope(
         projectManagerScope,
@@ -347,6 +355,35 @@ test(
       );
       assert.equal(
         await repository.projectExistsForScope(projectManagerScope, ids.projectB, now),
+        false,
+      );
+      const exactAssignedProject = await repository.getProjectForScope(
+        projectManagerScope,
+        ids.projectA,
+        now,
+      );
+      assert.equal(exactAssignedProject?.id, ids.projectA);
+      assertNoFinancialProjection([exactAssignedProject]);
+      assert.equal(
+        await repository.getProjectForScope(projectManagerScope, ids.projectB, now),
+        null,
+      );
+      assert.equal(
+        await repository.capabilityIsCurrentForScope(
+          projectManagerScope,
+          "records.read",
+          ids.projectA,
+          now,
+        ),
+        true,
+      );
+      assert.equal(
+        await repository.capabilityIsCurrentForScope(
+          projectManagerScope,
+          "records.read",
+          ids.projectB,
+          now,
+        ),
         false,
       );
       assert.deepEqual(await repository.getDashboardForScope(projectManagerScope, now), {
@@ -391,9 +428,10 @@ test(
         estimatedValueTotal: 350000,
       });
       assert.equal(
-        await repository.administratorCapabilityIsCurrent(
+        await repository.capabilityIsCurrentForScope(
           administratorScope,
           "financials.read",
+          null,
           now,
         ),
         true,
@@ -417,9 +455,10 @@ test(
         [],
       );
       assert.equal(
-        await repository.administratorCapabilityIsCurrent(
+        await repository.capabilityIsCurrentForScope(
           forgedOfficeFinancialScope,
           "financials.read",
+          null,
           now,
         ),
         false,

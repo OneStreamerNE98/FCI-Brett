@@ -14,6 +14,22 @@ export {
 
 export const AUTHORIZATION_DOMAIN = "cherryhillfci.com";
 
+export const AUTHORIZATION_INITIAL_ADMIN_EMAILS = Object.freeze([
+  "admincrm@cherryhillfci.com",
+  "brett@cherryhillfci.com",
+] as const);
+
+export const AUTHORIZATION_ACCESS_DEFAULTS = Object.freeze({
+  invitationLifetimeMs: 7 * 24 * 60 * 60 * 1_000,
+  sessionIdleLifetimeMs: 30 * 60 * 1_000,
+  sessionAbsoluteLifetimeMs: 8 * 60 * 60 * 1_000,
+  fieldLinkDefaultLifetimeMs: 7 * 24 * 60 * 60 * 1_000,
+  fieldLinkMaximumLifetimeMs: 14 * 24 * 60 * 60 * 1_000,
+  invitationSingleUse: true,
+  fieldLinksReadOnly: true,
+  perUserCapabilityOverrides: false,
+} as const);
+
 export const AUTHORIZATION_ROLES = Object.freeze({
   administrator: "administrator",
   officeOperations: "office_operations",
@@ -28,20 +44,59 @@ const APPROVED_ROLE_CAPABILITIES: Readonly<
 > = Object.freeze({
   [AUTHORIZATION_ROLES.administrator]: Object.freeze([
     AUTHORIZATION_CAPABILITIES.recordsRead,
+    AUTHORIZATION_CAPABILITIES.leadsCreate,
+    AUTHORIZATION_CAPABILITIES.leadsUpdate,
+    AUTHORIZATION_CAPABILITIES.clientsCreate,
+    AUTHORIZATION_CAPABILITIES.clientsUpdate,
+    AUTHORIZATION_CAPABILITIES.contactsCreate,
+    AUTHORIZATION_CAPABILITIES.contactsUpdate,
     AUTHORIZATION_CAPABILITIES.financialRead,
     AUTHORIZATION_CAPABILITIES.projectsCreate,
     AUTHORIZATION_CAPABILITIES.projectsAssign,
+    AUTHORIZATION_CAPABILITIES.projectsStatusUpdate,
+    AUTHORIZATION_CAPABILITIES.tasksUpdate,
+    AUTHORIZATION_CAPABILITIES.meetingsUpdate,
+    AUTHORIZATION_CAPABILITIES.notesUpdate,
     AUTHORIZATION_CAPABILITIES.gmailFile,
     AUTHORIZATION_CAPABILITIES.calendarCreate,
+    AUTHORIZATION_CAPABILITIES.filesRead,
+    AUTHORIZATION_CAPABILITIES.filesUpload,
     AUTHORIZATION_CAPABILITIES.filesShare,
     AUTHORIZATION_CAPABILITIES.dataExport,
     AUTHORIZATION_CAPABILITIES.auditRead,
+    AUTHORIZATION_CAPABILITIES.accessAdminRead,
+    AUTHORIZATION_CAPABILITIES.invitationsCreate,
+    AUTHORIZATION_CAPABILITIES.invitationsRevoke,
+    AUTHORIZATION_CAPABILITIES.usersDisable,
+    AUTHORIZATION_CAPABILITIES.rolesAssign,
+    AUTHORIZATION_CAPABILITIES.sessionsRevoke,
+    AUTHORIZATION_CAPABILITIES.fieldLinksCreate,
+    AUTHORIZATION_CAPABILITIES.fieldLinksRevoke,
+    AUTHORIZATION_CAPABILITIES.rolePermissionsUpdate,
   ]),
   [AUTHORIZATION_ROLES.officeOperations]: Object.freeze([
     AUTHORIZATION_CAPABILITIES.recordsRead,
+    AUTHORIZATION_CAPABILITIES.leadsCreate,
+    AUTHORIZATION_CAPABILITIES.leadsUpdate,
+    AUTHORIZATION_CAPABILITIES.clientsCreate,
+    AUTHORIZATION_CAPABILITIES.clientsUpdate,
+    AUTHORIZATION_CAPABILITIES.contactsCreate,
+    AUTHORIZATION_CAPABILITIES.contactsUpdate,
+    AUTHORIZATION_CAPABILITIES.projectsStatusUpdate,
+    AUTHORIZATION_CAPABILITIES.tasksUpdate,
+    AUTHORIZATION_CAPABILITIES.meetingsUpdate,
+    AUTHORIZATION_CAPABILITIES.notesUpdate,
+    AUTHORIZATION_CAPABILITIES.filesRead,
+    AUTHORIZATION_CAPABILITIES.filesUpload,
   ]),
   [AUTHORIZATION_ROLES.projectManager]: Object.freeze([
     AUTHORIZATION_CAPABILITIES.recordsRead,
+    AUTHORIZATION_CAPABILITIES.projectsStatusUpdate,
+    AUTHORIZATION_CAPABILITIES.tasksUpdate,
+    AUTHORIZATION_CAPABILITIES.meetingsUpdate,
+    AUTHORIZATION_CAPABILITIES.notesUpdate,
+    AUTHORIZATION_CAPABILITIES.filesRead,
+    AUTHORIZATION_CAPABILITIES.filesUpload,
   ]),
 });
 
@@ -60,6 +115,7 @@ export const AUTHORIZATION_OPERATIONS = Object.freeze({
   calendarRead: "calendar.read",
   filesShare: "files.share",
   filesView: "files.view",
+  filesUpload: "files.upload",
   dataExport: "data.export",
   auditView: "audit.view",
   recordsWrite: "records.write",
@@ -148,6 +204,11 @@ const OPERATION_POLICIES: Readonly<Record<AuthorizationOperation, OperationPolic
     },
     [AUTHORIZATION_OPERATIONS.filesView]: {
       capability: AUTHORIZATION_CAPABILITIES.filesRead,
+      sensitive: true,
+      projectTarget: "required",
+    },
+    [AUTHORIZATION_OPERATIONS.filesUpload]: {
+      capability: AUTHORIZATION_CAPABILITIES.filesUpload,
       sensitive: true,
       projectTarget: "required",
     },
@@ -362,7 +423,7 @@ export function resolveEmployeeAccessContext(
     }
     persistedRoles.add(grant.roleKey);
   }
-  if (persistedRoles.size === 0) {
+  if (persistedRoles.size !== 1) {
     return { allowed: false, reason: "role_not_approved" };
   }
 

@@ -104,6 +104,9 @@ test("preserves Sites/Vinext commands while adding a physically separate Cloud R
   );
   assert.match(serverEntry, /createDatabaseReadinessProbe/);
   assert.match(serverEntry, /createFoundationServer/);
+  assert.match(serverEntry, /createAuthorizationService/);
+  assert.match(serverEntry, /createEmployeeRequestRouter/);
+  assert.doesNotMatch(serverEntry, /testMode|testActions/);
   assert.match(migrationEntry, /runProductionSchemaMigrations/);
   assert.match(migrationEntry, /role: config\.postgres\.migrationRole/);
   assert.match(migrationEntry, /transactionLockTimeoutMs: config\.postgres\.pool\.lockTimeoutMs/);
@@ -125,17 +128,18 @@ test("builds isolated service and job entries without migration SQL in the servi
   assert.ok(names.includes("run-migrations.mjs"));
   assert.ok(names.includes("run-core-rehearsal.mjs"));
 
-  const [server, migrations, rehearsal, serviceGraph] = await Promise.all([
-    readFile(join(outputRoot, "cloud-run-server.mjs"), "utf8"),
+  const [migrations, rehearsal, serviceGraph] = await Promise.all([
     readFile(join(outputRoot, "run-migrations.mjs"), "utf8"),
     readFile(join(outputRoot, "run-core-rehearsal.mjs"), "utf8"),
     readBuiltModuleGraph(outputRoot, "cloud-run-server.mjs"),
   ]);
 
-  assert.match(server, /production_app_not_composed/);
+  assert.match(serviceGraph, /__Host-fci_session/);
+  assert.match(serviceGraph, /createEmployeeRequestRouter/);
+  assert.match(serviceGraph, /capabilityIsCurrentForScope/);
   assert.doesNotMatch(
     serviceGraph,
-    /cloudflare:workers|CREATE TABLE|runProductionSchemaMigrations|PRODUCTION_SCHEMA_HISTORY_SQL|runCoreRecordRehearsal|production_target_refused/,
+    /cloudflare:workers|CREATE TABLE|runProductionSchemaMigrations|PRODUCTION_SCHEMA_HISTORY_SQL|runCoreRecordRehearsal|production_target_refused|oai-authenticated-user-email/,
   );
   assert.match(migrations, /CREATE TABLE IF NOT EXISTS production_schema_migrations/);
   assert.match(migrations, /SET ROLE/);

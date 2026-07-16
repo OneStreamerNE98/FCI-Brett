@@ -59,9 +59,10 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 
 ## Owner decisions that can happen before connection
 
-- [ ] Confirm the proposed `operations@cherryhillfci.com` connection account exists and identify the Workspace super-administrator contact. The two owner-selected initial application Administrators are `admincrm@cherryhillfci.com` and `brett@cherryhillfci.com`; verify that each is an individual managed account assigned to one named person and never a shared staff login.
+- [ ] Confirm the proposed `operations@cherryhillfci.com` connection account exists and identify the Workspace super-administrator contact. The two owner-selected initial application Administrators are `admincrm@cherryhillfci.com` and `brett@cherryhillfci.com`; AdminCRM is owner-confirmed individual/non-shared, while its managed identity/immutable subject and Brett's individual managed identity still require live verification.
 - [x] Record the two initial Administrators, Administrator-only sensitive actions, Sales/Estimator exclusion, Field Lead link-only direction, no subcontractor accounts, and explicit-invitation requirement.
-- [ ] Approve complete Office Operations and Project Manager responsibilities and project/cross-project visibility; conservative fake read scopes are used only for local simulation meanwhile.
+- [x] Approve Office Operations company-wide nonfinancial operations and Project Manager assigned-project operations, including their bounded create/update and file view/upload ceilings; prohibit per-user capability overrides.
+- [x] Approve seven-day single-use invitations, 30-minute idle/eight-hour absolute sessions, and read-only exact-project Field links with a seven-day default/fourteen-day maximum and immediate revocation.
 - [x] Field leads use expiring links rather than employee accounts, and subcontractors receive no accounts.
 - [x] Restrict financial values, Gmail filing, Calendar creation, file sharing, exports, and audit viewing to Administrators for the first rollout. Recovery controls remain unapproved and denied.
 - [x] Approve isolated development/staging/production project, credential, and data boundaries, with Sites development and on-demand staging.
@@ -87,15 +88,16 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 4. **Completed PostgreSQL repository slice:** client/project adapters, atomic actor-scoped idempotency and truthful replay, transactional activity/outbox intent, guarded exact-value parsing, version-fenced outbox claim/complete/retry/recovery, and PostgreSQL 16 repository tests. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
 5. **Completed production runtime foundation:** a separate fail-closed Cloud Run image, private Cloud SQL connector composition, bounded runtime/migration/rehearsal pools, exact health/readiness, explicit migration ownership, least-privilege source policy, and a bounded core test-data rehearsal. See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md).
 6. **Accepted cost posture:** reuse Workspace, preserve Sites development, keep staging on demand, price standalone and HA Cloud SQL before selection, and default optional service modules to disabled.
-7. **Owner decisions in parallel:** the local authorization simulator records the named Administrator-only sensitive-capability matrix and uses conservative Office/Project Manager read defaults. Final role responsibilities, rollout order, direct Google read access, Cloud organization/billing, region, hostname, alert recipients, recovery, deployment, rollback, and Google Group/lifecycle inputs remain open.
+7. **Owner decisions in parallel:** the application role ceiling and invitation/session/Field-link defaults are approved. Rollout order, direct Google read access, Cloud organization/billing, region, hostname, alert recipients, recovery, deployment, rollback, and Google Group/lifecycle inputs remain open.
 8. **Completed in source; unapplied infrastructure definitions:** safe variables, costed core/profile definitions, and an on-demand staging procedure now exist. Missing owner inputs remain explicit provisioning blockers.
 9. **Completed in source; unapplied production persistence boundary:** remaining PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, exact runtime privileges, and provider-neutral object storage now exist without changing Sites behavior.
-10. **Completed source-only authorization simulation:** the approved Administrator-only capability decisions, conservative fake-role read defaults, secure-session denial rules, scoped queries, fixed-operation provider-action gates, and denial evidence now exist without enabling durable invitation admission, employee login, route composition, or live data. See [Authorization simulation](authorization-simulation.md).
-11. **Cloud Run composition and staging-proof workers:** port the remaining application routes, then create staging only with separate approval to prove migration, restore, reconciliation, rollback/forward-fix, and the application smoke path.
-12. **Workspace OIDC worker:** implement and verify live employee login only after the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
-13. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
-14. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
-15. **Workspace data-connector worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
+10. **Completed source-only authorization and narrow route boundary:** approved role ceilings, secure-session/CSRF denial rules, scoped queries, fixed-operation provider gates, and dashboard/search/project/client/logout source routes exist. File/Gmail/Calendar paths are gated but provider-unavailable. No durable admission, session issuance, migration/apply, deployment, or live data is enabled. See [Authorization simulation](authorization-simulation.md).
+11. **Administration workers:** build narrow audited administration persistence/APIs, then Management → Administration & Access with final-Administrator, session-invalidation, policy-preview, CSRF, and rendered denial evidence.
+12. **Staging-proof worker:** create staging only with separate approval to prove migration, restore, reconciliation, rollback/forward-fix, and the application smoke path.
+13. **Workspace OIDC worker:** implement and verify live employee login only after the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
+14. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
+15. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
+16. **Workspace data-connector worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
 
 Do not assign scheduling, outbound messaging, or AI document indexing until the production platform and authorization foundation are accepted.
 
@@ -136,7 +138,7 @@ The source-only repository worker connected the portable creation services to th
 
 The source-only production-runtime worker completed the next bounded foundation without changing any external system:
 
-- A separate fail-closed Cloud Run image exposes process liveness and exact database readiness while all employee application paths remain unavailable until their Cloudflare dependencies are ported.
+- A separate fail-closed Cloud Run image exposes process liveness and exact database readiness. The current source branch now composes authenticated dashboard, search, project, client, and logout routes; protected file, Gmail, and Calendar routes remain provider-unavailable after authorization until their adapters are supplied.
 - Validated private Cloud SQL connector composition provides one bounded runtime pool per instance and single-connection migration/rehearsal pools.
 - Migrations run only through a separate command/job with immutable history checks and explicit schema-owner role activation.
 - Source-only least-privilege role definitions keep the runtime from creating schema objects or mutating migration history.
@@ -145,14 +147,17 @@ The source-only production-runtime worker completed the next bounded foundation 
 
 See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) for the exact boundary and acceptance gates.
 
-## Next bounded developer assignment
+## Next bounded developer assignments
 
-After the authorization-simulation pull request is accepted, assign production employee-route composition as the next source-only worker. Open Google Cloud and Workspace inputs remain blockers to applying definitions and live integration, not to local route work.
+After the source-only employee-route composition is accepted, build the administration surface in bounded branches:
 
-- Use simulated principals and the owner-approved role/capability/project matrix.
-- Add access contexts, secure-session mechanics, project-scoped repository queries, and denial tests across list/search/dashboard/file/integration evidence.
-- Enforce authorization in server/repository queries; UI visibility is not authorization.
-- Preserve Sites development and the Google test connector.
-- Keep employee OIDC, live Workspace configuration, a second user, real data, migration apply, route cutover, infrastructure apply, and deployment disabled.
+1. `codex/admin-access-persistence`: versioned invitation-role, role-policy, user-role, project-membership, and session-invalidation persistence with final-Administrator protection.
+2. `codex/admin-access-api`: fixed administration endpoints with reasons, CSRF, optimistic concurrency, impact previews, audit, and session invalidation.
+3. `codex/field-link-persistence`: a separate hashed Field Lead link store and exact-project issuance/expiry/revocation behavior.
+4. `codex/admin-audit-reader`: a separately privileged, projection-limited audit reader/export boundary.
+5. `codex/admin-access-page`: **Management -> Administration & Access**, backed only by accepted APIs.
+6. `codex/admin-access-acceptance`: direct-route, cross-project, final-Administrator concurrency, session-invalidation, CSRF, responsive/accessibility, and browser evidence.
 
-The runtime foundation, infrastructure definitions, production persistence boundary, recorded first-rollout decisions, and conservative authorization simulation now exist in source. Final Office/Project Manager responsibilities, employee-route composition, Google Workspace OIDC, live sessions, and production authorization rollout remain blocked or incomplete until their production foundation, tested migration/cutover path, provider-neutral database/storage, and authorization acceptance gates pass.
+Each branch remains source-only. Preserve Sites development and the Google test connector; keep employee OIDC, live Workspace configuration, a second user, real data, migration apply, route cutover, infrastructure apply, and deployment disabled.
+
+The runtime foundation, infrastructure definitions, production persistence boundary, owner-approved role/capability/project policy, authorization simulation, and employee route composition now exist in source. Durable invitation/session/link issuance, Google Workspace OIDC, live provider adapters, admin persistence and UI, migration and recovery proof, and production authorization rollout remain blocked or incomplete until their acceptance gates pass.
