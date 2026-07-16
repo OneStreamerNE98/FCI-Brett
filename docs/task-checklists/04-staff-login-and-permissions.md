@@ -87,9 +87,9 @@ These decisions authorize local policy and route work only. They do not set the 
 
 ## Administration page follow-on
 
-- [ ] Build versioned administration persistence, then fixed APIs, for invitations, disablement, role/project assignment, session revocation, and global Office/Project Manager settings. Enforce one role, no per-user overrides, an immutable allowlist, required reasons, session invalidation on reductions, and transactionally protected final-Administrator status.
-- [ ] Build durable Field Lead links and the separately privileged audit reader in distinct least-privilege branches.
-- [ ] Build Management → Administration & Access only after those APIs exist, then add direct-route, CSRF, concurrency, responsive/accessibility, and rendered denial evidence in a separate acceptance branch.
+- [x] Implement `codex/admin-access-core` in source: fixed APIs for invite/revoke, one-role and Project Manager assignment changes, disablement, and sign-out-everywhere. The three role presets and invitation/session policy remain read-only; no per-user overrides exist; the commands enforce the immutable allowlist, required reasons, CSRF, optimistic concurrency, transactionally coupled audit, session invalidation, and final-Administrator protection. Migration version 4 remains unapplied.
+- [ ] Build `codex/admin-access-page` as Management → People & Access with one people/invitation list, a read-only role guide, five workflows, and direct-route, concurrency, responsive/accessibility, and rendered denial evidence. Do not add custom roles, a permission matrix, per-device sessions, deletion, or re-enablement.
+- [ ] Before second-user or real-data acceptance, build the separately privileged `codex/admin-audit-viewer` and Activity tab. Build `codex/admin-field-links` only when the field-assignment model is scheduled.
 
 ## Completion result
 

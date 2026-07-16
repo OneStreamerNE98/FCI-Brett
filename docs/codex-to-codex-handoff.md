@@ -91,16 +91,17 @@ The source-only authorization work now records the complete first-rollout applic
 
 The current source-only `codex/cloud-run-employee-routes` assignment composes secure session/CSRF transport, authorization, and PostgreSQL-backed dashboard, search, project list/exact-project, client list, and logout paths into the Cloud Run entry point. File list/upload/share, Gmail filing, and Calendar creation are authorization-gated but return `503 feature_unavailable` because production provider adapters are intentionally absent. It does not bind durable invitations, issue a session cookie, implement OIDC, issue Field Lead links, seed users/roles, migrate or apply a database, connect Google providers, deploy, add a second user, or use real data.
 
+The current source-only `codex/admin-access-core` assignment adds unapplied migration version 4, immutable three-role/capability seeds, durable invitation role and Project Manager project bindings, and the five fixed Administrator commands. It enforces exact request schemas, CSRF, reasons, post-lock actor-session/capability fencing, version fences, transactionally coupled exact-scope audit, expired-invitation replacement, session invalidation, and concurrent final-active-Administrator protection. Migration 4 fails before writing if version-3 role/access data is populated, so any future populated upgrade requires a reviewed backfill. It does not add the read/list page projection, fulfill invitations, seed users, apply a migration, connect Workspace, deploy, add a second user, or use real data.
+
 ## Recommended next worker assignments
 
-After the employee-route pull request is accepted and merged, use separate bounded branches:
+After the administration-core pull request is accepted and merged, continue the simplified [Administration and Access plan](administration-and-access-plan.md):
 
-1. `codex/admin-access-persistence`: add versioned, audited invitation-role, user-role, role-policy, project-membership, and session-invalidation persistence with a fixed allowlist and concurrency-safe final-active-Administrator protection.
-2. `codex/admin-access-api`: add fixed people/invitation/role/project/session/security-policy endpoints with reasons, CSRF, optimistic concurrency, impact preview, authorization-version changes, and session invalidation.
-3. `codex/field-link-persistence`: add a distinct hashed Field Lead link store and exact-project issuance, expiry, lookup, and revocation behavior; do not reuse file links.
-4. `codex/admin-audit-reader`: add the separately privileged, minimized, keyset-paginated audit reader/export boundary.
-5. `codex/admin-access-page`: add Management → Administration & Access with overview, people/invitations, role permissions, project assignments, Field links, sessions/security, and audit sections. Keep actions whose backend is not accepted visibly disabled.
-6. `codex/admin-access-acceptance`: add direct-URL, CSRF, cross-project, concurrent final-Administrator, session-invalidation, disabled-user, responsive/accessibility, and rendered browser tests.
+1. `codex/admin-access-page`: add the bounded Administrator read projection and Management → People & Access with one people/invitation list, a read-only three-role guide, the five immediate workflows, and direct-route, responsive, accessibility, and rendered browser tests.
+2. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged, minimized, keyset-paginated Activity reader and tab.
+3. `codex/admin-field-links`: when field assignments are scheduled, add a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.
+
+Do not build custom roles, a permission-toggle matrix, per-user overrides, editable session/invitation policy, user deletion/re-enablement, or a per-device session console for the first rollout.
 
 Brett's Google Cloud and Workspace inputs remain necessary for cost approval, resource application, staging, direct Google access, and later live integration, but they do not block these local source-only branches. Google Workspace OIDC, session issuance, migration/apply, live authorization rollout, deployment, a second user, and real data must still wait for the production foundation, tested migration/cutover and recovery path, provider-neutral database/storage boundaries, and authorization controls to pass acceptance.
 

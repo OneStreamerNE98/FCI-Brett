@@ -1,6 +1,4 @@
 import type {
-  IdentityDefinition,
-  IdentityGrant,
   IdentityPersistenceRepository,
   IdentityPersistenceResult,
   RegisterExternalIdentityIntent,
@@ -10,7 +8,6 @@ import type { SecurityAuditEvent } from "../../ports/security-audit";
 import { insertPostgresSecurityAuditEvent } from "./security-audit-repository";
 import { withPostgresTransaction, type PostgresPool } from "./postgres-database";
 import {
-  assertPersistenceDottedKey,
   assertPersistenceHash,
   assertPersistenceKey,
   assertPersistenceText,
@@ -34,19 +31,9 @@ const IDENTITY_CONFLICT_CONSTRAINTS = [
   "external_identities_pkey",
   "external_identities_issuer_subject_key",
   "external_identities_user_provider_key",
-  "invitations_pkey",
-  "invitations_pending_email_key_idx",
-  "invitations_token_hash_idx",
   "sessions_pkey",
   "sessions_token_hash_idx",
   "sessions_rotated_from_session_id_idx",
-  "roles_pkey",
-  "roles_role_key_key",
-  "capabilities_pkey",
-  "capabilities_capability_key_key",
-  "role_capabilities_pkey",
-  "user_roles_pkey",
-  "project_memberships_pkey",
 ] as const;
 
 function accepted(version: unknown, label: string): IdentityPersistenceResult {
@@ -121,34 +108,6 @@ function assertRegistration(intent: RegisterExternalIdentityIntent) {
     throw new TypeError("External identity authentication cannot predate first_seen_at");
   }
   return { ...times, sessionsValidAfter, firstSeenAt, lastAuthenticatedAt };
-}
-
-function assertDefinition(intent: IdentityDefinition, dotted: boolean) {
-  assertPersistenceUuid(intent.id, "Identity definition ID");
-  if (dotted) assertPersistenceDottedKey(intent.key, "Capability key");
-  else assertPersistenceKey(intent.key, "Role key");
-  assertPersistenceText(intent.displayName, "Identity definition display name", 255);
-  if (intent.description !== null) {
-    assertPersistenceText(intent.description, "Identity definition description", 2_000);
-  }
-  return persistenceDate(intent.createdAt, "Identity definition created_at");
-}
-
-function assertGrant(intent: IdentityGrant | Omit<IdentityGrant, "expiresAt">) {
-  assertPersistenceUuid(intent.subjectId, "Identity grant subject ID");
-  assertPersistenceUuid(intent.valueId, "Identity grant value ID");
-  if (intent.assignedByUserId !== null) {
-    assertPersistenceUuid(intent.assignedByUserId, "Identity grant assigner user ID");
-  }
-  assertPersistenceText(intent.assignedByActorKey, "Identity grant actor key", 255);
-  const assignedAt = persistenceDate(intent.assignedAt, "Identity grant assigned_at");
-  const expiresAt = "expiresAt" in intent && intent.expiresAt !== null
-    ? persistenceDate(intent.expiresAt, "Identity grant expires_at")
-    : null;
-  if (expiresAt !== null && expiresAt <= assignedAt) {
-    throw new TypeError("Identity grant expiry must follow assignment");
-  }
-  return { assignedAt, expiresAt };
 }
 
 export function createPostgresIdentityPersistenceRepository(
@@ -230,47 +189,6 @@ export function createPostgresIdentityPersistenceRepository(
         "identity.user_registered",
         "user",
         intent.user.id,
-        "conflict",
-      ));
-    },
-
-    async createInvitation(intent) {
-      assertPersistenceUuid(intent.id, "Invitation ID");
-      assertPersistenceText(intent.email, "Invitation email", 320);
-      assertPersistenceHash(intent.tokenHash, "Invitation token hash");
-      if (intent.invitedByUserId !== null) {
-        assertPersistenceUuid(intent.invitedByUserId, "Invitation inviter user ID");
-      }
-      assertPersistenceText(intent.invitedByActorKey, "Invitation actor key", 255);
-      const createdAt = persistenceDate(intent.createdAt, "Invitation created_at");
-      const expiresAt = persistenceDate(intent.expiresAt, "Invitation expires_at");
-      const purgeAfter = persistenceDate(intent.purgeAfter, "Invitation purge_after");
-      if (expiresAt <= createdAt || purgeAfter <= expiresAt) {
-        throw new TypeError("Invitation expiry and purge times must be ordered");
-      }
-      return transaction(async (client) => {
-        const inserted = await client.query<{ version: unknown }>(
-          `INSERT INTO invitations (
-             id, email, email_key, token_hash, status, invited_by_user_id,
-             invited_by_actor_key, expires_at, purge_after, created_at, updated_at, version
-           ) VALUES ($1, $2, pg_catalog.lower(pg_catalog.btrim($2)), $3, 'pending', $4, $5, $6, $7, $8, $8, 1)
-           RETURNING '1'::text AS version`,
-          [intent.id, intent.email, intent.tokenHash, intent.invitedByUserId,
-            intent.invitedByActorKey, expiresAt, purgeAfter, createdAt],
-        );
-        const version = exactVersionRow(inserted, "PostgreSQL invitation");
-        await insertPostgresSecurityAuditEvent(client, mutationAudit(
-          intent.audit,
-          "identity.invitation_created",
-          "invitation",
-          intent.id,
-        ));
-        return accepted(version, "PostgreSQL invitation version");
-      }, mutationAudit(
-        intent.audit,
-        "identity.invitation_created",
-        "invitation",
-        intent.id,
         "conflict",
       ));
     },
@@ -392,146 +310,6 @@ export function createPostgresIdentityPersistenceRepository(
         ));
         return accepted(version, "PostgreSQL session version");
       });
-    },
-
-    async createRole(intent) {
-      const createdAt = assertDefinition(intent, false);
-      return transaction(async (client) => {
-        const inserted = await client.query<{ version: unknown }>(
-          `INSERT INTO roles (
-             id, role_key, display_name, description, status,
-             created_at, updated_at, version
-           ) VALUES ($1, $2, $3, $4, 'active', $5, $5, 1)
-           RETURNING '1'::text AS version`,
-          [intent.id, intent.key, intent.displayName, intent.description, createdAt],
-        );
-        const version = exactVersionRow(inserted, "PostgreSQL role");
-        await insertPostgresSecurityAuditEvent(client, mutationAudit(
-          intent.audit,
-          "authorization.role_created",
-          "role",
-          intent.id,
-        ));
-        return accepted(version, "PostgreSQL role version");
-      }, mutationAudit(
-        intent.audit,
-        "authorization.role_created",
-        "role",
-        intent.id,
-        "conflict",
-      ));
-    },
-
-    async createCapability(intent) {
-      const createdAt = assertDefinition(intent, true);
-      return transaction(async (client) => {
-        const inserted = await client.query<{ version: unknown }>(
-          `INSERT INTO capabilities (
-             id, capability_key, display_name, description, status,
-             created_at, updated_at, version
-           ) VALUES ($1, $2, $3, $4, 'active', $5, $5, 1)
-           RETURNING '1'::text AS version`,
-          [intent.id, intent.key, intent.displayName, intent.description, createdAt],
-        );
-        const version = exactVersionRow(inserted, "PostgreSQL capability");
-        await insertPostgresSecurityAuditEvent(client, mutationAudit(
-          intent.audit,
-          "authorization.capability_created",
-          "capability",
-          intent.id,
-        ));
-        return accepted(version, "PostgreSQL capability version");
-      }, mutationAudit(
-        intent.audit,
-        "authorization.capability_created",
-        "capability",
-        intent.id,
-        "conflict",
-      ));
-    },
-
-    async grantCapabilityToRole(intent) {
-      const { assignedAt } = assertGrant(intent);
-      return transaction(async (client) => {
-        const inserted = await client.query(
-          `INSERT INTO role_capabilities (
-             role_id, capability_id, granted_by_user_id,
-             granted_by_actor_key, granted_at
-           ) VALUES ($1, $2, $3, $4, $5)`,
-          [intent.subjectId, intent.valueId, intent.assignedByUserId,
-            intent.assignedByActorKey, assignedAt],
-        );
-        if (inserted.rowCount !== 1) throw new Error("PostgreSQL capability grant was not inserted exactly once");
-        await insertPostgresSecurityAuditEvent(client, mutationAudit(
-          intent.audit,
-          "authorization.role_capability_granted",
-          "role",
-          intent.subjectId,
-        ));
-        return accepted("1", "PostgreSQL capability grant version");
-      }, mutationAudit(
-        intent.audit,
-        "authorization.role_capability_granted",
-        "role",
-        intent.subjectId,
-        "conflict",
-      ));
-    },
-
-    async assignRoleToUser(intent) {
-      const { assignedAt, expiresAt } = assertGrant(intent);
-      return transaction(async (client) => {
-        const inserted = await client.query(
-          `INSERT INTO user_roles (
-             user_id, role_id, assigned_by_user_id,
-             assigned_by_actor_key, assigned_at, expires_at
-           ) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [intent.subjectId, intent.valueId, intent.assignedByUserId,
-            intent.assignedByActorKey, assignedAt, expiresAt],
-        );
-        if (inserted.rowCount !== 1) throw new Error("PostgreSQL role assignment was not inserted exactly once");
-        await insertPostgresSecurityAuditEvent(client, mutationAudit(
-          intent.audit,
-          "authorization.user_role_assigned",
-          "user",
-          intent.subjectId,
-        ));
-        return accepted("1", "PostgreSQL role assignment version");
-      }, mutationAudit(
-        intent.audit,
-        "authorization.user_role_assigned",
-        "user",
-        intent.subjectId,
-        "conflict",
-      ));
-    },
-
-    async assignProjectToUser(intent) {
-      const { assignedAt, expiresAt } = assertGrant(intent);
-      return transaction(async (client) => {
-        const inserted = await client.query(
-          `INSERT INTO project_memberships (
-             project_id, user_id, assigned_by_user_id,
-             assigned_by_actor_key, assigned_at, expires_at
-           ) VALUES ($2, $1, $3, $4, $5, $6)`,
-          [intent.subjectId, intent.valueId, intent.assignedByUserId,
-            intent.assignedByActorKey, assignedAt, expiresAt],
-        );
-        if (inserted.rowCount !== 1) throw new Error("PostgreSQL project assignment was not inserted exactly once");
-        await insertPostgresSecurityAuditEvent(client, mutationAudit(
-          intent.audit,
-          "authorization.project_membership_assigned",
-          "project",
-          intent.valueId,
-        ));
-        return accepted("1", "PostgreSQL project assignment version");
-      }, mutationAudit(
-        intent.audit,
-        "authorization.project_membership_assigned",
-        "project",
-        intent.valueId,
-        "conflict",
-      ));
     },
   };
 }

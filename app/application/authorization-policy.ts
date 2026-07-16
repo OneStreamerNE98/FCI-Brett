@@ -39,7 +39,7 @@ export const AUTHORIZATION_ROLES = Object.freeze({
 export type AuthorizationRoleKey =
   (typeof AUTHORIZATION_ROLES)[keyof typeof AUTHORIZATION_ROLES];
 
-const APPROVED_ROLE_CAPABILITIES: Readonly<
+export const AUTHORIZATION_APPROVED_ROLE_CAPABILITIES: Readonly<
   Record<AuthorizationRoleKey, readonly AuthorizationCapability[]>
 > = Object.freeze({
   [AUTHORIZATION_ROLES.administrator]: Object.freeze([
@@ -118,6 +118,12 @@ export const AUTHORIZATION_OPERATIONS = Object.freeze({
   filesUpload: "files.upload",
   dataExport: "data.export",
   auditView: "audit.view",
+  accessAdminView: "access_admin.view",
+  invitationCreate: "invitations.create",
+  invitationRevoke: "invitations.revoke",
+  userAccessChange: "user_access.change",
+  userDisable: "users.disable",
+  sessionsInvalidate: "sessions.invalidate",
   recordsWrite: "records.write",
   jobsRetry: "jobs.retry",
   recoveryManage: "recovery.manage",
@@ -222,6 +228,36 @@ const OPERATION_POLICIES: Readonly<Record<AuthorizationOperation, OperationPolic
       sensitive: true,
       projectTarget: "none",
     },
+    [AUTHORIZATION_OPERATIONS.accessAdminView]: {
+      capability: AUTHORIZATION_CAPABILITIES.accessAdminRead,
+      sensitive: true,
+      projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.invitationCreate]: {
+      capability: AUTHORIZATION_CAPABILITIES.invitationsCreate,
+      sensitive: true,
+      projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.invitationRevoke]: {
+      capability: AUTHORIZATION_CAPABILITIES.invitationsRevoke,
+      sensitive: true,
+      projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.userAccessChange]: {
+      capability: AUTHORIZATION_CAPABILITIES.rolesAssign,
+      sensitive: true,
+      projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.userDisable]: {
+      capability: AUTHORIZATION_CAPABILITIES.usersDisable,
+      sensitive: true,
+      projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.sessionsInvalidate]: {
+      capability: AUTHORIZATION_CAPABILITIES.sessionsRevoke,
+      sensitive: true,
+      projectTarget: "none",
+    },
     [AUTHORIZATION_OPERATIONS.recordsWrite]: {
       capability: AUTHORIZATION_CAPABILITIES.recordsWrite,
       sensitive: true,
@@ -288,9 +324,25 @@ function knownRole(value: string): value is AuthorizationRoleKey {
   return Object.values(AUTHORIZATION_ROLES).includes(value as AuthorizationRoleKey);
 }
 
-function emailDomain(email: string) {
-  const separator = email.lastIndexOf("@");
-  return separator > 0 ? email.slice(separator + 1) : "";
+export function normalizeAuthorizationCompanyEmail(value: string) {
+  const email = value.trim().toLowerCase();
+  if (email.length < 3 || email.length > 320 || /[\s\u0000-\u001f\u007f]/.test(email)) {
+    return null;
+  }
+  const parts = email.split("@");
+  if (parts.length !== 2 || parts[1] !== AUTHORIZATION_DOMAIN) return null;
+  const local = parts[0];
+  if (
+    local.length < 1
+    || local.length > 64
+    || local.startsWith(".")
+    || local.endsWith(".")
+    || local.includes("..")
+    || !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/.test(local)
+  ) {
+    return null;
+  }
+  return email;
 }
 
 function immutableSet<T>(values: Iterable<T>): ReadonlySet<T> {
@@ -327,9 +379,9 @@ function immutableSet<T>(values: Iterable<T>): ReadonlySet<T> {
 export function evaluateEmployeeAdmission(
   input: EmployeeAdmissionInput,
 ): EmployeeAdmissionDecision {
-  const email = input.email.trim().toLowerCase();
+  const email = normalizeAuthorizationCompanyEmail(input.email);
   const hostedDomain = input.hostedDomain?.trim().toLowerCase() ?? null;
-  if (hostedDomain !== AUTHORIZATION_DOMAIN || emailDomain(email) !== AUTHORIZATION_DOMAIN) {
+  if (hostedDomain !== AUTHORIZATION_DOMAIN || email === null) {
     return { allowed: false, reason: "outside_domain" };
   }
   if (!input.emailVerified) return { allowed: false, reason: "email_unverified" };
@@ -401,8 +453,8 @@ export function resolveEmployeeAccessContext(
   ) {
     return { allowed: false, reason: "invalid_session" };
   }
-  const email = snapshot.email.trim().toLowerCase();
-  if (emailDomain(email) !== AUTHORIZATION_DOMAIN) {
+  const email = normalizeAuthorizationCompanyEmail(snapshot.email);
+  if (email === null) {
     return { allowed: false, reason: "outside_domain" };
   }
   if (snapshot.userAuthorizationVersion !== snapshot.sessionAuthorizationVersion) {
@@ -434,7 +486,7 @@ export function resolveEmployeeAccessContext(
     const persistedCapabilities = new Set(grant.capabilityKeys);
     if (!persistedCapabilities.has(AUTHORIZATION_CAPABILITIES.recordsRead)) continue;
     effectiveRoles.add(role);
-    for (const capability of APPROVED_ROLE_CAPABILITIES[role]) {
+    for (const capability of AUTHORIZATION_APPROVED_ROLE_CAPABILITIES[role]) {
       if (persistedCapabilities.has(capability)) policyCapabilities.add(capability);
     }
   }
@@ -562,5 +614,5 @@ export function authorizeOperation(
 }
 
 export function approvedCapabilitiesForRole(role: AuthorizationRoleKey) {
-  return APPROVED_ROLE_CAPABILITIES[role];
+  return AUTHORIZATION_APPROVED_ROLE_CAPABILITIES[role];
 }

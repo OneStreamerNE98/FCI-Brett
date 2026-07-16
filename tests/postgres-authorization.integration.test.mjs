@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { createServer } from "vite";
 import {
+  ADMIN_ACCESS_ROLE_CAPABILITY_KEYS,
+  ADMIN_ACCESS_ROLE_CATALOG,
+} from "../app/platform/postgres/admin-access-persistence-schema.ts";
+import {
   PRODUCTION_SCHEMA_MIGRATIONS,
   runProductionSchemaMigrations,
 } from "../app/platform/postgres/production-schema-migrations.ts";
@@ -55,11 +59,9 @@ async function seedAuthorizationFixture(pool, schema, now) {
     adminUser: randomUUID(),
     officeUser: randomUUID(),
     projectManagerUser: randomUUID(),
-    administratorRole: randomUUID(),
-    officeRole: randomUUID(),
-    projectManagerRole: randomUUID(),
-    recordsCapability: randomUUID(),
-    financialsCapability: randomUUID(),
+    administratorRole: ADMIN_ACCESS_ROLE_CATALOG[0].id,
+    officeRole: ADMIN_ACCESS_ROLE_CATALOG[1].id,
+    projectManagerRole: ADMIN_ACCESS_ROLE_CATALOG[2].id,
     adminSession: randomUUID(),
     officeSession: randomUUID(),
     projectManagerSession: randomUUID(),
@@ -93,42 +95,6 @@ async function seedAuthorizationFixture(pool, schema, now) {
       emails.projectManager,
       createdAt,
       new Date(now),
-    ],
-  );
-
-  await pool.query(
-    `INSERT INTO ${schema}.roles (
-       id, role_key, display_name, status, created_at, updated_at
-     ) VALUES
-       ($1, 'administrator', 'Administrator', 'active', $4, $4),
-       ($2, 'office_operations', 'Office', 'active', $4, $4),
-       ($3, 'project_manager', 'Project Manager', 'active', $4, $4)`,
-    [ids.administratorRole, ids.officeRole, ids.projectManagerRole, assignedAt],
-  );
-  await pool.query(
-    `INSERT INTO ${schema}.capabilities (
-       id, capability_key, display_name, status, created_at, updated_at
-     ) VALUES
-       ($1, 'records.read', 'Read records', 'active', $3, $3),
-       ($2, 'financials.read', 'Read financials', 'active', $3, $3)`,
-    [ids.recordsCapability, ids.financialsCapability, assignedAt],
-  );
-  await pool.query(
-    `INSERT INTO ${schema}.role_capabilities (
-       role_id, capability_id, granted_by_user_id, granted_by_actor_key, granted_at
-     ) VALUES
-       ($1, $4, $6, 'user:authorization-integration-admin', $7),
-       ($1, $5, $6, 'user:authorization-integration-admin', $7),
-       ($2, $4, $6, 'user:authorization-integration-admin', $7),
-       ($3, $4, $6, 'user:authorization-integration-admin', $7)`,
-    [
-      ids.administratorRole,
-      ids.officeRole,
-      ids.projectManagerRole,
-      ids.recordsCapability,
-      ids.financialsCapability,
-      ids.adminUser,
-      assignedAt,
     ],
   );
 
@@ -239,10 +205,13 @@ async function seedAuthorizationFixture(pool, schema, now) {
   await pool.query(
     `INSERT INTO ${schema}.project_memberships (
        project_id, user_id, assigned_by_user_id, assigned_by_actor_key,
-       assigned_at, expires_at
+       assigned_at, status, revoked_by_user_id, revoked_by_actor_key,
+       revoked_at, revocation_reason_code
      ) VALUES
-       ($1, $3, $4, 'user:authorization-integration-admin', $5, NULL),
-       ($2, $3, $4, 'user:authorization-integration-admin', $5, $6)`,
+       ($1, $3, $4, 'user:authorization-integration-admin', $5,
+        'active', NULL, NULL, NULL, NULL),
+       ($2, $3, $4, 'user:authorization-integration-admin', $5,
+        'revoked', $4, 'user:authorization-integration-admin', $6, 'assignment_removed')`,
     [
       ids.projectA,
       ids.projectB,
@@ -310,15 +279,15 @@ test(
       ]);
       assert.deepEqual(adminSession?.roleGrants, [{
         roleKey: "administrator",
-        capabilityKeys: ["financials.read", "records.read"],
+        capabilityKeys: [...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.administrator].sort(),
       }]);
       assert.deepEqual(officeSession?.roleGrants, [{
         roleKey: "office_operations",
-        capabilityKeys: ["records.read"],
+        capabilityKeys: [...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.office_operations].sort(),
       }]);
       assert.deepEqual(projectManagerSession?.roleGrants, [{
         roleKey: "project_manager",
-        capabilityKeys: ["records.read"],
+        capabilityKeys: [...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.project_manager].sort(),
       }]);
       assert.equal(
         await repository.sessionCsrfHashMatches(hash("a"), hash("d"), now),

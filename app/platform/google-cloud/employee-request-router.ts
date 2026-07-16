@@ -1,11 +1,19 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  ADMIN_ACCESS_ROLE_KEYS,
+  type AdminAccessPersistenceRepository,
+  type AdminAccessPersistenceResult,
+  type AdminAccessRoleKey,
+} from "../../ports/admin-access-persistence";
 import type { AuthorizationRepository } from "../../ports/authorization";
 import type {
   SecurityAuditEvent,
   SecurityAuditRepository,
 } from "../../ports/security-audit";
 import {
+  AUTHORIZATION_ACCESS_DEFAULTS,
+  normalizeAuthorizationCompanyEmail,
   resolveEmployeeAccessContext,
   type EmployeeAccessContext,
 } from "../../application/authorization-policy";
@@ -20,7 +28,11 @@ import {
 const MAX_URL_LENGTH = 2_048;
 const MAX_SEARCH_LENGTH = 200;
 const MAX_JSON_BODY_BYTES = 64 * 1_024;
+const MAX_ADMIN_REASON_LENGTH = 500;
+const MAX_ADMIN_PROJECTS = 50;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VERSION_PATTERN = /^[1-9][0-9]{0,18}$/;
+const GENERATED_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
 
 type AuthorizationService = ReturnType<typeof createAuthorizationService>;
 type JsonObject = Readonly<Record<string, unknown>>;
@@ -45,6 +57,7 @@ export type EmployeeRouteTestActions = Readonly<{
 export type EmployeeRequestRouterDependencies = Readonly<{
   authorization: AuthorizationService;
   repository: AuthorizationRepository;
+  adminAccess: AdminAccessPersistenceRepository;
   audit: SecurityAuditRepository;
   /**
    * Test-only callback seam for proving provider work cannot run after denial.
@@ -55,6 +68,7 @@ export type EmployeeRequestRouterDependencies = Readonly<{
   testMode?: boolean;
   now?: () => number;
   newId?: () => string;
+  newInvitationCredential?: () => string;
 }>;
 
 type RouteMatch = Readonly<{
@@ -69,10 +83,16 @@ type RouteMatch = Readonly<{
     | "files_share"
     | "gmail_file"
     | "calendar_create"
+    | "admin_invitation_create"
+    | "admin_invitation_revoke"
+    | "admin_user_access_change"
+    | "admin_user_disable"
+    | "admin_sessions_invalidate"
     | "logout";
   method: "GET" | "POST";
   projectId: string | null;
   fileId: string | null;
+  adminTargetId?: string;
 }>;
 
 class HttpFailure extends Error {
@@ -116,6 +136,50 @@ function route(path: string): RouteMatch | null {
   }
   if (path === "/api/v1/session/logout") {
     return { kind: "logout", method: "POST", projectId: null, fileId: null };
+  }
+  if (path === "/api/v1/admin/invitations") {
+    return {
+      kind: "admin_invitation_create",
+      method: "POST",
+      projectId: null,
+      fileId: null,
+    };
+  }
+
+  const invitationRevoke = path.match(
+    /^\/api\/v1\/admin\/invitations\/([^/]+)\/revoke$/,
+  );
+  if (invitationRevoke) {
+    const invitationId = uuid(invitationRevoke[1] ?? "");
+    return invitationId
+      ? {
+          kind: "admin_invitation_revoke",
+          method: "POST",
+          projectId: null,
+          fileId: null,
+          adminTargetId: invitationId,
+        }
+      : null;
+  }
+
+  const adminUserAction = path.match(
+    /^\/api\/v1\/admin\/users\/([^/]+)\/(access|disable|sign-out)$/,
+  );
+  if (adminUserAction) {
+    const userId = uuid(adminUserAction[1] ?? "");
+    const action = adminUserAction[2];
+    if (!userId) return null;
+    return {
+      kind: action === "access"
+        ? "admin_user_access_change"
+        : action === "disable"
+          ? "admin_user_disable"
+          : "admin_sessions_invalidate",
+      method: "POST",
+      projectId: null,
+      fileId: null,
+      adminTargetId: userId,
+    };
   }
 
   const project = path.match(/^\/api\/v1\/projects\/([^/]+)$/);
@@ -278,6 +342,163 @@ async function jsonBody(request: IncomingMessage): Promise<JsonObject> {
   return Object.freeze({ ...(parsed as Record<string, unknown>) });
 }
 
+function exactAdminBody(body: JsonObject, keys: readonly string[]) {
+  const actual = Object.keys(body).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    throw new HttpFailure(400, "invalid_admin_request");
+  }
+}
+
+function adminText(value: unknown, maximum: number) {
+  if (
+    typeof value !== "string"
+    || value !== value.trim()
+    || value.length < 1
+    || value.length > maximum
+    || /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new HttpFailure(400, "invalid_admin_request");
+  }
+  return value;
+}
+
+function adminEmail(value: unknown) {
+  const email = normalizeAuthorizationCompanyEmail(adminText(value, 320));
+  if (email === null) throw new HttpFailure(400, "invalid_admin_request");
+  return email;
+}
+
+function adminRole(value: unknown): AdminAccessRoleKey {
+  if (!ADMIN_ACCESS_ROLE_KEYS.includes(value as AdminAccessRoleKey)) {
+    throw new HttpFailure(400, "invalid_admin_request");
+  }
+  return value as AdminAccessRoleKey;
+}
+
+function adminProjectIds(value: unknown, role: AdminAccessRoleKey) {
+  if (!Array.isArray(value) || value.length > MAX_ADMIN_PROJECTS) {
+    throw new HttpFailure(400, "invalid_admin_request");
+  }
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const projectId = typeof item === "string" ? uuid(item) : null;
+    if (!projectId || seen.has(projectId)) {
+      throw new HttpFailure(400, "invalid_admin_request");
+    }
+    seen.add(projectId);
+    ids.push(projectId);
+  }
+  if (
+    (role === "project_manager" && ids.length === 0)
+    || (role !== "project_manager" && ids.length !== 0)
+  ) {
+    throw new HttpFailure(400, "invalid_admin_request");
+  }
+  return Object.freeze(ids.sort());
+}
+
+function adminVersion(value: unknown) {
+  if (typeof value !== "string" || !VERSION_PATTERN.test(value)) {
+    throw new HttpFailure(400, "invalid_admin_request");
+  }
+  try {
+    if (BigInt(value) > 9_223_372_036_854_775_807n) {
+      throw new HttpFailure(400, "invalid_admin_request");
+    }
+  } catch (error) {
+    if (error instanceof HttpFailure) throw error;
+    throw new HttpFailure(400, "invalid_admin_request");
+  }
+  return value;
+}
+
+function invitationAdminBody(body: JsonObject) {
+  exactAdminBody(body, ["email", "role", "projectIds"]);
+  const role = adminRole(body.role);
+  return Object.freeze({
+    email: adminEmail(body.email),
+    role,
+    projectIds: adminProjectIds(body.projectIds, role),
+  });
+}
+
+function reasonAdminBody(body: JsonObject) {
+  exactAdminBody(body, ["expectedVersion", "reason"]);
+  return Object.freeze({
+    expectedVersion: adminVersion(body.expectedVersion),
+    reason: adminText(body.reason, MAX_ADMIN_REASON_LENGTH),
+  });
+}
+
+function userAccessAdminBody(body: JsonObject) {
+  exactAdminBody(body, ["expectedVersion", "role", "projectIds", "reason"]);
+  const role = adminRole(body.role);
+  return Object.freeze({
+    expectedVersion: adminVersion(body.expectedVersion),
+    role,
+    projectIds: adminProjectIds(body.projectIds, role),
+    reason: adminText(body.reason, MAX_ADMIN_REASON_LENGTH),
+  });
+}
+
+function generatedInvitationCredential(value: string) {
+  if (typeof value !== "string" || !GENERATED_CREDENTIAL_PATTERN.test(value)) {
+    throw new Error("Generated invitation credential is invalid");
+  }
+  return value;
+}
+
+function invitationHash(value: string) {
+  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
+}
+
+function adminMutationAudit(
+  context: EmployeeAccessContext,
+  id: string,
+  action: string,
+  targetType: "invitation" | "user",
+  targetId: string,
+  requestId: string,
+  correlationId: string,
+  occurredAt: number,
+  metadata: Readonly<Record<string, string | number>>,
+): SecurityAuditEvent {
+  return {
+    id,
+    executorType: "user",
+    executorUserId: context.userId,
+    executorKey: context.email,
+    originatingUserId: null,
+    originatingActorKey: null,
+    action,
+    targetType,
+    targetId,
+    result: "succeeded",
+    reasonCode: null,
+    requestId,
+    correlationId,
+    source: "admin_access",
+    metadata,
+    occurredAt,
+    retentionPolicyKey: "security_audit",
+    retentionUntil: null,
+  };
+}
+
+function requireAcceptedAdminMutation(result: AdminAccessPersistenceResult) {
+  if (result.outcome === "accepted") return result;
+  if (result.outcome === "actor_authorization_changed") {
+    throw new HttpFailure(401, "authentication_required", true);
+  }
+  if (result.outcome === "final_active_administrator") {
+    throw new HttpFailure(409, "final_active_administrator");
+  }
+  if (result.outcome === "stale") throw new HttpFailure(409, "access_state_stale");
+  throw new HttpFailure(409, "access_conflict");
+}
+
 function requireEmptyBody(request: IncomingMessage) {
   const length = contentLength(request);
   if ((length !== null && length !== 0) || request.headers["transfer-encoding"] !== undefined) {
@@ -340,6 +561,8 @@ export function createEmployeeRequestRouter(
   }
   const now = dependencies.now ?? Date.now;
   const newId = dependencies.newId ?? randomUUID;
+  const newInvitationCredential = dependencies.newInvitationCredential
+    ?? (() => randomBytes(32).toString("base64url"));
   const testActions = dependencies.testMode === true ? dependencies.testActions : undefined;
 
   return async function handleEmployeeRequest(
@@ -523,6 +746,206 @@ export function createEmployeeRequestRouter(
         );
         if (!result.allowed) throw denialFailure(result.reason);
         jsonResponse(request, response, 200, { data: result.value });
+        return;
+      }
+
+      if (matched.kind === "admin_invitation_create") {
+        const result = await dependencies.authorization.performInvitationCreate(
+          requestTrace,
+          async (context) => {
+            const input = invitationAdminBody(await jsonBody(request));
+            const invitationId = newId();
+            const credential = generatedInvitationCredential(newInvitationCredential());
+            const createdAt = now();
+            const expiresAt = createdAt + AUTHORIZATION_ACCESS_DEFAULTS.invitationLifetimeMs;
+            const persistence = await dependencies.adminAccess.createInvitation({
+              id: invitationId,
+              email: input.email,
+              tokenHash: invitationHash(credential),
+              role: input.role,
+              projectIds: input.projectIds,
+              invitedByUserId: context.userId,
+              invitedByActorKey: context.email,
+              actorSessionId: context.sessionId,
+              actorSessionVersion: context.sessionVersion,
+              actorAuthorizationVersion: context.authorizationVersion,
+              expiresAt,
+              purgeAfter: expiresAt + AUTHORIZATION_ACCESS_DEFAULTS.invitationLifetimeMs,
+              createdAt,
+              audit: adminMutationAudit(
+                context,
+                newId(),
+                "identity.invitation_created",
+                "invitation",
+                invitationId,
+                requestId,
+                correlationId,
+                createdAt,
+                { role: input.role, project_count: input.projectIds.length },
+              ),
+            });
+            return persistence.outcome === "accepted"
+              ? {
+                  persistence,
+                  data: Object.freeze({
+                    id: invitationId,
+                    email: input.email,
+                    role: input.role,
+                    projectIds: input.projectIds,
+                    expiresAt,
+                    version: persistence.version,
+                    invitationCredential: credential,
+                  }),
+                }
+              : { persistence };
+          },
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        requireAcceptedAdminMutation(result.value.persistence);
+        if (!("data" in result.value)) throw new Error("Accepted invitation result is incomplete");
+        jsonResponse(request, response, 201, { data: result.value.data });
+        return;
+      }
+
+      if (matched.kind === "admin_invitation_revoke" && matched.adminTargetId) {
+        const result = await dependencies.authorization.performInvitationRevoke(
+          requestTrace,
+          async (context) => {
+            const input = reasonAdminBody(await jsonBody(request));
+            const changedAt = now();
+            const persistence = await dependencies.adminAccess.revokeInvitation({
+              invitationId: matched.adminTargetId!,
+              expectedVersion: input.expectedVersion,
+              actorUserId: context.userId,
+              actorKey: context.email,
+              actorSessionId: context.sessionId,
+              actorSessionVersion: context.sessionVersion,
+              actorAuthorizationVersion: context.authorizationVersion,
+              reasonCode: "administrator_request",
+              changedAt,
+              audit: adminMutationAudit(
+                context,
+                newId(),
+                "identity.invitation_revoked",
+                "invitation",
+                matched.adminTargetId!,
+                requestId,
+                correlationId,
+                changedAt,
+                { reason: input.reason },
+              ),
+            });
+            return { persistence };
+          },
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        const persisted = requireAcceptedAdminMutation(result.value.persistence);
+        jsonResponse(request, response, 200, {
+          data: { id: matched.adminTargetId, version: persisted.version, status: "revoked" },
+        });
+        return;
+      }
+
+      if (matched.kind === "admin_user_access_change" && matched.adminTargetId) {
+        const result = await dependencies.authorization.performUserAccessChange(
+          requestTrace,
+          async (context) => {
+            const input = userAccessAdminBody(await jsonBody(request));
+            const changedAt = now();
+            const persistence = await dependencies.adminAccess.setUserAccess({
+              userId: matched.adminTargetId!,
+              expectedVersion: input.expectedVersion,
+              role: input.role,
+              projectIds: input.projectIds,
+              actorUserId: context.userId,
+              actorKey: context.email,
+              actorSessionId: context.sessionId,
+              actorSessionVersion: context.sessionVersion,
+              actorAuthorizationVersion: context.authorizationVersion,
+              reasonCode: "administrator_request",
+              changedAt,
+              audit: adminMutationAudit(
+                context,
+                newId(),
+                "authorization.user_access_changed",
+                "user",
+                matched.adminTargetId!,
+                requestId,
+                correlationId,
+                changedAt,
+                {
+                  reason: input.reason,
+                  role: input.role,
+                  project_count: input.projectIds.length,
+                },
+              ),
+            });
+            return { persistence, input };
+          },
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        const persisted = requireAcceptedAdminMutation(result.value.persistence);
+        jsonResponse(request, response, 200, {
+          data: {
+            id: matched.adminTargetId,
+            role: result.value.input.role,
+            projectIds: result.value.input.projectIds,
+            version: persisted.version,
+            authorizationVersion: persisted.authorizationVersion,
+          },
+        });
+        return;
+      }
+
+      if (
+        (matched.kind === "admin_user_disable" || matched.kind === "admin_sessions_invalidate")
+        && matched.adminTargetId
+      ) {
+        const perform = matched.kind === "admin_user_disable"
+          ? dependencies.authorization.performUserDisable
+          : dependencies.authorization.performSessionsInvalidate;
+        const result = await perform(requestTrace, async (context) => {
+          const input = reasonAdminBody(await jsonBody(request));
+          const changedAt = now();
+          const common = {
+            userId: matched.adminTargetId!,
+            expectedVersion: input.expectedVersion,
+            actorUserId: context.userId,
+            actorKey: context.email,
+            actorSessionId: context.sessionId,
+            actorSessionVersion: context.sessionVersion,
+            actorAuthorizationVersion: context.authorizationVersion,
+            reasonCode: "administrator_request",
+            changedAt,
+            audit: adminMutationAudit(
+              context,
+              newId(),
+              matched.kind === "admin_user_disable"
+                ? "identity.user_disabled"
+                : "identity.sessions_invalidated",
+              "user",
+              matched.adminTargetId!,
+              requestId,
+              correlationId,
+              changedAt,
+              { reason: input.reason },
+            ),
+          } as const;
+          const persistence = matched.kind === "admin_user_disable"
+            ? await dependencies.adminAccess.disableUser(common)
+            : await dependencies.adminAccess.invalidateUserSessions(common);
+          return { persistence };
+        });
+        if (!result.allowed) throw denialFailure(result.reason);
+        const persisted = requireAcceptedAdminMutation(result.value.persistence);
+        jsonResponse(request, response, 200, {
+          data: {
+            id: matched.adminTargetId,
+            status: matched.kind === "admin_user_disable" ? "disabled" : "signed_out",
+            version: persisted.version,
+            authorizationVersion: persisted.authorizationVersion,
+          },
+        });
         return;
       }
 

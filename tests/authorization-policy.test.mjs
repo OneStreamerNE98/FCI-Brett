@@ -26,6 +26,9 @@ const {
   resolveEmployeeAccessContext,
   resolveFieldLinkAccess,
 } = await vite.ssrLoadModule("/app/application/authorization-policy.ts");
+const { ADMIN_ACCESS_ROLE_CAPABILITY_KEYS } = await vite.ssrLoadModule(
+  "/app/platform/postgres/admin-access-persistence-schema.ts",
+);
 
 after(async () => {
   await vite.close();
@@ -132,6 +135,13 @@ test("approved role matrix grants only owner-approved capabilities", () => {
     approvedCapabilitiesForRole(AUTHORIZATION_ROLES.projectManager),
     projectManagerCapabilities,
   );
+  for (const role of Object.values(AUTHORIZATION_ROLES)) {
+    assert.deepEqual(
+      [...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS[role]].sort(),
+      [...approvedCapabilitiesForRole(role)].sort(),
+      `${role} migration catalog must equal the runtime policy ceiling`,
+    );
+  }
 
   const explicitlyUnapproved = [
     AUTHORIZATION_CAPABILITIES.gmailRead,
@@ -180,6 +190,8 @@ test("employee admission requires the exact Workspace domain, verification, invi
 
   const deniedCases = [
     ["outside email domain", { email: "admin@example.com" }, "outside_domain"],
+    ["multiple-at company address", { email: "a@b@cherryhillfci.com" }, "outside_domain"],
+    ["whitespace in local part", { email: "first last@cherryhillfci.com" }, "outside_domain"],
     ["outside hosted domain", { hostedDomain: "example.com" }, "outside_domain"],
     ["missing hosted domain", { hostedDomain: null }, "outside_domain"],
     ["unverified email", { emailVerified: false }, "email_unverified"],
@@ -431,6 +443,12 @@ test("operations enforce required targets, approved capabilities, and deny unkno
     AUTHORIZATION_OPERATIONS.filesShare,
     AUTHORIZATION_OPERATIONS.dataExport,
     AUTHORIZATION_OPERATIONS.auditView,
+    AUTHORIZATION_OPERATIONS.accessAdminView,
+    AUTHORIZATION_OPERATIONS.invitationCreate,
+    AUTHORIZATION_OPERATIONS.invitationRevoke,
+    AUTHORIZATION_OPERATIONS.userAccessChange,
+    AUTHORIZATION_OPERATIONS.userDisable,
+    AUTHORIZATION_OPERATIONS.sessionsInvalidate,
   ]) {
     const projectId = [
       AUTHORIZATION_OPERATIONS.gmailFile,
@@ -441,6 +459,22 @@ test("operations enforce required targets, approved capabilities, and deny unkno
       allowed: false,
       reason: "missing_capability",
       sensitive: true,
+    }, operation);
+  }
+
+  for (const [operation, capability] of [
+    [AUTHORIZATION_OPERATIONS.accessAdminView, AUTHORIZATION_CAPABILITIES.accessAdminRead],
+    [AUTHORIZATION_OPERATIONS.invitationCreate, AUTHORIZATION_CAPABILITIES.invitationsCreate],
+    [AUTHORIZATION_OPERATIONS.invitationRevoke, AUTHORIZATION_CAPABILITIES.invitationsRevoke],
+    [AUTHORIZATION_OPERATIONS.userAccessChange, AUTHORIZATION_CAPABILITIES.rolesAssign],
+    [AUTHORIZATION_OPERATIONS.userDisable, AUTHORIZATION_CAPABILITIES.usersDisable],
+    [AUTHORIZATION_OPERATIONS.sessionsInvalidate, AUTHORIZATION_CAPABILITIES.sessionsRevoke],
+  ]) {
+    assert.deepEqual(authorizeOperation(admin, operation), {
+      allowed: true,
+      sensitive: true,
+      requiresProjectCheck: false,
+      capability,
     }, operation);
   }
 

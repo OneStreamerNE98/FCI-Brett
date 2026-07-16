@@ -23,7 +23,7 @@ The application role and the person’s direct Google Workspace access must be a
 - [x] Every employee has exactly one supported role; per-user capability overrides are prohibited.
 - [x] Only Administrators may view pricing, revenue, margins, or financial reports during the first rollout.
 - [x] Only Administrators may create projects, change assignments, file Gmail, create Calendar events, share files, export data, or view security audit records during the first rollout.
-- [x] Administrators may invite/revoke invitations, disable users, assign roles/projects, revoke sessions, manage Field links, and adjust the global Office/Project Manager permission settings within the fixed approved capability ceiling.
+- [x] Administrators may invite/revoke invitations, disable users, assign one role and Project Manager projects, revoke sessions, and later manage Field Links. The first-release Administrator page shows the approved Office and Project Manager presets as read-only; global role-permission editing remains dormant until a concrete need is separately approved.
 - [x] Office may create/update leads, clients, and contacts and update existing project status, tasks, meetings, and notes company-wide; Office may view/upload nonfinancial files.
 - [x] Project Managers may update status, tasks, meetings, and notes and view/upload nonfinancial files only for assigned projects; related client/contact context is read-only.
 - [ ] Decide the phased employee rollout order. Naming two initial Administrators does not authorize either account, exclude Office Operations or Project Managers from a later rollout, or relax the existing one-live-user development gate.
@@ -53,7 +53,7 @@ Use granular capabilities on the server. Do not treat an `isAdmin` Boolean or a 
 | View/upload application files | Yes | Yes, company-wide and nonfinancial | Assigned projects only and nonfinancial | No | No |
 | Create projects or change assignments | Yes | No | No | No | No |
 | Pricing, revenue, margins, and financial reports | Yes | No | No | No | No |
-| Invitation, user-disable, role/project assignment, session revocation, Field-link, and Office/PM policy administration | Yes, within fixed safeguards | No | No | No | No |
+| Invitation, user-disable, one-role/project assignment, session revocation, and later Field Link administration | Yes, within fixed safeguards | No | No | No | No |
 | Connector administration, job retry, recovery, or arbitrary/per-user capability grants | No | No | No | No | No |
 | Review and copy Gmail to a project | Yes | No | No | No | No |
 | Share files | Yes | No | No | No | No |
@@ -61,7 +61,7 @@ Use granular capabilities on the server. Do not treat an `isAdmin` Boolean or a 
 | Export data | Yes | No | No | No | No |
 | View security audit records | Yes | No | No | No | No |
 
-The application capability ceiling above is approved, but it does not grant direct Google resource access or make an unimplemented route available. Mailbox reading/delegation, Calendar viewing, Shared Drive root membership, Directory Sheet access, connector administration, job retry, recovery, arbitrary capabilities, per-user exceptions, and all deletes remain denied. The accepted runtime remains insert-only on `audit_events`; an Administrator audit viewer still needs a separately reviewed least-privilege read boundary.
+The application capability ceiling above is approved, but it does not grant direct Google resource access or make an unimplemented route available. Mailbox reading/delegation, Calendar viewing, Shared Drive root membership, Directory Sheet access, connector administration, job retry, recovery, arbitrary capabilities, per-user exceptions, role-permission toggles, user deletion/re-enablement, and all other deletes remain unavailable in the first release. The accepted runtime remains insert-only on `audit_events`; an Administrator Activity viewer still needs a separately reviewed least-privilege read boundary. See the [Administration and Access plan](../administration-and-access-plan.md).
 
 File view/upload approval does not permit pricing leakage through documents. Production file metadata, classification, storage, and download queries must enforce both project scope and the nonfinancial boundary before Office or Project Manager file access goes live. The same caution applies to free-text notes and meeting content.
 

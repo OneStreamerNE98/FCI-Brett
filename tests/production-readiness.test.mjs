@@ -4,6 +4,7 @@ import {
   DATABASE_TABLE_PRIVILEGES,
   createDatabaseReadinessProbe,
   EXPECTED_PRODUCTION_SCHEMA_HISTORY,
+  EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS,
   EXPECTED_RUNTIME_TABLE_ACCESS,
 } from "../app/platform/google-cloud/database-readiness.ts";
 import {
@@ -15,12 +16,15 @@ function result(rows) {
 }
 
 function expectedRuntimePrivilegeRows() {
+  const columnUpdateTables = new Set(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.map(({ table }) => table),
+  );
   return EXPECTED_RUNTIME_TABLE_ACCESS.flatMap(({ table, privileges }) =>
     DATABASE_TABLE_PRIVILEGES.map((privilege) => {
       const shouldHave = privileges.includes(privilege);
       const supportsColumnGrant = ["SELECT", "INSERT", "UPDATE", "REFERENCES"].includes(privilege);
       const hasReviewedColumnOnlyGrant = privilege === "UPDATE" &&
-        (table === "users" || table === "sessions");
+        columnUpdateTables.has(table);
       return {
         tableName: table,
         privilege,
@@ -34,6 +38,19 @@ function expectedRuntimePrivilegeRows() {
         hasColumnGrantOption: false,
       };
     }));
+}
+
+function expectedRuntimeColumnUpdateRows() {
+  return EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.flatMap(({ table, columns }) =>
+    columns.map((column) => ({
+      tableName: table,
+      columnName: column,
+      shouldHave: true,
+      relationExists: true,
+      columnExists: true,
+      hasPrivilege: true,
+      hasGrantOption: false,
+    })));
 }
 
 function readyDatabase(overrides = {}) {
@@ -55,11 +72,6 @@ function readyDatabase(overrides = {}) {
           can_set_migration_owner: overrides.canSetMigrationOwner ?? false,
           can_set_rehearsal_importer: overrides.canSetRehearsalImporter ?? false,
           has_sequence_access: overrides.hasSequenceAccess ?? false,
-          has_user_lock_column_update: overrides.hasUserLockColumnUpdate ?? true,
-          has_other_user_column_update: overrides.hasOtherUserColumnUpdate ?? false,
-          has_session_revocation_column_updates:
-            overrides.hasSessionRevocationColumnUpdates ?? true,
-          has_other_session_column_update: overrides.hasOtherSessionColumnUpdate ?? false,
           history_reader_exists: overrides.historyReaderExists ?? true,
           history_reader_security_definer: overrides.historyReaderSecurityDefiner ?? true,
           history_reader_owner: overrides.historyReaderOwner ?? true,
@@ -68,6 +80,9 @@ function readyDatabase(overrides = {}) {
           has_history_reader_grant_option: overrides.hasHistoryReaderGrantOption ?? false,
           has_unreviewed_function_execute: overrides.hasUnreviewedFunctionExecute ?? false,
         }]);
+      }
+      if (sql.includes("expected_update_columns")) {
+        return result(overrides.runtimeColumnUpdates ?? expectedRuntimeColumnUpdateRows());
       }
       if (sql.includes("has_table_privilege")) {
         return result(overrides.runtimePrivileges ?? expectedRuntimePrivilegeRows());
@@ -110,6 +125,7 @@ test("requires exact runtime privileges and complete migration history through t
     "BEGIN READ ONLY",
     "SET LOCAL statement_timeout = '1500ms'",
     "WITH history_reader AS (",
+    "WITH expected_update_columns(table_name, column_name, ordinal) AS (",
     "WITH expected(table_name, privilege, should_have, ordinal) AS (",
     "SELECT version, name, checksum",
     "COMMIT",
@@ -117,19 +133,16 @@ test("requires exact runtime privileges and complete migration history through t
   assert.deepEqual(queries[2].values, ["fci_app"]);
   assert.match(queries[2].sql, /pg_has_role\(SESSION_USER, role\.oid, 'SET'\)/);
   assert.match(queries[2].sql, /has_sequence_privilege\(CURRENT_USER, sequence\.oid, 'USAGE'\)/);
-  assert.match(queries[2].sql, /has_session_revocation_column_updates/);
-  for (const column of [
-    "token_hash",
-    "csrf_hash",
-    "revoked_at",
-    "revoked_by_actor_key",
-    "revocation_reason_code",
-    "version",
-  ]) {
-    assert.match(queries[2].sql, new RegExp(`'${column}'`));
-  }
-  assert.match(queries[2].sql, /has_other_session_column_update/);
   assert.deepEqual(queries[3].values, [
+    "fci_app",
+    expectedRuntimeColumnUpdateRows().map(({ tableName }) => tableName),
+    expectedRuntimeColumnUpdateRows().map(({ columnName }) => columnName),
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.map(({ table }) => table),
+  ]);
+  assert.match(queries[3].sql, /has_column_privilege/);
+  assert.match(queries[3].sql, /unexpected AS/);
+  assert.match(queries[3].sql, /UPDATE WITH GRANT OPTION/);
+  assert.deepEqual(queries[4].values, [
     "fci_app",
     expectedRuntimePrivilegeRows().map(({ tableName }) => tableName),
     expectedRuntimePrivilegeRows().map(({ privilege }) => privilege),
@@ -137,10 +150,10 @@ test("requires exact runtime privileges and complete migration history through t
     EXPECTED_RUNTIME_TABLE_ACCESS.map(({ table }) => table),
     DATABASE_TABLE_PRIVILEGES,
   ]);
-  assert.match(queries[3].sql, /has_table_privilege/);
-  assert.match(queries[4].sql, /FROM "fci_app"\.read_production_schema_history\(\)/);
-  assert.doesNotMatch(queries[4].sql, /FROM "fci_app"\.production_schema_migrations/);
-  assert.match(queries[4].sql, /ORDER BY version/);
+  assert.match(queries[4].sql, /has_table_privilege/);
+  assert.match(queries[5].sql, /FROM "fci_app"\.read_production_schema_history\(\)/);
+  assert.doesNotMatch(queries[5].sql, /FROM "fci_app"\.production_schema_migrations/);
+  assert.match(queries[5].sql, /ORDER BY version/);
   assert.deepEqual(releases, [undefined]);
 });
 
@@ -152,18 +165,15 @@ test("fails readiness when schema privilege is too weak or too broad", async () 
     { canSetMigrationOwner: true },
     { canSetRehearsalImporter: true },
     { hasSequenceAccess: true },
-    { hasUserLockColumnUpdate: false },
-    { hasOtherUserColumnUpdate: true },
-    { hasSessionRevocationColumnUpdates: false },
-    { hasOtherSessionColumnUpdate: true },
   ]) {
     const { database, queries } = readyDatabase(permissions);
     const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
     assert.equal(await probe.check(), false);
     assert.equal(
-      queries.filter(({ sql }) => /has_table_privilege|read_production_schema_history\(\)/.test(sql)).length,
+      queries.filter(({ sql }) =>
+        /expected_update_columns|has_table_privilege|read_production_schema_history\(\)/.test(sql)).length,
       0,
-      "table grants and history must not be read for an invalid runtime role",
+      "column/table grants and history must not be read for an invalid runtime role",
     );
   }
 });
@@ -181,8 +191,68 @@ test("fails readiness when the schema-history reader is missing, unavailable, or
     const { database, queries } = readyDatabase(permissions);
     const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
     assert.equal(await probe.check(), false);
+    assert.equal(queries.some(({ sql }) => sql.includes("expected_update_columns")), false);
     assert.equal(queries.some(({ sql }) => sql.includes("has_table_privilege")), false);
     assert.equal(queries.some(({ sql }) => /FROM "fci_app"\.read_production_schema_history/.test(sql)), false);
+  }
+});
+
+test("allows ungranted non-allowlisted columns in the exact update matrix", async () => {
+  const runtimeColumnUpdates = [
+    ...expectedRuntimeColumnUpdateRows(),
+    {
+      tableName: "users",
+      columnName: "email",
+      shouldHave: false,
+      relationExists: true,
+      columnExists: true,
+      hasPrivilege: false,
+      hasGrantOption: false,
+    },
+  ];
+  const { database } = readyDatabase({ runtimeColumnUpdates });
+  const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
+  assert.equal(await probe.check(), true);
+});
+
+test("fails readiness for missing, delegable, or unexpected column update access", async () => {
+  const base = expectedRuntimeColumnUpdateRows();
+  const cases = [
+    base.slice(0, -1),
+    base.map((row, index) => index === 0 ? { ...row, relationExists: false } : row),
+    base.map((row, index) => index === 0 ? { ...row, columnExists: false } : row),
+    base.map((row, index) => index === 0 ? { ...row, hasGrantOption: true } : row),
+    ...base.map((_, deniedIndex) =>
+      base.map((row, index) => index === deniedIndex ? { ...row, hasPrivilege: false } : row)),
+    [...base, {
+      tableName: "users",
+      columnName: "email",
+      shouldHave: false,
+      relationExists: true,
+      columnExists: true,
+      hasPrivilege: true,
+      hasGrantOption: false,
+    }],
+    [...base, {
+      tableName: "sessions",
+      columnName: "user_id",
+      shouldHave: false,
+      relationExists: true,
+      columnExists: true,
+      hasPrivilege: false,
+      hasGrantOption: true,
+    }],
+  ];
+
+  for (const runtimeColumnUpdates of cases) {
+    const { database, queries } = readyDatabase({ runtimeColumnUpdates });
+    const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
+    assert.equal(await probe.check(), false);
+    assert.equal(queries.some(({ sql }) => sql.includes("has_table_privilege")), false);
+    assert.equal(
+      queries.some(({ sql }) => /FROM "fci_app"\.read_production_schema_history/.test(sql)),
+      false,
+    );
   }
 });
 
@@ -263,10 +333,6 @@ test("coalesces concurrent checks, caches briefly, and never exposes query failu
               can_set_migration_owner: false,
               can_set_rehearsal_importer: false,
               has_sequence_access: false,
-              has_user_lock_column_update: true,
-              has_other_user_column_update: false,
-              has_session_revocation_column_updates: true,
-              has_other_session_column_update: false,
               history_reader_exists: true,
               history_reader_security_definer: true,
               history_reader_owner: true,
@@ -275,6 +341,9 @@ test("coalesces concurrent checks, caches briefly, and never exposes query failu
               has_history_reader_grant_option: false,
               has_unreviewed_function_execute: false,
             }]);
+          }
+          if (sql.includes("expected_update_columns")) {
+            return result(expectedRuntimeColumnUpdateRows());
           }
           if (sql.includes("has_table_privilege")) {
             return result(expectedRuntimePrivilegeRows());

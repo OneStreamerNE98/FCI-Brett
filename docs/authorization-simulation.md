@@ -1,6 +1,6 @@
 # Authorization simulation and source-only employee routes
 
-Status: Approved policy and source-only Cloud Run employee-route boundary implemented; not migrated, applied, deployed, or connected to live identity or providers
+Status: Approved policy, source-only Cloud Run employee routes, and fixed administration commands implemented; not migrated, applied, deployed, or connected to live identity or providers
 
 Decision dates: July 15–16, 2026
 
@@ -29,7 +29,7 @@ The table is the maximum source policy for the first rollout, not evidence that 
 
 | Principal | Record scope | Approved capability ceiling |
 | --- | --- | --- |
-| Administrator | Company-wide; financial values visible | All Office/Project Manager operations; create/assign projects; file Gmail; create Calendar events; view/upload/share files; export; audit view; and the narrowly named invitation, user-disable, role-assignment, session-revocation, Field-link, and Office/Project Manager permission-management capabilities |
+| Administrator | Company-wide; financial values visible | All Office/Project Manager operations; create/assign projects; file Gmail; create Calendar events; view/upload/share files; export; audit view; and the narrowly named invitation, user-disable, role-assignment, session-revocation, and Field-link capabilities. The approved global role-permission capability remains dormant in the first release. |
 | Office Operations | Company-wide; financial values omitted | Read operational records; create/update leads, clients, and contacts; update existing project status, tasks, meetings, and notes; view/upload files |
 | Project Manager | Assigned projects and only related client/contact context; financial values omitted | Read assigned operational records; update assigned project status, tasks, meetings, and notes; view/upload files for assigned projects |
 | Field Lead link | One exact project; financial values omitted | Read the exact field assignment only after durable link issuance exists |
@@ -51,7 +51,7 @@ The source policy intersects the ceiling with persisted same-role grants. It rej
 
 ### Capabilities and project scope
 
-- Every scoped record query rechecks the exact live session ID/version, active-user state, authorization version, same-role `records.read` grant, unexpired role, and—when applicable—active project membership in SQL before aggregation, ranking, limiting, or serialization.
+- Every scoped record query rechecks the exact live session ID/version, active-user state, authorization version, same-role `records.read` grant, permanent fixed role, and—when applicable—active project membership in SQL before aggregation, ranking, limiting, or serialization.
 - Sensitive operations recheck the exact current same-role capability and, for assigned-project scope, the exact project membership in the same SQL decision.
 - Company-wide and assigned-project paths are separate. Nonfinancial projections do not select financial columns. Project Manager client/contact results are reachable only through active assigned projects.
 - Unknown roles, operations, capabilities, project identifiers, and caller attempts to relabel a fixed operation are denied.
@@ -72,12 +72,12 @@ These are source contracts only. They have not been applied to a database, deplo
 - Resolved-session/operation denials, same-origin/CSRF transport denials, and sensitive allows are appended before protected work begins; an audit failure fails the request closed. Missing or malformed cookie requests receive the same generic `401` without persisting credential material.
 - Audit metadata records the operation, principal kind, and project-scoped state without raw credentials or request bodies.
 - The runtime database role remains append-only for security-audit records. `audit.read` is Administrator-only policy, but the separately privileged audit reader, route, and UI do not exist.
-- Runtime session updates remain limited to credential/revocation behavior. No route can yet mutate invitations, users, roles, role capabilities, or Field links.
+- The source-only Administrator command boundary can create or revoke an invitation, change one fixed role and any Project Manager assignments, disable a user, or sign a user out everywhere. These routes use exact same-origin/CSRF checks, fixed request schemas, optimistic concurrency, transactionally coupled exact-scope audit, session invalidation, and concurrent final-active-Administrator protection. After the global mutation lock, every command rechecks and row-locks the exact actor session/user/current Administrator capability with database statement time; access loss or expiry while a slow request is in flight fails as a generic signed-out response. Creating an invitation expires any same-email pending credential whose seven-day deadline has passed before inserting its replacement. The fixed role/capability catalog has no mutation route, and Field Links remain absent.
 
 ## Explicitly deferred
 
-- Durable invitation-role binding and fulfillment; role/capability seeds; Google Workspace OIDC; production session issuance, rotation, and sliding idle renewal; and live login.
-- Administration query/command APIs and the Management → Administration & Access page.
+- Durable invitation fulfillment; Google Workspace OIDC; production session issuance, rotation, and sliding idle renewal; and live login. Invitation role and Project Manager project bindings plus the fixed role/capability seeds now exist only in unapplied source migration version 4.
+- The bounded Administrator read/list projection and Management → People & Access page described in the [Administration and Access plan](administration-and-access-plan.md). The five fixed command APIs exist in source, but no page or live invitation delivery exists.
 - Durable hashed Field Lead link creation, delivery, lookup, revocation, and browser behavior. The snapshot evaluator is not sufficient for a route.
 - Production file/object-storage and Google Gmail/Calendar/Drive action adapters, direct Google access decisions, and provider configuration.
 - Lead/client/contact and project-operation mutation route composition beyond the approved capability ceiling.
@@ -87,11 +87,11 @@ The source work reduces implementation risk but does not change the no-go decisi
 
 ## Recommended administration-page sequence
 
-After this employee-route branch is reviewed and merged:
+The owner-facing design is intentionally small for a roughly 20-person company. Read the canonical [Administration and Access plan](administration-and-access-plan.md). Role permissions, invitation/session lifetimes, and the domain rule are fixed read-only policy; the first page does not expose a capability matrix or per-user exceptions.
 
-1. `codex/admin-access-persistence`: add the versioned invitation-role, role-policy, user-role, project-membership, and session-invalidation persistence needed for audited administration. Require reasons, invalidate affected sessions, prohibit arbitrary/per-user grants, and protect the final active Administrator transactionally.
-2. `codex/admin-access-api`: add fixed, bounded people/invitation/role/project/session/security-policy endpoints with same-origin, CSRF, capability, optimistic-concurrency, preview, and audit controls.
-3. `codex/field-link-persistence`: add the separate hashed Field Lead link table and exact-project issuance, lookup, expiry, and revocation behavior. Do not reuse file links.
-4. `codex/admin-audit-reader`: add the separately privileged, projection-limited, keyset-paginated audit reader and export boundary.
-5. `codex/admin-access-page`: add Management → Administration & Access for overview, people/invitations, role permissions, project assignments, Field links, sessions/security, and audit records. Keep unavailable backend actions visibly disabled.
-6. `codex/admin-access-acceptance`: add policy-preview, final-Administrator concurrency, cross-project, CSRF, direct-URL, session-invalidation, responsive/accessibility, and rendered browser evidence before staging or live identity work.
+1. `codex/admin-access-core` — implemented in source, unapplied: fixed schema/catalog and command APIs for invite, revoke invitation, change one role or Project Manager assignments, disable access, and sign out everywhere, with reasons, CSRF, optimistic concurrency, transactionally coupled audit, session invalidation, and concurrent final-Administrator protection.
+2. `codex/admin-access-page` — next: add the bounded Administrator read projection and Management → People & Access with one people/invitation list, a read-only role guide, the five workflows, and direct-route, responsive, accessibility, and rendered browser evidence.
+3. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged minimized Activity reader and tab. Audit writes remain part of the core branch.
+4. `codex/admin-field-links`: when the field-assignment workflow is scheduled, add the separate hashed exact-project Field Link lifecycle and tab. Do not reuse file links or create Field Lead users.
+
+The first two branches are the immediate milestone. No branch adds custom roles, global permission toggles, user deletion/re-enablement, live admission, migration/apply, or deployment.

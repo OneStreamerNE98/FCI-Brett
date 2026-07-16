@@ -288,7 +288,6 @@ const ACTIVE_COMPANY_RECORD_ROLE = `EXISTS (
         ON scope_capability.id = scope_role_capability.capability_id
        AND scope_capability.status = 'active'
       WHERE scope_user_role.user_id = $1
-        AND (scope_user_role.expires_at IS NULL OR scope_user_role.expires_at > $4)
         AND scope_role.role_key IN ('administrator', 'office_operations')
         AND scope_capability.capability_key = 'records.read'
     )`;
@@ -305,7 +304,6 @@ const ACTIVE_PROJECT_MANAGER_RECORD_ROLE = `EXISTS (
         ON scope_capability.id = scope_role_capability.capability_id
        AND scope_capability.status = 'active'
       WHERE scope_user_role.user_id = $1
-        AND (scope_user_role.expires_at IS NULL OR scope_user_role.expires_at > $4)
         AND scope_role.role_key = 'project_manager'
         AND scope_capability.capability_key = 'records.read'
     )`;
@@ -322,7 +320,6 @@ const ACTIVE_ADMIN_FINANCIAL_ROLE = `EXISTS (
         ON financial_capability.id = financial_role_capability.capability_id
        AND financial_capability.status = 'active'
       WHERE financial_user_role.user_id = $1
-        AND (financial_user_role.expires_at IS NULL OR financial_user_role.expires_at > $4)
         AND financial_role.role_key = 'administrator'
         AND financial_capability.capability_key = 'financials.read'
     )`;
@@ -357,7 +354,7 @@ function activeScopePredicate(projectAlias: string, includeFinancial: boolean) {
           FROM project_memberships AS membership
           WHERE membership.project_id = ${projectAlias}.id
             AND membership.user_id = $1
-            AND (membership.expires_at IS NULL OR membership.expires_at > $4)
+            AND membership.status = 'active'
         )
       )
     )
@@ -377,7 +374,7 @@ function activeClientScopePredicate() {
           JOIN project_memberships AS membership
             ON membership.project_id = project.id
            AND membership.user_id = $1
-           AND (membership.expires_at IS NULL OR membership.expires_at > $4)
+           AND membership.status = 'active'
           WHERE project.client_id = client.id
         )
       )
@@ -439,7 +436,7 @@ export function createPostgresAuthorizationRepository(
   const repository: AuthorizationRepository = {
     async findSessionByTokenHash(tokenHash, now) {
       assertPersistenceHash(tokenHash, "Authorization session token hash");
-      const checkedAt = persistenceDate(now, "Authorization session resolution time");
+      persistenceDate(now, "Authorization session resolution time");
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         const session = await client.query<SessionRow>(
           `SELECT session.id::text AS session_id,
@@ -474,9 +471,8 @@ export function createPostgresAuthorizationRepository(
              ON capability.id = role_capability.capability_id
             AND capability.status = 'active'
            WHERE user_role.user_id = $1
-             AND (user_role.expires_at IS NULL OR user_role.expires_at > $2)
            ORDER BY role.role_key, capability.capability_key NULLS FIRST`,
-          [userId, checkedAt],
+          [userId],
         );
         return sessionFromRows(row, roleCapabilities.rows);
       });
@@ -560,7 +556,6 @@ export function createPostgresAuthorizationRepository(
               AND current_capability.status = 'active'
              WHERE ${ACTIVE_SESSION_USER}
                AND current_user_role.user_id = $1
-               AND (current_user_role.expires_at IS NULL OR current_user_role.expires_at > $4)
                AND (
                  ($3::boolean AND effective_role.role_key IN ('administrator', 'office_operations'))
                  OR (
@@ -573,10 +568,7 @@ export function createPostgresAuthorizationRepository(
                        FROM project_memberships AS current_membership
                        WHERE current_membership.user_id = $1
                          AND current_membership.project_id = $8::uuid
-                         AND (
-                           current_membership.expires_at IS NULL
-                           OR current_membership.expires_at > $4
-                         )
+                         AND current_membership.status = 'active'
                      )
                    )
                  )
