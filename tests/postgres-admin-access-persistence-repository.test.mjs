@@ -360,9 +360,13 @@ test("access overview rechecks one Administrator session and returns only the bo
   assert.match(people.sql, /project_scopes AS/);
   assert.match(people.sql, /last_sign_ins AS/);
   assert.match(people.sql, /pg_catalog\.max\(sign_in\.issued_at\) AS last_signed_in_at/);
+  assert.match(people.sql, /COALESCE\(project_scopes\.project_ids, ARRAY\[\]::text\[\]\)/);
+  assert.doesNotMatch(people.sql, /pg_catalog\.coalesce/i);
   assert.match(people.sql, /LEFT JOIN user_roles/);
   assert.match(invitations.sql, /status = 'pending'/);
   assert.match(invitations.sql, /expires_at > pg_catalog\.statement_timestamp\(\)/);
+  assert.match(invitations.sql, /COALESCE\(/);
+  assert.doesNotMatch(invitations.sql, /pg_catalog\.coalesce/i);
   assert.deepEqual(projects.values, [501]);
   assert.equal(fake.queries.at(-1).sql, "COMMIT");
   assert.doesNotMatch(JSON.stringify(await repository.getAccessOverview(readerScope(), CREATED_AT)), /token|csrf|authorizationVersion|sessionId/i);

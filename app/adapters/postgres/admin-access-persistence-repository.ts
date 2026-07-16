@@ -639,7 +639,7 @@ export function createPostgresAdminAccessPersistenceRepository(
                     employee.status,
                     employee.role_key,
                     employee.role_status,
-                    pg_catalog.coalesce(project_scopes.project_ids, ARRAY[]::text[]) AS project_ids,
+                    COALESCE(project_scopes.project_ids, ARRAY[]::text[]) AS project_ids,
                     last_sign_ins.last_signed_in_at,
                     employee.version::text AS version
              FROM bounded_people AS employee
@@ -660,7 +660,7 @@ export function createPostgresAdminAccessPersistenceRepository(
                     invitation.email,
                     intended_role.role_key,
                     intended_role.status AS role_status,
-                    pg_catalog.coalesce(
+                    COALESCE(
                       pg_catalog.array_agg(
                         assignment.project_id::text
                         ORDER BY assignment.project_id::text
