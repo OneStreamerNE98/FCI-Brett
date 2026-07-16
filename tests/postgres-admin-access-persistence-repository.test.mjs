@@ -491,7 +491,7 @@ test("role and exact Project Manager assignments change atomically and invalidat
   assert.match(assigned.sql, /version = project_memberships\.version \+ 1/);
   const user = queries.find(({ sql }) => sql.startsWith("UPDATE users"));
   assert.match(user.sql, /authorization_version = authorization_version \+ 1/);
-  assert.match(user.sql, /sessions_valid_after = pg_catalog\.greatest/);
+  assert.match(user.sql, /sessions_valid_after = GREATEST/);
   assert.match(user.sql, /WHERE id = \$1 AND version = \$2::bigint AND status = 'active'/);
   const audit = queries.at(-1);
   assert.deepEqual(audit.values.slice(6, 11), [
@@ -738,7 +738,7 @@ test("disable and sign-out-everywhere are version fenced and invalidate through 
       });
       const update = workQueries(fake).find(({ sql }) => sql.startsWith("UPDATE users"));
       assert.match(update.sql, /authorization_version = authorization_version \+ 1/);
-      assert.match(update.sql, /sessions_valid_after = pg_catalog\.greatest/);
+      assert.match(update.sql, /sessions_valid_after = GREATEST/);
       if (method === "disableUser") assert.match(update.sql, /status = 'disabled'/);
       else assert.doesNotMatch(update.sql, /status = 'disabled'/);
       assert.equal(

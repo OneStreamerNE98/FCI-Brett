@@ -416,7 +416,7 @@ export function createPostgresAdminAccessPersistenceRepository(
            SET token_hash = NULL,
                status = 'expired',
                expired_at = expires_at,
-               updated_at = pg_catalog.greatest(updated_at, $2),
+               updated_at = GREATEST(updated_at, $2),
                version = version + 1
            WHERE email_key = $1
              AND status = 'pending'
@@ -503,7 +503,7 @@ export function createPostgresAdminAccessPersistenceRepository(
                status = 'revoked',
                revoked_by_user_id = $3,
                revoked_at = $4,
-               updated_at = pg_catalog.greatest(updated_at, $4),
+               updated_at = GREATEST(updated_at, $4),
                version = version + 1
            WHERE id = $1 AND version = $2::bigint AND status = 'pending'
            RETURNING version::text AS version`,
@@ -691,8 +691,8 @@ export function createPostgresAdminAccessPersistenceRepository(
         const updated = await client.query<{ version: unknown; authorization_version: unknown }>(
           `UPDATE users
            SET authorization_version = authorization_version + 1,
-               sessions_valid_after = pg_catalog.greatest(sessions_valid_after, $3),
-               updated_at = pg_catalog.greatest(updated_at, $3),
+               sessions_valid_after = GREATEST(sessions_valid_after, $3),
+               updated_at = GREATEST(updated_at, $3),
                version = version + 1
            WHERE id = $1 AND version = $2::bigint AND status = 'active'
            RETURNING version::text AS version,
@@ -760,8 +760,8 @@ export function createPostgresAdminAccessPersistenceRepository(
            SET status = 'disabled',
                disabled_at = $3,
                authorization_version = authorization_version + 1,
-               sessions_valid_after = pg_catalog.greatest(sessions_valid_after, $3),
-               updated_at = pg_catalog.greatest(updated_at, $3),
+               sessions_valid_after = GREATEST(sessions_valid_after, $3),
+               updated_at = GREATEST(updated_at, $3),
                version = version + 1
            WHERE id = $1 AND version = $2::bigint AND status = 'active'
            RETURNING version::text AS version,
@@ -816,8 +816,8 @@ export function createPostgresAdminAccessPersistenceRepository(
         const updated = await client.query<{ version: unknown; authorization_version: unknown }>(
           `UPDATE users
            SET authorization_version = authorization_version + 1,
-               sessions_valid_after = pg_catalog.greatest(sessions_valid_after, $3),
-               updated_at = pg_catalog.greatest(updated_at, $3),
+               sessions_valid_after = GREATEST(sessions_valid_after, $3),
+               updated_at = GREATEST(updated_at, $3),
                version = version + 1
            WHERE id = $1 AND version = $2::bigint
            RETURNING version::text AS version,

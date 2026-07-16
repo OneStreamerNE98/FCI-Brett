@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { createServer } from "vite";
 import {
+  ADMIN_ACCESS_ROLE_CAPABILITY_KEYS,
   ADMIN_ACCESS_ROLE_CATALOG,
 } from "../app/platform/postgres/admin-access-persistence-schema.ts";
 import {
@@ -278,15 +279,15 @@ test(
       ]);
       assert.deepEqual(adminSession?.roleGrants, [{
         roleKey: "administrator",
-        capabilityKeys: ["financials.read", "records.read"],
+        capabilityKeys: [...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.administrator].sort(),
       }]);
       assert.deepEqual(officeSession?.roleGrants, [{
         roleKey: "office_operations",
-        capabilityKeys: ["records.read"],
+        capabilityKeys: [...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.office_operations].sort(),
       }]);
       assert.deepEqual(projectManagerSession?.roleGrants, [{
         roleKey: "project_manager",
-        capabilityKeys: ["records.read"],
+        capabilityKeys: [...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.project_manager].sort(),
       }]);
       assert.equal(
         await repository.sessionCsrfHashMatches(hash("a"), hash("d"), now),
