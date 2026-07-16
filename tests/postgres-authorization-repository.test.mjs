@@ -540,7 +540,7 @@ test("company financial scope is explicit in both project and dashboard SQL proj
         assertActiveScopeSql(sql);
         assert.match(
           sql,
-          /pg_catalog\.sum\(project\.estimated_value\).*AS estimated_value_total/,
+          /COALESCE\(pg_catalog\.sum\(project\.estimated_value\), 0::numeric\)::text AS estimated_value_total/,
         );
         assertFinancialAuthorizationSql(sql);
         assert.deepEqual(values, [

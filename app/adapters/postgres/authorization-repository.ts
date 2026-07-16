@@ -584,7 +584,7 @@ export function createPostgresAuthorizationRepository(
       const values = scopeValues(scope, now);
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         const financialProjection = scope.includeFinancial
-          ? ", pg_catalog.coalesce(pg_catalog.sum(project.estimated_value), 0)::text AS estimated_value_total"
+          ? ", COALESCE(pg_catalog.sum(project.estimated_value), 0::numeric)::text AS estimated_value_total"
           : "";
         const found = await client.query<Record<string, unknown>>(
           `SELECT pg_catalog.count(*)::text AS project_count,
