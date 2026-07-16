@@ -482,6 +482,35 @@ export function createPostgresAuthorizationRepository(
       });
     },
 
+    async sessionCsrfHashMatches(tokenHash, csrfHash, now) {
+      assertPersistenceHash(tokenHash, "Authorization session token hash");
+      assertPersistenceHash(csrfHash, "Authorization session CSRF hash");
+      const checkedAt = persistenceDate(now, "Authorization CSRF resolution time");
+      return withPostgresTransaction(pool, transactionOptions, async (client) => {
+        const found = await client.query<{ allowed: unknown }>(
+          `SELECT EXISTS (
+             SELECT 1
+             FROM sessions AS session
+             JOIN users AS authorization_user ON authorization_user.id = session.user_id
+             WHERE session.token_hash = $1
+               AND session.csrf_hash = $2
+               AND session.revoked_at IS NULL
+               AND session.issued_at >= authorization_user.sessions_valid_after
+               AND session.idle_expires_at > $3
+               AND session.absolute_expires_at > $3
+               AND authorization_user.status = 'active'
+               AND authorization_user.authorization_version = session.authorization_version
+           ) AS allowed`,
+          [tokenHash, csrfHash, checkedAt],
+        );
+        if (found.rowCount !== 1 || found.rows.length !== 1 ||
+            typeof found.rows[0]?.allowed !== "boolean") {
+          throw new Error("PostgreSQL CSRF authorization result is invalid");
+        }
+        return found.rows[0].allowed;
+      });
+    },
+
     async projectExistsForScope(scope, projectId, now) {
       assertPersistenceUuid(projectId, "Authorization project ID");
       const values = scopeValues(scope, now);
@@ -504,41 +533,62 @@ export function createPostgresAuthorizationRepository(
       });
     },
 
-    async administratorCapabilityIsCurrent(scope, capabilityKey, now) {
+    async capabilityIsCurrentForScope(scope, capabilityKey, projectId, now) {
       const values = scopeValues(scope, now);
       const capability = authorizationCapabilityKey(capabilityKey);
+      if (projectId !== null) {
+        assertPersistenceUuid(projectId, "Authorization current-capability project ID");
+      }
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         const found = await client.query<{ allowed: unknown }>(
           `SELECT EXISTS (
              SELECT 1
              FROM user_roles AS current_user_role
-             JOIN roles AS administrator_role
-               ON administrator_role.id = current_user_role.role_id
-              AND administrator_role.status = 'active'
+             JOIN roles AS effective_role
+               ON effective_role.id = current_user_role.role_id
+              AND effective_role.status = 'active'
              JOIN role_capabilities AS current_record_role_capability
-               ON current_record_role_capability.role_id = administrator_role.id
+               ON current_record_role_capability.role_id = effective_role.id
              JOIN capabilities AS current_record_capability
                ON current_record_capability.id = current_record_role_capability.capability_id
               AND current_record_capability.status = 'active'
               AND current_record_capability.capability_key = 'records.read'
              JOIN role_capabilities AS current_role_capability
-               ON current_role_capability.role_id = administrator_role.id
+               ON current_role_capability.role_id = effective_role.id
              JOIN capabilities AS current_capability
                ON current_capability.id = current_role_capability.capability_id
               AND current_capability.status = 'active'
              WHERE ${ACTIVE_SESSION_USER}
                AND current_user_role.user_id = $1
-               AND $3::boolean
                AND (current_user_role.expires_at IS NULL OR current_user_role.expires_at > $4)
-               AND administrator_role.role_key = 'administrator'
+               AND (
+                 ($3::boolean AND effective_role.role_key IN ('administrator', 'office_operations'))
+                 OR (
+                   NOT $3::boolean
+                   AND effective_role.role_key = 'project_manager'
+                   AND (
+                     $8::uuid IS NULL
+                     OR EXISTS (
+                       SELECT 1
+                       FROM project_memberships AS current_membership
+                       WHERE current_membership.user_id = $1
+                         AND current_membership.project_id = $8::uuid
+                         AND (
+                           current_membership.expires_at IS NULL
+                           OR current_membership.expires_at > $4
+                         )
+                     )
+                   )
+                 )
+               )
                AND current_capability.capability_key = $7
            ) AS allowed`,
           [values.userId, values.authorizationVersion, values.companyWide, values.now,
-            values.sessionId, values.sessionVersion, capability],
+            values.sessionId, values.sessionVersion, capability, projectId],
         );
         if (found.rowCount !== 1 || found.rows.length !== 1 ||
             typeof found.rows[0]?.allowed !== "boolean") {
-          throw new Error("PostgreSQL capability authorization result is invalid");
+          throw new Error("PostgreSQL current-capability result is invalid");
         }
         return found.rows[0].allowed;
       });
@@ -546,6 +596,27 @@ export function createPostgresAuthorizationRepository(
 
     listProjectsForScope(scope, now, limit) {
       return readProjects(scope, now, limit, null);
+    },
+
+    async getProjectForScope(scope, projectId, now) {
+      assertPersistenceUuid(projectId, "Authorization project ID");
+      const values = scopeValues(scope, now);
+      return withPostgresTransaction(pool, transactionOptions, async (client) => {
+        const found = await client.query<ProjectRow>(
+          `SELECT ${projectProjection(scope.includeFinancial)}
+           FROM projects AS project
+           JOIN clients AS client ON client.id = project.client_id
+           WHERE project.id = $7
+             AND ${activeScopePredicate("project", scope.includeFinancial)}`,
+          [values.userId, values.authorizationVersion, values.companyWide, values.now,
+            values.sessionId, values.sessionVersion, projectId],
+        );
+        if (found.rowCount === 0 && found.rows.length === 0) return null;
+        if (found.rowCount !== 1 || found.rows.length !== 1) {
+          throw new Error("PostgreSQL authorized project result is invalid");
+        }
+        return projectFromRow(found.rows[0], scope.includeFinancial);
+      });
     },
 
     async listClientsForScope(scope, now, limit) {

@@ -27,6 +27,7 @@ const SECOND_PROJECT_ID = "44444444-4444-4444-8444-444444444444";
 const CLIENT_ID = "55555555-5555-4555-8555-555555555555";
 const SECOND_CLIENT_ID = "66666666-6666-4666-8666-666666666666";
 const TOKEN_HASH = `sha256:${"a".repeat(64)}`;
+const CSRF_HASH = `sha256:${"b".repeat(64)}`;
 const NOW = Date.UTC(2026, 6, 15, 14, 30, 0);
 
 const ASSIGNED_SCOPE = Object.freeze({
@@ -244,7 +245,39 @@ test("session resolution loads the user plus only active, unexpired role capabil
   client.assertComplete();
 });
 
-test("direct project lookup rechecks active user/version and exact project membership in SQL", async () => {
+test("CSRF resolution requires the exact active session and matching hashed secret", async () => {
+  const { client, repository } = repositoryFor([
+    ...transactionSetupSteps(),
+    step(
+      /SELECT EXISTS \(/,
+      result([{ allowed: true }], 1),
+      ({ sql, values }) => {
+        assert.match(sql, /session\.token_hash = \$1/);
+        assert.match(sql, /session\.csrf_hash = \$2/);
+        assert.match(sql, /session\.revoked_at IS NULL/);
+        assert.match(sql, /session\.issued_at >= authorization_user\.sessions_valid_after/);
+        assert.match(sql, /session\.idle_expires_at > \$3/);
+        assert.match(sql, /session\.absolute_expires_at > \$3/);
+        assert.match(sql, /authorization_user\.status = 'active'/);
+        assert.match(
+          sql,
+          /authorization_user\.authorization_version = session\.authorization_version/,
+        );
+        assert.deepEqual(values, [TOKEN_HASH, CSRF_HASH, new Date(NOW)]);
+        assert.equal(sql.includes("raw-csrf-secret"), false);
+      },
+    ),
+    step(/^COMMIT$/),
+  ]);
+
+  assert.equal(
+    await repository.sessionCsrfHashMatches(TOKEN_HASH, CSRF_HASH, NOW),
+    true,
+  );
+  client.assertComplete();
+});
+
+test("project-scope existence check rechecks active user/version and exact membership in SQL", async () => {
   const { client, repository } = repositoryFor([
     ...transactionSetupSteps(),
     step(
@@ -271,7 +304,47 @@ test("direct project lookup rechecks active user/version and exact project membe
   client.assertComplete();
 });
 
-test("administrator capability recheck binds the live session and exact same-role capability in SQL", async () => {
+test("exact-project query scopes the requested ID in SQL and returns a nonfinancial projection", async () => {
+  const { client, repository } = repositoryFor([
+    ...transactionSetupSteps(),
+    step(
+      /FROM projects AS project\s+JOIN clients AS client/,
+      result([projectRow()], 1),
+      ({ sql, values }) => {
+        assert.match(sql, /WHERE project\.id = \$7/);
+        assertActiveScopeSql(sql);
+        assert.doesNotMatch(sql, /project\.estimated_value/);
+        assert.deepEqual(values, [
+          USER_ID,
+          "7",
+          false,
+          new Date(NOW),
+          SESSION_ID,
+          "4",
+          PROJECT_ID,
+        ]);
+      },
+    ),
+    step(/^COMMIT$/),
+  ]);
+
+  assert.deepEqual(await repository.getProjectForScope(ASSIGNED_SCOPE, PROJECT_ID, NOW), {
+    id: PROJECT_ID,
+    projectNumber: "FCI-TEST-1001",
+    clientId: CLIENT_ID,
+    clientName: "FCI TEST — DO NOT USE Client",
+    name: "FCI TEST — DO NOT USE Project",
+    status: "installation",
+    site: "123 Test Street",
+    projectManagerId: "manager@cherryhillfci.com",
+    updatedAt: NOW - 1_000,
+    version: "3",
+    financialVisible: false,
+  });
+  client.assertComplete();
+});
+
+test("current capability recheck binds the live session, same role, and exact assigned project", async () => {
   const { client, repository } = repositoryFor([
     ...transactionSetupSteps(),
     step(
@@ -279,11 +352,20 @@ test("administrator capability recheck binds the live session and exact same-rol
       result([{ allowed: true }], 1),
       ({ sql, values }) => {
         assert.match(sql, /FROM user_roles AS current_user_role/);
-        assert.match(sql, /administrator_role\.role_key = 'administrator'/);
-        assert.doesNotMatch(sql, /roles AS current_role/);
+        assert.match(sql, /roles AS effective_role/);
+        assert.match(sql, /effective_role\.role_key IN \('administrator', 'office_operations'\)/);
+        assert.match(sql, /effective_role\.role_key = 'project_manager'/);
         assert.match(sql, /current_record_capability\.capability_key = 'records\.read'/);
         assert.match(sql, /current_capability\.capability_key = \$7/);
-        assert.match(sql, /AND \$3::boolean/);
+        assert.match(sql, /NOT \$3::boolean/);
+        assert.match(sql, /\$8::uuid IS NULL/);
+        assert.match(sql, /FROM project_memberships AS current_membership/);
+        assert.match(sql, /current_membership\.user_id = \$1/);
+        assert.match(sql, /current_membership\.project_id = \$8::uuid/);
+        assert.match(
+          sql,
+          /current_membership\.expires_at IS NULL\s+OR current_membership\.expires_at > \$4/,
+        );
         assert.match(sql, /current_user_role\.expires_at IS NULL OR current_user_role\.expires_at > \$4/);
         assert.match(sql, /authorization_session\.id = \$5/);
         assert.match(sql, /authorization_session\.version = \$6::bigint/);
@@ -292,11 +374,12 @@ test("administrator capability recheck binds the live session and exact same-rol
         assert.deepEqual(values, [
           USER_ID,
           "7",
-          true,
+          false,
           new Date(NOW),
           SESSION_ID,
           "4",
-          "files.share",
+          "files.read",
+          PROJECT_ID,
         ]);
       },
     ),
@@ -304,9 +387,10 @@ test("administrator capability recheck binds the live session and exact same-rol
   ]);
 
   assert.equal(
-    await repository.administratorCapabilityIsCurrent(
-      COMPANY_FINANCIAL_SCOPE,
-      "files.share",
+    await repository.capabilityIsCurrentForScope(
+      ASSIGNED_SCOPE,
+      "files.read",
+      PROJECT_ID,
       NOW,
     ),
     true,

@@ -84,14 +84,20 @@ export interface AuthorizationRepository {
     tokenHash: string,
     now: number,
   ): Promise<AuthorizationSessionSnapshot | null>;
+  sessionCsrfHashMatches(
+    tokenHash: string,
+    csrfHash: string,
+    now: number,
+  ): Promise<boolean>;
   projectExistsForScope(
     scope: AuthorizationRecordScope,
     projectId: string,
     now: number,
   ): Promise<boolean>;
-  administratorCapabilityIsCurrent(
+  capabilityIsCurrentForScope(
     scope: AuthorizationRecordScope,
     capabilityKey: string,
+    projectId: string | null,
     now: number,
   ): Promise<boolean>;
   listProjectsForScope(
@@ -99,6 +105,11 @@ export interface AuthorizationRepository {
     now: number,
     limit: number,
   ): Promise<readonly AuthorizedProjectSummary[]>;
+  getProjectForScope(
+    scope: AuthorizationRecordScope,
+    projectId: string,
+    now: number,
+  ): Promise<AuthorizedProjectSummary | null>;
   listClientsForScope(
     scope: AuthorizationRecordScope,
     now: number,

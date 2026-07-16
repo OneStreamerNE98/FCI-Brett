@@ -26,6 +26,9 @@ async function startController(overrides = {}) {
   const controller = createFoundationServer({
     readiness: probe,
     closeDatabase: overrides.closeDatabase ?? (async () => { closeCalls.push("database"); }),
+    ...(overrides.applicationHandler
+      ? { applicationHandler: overrides.applicationHandler }
+      : {}),
     readinessTimeoutMs: overrides.readinessTimeoutMs ?? 100,
     shutdownTimeoutMs: overrides.shutdownTimeoutMs ?? 1_000,
   });
@@ -101,6 +104,39 @@ test("returns only generic readiness responses for success, failure, and timeout
     assert.ok(Date.now() - startedAt < 500, "readiness response must be bounded");
   } finally {
     await timedOut.controller.shutdown();
+  }
+});
+
+test("routes non-health requests through an injected application handler", async () => {
+  const calls = [];
+  const running = await startController({
+    applicationHandler(request, response) {
+      calls.push(request.url);
+      const payload = JSON.stringify({ status: "application" });
+      response.writeHead(200, {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(payload),
+      });
+      response.end(payload);
+    },
+  });
+  try {
+    const application = await fetch(`${running.origin}/api/v1/projects`);
+    assert.equal(application.status, 200);
+    assert.deepEqual(await application.json(), { status: "application" });
+    assert.deepEqual(calls, ["/api/v1/projects"]);
+
+    const health = await fetch(`${running.origin}/healthz`);
+    assert.equal(health.status, 200);
+    assert.deepEqual(calls, ["/api/v1/projects"], "health must bypass application auth");
+
+    running.controller.beginDraining();
+    const draining = await fetch(`${running.origin}/api/v1/projects`);
+    assert.equal(draining.status, 503);
+    assert.deepEqual(await draining.json(), { error: "service_unavailable" });
+    assert.deepEqual(calls, ["/api/v1/projects"]);
+  } finally {
+    await running.controller.shutdown();
   }
 });
 

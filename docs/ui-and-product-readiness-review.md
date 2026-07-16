@@ -46,7 +46,7 @@ These are larger structural changes and should be scheduled separately:
 - Use real routes or a URL parameter for views so refresh, Back, bookmarks, and support links preserve the selected page.
 - Create one accessible dialog/drawer primitive with focus trapping, initial focus, focus restoration, Escape handling, and consistent labels.
 - Add full keyboard navigation to global search results.
-- Replace the current development access label with the durable production role/capability context only after the source-only authorization boundary is composed into employee routes and live OIDC is separately approved.
+- Replace the current development access label with the durable production role/capability context only after the source-composed authorization boundary is accepted and durable admission, live OIDC, session issuance, and deployment are separately approved.
 - Consolidate the older sidebar CSS and rename color variables by purpose.
 - Continue increasing very small metadata text as each operational module becomes real.
 - Add explicit Working, In development, Setup required, and Planned states so configuration-only or placeholder controls cannot be mistaken for operational features.
@@ -65,7 +65,7 @@ These are larger structural changes and should be scheduled separately:
 - Selected-project assistant evidence with citations and a records-only fallback.
 - A guarded file-upload API and an installable PWA manifest.
 
-Separately, the production source boundary now includes the [authorization simulation](authorization-simulation.md): recorded Administrator-only capability decisions, conservative fake Office/Project Manager defaults pending final responsibility approval, session-denial rules, project-scoped PostgreSQL reads, financial redaction, fixed-operation provider-action gates, and append-only security-audit evidence. None of those controls is wired into the hosted UI or its Workers/D1 routes yet.
+Separately, the production source boundary now includes the [approved authorization and employee-route work](authorization-simulation.md): granular Administrator/Office/Project Manager ceilings, exact-one-role and session-denial rules, project-scoped PostgreSQL reads, financial redaction, fixed-operation provider gates, append-only audit evidence, and a narrow Cloud Run dashboard/search/project/client/logout boundary. File/Gmail/Calendar routes are authorization-gated but provider-unavailable. None of these controls is wired into the hosted UI or its Workers/D1 routes.
 
 ## What is still in development or a placeholder
 
@@ -76,7 +76,7 @@ Separately, the production source boundary now includes the [authorization simul
 - Workers, crews, shifts, conflicts, assignment publishing, acknowledgements, and field links.
 - SMS/email delivery tracking, Twilio, consent, STOP handling, retries, and dead letters.
 - CSV preview/import.
-- Production HTTP/cookie composition, route use of the source-only roles and project scopes, live invitation/OIDC behavior, and rendered permission tests.
+- Durable invitation/OIDC/session issuance and renewal, the broader production interface/routes, provider adapters, administration APIs/page, and rendered permission tests.
 - Drive/email document indexing and permission-filtered semantic retrieval.
 - Backup restoration validation, audit viewer, retention, and export, plus malware scanning when untrusted uploads or Gmail attachments are enabled.
 - Production background workers for reminders, Gmail watches, synchronization, and retries.
@@ -97,16 +97,17 @@ The owner has approved the application role and sensitive-action policy, includi
 
 1. **Complete in source; unapplied:** costed infrastructure definitions and reviewable migration/restore/cutover procedures for the minimum core and on-demand staging boundary.
 2. **Complete in source; unapplied:** the production-persistence boundary covering provider-neutral PostgreSQL repositories, generic identity/security-audit schema, integration metadata, and object-storage ports.
-3. **Complete in source; not route-composed:** simulated access contexts, capability/project-scoped queries, provider-action gates, and negative authorization tests.
-4. Compose the remaining employee application routes for Cloud Run, then—with separate approval—prove migration, restore, reconciliation, and rollback/forward-fix in isolated on-demand staging.
-5. Add live Google Workspace OIDC only after those platform and authorization gates pass; do not add more users before project permissions are enforced.
-6. Add editing and archiving for clients, contacts, leads, projects, and meetings.
-7. Implement lead conversion as one transaction.
-8. Add project dates, tasks/follow-ups, notes, file metadata, photo UI, and activity history.
-9. Make saved Calendar settings control the live integration.
-10. Before accepting untrusted uploads or Gmail attachments, add quarantine, scanning, release, and authorized download controls; copy only approved files to Shared Drive.
-11. Replace source-contract tests with more route, integration, and browser behavior tests.
-12. Validate backup restoration and add an admin audit viewer before real client data.
+3. **Complete in source; not deployed:** approved access contexts, capability/project-scoped queries, provider-action gates, negative authorization tests, and narrow dashboard/search/project/client/logout Cloud Run routes. File/Gmail/Calendar paths are gated but provider-unavailable.
+4. Build narrow audited administration APIs and Management → Administration & Access, then finish the remaining employee application routes.
+5. With separate approval, prove migration, restore, reconciliation, and rollback/forward-fix in isolated on-demand staging.
+6. Add live Google Workspace OIDC/session issuance only after those platform and authorization gates pass; do not add more users before project permissions are enforced.
+7. Add editing and archiving for clients, contacts, leads, projects, and meetings.
+8. Implement lead conversion as one transaction.
+9. Add project dates, tasks/follow-ups, notes, file metadata, photo UI, and activity history.
+10. Make saved Calendar settings control the live integration.
+11. Before accepting untrusted uploads or Gmail attachments, add quarantine, scanning, release, and authorized download controls; copy only approved files to Shared Drive.
+12. Replace source-contract tests with more route, integration, and browser behavior tests.
+13. Validate backup restoration and add an admin audit viewer before real client data.
 
 ### Next: lead-to-closeout operations
 

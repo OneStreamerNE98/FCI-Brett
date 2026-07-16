@@ -87,17 +87,19 @@ function harness(options = {}) {
       timeline.push("session");
       return snapshot;
     },
+    async sessionCsrfHashMatches() { throw new Error("not used"); },
     async projectExistsForScope(scope, projectId, checkedAt) {
       projectChecks.push({ scope, projectId, checkedAt });
       timeline.push("project-scope");
       return options.projectAllowed ?? true;
     },
-    async administratorCapabilityIsCurrent(scope, capabilityKey, checkedAt) {
-      capabilityChecks.push({ scope, capabilityKey, checkedAt });
+    async capabilityIsCurrentForScope(scope, capabilityKey, projectId, checkedAt) {
+      capabilityChecks.push({ scope, capabilityKey, projectId, checkedAt });
       timeline.push("capability-current");
       return options.capabilityCurrent ?? true;
     },
     async listProjectsForScope() { throw new Error("not used"); },
+    async getProjectForScope() { throw new Error("not used"); },
     async listClientsForScope() { throw new Error("not used"); },
     async searchProjectsForScope() { throw new Error("not used"); },
     async getDashboardForScope() { throw new Error("not used"); },
@@ -160,6 +162,7 @@ test("sensitive Administrator actions are audited before provider work runs", as
   assert.deepEqual(fake.capabilityChecks, [{
     scope: fake.projectChecks[0].scope,
     capabilityKey: AUTHORIZATION_CAPABILITIES.gmailFile,
+    projectId: PROJECT_ID,
     checkedAt: NOW,
   }]);
   assert.equal(fake.audits.length, 1);
@@ -210,6 +213,45 @@ test("routine authorized reads use scoped queries without writing sensitive-acti
   assert.equal(fake.projectChecks.length, 1);
   assert.equal(fake.projectChecks[0].scope.userId, decision.context.userId);
   assert.equal(fake.projectChecks[0].checkedAt, NOW);
+});
+
+test("Office and Project Manager file reads retain role scope and recheck the current capability", async () => {
+  for (const [roleKey, expectedScope] of [
+    [AUTHORIZATION_ROLES.officeOperations, "company"],
+    [AUTHORIZATION_ROLES.projectManager, "assigned_projects"],
+  ]) {
+    const fake = harness({
+      snapshot: sessionSnapshot({
+        roleGrants: [{
+          roleKey,
+          capabilityKeys: [
+            AUTHORIZATION_CAPABILITIES.recordsRead,
+            AUTHORIZATION_CAPABILITIES.filesRead,
+          ],
+        }],
+      }),
+    });
+    const decision = await fake.service.performFilesView(request({
+      projectId: PROJECT_ID,
+    }), async () => "file metadata");
+
+    assert.equal(decision.allowed, true, roleKey);
+    assert.equal(decision.value, "file metadata", roleKey);
+    assert.equal(decision.context.recordScope.kind, expectedScope, roleKey);
+    assert.equal(decision.context.recordScope.includeFinancial, false, roleKey);
+    assert.deepEqual(fake.timeline, [
+      "session",
+      "project-scope",
+      "capability-current",
+      "audit",
+    ], roleKey);
+    assert.deepEqual(fake.capabilityChecks, [{
+      scope: fake.projectChecks[0].scope,
+      capabilityKey: AUTHORIZATION_CAPABILITIES.filesRead,
+      projectId: PROJECT_ID,
+      checkedAt: NOW,
+    }], roleKey);
+  }
 });
 
 test("named gateways cannot be relabeled by a caller-supplied operation property", async () => {
@@ -442,7 +484,7 @@ test("audit persistence failure fails closed before sensitive or denied work", a
   assert.deepEqual(denied.timeline, ["session", "audit"]);
 });
 
-test("a stale Administrator capability denies before audit-complete work can run", async () => {
+test("a stale persisted capability denies before audit-complete work can run", async () => {
   const fake = harness({ capabilityCurrent: false });
   let workCalls = 0;
   const decision = await fake.service.performDataExport(request({ projectId: null }), async () => {
@@ -456,6 +498,7 @@ test("a stale Administrator capability denies before audit-complete work can run
   assert.deepEqual(fake.capabilityChecks, [{
     scope: fake.capabilityChecks[0].scope,
     capabilityKey: AUTHORIZATION_CAPABILITIES.dataExport,
+    projectId: null,
     checkedAt: NOW,
   }]);
   assert.equal(fake.audits.length, 1);

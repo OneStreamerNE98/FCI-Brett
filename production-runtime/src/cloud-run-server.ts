@@ -1,4 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
+import {
+  createAuthorizationService,
+} from "../../app/application/authorization-service.ts";
 import {
   createDatabaseReadinessProbe,
 } from "../../app/platform/google-cloud/database-readiness.ts";
@@ -6,6 +10,9 @@ import {
   createFoundationServer,
   type FoundationServerController,
 } from "../../app/platform/google-cloud/foundation-server.ts";
+import {
+  createEmployeeRequestRouter,
+} from "../../app/platform/google-cloud/employee-request-router.ts";
 import {
   createProductionComposition,
   type ProductionComposition,
@@ -50,9 +57,21 @@ export async function startCloudRunFoundation(
     database: composition.postgres,
     schema: config.postgres.schema,
   });
+  const authorization = createAuthorizationService({
+    repository: composition.repositories.authorization,
+    sessions: composition.repositories.identity,
+    audit: composition.repositories.securityAudit,
+    newId: randomUUID,
+  });
+  const applicationHandler = createEmployeeRequestRouter({
+    authorization,
+    repository: composition.repositories.authorization,
+    audit: composition.repositories.securityAudit,
+  });
   const controller = createFoundationServer({
     readiness,
     closeDatabase: composition.close,
+    applicationHandler,
   });
 
   try {

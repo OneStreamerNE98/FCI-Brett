@@ -1,18 +1,20 @@
 # Google Cloud runtime foundation
 
-Reviewed: July 13, 2026
+Reviewed: July 16, 2026
 
 Status: Implemented and tested in source only. Not provisioned, connected, migrated, or deployed.
 
 ## Read this boundary first
 
-This slice creates the reviewable Cloud Run and Cloud SQL runtime foundation without changing the current Sites/Workers/D1/R2 development application. The new container is intentionally fail-closed:
+This slice creates the reviewable Cloud Run and Cloud SQL runtime foundation without changing the current Sites/Workers/D1/R2 development application. The container remains fail-closed while now exposing a narrow source-only employee API boundary:
 
 - `GET` or `HEAD /healthz` reports process liveness.
 - `GET` or `HEAD /readyz` reports ready only when the configured PostgreSQL schema is reachable, the current role has schema `USAGE` but not `CREATE`, and every migration version, name, and checksum exactly matches source.
-- Every application path returns `503` with `production_app_not_composed`.
+- Dashboard, search, project list/exact-project, client list, and logout paths are composed through hashed-session authorization and PostgreSQL scopes.
+- File list/upload/share, Gmail filing, and Calendar creation pass through authorization, exact-project checks, and mutation CSRF checks but return `503 feature_unavailable` because production provider action adapters are absent.
+- Unknown paths and methods fail closed. No route trusts `oai-authenticated-user-email` or supplies a fake production identity.
 
-The last behavior is deliberate. The current page and API tree still imports `cloudflare:workers`, uses D1/R2 bindings, and depends on the Sites identity boundary. This source image is not yet the employee web application and must not be deployed as though it were. The production checklist item “Containerize the Next.js application” remains open until the remaining routes, object storage, and Workspace OIDC boundary are ported.
+This is still not the employee web application. The current page and broader API tree imports `cloudflare:workers`, uses D1/R2 bindings, and depends on the Sites identity boundary. The source image has no OIDC or session-issuance route, no seeded employee, no production file/Google provider adapters, and no rendered interface. It must not be deployed as though it were a usable employee rollout. The production checklist item “Containerize the Next.js application” remains open until the remaining routes, interface, object storage, identity, and provider boundaries are ported and accepted.
 
 The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) controls how this source foundation may later be provisioned. Development remains on Sites, staging is created on demand, standalone and regional-HA Cloud SQL profiles must be priced before selection, and optional service modules remain disabled. Nothing in this document authorizes a continuously running development or staging database.
 
@@ -24,6 +26,8 @@ The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-f
 - Secret Manager-friendly password-file support. The password is non-enumerable in the in-memory configuration object and is never included in operational events.
 - One bounded `pg.Pool` per service instance, with copied query parameters, statement/lock/idle-transaction timeouts, connection lifetime limits, redacted idle-client error evidence, and ordered pool-then-connector shutdown.
 - Runtime composition for the completed PostgreSQL adapters. Client and project repositories are created per request so actor/idempotency metadata is not retained between requests; the outbox repository can be process-scoped.
+- Source-only employee request composition for dashboard, bounded search, project list/exact-project, client list, and idempotent logout. It reads one bounded host-only session cookie, hashes raw session/CSRF credentials immediately, requires exact same-origin plus live CSRF matching for mutations, clears unusable or confirmed-logout cookies while retaining retryable cookies after failed revocation, and applies generic `401`/`403`/`404` responses.
+- Authorization-gated file, Gmail, and Calendar route contracts that cannot call work after denial and deliberately report provider unavailability while their production adapters are absent.
 - A separate migration command using a one-connection pool, the immutable checksum runner, a session advisory lock, and an explicit validated migration-owner `SET ROLE`. Normal requests never import or call the migration runner.
 - Source-only capability roles and exact grants. The runtime role receives no schema creation, delete, truncate, reference, trigger, sequence, function, or broad future-table privilege.
 - A bounded test-data rehearsal for production-compatible clients, contacts, projects, and explicitly classified client/project activity events.
@@ -60,7 +64,7 @@ npm.cmd run build:cloud-run
 
 The build produces three distinct entry points under `work/cloud-run`:
 
-- `cloud-run-server.mjs` — fail-closed service and health endpoints;
+- `cloud-run-server.mjs` — fail-closed health/readiness plus the source-only employee API boundary;
 - `run-migrations.mjs` — one-off immutable schema migration job;
 - `run-core-rehearsal.mjs` — non-production, test-data-only core migration rehearsal.
 
@@ -135,7 +139,9 @@ This is evidence that the bounded core path can be rehearsed. It is not evidence
 2. Costed, unapplied infrastructure definitions are reviewed for private networking, separate standalone and regional-HA Cloud SQL profiles, service identities, Secret Manager, backups/PITR, zero-minimum/bounded-maximum Cloud Run scaling, monitoring, the `$50/month` pre-production alert, and an on-demand staging lifecycle. Optional service modules must default to disabled.
 3. The administrator creates environment-specific login/IAM principals, applies the reviewed capability-role policy, and verifies grants with denial tests.
 4. A staging migration and bounded rehearsal run with only test data; restore, reconciliation, rollback/forward-fix, and revision-overlap connection evidence are recorded.
-5. The source-only [production persistence boundary](production-persistence-boundary.md) is accepted; then access-context/session behavior, approved roles and project scoping, live provider adapters, and Workspace OIDC are implemented in their gated order.
-6. The full application runs in the container, application paths stop returning the foundation `503`, route/browser/security tests pass, and the owner separately approves deployment.
+5. The source-only [production persistence boundary](production-persistence-boundary.md), approved role matrix, and narrow employee route composition are accepted. Durable invitation-role fulfillment, OIDC verification, session issuance/renewal, administration APIs, provider adapters, and the audit reader then proceed in their gated order.
+6. The full application and interface run in the container; supported provider routes stop returning `feature_unavailable`; route/browser/security tests pass; and the owner separately approves deployment.
+
+No source route work in this branch applies a migration or infrastructure plan, provisions Cloud SQL/Cloud Run, deploys a revision, admits a second user, or moves real client/employee data.
 
 Current Google guidance requires the ingress container to listen on `0.0.0.0:$PORT`, recommends bounded database pooling, supports startup/liveness/readiness probes, treats jobs as run-to-completion processes, and recommends Secret Manager for sensitive values. See [Cloud Run’s container contract](https://docs.cloud.google.com/run/docs/container-contract), [Cloud Run health checks](https://docs.cloud.google.com/run/docs/configuring/healthchecks), [Cloud Run jobs](https://cloud.google.com/run/docs/create-jobs), [Cloud SQL connections from Cloud Run](https://docs.cloud.google.com/sql/docs/postgres/connect-run), [Cloud SQL connection management](https://docs.cloud.google.com/sql/docs/postgres/manage-connections), and [Cloud Run secrets](https://docs.cloud.google.com/run/docs/configuring/services/secrets).
