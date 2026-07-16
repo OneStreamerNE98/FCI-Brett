@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   type FormEvent,
   type RefObject,
@@ -134,9 +135,13 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
       || hostname === "127.0.0.1"
       || hostname === "::1"
       || hostname === "[::1]";
-    if (csrfToken === null && loopback && window.__FCI_E2E_ADMIN_CSRF_TOKEN__) {
-      setBrowserTestCsrfToken(window.__FCI_E2E_ADMIN_CSRF_TOKEN__);
-    }
+    const testToken = window.__FCI_E2E_ADMIN_CSRF_TOKEN__;
+    const timer = csrfToken === null && loopback && testToken
+      ? window.setTimeout(() => setBrowserTestCsrfToken(testToken), 0)
+      : undefined;
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
   }, [csrfToken]);
 
   const mutationCsrfToken = csrfToken ?? browserTestCsrfToken;
@@ -167,7 +172,10 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
   }, []);
 
   useEffect(() => {
-    void loadOverview();
+    const timer = window.setTimeout(() => {
+      void loadOverview();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadOverview]);
 
   const projectNames = useMemo(() => new Map(
@@ -217,7 +225,7 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
   return <main className="access-management-page">
     <header className="access-management-header">
       <div>
-        <a href="/" className="access-management-back">← Back to operations</a>
+        <Link href="/" className="access-management-back">← Back to operations</Link>
         <p className="eyebrow">Management</p>
         <h1>People &amp; Access</h1>
         <span>Invite employees and manage one fixed role per person.</span>
@@ -240,7 +248,7 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
     {sessionEnded ? <section className="panel access-management-state" role="alert">
       <h2>Your secure session has ended</h2>
       <p>Sign in again before reviewing or changing employee access.</p>
-      <a className="primary-button" href="/">Return to sign in</a>
+      <Link className="primary-button" href="/">Return to sign in</Link>
     </section> : loading ? <section className="panel access-management-state" role="status">
       <h2>Loading People &amp; Access…</h2>
       <p>Checking the current Administrator session and access records.</p>
