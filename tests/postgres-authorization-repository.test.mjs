@@ -279,7 +279,8 @@ test("administrator capability recheck binds the live session and exact same-rol
       result([{ allowed: true }], 1),
       ({ sql, values }) => {
         assert.match(sql, /FROM user_roles AS current_user_role/);
-        assert.match(sql, /current_role\.role_key = 'administrator'/);
+        assert.match(sql, /administrator_role\.role_key = 'administrator'/);
+        assert.doesNotMatch(sql, /roles AS current_role/);
         assert.match(sql, /current_record_capability\.capability_key = 'records\.read'/);
         assert.match(sql, /current_capability\.capability_key = \$7/);
         assert.match(sql, /AND \$3::boolean/);

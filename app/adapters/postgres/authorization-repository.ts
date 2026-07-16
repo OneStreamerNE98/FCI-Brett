@@ -512,17 +512,17 @@ export function createPostgresAuthorizationRepository(
           `SELECT EXISTS (
              SELECT 1
              FROM user_roles AS current_user_role
-             JOIN roles AS current_role
-               ON current_role.id = current_user_role.role_id
-              AND current_role.status = 'active'
+             JOIN roles AS administrator_role
+               ON administrator_role.id = current_user_role.role_id
+              AND administrator_role.status = 'active'
              JOIN role_capabilities AS current_record_role_capability
-               ON current_record_role_capability.role_id = current_role.id
+               ON current_record_role_capability.role_id = administrator_role.id
              JOIN capabilities AS current_record_capability
                ON current_record_capability.id = current_record_role_capability.capability_id
               AND current_record_capability.status = 'active'
               AND current_record_capability.capability_key = 'records.read'
              JOIN role_capabilities AS current_role_capability
-               ON current_role_capability.role_id = current_role.id
+               ON current_role_capability.role_id = administrator_role.id
              JOIN capabilities AS current_capability
                ON current_capability.id = current_role_capability.capability_id
               AND current_capability.status = 'active'
@@ -530,7 +530,7 @@ export function createPostgresAuthorizationRepository(
                AND current_user_role.user_id = $1
                AND $3::boolean
                AND (current_user_role.expires_at IS NULL OR current_user_role.expires_at > $4)
-               AND current_role.role_key = 'administrator'
+               AND administrator_role.role_key = 'administrator'
                AND current_capability.capability_key = $7
            ) AS allowed`,
           [values.userId, values.authorizationVersion, values.companyWide, values.now,
