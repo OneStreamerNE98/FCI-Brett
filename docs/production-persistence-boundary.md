@@ -1,6 +1,6 @@
 # Production persistence boundary
 
-Status: Source complete; unapplied and not composed into employee routes
+Status: Source complete; extended by unapplied migration 4 and fixed administration commands; not deployed
 Branch: `codex/production-persistence-boundary`
 Date: July 15, 2026
 
@@ -8,10 +8,10 @@ Date: July 15, 2026
 
 The repository now defines the production-owned persistence and storage seams that must exist before authorization behavior or Google Workspace employee login is implemented. This is a source-only foundation:
 
-- PostgreSQL migration `3`, `production_persistence_boundary`, adds generic identity, security-audit, integration, and file metadata.
+- PostgreSQL migration `3`, `production_persistence_boundary`, adds generic identity, security-audit, integration, and file metadata. Unapplied migration `4`, `admin_access_persistence`, adds the fixed three-role catalog and the bounded assignment/invitation state required by the approved administration plan.
 - Aggregate-oriented PostgreSQL repositories keep protected mutations and their audit evidence in one bounded transaction.
 - A provider-neutral object-storage port and in-memory contract adapter define conditional write, exact-generation metadata, and chunked reads without exposing provider URLs or overwrite/list/delete operations.
-- Production composition creates singleton identity, audit, integration, and file repositories around the existing bounded pool. Employee routes still fail closed and do not use them.
+- Production composition creates singleton identity, fixed administration, audit, integration, and file repositories around the existing bounded pool. The five source-only Administrator commands use the administration repository; invitation fulfillment, login/session issuance, the People & Access read projection/page, and provider actions remain absent.
 - Runtime readiness verifies an exact relation/privilege matrix as well as the immutable migration history.
 
 No database, role, grant, Google Cloud resource, hosted configuration, Workspace connector, or production route was changed or applied.
@@ -23,6 +23,7 @@ No database, role, grant, Google Cloud resource, hosted configuration, Workspace
 - `users`
 - `external_identities`
 - `invitations`
+- `invitation_project_assignments`
 - `sessions`
 - `roles`
 - `capabilities`
@@ -30,7 +31,11 @@ No database, role, grant, Google Cloud resource, hosted configuration, Workspace
 - `user_roles`
 - `project_memberships`
 
-These are generic structures only. No role, capability, invitation, user, or access-policy row is seeded. External identities are unique by issuer plus immutable provider subject; email is not the stable identity key. Invitation, session, state, and browser-nonce values are stored only as canonical SHA-256 digests.
+Migration 4 seeds exactly the three approved fixed roles and their capability ceilings, but no invitation, user, external identity, session, or live assignment row. Invitations bind one role and any intended Project Manager projects. External identities remain unique by issuer plus immutable provider subject; email is not the stable identity key. Invitation, session, state, and browser-nonce values are stored only as canonical SHA-256 digests.
+
+Migration 4 is deliberately fresh-access-data-only: it fails before writing when version-3 role, capability, invitation, role-assignment, or project-membership tables contain rows. No production database has applied version 3. A future populated upgrade requires a separately reviewed backfill rather than guessing old access meaning.
+
+The version-3 partial indexes for expiring role and project assignments remain as harmless empty legacy indexes because version 4 requires permanent `NULL` expiry and the migration safety contract prohibits destructive `DROP` statements. A later maintenance migration may remove them only through a separately reviewed destructive-DDL exception.
 
 ### Security evidence
 
@@ -73,7 +78,8 @@ It deliberately has no overwrite, list, delete, public URL, or signed URL surfac
 
 The source includes these ports and adapters:
 
-- `IdentityPersistenceRepository`: user/external-identity registration, invitations, secure sessions, and generic role/capability/project-membership persistence. It does not evaluate permissions.
+- `IdentityPersistenceRepository`: user/external-identity registration plus secure session issuance/revocation. Generic role/capability/assignment mutation methods were removed.
+- `AdminAccessPersistenceRepository`: the five fixed Administrator commands only—create/revoke invitation, set one role and any Project Manager projects, disable, and sign out everywhere. The immutable role/capability catalog has no mutation method.
 - `SecurityAuditRepository`: standalone append plus a same-client helper for atomic evidence inside another repository transaction.
 - `IntegrationMetadataRepository`: connection, one-time OAuth-attempt, and typed external-resource metadata. It does not call Google or decrypt credentials.
 - `FileMetadataRepository`: atomic project upload reservation, stored-object confirmation/failure, and released-reference lookup. It does not stream bytes inside PostgreSQL.
@@ -86,7 +92,7 @@ Network, provider, encryption, and decryption work must stay outside PostgreSQL 
 `infrastructure/postgres/least-privilege.sql` resets privileges before granting the exact reviewed matrix. Important restrictions include:
 
 - no runtime schema `CREATE`, grant option, sequence access, `DELETE`, `TRUNCATE`, `REFERENCES`, or `TRIGGER` privilege;
-- only `UPDATE(id)` on `users` to satisfy PostgreSQL's shared-row-lock requirement; identity/security columns have no runtime update grant;
+- exact column-only `UPDATE` grants for the implemented user, invitation, session, role-assignment, and project-membership transitions; primary identity keys, permanent-expiry columns, and table-wide identity/security updates remain unavailable;
 - insert-only access to `audit_events`;
 - no direct runtime access to migration history, credentials, connector scopes/cursors/events, or any not-yet-implemented integration writer;
 - a single owner-checked, fixed-search-path security-definer function for readiness to read non-secret migration history;
@@ -98,9 +104,9 @@ The SQL policy and readiness checks remain source-only. Applying the role policy
 
 ## Intentionally deferred
 
-- role/capability seeds and the business meaning of roles;
+- any custom role, per-user capability override, or runtime role/capability mutation;
 - atomic secure-session rotation; non-null predecessor rotation is rejected until implemented;
-- access-context resolution, capability evaluation, project-scoped queries, denial behavior, and RLS;
+- the bounded People & Access read projection/page, invitation fulfillment, and a separately privileged audit reader;
 - Google Workspace employee OIDC or a second user;
 - live company-connector OAuth, credential brokering, watches, notification channels, or provider calls;
 - Cloud Storage provisioning or adapter composition;
@@ -110,6 +116,6 @@ The SQL policy and readiness checks remain source-only. Applying the role policy
 
 ## Acceptance and next gate
 
-This source boundary was accepted without Brett's open Google Cloud/Workspace inputs because it did not apply or configure anything. The follow-on [authorization and employee-route work](authorization-simulation.md) now adds explicit access contexts, the approved granular Administrator/Office/Project Manager ceilings, secure session/CSRF behavior, project-scoped queries, fixed-operation provider gates, denial evidence, and a narrow dashboard/search/project/client/logout Cloud Run source boundary. Durable admission/session issuance, administration persistence/APIs, provider adapters, the broader application surface, migration/apply, and deployment remain open.
+This source boundary was accepted without Brett's open Google Cloud/Workspace inputs because it did not apply or configure anything. The follow-on [authorization and employee-route work](authorization-simulation.md) now adds explicit access contexts, the approved granular Administrator/Office/Project Manager ceilings, secure session/CSRF behavior, project-scoped queries, fixed-operation provider gates, denial evidence, a narrow dashboard/search/project/client/logout Cloud Run source boundary, and the five fixed Administrator commands. Durable invitation fulfillment/session issuance, the People & Access read projection/page, provider adapters, the broader application surface, migration/apply, and deployment remain open.
 
 Live Workspace OIDC, staging migration/restore, a second employee, and real client data remain blocked by their separate platform, owner-approval, recovery, authorization, and acceptance gates.

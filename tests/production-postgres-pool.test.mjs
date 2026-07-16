@@ -288,6 +288,8 @@ test("composes singleton persistence repositories and request-scoped creation fa
   assert.equal(composition.repositories.securityAudit, composition.repositories.securityAudit);
   assert.equal(composition.repositories.authorization, composition.repositories.authorization);
   assert.equal(typeof composition.repositories.authorization.findSessionByTokenHash, "function");
+  assert.equal(composition.repositories.adminAccess, composition.repositories.adminAccess);
+  assert.equal(typeof composition.repositories.adminAccess.setUserAccess, "function");
   assert.equal(composition.repositories.identity, composition.repositories.identity);
   assert.equal(composition.repositories.integrations, composition.repositories.integrations);
   assert.equal(composition.repositories.files, composition.repositories.files);
@@ -321,6 +323,7 @@ test("creates and closes a runtime composition through injected pool dependencie
   assert.equal(typeof composition.repositories.projects, "function");
   assert.equal(typeof composition.repositories.outbox.claimAvailable, "function");
   assert.equal(typeof composition.repositories.securityAudit.append, "function");
+  assert.equal(typeof composition.repositories.adminAccess.createInvitation, "function");
   assert.equal(typeof composition.repositories.identity.registerExternalIdentity, "function");
   assert.equal(typeof composition.repositories.integrations.registerConnection, "function");
   assert.equal(typeof composition.repositories.files.reserveProjectUpload, "function");

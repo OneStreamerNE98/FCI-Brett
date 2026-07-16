@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-schema.ts";
 import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
 
 export interface ProductionSchemaMigration {
@@ -403,6 +404,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "production_persistence_boundary",
     checksum: "sha256:12d02573feec218e2ed411ec55ab5d9a08e5b5f20fdbbb58103305a7ef3dcb7f",
     statements: PRODUCTION_PERSISTENCE_STATEMENTS,
+  },
+  {
+    version: 4,
+    name: "admin_access_persistence",
+    checksum: "sha256:a779369e499410a161fa31a02e0ea56972648b81e7836b75c37f7fdacaad6cd3",
+    statements: ADMIN_ACCESS_PERSISTENCE_STATEMENTS,
   },
 ];
 

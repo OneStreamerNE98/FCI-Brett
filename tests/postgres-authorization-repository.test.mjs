@@ -142,13 +142,14 @@ function assertActiveScopeSql(sql, projectAlias = "project") {
   assert.match(sql, /scope_capability\.capability_key = 'records\.read'/);
   assert.match(sql, new RegExp(`membership\\.project_id = ${projectAlias}\\.id`));
   assert.match(sql, /membership\.user_id = \$1/);
-  assert.match(sql, /membership\.expires_at IS NULL OR membership\.expires_at > \$4/);
+  assert.match(sql, /membership\.status = 'active'/);
+  assert.doesNotMatch(sql, /membership\.expires_at/);
 }
 
 function assertFinancialAuthorizationSql(sql) {
   assert.match(sql, /financial_role\.role_key = 'administrator'/);
   assert.match(sql, /financial_capability\.capability_key = 'financials\.read'/);
-  assert.match(sql, /financial_user_role\.expires_at IS NULL OR financial_user_role\.expires_at > \$4/);
+  assert.doesNotMatch(sql, /financial_user_role\.expires_at/);
 }
 
 function assertScopeBefore(sql, laterPattern) {
@@ -214,8 +215,8 @@ test("session resolution loads the user plus only active, unexpired role capabil
       ({ sql, values }) => {
         assert.match(sql, /role\.status = 'active'/);
         assert.match(sql, /capability\.status = 'active'/);
-        assert.match(sql, /user_role\.expires_at IS NULL OR user_role\.expires_at > \$2/);
-        assert.deepEqual(values, [USER_ID, new Date(NOW)]);
+        assert.doesNotMatch(sql, /user_role\.expires_at/);
+        assert.deepEqual(values, [USER_ID]);
       },
     ),
     step(/^COMMIT$/),
@@ -362,11 +363,9 @@ test("current capability recheck binds the live session, same role, and exact as
         assert.match(sql, /FROM project_memberships AS current_membership/);
         assert.match(sql, /current_membership\.user_id = \$1/);
         assert.match(sql, /current_membership\.project_id = \$8::uuid/);
-        assert.match(
-          sql,
-          /current_membership\.expires_at IS NULL\s+OR current_membership\.expires_at > \$4/,
-        );
-        assert.match(sql, /current_user_role\.expires_at IS NULL OR current_user_role\.expires_at > \$4/);
+        assert.match(sql, /current_membership\.status = 'active'/);
+        assert.doesNotMatch(sql, /current_membership\.expires_at/);
+        assert.doesNotMatch(sql, /current_user_role\.expires_at/);
         assert.match(sql, /authorization_session\.id = \$5/);
         assert.match(sql, /authorization_session\.version = \$6::bigint/);
         assert.match(sql, /authorization_session\.token_hash IS NOT NULL/);

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ADMIN_ACCESS_CAPABILITY_CATALOG,
+  ADMIN_ACCESS_ROLE_CAPABILITY_KEYS,
+  ADMIN_ACCESS_ROLE_CATALOG,
+} from "../app/platform/postgres/admin-access-persistence-schema.ts";
+import {
   calculateProductionMigrationChecksum,
   PRODUCTION_MIGRATION_LOCK_ID,
   PRODUCTION_SCHEMA_HISTORY_SQL,
@@ -151,6 +156,43 @@ test("keeps production migration declarations immutable and line-ending independ
   );
 });
 
+test("freezes the approved three-role capability catalog without seeding employees", () => {
+  assert.deepEqual(
+    ADMIN_ACCESS_ROLE_CATALOG.map(({ key }) => key),
+    ["administrator", "office_operations", "project_manager"],
+  );
+  assert.deepEqual(
+    [...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.administrator],
+    ADMIN_ACCESS_CAPABILITY_CATALOG.map(({ key }) => key),
+  );
+  assert.deepEqual([...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.office_operations], [
+    "records.read", "leads.create", "leads.update", "clients.create",
+    "clients.update", "contacts.create", "contacts.update",
+    "projects.status.update", "tasks.update", "meetings.update", "notes.update",
+    "files.read", "files.upload",
+  ]);
+  assert.deepEqual([...ADMIN_ACCESS_ROLE_CAPABILITY_KEYS.project_manager], [
+    "records.read", "projects.status.update", "tasks.update", "meetings.update",
+    "notes.update", "files.read", "files.upload",
+  ]);
+
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.at(-1);
+  assert.equal(migration.version, 4);
+  assert.equal(migration.name, "admin_access_persistence");
+  assert.match(migration.statements[0], /^DO \$admin_access_preflight\$/);
+  assert.match(
+    migration.statements[0],
+    /roles[\s\S]*capabilities[\s\S]*role_capabilities[\s\S]*invitations[\s\S]*user_roles[\s\S]*project_memberships/,
+  );
+  assert.match(migration.statements[0], /ERRCODE = '55000'/);
+  assert.match(migration.statements[0], /requires empty version-3 role and access tables/);
+  const sql = migration.statements.join("\n");
+  assert.match(sql, /INSERT INTO roles/);
+  assert.match(sql, /INSERT INTO capabilities/);
+  assert.match(sql, /INSERT INTO role_capabilities/);
+  assert.doesNotMatch(sql, /INSERT INTO (?:users|external_identities|invitations|sessions)/);
+});
+
 test("rejects gaps, duplicate names, transaction control, and concurrent indexes", () => {
   const first = PRODUCTION_SCHEMA_MIGRATIONS[0];
 
@@ -203,7 +245,7 @@ test("uses one dedicated connection, locks before history, and commits each vers
 
   const result = await runProductionSchemaMigrations(pool);
 
-  assert.deepEqual(result, { appliedVersions: [1, 2, 3], currentVersion: 3 });
+  assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4], currentVersion: 4 });
   assert.equal(pool.connectCount, 1);
   assert.equal(client.released, true);
   assert.deepEqual(client.history, PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({
@@ -234,10 +276,10 @@ test("uses one dedicated connection, locks before history, and commits each vers
   );
   assert.equal(client.searchPath, '"$user", public');
 
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 3);
-  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 3);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 3);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 3);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 4);
+  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 4);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 4);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 4);
 
   for (const migration of PRODUCTION_SCHEMA_MIGRATIONS) {
     const marker = client.queries.findIndex(
@@ -382,8 +424,8 @@ test("applies only the missing suffix of a known history prefix", async () => {
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result.appliedVersions, [2, 3]);
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 2);
+  assert.deepEqual(result.appliedVersions, [2, 3, 4]);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 3);
 });
 
 test("re-reads applied history after the lock and makes a completed rerun a no-op", async () => {
@@ -396,7 +438,7 @@ test("re-reads applied history after the lock and makes a completed rerun a no-o
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result, { appliedVersions: [], currentVersion: 3 });
+  assert.deepEqual(result, { appliedVersions: [], currentVersion: 4 });
   assert.equal(client.queries.some(({ sql }) => sql === "BEGIN"), false);
   assert.equal(client.released, true);
 });
@@ -408,7 +450,7 @@ test("fails closed on changed, unknown, or non-prefix migration history", async 
     [{ version: 2, name: PRODUCTION_SCHEMA_MIGRATIONS[1].name, checksum: PRODUCTION_SCHEMA_MIGRATIONS[1].checksum }],
     [
       ...PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({ version, name, checksum })),
-      { version: 4, name: "future", checksum: "sha256:" + "1".repeat(64) },
+      { version: 5, name: "future", checksum: "sha256:" + "1".repeat(64) },
     ],
   ];
 
@@ -512,6 +554,7 @@ test("defines the bounded production persistence schema with named constraints a
       "file_versions",
       "storage_objects",
       "file_links",
+      "invitation_project_assignments",
     ],
   );
   assert.doesNotMatch(versionedSql, /\bIF NOT EXISTS\b/i);
@@ -533,7 +576,20 @@ test("defines the bounded production persistence schema with named constraints a
   assert.match(versionedSql, /activity_events_append_only_trigger/);
   assert.match(versionedSql, /external_identities_issuer_subject_key UNIQUE \(issuer, subject\)/);
   assert.match(versionedSql, /invitations_token_hash_check/);
+  assert.match(versionedSql, /invitations_role_id_fkey FOREIGN KEY \(role_id\)/);
+  assert.match(versionedSql, /CREATE INDEX invitations_role_id_idx ON invitations \(role_id\)/);
+  assert.match(versionedSql, /CREATE TABLE invitation_project_assignments/);
+  assert.match(versionedSql, /invitation_project_assignments_pkey PRIMARY KEY \(invitation_id, project_id\)/);
+  assert.match(versionedSql, /invitation_project_assignments_project_id_idx/);
   assert.match(versionedSql, /sessions_csrf_hash_check/);
+  assert.match(versionedSql, /user_roles_one_role_per_user_idx ON user_roles \(user_id\)/);
+  assert.match(versionedSql, /user_roles_version_check CHECK \(version >= 1\)/);
+  assert.match(versionedSql, /user_roles_permanent_check CHECK \(expires_at IS NULL\)/);
+  assert.match(versionedSql, /project_memberships_status_check CHECK \(status IN \('active', 'revoked'\)\)/);
+  assert.match(versionedSql, /project_memberships_revocation_evidence_check CHECK/);
+  assert.match(versionedSql, /project_memberships_permanent_check CHECK \(expires_at IS NULL\)/);
+  assert.match(versionedSql, /project_memberships_version_check CHECK \(version >= 1\)/);
+  assert.match(versionedSql, /project_memberships_revoked_by_user_id_idx/);
   assert.match(versionedSql, /audit_events_append_only_trigger/);
   assert.match(versionedSql, /integration_credentials_status_evidence_check/);
   assert.match(versionedSql, /integration_oauth_attempts_state_evidence_check/);
@@ -550,6 +606,10 @@ test("defines the bounded production persistence schema with named constraints a
     ["activity_events_project_id_fkey", "activity_events_project_id_idx"],
     ["outbox_events_client_id_fkey", "outbox_events_client_id_idx"],
     ["outbox_events_project_id_fkey", "outbox_events_project_id_idx"],
+    [
+      "invitation_project_assignments_project_id_fkey",
+      "invitation_project_assignments_project_id_idx",
+    ],
   ]) {
     assert.match(versionedSql, new RegExp(`CONSTRAINT ${foreignKey[0]} FOREIGN KEY`));
     assert.match(versionedSql, new RegExp(`CREATE (?:UNIQUE )?INDEX ${foreignKey[1]} `));

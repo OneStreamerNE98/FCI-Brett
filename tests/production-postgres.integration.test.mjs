@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import {
+  ADMIN_ACCESS_CAPABILITY_CATALOG,
+  ADMIN_ACCESS_ROLE_CAPABILITY_KEYS,
+  ADMIN_ACCESS_ROLE_CATALOG,
+} from "../app/platform/postgres/admin-access-persistence-schema.ts";
+import {
   calculateProductionMigrationChecksum,
   PRODUCTION_SCHEMA_MIGRATIONS,
   runProductionSchemaMigrations,
@@ -53,16 +58,16 @@ test(
       ]);
       assert.deepEqual(
         concurrentResults.flatMap(({ appliedVersions }) => appliedVersions).sort(),
-        [1, 2, 3],
+        [1, 2, 3, 4],
       );
-      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [3, 3]);
+      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [4, 4]);
 
       const rerun = await runProductionSchemaMigrations(
         pool,
         PRODUCTION_SCHEMA_MIGRATIONS,
         migrationOptions,
       );
-      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 3 });
+      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 4 });
 
       const history = await pool.query(
         `SELECT version, name, checksum
@@ -105,6 +110,7 @@ test(
           "integration_events",
           "integration_oauth_attempts",
           "integration_resources",
+          "invitation_project_assignments",
           "invitations",
           "outbox_events",
           "production_schema_migrations",
@@ -118,6 +124,60 @@ test(
           "users",
         ],
       );
+
+      const seededRoles = await pool.query(
+        `SELECT role_key, display_name, version::text AS version
+         FROM ${schema}.roles
+         ORDER BY role_key`,
+      );
+      assert.deepEqual(
+        seededRoles.rows,
+        ADMIN_ACCESS_ROLE_CATALOG
+          .map(({ key, displayName }) => ({
+            role_key: key,
+            display_name: displayName,
+            version: "1",
+          }))
+          .sort((left, right) => left.role_key.localeCompare(right.role_key)),
+      );
+
+      const seededCapabilities = await pool.query(
+        `SELECT capability_key
+         FROM ${schema}.capabilities
+         ORDER BY capability_key`,
+      );
+      assert.deepEqual(
+        seededCapabilities.rows.map(({ capability_key }) => capability_key),
+        ADMIN_ACCESS_CAPABILITY_CATALOG.map(({ key }) => key).sort(),
+      );
+
+      const seededRoleCapabilities = await pool.query(
+        `SELECT role.role_key,
+                pg_catalog.array_agg(capability.capability_key ORDER BY capability.capability_key)
+                  AS capability_keys
+         FROM ${schema}.role_capabilities AS role_capability
+         JOIN ${schema}.roles AS role ON role.id = role_capability.role_id
+         JOIN ${schema}.capabilities AS capability ON capability.id = role_capability.capability_id
+         GROUP BY role.role_key
+         ORDER BY role.role_key`,
+      );
+      assert.deepEqual(
+        seededRoleCapabilities.rows,
+        Object.entries(ADMIN_ACCESS_ROLE_CAPABILITY_KEYS)
+          .map(([role_key, capabilityKeys]) => ({
+            role_key,
+            capability_keys: [...capabilityKeys].sort(),
+          }))
+          .sort((left, right) => left.role_key.localeCompare(right.role_key)),
+      );
+
+      const seededPrincipals = await pool.query(
+        `SELECT
+           (SELECT count(*)::integer FROM ${schema}.users) AS users,
+           (SELECT count(*)::integer FROM ${schema}.invitations) AS invitations,
+           (SELECT count(*)::integer FROM ${schema}.sessions) AS sessions`,
+      );
+      assert.deepEqual(seededPrincipals.rows, [{ users: 0, invitations: 0, sessions: 0 }]);
 
       const clientId = "11111111-1111-4111-8111-111111111111";
       const secondClientId = "22222222-2222-4222-8222-222222222222";
@@ -361,15 +421,97 @@ test(
         "23505",
         "external_identities_issuer_subject_key",
       );
+
+      await pool.query(
+        `INSERT INTO ${schema}.user_roles (
+           user_id, role_id, assigned_by_user_id, assigned_by_actor_key, assigned_at
+         ) VALUES ($1, $2, $1, 'user:admin-access-test', now())`,
+        [firstUserId, ADMIN_ACCESS_ROLE_CATALOG[0].id],
+      );
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.user_roles (
+             user_id, role_id, assigned_by_user_id, assigned_by_actor_key, assigned_at
+           ) VALUES ($1, $2, $1, 'user:admin-access-test', now())`,
+          [firstUserId, ADMIN_ACCESS_ROLE_CATALOG[1].id],
+        ),
+        "23505",
+        "user_roles_one_role_per_user_idx",
+      );
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.user_roles (
+             user_id, role_id, assigned_by_user_id, assigned_by_actor_key,
+             assigned_at, expires_at
+           ) VALUES ($1, $2, $3, 'user:admin-access-test', now(), now() + interval '1 day')`,
+          [secondUserId, ADMIN_ACCESS_ROLE_CATALOG[2].id, firstUserId],
+        ),
+        "23514",
+        "user_roles_permanent_check",
+      );
+      await pool.query(
+        `INSERT INTO ${schema}.user_roles (
+           user_id, role_id, assigned_by_user_id, assigned_by_actor_key, assigned_at
+         ) VALUES ($1, $2, $3, 'user:admin-access-test', now())`,
+        [secondUserId, ADMIN_ACCESS_ROLE_CATALOG[2].id, firstUserId],
+      );
+
+      await pool.query(
+        `INSERT INTO ${schema}.project_memberships (
+           project_id, user_id, assigned_by_user_id, assigned_by_actor_key, assigned_at
+         ) VALUES ($1, $2, $3, 'user:admin-access-test', now())`,
+        [projectId, secondUserId, firstUserId],
+      );
+      await expectPostgresError(
+        pool.query(
+          `UPDATE ${schema}.project_memberships
+           SET revoked_by_user_id = $3,
+               revoked_by_actor_key = 'user:admin-access-test',
+               revoked_at = now(), revocation_reason_code = 'role_changed'
+           WHERE project_id = $1 AND user_id = $2`,
+          [projectId, secondUserId, firstUserId],
+        ),
+        "23514",
+        "project_memberships_revocation_evidence_check",
+      );
+      await pool.query(
+        `UPDATE ${schema}.project_memberships
+         SET status = 'revoked', revoked_by_user_id = $3,
+             revoked_by_actor_key = 'user:admin-access-test',
+             revoked_at = now(), revocation_reason_code = 'role_changed',
+             version = version + 1
+         WHERE project_id = $1 AND user_id = $2`,
+        [projectId, secondUserId, firstUserId],
+      );
+      const revokedMembership = await pool.query(
+        `SELECT status, version::text AS version
+         FROM ${schema}.project_memberships
+         WHERE project_id = $1 AND user_id = $2`,
+        [projectId, secondUserId],
+      );
+      assert.deepEqual(revokedMembership.rows, [{ status: "revoked", version: "2" }]);
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.project_memberships (
+             project_id, user_id, assigned_by_user_id, assigned_by_actor_key,
+             assigned_at, expires_at
+           ) VALUES ($1, $2, $2, 'user:admin-access-test', now(), now() + interval '1 day')`,
+          [projectId, firstUserId],
+        ),
+        "23514",
+        "project_memberships_permanent_check",
+      );
+
       await expectPostgresError(
         pool.query(
           `INSERT INTO ${schema}.invitations (
              id, email, email_key, token_hash, status,
-             invited_by_actor_key, expires_at, purge_after, created_at, updated_at
+             invited_by_actor_key, expires_at, purge_after, created_at, updated_at,
+             role_id
            ) VALUES ($1, 'test@example.com', 'test@example.com', 'plaintext-token',
              'pending', 'system', now() + interval '1 hour',
-             now() + interval '2 hours', now(), now())`,
-          [randomUUID()],
+             now() + interval '2 hours', now(), now(), $2)`,
+          [randomUUID(), ADMIN_ACCESS_ROLE_CATALOG[2].id],
         ),
         "23514",
         "invitations_token_hash_check",
@@ -487,7 +629,7 @@ test(
       assert.deepEqual(missingForeignKeyIndexes.rows, []);
 
       const rollbackProbe = {
-        version: 4,
+        version: 5,
         name: "rollback_probe",
         checksum: "",
         statements: [
@@ -502,7 +644,7 @@ test(
           [...PRODUCTION_SCHEMA_MIGRATIONS, rollbackProbe],
           migrationOptions,
         ),
-        /migration 4 \(rollback_probe\) did not complete cleanly/,
+        /migration 5 \(rollback_probe\) did not complete cleanly/,
       );
       const rollbackState = await pool.query(
         `SELECT to_regclass('${schema}.rollback_probe') AS relation,
@@ -510,7 +652,7 @@ test(
                  FROM ${schema}.production_schema_migrations) AS migration_count`,
       );
       assert.equal(rollbackState.rows[0].relation, null);
-      assert.equal(rollbackState.rows[0].migration_count, 3);
+      assert.equal(rollbackState.rows[0].migration_count, 4);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();
@@ -548,7 +690,7 @@ test(
         PRODUCTION_SCHEMA_MIGRATIONS,
         { schema },
       );
-      assert.deepEqual(result, { appliedVersions: [1, 2, 3], currentVersion: 3 });
+      assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4], currentVersion: 4 });
 
       const targetHistory = await pool.query(
         `SELECT count(*)::integer AS count FROM ${schema}.production_schema_migrations`,
@@ -556,7 +698,7 @@ test(
       const temporaryHistory = await pool.query(
         "SELECT count(*)::integer AS count FROM pg_temp.production_schema_migrations",
       );
-      assert.equal(targetHistory.rows[0].count, 3);
+      assert.equal(targetHistory.rows[0].count, 4);
       assert.equal(temporaryHistory.rows[0].count, 0);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);

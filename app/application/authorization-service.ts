@@ -536,6 +536,66 @@ export function createAuthorizationService(
         work,
       );
     },
+    performAccessAdminView<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.accessAdminView,
+        noProjectRequest(request),
+        work,
+      );
+    },
+    performInvitationCreate<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.invitationCreate,
+        noProjectRequest(request),
+        work,
+      );
+    },
+    performInvitationRevoke<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.invitationRevoke,
+        noProjectRequest(request),
+        work,
+      );
+    },
+    performUserAccessChange<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.userAccessChange,
+        noProjectRequest(request),
+        work,
+      );
+    },
+    performUserDisable<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.userDisable,
+        noProjectRequest(request),
+        work,
+      );
+    },
+    performSessionsInvalidate<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.sessionsInvalidate,
+        noProjectRequest(request),
+        work,
+      );
+    },
     performFieldAssignmentOpen<T>(
       snapshot: FieldLinkSnapshot,
       request: FieldAuthorizationTraceRequest,

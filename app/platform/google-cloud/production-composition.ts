@@ -2,6 +2,9 @@ import {
   createPostgresAuthorizationRepository,
 } from "../../adapters/postgres/authorization-repository";
 import {
+  createPostgresAdminAccessPersistenceRepository,
+} from "../../adapters/postgres/admin-access-persistence-repository";
+import {
   createPostgresClientRepository,
 } from "../../adapters/postgres/client-repository";
 import {
@@ -25,6 +28,7 @@ import {
 } from "../../adapters/postgres/security-audit-repository";
 import type { PostgresCreationRequestMetadata } from "../../adapters/postgres/creation-idempotency";
 import type { AuthorizationRepository } from "../../ports/authorization";
+import type { AdminAccessPersistenceRepository } from "../../ports/admin-access-persistence";
 import type { ClientRepository } from "../../ports/client-repository";
 import type { FileMetadataRepository } from "../../ports/file-metadata";
 import type { IdentityPersistenceRepository } from "../../ports/identity-persistence";
@@ -43,6 +47,7 @@ export type ProductionRepositoryFactories = Readonly<{
   outbox: OutboxRepository;
   securityAudit: SecurityAuditRepository;
   authorization: AuthorizationRepository;
+  adminAccess: AdminAccessPersistenceRepository;
   identity: IdentityPersistenceRepository;
   integrations: IntegrationMetadataRepository;
   files: FileMetadataRepository;
@@ -83,6 +88,10 @@ export function composeProductionRepositories(
   };
   const securityAudit = createPostgresSecurityAuditRepository(postgres, sharedRepositoryOptions);
   const authorization = createPostgresAuthorizationRepository(postgres, sharedRepositoryOptions);
+  const adminAccess = createPostgresAdminAccessPersistenceRepository(
+    postgres,
+    sharedRepositoryOptions,
+  );
   const identity = createPostgresIdentityPersistenceRepository(postgres, sharedRepositoryOptions);
   const integrations = createPostgresIntegrationMetadataRepository(postgres, sharedRepositoryOptions);
   const files = createPostgresFileMetadataRepository(postgres, sharedRepositoryOptions);
@@ -90,6 +99,7 @@ export function composeProductionRepositories(
     outbox,
     securityAudit,
     authorization,
+    adminAccess,
     identity,
     integrations,
     files,

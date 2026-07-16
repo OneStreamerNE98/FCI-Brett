@@ -30,18 +30,6 @@ export type RegisterExternalIdentityIntent = Readonly<{
   audit: SecurityAuditEvent;
 }>;
 
-export type CreateInvitationIntent = Readonly<{
-  id: string;
-  email: string;
-  tokenHash: string;
-  invitedByUserId: string | null;
-  invitedByActorKey: string;
-  expiresAt: number;
-  purgeAfter: number;
-  createdAt: number;
-  audit: SecurityAuditEvent;
-}>;
-
 export type CreateSessionIntent = Readonly<{
   id: string;
   userId: string;
@@ -66,43 +54,17 @@ export type RevokeSessionIntent = Readonly<{
   audit: SecurityAuditEvent;
 }>;
 
-export type IdentityDefinition = Readonly<{
-  id: string;
-  key: string;
-  displayName: string;
-  description: string | null;
-  createdAt: number;
-  audit: SecurityAuditEvent;
-}>;
-
-export type IdentityGrant = Readonly<{
-  subjectId: string;
-  valueId: string;
-  assignedByUserId: string | null;
-  assignedByActorKey: string;
-  assignedAt: number;
-  expiresAt: number | null;
-  audit: SecurityAuditEvent;
-}>;
-
 export type IdentityPersistenceResult =
   | { outcome: "accepted"; version: string }
   | { outcome: "conflict" }
   | { outcome: "stale" };
 
 /**
- * Persistence mechanics only. Capability evaluation, access-context
- * resolution, and route authorization belong to the later authorization
- * simulation slice after the owner approves the 20-user access matrix.
+ * Employee identity and session lifecycle only. Fixed-role invitation and
+ * access administration uses the narrower AdminAccessPersistenceRepository.
  */
 export interface IdentityPersistenceRepository {
   registerExternalIdentity(intent: RegisterExternalIdentityIntent): Promise<IdentityPersistenceResult>;
-  createInvitation(intent: CreateInvitationIntent): Promise<IdentityPersistenceResult>;
   createSession(intent: CreateSessionIntent): Promise<IdentityPersistenceResult>;
   revokeSession(intent: RevokeSessionIntent): Promise<IdentityPersistenceResult>;
-  createRole(intent: IdentityDefinition): Promise<IdentityPersistenceResult>;
-  createCapability(intent: IdentityDefinition): Promise<IdentityPersistenceResult>;
-  grantCapabilityToRole(intent: Omit<IdentityGrant, "expiresAt">): Promise<IdentityPersistenceResult>;
-  assignRoleToUser(intent: IdentityGrant): Promise<IdentityPersistenceResult>;
-  assignProjectToUser(intent: IdentityGrant): Promise<IdentityPersistenceResult>;
 }

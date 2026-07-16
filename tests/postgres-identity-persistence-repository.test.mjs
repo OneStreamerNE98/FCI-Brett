@@ -23,12 +23,8 @@ after(async () => {
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const IDENTITY_ID = "22222222-2222-4222-8222-222222222222";
-const INVITATION_ID = "33333333-3333-4333-8333-333333333333";
 const SESSION_ID = "44444444-4444-4444-8444-444444444444";
 const ROTATED_SESSION_ID = "55555555-5555-4555-8555-555555555555";
-const ROLE_ID = "66666666-6666-4666-8666-666666666666";
-const CAPABILITY_ID = "77777777-7777-4777-8777-777777777777";
-const PROJECT_ID = "88888888-8888-4888-8888-888888888888";
 const ASSIGNER_ID = "99999999-9999-4999-8999-999999999999";
 const AUDIT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const CREATED_AT = Date.UTC(2026, 6, 15, 12, 0, 0);
@@ -88,24 +84,6 @@ function registrationIntent(overrides = {}) {
   };
 }
 
-function invitationIntent(overrides = {}) {
-  return {
-    id: INVITATION_ID,
-    email: "invitee@example.test",
-    tokenHash: TOKEN_HASH,
-    invitedByUserId: ASSIGNER_ID,
-    invitedByActorKey: `user:${ASSIGNER_ID}`,
-    expiresAt: CREATED_AT + 3_600_000,
-    purgeAfter: CREATED_AT + 7_200_000,
-    createdAt: CREATED_AT,
-    audit: auditEvent("identity.invitation_created", {
-      targetType: "invitation",
-      targetId: INVITATION_ID,
-    }),
-    ...overrides,
-  };
-}
-
 function sessionIntent(overrides = {}) {
   return {
     id: SESSION_ID,
@@ -139,34 +117,6 @@ function revokeSessionIntent(overrides = {}) {
       result: "denied",
       reasonCode: "stale_session",
     }),
-    ...overrides,
-  };
-}
-
-function definitionIntent({ capability = false, ...overrides } = {}) {
-  return {
-    id: capability ? CAPABILITY_ID : ROLE_ID,
-    key: capability ? "projects.read" : "office_operations",
-    displayName: capability ? "Read projects" : "Office Operations",
-    description: "FCI TEST — DO NOT USE",
-    createdAt: CREATED_AT,
-    audit: auditEvent(capability ? "identity.capability_created" : "identity.role_created", {
-      targetType: capability ? "capability" : "role",
-      targetId: capability ? CAPABILITY_ID : ROLE_ID,
-    }),
-    ...overrides,
-  };
-}
-
-function grantIntent({ subjectId = USER_ID, valueId = ROLE_ID, expiresAt = null, ...overrides } = {}) {
-  return {
-    subjectId,
-    valueId,
-    assignedByUserId: ASSIGNER_ID,
-    assignedByActorKey: `user:${ASSIGNER_ID}`,
-    assignedAt: CREATED_AT,
-    expiresAt,
-    audit: auditEvent("identity.assignment_created"),
     ...overrides,
   };
 }
@@ -241,14 +191,11 @@ test("identity intent validation fails before a PostgreSQL connection is borrowe
     ["registration UUID", "registerExternalIdentity", registrationIntent({
       user: { ...registrationIntent().user, id: "invalid" },
     }), /Identity user ID must be a UUID/],
-    ["invitation hash", "createInvitation", invitationIntent({ tokenHash: "raw-token" }), /canonical SHA-256/],
     ["session version", "createSession", sessionIntent({ authorizationVersion: "1.0" }), /signed 64-bit integer/],
     ["session rotation", "createSession", sessionIntent({
       rotatedFromSessionId: ROTATED_SESSION_ID,
     }), /rotation is unavailable/],
     ["revocation version", "revokeSession", revokeSessionIntent({ expectedVersion: "0" }), /positive signed 64-bit/],
-    ["role key", "createRole", definitionIntent({ key: "Office Operations" }), /lowercase key/],
-    ["grant expiry", "assignRoleToUser", grantIntent({ expiresAt: CREATED_AT }), /expiry must follow/],
   ];
 
   for (const [label, method, intent, pattern] of cases) {
@@ -287,7 +234,7 @@ test("registration commits user, external identity, and audit atomically with an
   const intent = registrationIntent({
     audit: auditEvent("caller.claimed_success", {
       targetType: "project",
-      targetId: PROJECT_ID,
+      targetId: SESSION_ID,
       result: "failed",
       reasonCode: "caller_selected",
     }),
@@ -448,103 +395,6 @@ test("stale session revocation keeps the version/status fence and commits denial
   ]);
   assert.equal(workQueries(fake).filter(({ sql }) => sql.startsWith("UPDATE sessions")).length, 1);
   assert.equal(fake.queries.at(-1).sql, "COMMIT");
-});
-
-test("role, capability, and assignment methods preserve exact subject/value mechanics and audit", async () => {
-  const cases = [
-    {
-      label: "role",
-      method: "createRole",
-      intent: definitionIntent(),
-      table: "roles",
-      expectedVersion: AUTHORIZATION_VERSION,
-      expectedValues: [ROLE_ID, "office_operations", "Office Operations"],
-      expectedAudit: ["authorization.role_created", "role", ROLE_ID],
-    },
-    {
-      label: "capability",
-      method: "createCapability",
-      intent: definitionIntent({ capability: true }),
-      table: "capabilities",
-      expectedVersion: STORED_VERSION,
-      expectedValues: [CAPABILITY_ID, "projects.read", "Read projects"],
-      expectedAudit: ["authorization.capability_created", "capability", CAPABILITY_ID],
-    },
-    {
-      label: "role capability",
-      method: "grantCapabilityToRole",
-      intent: (() => {
-        const grant = grantIntent({
-          subjectId: ROLE_ID,
-          valueId: CAPABILITY_ID,
-        });
-        return {
-          subjectId: grant.subjectId,
-          valueId: grant.valueId,
-          assignedByUserId: grant.assignedByUserId,
-          assignedByActorKey: grant.assignedByActorKey,
-          assignedAt: grant.assignedAt,
-          audit: grant.audit,
-        };
-      })(),
-      table: "role_capabilities",
-      expectedVersion: "1",
-      expectedValues: [ROLE_ID, CAPABILITY_ID, ASSIGNER_ID],
-      expectedAudit: ["authorization.role_capability_granted", "role", ROLE_ID],
-    },
-    {
-      label: "user role",
-      method: "assignRoleToUser",
-      intent: grantIntent({
-        subjectId: USER_ID,
-        valueId: ROLE_ID,
-        expiresAt: CREATED_AT + 3_600_000,
-      }),
-      table: "user_roles",
-      expectedVersion: "1",
-      expectedValues: [USER_ID, ROLE_ID, ASSIGNER_ID],
-      expectedAudit: ["authorization.user_role_assigned", "user", USER_ID],
-    },
-    {
-      label: "project membership",
-      method: "assignProjectToUser",
-      intent: grantIntent({ subjectId: USER_ID, valueId: PROJECT_ID }),
-      table: "project_memberships",
-      expectedVersion: "1",
-      expectedValues: [USER_ID, PROJECT_ID, ASSIGNER_ID],
-      expectedAudit: ["authorization.project_membership_assigned", "project", PROJECT_ID],
-    },
-  ];
-
-  for (const item of cases) {
-    const fake = fakeDatabase(async (sql, values) => {
-      if (sql.startsWith(`INSERT INTO ${item.table}`)) {
-        return item.table === "roles" || item.table === "capabilities"
-          ? result([{ version: item.expectedVersion }], 1)
-          : result([], 1);
-      }
-      if (sql.startsWith("INSERT INTO audit_events")) return auditInsert(values);
-      assert.fail(`unexpected work query for ${item.label}: ${sql}`);
-    });
-    const repository = createPostgresIdentityPersistenceRepository(fake.pool, { schema: "fci_test" });
-
-    assert.deepEqual(await repository[item.method](item.intent), {
-      outcome: "accepted",
-      version: item.expectedVersion,
-    }, item.label);
-    const [mutation, audit] = workQueries(fake);
-    assert.deepEqual(mutation.values.slice(0, 3), item.expectedValues, item.label);
-    if (item.table === "project_memberships") {
-      assert.match(mutation.sql, /project_id, user_id[\s\S]*VALUES \(\$2, \$1/);
-    }
-    assert.match(audit.sql, /^INSERT INTO audit_events/);
-    assert.deepEqual(audit.values.slice(6, 11), [
-      ...item.expectedAudit,
-      "succeeded",
-      null,
-    ], item.label);
-    assert.equal(fake.queries.at(-1).sql, "COMMIT");
-  }
 });
 
 test("only expected named unique conflicts map to conflict and unrelated failures still throw", async () => {

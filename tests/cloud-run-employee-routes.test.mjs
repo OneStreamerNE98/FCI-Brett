@@ -39,8 +39,11 @@ const PROJECT_A = "55555555-5555-4555-8555-555555555555";
 const PROJECT_B = "66666666-6666-4666-8666-666666666666";
 const UNKNOWN_PROJECT = "77777777-7777-4777-8777-777777777777";
 const FILE_ID = "88888888-8888-4888-8888-888888888888";
+const INVITATION_ID = "99999999-9999-4999-8999-999999999999";
+const TARGET_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SESSION_CREDENTIAL = Buffer.alloc(32, 0x41).toString("base64url");
 const CSRF_CREDENTIAL = Buffer.alloc(32, 0x42).toString("base64url");
+const INVITATION_CREDENTIAL = Buffer.alloc(32, 0x43).toString("base64url");
 
 function sha256(value) {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
@@ -184,6 +187,7 @@ async function startHarness(options = {}) {
     : options.snapshot;
   const audits = [];
   const revocations = [];
+  const adminAccessCalls = [];
   const repositoryCalls = {
     sessionHashes: [],
     csrf: [],
@@ -287,16 +291,60 @@ async function startHarness(options = {}) {
     now: () => NOW,
     newId: randomUUID,
   });
+  const adminAccess = {
+    async createInvitation(intent) {
+      adminAccessCalls.push({ method: "createInvitation", intent });
+      return options.adminResults?.createInvitation ?? {
+        outcome: "accepted",
+        version: "1",
+        authorizationVersion: null,
+      };
+    },
+    async revokeInvitation(intent) {
+      adminAccessCalls.push({ method: "revokeInvitation", intent });
+      return options.adminResults?.revokeInvitation ?? {
+        outcome: "accepted",
+        version: "2",
+        authorizationVersion: null,
+      };
+    },
+    async setUserAccess(intent) {
+      adminAccessCalls.push({ method: "setUserAccess", intent });
+      return options.adminResults?.setUserAccess ?? {
+        outcome: "accepted",
+        version: "2",
+        authorizationVersion: "2",
+      };
+    },
+    async disableUser(intent) {
+      adminAccessCalls.push({ method: "disableUser", intent });
+      return options.adminResults?.disableUser ?? {
+        outcome: "accepted",
+        version: "2",
+        authorizationVersion: "2",
+      };
+    },
+    async invalidateUserSessions(intent) {
+      adminAccessCalls.push({ method: "invalidateUserSessions", intent });
+      return options.adminResults?.invalidateUserSessions ?? {
+        outcome: "accepted",
+        version: "2",
+        authorizationVersion: "2",
+      };
+    },
+  };
   const actionCalls = [];
   const actions = options.actions === true ? recordedActions(actionCalls) : options.actions;
   const router = createEmployeeRequestRouter({
     authorization,
     repository,
+    adminAccess,
     audit,
     testActions: actions,
     testMode: true,
     now: () => NOW,
     newId: randomUUID,
+    newInvitationCredential: () => options.invitationCredential ?? INVITATION_CREDENTIAL,
   });
   const server = createHttpServer((request, response) => {
     void router(request, response).catch(() => {
@@ -347,6 +395,7 @@ async function startHarness(options = {}) {
 
   return {
     actionCalls,
+    adminAccessCalls,
     audits,
     close,
     origin,
@@ -524,6 +573,296 @@ test("Administrator-only Gmail, Calendar, and share actions deny Office before c
     assert.ok(running.audits.every(({ action }) => action === "authorization.access_denied"));
   } finally {
     await running.close();
+  }
+});
+
+test("Administrator access routes expose only the five fixed workflows with transactional intents", async () => {
+  const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+  try {
+    const invitationResponse = await running.request("/api/v1/admin/invitations", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      json: {
+        email: "New.PM@CherryHillFCI.com",
+        role: "project_manager",
+        projectIds: [PROJECT_A],
+      },
+    });
+    assert.equal(invitationResponse.status, 201);
+    const invitation = (await json(invitationResponse)).data;
+    assert.match(invitation.id, /^[0-9a-f-]{36}$/i);
+    assert.equal(invitation.email, "new.pm@cherryhillfci.com");
+    assert.equal(invitation.role, "project_manager");
+    assert.deepEqual(invitation.projectIds, [PROJECT_A]);
+    assert.equal(invitation.invitationCredential, INVITATION_CREDENTIAL);
+    assert.equal(invitation.expiresAt, NOW + 7 * 24 * 60 * 60_000);
+
+    const revokeResponse = await running.request(
+      `/api/v1/admin/invitations/${INVITATION_ID}/revoke`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { expectedVersion: "1", reason: "Position was not approved" },
+      },
+    );
+    assert.equal(revokeResponse.status, 200);
+    assert.deepEqual((await json(revokeResponse)).data, {
+      id: INVITATION_ID,
+      version: "2",
+      status: "revoked",
+    });
+
+    const accessResponse = await running.request(
+      `/api/v1/admin/users/${TARGET_USER_ID}/access`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: {
+          expectedVersion: "1",
+          role: "office_operations",
+          projectIds: [],
+          reason: "Moved into the office team",
+        },
+      },
+    );
+    assert.equal(accessResponse.status, 200);
+    assert.deepEqual((await json(accessResponse)).data, {
+      id: TARGET_USER_ID,
+      role: "office_operations",
+      projectIds: [],
+      version: "2",
+      authorizationVersion: "2",
+    });
+
+    const disableResponse = await running.request(
+      `/api/v1/admin/users/${TARGET_USER_ID}/disable`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { expectedVersion: "2", reason: "Employment ended" },
+      },
+    );
+    assert.equal(disableResponse.status, 200);
+    assert.equal((await json(disableResponse)).data.status, "disabled");
+
+    const signOutResponse = await running.request(
+      `/api/v1/admin/users/${TARGET_USER_ID}/sign-out`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { expectedVersion: "2", reason: "Security review" },
+      },
+    );
+    assert.equal(signOutResponse.status, 200);
+    assert.equal((await json(signOutResponse)).data.status, "signed_out");
+
+    assert.deepEqual(running.adminAccessCalls.map(({ method }) => method), [
+      "createInvitation",
+      "revokeInvitation",
+      "setUserAccess",
+      "disableUser",
+      "invalidateUserSessions",
+    ]);
+    const createIntent = running.adminAccessCalls[0].intent;
+    assert.equal(createIntent.tokenHash, sha256(INVITATION_CREDENTIAL));
+    assert.equal(createIntent.invitedByUserId, ROLE_IDENTITIES.administrator.userId);
+    assert.equal(createIntent.actorSessionId, ROLE_IDENTITIES.administrator.sessionId);
+    assert.equal(createIntent.actorSessionVersion, "1");
+    assert.equal(createIntent.actorAuthorizationVersion, "1");
+    assert.deepEqual(createIntent.projectIds, [PROJECT_A]);
+    assert.equal(createIntent.audit.metadata.project_count, 1);
+    assert.equal(running.adminAccessCalls[1].intent.audit.metadata.reason, "Position was not approved");
+    assert.equal(running.adminAccessCalls[2].intent.reasonCode, "administrator_request");
+    assert.equal(running.adminAccessCalls[2].intent.audit.metadata.reason, "Moved into the office team");
+    assert.doesNotMatch(JSON.stringify(running.adminAccessCalls), new RegExp(INVITATION_CREDENTIAL));
+    assert.doesNotMatch(JSON.stringify(running.audits), new RegExp(INVITATION_CREDENTIAL));
+    assert.deepEqual(
+      running.repositoryCalls.capabilityChecks.map(({ capabilityKey }) => capabilityKey),
+      [
+        AUTHORIZATION_CAPABILITIES.invitationsCreate,
+        AUTHORIZATION_CAPABILITIES.invitationsRevoke,
+        AUTHORIZATION_CAPABILITIES.rolesAssign,
+        AUTHORIZATION_CAPABILITIES.usersDisable,
+        AUTHORIZATION_CAPABILITIES.sessionsRevoke,
+      ],
+    );
+  } finally {
+    await running.close();
+  }
+});
+
+test("Office and Project Manager sessions cannot invoke any access-administration command", async () => {
+  const cases = [
+    ["/api/v1/admin/invitations", {
+      email: "new.person@cherryhillfci.com",
+      role: "office_operations",
+      projectIds: [],
+    }],
+    [`/api/v1/admin/invitations/${INVITATION_ID}/revoke`, {
+      expectedVersion: "1",
+      reason: "Not approved",
+    }],
+    [`/api/v1/admin/users/${TARGET_USER_ID}/access`, {
+      expectedVersion: "1",
+      role: "office_operations",
+      projectIds: [],
+      reason: "Test",
+    }],
+    [`/api/v1/admin/users/${TARGET_USER_ID}/disable`, {
+      expectedVersion: "1",
+      reason: "Test",
+    }],
+    [`/api/v1/admin/users/${TARGET_USER_ID}/sign-out`, {
+      expectedVersion: "1",
+      reason: "Test",
+    }],
+  ];
+
+  for (const role of [AUTHORIZATION_ROLES.officeOperations, AUTHORIZATION_ROLES.projectManager]) {
+    const running = await startHarness({ role });
+    try {
+      for (const [path, body] of cases) {
+        const response = await running.request(path, {
+          method: "POST",
+          sameOrigin: true,
+          csrf: true,
+          json: body,
+        });
+        assert.equal(response.status, 403, `${role} ${path}`);
+        assert.deepEqual(await json(response), { error: "forbidden" });
+      }
+      assert.equal(running.adminAccessCalls.length, 0);
+    } finally {
+      await running.close();
+    }
+  }
+});
+
+test("access-administration routes enforce origin, CSRF, closed bodies, and safe conflict responses", async () => {
+  const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+  try {
+    for (const options of [
+      {
+        csrf: true,
+        json: { expectedVersion: "1", reason: "Test" },
+      },
+      {
+        sameOrigin: true,
+        json: { expectedVersion: "1", reason: "Test" },
+      },
+    ]) {
+      const response = await running.request(
+        `/api/v1/admin/users/${TARGET_USER_ID}/disable`,
+        { method: "POST", ...options },
+      );
+      assert.equal(response.status, 403);
+      assert.deepEqual(await json(response), { error: "request_not_authorized" });
+    }
+    assert.equal(running.adminAccessCalls.length, 0);
+
+    const malformedEmail = await running.request("/api/v1/admin/invitations", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      json: {
+        email: "a@b@cherryhillfci.com",
+        role: "office_operations",
+        projectIds: [],
+      },
+    });
+    assert.equal(malformedEmail.status, 400);
+    assert.deepEqual(await json(malformedEmail), { error: "invalid_admin_request" });
+    assert.equal(running.adminAccessCalls.length, 0);
+
+    for (const body of [
+      { expectedVersion: "0", reason: "Test" },
+      { expectedVersion: "1", reason: "" },
+      { expectedVersion: "1", reason: "Test", extra: true },
+    ]) {
+      const response = await running.request(
+        `/api/v1/admin/users/${TARGET_USER_ID}/disable`,
+        {
+          method: "POST",
+          sameOrigin: true,
+          csrf: true,
+          json: body,
+        },
+      );
+      assert.equal(response.status, 400);
+      assert.deepEqual(await json(response), { error: "invalid_admin_request" });
+    }
+    assert.equal(running.adminAccessCalls.length, 0);
+
+    const wrongMethod = await running.request("/api/v1/admin/invitations");
+    assert.equal(wrongMethod.status, 405);
+    assert.equal(wrongMethod.headers.get("allow"), "POST");
+    assert.deepEqual(await json(wrongMethod), { error: "method_not_allowed" });
+  } finally {
+    await running.close();
+  }
+
+  for (const [label, adminResults, path, body, code] of [
+    ["conflict", { createInvitation: { outcome: "conflict" } },
+      "/api/v1/admin/invitations", {
+        email: "new.person@cherryhillfci.com",
+        role: "office_operations",
+        projectIds: [],
+      }, "access_conflict"],
+    ["stale", { setUserAccess: { outcome: "stale" } },
+      `/api/v1/admin/users/${TARGET_USER_ID}/access`, {
+        expectedVersion: "1",
+        role: "office_operations",
+        projectIds: [],
+        reason: "Test",
+      }, "access_state_stale"],
+    ["final admin", { disableUser: { outcome: "final_active_administrator" } },
+      `/api/v1/admin/users/${TARGET_USER_ID}/disable`, {
+        expectedVersion: "1",
+        reason: "Test",
+      }, "final_active_administrator"],
+  ]) {
+    const failed = await startHarness({ role: AUTHORIZATION_ROLES.administrator, adminResults });
+    try {
+      const response = await failed.request(path, {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: body,
+      });
+      assert.equal(response.status, 409, label);
+      const responseBody = await json(response);
+      assert.deepEqual(responseBody, { error: code }, label);
+      assert.equal(JSON.stringify(responseBody).includes(INVITATION_CREDENTIAL), false);
+    } finally {
+      await failed.close();
+    }
+  }
+
+  const actorChanged = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    adminResults: { createInvitation: { outcome: "actor_authorization_changed" } },
+  });
+  try {
+    const response = await actorChanged.request("/api/v1/admin/invitations", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      json: {
+        email: "new.person@cherryhillfci.com",
+        role: "office_operations",
+        projectIds: [],
+      },
+    });
+    assert.equal(response.status, 401);
+    assert.deepEqual(await json(response), { error: "authentication_required" });
+    assert.equal(response.headers.get("set-cookie"), CLEAR_SESSION_COOKIE);
+  } finally {
+    await actorChanged.close();
   }
 });
 

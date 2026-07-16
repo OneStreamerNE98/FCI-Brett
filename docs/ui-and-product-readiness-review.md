@@ -24,7 +24,7 @@ This review separates three things:
 | Inbox | Review-first Gmail workflow | Renamed to Gmail project inbox; Gmail labels consistently use `FCI/Intake`, `FCI/Needs Review`, and `FCI/Filed`; File to project is now Review & copy; Reply is now Draft reply; safety copy clearly states that nothing is filed automatically. | Add Gmail watch/history processing, a durable suggestion queue, thread view, send workflow, retries, and executable custom matchers. |
 | AI Assistant | Read-only, selected-project Q&A | Records-only mode is presented as a valid mode; prompt controls are disabled during a request; missing-evidence callouts only appear when present; no-project guidance and accessible answer updates were added. | Add project-level permissions, Drive document indexing, permission-filtered retrieval, saved conversations, and prompt-injection/leakage evaluations. |
 | Reports | Current operational totals | Copy is business-facing; loading totals do not show false zeros; custom pipeline stages roll into Other stages; chart columns now have equal visual weight. | Add date filters, drilldowns, revenue/margin data, sales-cycle timing, crew utilization, and exports. |
-| Settings | Account, Workspace, calendar, inbox, security, and launch settings | General Settings now opens My account; timezone changes update the Overview greeting; the Calendar plan no longer claims that saving creates calendars; the Schedule deep link was repaired; mobile settings layouts were improved. | Make saved calendar IDs authoritative at runtime, persist launch checklist state, add user/role management, and split the dense Google Workspace panel into smaller sections. |
+| Settings | Account, Workspace, calendar, inbox, security, and launch settings | General Settings now opens My account; timezone changes update the Overview greeting; the Calendar plan no longer claims that saving creates calendars; the Schedule deep link was repaired; mobile settings layouts were improved. | Make saved calendar IDs authoritative at runtime, persist launch checklist state, add the separate fixed-role People & Access page, and split the dense Google Workspace panel into smaller sections. |
 
 ## Cross-application consistency changes
 
@@ -76,7 +76,7 @@ Separately, the production source boundary now includes the [approved authorizat
 - Workers, crews, shifts, conflicts, assignment publishing, acknowledgements, and field links.
 - SMS/email delivery tracking, Twilio, consent, STOP handling, retries, and dead letters.
 - CSV preview/import.
-- Durable invitation/OIDC/session issuance and renewal, the broader production interface/routes, provider adapters, administration APIs/page, and rendered permission tests.
+- Durable invitation fulfillment/OIDC/session issuance and renewal, the broader production interface/routes, provider adapters, the People & Access read projection/page, and rendered permission tests. The five fixed administration commands now exist only in source.
 - Drive/email document indexing and permission-filtered semantic retrieval.
 - Backup restoration validation, audit viewer, retention, and export, plus malware scanning when untrusted uploads or Gmail attachments are enabled.
 - Production background workers for reminders, Gmail watches, synchronization, and retries.
@@ -98,7 +98,7 @@ The owner has approved the application role and sensitive-action policy, includi
 1. **Complete in source; unapplied:** costed infrastructure definitions and reviewable migration/restore/cutover procedures for the minimum core and on-demand staging boundary.
 2. **Complete in source; unapplied:** the production-persistence boundary covering provider-neutral PostgreSQL repositories, generic identity/security-audit schema, integration metadata, and object-storage ports.
 3. **Complete in source; not deployed:** approved access contexts, capability/project-scoped queries, provider-action gates, negative authorization tests, and narrow dashboard/search/project/client/logout Cloud Run routes. File/Gmail/Calendar paths are gated but provider-unavailable.
-4. Build narrow audited administration APIs and Management → Administration & Access, then finish the remaining employee application routes.
+4. **Administration core complete in source, unapplied; page next:** follow the simplified [Administration and Access plan](administration-and-access-plan.md) and build Management → People & Access with a bounded read projection, five workflows, and read-only role presets. Add the Activity viewer before employee rollout and Field Links only when field assignments are scheduled, then finish the remaining employee application routes.
 5. With separate approval, prove migration, restore, reconciliation, and rollback/forward-fix in isolated on-demand staging.
 6. Add live Google Workspace OIDC/session issuance only after those platform and authorization gates pass; do not add more users before project permissions are enforced.
 7. Add editing and archiving for clients, contacts, leads, projects, and meetings.

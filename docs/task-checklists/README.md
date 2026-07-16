@@ -11,7 +11,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Workspace resources | Workspace administrator | Not started | Create the Shared Drive, directory Sheet, mailbox, and two calendars. |
 | Google Cloud and OAuth | Workspace/Cloud administrator | Company-account project candidate reported; Cloud verification pending | Inventory Brett's candidate and bring the non-secret findings back for approval before any API, IAM, billing, OAuth, or Admin-console change. |
 | Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
-| Staff Google login and roles | Codex/developer | Approved policy and source-only employee routes implemented; OIDC/session issuance/providers pending | Review the Cloud Run route boundary; keep migration/apply, deployment, live OIDC, and additional users gated. |
+| Staff Google login and roles | Codex/developer | Approved policy, source-only employee routes, and fixed admin commands implemented; OIDC/session issuance/providers pending | Review the admin core, then build the bounded People & Access read projection/page; keep migration/apply, deployment, live OIDC, and additional users gated. |
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
@@ -45,10 +45,9 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 ## Recommended next source branches
 
-1. Review and merge the source-only Cloud Run employee-route boundary. Dashboard, search, project list/exact-project, client list, and logout are PostgreSQL-backed in source; file, Gmail, and Calendar paths are authorization-gated but provider-unavailable.
-2. Build `codex/admin-access-persistence` and `codex/admin-access-api` for versioned invitations, disablement, role/project assignment, session revocation, and global Office/Project Manager settings. Keep arbitrary/per-user grants impossible and protect the final active Administrator.
-3. Build Field Lead links and the audit reader in separate least-privilege branches: `codex/field-link-persistence` and `codex/admin-audit-reader`.
-4. Build `codex/admin-access-page` under Management → Administration & Access, followed by `codex/admin-access-acceptance` for policy preview, session invalidation, CSRF, concurrency, direct-route, responsive/accessibility, and rendered browser evidence.
+1. Review and merge `codex/admin-access-core`, which adds the fixed three-role catalog and five audited/versioned Administrator commands in source without applying migration version 4 or admitting users.
+2. Build `codex/admin-access-page` under Management → People & Access with a bounded Administrator read projection, one people/invitation list, a read-only role guide, and direct-route, responsive/accessibility, and rendered browser evidence.
+3. Before second-user or real-data acceptance, build `codex/admin-audit-viewer`. Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
 None of these steps authorizes OIDC, session issuance, a migration or infrastructure apply, deployment, a second user, or real data.
 
