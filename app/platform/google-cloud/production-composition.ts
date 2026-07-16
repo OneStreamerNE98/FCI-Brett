@@ -1,4 +1,7 @@
 import {
+  createPostgresAuthorizationRepository,
+} from "../../adapters/postgres/authorization-repository";
+import {
   createPostgresClientRepository,
 } from "../../adapters/postgres/client-repository";
 import {
@@ -21,6 +24,7 @@ import {
   createPostgresSecurityAuditRepository,
 } from "../../adapters/postgres/security-audit-repository";
 import type { PostgresCreationRequestMetadata } from "../../adapters/postgres/creation-idempotency";
+import type { AuthorizationRepository } from "../../ports/authorization";
 import type { ClientRepository } from "../../ports/client-repository";
 import type { FileMetadataRepository } from "../../ports/file-metadata";
 import type { IdentityPersistenceRepository } from "../../ports/identity-persistence";
@@ -38,6 +42,7 @@ import type { ProductionConfig } from "./production-config";
 export type ProductionRepositoryFactories = Readonly<{
   outbox: OutboxRepository;
   securityAudit: SecurityAuditRepository;
+  authorization: AuthorizationRepository;
   identity: IdentityPersistenceRepository;
   integrations: IntegrationMetadataRepository;
   files: FileMetadataRepository;
@@ -77,12 +82,14 @@ export function composeProductionRepositories(
     statementTimeoutMs: config.postgres.pool.statementTimeoutMs,
   };
   const securityAudit = createPostgresSecurityAuditRepository(postgres, sharedRepositoryOptions);
+  const authorization = createPostgresAuthorizationRepository(postgres, sharedRepositoryOptions);
   const identity = createPostgresIdentityPersistenceRepository(postgres, sharedRepositoryOptions);
   const integrations = createPostgresIntegrationMetadataRepository(postgres, sharedRepositoryOptions);
   const files = createPostgresFileMetadataRepository(postgres, sharedRepositoryOptions);
   const repositories: ProductionRepositoryFactories = Object.freeze({
     outbox,
     securityAudit,
+    authorization,
     identity,
     integrations,
     files,

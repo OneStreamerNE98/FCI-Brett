@@ -15,6 +15,7 @@
   "include": [
     "vite.cloud-run.config.ts",
     "production-runtime/src/**/*.ts",
+    "app/application/authorization-*.ts",
     "app/platform/google-cloud/**/*.ts",
     "app/platform/postgres/**/*.ts",
     "app/adapters/postgres/**/*.ts",

@@ -86,7 +86,7 @@ function runtimeTableAccess(
 export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[] =
   Object.freeze([
     runtimeTableAccess("clients", ["SELECT", "INSERT", "UPDATE"]),
-    runtimeTableAccess("contacts", ["INSERT"]),
+    runtimeTableAccess("contacts", ["SELECT", "INSERT"]),
     runtimeTableAccess("projects", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("activity_events", ["INSERT"]),
     runtimeTableAccess("idempotency_requests", ["SELECT", "INSERT", "UPDATE"]),
@@ -94,13 +94,13 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("production_schema_migrations", []),
     runtimeTableAccess("users", ["SELECT", "INSERT"]),
     runtimeTableAccess("external_identities", ["INSERT"]),
-    runtimeTableAccess("invitations", ["INSERT"]),
-    runtimeTableAccess("sessions", ["SELECT", "INSERT", "UPDATE"]),
-    runtimeTableAccess("roles", ["INSERT"]),
-    runtimeTableAccess("capabilities", ["INSERT"]),
-    runtimeTableAccess("role_capabilities", ["INSERT"]),
-    runtimeTableAccess("user_roles", ["INSERT"]),
-    runtimeTableAccess("project_memberships", ["INSERT"]),
+    runtimeTableAccess("invitations", []),
+    runtimeTableAccess("sessions", ["SELECT", "INSERT"]),
+    runtimeTableAccess("roles", ["SELECT"]),
+    runtimeTableAccess("capabilities", ["SELECT"]),
+    runtimeTableAccess("role_capabilities", ["SELECT"]),
+    runtimeTableAccess("user_roles", ["SELECT"]),
+    runtimeTableAccess("project_memberships", ["SELECT", "INSERT"]),
     runtimeTableAccess("audit_events", ["INSERT"]),
     runtimeTableAccess("integration_connections", ["INSERT"]),
     runtimeTableAccess("integration_credentials", []),
@@ -142,6 +142,8 @@ type PermissionRow = Record<string, unknown> & {
   has_sequence_access: unknown;
   has_user_lock_column_update: unknown;
   has_other_user_column_update: unknown;
+  has_session_revocation_column_updates: unknown;
+  has_other_session_column_update: unknown;
   history_reader_exists: unknown;
   history_reader_security_definer: unknown;
   history_reader_owner: unknown;
@@ -240,8 +242,8 @@ function runtimeTablePrivilegeMatrixMatches(rows: readonly RuntimeTablePrivilege
     const expected = RUNTIME_TABLE_PRIVILEGE_EXPECTATIONS[index];
     const supportsColumnGrant = expected && ["SELECT", "INSERT", "UPDATE", "REFERENCES"]
       .includes(expected.privilege);
-    const hasReviewedColumnOnlyGrant = expected?.tableName === "users" &&
-      expected.privilege === "UPDATE";
+    const hasReviewedColumnOnlyGrant = expected?.privilege === "UPDATE" &&
+      (expected.tableName === "users" || expected.tableName === "sessions");
     return Boolean(
       expected &&
       row.tableName === expected.tableName &&
@@ -287,6 +289,10 @@ async function readDatabaseReadiness(
        ), runtime_users AS (
          SELECT pg_catalog.to_regclass(
            pg_catalog.format('%I.%I', $1, 'users')
+         ) AS oid
+       ), runtime_sessions AS (
+         SELECT pg_catalog.to_regclass(
+           pg_catalog.format('%I.%I', $1, 'sessions')
          ) AS oid
        )
        SELECT
@@ -349,6 +355,48 @@ async function readDatabaseReadiness(
                'UPDATE'
              )
          ) AS has_other_user_column_update,
+         pg_catalog.coalesce(
+           (
+             SELECT pg_catalog.bool_and(
+               pg_catalog.has_column_privilege(
+                 CURRENT_USER,
+                 runtime_sessions.oid,
+                 allowed_column,
+                 'UPDATE'
+               )
+             )
+             FROM pg_catalog.unnest(ARRAY[
+               'token_hash',
+               'csrf_hash',
+               'revoked_at',
+               'revoked_by_actor_key',
+               'revocation_reason_code',
+               'version'
+             ]::text[]) AS allowed_session_update(allowed_column)
+           ),
+           false
+         ) AS has_session_revocation_column_updates,
+         EXISTS (
+           SELECT 1
+           FROM pg_catalog.pg_attribute AS attribute
+           WHERE attribute.attrelid = runtime_sessions.oid
+             AND attribute.attnum > 0
+             AND NOT attribute.attisdropped
+             AND attribute.attname <> ALL(ARRAY[
+               'token_hash',
+               'csrf_hash',
+               'revoked_at',
+               'revoked_by_actor_key',
+               'revocation_reason_code',
+               'version'
+             ]::text[])
+             AND pg_catalog.has_column_privilege(
+               CURRENT_USER,
+               runtime_sessions.oid,
+               attribute.attname,
+               'UPDATE'
+             )
+         ) AS has_other_session_column_update,
          history_reader.oid IS NOT NULL AS history_reader_exists,
          pg_catalog.coalesce(history_reader.prosecdef, false)
            AS history_reader_security_definer,
@@ -395,7 +443,8 @@ async function readDatabaseReadiness(
          ) AS has_unreviewed_function_execute
        FROM (SELECT 1) AS one
        LEFT JOIN history_reader ON true
-       LEFT JOIN runtime_users ON true`,
+       LEFT JOIN runtime_users ON true
+       LEFT JOIN runtime_sessions ON true`,
       [schema],
     );
     const permission = permissions.rows[0];
@@ -409,6 +458,8 @@ async function readDatabaseReadiness(
       permission.has_sequence_access !== false ||
       permission.has_user_lock_column_update !== true ||
       permission.has_other_user_column_update !== false ||
+      permission.has_session_revocation_column_updates !== true ||
+      permission.has_other_session_column_update !== false ||
       permission.history_reader_exists !== true ||
       permission.history_reader_security_definer !== true ||
       permission.history_reader_owner !== true ||

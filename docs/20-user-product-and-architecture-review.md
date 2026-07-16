@@ -9,9 +9,9 @@ The current application is a credible single-user hosted development environment
 
 The strongest parts are the clear client-to-project structure, review-first Gmail workflow, Shared Drive and Sheets plan, records-based assistant citations, and honest placeholders for unfinished scheduling and task features. The rollout blockers are foundational rather than cosmetic:
 
-1. Every authenticated user in the development environment still has company-wide data access. The interface now shows the current server-derived access level (`Admin` or `Office`), but durable roles, capabilities, and project assignments are not implemented.
+1. Every authenticated user in the hosted development environment still has company-wide data access. A source-only production authorization simulation now records the approved Administrator capabilities, uses conservative fake Office/Project Manager read scopes pending final responsibility approval, and defines secure-session denial rules plus project-scoped PostgreSQL reads, but it is not composed into the employee HTTP routes or deployed. The hosted interface still shows only its development `Admin` or `Office` label.
 2. Source now contains the approved fail-closed Cloud Run boundary and PostgreSQL foundation, but the full application, Google Cloud infrastructure, background-job operations, backup, and recovery platform are not yet implemented or provisioned.
-3. Application roles and Google Workspace permissions do not yet form one tested access model.
+3. The owner-approved application policy now has a local testable model, but Google Groups, direct Workspace access, account lifecycle, and live provider enforcement do not yet form one tested cross-system access model.
 4. The data model and synchronous Google operations are not safe for concurrent staff activity or transient Google outages.
 5. Several controls look operational even though they only save configuration or show a success message.
 
@@ -30,13 +30,13 @@ Use explicit invitations even for people in the company Google Workspace domain,
 
 | User type | Recommended application access | Recommended Google access |
 | --- | --- | --- |
-| Administrator | Company-wide records, user/role administration, connector administration, audit and recovery tools | Workspace resources required for administration; no routine use of a personal super-admin account |
-| Office Operations | Company-wide operational records and approved Gmail, Calendar, Drive, and Sheet actions | Intake mailbox delegation, operational calendars, Shared Drive, and directory Sheet as approved |
-| Project Manager | Assigned projects plus the minimum client/contact context needed for those projects | Assigned project folders and relevant calendars; no company inbox or company-wide directory by default |
-| Field/Crew Lead | Decide whether this is an internal application role; if so, limit it to assigned schedule and field records | No intake mailbox or company directory; limited project-folder access only when required |
-| Subcontractor or temporary field worker | No full application account by default; use expiring, purpose-specific links after that feature is built | No Shared Drive membership by default |
+| Administrator | Company-wide operational and financial records; project creation/assignment; Gmail filing, Calendar creation, file sharing, export, and audit viewing | Only the Workspace resources separately approved for administration; no routine use of a personal super-admin account |
+| Office Operations | Company-wide operational records without pricing, revenue, or margin values; no approved sensitive Google, export, or audit action yet | Direct Gmail, Calendar, Drive, Sheet, and mailbox delegation remain undecided and denied by the application policy |
+| Project Manager | Assigned projects plus the minimum client/contact context needed for those projects, without pricing, revenue, or margin values | Direct project-folder and calendar access remains undecided; no company inbox or company-wide directory by default |
+| Field/Crew Lead | No employee account; an expiring purpose-specific link may read only its exact assigned project after issuance is built | No intake mailbox, company directory, or Shared Drive membership by default |
+| Subcontractor or temporary field worker | No application account or access for the first rollout; any future purpose-specific link requires a separate decision | No Shared Drive membership by default |
 
-The owner must decide whether sales/estimating is part of Office Operations, a separate role, or out of the first rollout. The owner must also decide whether field leads receive full accounts or only expiring assignment links. Record those decisions in [20-user operating model and Google access](task-checklists/06-20-user-operating-model-and-access.md).
+The owner selected `admincrm@cherryhillfci.com` and `brett@cherryhillfci.com` as the two initial application Administrators; each address still must be verified as an individual managed account assigned to one named person, never a shared staff login. Sales/Estimator is excluded from the first rollout, Field Leads use expiring assignment links rather than employee accounts, subcontractors receive no accounts, and every employee requires an explicit invitation. See [Authorization simulation](authorization-simulation.md) and [20-user operating model and Google access](task-checklists/06-20-user-operating-model-and-access.md). These decisions do not establish the employee rollout order or approve direct Google resource access.
 
 ## Recommended production architecture
 
@@ -73,7 +73,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 
 ### P0 — complete before a second user
 
-1. **Implement server-enforced identity and authorization.** Add invited users, sessions, roles, disabled status, granular capabilities, project memberships, and query-scoped authorization. The current dashboard, search, project, and assistant routes expose company-wide data to any authenticated user.
+1. **Compose and prove server-enforced identity and authorization.** The source-only simulation now resolves invited employee policy, active/revoked/expired/version-invalid sessions, approved role capabilities, and project-scoped PostgreSQL reads. The current hosted dashboard, search, project, and assistant routes remain outside that boundary and expose company-wide development data to any allowlisted tester. Production HTTP/cookie/logout composition, live OIDC, and rendered permission tests remain open.
 2. **Resolved in source; verify after deployment: remove the Gmail label-only filing bypass.** The Settings button and standalone API route that could apply `FCI/Filed` without an exact project copy have been removed. Any future repair tool must require an existing archive/project, a reason, and an audit event.
 3. **Complete the accepted production platform.** The current application is still coupled to Workers, D1, and R2. Source now includes a fail-closed Cloud Run foundation, the production persistence boundary, immutable migrations, exact least-privilege readiness, a bounded core rehearsal, and zero-resource-by-default Google Cloud definitions, but it is not the full application and no Google Cloud resources, staging migration/restore exercise, or production cutover exists yet.
 
@@ -83,7 +83,7 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 2. Replace free-text relationships and statuses with foreign keys, constraints, version fields, and normalized child records.
 3. Add optimistic concurrency and background jobs. Current write and full-Sheet-sync patterns can lose updates or race when several employees work at once.
 4. Add timeouts, retry policies, idempotency, application-owned durable failed-job/dead-letter handling, connector health, and token-refresh single-flight behavior around Google calls.
-5. Implement backup/restore, audit viewing, retention, session revocation, key rotation, and connector-account continuity. Before accepting untrusted direct uploads or Gmail attachments, also implement file metadata, quarantine, scanning, release, and authorized download controls.
+5. Implement backup/restore, the separately privileged audit viewer, retention, production session/logout endpoints, key rotation, and connector-account continuity. The source-only session resolver already denies revoked, disabled, invalidated, and expired sessions, but it is not a live login/session surface. Before accepting untrusted direct uploads or Gmail attachments, also implement file metadata, quarantine, scanning, release, and authorized download controls.
 6. Make saved Workspace resource IDs authoritative. Calendar configuration currently has both saved settings and environment values.
 7. **Resolved in source; verify after deployment:** Settings loading retains known data and presents typed failures instead of silently replacing failed requests with valid-looking defaults.
 8. **Resolved in source; verify after deployment:** unfinished features have visible Working, In development, Setup required, or Planned states, and non-persisting actions are disabled or relabeled.
@@ -101,11 +101,11 @@ This keeps operating cost and failure modes understandable for a 20-person compa
 
 ## Corrected delivery order
 
-The owner completes setup inputs, staff/field policy, Google Groups, and the cross-system access matrix in parallel; those decisions gate the relevant persistence, authorization, and provisioning work below.
+The owner-approved application role and sensitive-action policy now permits local authorization work. Setup inputs, rollout order, Google Groups, direct Workspace access, and the remaining cross-system lifecycle decisions continue in parallel and gate live identity, provisioning, and Google access.
 
 1. **Infrastructure definitions — complete in source, unapplied:** Sites development is preserved; on-demand staging, alternative Cloud SQL profiles, the minimum core, and disabled optional modules are reviewable. Owner inputs, approved calculator evidence, and any apply remain open.
 2. **Production persistence boundary — complete in source, unapplied:** PostgreSQL migration/repository structures now cover generic identity/security audit and production-owned integration/file metadata, with an opaque provider-neutral object-storage contract. See [Production persistence boundary](production-persistence-boundary.md).
-3. **Authorization simulation:** add access contexts, capability and project scoping, and negative permission tests on the accepted persistence boundary.
+3. **Authorization simulation — implemented in source, not route-composed or deployed:** recorded first-rollout decisions, conservative fake-role scopes, per-role capability and project scoping, secure-session denial behavior, fixed-operation callback gates, and security-audit evidence run against the accepted production boundaries. Final Office/Project Manager responsibilities remain open. See [Authorization simulation](authorization-simulation.md).
 4. **Cloud Run composition:** port the remaining employee application routes through those production database/storage boundaries.
 5. **Staging and recovery proof:** with separate approval, create staging on demand and prove migration, restore, reconciliation, rollback/forward-fix, and the complete application smoke path.
 6. **Live employee identity:** add Google Workspace OIDC only after the platform, persistence, authorization, and staging gates pass.

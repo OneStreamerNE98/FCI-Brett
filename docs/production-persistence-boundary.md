@@ -110,6 +110,6 @@ The SQL policy and readiness checks remain source-only. Applying the role policy
 
 ## Acceptance and next gate
 
-This source boundary can be accepted without Brett's open Google Cloud/Workspace inputs because it does not apply or configure anything. The next source task is authorization simulation: explicit access contexts, secure-session behavior, capabilities, approved role mappings, project-scoped queries, denial tests, and production-database/storage composition. That task may begin only after the owner accepts both this persistence boundary and the completed 20-user role/cross-system access matrix.
+This source boundary was accepted without Brett's open Google Cloud/Workspace inputs because it did not apply or configure anything. The follow-on [authorization simulation](authorization-simulation.md) now adds explicit access contexts, secure-session denial behavior, owner-approved Administrator capabilities, conservative fake Office/Project Manager defaults, project-scoped queries, fixed-operation provider-action gates, and denial evidence. Final role responsibilities and production employee-route composition remain open after that simulation is accepted.
 
 Live Workspace OIDC, staging migration/restore, a second employee, and real client data remain blocked by their separate platform, owner-approval, recovery, authorization, and acceptance gates.

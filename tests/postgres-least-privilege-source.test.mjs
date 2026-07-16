@@ -57,9 +57,16 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     .filter(({ privileges }) => privileges.length > 0)
     .flatMap(({ table, privileges }) => {
       const tableGrant = `GRANT ${privileges.join(", ")} ON TABLE fci_app.${table} TO fci_runtime;`;
-      return table === "users"
-        ? [tableGrant, "GRANT UPDATE (id) ON TABLE fci_app.users TO fci_runtime;"]
-        : [tableGrant];
+      if (table === "users") {
+        return [tableGrant, "GRANT UPDATE (id) ON TABLE fci_app.users TO fci_runtime;"];
+      }
+      if (table === "sessions") {
+        return [
+          tableGrant,
+          "GRANT UPDATE (token_hash, csrf_hash, revoked_at, revoked_by_actor_key, revocation_reason_code, version) ON TABLE fci_app.sessions TO fci_runtime;",
+        ];
+      }
+      return [tableGrant];
     });
   assert.deepEqual(runtimeGrants, [
     "GRANT USAGE ON SCHEMA fci_app TO fci_runtime;",
@@ -79,6 +86,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
   );
   for (const deniedTable of [
     "production_schema_migrations",
+    "invitations",
     "integration_credentials",
     "integration_connection_scopes",
     "integration_cursors",
@@ -94,6 +102,8 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     );
   }
   assert.match(sql, /FOR SHARE on users[\s\S]*UPDATE\(id\) column grant/);
+  assert.doesNotMatch(sql, /GRANT SELECT, INSERT, UPDATE ON TABLE fci_app\.sessions/);
+  assert.doesNotMatch(sql, /GRANT .*INSERT.* ON TABLE fci_app\.(?:invitations|roles|capabilities|role_capabilities|user_roles)/);
   assert.match(sql, /integration_credentials intentionally has no runtime table grant/);
 });
 

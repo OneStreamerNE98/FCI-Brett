@@ -46,7 +46,7 @@ These are larger structural changes and should be scheduled separately:
 - Use real routes or a URL parameter for views so refresh, Back, bookmarks, and support links preserve the selected page.
 - Create one accessible dialog/drawer primitive with focus trapping, initial focus, focus restoration, Escape handling, and consistent labels.
 - Add full keyboard navigation to global search results.
-- Replace the current access label with the durable OIDC application role and capabilities when the production authorization model is implemented.
+- Replace the current development access label with the durable production role/capability context only after the source-only authorization boundary is composed into employee routes and live OIDC is separately approved.
 - Consolidate the older sidebar CSS and rename color variables by purpose.
 - Continue increasing very small metadata text as each operational module becomes real.
 - Add explicit Working, In development, Setup required, and Planned states so configuration-only or placeholder controls cannot be mistaken for operational features.
@@ -65,6 +65,8 @@ These are larger structural changes and should be scheduled separately:
 - Selected-project assistant evidence with citations and a records-only fallback.
 - A guarded file-upload API and an installable PWA manifest.
 
+Separately, the production source boundary now includes the [authorization simulation](authorization-simulation.md): recorded Administrator-only capability decisions, conservative fake Office/Project Manager defaults pending final responsibility approval, session-denial rules, project-scoped PostgreSQL reads, financial redaction, fixed-operation provider-action gates, and append-only security-audit evidence. None of those controls is wired into the hosted UI or its Workers/D1 routes yet.
+
 ## What is still in development or a placeholder
 
 - Lead conversion and public lead intake.
@@ -74,7 +76,7 @@ These are larger structural changes and should be scheduled separately:
 - Workers, crews, shifts, conflicts, assignment publishing, acknowledgements, and field links.
 - SMS/email delivery tracking, Twilio, consent, STOP handling, retries, and dead letters.
 - CSV preview/import.
-- Application roles beyond the admin flag and project-level permissions.
+- Production HTTP/cookie composition, route use of the source-only roles and project scopes, live invitation/OIDC behavior, and rendered permission tests.
 - Drive/email document indexing and permission-filtered semantic retrieval.
 - Backup restoration validation, audit viewer, retention, and export, plus malware scanning when untrusted uploads or Gmail attachments are enabled.
 - Production background workers for reminders, Gmail watches, synchronization, and retries.
@@ -91,11 +93,11 @@ See [`architecture-decision-production-platform.md`](architecture-decision-produ
 
 ### Now: safe single-user development environment
 
-The owner should complete the Cloud inputs and approve the app-to-Google access matrix, including the field/crew decision and two initial Administrators, in parallel with the ordered source work below.
+The owner has approved the application role and sensitive-action policy, including two initial Administrators, explicit invitations, no Sales/Estimator role, Field Lead links, and no subcontractor accounts. Cloud inputs, rollout order, direct Google resource access, Google Groups, and account lifecycle remain open in parallel with the ordered source work below.
 
-1. Add costed, unapplied infrastructure definitions and reviewable migration/restore/cutover procedures for the minimum core and on-demand staging boundary.
-2. Complete one production-persistence boundary covering the remaining provider-neutral PostgreSQL repositories, generic identity/security-audit schema, integration metadata, and object-storage ports.
-3. Add simulated access contexts, capability and project-scoped queries, and negative authorization tests.
+1. **Complete in source; unapplied:** costed infrastructure definitions and reviewable migration/restore/cutover procedures for the minimum core and on-demand staging boundary.
+2. **Complete in source; unapplied:** the production-persistence boundary covering provider-neutral PostgreSQL repositories, generic identity/security-audit schema, integration metadata, and object-storage ports.
+3. **Complete in source; not route-composed:** simulated access contexts, capability/project-scoped queries, provider-action gates, and negative authorization tests.
 4. Compose the remaining employee application routes for Cloud Run, then—with separate approval—prove migration, restore, reconciliation, and rollback/forward-fix in isolated on-demand staging.
 5. Add live Google Workspace OIDC only after those platform and authorization gates pass; do not add more users before project permissions are enforced.
 6. Add editing and archiving for clients, contacts, leads, projects, and meetings.

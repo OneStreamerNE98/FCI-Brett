@@ -23,6 +23,8 @@ export type PostgresTransactionOptions = {
   schema?: string;
   lockTimeoutMs?: number;
   statementTimeoutMs?: number;
+  readOnly?: boolean;
+  isolationLevel?: "read_committed" | "repeatable_read";
 };
 
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
@@ -47,6 +49,19 @@ function transactionTimeout(
 
 function cleanupError(value: unknown) {
   return value instanceof Error ? value : new Error(String(value));
+}
+
+function beginStatement(options: PostgresTransactionOptions) {
+  const isolationLevel = options.isolationLevel ?? "read_committed";
+  if (isolationLevel === "read_committed") {
+    return options.readOnly ? "BEGIN READ ONLY" : "BEGIN";
+  }
+  if (isolationLevel === "repeatable_read") {
+    return options.readOnly
+      ? "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
+      : "BEGIN ISOLATION LEVEL REPEATABLE READ";
+  }
+  throw new TypeError("PostgreSQL transaction isolation level is invalid");
 }
 
 /**
@@ -81,7 +96,7 @@ export async function withPostgresTransaction<T>(
   try {
     try {
       ambiguousTransactionState = true;
-      await client.query("BEGIN");
+      await client.query(beginStatement(options));
       ambiguousTransactionState = false;
       transactionStarted = true;
 

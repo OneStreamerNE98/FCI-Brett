@@ -28,7 +28,7 @@ The application and domain layers do not import Next.js, Cloudflare bindings, or
 - `ClientRepository` atomically creates a client, primary contact, and activity entry.
 - `ProjectRepository` atomically verifies the client and creates a project plus activity entry.
 - `DirectoryMirror` is optional and runs only after a durable write.
-- `CreationAuthorization` checks `clients:create` or `projects:create` before any creation side effects.
+- `CreationAuthorization` checks the canonical dotted capability keys `clients.create` or `projects.create` before any creation side effects.
 - D1 repository adapters preserve the current development identifiers, client codes, project numbers, duplicate handling, and response status codes.
 - PostgreSQL adapters preserve the ports while adding atomic actor-scoped request replay, transactionally queued delivery intent, and exact persisted version values.
 - The Google development mirror adapter returns an explicitly allowlisted result instead of leaking provider or credential details.
