@@ -6,15 +6,21 @@ import {
 } from "../../application/authorization-policy";
 import {
   ADMIN_ACCESS_ROLE_KEYS,
+  type AdminAccessInvitationSummary,
+  type AdminAccessOverview,
   type AdminAccessPersistenceRepository,
   type AdminAccessPersistenceResult,
+  type AdminAccessPersonSummary,
+  type AdminAccessProjectSummary,
   type AdminAccessRoleKey,
+  type AdminAccessRoleSummary,
   type CreateAdminInvitationIntent,
   type DisableUserAccessIntent,
   type InvalidateUserSessionsIntent,
   type RevokeAdminInvitationIntent,
   type SetUserAccessIntent,
 } from "../../ports/admin-access-persistence";
+import type { AuthorizationRecordScope } from "../../ports/authorization";
 import type { SecurityAuditEvent } from "../../ports/security-audit";
 import { withPostgresTransaction, type PostgresClient, type PostgresPool } from "./postgres-database";
 import {
@@ -28,7 +34,11 @@ import {
   persistenceVersion,
 } from "./persistence-repository-values";
 import { insertPostgresSecurityAuditEvent } from "./security-audit-repository";
-import { parsePostgresUuid, postgresSchemaName } from "./postgres-values";
+import {
+  parsePostgresTimestamp,
+  parsePostgresUuid,
+  postgresSchemaName,
+} from "./postgres-values";
 
 export type PostgresAdminAccessPersistenceOptions = Readonly<{
   schema?: string;
@@ -40,6 +50,9 @@ export type PostgresAdminAccessPersistenceOptions = Readonly<{
 export const ADMIN_ACCESS_MUTATION_LOCK_ID = "7314269172071302";
 
 const MAX_PROJECT_ASSIGNMENTS = 50;
+const MAX_ACCESS_USERS = 100;
+const MAX_ACCESS_INVITATIONS = 100;
+const MAX_ACCESS_PROJECTS = 500;
 const INVITATION_CONFLICT_CONSTRAINTS = [
   "invitations_pkey",
   "invitations_pending_email_key_idx",
@@ -51,6 +64,42 @@ type UserAccessRow = Record<string, unknown> & {
   version: unknown;
   authorization_version: unknown;
   role_key: unknown;
+};
+
+type AccessOverviewUserRow = Record<string, unknown> & {
+  id: unknown;
+  email: unknown;
+  display_name: unknown;
+  status: unknown;
+  role_key: unknown;
+  role_status: unknown;
+  project_ids: unknown;
+  last_signed_in_at: unknown;
+  version: unknown;
+};
+
+type AccessOverviewRoleRow = Record<string, unknown> & {
+  role_key: unknown;
+  display_name: unknown;
+  description: unknown;
+};
+
+type AccessOverviewInvitationRow = Record<string, unknown> & {
+  id: unknown;
+  email: unknown;
+  role_key: unknown;
+  role_status: unknown;
+  project_ids: unknown;
+  created_at: unknown;
+  expires_at: unknown;
+  version: unknown;
+};
+
+type AccessOverviewProjectRow = Record<string, unknown> & {
+  id: unknown;
+  project_number: unknown;
+  name: unknown;
+  status: unknown;
 };
 
 function accepted(
@@ -89,6 +138,127 @@ function roleKey(value: unknown): AdminAccessRoleKey {
     throw new TypeError("Administration role must be a supported fixed role");
   }
   return value as AdminAccessRoleKey;
+}
+
+function accessText(value: unknown, label: string, maximum = 512) {
+  assertPersistenceText(value, label, maximum);
+  return value;
+}
+
+function accessProjectIds(value: unknown, label: string, maximum = MAX_PROJECT_ASSIGNMENTS) {
+  if (!Array.isArray(value) || value.length > maximum) {
+    throw new TypeError(`${label} must be a bounded PostgreSQL UUID array`);
+  }
+  const ids = value.map((id, index) => parsePostgresUuid(id, `${label} ${index + 1}`));
+  if (new Set(ids).size !== ids.length) {
+    throw new TypeError(`${label} must contain unique project IDs`);
+  }
+  return Object.freeze(ids);
+}
+
+function accessReadScope(scope: AuthorizationRecordScope, now: number) {
+  if (!scope || scope.kind !== "company" || scope.includeFinancial !== true) {
+    throw new TypeError("Administration access overview requires company Administrator scope");
+  }
+  assertPersistenceUuid(scope.sessionId, "Administration reader session ID");
+  assertPersistenceUuid(scope.userId, "Administration reader user ID");
+  return Object.freeze({
+    sessionId: scope.sessionId,
+    sessionVersion: persistenceVersion(
+      scope.sessionVersion,
+      "Administration reader session version",
+    ),
+    userId: scope.userId,
+    authorizationVersion: persistenceVersion(
+      scope.authorizationVersion,
+      "Administration reader authorization version",
+    ),
+    checkedAt: persistenceDate(now, "Administration overview time"),
+  });
+}
+
+function boundedRows<Row extends Record<string, unknown>>(
+  result: { rowCount: number | null; rows: Row[] },
+  maximum: number,
+  label: string,
+) {
+  if (result.rowCount !== result.rows.length) {
+    throw new Error(`${label} returned an invalid row count`);
+  }
+  if (result.rows.length > maximum) {
+    throw new Error(`${label} exceeds its bounded projection limit`);
+  }
+  return result.rows;
+}
+
+function accessOverviewPerson(row: AccessOverviewUserRow): AdminAccessPersonSummary {
+  const email = normalizedInvitationEmail(accessText(row.email, "Access user email", 320));
+  if (row.status !== "active" && row.status !== "disabled") {
+    throw new TypeError("Access user status is invalid");
+  }
+  if (row.role_status !== "active") {
+    throw new TypeError("Access user role status is invalid");
+  }
+  const role = roleKey(row.role_key);
+  const projectIds = accessProjectIds(row.project_ids, "Access user project IDs");
+  if (role !== "project_manager" && projectIds.length !== 0) {
+    throw new TypeError("Only an access Project Manager can have active project assignments");
+  }
+  return Object.freeze({
+    id: parsePostgresUuid(row.id, "Access user ID"),
+    email,
+    displayName: accessText(row.display_name, "Access user display name"),
+    status: row.status,
+    role,
+    projectIds,
+    lastSignedInAt: row.last_signed_in_at === null
+      ? null
+      : parsePostgresTimestamp(row.last_signed_in_at, "Access user last sign-in"),
+    version: persistenceVersion(row.version, "Access user version"),
+  });
+}
+
+function accessOverviewInvitation(
+  row: AccessOverviewInvitationRow,
+): AdminAccessInvitationSummary {
+  if (row.role_status !== "active") {
+    throw new TypeError("Access invitation role status is invalid");
+  }
+  const role = roleKey(row.role_key);
+  const projectIds = accessProjectIds(row.project_ids, "Access invitation project IDs");
+  if (
+    (role === "project_manager" && projectIds.length === 0)
+    || (role !== "project_manager" && projectIds.length !== 0)
+  ) {
+    throw new TypeError("Access invitation project assignments do not match its fixed role");
+  }
+  return Object.freeze({
+    id: parsePostgresUuid(row.id, "Access invitation ID"),
+    email: normalizedInvitationEmail(accessText(row.email, "Access invitation email", 320)),
+    role,
+    status: "pending",
+    projectIds,
+    createdAt: parsePostgresTimestamp(row.created_at, "Access invitation created time"),
+    expiresAt: parsePostgresTimestamp(row.expires_at, "Access invitation expiry time"),
+    version: persistenceVersion(row.version, "Access invitation version"),
+  });
+}
+
+function accessOverviewProject(row: AccessOverviewProjectRow): AdminAccessProjectSummary {
+  return Object.freeze({
+    id: parsePostgresUuid(row.id, "Access project ID"),
+    projectNumber: accessText(row.project_number, "Access project number", 64),
+    name: accessText(row.name, "Access project name"),
+    status: accessText(row.status, "Access project status", 64),
+  });
+}
+
+function accessOverviewRole(row: AccessOverviewRoleRow): AdminAccessRoleSummary {
+  return Object.freeze({
+    key: roleKey(row.role_key),
+    displayName: accessText(row.display_name, "Access role display name", 128),
+    description: accessText(row.description, "Access role description", 512),
+  });
 }
 
 function exactRow<Row extends Record<string, unknown>>(
@@ -242,6 +412,53 @@ async function activeAdministratorActor(
   return false;
 }
 
+async function activeAdministratorReader(
+  client: PostgresClient,
+  reader: ReturnType<typeof accessReadScope>,
+) {
+  const current = await client.query(
+    `SELECT actor_session.id
+     FROM sessions AS actor_session
+     JOIN users AS actor_user ON actor_user.id = actor_session.user_id
+     JOIN user_roles AS actor_assignment ON actor_assignment.user_id = actor_user.id
+     JOIN roles AS actor_role
+       ON actor_role.id = actor_assignment.role_id
+      AND actor_role.status = 'active'
+      AND actor_role.role_key = 'administrator'
+     JOIN role_capabilities AS actor_role_capability
+       ON actor_role_capability.role_id = actor_role.id
+     JOIN capabilities AS actor_capability
+       ON actor_capability.id = actor_role_capability.capability_id
+      AND actor_capability.status = 'active'
+      AND actor_capability.capability_key = $5
+     WHERE actor_session.id = $1
+       AND actor_session.version = $2::bigint
+       AND actor_session.user_id = $3
+       AND actor_session.authorization_version = $4::bigint
+       AND actor_session.token_hash IS NOT NULL
+       AND actor_session.csrf_hash IS NOT NULL
+       AND actor_session.revoked_at IS NULL
+       AND actor_session.issued_at >= actor_user.sessions_valid_after
+       AND actor_session.idle_expires_at > pg_catalog.statement_timestamp()
+       AND actor_session.absolute_expires_at > pg_catalog.statement_timestamp()
+       AND actor_user.status = 'active'
+       AND actor_user.authorization_version = $4::bigint
+     FOR SHARE OF actor_session, actor_user`,
+    [
+      reader.sessionId,
+      reader.sessionVersion,
+      reader.userId,
+      reader.authorizationVersion,
+      AUTHORIZATION_CAPABILITIES.accessAdminRead,
+    ],
+  );
+  if (current.rowCount === 1 && current.rows.length === 1) return true;
+  if (current.rowCount !== 0 || current.rows.length !== 0) {
+    throw new Error("PostgreSQL administration reader fence returned an invalid row count");
+  }
+  return false;
+}
+
 async function activeRoleId(client: PostgresClient, role: AdminAccessRoleKey) {
   const found = await client.query<{ id: unknown }>(
     `SELECT id::text AS id
@@ -353,6 +570,157 @@ export function createPostgresAdminAccessPersistenceRepository(
   }
 
   return Object.freeze({
+    async getAccessOverview(scope: AuthorizationRecordScope, now: number) {
+      const reader = accessReadScope(scope, now);
+      return withPostgresTransaction(
+        pool,
+        { ...transactionOptions, isolationLevel: "repeatable_read" },
+        async (client) => {
+          if (!await activeAdministratorReader(client, reader)) {
+            return { outcome: "actor_authorization_changed" as const };
+          }
+
+          const roleResult = await client.query<AccessOverviewRoleRow>(
+            `SELECT role_key, display_name, description
+             FROM roles
+             WHERE status = 'active'
+               AND role_key = ANY($1::text[])
+             ORDER BY pg_catalog.array_position($1::text[], role_key)`,
+            [ADMIN_ACCESS_ROLE_KEYS],
+          );
+          const roleRows = boundedRows(
+            roleResult,
+            ADMIN_ACCESS_ROLE_KEYS.length,
+            "PostgreSQL administration role projection",
+          );
+          if (roleRows.length !== ADMIN_ACCESS_ROLE_KEYS.length) {
+            throw new Error("PostgreSQL administration role projection is incomplete");
+          }
+          const roles = Object.freeze(roleRows.map(accessOverviewRole));
+
+          const peopleResult = await client.query<AccessOverviewUserRow>(
+            `WITH bounded_people AS MATERIALIZED (
+               SELECT employee.id,
+                      employee.email,
+                      employee.email_key,
+                      employee.display_name,
+                      employee.status,
+                      assigned_role.role_key,
+                      assigned_role.status AS role_status,
+                      employee.version
+               FROM users AS employee
+               LEFT JOIN user_roles AS assignment ON assignment.user_id = employee.id
+               LEFT JOIN roles AS assigned_role ON assigned_role.id = assignment.role_id
+               ORDER BY CASE WHEN employee.status = 'active' THEN 0 ELSE 1 END,
+                        pg_catalog.lower(employee.display_name), employee.email_key, employee.id
+               LIMIT $1
+             ),
+             project_scopes AS (
+               SELECT membership.user_id,
+                      pg_catalog.array_agg(
+                        membership.project_id::text
+                        ORDER BY membership.project_id::text
+                      ) AS project_ids
+               FROM project_memberships AS membership
+               JOIN bounded_people AS employee ON employee.id = membership.user_id
+               WHERE membership.status = 'active'
+               GROUP BY membership.user_id
+             ),
+             last_sign_ins AS (
+               SELECT sign_in.user_id,
+                      pg_catalog.max(sign_in.issued_at) AS last_signed_in_at
+               FROM sessions AS sign_in
+               JOIN bounded_people AS employee ON employee.id = sign_in.user_id
+               GROUP BY sign_in.user_id
+             )
+             SELECT employee.id::text AS id,
+                    employee.email,
+                    employee.display_name,
+                    employee.status,
+                    employee.role_key,
+                    employee.role_status,
+                    COALESCE(project_scopes.project_ids, ARRAY[]::text[]) AS project_ids,
+                    last_sign_ins.last_signed_in_at,
+                    employee.version::text AS version
+             FROM bounded_people AS employee
+             LEFT JOIN project_scopes ON project_scopes.user_id = employee.id
+             LEFT JOIN last_sign_ins ON last_sign_ins.user_id = employee.id
+             ORDER BY CASE WHEN employee.status = 'active' THEN 0 ELSE 1 END,
+                      pg_catalog.lower(employee.display_name), employee.email_key, employee.id`,
+            [MAX_ACCESS_USERS + 1],
+          );
+          const people = Object.freeze(boundedRows(
+            peopleResult,
+            MAX_ACCESS_USERS,
+            "PostgreSQL administration people projection",
+          ).map(accessOverviewPerson));
+
+          const invitationResult = await client.query<AccessOverviewInvitationRow>(
+            `SELECT invitation.id::text AS id,
+                    invitation.email,
+                    intended_role.role_key,
+                    intended_role.status AS role_status,
+                    COALESCE(
+                      pg_catalog.array_agg(
+                        assignment.project_id::text
+                        ORDER BY assignment.project_id::text
+                      ) FILTER (WHERE assignment.project_id IS NOT NULL),
+                      ARRAY[]::text[]
+                    ) AS project_ids,
+                    invitation.created_at,
+                    invitation.expires_at,
+                    invitation.version::text AS version
+             FROM invitations AS invitation
+             JOIN roles AS intended_role ON intended_role.id = invitation.role_id
+             LEFT JOIN invitation_project_assignments AS assignment
+               ON assignment.invitation_id = invitation.id
+             WHERE invitation.status = 'pending'
+               AND invitation.expires_at > pg_catalog.statement_timestamp()
+             GROUP BY invitation.id, invitation.email, invitation.email_key,
+                      intended_role.role_key, intended_role.status, invitation.created_at,
+                      invitation.expires_at, invitation.version
+             ORDER BY invitation.expires_at, invitation.email_key, invitation.id
+             LIMIT $1`,
+            [MAX_ACCESS_INVITATIONS + 1],
+          );
+          const invitations = Object.freeze(boundedRows(
+            invitationResult,
+            MAX_ACCESS_INVITATIONS,
+            "PostgreSQL administration invitation projection",
+          ).map(accessOverviewInvitation));
+
+          const projectResult = await client.query<AccessOverviewProjectRow>(
+            `SELECT id::text AS id, project_number, name, status
+             FROM projects
+             ORDER BY project_number, id
+             LIMIT $1`,
+            [MAX_ACCESS_PROJECTS + 1],
+          );
+          const projects = Object.freeze(boundedRows(
+            projectResult,
+            MAX_ACCESS_PROJECTS,
+            "PostgreSQL administration project projection",
+          ).map(accessOverviewProject));
+
+          const overview: AdminAccessOverview = Object.freeze({
+            summary: Object.freeze({
+              activePeopleCount: people.filter(({ status }) => status === "active").length,
+              activeAdministratorCount: people.filter(
+                ({ status, role }) => status === "active" && role === "administrator",
+              ).length,
+              pendingInvitationCount: invitations.length,
+            }),
+            roles,
+            people,
+            invitations,
+            projects,
+            generatedAt: reader.checkedAt.getTime(),
+          });
+          return { outcome: "accepted" as const, overview };
+        },
+      );
+    },
+
     async createInvitation(intent: CreateAdminInvitationIntent) {
       assertPersistenceUuid(intent.id, "Invitation ID");
       const email = normalizedInvitationEmail(intent.email);
@@ -611,6 +979,21 @@ export function createPostgresAdminAccessPersistenceRepository(
           parsePostgresUuid(row.project_id, "PostgreSQL current project membership ID")));
         if (new Set(previousProjectIds).size !== previousProjectIds.length) {
           throw new Error("PostgreSQL current project memberships contain duplicates");
+        }
+        if (
+          user.role_key === role
+          && previousProjectIds.length === projectIds.length
+          && previousProjectIds.every((projectId, index) => projectId === projectIds[index])
+        ) {
+          await appendDenied(
+            client,
+            intent.audit,
+            "authorization.user_access_changed",
+            "user",
+            intent.userId,
+            "unchanged_access",
+          );
+          return { outcome: "conflict" as const };
         }
         const accessHistoryAudit: SecurityAuditEvent = Object.freeze({
           ...intent.audit,

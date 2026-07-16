@@ -148,6 +148,56 @@ const CLIENT_FIXTURES = Object.freeze([
   }),
 ]);
 
+const ACCESS_OVERVIEW_FIXTURE = Object.freeze({
+  summary: Object.freeze({
+    activePeopleCount: 2,
+    activeAdministratorCount: 1,
+    pendingInvitationCount: 1,
+  }),
+  roles: Object.freeze([
+    Object.freeze({ key: "administrator", displayName: "Administrator", description: "Company-wide administration." }),
+    Object.freeze({ key: "office_operations", displayName: "Office Operations", description: "Company-wide nonfinancial operations." }),
+    Object.freeze({ key: "project_manager", displayName: "Project Manager", description: "Assigned-project nonfinancial operations." }),
+  ]),
+  people: Object.freeze([
+    Object.freeze({
+      id: ROLE_IDENTITIES.administrator.userId,
+      displayName: "FCI TEST — DO NOT USE Administrator",
+      email: ROLE_IDENTITIES.administrator.email,
+      role: "administrator",
+      status: "active",
+      projectIds: Object.freeze([]),
+      lastSignedInAt: NOW - 30_000,
+      version: "1",
+    }),
+    Object.freeze({
+      id: TARGET_USER_ID,
+      displayName: "FCI TEST — DO NOT USE Office",
+      email: "office.person@cherryhillfci.com",
+      role: "office_operations",
+      status: "active",
+      projectIds: Object.freeze([]),
+      lastSignedInAt: null,
+      version: "2",
+    }),
+  ]),
+  invitations: Object.freeze([
+    Object.freeze({
+      id: INVITATION_ID,
+      email: "pending.pm@cherryhillfci.com",
+      role: "project_manager",
+      status: "pending",
+      projectIds: Object.freeze([PROJECT_A]),
+      createdAt: NOW - 60_000,
+      expiresAt: NOW + 7 * 24 * 60 * 60_000,
+      version: "1",
+    }),
+  ]),
+  projects: Object.freeze(PROJECT_FIXTURES.map(({ id, projectNumber, name, status }) =>
+    Object.freeze({ id, projectNumber, name, status }))),
+  generatedAt: NOW,
+});
+
 function visibleProjectIds(scope) {
   return scope.kind === "company" ? [PROJECT_A, PROJECT_B] : [PROJECT_A];
 }
@@ -292,6 +342,13 @@ async function startHarness(options = {}) {
     newId: randomUUID,
   });
   const adminAccess = {
+    async getAccessOverview(scope, checkedAt) {
+      adminAccessCalls.push({ method: "getAccessOverview", scope, checkedAt });
+      return options.adminResults?.getAccessOverview ?? {
+        outcome: "accepted",
+        overview: ACCESS_OVERVIEW_FIXTURE,
+      };
+    },
     async createInvitation(intent) {
       adminAccessCalls.push({ method: "createInvitation", intent });
       return options.adminResults?.createInvitation ?? {
@@ -576,6 +633,64 @@ test("Administrator-only Gmail, Calendar, and share actions deny Office before c
   }
 });
 
+test("Administrator access projection is bounded, capability-gated, and race-fenced", async () => {
+  const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+  try {
+    const response = await running.request("/api/v1/admin/access");
+    assert.equal(response.status, 200);
+    assert.deepEqual((await json(response)).data, ACCESS_OVERVIEW_FIXTURE);
+    assert.deepEqual(running.adminAccessCalls.map(({ method }) => method), ["getAccessOverview"]);
+    assert.equal(running.adminAccessCalls[0].checkedAt, NOW);
+    assert.equal(running.adminAccessCalls[0].scope.kind, "company");
+    assert.equal(running.adminAccessCalls[0].scope.includeFinancial, true);
+    assert.deepEqual(
+      running.repositoryCalls.capabilityChecks.map(({ capabilityKey }) => capabilityKey),
+      [AUTHORIZATION_CAPABILITIES.accessAdminRead],
+    );
+    assert.equal(running.repositoryCalls.csrf.length, 0);
+
+    const query = await running.request("/api/v1/admin/access?section=roles");
+    assert.equal(query.status, 400);
+    assert.deepEqual(await json(query), { error: "invalid_query" });
+
+    const wrongMethod = await running.request("/api/v1/admin/access", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+    });
+    assert.equal(wrongMethod.status, 405);
+    assert.equal(wrongMethod.headers.get("allow"), "GET");
+    assert.deepEqual(await json(wrongMethod), { error: "method_not_allowed" });
+  } finally {
+    await running.close();
+  }
+
+  for (const role of [AUTHORIZATION_ROLES.officeOperations, AUTHORIZATION_ROLES.projectManager]) {
+    const denied = await startHarness({ role });
+    try {
+      const response = await denied.request("/api/v1/admin/access");
+      assert.equal(response.status, 403, role);
+      assert.deepEqual(await json(response), { error: "forbidden" });
+      assert.equal(denied.adminAccessCalls.length, 0);
+    } finally {
+      await denied.close();
+    }
+  }
+
+  const changed = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    adminResults: { getAccessOverview: { outcome: "actor_authorization_changed" } },
+  });
+  try {
+    const response = await changed.request("/api/v1/admin/access");
+    assert.equal(response.status, 401);
+    assert.deepEqual(await json(response), { error: "authentication_required" });
+    assertSessionCleared(response);
+  } finally {
+    await changed.close();
+  }
+});
+
 test("Administrator access routes expose only the five fixed workflows with transactional intents", async () => {
   const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
   try {
@@ -820,6 +935,13 @@ test("access-administration routes enforce origin, CSRF, closed bodies, and safe
         projectIds: [],
         reason: "Test",
       }, "access_state_stale"],
+    ["unchanged access", { setUserAccess: { outcome: "conflict" } },
+      `/api/v1/admin/users/${TARGET_USER_ID}/access`, {
+        expectedVersion: "1",
+        role: "office_operations",
+        projectIds: [],
+        reason: "No-op test",
+      }, "access_conflict"],
     ["final admin", { disableUser: { outcome: "final_active_administrator" } },
       `/api/v1/admin/users/${TARGET_USER_ID}/disable`, {
         expectedVersion: "1",

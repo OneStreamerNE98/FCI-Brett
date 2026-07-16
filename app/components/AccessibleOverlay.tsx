@@ -10,6 +10,7 @@ type AccessibleOverlayProps = {
   children: ReactNode;
   closeOnBackdrop?: boolean;
   contentClassName: string;
+  fallbackFocusRef?: RefObject<HTMLElement | null>;
   onClose: () => void;
   returnFocusRef?: RefObject<HTMLElement | null>;
   variant?: "modal" | "drawer";
@@ -103,6 +104,7 @@ export function AccessibleOverlay({
   children,
   closeOnBackdrop = true,
   contentClassName,
+  fallbackFocusRef,
   onClose,
   returnFocusRef,
   variant = "modal",
@@ -128,6 +130,7 @@ export function AccessibleOverlay({
     const token = tokenRef.current;
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const preferredReturnTarget = returnFocusRef?.current;
+    const fallbackReturnTarget = fallbackFocusRef?.current;
     overlayStack.push(token);
     const unlockBodyScroll = lockBodyScroll();
     const restoreOutsideInteraction = inertOutside(backdrop);
@@ -179,10 +182,12 @@ export function AccessibleOverlay({
         ? preferredReturnTarget
         : previouslyFocused?.isConnected
           ? previouslyFocused
-          : null;
+          : fallbackReturnTarget?.isConnected
+            ? fallbackReturnTarget
+            : null;
       if (returnTarget && !returnTarget.closest("[inert]")) returnTarget.focus();
     };
-  }, [returnFocusRef]);
+  }, [fallbackFocusRef, returnFocusRef]);
 
   function closeFromBackdrop(event: MouseEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget) return;

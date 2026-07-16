@@ -1,6 +1,6 @@
 # Administration and Access plan
 
-Status: Approved first-release design; fixed source-only administration core implemented on `codex/admin-access-core`; page pending
+Status: Approved first-release design; fixed source-only administration core and People & Access page implemented; runtime composition and deployment remain pending
 
 Reviewed: July 16, 2026
 
@@ -108,7 +108,7 @@ Add an **Activity** tab before a second-user or real-data rollout. It uses a sep
 ## Bounded implementation branches
 
 1. `codex/admin-access-core` — implemented in source, unapplied: migration version 4 seeds only the fixed role/capability catalog, binds invitations to one role and any Project Manager projects, and adds the five fixed command APIs with reasons, post-authorization actor-session fencing, audit, CSRF, optimistic concurrency, session invalidation, expired-invitation replacement, and final-Administrator protection. It requires empty version-3 role/access data; a populated database needs a separately reviewed backfill. It does not seed live users or issue a production session.
-2. `codex/admin-access-page` — next: add the bounded Administrator-only read projection and build `/management/access` with the People list, read-only role guide, five workflows, direct-route denials, responsive/accessibility coverage, and rendered browser tests. Keep unsupported actions absent rather than presenting a large disabled console.
+2. `codex/admin-access-page` — implemented in source: one bounded Administrator-only `GET /api/v1/admin/access` projection plus `/management/access` with the People table, pending invitations, read-only role guide, five workflows, direct-route denials, stale/final-Administrator handling, and responsive/accessibility browser coverage. The current Sites route is only a presentation/test adapter: it has no production employee-session or CSRF bootstrap and is intentionally not deployed. Unsupported actions remain absent rather than appearing as a large disabled console.
 3. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged audit reader and Activity tab with bounded filters and keyset pagination.
 4. `codex/admin-field-links`: when the field-assignment model is scheduled, add the distinct hashed exact-project Field Link lifecycle, read route, and Field Links tab.
 

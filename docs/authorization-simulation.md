@@ -1,6 +1,6 @@
 # Authorization simulation and source-only employee routes
 
-Status: Approved policy, source-only Cloud Run employee routes, and fixed administration commands implemented; not migrated, applied, deployed, or connected to live identity or providers
+Status: Approved policy, source-only Cloud Run employee routes, fixed administration commands, and People & Access projection/page implemented; not migrated, applied, deployed, or connected to live identity or providers
 
 Decision dates: July 15–16, 2026
 
@@ -73,11 +73,13 @@ These are source contracts only. They have not been applied to a database, deplo
 - Audit metadata records the operation, principal kind, and project-scoped state without raw credentials or request bodies.
 - The runtime database role remains append-only for security-audit records. `audit.read` is Administrator-only policy, but the separately privileged audit reader, route, and UI do not exist.
 - The source-only Administrator command boundary can create or revoke an invitation, change one fixed role and any Project Manager assignments, disable a user, or sign a user out everywhere. These routes use exact same-origin/CSRF checks, fixed request schemas, optimistic concurrency, transactionally coupled exact-scope audit, session invalidation, and concurrent final-active-Administrator protection. After the global mutation lock, every command rechecks and row-locks the exact actor session/user/current Administrator capability with database statement time; access loss or expiry while a slow request is in flight fails as a generic signed-out response. Creating an invitation expires any same-email pending credential whose seven-day deadline has passed before inserting its replacement. The fixed role/capability catalog has no mutation route, and Field Links remain absent.
+- One bounded `GET /api/v1/admin/access` projection rechecks and share-locks the exact current Administrator session/user and `access_admin.read` grant in a repeatable-read transaction before returning fixed role descriptions, at most 100 people, 100 live pending invitations, and 500 lightweight project choices. It reports last sign-in from session issuance rather than mislabeling the currently untended `last_seen_at` value as activity. It fails closed on truncation, malformed role/scope state, or a post-authorization actor change and never returns credentials, capability arrays, session identifiers, audit records, client data, or financial values.
+- A dedicated source-only `/management/access` screen presents three summary counts, one People table, one pending-invitation list, three compact read-only role explanations, and only the five approved workflows. It reloads the single projection after confirmed writes, handles stale/final-Administrator/session-ended responses explicitly, and has direct-route, keyboard, mobile/tablet/desktop, 200%-equivalent reflow, and accessibility coverage. The current Sites shell remains only a presentation/test adapter and deliberately has no production session/CSRF bridge.
 
 ## Explicitly deferred
 
 - Durable invitation fulfillment; Google Workspace OIDC; production session issuance, rotation, and sliding idle renewal; and live login. Invitation role and Project Manager project bindings plus the fixed role/capability seeds now exist only in unapplied source migration version 4.
-- The bounded Administrator read/list projection and Management → People & Access page described in the [Administration and Access plan](administration-and-access-plan.md). The five fixed command APIs exist in source, but no page or live invitation delivery exists.
+- Production composition of the source-only Management → People & Access screen with employee session issuance and an in-memory CSRF bootstrap. The page and API contracts exist, but there is still no live invitation fulfillment/delivery, migration/apply, or deployment.
 - Durable hashed Field Lead link creation, delivery, lookup, revocation, and browser behavior. The snapshot evaluator is not sufficient for a route.
 - Production file/object-storage and Google Gmail/Calendar/Drive action adapters, direct Google access decisions, and provider configuration.
 - Lead/client/contact and project-operation mutation route composition beyond the approved capability ceiling.
@@ -90,7 +92,7 @@ The source work reduces implementation risk but does not change the no-go decisi
 The owner-facing design is intentionally small for a roughly 20-person company. Read the canonical [Administration and Access plan](administration-and-access-plan.md). Role permissions, invitation/session lifetimes, and the domain rule are fixed read-only policy; the first page does not expose a capability matrix or per-user exceptions.
 
 1. `codex/admin-access-core` — implemented in source, unapplied: fixed schema/catalog and command APIs for invite, revoke invitation, change one role or Project Manager assignments, disable access, and sign out everywhere, with reasons, CSRF, optimistic concurrency, transactionally coupled audit, session invalidation, and concurrent final-Administrator protection.
-2. `codex/admin-access-page` — next: add the bounded Administrator read projection and Management → People & Access with one people/invitation list, a read-only role guide, the five workflows, and direct-route, responsive, accessibility, and rendered browser evidence.
+2. `codex/admin-access-page` — implemented in source: bounded Administrator read projection and Management → People & Access with one people/invitation list, a read-only role guide, the five workflows, and direct-route, responsive, accessibility, and rendered browser evidence. Production employee-session/CSRF composition remains deferred.
 3. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged minimized Activity reader and tab. Audit writes remain part of the core branch.
 4. `codex/admin-field-links`: when the field-assignment workflow is scheduled, add the separate hashed exact-project Field Link lifecycle and tab. Do not reuse file links or create Field Lead users.
 
