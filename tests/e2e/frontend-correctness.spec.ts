@@ -61,7 +61,7 @@ test("settings never expose editable defaults after a failed load and support re
   });
 
   await openReadyApp(page);
-  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Settings · In development" }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings · In development" }).click();
   const accountError = page.getByRole("alert").filter({ hasText: "Saved settings could not be loaded" });
   await expect(accountError).toBeVisible();
   await expect(page.getByRole("button", { name: "Save my preferences" })).toHaveCount(0);
@@ -81,10 +81,11 @@ test("settings never expose editable defaults after a failed load and support re
 });
 
 test("Google OAuth query results are consumed in an effect without dropping other parameters", async ({ page }) => {
-  await openReadyApp(page, "/?google=connected&keep=1");
-  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Settings · In development" }).click();
-  await page.getByRole("button", { name: "Google Workspace", exact: true }).click();
+  await page.goto("/settings?section=google-workspace&google=connected&keep=1");
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Google Workspace", exact: true })).toHaveAttribute("aria-current", "page");
 
   await expect.poll(() => new URL(page.url()).searchParams.has("google")).toBe(false);
   expect(new URL(page.url()).searchParams.get("keep")).toBe("1");
+  expect(new URL(page.url()).searchParams.get("section")).toBe("google-workspace");
 });

@@ -19,7 +19,7 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 
 - [x] Finish the shared accessible dialog/drawer foundation for every existing form and review workflow.
 - [x] Add typed success, information, warning, and error feedback; persistent errors use an alert icon, explicit dismissal, and retry where the operation is safe to repeat.
-- [ ] Give each major page a durable URL so refresh, Back, bookmarks, and support links preserve context.
+- [x] Give each major page a durable URL so refresh, Back, bookmarks, and support links preserve context. Project status, Settings section, and Inbox bucket use bounded canonical query state; record drawers and free-form search remain intentionally transient.
 - [x] Give global search full keyboard behavior and make disclosure popovers close on Escape/outside click without false menu semantics.
 - [ ] Split the large client component into route, feature, and shared-component modules.
 - [ ] Add independent loading, error, retry, and last-updated states instead of one all-or-nothing screen state.
@@ -92,11 +92,11 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 8. **Completed in source; unapplied infrastructure definitions:** safe variables, costed core/profile definitions, and an on-demand staging procedure now exist. Missing owner inputs remain explicit provisioning blockers.
 9. **Completed in source; unapplied production persistence boundary:** remaining PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, exact runtime privileges, and provider-neutral object storage now exist without changing Sites behavior.
 10. **Completed source-only authorization and narrow route boundary:** approved role ceilings, secure-session/CSRF denial rules, scoped queries, fixed-operation provider gates, and dashboard/search/project/client/logout source routes exist. File/Gmail/Calendar paths are gated but provider-unavailable. No durable admission, session issuance, migration/apply, deployment, or live data is enabled. See [Authorization simulation](authorization-simulation.md).
-11. **Administration core complete in source, unapplied; page next:** the fixed three-role catalog and five people-access commands now exist with audit, session invalidation, version fences, and final-Administrator protection. Next build Management → People & Access with a bounded read projection and rendered denial evidence. Keep role presets and security policy read-only; add Activity before rollout and Field Links only with the field-assignment model.
+11. **Administration and Activity source milestones merged; production boundary unapplied:** the fixed catalog/commands, bounded People projection/page, and minimized Activity reader/tab now exist with rendered denial evidence. Their presentation adapter is deployed only to private Sites development; production migrations 4–5, reader grants, employee-session/CSRF composition, and live data remain unapplied. Keep role presets and security policy read-only; add Field Links only with the field-assignment model.
 12. **Staging-proof worker:** create staging only with separate approval to prove migration, restore, reconciliation, rollback/forward-fix, and the application smoke path.
 13. **Workspace OIDC worker:** implement and verify live employee login only after the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
 14. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
-15. **Frontend structure worker:** durable URLs, component split, broader partial-failure/freshness states, and responsive/accessibility tests.
+15. **Frontend structure worker:** durable URLs are implemented in source; component splitting, broader partial-failure/freshness states, and responsive/accessibility tests remain.
 16. **Workspace data-connector worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
 
 Do not assign scheduling, outbound messaging, or AI document indexing until the production platform and authorization foundation are accepted.
@@ -149,13 +149,13 @@ See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) for th
 
 ## Next bounded developer assignments
 
-After the source-only administration page is accepted, continue the administration surface according to the [Administration and Access plan](administration-and-access-plan.md):
+Continue the administration surface according to the [Administration and Access plan](administration-and-access-plan.md):
 
-1. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged, projection-limited Activity reader and tab.
+1. `codex/admin-audit-viewer`: merged in PR #21 with the separately privileged, projection-limited Activity reader and tab; production migration 5 and its reader grant remain unapplied.
 2. `codex/admin-field-links`: when field assignments are scheduled, add a separate hashed exact-project Field Link lifecycle and later tab.
 
 Do not add custom roles, permission toggles, per-user grants, editable invitation/session policy, per-device session management, user deletion, or re-enablement in the first release.
 
-Each branch remains source-only. Preserve Sites development and the Google test connector; keep employee OIDC, live Workspace configuration, a second user, real data, migration apply, route cutover, infrastructure apply, and deployment disabled.
+Production-facing work remains source-only. Preserve Sites development and the Google test connector; the People/Activity presentation adapter is the only administration deployment. Keep employee OIDC, live Workspace configuration, a second user, real data, PostgreSQL migration/grant apply, route cutover, infrastructure apply, and production deployment disabled.
 
-The runtime foundation, infrastructure definitions, production persistence boundary, owner-approved role/capability/project policy, authorization simulation, employee route composition, fixed administration persistence/commands, and People & Access read projection/UI now exist in source. Invitation fulfillment and session issuance/UI bootstrap, the Activity audit reader, Field Links, Google Workspace OIDC, live provider adapters, migration and recovery proof, and production authorization rollout remain blocked or incomplete until their acceptance gates pass.
+The runtime foundation, infrastructure definitions, production persistence boundary, owner-approved role/capability/project policy, authorization simulation, employee route composition, all three Administration and Access source branches, and durable primary-view routing now exist in source. Invitation fulfillment and production session/CSRF bootstrap, PostgreSQL migration/grant apply, Field Links, Google Workspace OIDC, live provider adapters, migration and recovery proof, and production authorization rollout remain blocked or incomplete until their acceptance gates pass.

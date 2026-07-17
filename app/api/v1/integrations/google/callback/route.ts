@@ -7,7 +7,7 @@ import { ensureWorkspaceSchema } from "../../../_workspace-data";
 const OAUTH_NONCE_COOKIE = "fci_google_oauth_nonce";
 
 function appRedirect(request: NextRequest, result: string) {
-  return NextResponse.redirect(new URL(`/?google=${encodeURIComponent(result)}`, request.url), 302);
+  return NextResponse.redirect(new URL(`/settings?section=google-workspace&google=${encodeURIComponent(result)}`, request.url), 302);
 }
 
 export async function GET(request: NextRequest) {

@@ -24,6 +24,7 @@ For a 20-person company, operations must be simple enough that two named people 
 - [x] Create one append-only audit event model with executor/originator, action, entity type/ID, timestamp, result, reason, request/correlation ID, and bounded safe metadata. The source migration, mutation-blocking trigger, insert-only grant, and atomic repository helper exist but remain unapplied; operational route coverage is tracked separately. See [Production persistence boundary](../production-persistence-boundary.md).
 - [ ] Audit login outcomes, session revocation, role/project changes, connector changes, Gmail preview/file/draft actions, Drive sharing/provisioning, Calendar writes, exports, and recovery actions.
 - [ ] Build an Administrator audit viewer with filters and export controls.
+  - The minimized read-only Activity viewer with fixed filters and bounded pagination is merged, and its presentation adapter is deployed only to private Sites development. Export controls, retention policy, production migration 5/reader grants, and Cloud Run composition remain open.
 - [ ] Approve retention periods for client records, email copies, attachments, meeting transcripts, field photos, audit events, and backups.
 - [ ] Document client/employee data export, correction, and deletion procedures.
 - [ ] Prohibit tokens, message bodies, secrets, and unnecessary personal data in logs.

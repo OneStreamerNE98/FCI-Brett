@@ -6,11 +6,12 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("ships the Floor Coverings International product instead of starter content", async () => {
-  const [page, layout, app, css, packageJson] = await Promise.all([
-    read("app/page.tsx"), read("app/layout.tsx"), read("app/FloorOpsApp.tsx"),
+  const [page, routePage, layout, app, css, packageJson] = await Promise.all([
+    read("app/page.tsx"), read("app/OperationsRoutePage.tsx"), read("app/layout.tsx"), read("app/FloorOpsApp.tsx"),
     read("app/globals.css"), read("package.json"),
   ]);
-  assert.match(page, /FloorOpsApp/);
+  assert.match(page, /OperationsRoutePage/);
+  assert.match(routePage, /FloorOpsApp/);
   assert.match(layout, /Floor Coverings International \| Commercial Operations/);
   assert.match(app, /floor-coverings-international-logo\.png/);
   assert.match(app, /Leads & opportunities/);

@@ -11,11 +11,11 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Workspace resources | Workspace administrator | Not started | Create the Shared Drive, directory Sheet, mailbox, and two calendars. |
 | Google Cloud and OAuth | Workspace/Cloud administrator | Company-account project candidate reported; Cloud verification pending | Inventory Brett's candidate and bring the non-secret findings back for approval before any API, IAM, billing, OAuth, or Admin-console change. |
 | Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
-| Staff Google login and roles | Codex/developer | Approved policy, source-only employee routes, People & Access page, and Activity viewer implemented in source; OIDC/session issuance/providers pending | Review and merge the minimized audit-viewer branch; keep migration/apply, deployment, live OIDC, and additional users gated. |
+| Staff Google login and roles | Codex/developer | Approved policy; People & Access and Activity are merged, with only their presentation adapter deployed to private Sites development | Keep PostgreSQL migration/grants, Cloud Run employee-session/CSRF composition, live OIDC/providers, and additional users gated. |
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
-| Frontend multi-user hardening | Codex/developer | In progress | Cloud Run dashboard/search/project/client/logout APIs are source-composed; connect an approved identity/UI only after platform gates, then add freshness, durable URLs, and conflict handling. |
+| Frontend multi-user hardening | Codex/developer | In progress; durable primary URLs and bounded bookmarkable state implemented in the current source branch | Review the durable-route branch, then continue feature splitting, freshness, partial-failure, conflict, and broader accessibility work. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime boundary approved; broader decisions open | Approve system boundaries, roles, state machines, messaging/file policy, and authoritative external systems. |
@@ -45,11 +45,10 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 ## Recommended next source branches
 
-1. Review and merge `codex/admin-audit-viewer`, which implements the separately privileged minimized Activity reader and tab in source without applying database privileges or admitting users.
-2. Build `codex/frontend-durable-routes` for primary-view URLs plus refresh, Back, bookmark, and incremental feature-split coverage.
-3. Complete the remaining frontend type/contrast, responsive/accessibility, and browser console-health work.
-4. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
-5. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
+1. Review and merge `codex/frontend-durable-routes`, which adds primary-view URLs plus direct-entry, refresh, Back/Forward, bookmark, mobile, 404, and denial coverage without changing hosted configuration.
+2. Complete the remaining frontend type/contrast, responsive/accessibility, console-health, and incremental feature-split work.
+3. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
+4. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 

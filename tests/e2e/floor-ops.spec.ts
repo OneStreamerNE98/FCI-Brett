@@ -145,8 +145,8 @@ test("feature labels distinguish working, in-development, setup-required, and pl
 
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
   await expect(page.getByRole("status", { name: "Development environment; test data only" })).toContainText("Development environment · Test data only");
-  await expect(navigation.getByRole("button", { name: "Overview · Working" })).toContainText("Working");
-  await expect(navigation.getByRole("button", { name: "Projects · In development" })).toContainText("In development");
+  await expect(navigation.getByRole("link", { name: "Overview · Working" })).toContainText("Working");
+  await expect(navigation.getByRole("link", { name: "Projects · In development" })).toContainText("In development");
 
   await page.getByRole("button", { name: "Scheduling setup" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Schedule & crews" })).toBeVisible();
@@ -154,7 +154,7 @@ test("feature labels distinguish working, in-development, setup-required, and pl
   await expect(page.locator(".page-heading .feature-state")).toHaveText("Planned");
   await expect(page.getByRole("button", { name: /publish|assign/i })).toHaveCount(0);
 
-  await navigation.getByRole("button", { name: "Projects · In development" }).click();
+  await navigation.getByRole("link", { name: "Projects · In development" }).click();
   const row = page.getByRole("button", { name: new RegExp(projectName) });
   await row.click();
   const drawer = page.getByRole("dialog", { name: new RegExp(projectNumber) });
@@ -171,7 +171,7 @@ test("390px project rows preserve schedule, site, and value metadata", async ({ 
   await waitForLiveRecords(page);
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Projects · In development" }).click();
+  await page.getByRole("link", { name: "Projects · In development" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
 
   const row = page.getByRole("button", { name: new RegExp(projectName) });

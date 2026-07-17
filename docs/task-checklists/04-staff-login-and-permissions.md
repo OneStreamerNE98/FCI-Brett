@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with policy approval from the business owner
 
-Status: Approved policy, source-only employee routes and People & Access contracts merged; minimized Activity viewer implemented in the current source branch; live OIDC, session issuance/UI bootstrap, providers, migration/apply, and deployment remain unimplemented
+Status: Approved policy and all three Administration and Access source branches merged; the People/Activity presentation adapter is deployed only to private Sites development. Live OIDC, production session/CSRF composition, providers, PostgreSQL migration/grants, and production deployment remain unimplemented
 
 Local simulation depends on: Recorded first-rollout sensitive-action decisions and the production persistence boundary
 
@@ -89,8 +89,8 @@ These decisions authorize local policy and route work only. They do not set the 
 ## Administration page follow-on
 
 - [x] Implement `codex/admin-access-core` in source: fixed APIs for invite/revoke, one-role and Project Manager assignment changes, disablement, and sign-out-everywhere. The three role presets and invitation/session policy remain read-only; no per-user overrides exist; the commands enforce the immutable allowlist, required reasons, CSRF, optimistic concurrency, transactionally coupled audit, session invalidation, and final-Administrator protection. Migration version 4 remains unapplied.
-- [x] Build `codex/admin-access-page` in source as Management → People & Access with one bounded people/invitation projection, a read-only role guide, five workflows, optimistic-conflict and final-Administrator feedback, and direct-route, responsive/accessibility, and rendered denial evidence. No custom roles, permission matrix, per-device sessions, deletion, or re-enablement were added. Runtime employee-session/CSRF composition and deployment remain open.
-- [x] Implement `codex/admin-audit-viewer` in the current source branch with a separately privileged minimized reader, fixed filters, 25-row keyset pagination, and the responsive/accessibility-tested Activity tab. No database privilege was applied and nothing was deployed. Build `codex/admin-field-links` only when the field-assignment model is scheduled.
+- [x] Build and merge `codex/admin-access-page` as Management → People & Access with one bounded people/invitation projection, a read-only role guide, five workflows, optimistic-conflict and final-Administrator feedback, and direct-route, responsive/accessibility, and rendered denial evidence. No custom roles, permission matrix, per-device sessions, deletion, or re-enablement were added. Its private Sites presentation adapter is deployed; production employee-session/CSRF composition remains open.
+- [x] Merge `codex/admin-audit-viewer` with a separately privileged minimized reader, fixed filters, 25-row keyset pagination, and the responsive/accessibility-tested Activity tab. The private Sites presentation adapter is deployed, but production migration 5, the database reader privilege, and Cloud Run composition remain unapplied or undeployed. Build `codex/admin-field-links` only when the field-assignment model is scheduled.
 
 ## Completion result
 

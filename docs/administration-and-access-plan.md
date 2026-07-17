@@ -1,8 +1,8 @@
 # Administration and Access plan
 
-Status: Approved first-release design; fixed administration core and People & Access page merged, with the minimized Activity viewer implemented in the current source branch; runtime composition and deployment remain pending
+Status: Approved first-release design; all three Administration and Access source branches are merged. The private Sites development deployment includes the People/Activity presentation adapter; production runtime composition, PostgreSQL migration/grants, and live identity remain pending
 
-Reviewed: July 16, 2026
+Reviewed: July 17, 2026
 
 Audience: Business owner, application Administrators, and developers
 
@@ -108,11 +108,11 @@ The **Activity** tab is implemented in source before a second-user or real-data 
 ## Bounded implementation branches
 
 1. `codex/admin-access-core` — implemented in source, unapplied: migration version 4 seeds only the fixed role/capability catalog, binds invitations to one role and any Project Manager projects, and adds the five fixed command APIs with reasons, post-authorization actor-session fencing, audit, CSRF, optimistic concurrency, session invalidation, expired-invitation replacement, and final-Administrator protection. It requires empty version-3 role/access data; a populated database needs a separately reviewed backfill. It does not seed live users or issue a production session.
-2. `codex/admin-access-page` — implemented in source: one bounded Administrator-only `GET /api/v1/admin/access` projection plus `/management/access` with the People table, pending invitations, read-only role guide, five workflows, direct-route denials, stale/final-Administrator handling, and responsive/accessibility browser coverage. The current Sites route is only a presentation/test adapter: it has no production employee-session or CSRF bootstrap and is intentionally not deployed. Unsupported actions remain absent rather than appearing as a large disabled console.
-3. `codex/admin-audit-viewer` — implemented in the current source branch: a separately privileged, minimized `GET /api/v1/admin/audit` reader plus an independently loaded Activity tab with fixed filters, 25-row keyset pagination, Administrator-only route and presentation denials, and responsive/accessibility browser coverage. Source least privilege permits reads only through a security-barrier minimized projection; the branch does not expose raw audit fields, export data, apply database privileges, or deploy the page.
+2. `codex/admin-access-page` — merged in source: one bounded Administrator-only `GET /api/v1/admin/access` projection plus `/management/access` with the People table, pending invitations, read-only role guide, five workflows, direct-route denials, stale/final-Administrator handling, and responsive/accessibility browser coverage. Its presentation/test adapter is deployed only to private Sites development; it has no production employee-session or CSRF bootstrap. Unsupported actions remain absent rather than appearing as a large disabled console.
+3. `codex/admin-audit-viewer` — merged in PR #21: a separately privileged, minimized `GET /api/v1/admin/audit` reader plus an independently loaded Activity tab with fixed filters, 25-row keyset pagination, Administrator-only route and presentation denials, and responsive/accessibility browser coverage. Source least privilege permits reads only through a security-barrier minimized projection; raw audit fields and export data remain unavailable. The private Sites development presentation adapter is deployed, but production migration 5, the reader grant, Cloud Run employee-session/CSRF composition, and live audit data remain unapplied or undeployed.
 4. `codex/admin-field-links`: when the field-assignment model is scheduled, add the distinct hashed exact-project Field Link lifecycle, read route, and Field Links tab.
 
-The first two branches are merged, and the third is implemented in the current source branch as the final source-only Administration and Access milestone. Audit writes are part of the core branch, while the minimized reader remains separately privileged. Field Links do not block the People or Activity views because no field-assignment workflow exists yet.
+All three Administration and Access source branches are merged. Audit writes are part of the core branch, while the minimized reader remains separately privileged. Field Links do not block the People or Activity views because no field-assignment workflow exists yet.
 
 ## Not included
 
@@ -124,10 +124,10 @@ The first two branches are merged, and the third is implemented in the current s
 - User deletion or re-enablement
 - Bulk import, Google Group synchronization, or direct Google sharing management
 - Connector administration, recovery controls, job retry, or infrastructure settings
-- Live OIDC, session issuance, migration/apply, deployment, a second user, or real client data
+- Live OIDC, session issuance, migration/apply, production runtime deployment, a second user, or real client data
 
 ## Acceptance boundary
 
 The People & Access source milestone is complete only when direct API and direct-route tests prove the same Administrator-only behavior as the rendered interface; concurrent final-Administrator mutations are denied; role/project reductions invalidate sessions; disabled users cannot reuse sessions; CSRF and stale-version requests fail closed; Activity pagination and filtering stay bounded without exposing raw audit fields; and keyboard, 200% zoom, mobile, tablet, and desktop behavior pass.
 
-The page may be developed with fake Administrators, Office users, and Project Managers. It does not authorize a database migration, hosted configuration change, Google Workspace connection, employee invitation, deployment, second-user access, or real data.
+The page uses fake Administrators, Office users, and Project Managers in the private Sites development adapter. That development deployment does not authorize a database migration, PostgreSQL reader grant, Google Workspace connection, employee invitation, production runtime deployment, second-user access, or real data.
