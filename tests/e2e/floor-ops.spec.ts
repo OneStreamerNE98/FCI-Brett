@@ -109,6 +109,58 @@ test("mobile navigation traps focus and restores the menu trigger on every close
   await expect(trigger).toBeFocused();
 });
 
+test("mobile navigation keeps management labels and compact status on one line without horizontal scrolling", async ({ page }) => {
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    await waitForLiveRecords(page);
+
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    const navigation = page.getByRole("navigation", { name: "Main navigation" });
+    const managementLinks = [
+      { link: navigation.getByRole("link", { name: "Reports · Working" }), compactState: "Working" },
+      { link: navigation.getByRole("link", { name: "Settings · In development" }), compactState: "Dev" },
+      { link: navigation.getByRole("link", { name: "People & Access · In development" }), compactState: "Dev" },
+    ];
+
+    await expect(navigation).toBeVisible();
+    const navigationWidth = await navigation.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(navigationWidth.scrollWidth).toBeLessThanOrEqual(navigationWidth.clientWidth);
+
+    for (const { link, compactState } of managementLinks) {
+      await expect(link).toBeVisible();
+      const stateBadge = link.locator(".feature-state");
+      await expect(stateBadge).toBeVisible();
+      const renderedCompactState = await stateBadge.evaluate((element) => (
+        window.getComputedStyle(element, "::after").content.replaceAll('"', "")
+      ));
+      expect(renderedCompactState).toBe(compactState);
+      const labelLayout = await link.locator(".nav-label").evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        const bounds = element.getBoundingClientRect();
+        const textRange = document.createRange();
+        textRange.selectNodeContents(element);
+        return {
+          clientWidth: element.clientWidth,
+          height: bounds.height,
+          scrollWidth: element.scrollWidth,
+          textWidth: textRange.getBoundingClientRect().width,
+          whiteSpace: style.whiteSpace,
+        };
+      });
+      expect(labelLayout.whiteSpace).toBe("nowrap");
+      expect(labelLayout.scrollWidth).toBeLessThanOrEqual(labelLayout.clientWidth);
+      expect(labelLayout.textWidth).toBeLessThanOrEqual(labelLayout.clientWidth);
+      expect(labelLayout.height).toBeLessThan(24);
+    }
+
+    await page.getByRole("button", { name: "Close navigation" }).click();
+  }
+});
+
 test("global search supports the keyboard and returns focus after opening a project", async ({ page }) => {
   await page.goto("/");
   await waitForLiveRecords(page);
