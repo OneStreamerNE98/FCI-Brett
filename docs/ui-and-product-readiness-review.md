@@ -24,7 +24,7 @@ This review separates three things:
 | Inbox | Review-first Gmail workflow | Renamed to Gmail project inbox; Gmail labels consistently use `FCI/Intake`, `FCI/Needs Review`, and `FCI/Filed`; File to project is now Review & copy; Reply is now Draft reply; safety copy clearly states that nothing is filed automatically. | Add Gmail watch/history processing, a durable suggestion queue, thread view, send workflow, retries, and executable custom matchers. |
 | AI Assistant | Read-only, selected-project Q&A | Records-only mode is presented as a valid mode; prompt controls are disabled during a request; missing-evidence callouts only appear when present; no-project guidance and accessible answer updates were added. | Add project-level permissions, Drive document indexing, permission-filtered retrieval, saved conversations, and prompt-injection/leakage evaluations. |
 | Reports | Current operational totals | Copy is business-facing; loading totals do not show false zeros; custom pipeline stages roll into Other stages; chart columns now have equal visual weight. | Add date filters, drilldowns, revenue/margin data, sales-cycle timing, crew utilization, and exports. |
-| Settings | Account, Workspace, calendar, inbox, security, and launch settings | General Settings now opens My account; timezone changes update the Overview greeting; the Calendar plan no longer claims that saving creates calendars; the Schedule deep link was repaired; mobile settings layouts were improved. The separate fixed-role People & Access page and minimized Activity tab now exist in source. | Make saved calendar IDs authoritative at runtime, persist launch checklist state, compose People & Access with the production employee session/CSRF bootstrap, and split the dense Google Workspace panel into smaller sections. |
+| Settings | Account, Workspace, calendar, inbox, security, and launch settings | General Settings now opens My account; timezone changes update the Overview greeting; the Calendar plan no longer claims that saving creates calendars; the Schedule deep link was repaired; mobile settings layouts were improved. The fixed-role People & Access page and minimized Activity tab are merged, and their presentation adapter is deployed only to private Sites development. | Make saved calendar IDs authoritative at runtime, persist launch checklist state, compose People & Access with the production employee session/CSRF bootstrap, apply its PostgreSQL migrations/grants, and split the dense Google Workspace panel into smaller sections. |
 
 ## Cross-application consistency changes
 
@@ -38,12 +38,12 @@ This review separates three things:
 - Removed the standalone Gmail Filed-label action and API route; `FCI/Filed` now remains part of the exact-project archive flow only.
 - Replaced the transient project-update composer with a disabled Project updates planned control.
 - Replaced the hardcoded Administrator text with the current server-derived access label (`Admin` or `Office`).
+- Added fixed App Router URLs for all nine primary views. Project status, Settings section, and Inbox bucket use bounded bookmarkable query state; invalid or duplicate route state canonicalizes safely, and unknown paths return a real 404.
 
 ## Known UI work not included in this pass
 
 These are larger structural changes and should be scheduled separately:
 
-- Use real routes or a URL parameter for views so refresh, Back, bookmarks, and support links preserve the selected page.
 - Create one accessible dialog/drawer primitive with focus trapping, initial focus, focus restoration, Escape handling, and consistent labels.
 - Add full keyboard navigation to global search results.
 - Replace the current development access label with the durable production role/capability context only after the source-composed authorization boundary is accepted and durable admission, live OIDC, session issuance, and deployment are separately approved.
@@ -65,7 +65,7 @@ These are larger structural changes and should be scheduled separately:
 - Selected-project assistant evidence with citations and a records-only fallback.
 - A guarded file-upload API and an installable PWA manifest.
 
-Separately, the production source boundary now includes the [approved authorization and employee-route work](authorization-simulation.md): granular Administrator/Office/Project Manager ceilings, exact-one-role and session-denial rules, project-scoped PostgreSQL reads, financial redaction, fixed-operation provider gates, append-only audit evidence, and a narrow Cloud Run dashboard/search/project/client/logout boundary. File/Gmail/Calendar routes are authorization-gated but provider-unavailable. None of these controls is wired into the hosted UI or its Workers/D1 routes.
+Separately, the production source boundary now includes the [approved authorization and employee-route work](authorization-simulation.md): granular Administrator/Office/Project Manager ceilings, exact-one-role and session-denial rules, project-scoped PostgreSQL reads, financial redaction, fixed-operation provider gates, append-only audit evidence, and a narrow Cloud Run dashboard/search/project/client/logout boundary. File/Gmail/Calendar routes are authorization-gated but provider-unavailable. These production controls are not wired into the hosted Workers/D1 application; the private People/Activity presentation adapter uses development-only fixtures and is not production session/database composition.
 
 ## What is still in development or a placeholder
 
@@ -76,9 +76,9 @@ Separately, the production source boundary now includes the [approved authorizat
 - Workers, crews, shifts, conflicts, assignment publishing, acknowledgements, and field links.
 - SMS/email delivery tracking, Twilio, consent, STOP handling, retries, and dead letters.
 - CSV preview/import.
-- Durable invitation fulfillment/OIDC/session issuance and renewal, the broader production interface/routes, and provider adapters. The five fixed administration commands, People & Access projection/page, minimized Activity reader/tab, and rendered permission tests now exist only in source and are not deployed.
+- Durable invitation fulfillment/OIDC/session issuance and renewal, the broader production interface/routes, and provider adapters. The five fixed administration commands, People & Access projection/page, minimized Activity reader/tab, and rendered permission tests are merged; only their presentation adapter is deployed to private Sites development.
 - Drive/email document indexing and permission-filtered semantic retrieval.
-- Backup restoration validation, audit retention and export, plus malware scanning when untrusted uploads or Gmail attachments are enabled. The minimized audit viewer is implemented only in the current source branch.
+- Backup restoration validation, audit retention and export, plus malware scanning when untrusted uploads or Gmail attachments are enabled. The minimized audit viewer is merged, but production migration 5, its reader grant, and live audit data remain unapplied.
 - Production background workers for reminders, Gmail watches, synchronization, and retries.
 
 ## Production architecture decision
@@ -98,7 +98,7 @@ The owner has approved the application role and sensitive-action policy, includi
 1. **Complete in source; unapplied:** costed infrastructure definitions and reviewable migration/restore/cutover procedures for the minimum core and on-demand staging boundary.
 2. **Complete in source; unapplied:** the production-persistence boundary covering provider-neutral PostgreSQL repositories, generic identity/security-audit schema, integration metadata, and object-storage ports.
 3. **Complete in source; not deployed:** approved access contexts, capability/project-scoped queries, provider-action gates, negative authorization tests, and narrow dashboard/search/project/client/logout Cloud Run routes. File/Gmail/Calendar paths are gated but provider-unavailable.
-4. **Administration milestone implemented in source, unapplied and undeployed:** Management → People & Access now has the bounded People projection, five fixed workflows, read-only role presets, and a separately privileged minimized Activity reader/tab. Field Links remain deferred until field assignments are scheduled.
+4. **Administration milestone merged; production boundary unapplied:** Management → People & Access has the bounded People projection, five fixed workflows, read-only role presets, and a separately privileged minimized Activity reader/tab. Its presentation adapter is deployed only to private Sites development; production migrations/grants and employee-session/CSRF composition remain unapplied or undeployed. Field Links remain deferred until field assignments are scheduled.
 5. With separate approval, prove migration, restore, reconciliation, and rollback/forward-fix in isolated on-demand staging.
 6. Add live Google Workspace OIDC/session issuance only after those platform and authorization gates pass; do not add more users before project permissions are enforced.
 7. Add editing and archiving for clients, contacts, leads, projects, and meetings.

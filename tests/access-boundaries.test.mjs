@@ -6,19 +6,33 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("enforces the office allowlist before rendering the operational app shell", async () => {
-  const [page, auth, app] = await Promise.all([
+  const [page, protectedPage, auth, app] = await Promise.all([
     read("app/page.tsx"),
+    read("app/OperationsRoutePage.tsx"),
     read("app/lib/workspace-auth.ts"),
     read("app/FloorOpsApp.tsx"),
   ]);
+  const routePages = await Promise.all([
+    "leads",
+    "clients",
+    "projects",
+    "schedule",
+    "inbox",
+    "assistant",
+    "reports",
+    "settings",
+  ].map((route) => read(`app/${route}/page.tsx`)));
 
   assert.match(auth, /export function officeIdentityForEmail/);
-  assert.match(page, /officeIdentityForEmail\(user\.email\)/);
-  assert.match(page, /Access not authorized/);
+  assert.match(page, /OperationsRoutePage/);
+  for (const routePage of routePages) assert.match(routePage, /OperationsRoutePage/);
+  assert.match(protectedPage, /requireChatGPTUser\(returnPath\)/);
+  assert.match(protectedPage, /officeIdentityForEmail\(user\.email\)/);
+  assert.match(protectedPage, /Access not authorized/);
   assert.match(auth, /const user = officeIdentityForEmail\(email\)/);
-  assert.match(page, /const officeUser = officeIdentityForEmail\(user\.email\)/);
-  assert.match(page, /officeUser\.isAdmin \? "Admin" : "Office"/);
-  assert.match(page, /accessLabel=\{accessLabel\}/);
+  assert.match(protectedPage, /const officeUser = officeIdentityForEmail\(user\.email\)/);
+  assert.match(protectedPage, /officeUser\.isAdmin \? "Admin" : "Office"/);
+  assert.match(protectedPage, /accessLabel=\{accessLabel\}/);
   assert.match(app, /accessLabel: "Admin" \| "Office"/);
   assert.match(app, /\{userEmail\} · \{accessLabel\}/);
   assert.doesNotMatch(app, /Administrator/);

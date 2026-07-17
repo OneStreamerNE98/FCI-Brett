@@ -91,6 +91,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 - [ ] Complete quarantine scan/release and permission behavior. Generic file/version/storage/link metadata, project-only reservation, quarantine-state finalization, and a conditional object-storage fake now exist; scanner behavior, release policy, authorized download, provider composition, and untrusted intake remain deferred.
 - [ ] Add optimistic concurrency, edit/archive, atomic conversion, project dates, tasks/follow-ups, notes, and conflict UI.
 - [ ] Split the frontend into durable routes and feature modules with typed errors, query freshness, partial-failure, accessibility, and responsive tests.
+  - Durable primary routes, bounded project/Settings/Inbox query state, direct-entry/refresh/history coverage, and route-level denial/404 tests are complete in the current source branch. Feature modules, freshness, partial-failure, conflict, and broader accessibility work remain.
 - [ ] Complete test-data transformation, duplicate reporting, backup/restore, cutover, and rollback tooling. The bounded core rehearsal already preserves test identifiers and verifies per-table counts plus content/identifier hashes, but it is not the full staging/cutover rehearsal.
 - [ ] Write ADRs and contract/state-transition tests for approved estimate, procurement, schedule/field, communications, closeout, and warranty behavior.
 

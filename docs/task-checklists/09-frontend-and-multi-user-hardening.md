@@ -21,7 +21,7 @@ These are the eight implementation priorities confirmed against the hosted Sites
   - Audited metric, panel, project, status, form, and drawer selectors now use at least 12 px and higher-contrast muted text. A broader legacy typography pass remains open for less-used integration/settings details.
 - [x] **P2 — Mobile project comparison:** retain status, site/date, and value in a compact stacked mobile row instead of hiding decision-useful fields; do not imply that placeholder dates are durable schedule data.
 - [ ] **P2 — Initial-load and bundle performance:** break the monolithic client surface into feature boundaries, dynamically load rare/heavy panels, start critical data earlier where safe, deduplicate shared reads, and bound long record lists.
-  - First pass complete: initial client loading starts immediately; duplicated account/Workspace reads share a TTL cache; the overview clock no longer rerenders the app shell; project counts are one-pass; the phone panel is lazy-loaded; and long rows defer off-screen rendering. Route/feature splitting and server-started core data remain open.
+  - First pass complete: initial client loading starts immediately; duplicated account/Workspace reads share a TTL cache; the overview clock no longer rerenders the app shell; project counts are one-pass; the phone panel is lazy-loaded; long rows defer off-screen rendering; and fixed App Router wrappers now support direct entry. Feature-level client splitting and server-started core data remain open.
 - [x] **P2 — Rendered regression coverage:** add browser-level coverage for mobile navigation, overlays, search focus/keyboard behavior, feature-state labels, responsive project rows, console health, and primary accessibility checks.
 
 ## P0 integrity fixes
@@ -51,8 +51,9 @@ These are the eight implementation priorities confirmed against the hosted Sites
 
 ## Navigation and component structure
 
-- [ ] Give Overview, Leads, Clients, Projects, Schedule, Inbox, Assistant, Reports, and Settings real App Router URLs.
+- [x] Give Overview, Leads, Clients, Projects, Schedule, Inbox, Assistant, Reports, and Settings real App Router URLs, with direct-entry authentication, refresh, Back/Forward, bookmark, 404, and outside-identity denial coverage.
 - [ ] Preserve filters, selected project, and useful search state in the URL where appropriate.
+  - Project status, Settings section, and Inbox bucket now use bounded canonical query values. Selected-record drawers and free-form search remain intentionally transient until record-detail routing and privacy-safe search-link behavior are designed.
 - [ ] Split the large client component by route and feature; prefer server rendering for stable shells and dynamically load heavy, rarely used panels.
 - [ ] Consolidate duplicate Inbox and Settings Google workflows behind shared components and hooks.
 
@@ -75,7 +76,7 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [ ] Capture approved desktop and mobile screenshots for the pull request after browser capture is reliable.
 - [x] Include lint in CI.
 - [ ] Fail on unhandled console errors in every browser smoke path.
-  - Primary page/sidebar tests enforce console health; the remaining Playwright paths still need the same guard.
+  - Primary page/sidebar and durable-route tests enforce console health; the remaining Playwright paths still need the same guard.
 
 ## Completion result
 

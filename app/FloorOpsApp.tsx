@@ -2,6 +2,8 @@
 
 import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Activity, Bell, Bot, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, ExternalLink, FileText, FolderOpen, FolderTree, HardHat,
@@ -14,8 +16,22 @@ import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
 import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
 import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
+import {
+  canonicalOperationsSearch,
+  inboxBucketFromSearch,
+  operationsHref,
+  operationsPath,
+  operationsViewForPath,
+  PROJECT_STATUS_FILTERS,
+  projectStatusFromSearch,
+  SETTINGS_SECTIONS,
+  settingsSectionFromSearch,
+  type InboxBucket,
+  type OperationsView,
+  type ProjectStatusFilter,
+  type SettingsSection,
+} from "./lib/operations-routes";
 
-type View = "Overview" | "Leads" | "Clients" | "Projects" | "Schedule" | "Inbox" | "AI Assistant" | "Reports" | "Settings";
 type Lead = { id: string; number: string; company: string; contact: string; project: string; value: string; estimatedValue: number; stage: string; source: string; next: string; site: string; status: string; initials: string; color: string };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; driveFolderId?: string; driveUrl?: string };
 type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; site: string; managerId: string | null; lead: string; date: string; accent: string; driveFolderId?: string; driveUrl?: string };
@@ -80,7 +96,7 @@ const focusableControlSelector = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-const navItems: { label: Exclude<View, "Schedule">; icon: typeof LayoutDashboard; state: FeatureState }[] = [
+const navItems: { label: Exclude<OperationsView, "Schedule">; icon: typeof LayoutDashboard; state: FeatureState }[] = [
   { label: "Overview", icon: LayoutDashboard, state: "Working" }, { label: "Leads", icon: Zap, state: "In development" },
   { label: "Clients", icon: ContactRound, state: "In development" }, { label: "Projects", icon: BriefcaseBusiness, state: "In development" },
   { label: "Inbox", icon: Inbox, state: "In development" }, { label: "AI Assistant", icon: Sparkles, state: "In development" },
@@ -110,8 +126,15 @@ function projectManagerLabel(managerId: string | null, currentUserEmail: string,
   return managerId;
 }
 
-export function FloorOpsApp({ environment, userName, userEmail, accessLabel, signOutHref }: { environment: AppEnvironment; userName: string; userEmail: string; accessLabel: "Admin" | "Office"; signOutHref: string }) {
-  const [view, setView] = useState<View>("Overview");
+export function FloorOpsApp({ initialView, environment, userName, userEmail, accessLabel, signOutHref }: { initialView: OperationsView; environment: AppEnvironment; userName: string; userEmail: string; accessLabel: "Admin" | "Office"; signOutHref: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParameters = useSearchParams();
+  const search = searchParameters.toString();
+  const view = operationsViewForPath(pathname) ?? initialView;
+  const settingsArea = settingsSectionFromSearch(search);
+  const projectStatus = projectStatusFromSearch(search);
+  const inboxBucket = inboxBucketFromSearch(search);
   const [mobileNav, setMobileNav] = useState(false);
   const [mobileNavViewport, setMobileNavViewport] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -133,7 +156,6 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [liveDataState, setLiveDataState] = useState<LiveDataState>("loading");
   const [liveDataError, setLiveDataError] = useState("");
-  const [settingsArea, setSettingsArea] = useState("My account");
   const [toast, setToast] = useState<AppNotification | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<WorkspaceSearchResult[]>([]);
@@ -156,6 +178,16 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
   const firstName = friendlyFirstName(userName, userEmail);
   const development = environment === "development";
   const userInitials = userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
+
+  useEffect(() => {
+    // The Workspace panel consumes its one-time OAuth result before normal
+    // route canonicalization so these two URL updates cannot race on mount.
+    if (new URLSearchParams(search).has("google")) return;
+    const canonicalSearch = canonicalOperationsSearch(view, search);
+    if (canonicalSearch === search) return;
+    const canonicalUrl = `${operationsPath(view)}${canonicalSearch ? `?${canonicalSearch}` : ""}`;
+    router.replace(canonicalUrl, { scroll: false });
+  }, [router, search, view]);
 
   const refreshDirectoryData = useCallback(() => {
     async function getJson(path: string) {
@@ -494,35 +526,48 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
     return counts;
   }, [projectItems]);
 
-  function openRules() {
-    setSettingsArea("Inbox & file rules");
-    setView("Settings");
+  function closeNavigationMenus() {
+    setMobileNav(false);
     setWorkspaceMenuOpen(false);
     setProfileMenuOpen(false);
+    setNotificationsOpen(false);
+  }
+
+  function navigateToView(nextView: OperationsView) {
+    router.push(operationsHref(nextView));
+    closeNavigationMenus();
+  }
+
+  function navigateToSettings(section: SettingsSection) {
+    router.push(operationsHref("Settings", { settingsSection: section }));
+    closeNavigationMenus();
+  }
+
+  function navigateToProjectStatus(status: ProjectStatusFilter) {
+    router.push(operationsHref("Projects", { projectStatus: status }));
+  }
+
+  function navigateToInboxBucket(bucket: InboxBucket) {
+    router.push(operationsHref("Inbox", { inboxBucket: bucket }));
+  }
+
+  function openRules() {
+    navigateToSettings("Inbox & file rules");
   }
 
   function openGoogleWorkspace() {
     setProjectOpen(false);
     setClientOpen(false);
-    setSettingsArea("Google Workspace");
-    setView("Settings");
-    setWorkspaceMenuOpen(false);
-    setProfileMenuOpen(false);
+    navigateToSettings("Google Workspace");
     notify("Google Workspace setup opened", "info");
   }
 
   function openDirectorySettings() {
-    setSettingsArea("Client Directory");
-    setView("Settings");
-    setWorkspaceMenuOpen(false);
-    setProfileMenuOpen(false);
+    navigateToSettings("Client Directory");
   }
 
   function openTestingChecklist() {
-    setSettingsArea("Testing & launch");
-    setView("Settings");
-    setWorkspaceMenuOpen(false);
-    setProfileMenuOpen(false);
+    navigateToSettings("Testing & launch");
   }
 
   async function copySignedInEmail() {
@@ -633,7 +678,7 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
         openProject(project, workspaceSearchRef.current);
         notify(`Opened ${project.number}`, "info");
       } else {
-        setView("Projects");
+        navigateToView("Projects");
         notify("Project found. Refresh the directory if it is not listed yet.", "warning");
       }
       return;
@@ -643,7 +688,7 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
       openClient(client, workspaceSearchRef.current);
       notify(`Opened ${client.name}`, "info");
     } else {
-      setView("Clients");
+      navigateToView("Clients");
       notify("Client found. Refresh the directory if it is not listed yet.", "warning");
     }
   }
@@ -726,18 +771,18 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
         <button ref={mobileNavigationCloseRef} className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <p>Workspace</p>
-          {navItems.slice(0, 6).map(({ label, icon: Icon, state }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></button>)}
+          {navItems.slice(0, 6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></Link>)}
           <p>Management</p>
-          {navItems.slice(6).map(({ label, icon: Icon, state }) => <button key={label} className={view === label ? "active" : ""} onClick={() => { setView(label); setMobileNav(false); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></button>)}
+          {navItems.slice(6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></Link>)}
           {accessLabel === "Admin" && <a href="/management/access" aria-label="People & Access · In development" title="People & Access · In development"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span><FeatureStateBadge state="In development" /></a>}
         </nav>
         <div ref={workspaceMenuRef} className="sidebar-menu-wrap workspace-menu-wrap">
           <button className="workspace-card" onClick={() => { setWorkspaceMenuOpen((current) => !current); setProfileMenuOpen(false); setNotificationsOpen(false); }} aria-controls="workspace-actions-popover" aria-expanded={workspaceMenuOpen} title="Workspace actions"><div className="workspace-icon"><Building2 size={17} /></div><div><span>{development ? "Development workspace" : "Production workspace"}</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></button>
-          {workspaceMenuOpen && <div id="workspace-actions-popover" className="sidebar-popover workspace-popover"><div className="menu-heading"><strong>FCI Operations</strong><span>{development ? "Working development environment" : "Company production environment"}</span></div><button onClick={() => { setView("Clients"); setWorkspaceMenuOpen(false); }}><ContactRound size={15} /> Client Directory</button><button onClick={openDirectorySettings}><FolderTree size={15} /> Directory sync</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google Workspace</button><button onClick={openTestingChecklist}><ShieldCheck size={15} /> Testing & launch</button></div>}
+          {workspaceMenuOpen && <div id="workspace-actions-popover" className="sidebar-popover workspace-popover"><div className="menu-heading"><strong>FCI Operations</strong><span>{development ? "Working development environment" : "Company production environment"}</span></div><button onClick={() => navigateToView("Clients")}><ContactRound size={15} /> Client Directory</button><button onClick={openDirectorySettings}><FolderTree size={15} /> Directory sync</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google Workspace</button><button onClick={openTestingChecklist}><ShieldCheck size={15} /> Testing & launch</button></div>}
         </div>
         <div ref={profileMenuRef} className="sidebar-menu-wrap profile-menu-wrap">
           <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); setNotificationsOpen(false); }} aria-controls="account-actions-popover" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>{accessLabel}</span></div><MoreHorizontal size={18} /></button>
-          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button><button onClick={() => { setSettingsArea("My account"); setView("Settings"); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }}><Settings size={15} /> My account</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
+          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button><button onClick={() => navigateToSettings("My account")}><Settings size={15} /> My account</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
         </div>
       </aside>
 
@@ -787,21 +832,21 @@ export function FloorOpsApp({ environment, userName, userEmail, accessLabel, sig
               ><span>{result.kind === "project" ? <BriefcaseBusiness size={14} /> : result.kind === "contact" ? <ContactRound size={14} /> : <Users size={14} />}</span><div><strong>{result.title}</strong><small>{result.kind} · {result.subtitle}</small></div><ChevronRight size={14} /></button>)}
             </div>}
           </form>
-          <div className="top-actions"><div ref={notificationsMenuRef} className="notification-wrap"><button className="icon-button" onClick={() => { setNotificationsOpen((current) => !current); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label="Notifications" aria-controls="notifications-popover" aria-expanded={notificationsOpen}><Bell size={19} /></button>{notificationsOpen && <div id="notifications-popover" className="notification-menu"><strong>Notifications</strong><button onClick={() => { setView("Inbox"); setNotificationsOpen(false); }}>Open the Gmail project inbox</button><button onClick={() => { setView("Schedule"); setNotificationsOpen(false); }}>Schedule alerts will appear after scheduling is connected</button></div>}</div><button className="primary-button" onClick={() => setLeadModal(true)}><Plus size={17} /> Add lead</button></div>
+          <div className="top-actions"><div ref={notificationsMenuRef} className="notification-wrap"><button className="icon-button" onClick={() => { setNotificationsOpen((current) => !current); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label="Notifications" aria-controls="notifications-popover" aria-expanded={notificationsOpen}><Bell size={19} /></button>{notificationsOpen && <div id="notifications-popover" className="notification-menu"><strong>Notifications</strong><button onClick={() => navigateToView("Inbox")}>Open the Gmail project inbox</button><button onClick={() => navigateToView("Schedule")}>Schedule alerts will appear after scheduling is connected</button></div>}</div><button className="primary-button" onClick={() => setLeadModal(true)}><Plus size={17} /> Add lead</button></div>
         </header>
 
         <div className="page-wrap">
           {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
           <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData()} />
-          {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} onView={setView} onProject={openProject} />}
+          {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} onView={navigateToView} onProject={openProject} />}
           {view === "Leads" && <LeadsView leads={leads} state={liveDataState} onAdd={() => setLeadModal(true)} onAdvance={advanceLead} />}
           {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
-          {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} onNewProject={() => openNewProject()} onProject={openProject} />}
-          {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => { setSettingsArea("Workflow & notifications"); setView("Settings"); }} />}
-          {view === "Inbox" && <InboxView notify={notify} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
+          {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
+          {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
+          {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
           {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} />}
-          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={setSettingsArea} onTimezoneChange={setDisplayTimezone} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
+          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
         </div>
       </main>
       {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
@@ -826,7 +871,7 @@ function LiveDataBanner({ state, error, onRetry }: { state: LiveDataState; error
   return <section className="schedule-alert" role="alert"><CircleAlert size={19} /><div><strong>Live records could not be loaded</strong><span>{error}</span></div><button onClick={onRetry}>Try again</button></section>;
 }
 
-function Overview({ firstName, timezone, leads, projects, dashboard, state, onView, onProject }: { firstName: string | null; timezone: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; onView: (v: View) => void; onProject: (p: Project) => void }) {
+function Overview({ firstName, timezone, leads, projects, dashboard, state, onView, onProject }: { firstName: string | null; timezone: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; onView: (v: OperationsView) => void; onProject: (p: Project) => void }) {
   const [currentTime, setCurrentTime] = useState<number | null>(null);
   useEffect(() => {
     const initialClock = window.requestAnimationFrame(() => setCurrentTime(Date.now()));
@@ -903,15 +948,14 @@ function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProj
   </>;
 }
 
-function ProjectsView({ projects, state, onProject, onNewProject }: { projects: Project[]; state: LiveDataState; onProject: (p: Project) => void; onNewProject: () => void }) {
-  const [filter, setFilter] = useState("Active");
+function ProjectsView({ projects, state, filter, onFilter, onProject, onNewProject }: { projects: Project[]; state: LiveDataState; filter: ProjectStatusFilter; onFilter: (filter: ProjectStatusFilter) => void; onProject: (p: Project) => void; onNewProject: () => void }) {
   const filteredProjects = projects.filter((project) => {
     const status = project.status.toLowerCase();
     return filter === "Active" ? !terminalProjectStatuses.has(status) : status === filter.toLowerCase();
   });
   const filterCount = (stage: string) => stage === "Active" ? projects.filter(isActiveProject).length : projects.filter((project) => project.status.toLowerCase() === stage.toLowerCase()).length;
   return <><PageTitle eyebrow="Project delivery" title="Projects" text="Track every project separately, including repeat work for the same client." state="In development" action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
-    <div className="filterbar"><div className="tabs" aria-label="Project status filter">{["Active", "Completed", "Cancelled", "Archived"].map((stage) => <button className={filter === stage ? "active" : ""} aria-pressed={filter === stage} key={stage} onClick={() => setFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
+    <div className="filterbar"><div className="tabs" aria-label="Project status filter">{PROJECT_STATUS_FILTERS.map((stage) => <button className={filter === stage ? "active" : ""} aria-pressed={filter === stage} key={stage} onClick={() => onFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
     <div className="projects-table panel"><div className="projects-table-head"><span>Project</span><span>Status</span><span>Dates</span><span>Value</span><span /></div>{filteredProjects.map((p) => <button className="projects-table-row" key={p.id} onClick={() => onProject(p)}><div className="project-row-identity"><Avatar initials={recordInitials(p.client)} color={p.accent} /><span><strong>{p.name}</strong><small>{p.number} · {p.client}</small></span></div><span className="project-row-status"><Status text={p.status} /></span><span className="project-row-details"><strong>{p.date}</strong><small><MapPin size={12} />{p.site}</small></span><strong className="project-row-value"><span>Estimated value</span>{p.value}</strong><ChevronRight size={17} aria-hidden="true" /></button>)}{!filteredProjects.length && <div className="empty-table">{state === "ready" ? filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</div>}</div>
   </>;
 }
@@ -923,7 +967,6 @@ function ScheduleView({ dashboard, onSettings }: { dashboard: DashboardSummary |
   </>;
 }
 
-type InboxBucket = "inbox" | "intake" | "needs-review" | "filed";
 type GmailWorkspaceStatus = {
   connectionStatus?: string;
   connectionAccount?: string | null;
@@ -957,10 +1000,10 @@ function inboxProjectSuggestion(message: WorkspaceMessage, projects: Project[], 
   return { kind: "intake", text: "FCI/Intake: no enabled built-in rule matched; choose a project before filing", reason: decision.reason };
 }
 
-function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }: { notify: Notify; onRules: () => void; projects: Project[]; clients: Client[]; rules: FilingRuleDraft[]; onGoogleSetup: () => void }) {
+function InboxView({ notify, bucket, onBucket, onRules, projects, clients, rules, onGoogleSetup }: { notify: Notify; bucket: InboxBucket; onBucket: (bucket: InboxBucket) => void; onRules: () => void; projects: Project[]; clients: Client[]; rules: FilingRuleDraft[]; onGoogleSetup: () => void }) {
   const [workspace, setWorkspace] = useState<GmailWorkspaceStatus | null>(null);
   const [messages, setMessages] = useState<WorkspaceMessage[]>([]);
-  const [bucket, setBucket] = useState<InboxBucket>("inbox");
+  const [loadedBucket, setLoadedBucket] = useState<InboxBucket | null>(null);
   const [search, setSearch] = useState("");
   const [checking, setChecking] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1001,6 +1044,7 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
   }, []);
 
   const gmailReady = workspace?.connectionStatus === "connected" && workspace.gmailEnabled === true && workspace.gmailConnected === true;
+  const visibleMessages = loadedBucket === bucket ? messages : [];
 
   async function loadMessages() {
     setLoading(true);
@@ -1012,10 +1056,12 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
       const data = await response.json().catch(() => ({})) as { messages?: WorkspaceMessage[]; labelReady?: boolean; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Your Gmail messages could not be loaded.");
       setMessages(data.messages ?? []);
+      setLoadedBucket(bucket);
       setLabelReady(Boolean(data.labelReady));
       notify(`Loaded ${data.messages?.length ?? 0} message${(data.messages?.length ?? 0) === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`, "info");
     } catch (loadError) {
       setMessages([]);
+      setLoadedBucket(bucket);
       setError(loadError instanceof Error ? loadError.message : "Your Gmail messages could not be loaded.");
       await checkGmailConnection(true);
     } finally {
@@ -1132,13 +1178,13 @@ function InboxView({ notify, onRules, projects, clients, rules, onGoogleSetup }:
     {error && <p className="workspace-missing">{error}</p>}
     <div className="inbox-layout">
       <section className="panel message-list">
-        <header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => { setBucket(event.target.value as InboxBucket); setMessages([]); setLabelReady(null); }} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI/Intake</option><option value="needs-review">FCI/Needs Review</option><option value="filed">FCI/Filed</option></select></label><label>Search this Gmail mailbox<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label><small className="gmail-search-help">Use Gmail search terms such as <b>from:</b>, <b>subject:</b>, or a project number.</small></div><div className="workspace-actions">{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
-        {!gmailReady ? <div className="inbox-empty"><Mail size={25} /><h3>Connect Workspace Gmail to see the company inbox</h3><p>Until Workspace is available, switch the local app to Workspace simulation to test the full inbox workflow with sample data.</p><button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button></div> : messages.length === 0 ? <div className="inbox-empty"><Inbox size={25} /><h3>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h3><p>Choose a mailbox, optionally enter a Gmail search, and select Load messages. The view is limited to 20 message summaries.</p><button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>Load {inboxBucketLabels[bucket]}</button></div> : messages.map((message, index) => {
+        <header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => onBucket(event.target.value as InboxBucket)} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI/Intake</option><option value="needs-review">FCI/Needs Review</option><option value="filed">FCI/Filed</option></select></label><label>Search this Gmail mailbox<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label><small className="gmail-search-help">Use Gmail search terms such as <b>from:</b>, <b>subject:</b>, or a project number.</small></div><div className="workspace-actions">{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
+        {!gmailReady ? <div className="inbox-empty"><Mail size={25} /><h3>Connect Workspace Gmail to see the company inbox</h3><p>Until Workspace is available, switch the local app to Workspace simulation to test the full inbox workflow with sample data.</p><button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button></div> : visibleMessages.length === 0 ? <div className="inbox-empty"><Inbox size={25} /><h3>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h3><p>Choose a mailbox, optionally enter a Gmail search, and select Load messages. The view is limited to 20 message summaries.</p><button className="primary-button" onClick={() => void loadMessages()} disabled={loading}>Load {inboxBucketLabels[bucket]}</button></div> : visibleMessages.map((message, index) => {
           const suggestion = inboxProjectSuggestion(message, projects, clients, rules);
           return <article className="message-row live-message-row" key={message.id}><div className={`sender-dot s${index % 4}`}>{(message.from ?? "?").split(/[\s@<]+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div><div className="message-copy"><strong>{message.from ?? "Unknown sender"}</strong><h3>{message.subject ?? "(No subject)"}</h3><p>{message.snippet || "No preview available."}</p><div className={`inbox-project-suggestion ${suggestion.kind}`} title={suggestion.reason} aria-label={`${suggestion.text}. ${suggestion.reason}`}><ShieldCheck size={13} /> {suggestion.text}</div></div><div className="message-actions"><span>{inboxDate(message.date)}</span><small>{message.to ? `To: ${message.to}` : workspace?.simulation ? "Simulated Workspace mailbox" : "Company Workspace mailbox"}</small><button className="primary-button" onClick={() => openFilingReview(message)}><FolderOpen size={14} /> Review & copy</button><button className="soft-button" onClick={() => openReplyComposer(message)}><Reply size={14} /> Draft reply</button></div></article>;
         })}
       </section>
-      <aside className="panel inbox-summary"><div className="summary-icon"><Mail size={20} /></div><h3>Inbox status</h3><p>{gmailReady ? `Showing ${messages.length} loaded message${messages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.` : "Workspace Gmail is not connected yet."}</p><div><span>Provider</span><strong>{workspace?.simulation ? "Local Workspace simulation" : workspace?.connectionAccount ?? "Not connected"}</strong></div><div><span>Message limit</span><strong>20 summaries</strong></div><div><span>Filing protection</span><strong>Exact project required</strong></div><hr /><h4>Keep it organized</h4><ul className="inbox-organization"><li>Use only FCI/Intake, FCI/Needs Review, and FCI/Filed labels.</li><li>Use project numbers for the safest match.</li><li>Store the permanent email and attachments in that project’s Shared Drive folder.</li></ul><small>{workspace?.simulation ? "Simulation mode · no Google access" : "Google Workspace mode"}</small><small>Inbox is retained after filing</small></aside>
+      <aside className="panel inbox-summary"><div className="summary-icon"><Mail size={20} /></div><h3>Inbox status</h3><p>{gmailReady ? `Showing ${visibleMessages.length} loaded message${visibleMessages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.` : "Workspace Gmail is not connected yet."}</p><div><span>Provider</span><strong>{workspace?.simulation ? "Local Workspace simulation" : workspace?.connectionAccount ?? "Not connected"}</strong></div><div><span>Message limit</span><strong>20 summaries</strong></div><div><span>Filing protection</span><strong>Exact project required</strong></div><hr /><h4>Keep it organized</h4><ul className="inbox-organization"><li>Use only FCI/Intake, FCI/Needs Review, and FCI/Filed labels.</li><li>Use project numbers for the safest match.</li><li>Store the permanent email and attachments in that project’s Shared Drive folder.</li></ul><small>{workspace?.simulation ? "Simulation mode · no Google access" : "Google Workspace mode"}</small><small>Inbox is retained after filing</small></aside>
     </div>
     {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
     {replyMessage && <GmailReplyModal message={replyMessage} body={replyBody} saving={replySaving} onBody={setReplyBody} onSave={saveReplyDraft} onClose={closeReplyComposer} />}
@@ -1196,10 +1242,9 @@ function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Le
   </>;
 }
 
-function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: string; onSection: (section: string) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
-  const options = ["My account", "Google Workspace", "Calendar & appointments", "Inbox & file rules", "Client Directory", "Workflow & notifications", "Data & security", "Testing & launch"];
+function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
   return <><PageTitle eyebrow="Control center" title="Settings" text="Keep account preferences, one Google Workspace connection, inbox rules, calendar defaults, and safeguards in one simple place." state="In development" />
-    <div className="settings-layout"><aside className="settings-nav panel">{options.map((option) => <button className={section === option ? "active" : ""} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
+    <div className="settings-layout"><aside className="settings-nav panel">{SETTINGS_SECTIONS.map((option) => <button className={section === option ? "active" : ""} aria-current={section === option ? "page" : undefined} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
       {section === "My account" && <MyAccountPanel notify={notify} userName={userName} userEmail={userEmail} onGoogleSetup={onGoogleSetup} onTimezoneChange={onTimezoneChange} />}
       {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
       {section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} />}
