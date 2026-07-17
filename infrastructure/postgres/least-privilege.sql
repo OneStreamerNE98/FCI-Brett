@@ -134,6 +134,7 @@ GRANT UPDATE (role_id, assigned_by_user_id, assigned_by_actor_key, assigned_at, 
 GRANT SELECT, INSERT ON TABLE fci_app.project_memberships TO fci_runtime;
 GRANT UPDATE (assigned_by_user_id, assigned_by_actor_key, assigned_at, status, revoked_by_user_id, revoked_by_actor_key, revoked_at, revocation_reason_code, version) ON TABLE fci_app.project_memberships TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.audit_events TO fci_runtime;
+GRANT SELECT ON TABLE fci_app.audit_activity_projection TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.integration_connections TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.integration_oauth_attempts TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.integration_resources TO fci_runtime;

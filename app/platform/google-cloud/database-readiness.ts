@@ -58,6 +58,28 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "admin_access_persistence",
       checksum: "sha256:a779369e499410a161fa31a02e0ea56972648b81e7836b75c37f7fdacaad6cd3",
     }),
+    Object.freeze({
+      version: 5,
+      name: "admin_audit_activity",
+      checksum: "sha256:aa5e56dc3d1c22d3a6bc5be32f48cfde9ea133cdd853ce6fa024073ebeee05d9",
+    }),
+  ]);
+
+/**
+ * Ordered catalog fingerprint for the only runtime-readable security-audit
+ * projection. Any added, removed, renamed, reordered, or retyped column makes
+ * the service unready before the projection can be queried.
+ */
+export const EXPECTED_AUDIT_ACTIVITY_PROJECTION_COLUMNS: readonly string[] =
+  Object.freeze([
+    "cursor_key:text",
+    "actor_label:text",
+    "action:text",
+    "target_label:text",
+    "result:text",
+    "reason_code:text",
+    "administrator_reason:text",
+    "occurred_at:timestamp with time zone",
   ]);
 
 export const DATABASE_TABLE_PRIVILEGES = Object.freeze([
@@ -108,6 +130,7 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("user_roles", ["SELECT", "INSERT"]),
     runtimeTableAccess("project_memberships", ["SELECT", "INSERT"]),
     runtimeTableAccess("audit_events", ["INSERT"]),
+    runtimeTableAccess("audit_activity_projection", ["SELECT"]),
     runtimeTableAccess("integration_connections", ["INSERT"]),
     runtimeTableAccess("integration_credentials", []),
     runtimeTableAccess("integration_connection_scopes", []),
@@ -258,6 +281,16 @@ type RuntimeTablePrivilegeRow = Record<string, unknown> & {
   hasColumnGrantOption: unknown;
 };
 
+type AuditActivityProjectionCatalogRow = Record<string, unknown> & {
+  relationExists: unknown;
+  relationKind: unknown;
+  ownerName: unknown;
+  securityBarrier: unknown;
+  securityInvokerFalse: unknown;
+  relationOptionCount: unknown;
+  columnFingerprint: unknown;
+};
+
 export type ProductionMigrationHistoryRow = Record<string, unknown> & {
   version: unknown;
   name: unknown;
@@ -379,6 +412,27 @@ function runtimeColumnUpdatePrivilegeMatrixMatches(
     row.columnExists === true &&
     row.hasPrivilege === false &&
     row.hasGrantOption === false);
+}
+
+function auditActivityProjectionCatalogMatches(
+  rows: readonly AuditActivityProjectionCatalogRow[],
+) {
+  if (rows.length !== 1) return false;
+  const row = rows[0];
+  return Boolean(
+    row &&
+    row.relationExists === true &&
+    row.relationKind === "v" &&
+    row.ownerName === "fci_migration_owner" &&
+    row.securityBarrier === true &&
+    row.securityInvokerFalse === true &&
+    row.relationOptionCount === 2 &&
+    Array.isArray(row.columnFingerprint) &&
+    row.columnFingerprint.length === EXPECTED_AUDIT_ACTIVITY_PROJECTION_COLUMNS.length &&
+    row.columnFingerprint.every(
+      (column, index) => column === EXPECTED_AUDIT_ACTIVITY_PROJECTION_COLUMNS[index],
+    )
+  );
 }
 
 async function readDatabaseReadiness(
@@ -510,6 +564,60 @@ async function readDatabaseReadiness(
       permission.has_history_reader_grant_option !== false ||
       permission.has_unreviewed_function_execute !== false
     );
+
+    if (ready) {
+      const projectionCatalog = await client.query<AuditActivityProjectionCatalogRow>(
+        `WITH projection AS (
+           SELECT relation.oid, relation.relkind::text AS relkind,
+                  relation.relowner, relation.reloptions
+           FROM pg_catalog.pg_class AS relation
+           INNER JOIN pg_catalog.pg_namespace AS namespace
+             ON namespace.oid = relation.relnamespace
+           WHERE namespace.nspname = $1
+             AND relation.relname = 'audit_activity_projection'
+         ),
+         actual_columns AS (
+           SELECT pg_catalog.array_agg(
+                    attribute.attname || ':' || pg_catalog.format_type(
+                      attribute.atttypid,
+                      attribute.atttypmod
+                    )
+                    ORDER BY attribute.attnum
+                  ) AS fingerprint
+           FROM projection
+           INNER JOIN pg_catalog.pg_attribute AS attribute
+             ON attribute.attrelid = projection.oid
+           WHERE attribute.attnum > 0
+             AND NOT attribute.attisdropped
+         )
+         SELECT projection.oid IS NOT NULL AS "relationExists",
+                pg_catalog.coalesce(projection.relkind, '') AS "relationKind",
+                pg_catalog.coalesce(owner.rolname, '') AS "ownerName",
+                pg_catalog.coalesce(
+                  projection.reloptions @> ARRAY['security_barrier=true']::text[],
+                  false
+                ) AS "securityBarrier",
+                pg_catalog.coalesce(
+                  projection.reloptions @> ARRAY['security_invoker=false']::text[],
+                  false
+                ) AS "securityInvokerFalse",
+                pg_catalog.coalesce(
+                  pg_catalog.cardinality(projection.reloptions),
+                  0
+                ) AS "relationOptionCount",
+                pg_catalog.coalesce(
+                  actual_columns.fingerprint,
+                  ARRAY[]::text[]
+                ) AS "columnFingerprint"
+         FROM (SELECT 1) AS one
+         LEFT JOIN projection ON true
+         LEFT JOIN pg_catalog.pg_roles AS owner
+           ON owner.oid = projection.relowner
+         LEFT JOIN actual_columns ON true`,
+        [schema],
+      );
+      ready = auditActivityProjectionCatalogMatches(projectionCatalog.rows);
+    }
 
     if (ready) {
       const columnTableNames = RUNTIME_COLUMN_UPDATE_PRIVILEGE_EXPECTATIONS

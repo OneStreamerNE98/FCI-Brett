@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with policy approval from the business owner
 
-Status: Approved policy, source-only employee routes, and People & Access contracts implemented; live OIDC, session issuance/UI bootstrap, providers, migration/apply, and deployment remain unimplemented
+Status: Approved policy, source-only employee routes and People & Access contracts merged; minimized Activity viewer implemented in the current source branch; live OIDC, session issuance/UI bootstrap, providers, migration/apply, and deployment remain unimplemented
 
 Local simulation depends on: Recorded first-rollout sensitive-action decisions and the production persistence boundary
 
@@ -58,7 +58,7 @@ These decisions authorize local policy and route work only. They do not set the 
 - [ ] Use Google's immutable `sub` claim as the external identity key, not email.
 - [x] Define generic durable users, sessions, roles, disabled status, and project memberships in the unapplied Cloud SQL schema; no live rows are seeded.
 - [ ] Fulfill durable invitations against exact email/status/role and bind verified Google issuer/`sub` before creating a session.
-- [ ] Compose production provider adapters for the authorization-gated Gmail, Calendar, and file routes; export, financial-report, and audit-view routes remain open.
+- [ ] Compose production provider adapters for the authorization-gated Gmail, Calendar, and file routes; export and financial-report routes remain open. The minimized audit-view route exists only in source behind a separately privileged reader.
 - [ ] Issue a Secure, HttpOnly, SameSite session cookie and support expiry, rotation, logout, and revocation.
 - [ ] Replace trust in `oai-authenticated-user-email` for the Cloud Run deployment.
 - [ ] Enforce authorization inside data queries for clients, projects, leads, dashboard, search, meetings, uploads, Gmail filing, and assistant evidence.
@@ -83,13 +83,14 @@ These decisions authorize local policy and route work only. They do not set the 
 - [x] Cross-project project list, direct lookup, client context, search, dashboard aggregation, and protected-callback denials in source tests; the real PostgreSQL suite requires `TEST_POSTGRES_URL` and is skipped locally when it is absent
 - [ ] Cross-project assistant evidence and production route writes after those surfaces are composed
 - [x] Direct access-administration API and bookmarked `/management/access` tests deny Office, Project Manager, and outside-domain presentation identities before protected work; broader feature-route coverage remains in the frontend checklist.
+- [x] Activity API and rendered-tab tests deny Office, Project Manager, outside-domain, and expired-session contexts; bounded filters/keyset pagination never expose raw audit metadata or internal request identifiers.
 - [ ] Google Group/folder/calendar access removal matches the application role change
 
 ## Administration page follow-on
 
 - [x] Implement `codex/admin-access-core` in source: fixed APIs for invite/revoke, one-role and Project Manager assignment changes, disablement, and sign-out-everywhere. The three role presets and invitation/session policy remain read-only; no per-user overrides exist; the commands enforce the immutable allowlist, required reasons, CSRF, optimistic concurrency, transactionally coupled audit, session invalidation, and final-Administrator protection. Migration version 4 remains unapplied.
 - [x] Build `codex/admin-access-page` in source as Management → People & Access with one bounded people/invitation projection, a read-only role guide, five workflows, optimistic-conflict and final-Administrator feedback, and direct-route, responsive/accessibility, and rendered denial evidence. No custom roles, permission matrix, per-device sessions, deletion, or re-enablement were added. Runtime employee-session/CSRF composition and deployment remain open.
-- [ ] Before second-user or real-data acceptance, build the separately privileged `codex/admin-audit-viewer` and Activity tab. Build `codex/admin-field-links` only when the field-assignment model is scheduled.
+- [x] Implement `codex/admin-audit-viewer` in the current source branch with a separately privileged minimized reader, fixed filters, 25-row keyset pagination, and the responsive/accessibility-tested Activity tab. No database privilege was applied and nothing was deployed. Build `codex/admin-field-links` only when the field-assignment model is scheduled.
 
 ## Completion result
 

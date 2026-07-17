@@ -6,6 +6,14 @@ import {
   type AdminAccessPersistenceResult,
   type AdminAccessRoleKey,
 } from "../../ports/admin-access-persistence";
+import {
+  ADMIN_AUDIT_CATEGORIES,
+  type AdminAuditCategory,
+  type AdminAuditKeyset,
+  type AdminAuditQuery,
+  type AdminAuditReader,
+  type AdminAuditResult,
+} from "../../ports/admin-audit-reader";
 import type { AuthorizationRepository } from "../../ports/authorization";
 import type {
   SecurityAuditEvent,
@@ -33,6 +41,11 @@ const MAX_ADMIN_PROJECTS = 50;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VERSION_PATTERN = /^[1-9][0-9]{0,18}$/;
 const GENERATED_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
+const MAX_AUDIT_CURSOR_LENGTH = 256;
+const AUDIT_CURSOR_PATTERN = /^v2\.([A-Za-z0-9_-]+)$/;
+const AUDIT_CURSOR_KEY_PATTERN = /^[0-9a-f]{64}$/;
+const AUDIT_RESULTS = new Set<AdminAuditResult>(["succeeded", "failed", "denied"]);
+const AUDIT_CATEGORIES = new Set<AdminAuditCategory>(ADMIN_AUDIT_CATEGORIES);
 
 type AuthorizationService = ReturnType<typeof createAuthorizationService>;
 type JsonObject = Readonly<Record<string, unknown>>;
@@ -57,6 +70,7 @@ export type EmployeeRouteTestActions = Readonly<{
 export type EmployeeRequestRouterDependencies = Readonly<{
   authorization: AuthorizationService;
   repository: AuthorizationRepository;
+  adminAudit: AdminAuditReader;
   adminAccess: AdminAccessPersistenceRepository;
   audit: SecurityAuditRepository;
   /**
@@ -83,6 +97,7 @@ type RouteMatch = Readonly<{
     | "files_share"
     | "gmail_file"
     | "calendar_create"
+    | "admin_audit_view"
     | "admin_access_view"
     | "admin_invitation_create"
     | "admin_invitation_revoke"
@@ -141,6 +156,14 @@ function route(path: string): RouteMatch | null {
   if (path === "/api/v1/admin/access") {
     return {
       kind: "admin_access_view",
+      method: "GET",
+      projectId: null,
+      fileId: null,
+    };
+  }
+  if (path === "/api/v1/admin/audit") {
+    return {
+      kind: "admin_audit_view",
       method: "GET",
       projectId: null,
       fileId: null,
@@ -528,6 +551,148 @@ function searchQuery(url: URL) {
   return query;
 }
 
+function optionalAuditQueryValue(url: URL, key: string) {
+  const values = url.searchParams.getAll(key);
+  if (values.length > 1) throw new HttpFailure(400, "invalid_query");
+  if (values.length === 0) return null;
+  const value = values[0] ?? "";
+  if (!value || value !== value.trim() || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  return value;
+}
+
+function auditTimestamp(value: string | null) {
+  if (value === null) return null;
+  if (
+    value.length !== 24
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
+  ) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isSafeInteger(parsed) || new Date(parsed).toISOString() !== value) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  return parsed;
+}
+
+function auditFilterFingerprint(
+  from: number | null,
+  before: number | null,
+  result: AdminAuditResult | null,
+  category: AdminAuditCategory | null,
+) {
+  return createHash("sha256")
+    .update(JSON.stringify({ before, category, from, result }), "utf8")
+    .digest("hex");
+}
+
+function auditCursor(value: string | null, fingerprint: string): AdminAuditKeyset | null {
+  if (value === null) return null;
+  if (value.length > MAX_AUDIT_CURSOR_LENGTH) throw new HttpFailure(400, "invalid_query");
+  const match = value.match(AUDIT_CURSOR_PATTERN);
+  if (!match) throw new HttpFailure(400, "invalid_query");
+  const encoded = match[1] ?? "";
+  let serialized: string;
+  try {
+    const bytes = Buffer.from(encoded, "base64url");
+    if (bytes.toString("base64url") !== encoded || bytes.byteLength > 192) {
+      throw new Error("noncanonical cursor");
+    }
+    serialized = bytes.toString("utf8");
+  } catch {
+    throw new HttpFailure(400, "invalid_query");
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  const record = parsed as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.length !== 3 || keys[0] !== "f" || keys[1] !== "k" || keys[2] !== "t") {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  if (
+    record.f !== fingerprint
+    || typeof record.t !== "number"
+    || !Number.isSafeInteger(record.t)
+    || record.t < 0
+    || typeof record.k !== "string"
+    || !AUDIT_CURSOR_KEY_PATTERN.test(record.k)
+  ) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  if (!Number.isFinite(new Date(record.t).getTime())) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  return Object.freeze({ occurredAt: record.t, cursorKey: record.k });
+}
+
+function encodeAuditCursor(cursor: AdminAuditKeyset | null, fingerprint: string) {
+  if (cursor === null) return null;
+  const serialized = JSON.stringify({ f: fingerprint, k: cursor.cursorKey, t: cursor.occurredAt });
+  return `v2.${Buffer.from(serialized, "utf8").toString("base64url")}`;
+}
+
+function adminAuditQuery(url: URL): Readonly<{
+  query: AdminAuditQuery;
+  fingerprint: string;
+}> {
+  const allowed = new Set(["limit", "from", "before", "result", "category", "cursor"]);
+  if ([...url.searchParams.keys()].some((key) => !allowed.has(key))) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+
+  const limitValue = optionalAuditQueryValue(url, "limit");
+  const limit = limitValue === null ? 25 : Number(limitValue);
+  if (
+    (limitValue !== null && !/^[1-9][0-9]?$/.test(limitValue))
+    || !Number.isSafeInteger(limit)
+    || limit < 1
+    || limit > 50
+  ) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  const from = auditTimestamp(optionalAuditQueryValue(url, "from"));
+  const before = auditTimestamp(optionalAuditQueryValue(url, "before"));
+  if (from !== null && before !== null && from >= before) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+
+  const resultValue = optionalAuditQueryValue(url, "result");
+  const result = resultValue === null || resultValue === "all"
+    ? null
+    : AUDIT_RESULTS.has(resultValue as AdminAuditResult)
+      ? resultValue as AdminAuditResult
+      : null;
+  if (resultValue !== null && resultValue !== "all" && result === null) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+  const categoryValue = optionalAuditQueryValue(url, "category");
+  const category = categoryValue === null || categoryValue === "all"
+    ? null
+    : AUDIT_CATEGORIES.has(categoryValue as AdminAuditCategory)
+      ? categoryValue as AdminAuditCategory
+      : null;
+  if (categoryValue !== null && categoryValue !== "all" && category === null) {
+    throw new HttpFailure(400, "invalid_query");
+  }
+
+  const fingerprint = auditFilterFingerprint(from, before, result, category);
+  const cursor = auditCursor(optionalAuditQueryValue(url, "cursor"), fingerprint);
+  return Object.freeze({
+    query: Object.freeze({ from, before, result, category, cursor, limit }),
+    fingerprint,
+  });
+}
+
 function requestUrl(request: IncomingMessage) {
   const raw = request.url ?? "/";
   if (raw.length > MAX_URL_LENGTH) throw new HttpFailure(414, "uri_too_long");
@@ -593,7 +758,7 @@ export function createEmployeeRequestRouter(
         );
         throw new HttpFailure(405, "method_not_allowed");
       }
-      if (matched.kind !== "search" && url.search) {
+      if (matched.kind !== "search" && matched.kind !== "admin_audit_view" && url.search) {
         throw new HttpFailure(400, "invalid_query");
       }
 
@@ -772,6 +937,31 @@ export function createEmployeeRequestRouter(
           throw new HttpFailure(401, "authentication_required", true);
         }
         jsonResponse(request, response, 200, { data: result.value.overview });
+        return;
+      }
+
+      if (matched.kind === "admin_audit_view") {
+        requireEmptyBody(request);
+        const input = adminAuditQuery(url);
+        const result = await dependencies.authorization.performAuditView(
+          requestTrace,
+          (context) => dependencies.adminAudit.listActivity(
+            context.recordScope,
+            input.query,
+            now(),
+          ),
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        if (result.value.outcome === "actor_authorization_changed") {
+          throw new HttpFailure(401, "authentication_required", true);
+        }
+        jsonResponse(request, response, 200, {
+          data: {
+            events: result.value.page.events,
+            nextCursor: encodeAuditCursor(result.value.page.next, input.fingerprint),
+            generatedAt: result.value.page.generatedAt,
+          },
+        });
         return;
       }
 

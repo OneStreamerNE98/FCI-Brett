@@ -66,6 +66,7 @@ export async function startCloudRunFoundation(
   const applicationHandler = createEmployeeRequestRouter({
     authorization,
     repository: composition.repositories.authorization,
+    adminAudit: composition.repositories.adminAudit,
     adminAccess: composition.repositories.adminAccess,
     audit: composition.repositories.securityAudit,
   });

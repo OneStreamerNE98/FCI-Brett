@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   DATABASE_TABLE_PRIVILEGES,
   createDatabaseReadinessProbe,
+  EXPECTED_AUDIT_ACTIVITY_PROJECTION_COLUMNS,
   EXPECTED_PRODUCTION_SCHEMA_HISTORY,
   EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS,
   EXPECTED_RUNTIME_TABLE_ACCESS,
@@ -53,6 +54,18 @@ function expectedRuntimeColumnUpdateRows() {
     })));
 }
 
+function expectedAuditProjectionCatalogRow() {
+  return {
+    relationExists: true,
+    relationKind: "v",
+    ownerName: "fci_migration_owner",
+    securityBarrier: true,
+    securityInvokerFalse: true,
+    relationOptionCount: 2,
+    columnFingerprint: [...EXPECTED_AUDIT_ACTIVITY_PROJECTION_COLUMNS],
+  };
+}
+
 function readyDatabase(overrides = {}) {
   const queries = [];
   const releases = [];
@@ -80,6 +93,9 @@ function readyDatabase(overrides = {}) {
           has_history_reader_grant_option: overrides.hasHistoryReaderGrantOption ?? false,
           has_unreviewed_function_execute: overrides.hasUnreviewedFunctionExecute ?? false,
         }]);
+      }
+      if (sql.includes("actual_columns AS")) {
+        return result(overrides.auditProjectionCatalog ?? [expectedAuditProjectionCatalogRow()]);
       }
       if (sql.includes("expected_update_columns")) {
         return result(overrides.runtimeColumnUpdates ?? expectedRuntimeColumnUpdateRows());
@@ -125,6 +141,7 @@ test("requires exact runtime privileges and complete migration history through t
     "BEGIN READ ONLY",
     "SET LOCAL statement_timeout = '1500ms'",
     "WITH history_reader AS (",
+    "WITH projection AS (",
     "WITH expected_update_columns(table_name, column_name, ordinal) AS (",
     "WITH expected(table_name, privilege, should_have, ordinal) AS (",
     "SELECT version, name, checksum",
@@ -133,16 +150,22 @@ test("requires exact runtime privileges and complete migration history through t
   assert.deepEqual(queries[2].values, ["fci_app"]);
   assert.match(queries[2].sql, /pg_has_role\(SESSION_USER, role\.oid, 'SET'\)/);
   assert.match(queries[2].sql, /has_sequence_privilege\(CURRENT_USER, sequence\.oid, 'USAGE'\)/);
-  assert.deepEqual(queries[3].values, [
+  assert.deepEqual(queries[3].values, ["fci_app"]);
+  assert.match(queries[3].sql, /relation\.relkind::text/);
+  assert.match(queries[3].sql, /owner\.rolname/);
+  assert.match(queries[3].sql, /security_barrier=true/);
+  assert.match(queries[3].sql, /security_invoker=false/);
+  assert.match(queries[3].sql, /pg_catalog\.format_type/);
+  assert.deepEqual(queries[4].values, [
     "fci_app",
     expectedRuntimeColumnUpdateRows().map(({ tableName }) => tableName),
     expectedRuntimeColumnUpdateRows().map(({ columnName }) => columnName),
     EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.map(({ table }) => table),
   ]);
-  assert.match(queries[3].sql, /has_column_privilege/);
-  assert.match(queries[3].sql, /unexpected AS/);
-  assert.match(queries[3].sql, /UPDATE WITH GRANT OPTION/);
-  assert.deepEqual(queries[4].values, [
+  assert.match(queries[4].sql, /has_column_privilege/);
+  assert.match(queries[4].sql, /unexpected AS/);
+  assert.match(queries[4].sql, /UPDATE WITH GRANT OPTION/);
+  assert.deepEqual(queries[5].values, [
     "fci_app",
     expectedRuntimePrivilegeRows().map(({ tableName }) => tableName),
     expectedRuntimePrivilegeRows().map(({ privilege }) => privilege),
@@ -150,10 +173,10 @@ test("requires exact runtime privileges and complete migration history through t
     EXPECTED_RUNTIME_TABLE_ACCESS.map(({ table }) => table),
     DATABASE_TABLE_PRIVILEGES,
   ]);
-  assert.match(queries[4].sql, /has_table_privilege/);
-  assert.match(queries[5].sql, /FROM "fci_app"\.read_production_schema_history\(\)/);
-  assert.doesNotMatch(queries[5].sql, /FROM "fci_app"\.production_schema_migrations/);
-  assert.match(queries[5].sql, /ORDER BY version/);
+  assert.match(queries[5].sql, /has_table_privilege/);
+  assert.match(queries[6].sql, /FROM "fci_app"\.read_production_schema_history\(\)/);
+  assert.doesNotMatch(queries[6].sql, /FROM "fci_app"\.production_schema_migrations/);
+  assert.match(queries[6].sql, /ORDER BY version/);
   assert.deepEqual(releases, [undefined]);
 });
 
@@ -194,6 +217,36 @@ test("fails readiness when the schema-history reader is missing, unavailable, or
     assert.equal(queries.some(({ sql }) => sql.includes("expected_update_columns")), false);
     assert.equal(queries.some(({ sql }) => sql.includes("has_table_privilege")), false);
     assert.equal(queries.some(({ sql }) => /FROM "fci_app"\.read_production_schema_history/.test(sql)), false);
+  }
+});
+
+test("fails readiness when the audit projection catalog boundary drifts", async () => {
+  const expected = expectedAuditProjectionCatalogRow();
+  const cases = [
+    [],
+    [{ ...expected, relationExists: false }],
+    [{ ...expected, relationKind: "r" }],
+    [{ ...expected, ownerName: "fci_runtime" }],
+    [{ ...expected, securityBarrier: false }],
+    [{ ...expected, securityInvokerFalse: false }],
+    [{ ...expected, relationOptionCount: 3 }],
+    [{ ...expected, columnFingerprint: expected.columnFingerprint.slice(0, -1) }],
+    [{ ...expected, columnFingerprint: expected.columnFingerprint.map(
+      (column, index) => index === 0 ? "cursor_key:uuid" : column,
+    ) }],
+    [{ ...expected, columnFingerprint: [...expected.columnFingerprint, "metadata:jsonb"] }],
+  ];
+
+  for (const auditProjectionCatalog of cases) {
+    const { database, queries } = readyDatabase({ auditProjectionCatalog });
+    const probe = createDatabaseReadinessProbe({ database, schema: "fci_app", cacheTtlMs: 0 });
+    assert.equal(await probe.check(), false);
+    assert.equal(queries.some(({ sql }) => sql.includes("expected_update_columns")), false);
+    assert.equal(queries.some(({ sql }) => sql.includes("has_table_privilege")), false);
+    assert.equal(
+      queries.some(({ sql }) => /FROM "fci_app"\.read_production_schema_history/.test(sql)),
+      false,
+    );
   }
 });
 
@@ -344,6 +397,9 @@ test("coalesces concurrent checks, caches briefly, and never exposes query failu
           }
           if (sql.includes("expected_update_columns")) {
             return result(expectedRuntimeColumnUpdateRows());
+          }
+          if (sql.includes("actual_columns AS")) {
+            return result([expectedAuditProjectionCatalogRow()]);
           }
           if (sql.includes("has_table_privilege")) {
             return result(expectedRuntimePrivilegeRows());
