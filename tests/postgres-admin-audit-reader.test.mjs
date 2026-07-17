@@ -286,7 +286,7 @@ test(
              target_type, target_id, result, reason_code, request_id,
              correlation_id, source, metadata, occurred_at, retention_policy_key
            ) VALUES ($1, 'user', $2, 'admincrm@cherryhillfci.com',
-             $3, 'user', $2::text, $4, $5, $6, $7, 'integration_test',
+             $3, 'user', $2::uuid::text, $4, $5, $6, $7, 'integration_test',
              $8::jsonb, $9, 'security_audit')`,
           [
             id,
