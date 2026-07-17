@@ -7,7 +7,14 @@ const featureStateDescriptions: Record<FeatureState, string> = {
   Planned: "Informational only; the workflow is not implemented yet",
 };
 
+const featureStateCompactLabels: Record<FeatureState, string> = {
+  Working: "Working",
+  "In development": "Dev",
+  "Setup required": "Setup",
+  Planned: "Planned",
+};
+
 export function FeatureStateBadge({ state }: { state: FeatureState }) {
   const className = state.toLowerCase().replaceAll(" ", "-");
-  return <span className={`feature-state feature-state-${className}`} title={featureStateDescriptions[state]}>{state}</span>;
+  return <span className={`feature-state feature-state-${className}`} data-compact-label={featureStateCompactLabels[state]} title={featureStateDescriptions[state]}>{state}</span>;
 }

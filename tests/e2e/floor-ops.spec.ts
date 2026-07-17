@@ -109,7 +109,7 @@ test("mobile navigation traps focus and restores the menu trigger on every close
   await expect(trigger).toBeFocused();
 });
 
-test("mobile navigation keeps management labels on one line without horizontal scrolling", async ({ page }) => {
+test("mobile navigation keeps management labels and compact status on one line without horizontal scrolling", async ({ page }) => {
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/");
@@ -118,8 +118,9 @@ test("mobile navigation keeps management labels on one line without horizontal s
     await page.getByRole("button", { name: "Open navigation" }).click();
     const navigation = page.getByRole("navigation", { name: "Main navigation" });
     const managementLinks = [
-      navigation.getByRole("link", { name: "Settings · In development" }),
-      navigation.getByRole("link", { name: "People & Access · In development" }),
+      { link: navigation.getByRole("link", { name: "Reports · Working" }), compactState: "Working" },
+      { link: navigation.getByRole("link", { name: "Settings · In development" }), compactState: "Dev" },
+      { link: navigation.getByRole("link", { name: "People & Access · In development" }), compactState: "Dev" },
     ];
 
     await expect(navigation).toBeVisible();
@@ -129,21 +130,30 @@ test("mobile navigation keeps management labels on one line without horizontal s
     }));
     expect(navigationWidth.scrollWidth).toBeLessThanOrEqual(navigationWidth.clientWidth);
 
-    for (const link of managementLinks) {
+    for (const { link, compactState } of managementLinks) {
       await expect(link).toBeVisible();
-      await expect(link.locator(".feature-state")).toBeHidden();
+      const stateBadge = link.locator(".feature-state");
+      await expect(stateBadge).toBeVisible();
+      const renderedCompactState = await stateBadge.evaluate((element) => (
+        window.getComputedStyle(element, "::after").content.replaceAll('"', "")
+      ));
+      expect(renderedCompactState).toBe(compactState);
       const labelLayout = await link.locator(".nav-label").evaluate((element) => {
         const style = window.getComputedStyle(element);
         const bounds = element.getBoundingClientRect();
+        const textRange = document.createRange();
+        textRange.selectNodeContents(element);
         return {
           clientWidth: element.clientWidth,
           height: bounds.height,
           scrollWidth: element.scrollWidth,
+          textWidth: textRange.getBoundingClientRect().width,
           whiteSpace: style.whiteSpace,
         };
       });
       expect(labelLayout.whiteSpace).toBe("nowrap");
       expect(labelLayout.scrollWidth).toBeLessThanOrEqual(labelLayout.clientWidth);
+      expect(labelLayout.textWidth).toBeLessThanOrEqual(labelLayout.clientWidth);
       expect(labelLayout.height).toBeLessThan(24);
     }
 
