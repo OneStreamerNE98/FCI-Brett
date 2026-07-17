@@ -109,6 +109,48 @@ test("mobile navigation traps focus and restores the menu trigger on every close
   await expect(trigger).toBeFocused();
 });
 
+test("mobile navigation keeps management labels on one line without horizontal scrolling", async ({ page }) => {
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    await waitForLiveRecords(page);
+
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    const navigation = page.getByRole("navigation", { name: "Main navigation" });
+    const managementLinks = [
+      navigation.getByRole("link", { name: "Settings · In development" }),
+      navigation.getByRole("link", { name: "People & Access · In development" }),
+    ];
+
+    await expect(navigation).toBeVisible();
+    const navigationWidth = await navigation.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(navigationWidth.scrollWidth).toBeLessThanOrEqual(navigationWidth.clientWidth);
+
+    for (const link of managementLinks) {
+      await expect(link).toBeVisible();
+      await expect(link.locator(".feature-state")).toBeHidden();
+      const labelLayout = await link.locator(".nav-label").evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        const bounds = element.getBoundingClientRect();
+        return {
+          clientWidth: element.clientWidth,
+          height: bounds.height,
+          scrollWidth: element.scrollWidth,
+          whiteSpace: style.whiteSpace,
+        };
+      });
+      expect(labelLayout.whiteSpace).toBe("nowrap");
+      expect(labelLayout.scrollWidth).toBeLessThanOrEqual(labelLayout.clientWidth);
+      expect(labelLayout.height).toBeLessThan(24);
+    }
+
+    await page.getByRole("button", { name: "Close navigation" }).click();
+  }
+});
+
 test("global search supports the keyboard and returns focus after opening a project", async ({ page }) => {
   await page.goto("/");
   await waitForLiveRecords(page);
