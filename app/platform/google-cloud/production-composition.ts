@@ -2,6 +2,9 @@ import {
   createPostgresAuthorizationRepository,
 } from "../../adapters/postgres/authorization-repository";
 import {
+  createPostgresAdminAuditReader,
+} from "../../adapters/postgres/admin-audit-reader-repository";
+import {
   createPostgresAdminAccessPersistenceRepository,
 } from "../../adapters/postgres/admin-access-persistence-repository";
 import {
@@ -28,6 +31,7 @@ import {
 } from "../../adapters/postgres/security-audit-repository";
 import type { PostgresCreationRequestMetadata } from "../../adapters/postgres/creation-idempotency";
 import type { AuthorizationRepository } from "../../ports/authorization";
+import type { AdminAuditReader } from "../../ports/admin-audit-reader";
 import type { AdminAccessPersistenceRepository } from "../../ports/admin-access-persistence";
 import type { ClientRepository } from "../../ports/client-repository";
 import type { FileMetadataRepository } from "../../ports/file-metadata";
@@ -47,6 +51,7 @@ export type ProductionRepositoryFactories = Readonly<{
   outbox: OutboxRepository;
   securityAudit: SecurityAuditRepository;
   authorization: AuthorizationRepository;
+  adminAudit: AdminAuditReader;
   adminAccess: AdminAccessPersistenceRepository;
   identity: IdentityPersistenceRepository;
   integrations: IntegrationMetadataRepository;
@@ -88,6 +93,7 @@ export function composeProductionRepositories(
   };
   const securityAudit = createPostgresSecurityAuditRepository(postgres, sharedRepositoryOptions);
   const authorization = createPostgresAuthorizationRepository(postgres, sharedRepositoryOptions);
+  const adminAudit = createPostgresAdminAuditReader(postgres, sharedRepositoryOptions);
   const adminAccess = createPostgresAdminAccessPersistenceRepository(
     postgres,
     sharedRepositoryOptions,
@@ -99,6 +105,7 @@ export function composeProductionRepositories(
     outbox,
     securityAudit,
     authorization,
+    adminAudit,
     adminAccess,
     identity,
     integrations,

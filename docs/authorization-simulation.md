@@ -1,6 +1,6 @@
 # Authorization simulation and source-only employee routes
 
-Status: Approved policy, source-only Cloud Run employee routes, fixed administration commands, and People & Access projection/page implemented; not migrated, applied, deployed, or connected to live identity or providers
+Status: Approved policy, source-only Cloud Run employee routes, fixed administration commands, and People & Access projection/page merged; minimized Activity viewer implemented in the current source branch; not migrated, applied, deployed, or connected to live identity or providers
 
 Decision dates: July 15–16, 2026
 
@@ -71,10 +71,11 @@ These are source contracts only. They have not been applied to a database, deplo
 
 - Resolved-session/operation denials, same-origin/CSRF transport denials, and sensitive allows are appended before protected work begins; an audit failure fails the request closed. Missing or malformed cookie requests receive the same generic `401` without persisting credential material.
 - Audit metadata records the operation, principal kind, and project-scoped state without raw credentials or request bodies.
-- The runtime database role remains append-only for security-audit records. `audit.read` is Administrator-only policy, but the separately privileged audit reader, route, and UI do not exist.
+- The normal runtime database role remains insert-only for raw security-audit records. The source-only `GET /api/v1/admin/audit` path uses a dedicated reader behind `audit.read` and least-privilege `SELECT` on a security-barrier minimized projection. It returns only actor, human action, target label, result, reason, and time through bounded filters and a filter-bound keyset cursor containing only a one-way pseudonymous pagination key. It does not expose raw metadata, credentials, request bodies, internal identifiers, or request/correlation data, and it does not grant general `audit_events` read access.
 - The source-only Administrator command boundary can create or revoke an invitation, change one fixed role and any Project Manager assignments, disable a user, or sign a user out everywhere. These routes use exact same-origin/CSRF checks, fixed request schemas, optimistic concurrency, transactionally coupled exact-scope audit, session invalidation, and concurrent final-active-Administrator protection. After the global mutation lock, every command rechecks and row-locks the exact actor session/user/current Administrator capability with database statement time; access loss or expiry while a slow request is in flight fails as a generic signed-out response. Creating an invitation expires any same-email pending credential whose seven-day deadline has passed before inserting its replacement. The fixed role/capability catalog has no mutation route, and Field Links remain absent.
 - One bounded `GET /api/v1/admin/access` projection rechecks and share-locks the exact current Administrator session/user and `access_admin.read` grant in a repeatable-read transaction before returning fixed role descriptions, at most 100 people, 100 live pending invitations, and 500 lightweight project choices. It reports last sign-in from session issuance rather than mislabeling the currently untended `last_seen_at` value as activity. It fails closed on truncation, malformed role/scope state, or a post-authorization actor change and never returns credentials, capability arrays, session identifiers, audit records, client data, or financial values.
 - A dedicated source-only `/management/access` screen presents three summary counts, one People table, one pending-invitation list, three compact read-only role explanations, and only the five approved workflows. It reloads the single projection after confirmed writes, handles stale/final-Administrator/session-ended responses explicitly, and has direct-route, keyboard, mobile/tablet/desktop, 200%-equivalent reflow, and accessibility coverage. The current Sites shell remains only a presentation/test adapter and deliberately has no production session/CSRF bridge.
+- The same source-only screen now has an independently loaded **Activity** tab. Fixed period, result, and action-category filters query 25-row keyset pages; load-more failures preserve existing rows. Administrator-only route and presentation denials, session-ended handling, keyboard tab semantics, responsive table-to-card reflow, accessibility, and console-error coverage are exercised with local fixtures.
 
 ## Explicitly deferred
 
@@ -83,7 +84,7 @@ These are source contracts only. They have not been applied to a database, deplo
 - Durable hashed Field Lead link creation, delivery, lookup, revocation, and browser behavior. The snapshot evaluator is not sufficient for a route.
 - Production file/object-storage and Google Gmail/Calendar/Drive action adapters, direct Google access decisions, and provider configuration.
 - Lead/client/contact and project-operation mutation route composition beyond the approved capability ceiling.
-- A separately privileged audit viewer, recovery controls, backup/restore proof, key rotation, staging, migration/apply, deployment, a second user, and real client or employee data.
+- Production composition or deployment of the source-only audit viewer; audit export and retention controls; recovery controls; backup/restore proof; key rotation; staging; migration/apply; a second user; and real client or employee data.
 
 The source work reduces implementation risk but does not change the no-go decision for a second employee or real data.
 
@@ -93,7 +94,7 @@ The owner-facing design is intentionally small for a roughly 20-person company. 
 
 1. `codex/admin-access-core` — implemented in source, unapplied: fixed schema/catalog and command APIs for invite, revoke invitation, change one role or Project Manager assignments, disable access, and sign out everywhere, with reasons, CSRF, optimistic concurrency, transactionally coupled audit, session invalidation, and concurrent final-Administrator protection.
 2. `codex/admin-access-page` — implemented in source: bounded Administrator read projection and Management → People & Access with one people/invitation list, a read-only role guide, the five workflows, and direct-route, responsive, accessibility, and rendered browser evidence. Production employee-session/CSRF composition remains deferred.
-3. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged minimized Activity reader and tab. Audit writes remain part of the core branch.
+3. `codex/admin-audit-viewer` — implemented in the current source branch: separately privileged minimized Activity reader and independently loaded tab with fixed filters, keyset pagination, denial evidence, and responsive/accessibility coverage. Audit writes remain part of the core branch; no reader privilege is applied to a database.
 4. `codex/admin-field-links`: when the field-assignment workflow is scheduled, add the separate hashed exact-project Field Link lifecycle and tab. Do not reuse file links or create Field Lead users.
 
-The first two branches are the immediate milestone. No branch adds custom roles, global permission toggles, user deletion/re-enablement, live admission, migration/apply, or deployment.
+The first two branches are merged and the third is implemented in the current source branch as the source-only administration milestone. No branch adds custom roles, global permission toggles, user deletion/re-enablement, live admission, migration/apply, or deployment.

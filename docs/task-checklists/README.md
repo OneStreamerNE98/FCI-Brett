@@ -11,7 +11,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Workspace resources | Workspace administrator | Not started | Create the Shared Drive, directory Sheet, mailbox, and two calendars. |
 | Google Cloud and OAuth | Workspace/Cloud administrator | Company-account project candidate reported; Cloud verification pending | Inventory Brett's candidate and bring the non-secret findings back for approval before any API, IAM, billing, OAuth, or Admin-console change. |
 | Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
-| Staff Google login and roles | Codex/developer | Approved policy, source-only employee routes, and fixed admin commands implemented; OIDC/session issuance/providers pending | Review the admin core, then build the bounded People & Access read projection/page; keep migration/apply, deployment, live OIDC, and additional users gated. |
+| Staff Google login and roles | Codex/developer | Approved policy, source-only employee routes, People & Access page, and Activity viewer implemented in source; OIDC/session issuance/providers pending | Review and merge the minimized audit-viewer branch; keep migration/apply, deployment, live OIDC, and additional users gated. |
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
@@ -45,11 +45,15 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 ## Recommended next source branches
 
-1. Review and merge `codex/admin-access-page`, which adds the source-only bounded Administrator read projection and compact Management → People & Access screen without applying migration version 4 or admitting users.
-2. Before second-user or real-data acceptance, build `codex/admin-audit-viewer` with its separately privileged minimized Activity reader.
-3. Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
+1. Review and merge `codex/admin-audit-viewer`, which implements the separately privileged minimized Activity reader and tab in source without applying database privileges or admitting users.
+2. Build `codex/frontend-durable-routes` for primary-view URLs plus refresh, Back, bookmark, and incremental feature-split coverage.
+3. Complete the remaining frontend type/contrast, responsive/accessibility, and browser console-health work.
+4. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
+5. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
 
-None of these steps authorizes OIDC, session issuance, a migration or infrastructure apply, deployment, a second user, or real data.
+Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
+
+None of these steps authorizes live OIDC/session issuance, staging execution, a migration or infrastructure apply, deployment, a second user, or real data.
 
 ## Safety boundary
 

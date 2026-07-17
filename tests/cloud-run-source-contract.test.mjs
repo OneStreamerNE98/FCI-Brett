@@ -244,7 +244,7 @@ test("migration entry activates the configured role and always closes its max-on
     }),
   });
 
-  assert.deepEqual(result, { appliedVersions: [], currentVersion: 4 });
+  assert.deepEqual(result, { appliedVersions: [], currentVersion: 5 });
   assert.equal(queries[0], 'SET ROLE "fci_migration_owner"');
   assert.ok(queries.indexOf("RESET ROLE") > queries.indexOf("SELECT pg_catalog.pg_advisory_unlock($1::bigint)"));
   assert.deepEqual(releases, [undefined]);

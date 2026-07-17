@@ -176,7 +176,8 @@ test("freezes the approved three-role capability catalog without seeding employe
     "notes.update", "files.read", "files.upload",
   ]);
 
-  const migration = PRODUCTION_SCHEMA_MIGRATIONS.at(-1);
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 4);
+  assert.ok(migration);
   assert.equal(migration.version, 4);
   assert.equal(migration.name, "admin_access_persistence");
   assert.match(migration.statements[0], /^DO \$admin_access_preflight\$/);
@@ -191,6 +192,18 @@ test("freezes the approved three-role capability catalog without seeding employe
   assert.match(sql, /INSERT INTO capabilities/);
   assert.match(sql, /INSERT INTO role_capabilities/);
   assert.doesNotMatch(sql, /INSERT INTO (?:users|external_identities|invitations|sessions)/);
+});
+
+test("adds only the minimized security-barrier Activity projection in migration five", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 5);
+  assert.ok(migration);
+  assert.equal(migration.name, "admin_audit_activity");
+  const sql = migration.statements.join("\n");
+  assert.match(sql, /CREATE INDEX audit_events_occurred_cursor_key_idx/);
+  assert.match(sql, /CREATE INDEX audit_events_result_occurred_cursor_key_idx/);
+  assert.match(sql, /CREATE VIEW audit_activity_projection[\s\S]*security_barrier = true/);
+  assert.match(sql, /event\.metadata -> 'reason'/);
+  assert.doesNotMatch(sql, /CREATE TABLE|INSERT INTO audit_events|DROP\s/);
 });
 
 test("rejects gaps, duplicate names, transaction control, and concurrent indexes", () => {
@@ -245,7 +258,7 @@ test("uses one dedicated connection, locks before history, and commits each vers
 
   const result = await runProductionSchemaMigrations(pool);
 
-  assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4], currentVersion: 4 });
+  assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4, 5], currentVersion: 5 });
   assert.equal(pool.connectCount, 1);
   assert.equal(client.released, true);
   assert.deepEqual(client.history, PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({
@@ -276,10 +289,10 @@ test("uses one dedicated connection, locks before history, and commits each vers
   );
   assert.equal(client.searchPath, '"$user", public');
 
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 4);
-  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 4);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 4);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 4);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 5);
+  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 5);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 5);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 5);
 
   for (const migration of PRODUCTION_SCHEMA_MIGRATIONS) {
     const marker = client.queries.findIndex(
@@ -424,8 +437,8 @@ test("applies only the missing suffix of a known history prefix", async () => {
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result.appliedVersions, [2, 3, 4]);
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 3);
+  assert.deepEqual(result.appliedVersions, [2, 3, 4, 5]);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 4);
 });
 
 test("re-reads applied history after the lock and makes a completed rerun a no-op", async () => {
@@ -438,7 +451,7 @@ test("re-reads applied history after the lock and makes a completed rerun a no-o
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result, { appliedVersions: [], currentVersion: 4 });
+  assert.deepEqual(result, { appliedVersions: [], currentVersion: 5 });
   assert.equal(client.queries.some(({ sql }) => sql === "BEGIN"), false);
   assert.equal(client.released, true);
 });
@@ -450,7 +463,7 @@ test("fails closed on changed, unknown, or non-prefix migration history", async 
     [{ version: 2, name: PRODUCTION_SCHEMA_MIGRATIONS[1].name, checksum: PRODUCTION_SCHEMA_MIGRATIONS[1].checksum }],
     [
       ...PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({ version, name, checksum })),
-      { version: 5, name: "future", checksum: "sha256:" + "1".repeat(64) },
+      { version: 6, name: "future", checksum: "sha256:" + "1".repeat(64) },
     ],
   ];
 

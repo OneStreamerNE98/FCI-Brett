@@ -238,6 +238,7 @@ async function startHarness(options = {}) {
   const audits = [];
   const revocations = [];
   const adminAccessCalls = [];
+  const adminAuditCalls = [];
   const repositoryCalls = {
     sessionHashes: [],
     csrf: [],
@@ -390,11 +391,32 @@ async function startHarness(options = {}) {
       };
     },
   };
+  const adminAudit = {
+    async listActivity(scope, query, checkedAt) {
+      adminAuditCalls.push({ scope, query, checkedAt });
+      return options.adminAuditResult ?? {
+        outcome: "accepted",
+        page: {
+          events: [{
+            actorLabel: "FCI TEST — DO NOT USE Administrator",
+            actionLabel: "Access denied",
+            targetLabel: "Security activity",
+            result: "denied",
+            reason: "Session expired after inactivity",
+            occurredAt: NOW - 1_000,
+          }],
+          next: null,
+          generatedAt: NOW,
+        },
+      };
+    },
+  };
   const actionCalls = [];
   const actions = options.actions === true ? recordedActions(actionCalls) : options.actions;
   const router = createEmployeeRequestRouter({
     authorization,
     repository,
+    adminAudit,
     adminAccess,
     audit,
     testActions: actions,
@@ -453,6 +475,7 @@ async function startHarness(options = {}) {
   return {
     actionCalls,
     adminAccessCalls,
+    adminAuditCalls,
     audits,
     close,
     origin,
@@ -683,6 +706,113 @@ test("Administrator access projection is bounded, capability-gated, and race-fen
   });
   try {
     const response = await changed.request("/api/v1/admin/access");
+    assert.equal(response.status, 401);
+    assert.deepEqual(await json(response), { error: "authentication_required" });
+    assertSessionCleared(response);
+  } finally {
+    await changed.close();
+  }
+});
+
+test("Administrator audit Activity uses strict filters, a one-way cursor, and minimized DTOs", async () => {
+  const next = { occurredAt: NOW - 1_000, cursorKey: "a".repeat(64) };
+  const running = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    adminAuditResult: {
+      outcome: "accepted",
+      page: {
+        events: [{
+          actorLabel: "FCI TEST — DO NOT USE Administrator",
+          actionLabel: "Access denied",
+          targetLabel: "Security activity",
+          result: "denied",
+          reason: "Session expired after inactivity",
+          occurredAt: NOW - 1_000,
+        }],
+        next,
+        generatedAt: NOW,
+      },
+    },
+  });
+  try {
+    const filters = "limit=25&from=2026-07-15T16%3A00%3A00.000Z&before=2026-07-16T16%3A00%3A00.000Z&result=denied&category=access";
+    const response = await running.request(`/api/v1/admin/audit?${filters}`);
+    assert.equal(response.status, 200);
+    const payload = await json(response);
+    assert.deepEqual(payload.data.events, [{
+      actorLabel: "FCI TEST — DO NOT USE Administrator",
+      actionLabel: "Access denied",
+      targetLabel: "Security activity",
+      result: "denied",
+      reason: "Session expired after inactivity",
+      occurredAt: NOW - 1_000,
+    }]);
+    assert.equal(payload.data.generatedAt, NOW);
+    assert.match(payload.data.nextCursor, /^v2\.[A-Za-z0-9_-]+$/);
+    const decodedCursor = Buffer.from(payload.data.nextCursor.split(".")[1], "base64url")
+      .toString("utf8");
+    assert.doesNotMatch(decodedCursor, new RegExp(INVITATION_ID, "i"));
+    assert.match(decodedCursor, /"k":"[0-9a-f]{64}"/);
+    assert.doesNotMatch(JSON.stringify(payload.data), new RegExp(INVITATION_ID, "i"));
+    assert.deepEqual(running.adminAuditCalls[0].query, {
+      from: Date.parse("2026-07-15T16:00:00.000Z"),
+      before: Date.parse("2026-07-16T16:00:00.000Z"),
+      result: "denied",
+      category: "access",
+      cursor: null,
+      limit: 25,
+    });
+
+    const nextResponse = await running.request(
+      `/api/v1/admin/audit?${filters}&cursor=${encodeURIComponent(payload.data.nextCursor)}`,
+    );
+    assert.equal(nextResponse.status, 200);
+    await json(nextResponse);
+    assert.deepEqual(running.adminAuditCalls[1].query.cursor, next);
+    assert.ok(running.repositoryCalls.capabilityChecks
+      .slice(-2)
+      .every(({ capabilityKey }) => capabilityKey === AUTHORIZATION_CAPABILITIES.auditRead));
+
+    const callsBeforeInvalid = running.adminAuditCalls.length;
+    for (const path of [
+      "/api/v1/admin/audit?unknown=value",
+      "/api/v1/admin/audit?result=all&result=denied",
+      "/api/v1/admin/audit?from=2026-07-15",
+      "/api/v1/admin/audit?limit=51",
+      "/api/v1/admin/audit?category=unknown",
+      "/api/v1/admin/audit?cursor=v2.invalid",
+      `/api/v1/admin/audit?category=people&cursor=${encodeURIComponent(payload.data.nextCursor)}`,
+    ]) {
+      const invalid = await running.request(path);
+      assert.equal(invalid.status, 400, path);
+      assert.deepEqual(await json(invalid), { error: "invalid_query" }, path);
+    }
+    assert.equal(running.adminAuditCalls.length, callsBeforeInvalid);
+  } finally {
+    await running.close();
+  }
+
+  for (const role of [
+    AUTHORIZATION_ROLES.officeOperations,
+    AUTHORIZATION_ROLES.projectManager,
+  ]) {
+    const denied = await startHarness({ role });
+    try {
+      const response = await denied.request("/api/v1/admin/audit");
+      assert.equal(response.status, 403, role);
+      assert.deepEqual(await json(response), { error: "forbidden" }, role);
+      assert.equal(denied.adminAuditCalls.length, 0, role);
+    } finally {
+      await denied.close();
+    }
+  }
+
+  const changed = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    adminAuditResult: { outcome: "actor_authorization_changed" },
+  });
+  try {
+    const response = await changed.request("/api/v1/admin/audit");
     assert.equal(response.status, 401);
     assert.deepEqual(await json(response), { error: "authentication_required" });
     assertSessionCleared(response);

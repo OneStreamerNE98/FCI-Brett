@@ -1,6 +1,6 @@
 # Administration and Access plan
 
-Status: Approved first-release design; fixed source-only administration core and People & Access page implemented; runtime composition and deployment remain pending
+Status: Approved first-release design; fixed administration core and People & Access page merged, with the minimized Activity viewer implemented in the current source branch; runtime composition and deployment remain pending
 
 Reviewed: July 16, 2026
 
@@ -10,7 +10,7 @@ Audience: Business owner, application Administrators, and developers
 
 For the first rollout, use one small **Management → People & Access** page rather than a general-purpose permission console. The company has about 20 employees, three fixed employee roles, no per-user capability overrides, and no approved need for custom roles or editable security policy.
 
-The first page manages people and pending invitations only. Field Lead links and security activity join the page later, after their separately privileged backend boundaries exist. This gives Administrators the workflows they need without exposing low-level capabilities, session policy, or database concepts.
+The People view manages people and pending invitations only. A second **Activity** view uses its own projection-limited reader instead of granting general raw-audit access. Field Lead links join later, after their distinct backend boundary and field-assignment workflow exist. This gives Administrators the workflows and minimized security evidence they need without exposing low-level capabilities, session policy, raw audit metadata, or database concepts.
 
 ## Fixed first-release policy
 
@@ -101,18 +101,18 @@ The smaller interface does not reduce the authorization boundary:
 
 Add a **Field Links** tab only when the field-assignment workflow exists. Create links from the exact project or assignment and list active links here for revocation. Use a separate hashed bearer-link store, show the raw link once, and expose only recipient/purpose label, exact project, seven- or fourteen-day expiry, status, and revoke. Do not reuse file links or create a Field Lead user.
 
-### Activity
+### Activity — implemented in source
 
-Add an **Activity** tab before a second-user or real-data rollout. It uses a separately privileged, projection-limited audit reader and shows only actor, action, target label, result, reason, and time. Keep raw metadata, credentials, request bodies, and general runtime `SELECT` access unavailable. Audit export remains deferred until its retention and export contract is accepted.
+The **Activity** tab is implemented in source before a second-user or real-data rollout. It uses a separately privileged, projection-limited audit reader and shows only actor, action, target label, result, reason, and time. Fixed period, result, and action-category filters plus 25-row keyset pages keep the view bounded. Raw metadata, credentials, request bodies, internal identifiers, request/correlation data, and general runtime `SELECT` access remain unavailable. Audit export remains deferred until its retention and export contract is accepted.
 
 ## Bounded implementation branches
 
 1. `codex/admin-access-core` — implemented in source, unapplied: migration version 4 seeds only the fixed role/capability catalog, binds invitations to one role and any Project Manager projects, and adds the five fixed command APIs with reasons, post-authorization actor-session fencing, audit, CSRF, optimistic concurrency, session invalidation, expired-invitation replacement, and final-Administrator protection. It requires empty version-3 role/access data; a populated database needs a separately reviewed backfill. It does not seed live users or issue a production session.
 2. `codex/admin-access-page` — implemented in source: one bounded Administrator-only `GET /api/v1/admin/access` projection plus `/management/access` with the People table, pending invitations, read-only role guide, five workflows, direct-route denials, stale/final-Administrator handling, and responsive/accessibility browser coverage. The current Sites route is only a presentation/test adapter: it has no production employee-session or CSRF bootstrap and is intentionally not deployed. Unsupported actions remain absent rather than appearing as a large disabled console.
-3. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged audit reader and Activity tab with bounded filters and keyset pagination.
+3. `codex/admin-audit-viewer` — implemented in the current source branch: a separately privileged, minimized `GET /api/v1/admin/audit` reader plus an independently loaded Activity tab with fixed filters, 25-row keyset pagination, Administrator-only route and presentation denials, and responsive/accessibility browser coverage. Source least privilege permits reads only through a security-barrier minimized projection; the branch does not expose raw audit fields, export data, apply database privileges, or deploy the page.
 4. `codex/admin-field-links`: when the field-assignment model is scheduled, add the distinct hashed exact-project Field Link lifecycle, read route, and Field Links tab.
 
-The first two branches are the immediate Administration and Access milestone. Audit writes are part of the core branch; the reader remains mandatory before employee rollout. Field Links do not block the People page because no field-assignment workflow exists yet.
+The first two branches are merged, and the third is implemented in the current source branch as the final source-only Administration and Access milestone. Audit writes are part of the core branch, while the minimized reader remains separately privileged. Field Links do not block the People or Activity views because no field-assignment workflow exists yet.
 
 ## Not included
 
@@ -128,6 +128,6 @@ The first two branches are the immediate Administration and Access milestone. Au
 
 ## Acceptance boundary
 
-The People & Access page is complete only when direct API and direct-route tests prove the same Administrator-only behavior as the rendered interface; concurrent final-Administrator mutations are denied; role/project reductions invalidate sessions; disabled users cannot reuse sessions; CSRF and stale-version requests fail closed; and keyboard, 200% zoom, mobile, tablet, and desktop behavior pass.
+The People & Access source milestone is complete only when direct API and direct-route tests prove the same Administrator-only behavior as the rendered interface; concurrent final-Administrator mutations are denied; role/project reductions invalidate sessions; disabled users cannot reuse sessions; CSRF and stale-version requests fail closed; Activity pagination and filtering stay bounded without exposing raw audit fields; and keyboard, 200% zoom, mobile, tablet, and desktop behavior pass.
 
 The page may be developed with fake Administrators, Office users, and Project Managers. It does not authorize a database migration, hosted configuration change, Google Workspace connection, employee invitation, deployment, second-user access, or real data.

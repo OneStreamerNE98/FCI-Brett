@@ -11,6 +11,7 @@ const productionMigrationModules = new Set([
   join(appRoot, "platform", "postgres", "production-schema-migrations.ts"),
   join(appRoot, "platform", "postgres", "production-persistence-schema.ts"),
   join(appRoot, "platform", "postgres", "admin-access-persistence-schema.ts"),
+  join(appRoot, "platform", "postgres", "admin-audit-activity-schema.ts"),
 ]);
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");

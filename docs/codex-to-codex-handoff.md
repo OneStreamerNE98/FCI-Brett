@@ -95,16 +95,22 @@ The current source-only `codex/admin-access-core` assignment adds unapplied migr
 
 The source-only `codex/admin-access-page` assignment adds the bounded Administrator read projection plus the compact `/management/access` screen with one People table, pending invitations, three read-only role explanations, and the five fixed workflows. The projection rechecks the exact current Administrator session and fails closed on stale authorization, malformed scope data, or bounded-list overflow. Browser coverage includes direct-route denials, stale/final-Administrator handling, keyboard focus, responsive reflow, and accessibility. The current Sites route is only a presentation/test adapter; production employee-session/CSRF bootstrap, invitation delivery, migration/apply, and deployment remain absent.
 
+The current source-only `codex/admin-audit-viewer` assignment implements a separately privileged `GET /api/v1/admin/audit` reader over a security-barrier minimized projection plus an independently loaded **Activity** tab on `/management/access`. It rechecks the exact live Administrator session/version and `audit.read`, accepts only bounded fixed filters and a filter-bound keyset cursor containing a one-way pseudonymous pagination key, and returns only actor, human action, target label, result, bounded friendly reason, and time. Raw audit metadata and internal identifiers remain unavailable. Responsive/accessibility and Office, Project Manager, outside-domain, and expired-session denial evidence use local fixtures. The branch does not apply a migration or database grant, deploy, connect live identity, admit a second user, or use real data.
+
 ## Recommended next worker assignments
 
-After the administration-page pull request is accepted and merged, continue the simplified [Administration and Access plan](administration-and-access-plan.md):
+Review and merge the current `codex/admin-audit-viewer` source branch before beginning the next branch. After that, the next local sequence does not require Brett's Workspace or Cloud input:
 
-1. `codex/admin-audit-viewer`: before second-user or real-data acceptance, add the separately privileged, minimized, keyset-paginated Activity reader and tab.
-2. `codex/admin-field-links`: when field assignments are scheduled, add a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.
+1. `codex/frontend-durable-routes`: give primary views durable URLs with refresh, Back, and bookmark coverage, then split the large client surface incrementally.
+2. `codex/frontend-quality-hardening`: finish legacy type/contrast work, broader responsive/accessibility checks, and console-error guards.
+3. Source-only jobs and Google sync contracts: model job/attempt/failure/replay plus Gmail/Calendar cursor and renewal state with fakes only; do not activate Scheduler, watches, channels, or delivery.
+4. Local migration fixtures: extend transformation, duplicate-reporting, reconciliation, and rollback evidence without creating or using staging.
+
+Build `codex/admin-field-links` only when field assignments are scheduled. It needs a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.
 
 Do not build custom roles, a permission-toggle matrix, per-user overrides, editable session/invitation policy, user deletion/re-enablement, or a per-device session console for the first rollout.
 
-Brett's Google Cloud and Workspace inputs remain necessary for cost approval, resource application, staging, direct Google access, and later live integration, but they do not block these local source-only branches. Google Workspace OIDC, session issuance, migration/apply, live authorization rollout, deployment, a second user, and real data must still wait for the production foundation, tested migration/cutover and recovery path, provider-neutral database/storage boundaries, and authorization controls to pass acceptance.
+Brett's Google Cloud and Workspace inputs remain necessary for cost approval, resource application, direct Google access, and later live integration, but they do not block the local source-only sequence above. Google Workspace OIDC, live session issuance, any staging execution, migration/apply, live authorization rollout, deployment, a second user, and real data must still wait for the production foundation, tested migration/cutover and recovery path, provider-neutral database/storage boundaries, authorization controls, and separate owner approval to pass acceptance.
 
 ## Daily collaboration workflow
 

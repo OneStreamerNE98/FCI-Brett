@@ -58,16 +58,16 @@ test(
       ]);
       assert.deepEqual(
         concurrentResults.flatMap(({ appliedVersions }) => appliedVersions).sort(),
-        [1, 2, 3, 4],
+        [1, 2, 3, 4, 5],
       );
-      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [4, 4]);
+      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [5, 5]);
 
       const rerun = await runProductionSchemaMigrations(
         pool,
         PRODUCTION_SCHEMA_MIGRATIONS,
         migrationOptions,
       );
-      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 4 });
+      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 5 });
 
       const history = await pool.query(
         `SELECT version, name, checksum
@@ -94,6 +94,7 @@ test(
         tableNames.rows.map(({ table_name }) => table_name),
         [
           "activity_events",
+          "audit_activity_projection",
           "audit_events",
           "capabilities",
           "clients",
@@ -629,7 +630,7 @@ test(
       assert.deepEqual(missingForeignKeyIndexes.rows, []);
 
       const rollbackProbe = {
-        version: 5,
+        version: 6,
         name: "rollback_probe",
         checksum: "",
         statements: [
@@ -644,7 +645,7 @@ test(
           [...PRODUCTION_SCHEMA_MIGRATIONS, rollbackProbe],
           migrationOptions,
         ),
-        /migration 5 \(rollback_probe\) did not complete cleanly/,
+        /migration 6 \(rollback_probe\) did not complete cleanly/,
       );
       const rollbackState = await pool.query(
         `SELECT to_regclass('${schema}.rollback_probe') AS relation,
@@ -652,7 +653,7 @@ test(
                  FROM ${schema}.production_schema_migrations) AS migration_count`,
       );
       assert.equal(rollbackState.rows[0].relation, null);
-      assert.equal(rollbackState.rows[0].migration_count, 4);
+      assert.equal(rollbackState.rows[0].migration_count, 5);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();
@@ -690,7 +691,7 @@ test(
         PRODUCTION_SCHEMA_MIGRATIONS,
         { schema },
       );
-      assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4], currentVersion: 4 });
+      assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4, 5], currentVersion: 5 });
 
       const targetHistory = await pool.query(
         `SELECT count(*)::integer AS count FROM ${schema}.production_schema_migrations`,
@@ -698,7 +699,7 @@ test(
       const temporaryHistory = await pool.query(
         "SELECT count(*)::integer AS count FROM pg_temp.production_schema_migrations",
       );
-      assert.equal(targetHistory.rows[0].count, 4);
+      assert.equal(targetHistory.rows[0].count, 5);
       assert.equal(temporaryHistory.rows[0].count, 0);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);

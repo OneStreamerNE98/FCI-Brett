@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   type FormEvent,
+  type KeyboardEvent,
   type RefObject,
   useCallback,
   useEffect,
@@ -27,6 +28,7 @@ import {
   revokeAdminAccessInvitation,
   signOutAdminAccessPerson,
 } from "../../lib/admin-access-client";
+import { AdminActivityPanel } from "./AdminActivityPanel";
 
 type AccessDialog =
   | Readonly<{ kind: "invite" }>
@@ -39,6 +41,8 @@ type RunMutation = (
   work: () => Promise<unknown>,
   successMessage: string,
 ) => Promise<void>;
+
+type AccessSection = "people" | "activity";
 
 declare global {
   interface Window {
@@ -114,6 +118,8 @@ function dialogIdentity(dialog: AccessDialog) {
 }
 
 export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
+  const [hydrated, setHydrated] = useState(false);
+  const [activeSection, setActiveSection] = useState<AccessSection>("people");
   const [overview, setOverview] = useState<AdminAccessOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -125,6 +131,13 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
   const [browserTestCsrfToken, setBrowserTestCsrfToken] = useState<string | null>(null);
   const peopleHeadingRef = useRef<HTMLHeadingElement>(null);
   const invitationsHeadingRef = useRef<HTMLHeadingElement>(null);
+  const peopleTabRef = useRef<HTMLButtonElement>(null);
+  const activityTabRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setHydrated(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     // Playwright supplies this value before hydration. It remains a test seam,
@@ -222,41 +235,103 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
     setDialog(next);
   }
 
+  const endSession = useCallback(() => {
+    setSessionEnded(true);
+    setOverview(null);
+    setDialog(null);
+  }, []);
+
+  function selectSection(section: AccessSection, focus = false) {
+    setActiveSection(section);
+    if (focus) {
+      const ref = section === "people" ? peopleTabRef : activityTabRef;
+      window.setTimeout(() => ref.current?.focus(), 0);
+    }
+  }
+
+  function moveSection(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Home") {
+      selectSection("people", true);
+      return;
+    }
+    if (event.key === "End") {
+      selectSection("activity", true);
+      return;
+    }
+    selectSection(activeSection === "people" ? "activity" : "people", true);
+  }
+
   return <main className="access-management-page">
     <header className="access-management-header">
       <div>
         <Link href="/" className="access-management-back">← Back to operations</Link>
         <p className="eyebrow">Management</p>
         <h1>People &amp; Access</h1>
-        <span>Invite employees and manage one fixed role per person.</span>
+        <span>Manage employee access and review security activity.</span>
       </div>
-      <button
+      {activeSection === "people" && <button
         type="button"
         className="primary-button"
         onClick={() => openDialog({ kind: "invite" })}
         disabled={!overview || sessionEnded || !mutationsReady}
-      >Invite person</button>
+      >Invite person</button>}
     </header>
 
-    {mutationCsrfToken === null && <section className="access-management-boundary" role="note">
+    {activeSection === "people" && mutationCsrfToken === null && <section className="access-management-boundary" role="note">
       <strong>Development integration boundary</strong>
       <span>The screen and server contracts are implemented in source. Access changes remain unavailable until the employee session and CSRF bootstrap are composed on Cloud Run.</span>
     </section>}
 
-    {notice && <div className="access-management-notice" role="status" aria-live="polite">{notice}</div>}
+    {activeSection === "people" && notice && <div className="access-management-notice" role="status" aria-live="polite">{notice}</div>}
 
     {sessionEnded ? <section className="panel access-management-state" role="alert">
       <h2>Your secure session has ended</h2>
       <p>Sign in again before reviewing or changing employee access.</p>
       <Link className="primary-button" href="/">Return to sign in</Link>
-    </section> : loading ? <section className="panel access-management-state" role="status">
-      <h2>Loading People &amp; Access…</h2>
-      <p>Checking the current Administrator session and access records.</p>
-    </section> : loadError || !overview ? <section className="panel access-management-state" role="alert">
-      <h2>People &amp; Access is unavailable</h2>
-      <p>{loadError || "The access projection could not be loaded."}</p>
-      <button type="button" className="soft-button" onClick={() => void loadOverview()}>Retry</button>
     </section> : <>
+      <div className="access-management-tabs" role="tablist" aria-label="People and access sections">
+        <button
+          id="access-tab-people"
+          ref={peopleTabRef}
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "people"}
+          aria-controls="access-panel-people"
+          tabIndex={activeSection === "people" ? 0 : -1}
+          disabled={!hydrated}
+          onClick={() => selectSection("people")}
+          onKeyDown={moveSection}
+        >People</button>
+        <button
+          id="access-tab-activity"
+          ref={activityTabRef}
+          type="button"
+          role="tab"
+          aria-selected={activeSection === "activity"}
+          aria-controls="access-panel-activity"
+          tabIndex={activeSection === "activity" ? 0 : -1}
+          disabled={!hydrated}
+          onClick={() => selectSection("activity")}
+          onKeyDown={moveSection}
+        >Activity</button>
+      </div>
+
+      <section
+        id="access-panel-people"
+        role="tabpanel"
+        aria-labelledby="access-tab-people"
+        hidden={activeSection !== "people"}
+      >
+      {loading ? <section className="panel access-management-state" role="status">
+        <h2>Loading People &amp; Access…</h2>
+        <p>Checking the current Administrator session and access records.</p>
+      </section> : loadError || !overview ? <section className="panel access-management-state" role="alert">
+        <h2>People &amp; Access is unavailable</h2>
+        <p>{loadError || "The access projection could not be loaded."}</p>
+        <button type="button" className="soft-button" onClick={() => void loadOverview()}>Retry</button>
+      </section> : <>
       {overview.summary.activeAdministratorCount < 2 && <section className="access-management-warning" role="status">
         <strong>Administrator coverage needs attention</strong>
         <span>Keep at least two active Administrators. The server will not allow the final active Administrator to be disabled or moved to another role.</span>
@@ -317,6 +392,20 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
           <p className="access-management-policy-note">Every employee requires an exact company invitation. Field Leads use future temporary links; subcontractors receive no account. Pricing, revenue, margins, project creation and assignment, Gmail filing, Calendar creation, file sharing, export, and audit viewing are Administrator-only.</p>
         </section>
       </div>
+      </>}
+      </section>
+
+      <section
+        id="access-panel-activity"
+        role="tabpanel"
+        aria-labelledby="access-tab-activity"
+        hidden={activeSection !== "activity"}
+      >
+        <AdminActivityPanel
+          active={activeSection === "activity"}
+          onSessionEnded={endSession}
+        />
+      </section>
     </>}
 
     {dialog && overview && <AccessManagementDialog
