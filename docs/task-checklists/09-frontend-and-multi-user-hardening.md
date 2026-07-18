@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with workflow decisions from the business owner
 
-Status: In progress — July UI audit remediation merged and deployed to private Sites development version 37; structural and multi-user work remains
+Status: In progress — July UI remediation and Reports drill-through are merged and deployed through private Sites development version 38; structural and multi-user work remains
 
 Depends on: Approved roles/capabilities and production API contracts
 

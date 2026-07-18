@@ -8,7 +8,7 @@ Baseline: PR #24, merged to `main` as `80a2d5a`
 
 Completed release: PR #25, merged to `main` as `13241fc` and deployed to the private Sites development environment as version 37
 
-Follow-on source work: `codex/reports-drill-through` completes the bounded Reports chart-to-list contract and its rendered regression coverage. It is not part of version 37 and has not been deployed.
+Completed follow-on: PR #27, merged to `main` as `cf32a9e` and deployed to the private Sites development environment as version 38. It completes the bounded Reports chart-to-list contract and its rendered regression coverage.
 
 ## Purpose
 
@@ -53,7 +53,7 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 | B11 | Schedule | Complete | Schedule has durable navigation, one “planned for a later milestone” message, a consistent Planned state, and aligned Overview wording/action. | Keep Schedule in route and mobile accessibility coverage. |
 | B12 | People & Access | Partial by design | The development/session boundary is informational, Retry is omitted for the known boundary, Invite is explained and visually secondary when unavailable, copy is plain language, the standard In development badge is visible, and the solid focus ring is restored. | Hydration-gate removal is deferred until dedicated SSR/hydration tests pass. App-shell integration remains a separate structural task. |
 | B13 | Projects | Complete | “Schedule & site” is the header, “Not scheduled” is muted regular text, row hover/focus is visible, tabs are readable, and named status colors pass. | Preserve through semantic-table migration. |
-| B14 | Reports | Complete in source | Active-project copy is “X of Y … active,” status rows use lifecycle order, meaningless Current pills are removed, and chart rows now open exact bounded list filters. Lead links use the bounded `stage` values `new-inquiry`, `site-visit`, `proposal`, `decision`, and `other` and include active leads only; `other` contains active nonstandard stages. Project links use the bounded `status` values from `planning` through `archived` and match the exact lifecycle status. Invalid, duplicate, or obsolete values return to the normal page, and Back returns to Reports. | Merge and deploy this follow-on separately; deeper record-level and financial drilldowns remain future reporting work. |
+| B14 | Reports | Complete | Active-project copy is “X of Y … active,” status rows use lifecycle order, meaningless Current pills are removed, and chart rows now open exact bounded list filters. Lead links use the bounded `stage` values `new-inquiry`, `site-visit`, `proposal`, `decision`, and `other` and include active leads only; `other` contains active nonstandard stages. Project links use the bounded `status` values from `planning` through `archived` and match the exact lifecycle status. Invalid, duplicate, or obsolete values return to the normal page, and Back returns to Reports. | Keep bounded-filter regression coverage; deeper record-level and financial drilldowns remain future reporting work. |
 | B15 | Global heading/copy | Complete | Lead columns and Inbox empty states use h2; Clients says “Projects” and removes repeated “independently managed” copy. | Enforce heading order in route accessibility checks. |
 | B16 | Settings | Complete | When display name equals email, the account card renders the address once and uses a workspace identity line instead of duplicating it. | None. |
 
@@ -83,7 +83,7 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 - [x] CTA hierarchy and short global Search placeholder.
 - [x] Boundary-aware Access presentation and focus styling.
 - [ ] Access hydration-gate removal and app-shell composition — explicitly deferred structural work.
-- [x] Reports chart drill-through — durable bounded URL/filter contract implemented in source.
+- [x] Reports chart drill-through — durable bounded URL/filter contract implemented and deployed in private Sites development version 38.
 
 ### Phase 3 — structural consolidation
 
@@ -145,7 +145,7 @@ These items remain open. They are split into reviewable tracks so a visual clean
 - Route-helper tests cover valid, invalid, duplicate, cross-route, canonical, and authentication return-path behavior for Lead stage and exact Project lifecycle values.
 - Playwright covers keyboard activation, exact matching-only destinations, visible filter and Clear actions, reload/bookmark behavior without focus theft, Back focus restoration, abandoned-path focus isolation, invalid/duplicate fallback, static zero-record and unsupported-status rows, and a `$0` active custom-stage record in the bounded `other` bucket.
 - Reports and filtered Lead/Project routes pass serious/critical axe checks at 1280×720 and 390×844; the focused mobile check also verifies a 44 px chart-row target and no horizontal viewport overflow.
-- Desktop and 390 px screenshots were reviewed for Reports and the filtered Lead/Project destinations. The follow-on changes no database schema, access policy, hosted configuration, or Google connection and remains undeployed.
+- Desktop and 390 px screenshots were reviewed for Reports and the filtered Lead/Project destinations. PR #27 merged at `cf32a9e`, all merged-commit CI checks passed, and the exact merged commit deployed successfully as private Sites development version 38. Authenticated read-only live smoke verified Reports, exact Planning-project filtering, Back focus restoration, a valid empty Proposal-lead filter, and a clean browser console. The follow-on changed no database schema, access policy, hosted environment values, or Google connection.
 
 ## Intentionally preserved behavior
 
