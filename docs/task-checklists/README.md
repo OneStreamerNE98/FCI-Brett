@@ -15,14 +15,14 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | July critique remediation is deployed to version 37; P0 project-manager integrity is complete; Reports drill-through is complete in the current source branch | Review and merge the Reports follow-on, then continue feature splitting, freshness, partial-failure, and conflict work. |
+| Frontend multi-user hardening | Codex/developer | July critique remediation and Reports drill-through are deployed through version 38; P0 project-manager integrity is complete | Continue Phase 3 shared primitives, semantic patterns, feature splitting, and legacy CSS consolidation. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status checked against `main`, the current Reports follow-on source branch, and the private Sites development deployment on July 18, 2026.
+Status checked against `main` and private Sites development version 38 on July 18, 2026.
 
 ### Jason / business owner
 
@@ -68,7 +68,7 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-The private Sites development release is version 37. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
+The private Sites development release is version 38. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
 
