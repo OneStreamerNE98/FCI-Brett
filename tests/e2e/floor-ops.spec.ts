@@ -4,6 +4,40 @@ import { expect, test, type Page } from "@playwright/test";
 const projectNumber = "CF-2026-E2E00001";
 const projectName = "E2E Mobile Metadata Project";
 const projectSite = "201 E2E Test Ave, Cherry Hill, NJ";
+const leadCompany = "FCI TEST — DO NOT USE — Lead Drawer Client";
+
+async function ensureLeadDrawerRecord(page: Page) {
+  const existingResponse = await page.request.get("/api/v1/leads");
+  expect(existingResponse.ok()).toBe(true);
+  const existingPayload = await existingResponse.json() as { leads?: Array<{ id: string; company?: string; stage?: string; status?: string }> };
+  const existingLead = existingPayload.leads?.find((lead) => lead.company === leadCompany);
+  if (existingLead) {
+    if (existingLead.stage !== "New inquiry" || existingLead.status !== "active") {
+      const resetResponse = await page.request.patch(`/api/v1/leads/${encodeURIComponent(existingLead.id)}`, {
+        headers: { Origin: "http://localhost:4173" },
+        data: { stage: "New inquiry", status: "active" },
+      });
+      expect(resetResponse.ok()).toBe(true);
+    }
+    return;
+  }
+
+  const createdResponse = await page.request.post("/api/v1/leads", {
+    headers: { Origin: "http://localhost:4173" },
+    data: {
+      company: leadCompany,
+      contactName: "FCI TEST — DO NOT USE — Lead Contact",
+      projectName: "FCI TEST — DO NOT USE — Lead Drawer Opportunity",
+      source: "Website",
+      stage: "New inquiry",
+      site: "301 FCI TEST Ave, Cherry Hill, NJ",
+      estimatedValue: 25000,
+      nextAction: "Review the read-only lead details",
+      status: "active",
+    },
+  });
+  expect(createdResponse.status()).toBe(201);
+}
 
 type BrowserIssue = { kind: "console.error" | "pageerror"; detail: string };
 
@@ -200,9 +234,9 @@ test("feature labels distinguish working, in-development, setup-required, and pl
   await expect(navigation.getByRole("link", { name: "Overview · Working" })).toContainText("Working");
   await expect(navigation.getByRole("link", { name: "Projects · In development" })).toContainText("In development");
 
-  await page.getByRole("button", { name: "Scheduling setup" }).click();
+  await page.getByRole("button", { name: "View scheduling status" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Schedule & crews" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Scheduling is coming in a later milestone" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "What the scheduling workspace will include" })).toBeVisible();
   await expect(page.locator(".page-heading .feature-state")).toHaveText("Planned");
   await expect(page.getByRole("button", { name: /publish|assign/i })).toHaveCount(0);
 
@@ -231,4 +265,114 @@ test("390px project rows preserve schedule, site, and value metadata", async ({ 
   await expect(row.getByText("Not scheduled", { exact: true })).toBeVisible();
   await expect(row.getByText(projectSite, { exact: true })).toBeVisible();
   await expect(row.locator(".project-row-value")).toContainText("$125,000");
+});
+
+test("overview keeps lead next actions visible at tablet and mobile widths", async ({ page }) => {
+  await ensureLeadDrawerRecord(page);
+
+  for (const viewport of [
+    { width: 768, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.locator(".pipeline-row .next-cell").first()).toBeVisible();
+  }
+});
+
+test("lead details open separately from stage advancement and restore focus", async ({ page }) => {
+  await ensureLeadDrawerRecord(page);
+  await page.goto("/leads");
+  await expect(page.getByRole("heading", { level: 1, name: "Leads & opportunities" })).toBeVisible();
+
+  const card = page.locator(".lead-card").filter({ hasText: leadCompany });
+  const detailsTrigger = card.getByRole("button", { name: `View details for ${leadCompany}`, exact: true });
+  const cardAdvance = card.getByRole("button", { name: `Advance ${leadCompany} from New inquiry` });
+  await expect(detailsTrigger).toBeVisible();
+  await expect(detailsTrigger).toContainText("View details");
+  await expect(cardAdvance).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
+
+  await detailsTrigger.click();
+  const drawer = page.getByRole("dialog", { name: new RegExp(leadCompany) });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("heading", { level: 2, name: leadCompany })).toBeVisible();
+  await expect(drawer.getByText("This drawer is read-only.", { exact: false })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Advance stage" })).toBeVisible();
+
+  await drawer.getByRole("button", { name: "Close lead details" }).click();
+  await expect(drawer).toHaveCount(0);
+  await expect(detailsTrigger).toBeFocused();
+});
+
+test("clients can be filtered by code and show a clear no-match state", async ({ page }) => {
+  await page.goto("/clients");
+  await expect(page.getByRole("heading", { level: 1, name: "Clients" })).toBeVisible();
+
+  const filter = page.getByRole("textbox", { name: "Find a client" });
+  const clientRow = page.getByRole("button", { name: /E2E Regression Client/ });
+  await expect(filter).toBeVisible();
+  await expect(clientRow).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
+
+  await filter.fill("no-such-e2e-client");
+  await expect(clientRow).toHaveCount(0);
+  await expect(page.getByText("No clients match “no-such-e2e-client”.", { exact: true })).toBeVisible();
+
+  await filter.fill("E2E-CLIENT");
+  await expect(clientRow).toBeVisible();
+  await expect(page.locator(".client-directory-toolbar")).toContainText(/1 of \d+ clients/);
+});
+
+test("inbox keeps one primary load action and exposes semantic status details", async ({ page }) => {
+  await page.goto("/inbox");
+  await expect(page.getByRole("heading", { level: 1, name: "Gmail project inbox" })).toBeVisible();
+
+  const loadMessages = page.getByRole("button", { name: "Load messages", exact: true });
+  await expect(loadMessages).toHaveCount(1);
+  await expect(loadMessages).toHaveClass(/primary-button/);
+  await expect(page.locator(".inbox-empty").getByRole("button", { name: "Load messages", exact: true })).toHaveCount(0);
+
+  const summary = page.locator(".inbox-summary");
+  await expect(summary.getByRole("heading", { level: 2, name: "Inbox status" })).toBeVisible();
+  const statusList = summary.locator("dl.inbox-status-list");
+  await expect(statusList.locator("dt")).toHaveText(["Provider", "Message limit", "Filing protection"]);
+  await expect(statusList.locator("dd")).toHaveCount(3);
+});
+
+test("assistant exposes one visible project context and one suggested-question family", async ({ page }) => {
+  await page.goto("/assistant");
+  await expect(page.getByRole("heading", { level: 1, name: "Ask FCI Assistant" })).toBeVisible();
+
+  const projectContext = page.getByRole("combobox", { name: "Project context" });
+  await expect(projectContext).toHaveCount(1);
+  await expect(projectContext).toBeVisible();
+  await expect(projectContext.locator("option").filter({ hasText: projectName })).toHaveCount(1);
+  await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
+
+  const suggestedQuestions = [
+    "What is the current project status?",
+    "Who is the primary contact?",
+    "How many email archives are linked?",
+    "What evidence has not been captured yet?",
+  ];
+  const questionPanel = page.locator(".recent-questions");
+  await expect(questionPanel.getByRole("heading", { level: 3, name: "Suggested questions" })).toHaveCount(1);
+  await expect(questionPanel.getByRole("button")).toHaveCount(suggestedQuestions.length);
+  for (const question of suggestedQuestions) {
+    await expect(page.getByRole("button", { name: new RegExp(question.replace(/[?]/g, "\\?")) })).toHaveCount(1);
+  }
+  await expect(page.locator(".assistant-main").getByRole("button", { name: /current project status|primary contact|email archives|evidence has not/i })).toHaveCount(0);
+});
+
+test("reports remove generic Current pills and explain active project coverage", async ({ page }) => {
+  await page.goto("/reports");
+  await expect(page.getByRole("heading", { level: 1, name: "Reports" })).toBeVisible();
+
+  await expect(page.getByText("Current", { exact: true })).toHaveCount(0);
+  const activeProjects = page.locator(".metric-card").filter({ hasText: "Active projects" });
+  await expect(activeProjects).toHaveCount(1);
+  await expect(activeProjects).toContainText(/\d+ of \d+ project records active/);
+  await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
 });

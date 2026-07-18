@@ -279,14 +279,16 @@ test("dialogs restore focus and mobile, tablet, and 200%-equivalent layouts do n
 
 test("the source-only route is visibly read-only until its secure session bootstrap is composed", async ({ page }) => {
   const api = await installAccessApi(page, { csrf: false });
-  await openAccessPage(page);
+  const response = await page.goto("/management/access");
+  expect(response?.ok()).toBe(true);
 
-  await expect(page.getByRole("note")).toContainText("Access changes remain unavailable");
+  await expect(page.locator(".access-management-state-info")).toContainText("No retry is needed until secure sign-in is connected");
   await expect(page.locator([
-    ".access-management-header > button:not(:disabled)",
+    ".access-management-header-action button:not(:disabled)",
     ".access-management-actions button:not(:disabled)",
     ".access-management-invitations button:not(:disabled)",
   ].join(","))).toHaveCount(0);
+  expect(api.reads).toBe(0);
   expect(api.mutations).toEqual([]);
 });
 
@@ -363,6 +365,10 @@ test("an expired production session clears the access screen", async ({ page }) 
   expectedBrowserIssues.get(page)?.push(
     "console.error: Failed to load resource: the server responded with a status of 401 (Unauthorized)",
   );
+  await page.addInitScript(() => {
+    (window as Window & { __FCI_E2E_ADMIN_CSRF_TOKEN__?: string })
+      .__FCI_E2E_ADMIN_CSRF_TOKEN__ = "FCI_E2E_ADMIN_CSRF_CREDENTIAL_0000000000000000";
+  });
   await page.route("**/api/v1/admin/access", (route) => route.fulfill({
     status: 401,
     contentType: "application/json",

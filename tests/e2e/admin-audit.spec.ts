@@ -94,6 +94,10 @@ async function installAdminApis(
   auditHandler: (route: Route, url: URL, requestIndex: number) => Promise<void>,
 ) {
   const auditRequests: URL[] = [];
+  await page.addInitScript(() => {
+    (window as Window & { __FCI_E2E_ADMIN_CSRF_TOKEN__?: string })
+      .__FCI_E2E_ADMIN_CSRF_TOKEN__ = "FCI_E2E_ADMIN_CSRF_CREDENTIAL_0000000000000000";
+  });
   await page.route("**/api/v1/admin/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/admin/access") {

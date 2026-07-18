@@ -5,6 +5,16 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
+function containingSelector(css, declarationIndex) {
+  const ruleStart = css.lastIndexOf("{", declarationIndex);
+  const priorBoundary = Math.max(css.lastIndexOf("}", ruleStart), css.lastIndexOf("{", ruleStart - 1));
+  return css.slice(priorBoundary + 1, ruleStart).trim();
+}
+
+function pxValue(value, unit) {
+  return unit.toLowerCase() === "rem" ? value * 16 : value;
+}
+
 test("ships the Floor Coverings International product instead of starter content", async () => {
   const [page, routePage, layout, app, css, packageJson] = await Promise.all([
     read("app/page.tsx"), read("app/OperationsRoutePage.tsx"), read("app/layout.tsx"), read("app/FloorOpsApp.tsx"),
@@ -26,6 +36,55 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(css, /@media \(max-width:560px\)/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
+});
+
+test("keeps rendered typography at the audited 12px minimum", async () => {
+  const css = (await read("app/globals.css")).replace(/\/\*[\s\S]*?\*\//g, "");
+  const allowedZeroSelectors = new Set([
+    ".main-nav>a>.feature-state",
+    ".sidebar:not(.collapsed) .main-nav>a>.feature-state",
+  ]);
+  const violations = [];
+
+  for (const match of css.matchAll(/\bfont-size\s*:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))(px|rem)?(?=\s*(?:!important\s*)?[;}])/gi)) {
+    const value = Number(match[1]);
+    const unit = match[2]?.toLowerCase() ?? "";
+    const selector = containingSelector(css, match.index);
+    const isAllowedNonRenderedZero = value === 0 && unit === "" && allowedZeroSelectors.has(selector);
+    const isBelowFloor = (unit === "px" || unit === "rem") && pxValue(value, unit) < 12;
+    if (!isAllowedNonRenderedZero && (value === 0 || isBelowFloor)) {
+      violations.push(`${selector} -> ${match[0]}`);
+    }
+  }
+
+  for (const match of css.matchAll(/\bfont\s*:\s*([^;}]+)/gi)) {
+    const size = match[1].match(/(?:^|\s)(\d+(?:\.\d*)?|\.\d+)(px|rem)(?=\s*(?:\/|\s|$))/i);
+    if (size && pxValue(Number(size[1]), size[2]) < 12) {
+      violations.push(`${containingSelector(css, match.index)} -> ${match[0]}`);
+    }
+  }
+
+  assert.deepEqual(violations, [], `Typography below 12px:\n${violations.join("\n")}`);
+});
+
+test("keeps the design-critique interaction contracts in the rendered app", async () => {
+  const app = await read("app/FloorOpsApp.tsx");
+  const inbox = app.slice(app.indexOf("function InboxView"), app.indexOf("function AssistantView"));
+  const assistant = app.slice(app.indexOf("function AssistantView"), app.indexOf("function ReportsView"));
+  const reports = app.slice(app.indexOf("function ReportsView"), app.indexOf("function SettingsView"));
+  const askBox = assistant.slice(assistant.indexOf('className="ask-box"'), assistant.indexOf("</form>"));
+
+  assert.match(app, /<LeadDrawer lead=\{selectedLead\}/);
+  assert.match(app, /function LeadDrawer\(/);
+  assert.match(app, /This drawer is read-only/);
+  assert.match(app, /placeholder="Name, code, or email"/);
+  assert.match(app, /visibleClients\.map/);
+  assert.equal(inbox.match(/inbox-state-strip/g)?.length, 1);
+  assert.match(assistant, /className="assistant-project-scope"/);
+  assert.ok(assistant.indexOf('className="assistant-project-scope"') < assistant.indexOf('className="ask-box"'));
+  assert.doesNotMatch(askBox, /<select/);
+  assert.match(reports, /projectLifecycleOrder\.indexOf/);
+  assert.doesNotMatch(reports, /trend=/);
 });
 
 test("declares durable records, uploads, and guarded integration endpoints", async () => {

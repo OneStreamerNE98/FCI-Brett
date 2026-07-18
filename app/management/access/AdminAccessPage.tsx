@@ -123,6 +123,7 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
   const [overview, setOverview] = useState<AdminAccessOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [developmentBoundary, setDevelopmentBoundary] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
   const [dialog, setDialog] = useState<AccessDialog | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -159,17 +160,24 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
 
   const mutationCsrfToken = csrfToken ?? browserTestCsrfToken;
   const mutationsReady = mutationCsrfToken !== null;
+  const accessBoundaryDescriptionId = developmentBoundary
+    ? "access-development-state"
+    : "access-development-boundary";
 
   const loadOverview = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     setLoadError("");
+    setDevelopmentBoundary(false);
     try {
       const next = await readAdminAccessOverview();
       setOverview(next);
       setSessionEnded(false);
       return true;
     } catch (error) {
-      if (error instanceof AdminAccessClientError && error.status === 401) {
+      if (error instanceof AdminAccessClientError && error.code === "secure_session_not_ready") {
+        setDevelopmentBoundary(true);
+        setOverview(null);
+      } else if (error instanceof AdminAccessClientError && error.status === 401) {
         setSessionEnded(true);
         setOverview(null);
       } else if (error instanceof AdminAccessClientError && error.status === 403) {
@@ -186,10 +194,23 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      const hostname = window.location.hostname.toLowerCase();
+      const loopback = hostname === "localhost"
+        || hostname === "127.0.0.1"
+        || hostname === "::1"
+        || hostname === "[::1]";
+      const browserTestTokenAvailable = loopback && Boolean(window.__FCI_E2E_ADMIN_CSRF_TOKEN__);
+      if (csrfToken === null && !browserTestTokenAvailable) {
+        setLoading(false);
+        setLoadError("");
+        setDevelopmentBoundary(true);
+        setOverview(null);
+        return;
+      }
       void loadOverview();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadOverview]);
+  }, [csrfToken, loadOverview]);
 
   const projectNames = useMemo(() => new Map(
     overview?.projects.map((project) => [
@@ -268,19 +289,22 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
       <div>
         <Link href="/" className="access-management-back">← Back to operations</Link>
         <p className="eyebrow">Management</p>
-        <h1>People &amp; Access</h1>
+        <div className="access-management-title-row"><h1>People &amp; Access</h1><span className="feature-state feature-state-in-development">In development</span></div>
         <span>Manage employee access and review security activity.</span>
       </div>
-      {activeSection === "people" && <button
-        type="button"
-        className="primary-button"
-        aria-describedby={!mutationsReady ? "access-development-boundary" : undefined}
-        onClick={() => openDialog({ kind: "invite" })}
-        disabled={!overview || sessionEnded || !mutationsReady}
-      >Invite person</button>}
+      {activeSection === "people" && <div className="access-management-header-action">
+        {!mutationsReady && <span>Changes unavailable in development</span>}
+        <button
+          type="button"
+          className={mutationsReady ? "primary-button" : "soft-button"}
+          aria-describedby={!mutationsReady ? accessBoundaryDescriptionId : undefined}
+          onClick={() => openDialog({ kind: "invite" })}
+          disabled={!overview || sessionEnded || !mutationsReady}
+        >Invite person</button>
+      </div>}
     </header>
 
-    {activeSection === "people" && mutationCsrfToken === null && <section id="access-development-boundary" className="access-management-boundary" role="note">
+    {activeSection === "people" && mutationCsrfToken === null && !developmentBoundary && <section id="access-development-boundary" className="access-management-boundary" role="note">
       <strong>Access changes are in development</strong>
       <span>Access changes remain unavailable in this development build. You can review the planned experience here; inviting people and changing access will become available after secure employee sign-in is connected.</span>
     </section>}
@@ -291,6 +315,9 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
       <h2>Your secure session has ended</h2>
       <p>Sign in again before reviewing or changing employee access.</p>
       <Link className="primary-button" href="/">Return to sign in</Link>
+    </section> : developmentBoundary ? <section id="access-development-state" className="panel access-management-state access-management-state-info" role="note">
+      <h2>People &amp; Access is planned for secure sign-in</h2>
+      <p>This development build does not have an active employee session, so access records and changes stay unavailable. No retry is needed until secure sign-in is connected.</p>
     </section> : <>
       <div className="access-management-tabs" role="tablist" aria-label="People and access sections">
         <button
