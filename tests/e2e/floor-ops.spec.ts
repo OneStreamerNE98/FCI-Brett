@@ -202,7 +202,7 @@ test("feature labels distinguish working, in-development, setup-required, and pl
 
   await page.getByRole("button", { name: "Scheduling setup" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Schedule & crews" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Scheduling is not available yet" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Scheduling is coming in a later milestone" })).toBeVisible();
   await expect(page.locator(".page-heading .feature-state")).toHaveText("Planned");
   await expect(page.getByRole("button", { name: /publish|assign/i })).toHaveCount(0);
 
