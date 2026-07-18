@@ -274,14 +274,15 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
       {activeSection === "people" && <button
         type="button"
         className="primary-button"
+        aria-describedby={!mutationsReady ? "access-development-boundary" : undefined}
         onClick={() => openDialog({ kind: "invite" })}
         disabled={!overview || sessionEnded || !mutationsReady}
       >Invite person</button>}
     </header>
 
-    {activeSection === "people" && mutationCsrfToken === null && <section className="access-management-boundary" role="note">
-      <strong>Development integration boundary</strong>
-      <span>The screen and server contracts are implemented in source. Access changes remain unavailable until the employee session and CSRF bootstrap are composed on Cloud Run.</span>
+    {activeSection === "people" && mutationCsrfToken === null && <section id="access-development-boundary" className="access-management-boundary" role="note">
+      <strong>Access changes are in development</strong>
+      <span>Access changes remain unavailable in this development build. You can review the planned experience here; inviting people and changing access will become available after secure employee sign-in is connected.</span>
     </section>}
 
     {activeSection === "people" && notice && <div className="access-management-notice" role="status" aria-live="polite">{notice}</div>}

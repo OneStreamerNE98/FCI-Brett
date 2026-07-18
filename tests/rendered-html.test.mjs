@@ -348,7 +348,7 @@ test("labels unfinished features without presenting placeholder controls", async
   ]);
   const navItems = app.match(/const navItems:[\s\S]+?= \[([\s\S]+?)\n\];/)?.[1] ?? "";
 
-  assert.doesNotMatch(navItems, /Schedule/);
+  assert.match(navItems, /label: "Schedule"[\s\S]+?state: "Planned"/);
   assert.match(app, /state="Working"/);
   assert.match(app, /state="In development"/);
   assert.match(app, /"Setup required"/);
