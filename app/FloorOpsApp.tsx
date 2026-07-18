@@ -19,15 +19,22 @@ import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
 import {
   canonicalOperationsSearch,
   inboxBucketFromSearch,
+  LEAD_STAGE_FILTERS,
+  LEAD_STAGE_LABELS,
+  leadStageFromSearch,
   operationsHref,
   operationsPath,
   operationsViewForPath,
+  PROJECT_LIFECYCLE_FILTERS,
   PROJECT_STATUS_FILTERS,
+  projectLifecycleFromSearch,
   projectStatusFromSearch,
   SETTINGS_SECTIONS,
   settingsSectionFromSearch,
   type InboxBucket,
+  type LeadStageFilter,
   type OperationsView,
+  type ProjectLifecycleFilter,
   type ProjectStatusFilter,
   type SettingsSection,
 } from "./lib/operations-routes";
@@ -79,9 +86,11 @@ type SheetMirrorStatus = {
 };
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
 
-const leadStages = ["New inquiry", "Site visit", "Proposal", "Decision"];
-const projectLifecycleOrder = ["planning", "mobilizing", "installation", "closeout", "completed", "cancelled", "archived"];
+const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((stage) => LEAD_STAGE_LABELS[stage]);
+const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
 const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
+const reportsReturnFocusHistoryKey = "fciReportsReturnFocusId";
+const reportsDestinationFocusStorageKey = "fci-reports-destination-focus";
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const PhoneInstallPanel = dynamic(
   () => import("./PhoneInstallPanel").then((module) => module.PhoneInstallPanel),
@@ -122,6 +131,17 @@ function isActiveProject(project: Project) {
   return !terminalProjectStatuses.has(project.status.toLowerCase());
 }
 
+function leadMatchesStageFilter(lead: Lead, filter: LeadStageFilter) {
+  const normalizedStage = lead.stage.toLowerCase();
+  if (filter === "other") return !leadStages.some((stage) => stage.toLowerCase() === normalizedStage);
+  return normalizedStage === LEAD_STAGE_LABELS[filter].toLowerCase();
+}
+
+function projectLifecycleFilter(value: string): ProjectLifecycleFilter | null {
+  const normalizedStatus = value.toLowerCase();
+  return PROJECT_LIFECYCLE_FILTERS.find((status) => status === normalizedStatus) ?? null;
+}
+
 function projectManagerLabel(managerId: string | null, currentUserEmail: string, currentUserName: string) {
   if (!managerId) return "Unassigned";
   if (managerId === currentUserEmail.trim().toLowerCase()) return currentUserName.trim() ? `${currentUserName} (you)` : `${managerId} (you)`;
@@ -135,7 +155,9 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
   const search = searchParameters.toString();
   const view = operationsViewForPath(pathname) ?? initialView;
   const settingsArea = settingsSectionFromSearch(search);
+  const leadStageFilter = leadStageFromSearch(search);
   const projectStatus = projectStatusFromSearch(search);
+  const projectLifecycle = projectLifecycleFromSearch(search);
   const inboxBucket = inboxBucketFromSearch(search);
   const [mobileNav, setMobileNav] = useState(false);
   const [mobileNavViewport, setMobileNavViewport] = useState(false);
@@ -867,9 +889,9 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
           {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
           <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData()} />
           {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} onView={navigateToView} onProject={openProject} onLead={openLead} />}
-          {view === "Leads" && <LeadsView leads={leads} state={liveDataState} onAdd={() => setLeadModal(true)} onAdvance={advanceLead} onLead={openLead} />}
+          {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal(true)} onAdvance={advanceLead} onLead={openLead} />}
           {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
-          {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
+          {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
           {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
           {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
@@ -940,23 +962,45 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, onVi
   </>;
 }
 
-function LeadsView({ leads, state, onAdd, onAdvance, onLead }: { leads: Lead[]; state: LiveDataState; onAdd: () => void; onAdvance: (id: string) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
+function LeadsView({ leads, state, filter, onAdd, onAdvance, onLead }: { leads: Lead[]; state: LiveDataState; filter: LeadStageFilter | null; onAdd: () => void; onAdvance: (id: string) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
+  const filterSummaryRef = useRef<HTMLElement>(null);
   const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
+  const visibleActiveLeads = filter ? activeLeads.filter((lead) => leadMatchesStageFilter(lead, filter)) : activeLeads;
   const knownStages = new Set(leadStages.map((stage) => stage.toLowerCase()));
-  const standardLeads = activeLeads.filter((lead) => knownStages.has(lead.stage.toLowerCase()));
-  const customStageLeads = activeLeads.filter((lead) => !knownStages.has(lead.stage.toLowerCase()));
+  const standardLeads = visibleActiveLeads.filter((lead) => knownStages.has(lead.stage.toLowerCase()));
+  const customStageLeads = visibleActiveLeads.filter((lead) => !knownStages.has(lead.stage.toLowerCase()));
   const inactiveLeads = leads.filter((lead) => lead.status.toLowerCase() !== "active");
-  const pipelineValue = activeLeads.reduce((total, lead) => total + lead.estimatedValue, 0);
-  const summary = state === "ready" ? `${activeLeads.length} open opportunities · ${money(pipelineValue)} estimated value` : "Loading current pipeline totals…";
+  const pipelineValue = visibleActiveLeads.reduce((total, lead) => total + lead.estimatedValue, 0);
+  const filterLabel = filter ? LEAD_STAGE_LABELS[filter] : null;
+  const summary = state === "ready"
+    ? filterLabel
+      ? `${visibleActiveLeads.length} active ${visibleActiveLeads.length === 1 ? "lead" : "leads"} in ${filterLabel} · ${money(pipelineValue)} estimated value`
+      : `${activeLeads.length} open opportunities · ${money(pipelineValue)} estimated value`
+    : "Loading current pipeline totals…";
+  const stagesToRender = filter && filter !== "other" ? [LEAD_STAGE_LABELS[filter]] : leadStages;
+
+  useEffect(() => {
+    if (!filter) return;
+    const expectedFocusKey = `lead:${filter}`;
+    if (window.sessionStorage.getItem(reportsDestinationFocusStorageKey) !== expectedFocusKey) return;
+    const focusFrame = window.requestAnimationFrame(() => {
+      filterSummaryRef.current?.focus();
+      window.sessionStorage.removeItem(reportsDestinationFocusStorageKey);
+      clearReportReturnFocusFromCurrentHistoryEntry();
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [filter]);
+
   return <><PageTitle eyebrow="Sales pipeline" title="Leads & opportunities" text={summary} state="In development" action={<button className="primary-button" onClick={onAdd}><Plus size={17} /> Add lead</button>} />
-    {activeLeads.length === 0 && state === "ready" ? <section className="panel empty-tab"><div><Zap size={25} /></div><h2>No active leads</h2><p>Add your first lead. Inactive records remain listed below.</p><button className="primary-button" onClick={onAdd}><Plus size={16} /> Add first lead</button></section> : standardLeads.length > 0 ? <div className="board">{leadStages.map((stage) => { const stageLeads = standardLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()); return <section className="board-column" key={stage}><header><h2>{stage}</h2><b>{stageLeads.length}</b></header>{stageLeads.map((lead) => <article className="lead-card" key={lead.id}><div className="lead-card-head"><Avatar initials={lead.initials} color={lead.color} /><span>{lead.number}</span></div><h3>{lead.company}</h3><p>{lead.project}</p><div className="lead-value">{lead.value}</div><div className="lead-contact"><Users size={14} />{lead.contact}</div><button type="button" className="lead-detail-button" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button><footer><span>{lead.source}</span><button onClick={() => onAdvance(lead.id)} aria-label={`Advance ${lead.company} from ${lead.stage}`}>Advance <ChevronRight size={15} /></button></footer></article>)}{stageLeads.length === 0 && <p className="board-empty">No leads in this stage.</p>}</section>; })}</div> : null}
-    {customStageLeads.length > 0 && <LeadStatusPanel title="Custom pipeline stages" subtitle="These leads use stages outside the current pipeline. Review their stage before advancing them." leads={customStageLeads} />}
-    {inactiveLeads.length > 0 && <LeadStatusPanel title="Inactive leads" subtitle="Converted, lost, closed, and archived leads are excluded from active totals." leads={inactiveLeads} showRecordStatus />}
+    {filterLabel && <section className="active-route-filter" ref={filterSummaryRef} tabIndex={-1} aria-labelledby="lead-stage-filter-title"><div><ListFilter size={18} aria-hidden="true" /><div><span>Report filter</span><strong id="lead-stage-filter-title">Filtered to {filterLabel}</strong><p>Showing active leads that match the selected pipeline row.</p></div></div><Link className="soft-button" href={operationsHref("Leads")}>Clear filter</Link></section>}
+    {visibleActiveLeads.length === 0 && state === "ready" ? <section className="panel empty-tab"><div><Zap size={25} /></div><h2>{filterLabel ? `No active leads in ${filterLabel}` : "No active leads"}</h2><p>{filterLabel ? "The report filter is valid, but no current records match it." : "Add your first lead. Inactive records remain listed below."}</p>{filterLabel ? <Link className="soft-button" href={operationsHref("Leads")}>Show all active leads</Link> : <button className="primary-button" onClick={onAdd}><Plus size={16} /> Add first lead</button>}</section> : standardLeads.length > 0 ? <div className={`board${filter ? " filtered-board" : ""}`}>{stagesToRender.map((stage) => { const stageLeads = standardLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()); return <section className="board-column" key={stage}><header><h2>{stage}</h2><b>{stageLeads.length}</b></header>{stageLeads.map((lead) => <article className="lead-card" key={lead.id}><div className="lead-card-head"><Avatar initials={lead.initials} color={lead.color} /><span>{lead.number}</span></div><h3>{lead.company}</h3><p>{lead.project}</p><div className="lead-value">{lead.value}</div><div className="lead-contact"><Users size={14} />{lead.contact}</div><button type="button" className="lead-detail-button" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button><footer><span>{lead.source}</span><button onClick={() => onAdvance(lead.id)} aria-label={`Advance ${lead.company} from ${lead.stage}`}>Advance <ChevronRight size={15} /></button></footer></article>)}{stageLeads.length === 0 && <p className="board-empty">No leads in this stage.</p>}</section>; })}</div> : null}
+    {customStageLeads.length > 0 && <LeadStatusPanel title="Custom pipeline stages" subtitle="These leads use stages outside the current pipeline. Review their stage before advancing them." leads={customStageLeads} onLead={onLead} />}
+    {!filter && inactiveLeads.length > 0 && <LeadStatusPanel title="Inactive leads" subtitle="Converted, lost, closed, and archived leads are excluded from active totals." leads={inactiveLeads} showRecordStatus onLead={onLead} />}
   </>;
 }
 
-function LeadStatusPanel({ title, subtitle, leads, showRecordStatus = false }: { title: string; subtitle: string; leads: Lead[]; showRecordStatus?: boolean }) {
-  return <section className="panel pipeline-panel"><PanelHeader title={title} subtitle={subtitle} /><div className="pipeline-head"><span>Client / opportunity</span><span>{showRecordStatus ? "Status" : "Stage"}</span><span>Est. value</span><span>Next action</span></div>{leads.map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={showRecordStatus ? displayStatus(lead.status, "Inactive") : lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell"><Clock3 size={14} />{lead.next}</div></div>)}</section>;
+function LeadStatusPanel({ title, subtitle, leads, showRecordStatus = false, onLead }: { title: string; subtitle: string; leads: Lead[]; showRecordStatus?: boolean; onLead?: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
+  return <section className="panel pipeline-panel"><PanelHeader title={title} subtitle={subtitle} /><div className="pipeline-head"><span>Client / opportunity</span><span>{showRecordStatus ? "Status" : "Stage"}</span><span>Est. value</span><span>Next action</span></div>{leads.map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={showRecordStatus ? displayStatus(lead.status, "Inactive") : lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell lead-status-next"><span><Clock3 size={14} />{lead.next}</span>{onLead && <button type="button" className="lead-status-detail" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button>}</div></div>)}</section>;
 }
 
 function sheetStateLabel(mirror: SheetMirrorStatus | null) {
@@ -981,15 +1025,32 @@ function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProj
   </>;
 }
 
-function ProjectsView({ projects, state, filter, onFilter, onProject, onNewProject }: { projects: Project[]; state: LiveDataState; filter: ProjectStatusFilter; onFilter: (filter: ProjectStatusFilter) => void; onProject: (p: Project) => void; onNewProject: () => void }) {
+function ProjectsView({ projects, state, filter, lifecycle, onFilter, onProject, onNewProject }: { projects: Project[]; state: LiveDataState; filter: ProjectStatusFilter; lifecycle: ProjectLifecycleFilter | null; onFilter: (filter: ProjectStatusFilter) => void; onProject: (p: Project) => void; onNewProject: () => void }) {
+  const filterSummaryRef = useRef<HTMLElement>(null);
   const filteredProjects = projects.filter((project) => {
     const status = project.status.toLowerCase();
+    if (lifecycle) return status === lifecycle;
     return filter === "Active" ? !terminalProjectStatuses.has(status) : status === filter.toLowerCase();
   });
   const filterCount = (stage: string) => stage === "Active" ? projects.filter(isActiveProject).length : projects.filter((project) => project.status.toLowerCase() === stage.toLowerCase()).length;
+  const lifecycleLabel = lifecycle ? displayStatus(lifecycle, "Unknown") : null;
+
+  useEffect(() => {
+    if (!lifecycle) return;
+    const expectedFocusKey = `project:${lifecycle}`;
+    if (window.sessionStorage.getItem(reportsDestinationFocusStorageKey) !== expectedFocusKey) return;
+    const focusFrame = window.requestAnimationFrame(() => {
+      filterSummaryRef.current?.focus();
+      window.sessionStorage.removeItem(reportsDestinationFocusStorageKey);
+      clearReportReturnFocusFromCurrentHistoryEntry();
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [lifecycle]);
+
   return <><PageTitle eyebrow="Project delivery" title="Projects" text="Track every project separately, including repeat work for the same client." state="In development" action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
     <div className="filterbar"><div className="tabs" aria-label="Project status filter">{PROJECT_STATUS_FILTERS.map((stage) => <button className={filter === stage ? "active" : ""} aria-pressed={filter === stage} key={stage} onClick={() => onFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
-    <div className="projects-table panel"><div className="projects-table-head"><span>Project</span><span>Status</span><span>Schedule &amp; site</span><span>Value</span><span /></div>{filteredProjects.map((p) => <button className="projects-table-row" key={p.id} onClick={() => onProject(p)}><div className="project-row-identity"><Avatar initials={recordInitials(p.client)} color={p.accent} /><span><strong>{p.name}</strong><small>{p.number} · {p.client}</small></span></div><span className="project-row-status"><Status text={p.status} /></span><span className="project-row-details"><span className={p.date.toLowerCase() === "not scheduled" ? "is-unscheduled" : ""}>{p.date}</span><small><MapPin size={12} />{p.site}</small></span><strong className="project-row-value"><span>Estimated value</span>{p.value}</strong><ChevronRight size={17} aria-hidden="true" /></button>)}{!filteredProjects.length && <div className="empty-table">{state === "ready" ? filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</div>}</div>
+    {lifecycleLabel && <section className="active-route-filter" ref={filterSummaryRef} tabIndex={-1} aria-labelledby="project-lifecycle-filter-title"><div><ListFilter size={18} aria-hidden="true" /><div><span>Report filter</span><strong id="project-lifecycle-filter-title">Filtered to {lifecycleLabel}</strong><p>Showing projects with this exact lifecycle status.</p></div></div><Link className="soft-button" href={operationsHref("Projects")}>Clear filter</Link></section>}
+    <div className="projects-table panel"><div className="projects-table-head"><span>Project</span><span>Status</span><span>Schedule &amp; site</span><span>Value</span><span /></div>{filteredProjects.map((p) => <button className="projects-table-row" key={p.id} onClick={() => onProject(p)}><div className="project-row-identity"><Avatar initials={recordInitials(p.client)} color={p.accent} /><span><strong>{p.name}</strong><small>{p.number} · {p.client}</small></span></div><span className="project-row-status"><Status text={p.status} /></span><span className="project-row-details"><span className={p.date.toLowerCase() === "not scheduled" ? "is-unscheduled" : ""}>{p.date}</span><small><MapPin size={12} />{p.site}</small></span><strong className="project-row-value"><span>Estimated value</span>{p.value}</strong><ChevronRight size={17} aria-hidden="true" /></button>)}{!filteredProjects.length && <div className="empty-table">{state === "ready" ? lifecycleLabel ? `There are no projects in ${lifecycleLabel}.` : filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</div>}</div>
   </>;
 }
 
@@ -1253,11 +1314,34 @@ function AssistantView({ projects }: { projects: Project[] }) {
   </>;
 }
 
+function rememberReportReturnFocus(id: string, destinationFocusKey: string) {
+  window.history.replaceState({ ...(window.history.state ?? {}), [reportsReturnFocusHistoryKey]: id }, "", window.location.href);
+  window.sessionStorage.setItem(reportsDestinationFocusStorageKey, destinationFocusKey);
+}
+
+function clearReportReturnFocusFromCurrentHistoryEntry() {
+  const currentState = window.history.state as Record<string, unknown> | null;
+  if (!currentState || !(reportsReturnFocusHistoryKey in currentState)) return;
+  const nextState = { ...currentState };
+  delete nextState[reportsReturnFocusHistoryKey];
+  window.history.replaceState(nextState, "", window.location.href);
+}
+
+function ReportBarRow({ label, measure, width, href, accessibleName, focusId, destinationFocusKey }: { label: string; measure: string; width: number; href?: string; accessibleName?: string; focusId?: string; destinationFocusKey?: string }) {
+  const content = <><span className="bar-chart-label">{label}</span><span className="bar-chart-track" aria-hidden="true"><i style={{ width: `${width}%` }} /></span><strong>{measure}</strong>{href ? <ChevronRight className="bar-chart-chevron" size={16} aria-hidden="true" /> : <span className="bar-chart-spacer" aria-hidden="true" />}</>;
+  return <li>{href && accessibleName && focusId && destinationFocusKey ? <Link id={focusId} className="bar-chart-row actionable" href={href} aria-label={accessibleName} onClick={() => rememberReportReturnFocus(focusId, destinationFocusKey)}>{content}</Link> : <div className="bar-chart-row">{content}</div>}</li>;
+}
+
 function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Lead[]; projects: Project[]; clients: Client[]; dashboard: DashboardSummary | null; state: LiveDataState }) {
   const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
-  const standardStageValues = leadStages.map((stage) => ({ stage, value: activeLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()).reduce((total, lead) => total + lead.estimatedValue, 0) }));
-  const otherStageValue = activeLeads.filter((lead) => !leadStages.some((stage) => stage.toLowerCase() === lead.stage.toLowerCase())).reduce((total, lead) => total + lead.estimatedValue, 0);
-  const stageValues = otherStageValue > 0 ? [...standardStageValues, { stage: "Other stages", value: otherStageValue }] : standardStageValues;
+  const standardStageValues = LEAD_STAGE_FILTERS.filter((filter) => filter !== "other").map((filter) => {
+    const stage = LEAD_STAGE_LABELS[filter];
+    const matchingLeads = activeLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase());
+    return { stage, filter, count: matchingLeads.length, value: matchingLeads.reduce((total, lead) => total + lead.estimatedValue, 0) };
+  });
+  const otherStageLeads = activeLeads.filter((lead) => !leadStages.some((stage) => stage.toLowerCase() === lead.stage.toLowerCase()));
+  const otherStageValue = otherStageLeads.reduce((total, lead) => total + lead.estimatedValue, 0);
+  const stageValues = otherStageLeads.length > 0 ? [...standardStageValues, { stage: LEAD_STAGE_LABELS.other, filter: "other" as const, count: otherStageLeads.length, value: otherStageValue }] : standardStageValues;
   const maximumStageValue = Math.max(1, ...stageValues.map((item) => item.value));
   const projectStatuses = [...(dashboard?.projectsByStatus ?? [])].sort((left, right) => {
     const leftIndex = projectLifecycleOrder.indexOf(left.status.toLowerCase());
@@ -1267,12 +1351,31 @@ function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Le
   const maximumProjectCount = Math.max(1, ...projectStatuses.map((item) => item.count));
   const metrics = dashboard?.metrics;
   const activeProjectCount = metrics?.activeProjects ?? projects.filter(isActiveProject).length;
+
+  useEffect(() => {
+    const currentHistoryState = window.history.state as Record<string, unknown> | null;
+    const returnFocusId = typeof currentHistoryState?.[reportsReturnFocusHistoryKey] === "string"
+      ? currentHistoryState[reportsReturnFocusHistoryKey]
+      : null;
+    if (!returnFocusId) return;
+    const returnFocusTarget = document.getElementById(returnFocusId);
+    if (!returnFocusTarget) {
+      if (state === "ready") clearReportReturnFocusFromCurrentHistoryEntry();
+      return;
+    }
+    const focusFrame = window.requestAnimationFrame(() => {
+      returnFocusTarget.focus();
+      clearReportReturnFocusFromCurrentHistoryEntry();
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [activeLeads.length, projectStatuses.length, state]);
+
   return <>
     <PageTitle eyebrow="Business performance" title="Reports" text="Current totals from saved leads, clients, projects, and meeting notes." state="Working" />
     <section className="metrics-grid"><Metric label="Pipeline value" value={state === "ready" ? money(metrics?.estimatedPipelineValue ?? 0) : "—"} note={state === "ready" ? `${metrics?.activeLeads ?? activeLeads.length} active leads` : "Loading current totals"} icon={Zap} color="orange" /><Metric label="Active projects" value={state === "ready" ? String(activeProjectCount) : "—"} note={state === "ready" ? `${activeProjectCount} of ${projects.length} project records active` : "Loading current totals"} icon={BriefcaseBusiness} color="green" /><Metric label="Clients" value={state === "ready" ? String(metrics?.clientCount ?? clients.length) : "—"} note={state === "ready" ? "Client accounts" : "Loading current totals"} icon={Users} color="blue" /><Metric label="Project meetings" value={state === "ready" ? String(metrics?.meetingCount ?? 0) : "—"} note={state === "ready" ? "Meeting notes saved" : "Loading current totals"} icon={MessageSquareText} color="violet" /></section>
     <div className="reports-grid">
-      <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" />{activeLeads.length > 0 ? <div className="bar-chart">{stageValues.map((item) => <div key={item.stage}><span>{item.stage}</span><div role="img" aria-label={`${item.stage}: ${money(item.value)}`}><i style={{ width: `${Math.round((item.value / maximumStageValue) * 100)}%` }} /></div><strong>{money(item.value)}</strong></div>)}</div> : state === "ready" ? <div className="empty-table">No active leads are available for this report.</div> : null}</section>
-      <section className="panel report-chart"><PanelHeader title="Projects by status" subtitle={`${projects.length} records`} />{projectStatuses.length > 0 ? <div className="bar-chart">{projectStatuses.map((item) => <div key={item.status}><span>{displayStatus(item.status, "Unknown")}</span><div role="img" aria-label={`${displayStatus(item.status, "Unknown")}: ${item.count} projects`}><i style={{ width: `${Math.round((item.count / maximumProjectCount) * 100)}%` }} /></div><strong>{item.count}</strong></div>)}</div> : state === "ready" ? <div className="empty-table">No project status data is available yet.</div> : null}</section>
+      <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" />{activeLeads.length > 0 ? <ul className="bar-chart" aria-label="Pipeline stages">{stageValues.map((item) => { const href = item.count > 0 ? operationsHref("Leads", { leadStage: item.filter }) : undefined; const focusId = href ? `report-lead-${item.filter}` : undefined; return <ReportBarRow key={item.stage} label={item.stage} measure={money(item.value)} width={Math.round((item.value / maximumStageValue) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `lead:${item.filter}` : undefined} accessibleName={href ? `View ${item.stage} leads — ${item.count} active ${item.count === 1 ? "lead" : "leads"}, ${money(item.value)} estimated value` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No active leads are available for this report.</div> : null}</section>
+      <section className="panel report-chart"><PanelHeader title="Projects by status" subtitle={`${projects.length} records`} />{projectStatuses.length > 0 ? <ul className="bar-chart" aria-label="Project lifecycle statuses">{projectStatuses.map((item) => { const lifecycle = projectLifecycleFilter(item.status); const href = lifecycle && item.count > 0 ? operationsHref("Projects", { projectLifecycle: lifecycle }) : undefined; const label = displayStatus(item.status, "Unknown"); const focusId = href ? `report-project-${lifecycle}` : undefined; return <ReportBarRow key={item.status} label={label} measure={String(item.count)} width={Math.round((item.count / maximumProjectCount) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `project:${lifecycle}` : undefined} accessibleName={href ? `View ${label} projects — ${item.count} ${item.count === 1 ? "project" : "projects"}` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No project status data is available yet.</div> : null}</section>
     </div>
     <section className="client-directory-banner"><div className="directory-badge"><Activity size={20} /></div><div><strong>More reports will appear as additional workflows go live</strong><span>Crew utilization, sales-cycle timing, margin, revenue, and closeout timing require scheduling and commercial records that are not available yet.</span></div></section>
   </>;

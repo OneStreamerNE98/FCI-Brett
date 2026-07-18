@@ -14,8 +14,8 @@ The complete July 17 design-critique finding ledger, including intentionally def
 
 These are the eight implementation priorities confirmed against the hosted Sites development environment and the current GitHub source. Keep an item open until its acceptance criteria are covered by source tests and rendered browser verification.
 
-- [ ] **P0 — Project-manager data integrity:** correct the inappropriate live development value through an authorized admin workflow; replace unrestricted free text with an approved staff identity; validate the identifier and membership on the server; preserve a safe display path for legacy records.
-  - Source and deployment complete: creation uses an authorized email identity, raw invalid legacy text is not returned, and an audited Admin correction action is live in version 37. Remaining owner action: open the flagged legacy test project, use **Assign to me**, and confirm the activity evidence.
+- [x] **P0 — Project-manager data integrity:** correct the inappropriate live development value through an authorized admin workflow; replace unrestricted free text with an approved staff identity; validate the identifier and membership on the server; preserve a safe display path for legacy records.
+  - Completed July 18, 2026 in private Sites development version 37: creation uses an authorized email identity, raw invalid legacy text is not returned, and the owner used the audited **Assign to me** action on the flagged test project and confirmed the corrected project-manager identity and activity evidence.
 - [x] **P1 — Keyboard and focus accessibility:** make the mobile navigation a true modal drawer, keep its closed controls out of the tab order and accessibility tree, inert the background, restore launcher focus, complete global-search keyboard semantics, and return focus to search after a project drawer closes.
 - [x] **P1 — Truthful feature readiness:** remove unfinished modules from normal production navigation or label them clearly as Planned or Setup required; do not present placeholder project tabs or disabled future actions as available work.
 - [x] **P1 — Deployment-time database migrations:** remove schema DDL from normal request paths and rely on the checked-in, versioned Sites/D1 migration sequence; retain an explicit migration/bootstrap path for controlled environments only.
@@ -55,7 +55,7 @@ These are the eight implementation priorities confirmed against the hosted Sites
 
 - [x] Give Overview, Leads, Clients, Projects, Schedule, Inbox, Assistant, Reports, and Settings real App Router URLs, with direct-entry authentication, refresh, Back/Forward, bookmark, 404, and outside-identity denial coverage.
 - [ ] Preserve filters, selected project, and useful search state in the URL where appropriate.
-  - Project status, Settings section, and Inbox bucket now use bounded canonical query values. Selected-record drawers and free-form search remain intentionally transient until record-detail routing and privacy-safe search-link behavior are designed.
+  - Project status, exact report lifecycle, Lead report stage, Settings section, and Inbox bucket now use bounded canonical query values with safe invalid/duplicate fallback and Back/Forward behavior. Selected-record drawers and free-form search remain intentionally transient until record-detail routing and privacy-safe search-link behavior are designed.
 - [ ] Split the large client component by route and feature; prefer server rendering for stable shells and dynamically load heavy, rarely used panels.
 - [ ] Consolidate duplicate Inbox and Settings Google workflows behind shared components and hooks.
 

@@ -99,9 +99,11 @@ PR #21 merged `codex/admin-audit-viewer` into `main` at `de0fb51`. It implements
 
 PR #22 merged the durable routes at `03223c1`: Overview, Leads, Clients, Projects, Schedule, Inbox, Assistant, Reports, and Settings have fixed App Router URLs, with bounded bookmarkable Project, Settings, and Inbox state. PR #25 then completed the July critique gap pass at `13241fc`; private Sites development version 37 now contains the readability, feature-state, responsive, drawer, filtering, Inbox, Assistant, Reports, and Access-boundary refinements. The release changed no database migration, access policy, or Google connection.
 
+The follow-on `codex/reports-drill-through` source branch completes the critique's Reports chart-to-list contract. Pipeline links use five bounded active-lead buckets (`new-inquiry`, `site-visit`, `proposal`, `decision`, and `other`), and project links use the seven exact lifecycle statuses from Planning through Archived. Destination filters are visible, clearable, reloadable, history-aware, and fail safely on invalid or duplicate values; rendered tests cover keyboard activation, Back focus, a `$0` custom-stage record, desktop/mobile accessibility, and overflow. This follow-on is not part of private Sites version 37 and remains undeployed until separately reviewed and merged.
+
 ## Recommended next worker assignments
 
-The immediate owner-only step is to open the flagged hosted legacy test project, use the audited **Assign to me** action for its currently unassigned project manager, and verify the activity evidence. After that, the next local sequence does not require Brett's Workspace or Cloud input:
+The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. The next local sequence does not require Brett's Workspace or Cloud input:
 
 1. Phase 3 frontend structure: consolidate shared UI primitives and semantic table/list patterns, split feature-level client code, and remove redundant legacy CSS without regressing the completed type/contrast and accessibility acceptance.
 2. Source-only jobs and Google sync contracts: model job/attempt/failure/replay plus Gmail/Calendar cursor and renewal state with fakes only; do not activate Scheduler, watches, channels, or delivery.
