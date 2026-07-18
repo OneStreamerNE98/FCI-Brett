@@ -15,20 +15,21 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | July critique remediation merged and deployed to private Sites development version 37; structural and multi-user work remains | Correct the flagged hosted project-manager value, then continue feature splitting, freshness, partial-failure, and conflict work. |
+| Frontend multi-user hardening | Codex/developer | July critique remediation is deployed to version 37; P0 project-manager integrity is complete; Reports drill-through is complete in the current source branch | Review and merge the Reports follow-on, then continue feature splitting, freshness, partial-failure, and conflict work. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status checked against `main` and the private Sites development deployment on July 18, 2026.
+Status checked against `main`, the current Reports follow-on source branch, and the private Sites development deployment on July 18, 2026.
 
 ### Jason / business owner
 
-1. In **Projects**, open the flagged legacy test project that currently shows **Project manager: Unassigned**, use the audited **Assign to me** action, and confirm the correction/activity evidence. This is the only remaining P0 frontend-integrity action and does not require Brett.
-2. Review Brett's read-only Google Cloud inventory when it arrives and approve or reject the exact proposed external changes before any API, IAM, billing, OAuth, or Admin-console write.
-3. Continue the open owner decisions in [Setup inputs](00-setup-inputs.md), the [20-user operating model](06-20-user-operating-model-and-access.md), and the [complete product architecture checklist](10-complete-product-and-integration-architecture.md).
+Completed July 18, 2026: Jason used the audited **Assign to me** action on the flagged test project and confirmed the corrected project-manager identity and activity evidence. The P0 frontend-integrity action is closed.
+
+1. Review Brett's read-only Google Cloud inventory when it arrives and approve or reject the exact proposed external changes before any API, IAM, billing, OAuth, or Admin-console write.
+2. Continue the open owner decisions in [Setup inputs](00-setup-inputs.md), the [20-user operating model](06-20-user-operating-model-and-access.md), and the [complete product architecture checklist](10-complete-product-and-integration-architecture.md).
 
 ### Brett / Workspace and Cloud follow-up
 
@@ -61,10 +62,9 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 ## Recommended next work
 
-1. Close the hosted project-manager correction described above and record the result in [Frontend and multi-user hardening](09-frontend-and-multi-user-hardening.md).
-2. Complete the remaining Phase 3 frontend structure work: shared UI primitives, semantic table/list patterns, feature-level client splitting, and legacy CSS consolidation.
-3. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
-4. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
+1. Complete the remaining Phase 3 frontend structure work: shared UI primitives, semantic table/list patterns, feature-level client splitting, and legacy CSS consolidation.
+2. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
+3. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 

@@ -366,7 +366,7 @@ test("assistant exposes one visible project context and one suggested-question f
   await expect(page.locator(".assistant-main").getByRole("button", { name: /current project status|primary contact|email archives|evidence has not/i })).toHaveCount(0);
 });
 
-test("reports remove generic Current pills and explain active project coverage", async ({ page }) => {
+test("reports explain active project coverage and expose semantic lifecycle drill-through", async ({ page }) => {
   await page.goto("/reports");
   await expect(page.getByRole("heading", { level: 1, name: "Reports" })).toBeVisible();
 
@@ -374,5 +374,7 @@ test("reports remove generic Current pills and explain active project coverage",
   const activeProjects = page.locator(".metric-card").filter({ hasText: "Active projects" });
   await expect(activeProjects).toHaveCount(1);
   await expect(activeProjects).toContainText(/\d+ of \d+ project records active/);
+  await expect(page.getByRole("link", { name: /View Mobilizing projects/ })).toHaveAttribute("href", "/projects?status=mobilizing");
+  await expect(page.locator(".bar-chart [role=img]")).toHaveCount(0);
   await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
 });

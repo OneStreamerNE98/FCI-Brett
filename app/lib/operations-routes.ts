@@ -40,6 +40,20 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 export const PROJECT_STATUS_FILTERS = ["Active", "Completed", "Cancelled", "Archived"] as const;
 export type ProjectStatusFilter = (typeof PROJECT_STATUS_FILTERS)[number];
 
+export const PROJECT_LIFECYCLE_FILTERS = ["planning", "mobilizing", "installation", "closeout", "completed", "cancelled", "archived"] as const;
+export type ProjectLifecycleFilter = (typeof PROJECT_LIFECYCLE_FILTERS)[number];
+
+export const LEAD_STAGE_FILTERS = ["new-inquiry", "site-visit", "proposal", "decision", "other"] as const;
+export type LeadStageFilter = (typeof LEAD_STAGE_FILTERS)[number];
+
+export const LEAD_STAGE_LABELS: Record<LeadStageFilter, string> = {
+  "new-inquiry": "New inquiry",
+  "site-visit": "Site visit",
+  proposal: "Proposal",
+  decision: "Decision",
+  other: "Other stages",
+};
+
 export const INBOX_BUCKETS = ["inbox", "intake", "needs-review", "filed"] as const;
 export type InboxBucket = (typeof INBOX_BUCKETS)[number];
 
@@ -114,6 +128,16 @@ export function projectStatusFromSearch(search: string): ProjectStatusFilter {
   return match ?? "Active";
 }
 
+export function projectLifecycleFromSearch(search: string): ProjectLifecycleFilter | null {
+  const value = exactSingleValue(new URLSearchParams(search), "status");
+  return PROJECT_LIFECYCLE_FILTERS.find((filter) => filter === value) ?? null;
+}
+
+export function leadStageFromSearch(search: string): LeadStageFilter | null {
+  const value = exactSingleValue(new URLSearchParams(search), "stage");
+  return LEAD_STAGE_FILTERS.find((filter) => filter === value) ?? null;
+}
+
 export function inboxBucketFromSearch(search: string): InboxBucket {
   const value = exactSingleValue(new URLSearchParams(search), "bucket");
   return INBOX_BUCKETS.find((bucket) => bucket === value) ?? "inbox";
@@ -122,16 +146,23 @@ export function inboxBucketFromSearch(search: string): InboxBucket {
 export function operationsHref(view: OperationsView, state: {
   settingsSection?: SettingsSection;
   projectStatus?: ProjectStatusFilter;
+  projectLifecycle?: ProjectLifecycleFilter;
+  leadStage?: LeadStageFilter;
   inboxBucket?: InboxBucket;
 } = {}) {
   const parameters = new URLSearchParams();
+  if (view === "Leads" && state.leadStage) parameters.set("stage", state.leadStage);
   if (view === "Settings") {
     const section = state.settingsSection ?? "My account";
     if (section !== "My account") parameters.set("section", settingsSectionSlugs[section]);
   }
   if (view === "Projects") {
-    const status = state.projectStatus ?? "Active";
-    if (status !== "Active") parameters.set("status", status.toLowerCase());
+    if (state.projectLifecycle) {
+      parameters.set("status", state.projectLifecycle);
+    } else {
+      const status = state.projectStatus ?? "Active";
+      if (status !== "Active") parameters.set("status", status.toLowerCase());
+    }
   }
   if (view === "Inbox") {
     const bucket = state.inboxBucket ?? "inbox";
@@ -142,14 +173,21 @@ export function operationsHref(view: OperationsView, state: {
 }
 
 export function operationsReturnPath(view: OperationsView, searchParams: OperationsPageSearchParams = {}) {
+  if (view === "Leads") {
+    return operationsHref(view, {
+      leadStage: leadStageFromSearch(pageParameterSearch(searchParams.stage, "stage")) ?? undefined,
+    });
+  }
   if (view === "Settings") {
     return operationsHref(view, {
       settingsSection: settingsSectionFromSearch(pageParameterSearch(searchParams.section, "section")),
     });
   }
   if (view === "Projects") {
+    const statusSearch = pageParameterSearch(searchParams.status, "status");
     return operationsHref(view, {
-      projectStatus: projectStatusFromSearch(pageParameterSearch(searchParams.status, "status")),
+      projectStatus: projectStatusFromSearch(statusSearch),
+      projectLifecycle: projectLifecycleFromSearch(statusSearch) ?? undefined,
     });
   }
   if (view === "Inbox") {
@@ -162,15 +200,19 @@ export function operationsReturnPath(view: OperationsView, searchParams: Operati
 
 export function canonicalOperationsSearch(view: OperationsView, search: string) {
   const parameters = new URLSearchParams(search);
+  if (view !== "Leads") parameters.delete("stage");
   if (view !== "Settings") parameters.delete("section");
   if (view !== "Projects") parameters.delete("status");
   if (view !== "Inbox") parameters.delete("bucket");
 
+  if (view === "Leads") {
+    replaceBoundedParameter(parameters, "stage", LEAD_STAGE_FILTERS, "");
+  }
   if (view === "Settings") {
     replaceBoundedParameter(parameters, "section", [...settingsSectionBySlug.keys()], "account");
   }
   if (view === "Projects") {
-    replaceBoundedParameter(parameters, "status", PROJECT_STATUS_FILTERS.map((filter) => filter.toLowerCase()), "active");
+    replaceBoundedParameter(parameters, "status", ["active", ...PROJECT_LIFECYCLE_FILTERS], "active");
   }
   if (view === "Inbox") {
     replaceBoundedParameter(parameters, "bucket", INBOX_BUCKETS, "inbox");

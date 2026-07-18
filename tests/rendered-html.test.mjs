@@ -71,7 +71,7 @@ test("keeps the design-critique interaction contracts in the rendered app", asyn
   const app = await read("app/FloorOpsApp.tsx");
   const inbox = app.slice(app.indexOf("function InboxView"), app.indexOf("function AssistantView"));
   const assistant = app.slice(app.indexOf("function AssistantView"), app.indexOf("function ReportsView"));
-  const reports = app.slice(app.indexOf("function ReportsView"), app.indexOf("function SettingsView"));
+  const reports = app.slice(app.indexOf("function ReportBarRow"), app.indexOf("function SettingsView"));
   const askBox = assistant.slice(assistant.indexOf('className="ask-box"'), assistant.indexOf("</form>"));
 
   assert.match(app, /<LeadDrawer lead=\{selectedLead\}/);
@@ -84,6 +84,11 @@ test("keeps the design-critique interaction contracts in the rendered app", asyn
   assert.ok(assistant.indexOf('className="assistant-project-scope"') < assistant.indexOf('className="ask-box"'));
   assert.doesNotMatch(askBox, /<select/);
   assert.match(reports, /projectLifecycleOrder\.indexOf/);
+  assert.match(reports, /<ul className="bar-chart"/);
+  assert.match(reports, /operationsHref\("Leads", \{ leadStage: item\.filter \}\)/);
+  assert.match(reports, /operationsHref\("Projects", \{ projectLifecycle: lifecycle \}\)/);
+  assert.match(reports, /otherStageLeads\.length > 0/);
+  assert.doesNotMatch(reports, /role="img"/);
   assert.doesNotMatch(reports, /trend=/);
 });
 
