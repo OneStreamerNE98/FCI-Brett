@@ -39,17 +39,18 @@ This review separates three things:
 - Replaced the transient project-update composer with a disabled Project updates planned control.
 - Replaced the hardcoded Administrator text with the current server-derived access label (`Admin` or `Office`).
 - Added fixed App Router URLs for all nine primary views. Project status, Settings section, and Inbox bucket use bounded bookmarkable query state; invalid or duplicate route state canonicalizes safely, and unknown paths return a real 404.
+- Completed global-search keyboard navigation and focus handling, plus drawer Escape/focus-restoration behavior for the current Lead and Project flows.
+- Enforced a stylesheet-wide 12 px minimum for meaningful metadata, strengthened muted-text contrast, and raised undersized interactive controls.
+- Added explicit Working, In development, Setup required, and Planned states, including a fail-closed People & Access development boundary.
 
 ## Known UI work not included in this pass
 
 These are larger structural changes and should be scheduled separately:
 
-- Create one accessible dialog/drawer primitive with focus trapping, initial focus, focus restoration, Escape handling, and consistent labels.
-- Add full keyboard navigation to global search results.
+- Move repeated Lead and Project drawer content/chrome into feature modules and shared presentation components while retaining the existing `AccessibleOverlay` focus trap, initial focus, focus restoration, Escape handling, and labeling behavior.
 - Replace the current development access label with the durable production role/capability context only after the source-composed authorization boundary is accepted and durable admission, live OIDC, session issuance, and deployment are separately approved.
 - Consolidate the older sidebar CSS and rename color variables by purpose.
-- Continue increasing very small metadata text as each operational module becomes real.
-- Add explicit Working, In development, Setup required, and Planned states so configuration-only or placeholder controls cannot be mistaken for operational features.
+- Split the monolithic client surface into feature boundaries and start core data on the server where the production persistence boundary permits it.
 - Add independent loading/error states, query invalidation, stale timestamps, and optimistic-concurrency messages for multi-user use.
 
 ## What is genuinely implemented
@@ -109,7 +110,7 @@ The owner has approved the application role and sensitive-action policy, includi
 12. Replace source-contract tests with more route, integration, and browser behavior tests.
 13. Validate backup restoration before real client data; retain the minimized audit viewer as a separately privileged production gate.
 
-After the Activity branch is reviewed, the next source work that does not need Brett's input is durable frontend routes, the remaining frontend quality pass, provider-neutral job and Gmail/Calendar sync contracts with local fakes, and local migration transformation/reconciliation fixtures. Live OIDC, staging execution, migration/apply, deployment, a second user, and real data remain separately gated.
+After private Sites development version 37, the immediate owner-only action is the hosted project-manager correction tracked in the frontend checklist. The next source work that does not need Brett's input is Phase 3 frontend structure, provider-neutral job and Gmail/Calendar sync contracts with local fakes, and local migration transformation/reconciliation fixtures. Live OIDC, staging execution, migration/apply, production deployment, a second user, and real data remain separately gated.
 
 ### Next: lead-to-closeout operations
 

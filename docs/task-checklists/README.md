@@ -8,17 +8,33 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | --- | --- | --- | --- |
 | Repository verification | Codex/developer | Complete | GitHub CI builds and tests every push and pull request. |
 | Workspace identity inputs | Business owner | Partially complete | Two initial Administrators are recorded and AdminCRM is confirmed non-shared; verify both managed Workspace identities/immutable subjects, the operations connector account, resource setup, and super-administrator contact. |
-| Workspace resources | Workspace administrator | Not started | Create the Shared Drive, directory Sheet, mailbox, and two calendars. |
+| Workspace resources | Workspace administrator | Verification pending; no completed inventory is recorded | Verify the domain, operations account, enabled services, Shared Drive support, directory Sheet, mailbox, and two calendars. |
 | Google Cloud and OAuth | Workspace/Cloud administrator | Company-account project candidate reported; Cloud verification pending | Inventory Brett's candidate and bring the non-secret findings back for approval before any API, IAM, billing, OAuth, or Admin-console change. |
-| Hosted development connection | Owner + Codex/developer | Blocked by resources | Add hosted configuration, connect one approved account, and verify each service. |
+| Hosted development connection | Owner + Codex/developer | Not connected; Workspace resource and OAuth verification remain pending | After approval, add hosted configuration, connect one approved account, and verify each service. |
 | Staff Google login and roles | Codex/developer | Approved policy; People & Access and Activity are merged, with only their presentation adapter deployed to private Sites development | Keep PostgreSQL migration/grants, Cloud Run employee-session/CSRF composition, live OIDC/providers, and additional users gated. |
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
-| Operations, recovery, and security | Owner + administrators | Not started | Name runbook owners and approve recovery and retention targets. |
-| Frontend multi-user hardening | Codex/developer | In progress; durable primary URLs and bounded bookmarkable state implemented in the current source branch | Review the durable-route branch, then continue feature splitting, freshness, partial-failure, conflict, and broader accessibility work. |
+| Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
+| Frontend multi-user hardening | Codex/developer | July critique remediation merged and deployed to private Sites development version 37; structural and multi-user work remains | Correct the flagged hosted project-manager value, then continue feature splitting, freshness, partial-failure, and conflict work. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
-| Complete product/integration architecture | Owner + developer + operations | Runtime boundary approved; broader decisions open | Approve system boundaries, roles, state machines, messaging/file policy, and authoritative external systems. |
+| Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
+
+## Immediate owner and administrator handoff
+
+Status checked against `main` and the private Sites development deployment on July 18, 2026.
+
+### Jason / business owner
+
+1. In **Projects**, open the flagged legacy test project that currently shows **Project manager: Unassigned**, use the audited **Assign to me** action, and confirm the correction/activity evidence. This is the only remaining P0 frontend-integrity action and does not require Brett.
+2. Review Brett's read-only Google Cloud inventory when it arrives and approve or reject the exact proposed external changes before any API, IAM, billing, OAuth, or Admin-console write.
+3. Continue the open owner decisions in [Setup inputs](00-setup-inputs.md), the [20-user operating model](06-20-user-operating-model-and-access.md), and the [complete product architecture checklist](10-complete-product-and-integration-architecture.md).
+
+### Brett / Workspace and Cloud follow-up
+
+1. Complete only the read-only inventory of the reported company Cloud project candidate and return the approved non-secret facts listed in [Google Cloud and OAuth](02-google-cloud-and-oauth.md#what-to-report-back-to-codex).
+2. Stop before changing APIs, IAM, billing, OAuth, or Google Admin settings until Jason approves the exact changes.
+3. Verify the company Workspace domain, operations connection account, enabled services, Shared Drive support, directory Sheet, and calendars using [Workspace resources](01-workspace-resources.md). Do not send secrets or admit another app user.
 
 ## Checklists by topic
 
@@ -43,16 +59,16 @@ Read the accepted [Workspace-first, cost-controlled rollout](../architecture-dec
 
 Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) to separate work that can be built with simulation now from owner decisions and live-connection tasks that require Workspace resources or credentials.
 
-## Recommended next source branches
+## Recommended next work
 
-1. Review and merge `codex/frontend-durable-routes`, which adds primary-view URLs plus direct-entry, refresh, Back/Forward, bookmark, mobile, 404, and denial coverage without changing hosted configuration.
-2. Complete the remaining frontend type/contrast, responsive/accessibility, console-health, and incremental feature-split work.
+1. Close the hosted project-manager correction described above and record the result in [Frontend and multi-user hardening](09-frontend-and-multi-user-hardening.md).
+2. Complete the remaining Phase 3 frontend structure work: shared UI primitives, semantic table/list patterns, feature-level client splitting, and legacy CSS consolidation.
 3. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
 4. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-None of these steps authorizes live OIDC/session issuance, staging execution, a migration or infrastructure apply, deployment, a second user, or real data.
+The private Sites development release is version 37. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
 

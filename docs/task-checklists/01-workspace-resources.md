@@ -2,7 +2,7 @@
 
 Owner: Google Workspace administrator
 
-Status: Not started
+Status: Workspace administrator verification pending — no completed resource inventory is recorded
 
 Depends on: [Setup inputs](00-setup-inputs.md)
 

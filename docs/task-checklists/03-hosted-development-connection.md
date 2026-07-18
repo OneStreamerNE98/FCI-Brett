@@ -2,11 +2,11 @@
 
 Owner: Business owner and Codex/developer
 
-Status: Blocked by Workspace resources and OAuth client
+Status: Connection not established; Workspace resource and OAuth verification remain pending — reverified against private Sites development version 37 on July 18, 2026
 
 Depends on: [Workspace resources](01-workspace-resources.md) and [Google Cloud/OAuth](02-google-cloud-and-oauth.md)
 
-The live Settings page currently reports the company Workspace connection as not configured. Add these values to the hosting platform, never to GitHub.
+The live Settings page on version 37 reports **Workspace connection: Not connected**. Add these values to the hosting platform only after the resource and OAuth prerequisites are approved; never add them to GitHub.
 
 ## Non-secret hosted values
 
