@@ -46,7 +46,7 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /event\.target !== event\.currentTarget/);
   assert.match(overlay, /!closeOnBackdropRef\.current \|\| busyRef\.current/);
 
-  assert.equal(app.match(/<AccessibleOverlay\b/g)?.length, 10);
+  assert.equal(app.match(/<AccessibleOverlay\b/g)?.length, 11);
   assert.doesNotMatch(app, /<div className="modal-backdrop"/);
   assert.doesNotMatch(app, /<div className="drawer-backdrop"/);
   assert.match(app, /variant="drawer"/);
@@ -86,6 +86,7 @@ test("keeps mobile navigation and workspace search keyboard-operable", async () 
   assert.match(app, /openClient\(client, workspaceSearchRef\.current\)/);
   assert.match(app, /returnFocusRef=\{projectDrawerReturnFocusRef\}/);
   assert.match(app, /returnFocusRef=\{clientDrawerReturnFocusRef\}/);
+  assert.match(app, /returnFocusRef=\{leadDrawerReturnFocusRef\}/);
 
   assert.match(css, /visibility:hidden;pointer-events:none/);
   assert.match(css, /\.sidebar\.open\{transform:translateX\(0\);visibility:visible;pointer-events:auto\}/);

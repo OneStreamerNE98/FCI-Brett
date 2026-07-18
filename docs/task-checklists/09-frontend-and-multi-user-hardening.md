@@ -8,6 +8,8 @@ Depends on: Approved roles/capabilities and production API contracts
 
 The interface is suitable for learning the single-user workflow. It needs explicit authorization, freshness, error, accessibility, and feature-readiness behavior before about 20 employees can rely on it together.
 
+The complete July 17 design-critique finding ledger, including intentionally deferred structural work and verification gates, is maintained in [the UI design critique remediation plan](../design-critique-fix-plan.md).
+
 ## July 13, 2026 UI audit priorities
 
 These are the eight implementation priorities confirmed against the hosted Sites development environment and the current GitHub source. Keep an item open until its acceptance criteria are covered by source tests and rendered browser verification.
@@ -17,8 +19,8 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [x] **P1 — Keyboard and focus accessibility:** make the mobile navigation a true modal drawer, keep its closed controls out of the tab order and accessibility tree, inert the background, restore launcher focus, complete global-search keyboard semantics, and return focus to search after a project drawer closes.
 - [x] **P1 — Truthful feature readiness:** remove unfinished modules from normal production navigation or label them clearly as Planned or Setup required; do not present placeholder project tabs or disabled future actions as available work.
 - [x] **P1 — Deployment-time database migrations:** remove schema DDL from normal request paths and rely on the checked-in, versioned Sites/D1 migration sequence; retain an explicit migration/bootstrap path for controlled environments only.
-- [ ] **P2 — Readable type and contrast:** raise meaningful metadata to at least 12 px, keep body and action text at 14–16 px where practical, and meet WCAG AA contrast for normal operational text.
-  - Audited metric, panel, project, status, form, and drawer selectors now use at least 12 px and higher-contrast muted text. A broader legacy typography pass remains open for less-used integration/settings details.
+- [x] **P2 — Readable type and contrast:** raise meaningful metadata to at least 12 px, keep body and action text at 14–16 px where practical, and meet WCAG AA contrast for normal operational text.
+  - The July 18 gap pass completes the stylesheet-wide 12 px declaration floor and higher-contrast muted-text sweep, including integration, filing, meeting, rule, popover, client, and assistant states. Phase 3 still tracks removal of redundant legacy declarations without reopening this acceptance item.
 - [x] **P2 — Mobile project comparison:** retain status, site/date, and value in a compact stacked mobile row instead of hiding decision-useful fields; do not imply that placeholder dates are durable schedule data.
 - [ ] **P2 — Initial-load and bundle performance:** break the monolithic client surface into feature boundaries, dynamically load rare/heavy panels, start critical data earlier where safe, deduplicate shared reads, and bound long record lists.
   - First pass complete: initial client loading starts immediately; duplicated account/Workspace reads share a TTL cache; the overview clock no longer rerenders the app shell; project counts are one-pass; the phone panel is lazy-loaded; long rows defer off-screen rendering; and fixed App Router wrappers now support direct entry. Feature-level client splitting and server-started core data remain open.
@@ -64,7 +66,7 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [x] Add Arrow Up/Down, Enter, Escape, and current-selection semantics to global search.
 - [x] Create typed success, information, warning, and error notifications; use `role="alert"` for persistent errors and offer inline retry where safe.
 - [x] Clean up notification timers when components unmount or a newer notification replaces them.
-- [ ] Raise metadata text to at least 12 px and body/action text to 14–16 px unless a documented exception is tested.
+- [x] Raise metadata text to at least 12 px and body/action text to 14–16 px unless a documented exception is tested.
 - [ ] Test keyboard-only use, screen-reader names, reduced motion, 200% zoom, contrast, 390 px mobile, tablet, and desktop widths.
 
 ## Test coverage and completion
