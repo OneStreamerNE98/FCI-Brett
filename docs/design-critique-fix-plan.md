@@ -1,12 +1,12 @@
 # UI design critique remediation plan
 
-Last audited: July 18, 2026
+Last audited and released: July 18, 2026
 
 Source critique: the July 17, 2026 design critique supplied by the owner. This checked-in ledger is the self-contained project record; it does not depend on the original temporary worktree path.
 
 Baseline: PR #24, merged to `main` as `80a2d5a`
 
-Current completion branch: `codex/design-critique-gap-pass`
+Completed release: PR #25, merged to `main` as `13241fc` and deployed to the private Sites development environment as version 37
 
 ## Purpose
 
@@ -115,7 +115,7 @@ These items remain open. They are split into reviewable tracks so a visual clean
 - [ ] Add a CSS regression guard for undersized fixed controls.
 - [ ] Capture approved desktop and mobile reference screenshots once the browser harness is reliable.
 
-## Verification gates for this completion branch
+## Verification gates for this release
 
 - `npm run lint`
 - `npm test` (production build plus Node suite)
@@ -135,6 +135,8 @@ These items remain open. They are split into reviewable tracks so a visual clean
 - All ten durable routes passed serious/critical axe checks at 1280×720 and 390×844, including Schedule.
 - Desktop and 390 px rendered QA covered all ten routes plus the Lead drawer; exercised paths had no unresolved console error.
 - `git diff --check` passed.
+- PR #25 merged to `main` as `13241fc`; the exact merged source built successfully and was deployed to private Sites development version 37.
+- Authenticated post-deployment smoke checks covered all ten durable routes with the expected page identity, meaningful content, an H1, no framework overlay, and no console warning/error. Live interaction checks also passed for Client filtering, the Project drawer and focus return, and the fail-closed People & Access boundary.
 
 ## Intentionally preserved behavior
 
@@ -148,4 +150,4 @@ These items remain open. They are split into reviewable tracks so a visual clean
 
 ## Follow-on release boundary
 
-This critique pass does not authorize deployment, production configuration, data migration, multi-user admission, or live Google Workspace changes. Those remain governed by the production-platform, authorization, and rollout acceptance gates in the repository guidance.
+The owner separately authorized this critique pass for the controlled, single-user Sites development environment, and version 37 was deployed successfully on July 18, 2026. That release did not change hosted access, data, migrations, or Google Workspace configuration. Production deployment, production configuration, data migration, multi-user admission, and live Google Workspace changes remain governed by the production-platform, authorization, and rollout acceptance gates in the repository guidance.

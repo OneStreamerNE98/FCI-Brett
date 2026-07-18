@@ -19,11 +19,11 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 
 ## Roles and access
 
-- [ ] Approve Admin, Office Operations, and Project Manager responsibilities.
+- [x] Approve Admin, Office Operations, and Project Manager responsibilities. The first-rollout ceilings are recorded in [the 20-user operating model](06-20-user-operating-model-and-access.md); rollout and live identity verification remain separate gates.
 - [x] Sales/Estimator is excluded from the first rollout, and Field Lead uses a future expiring assignment link rather than an employee role.
 - [x] Subcontractors receive no application accounts or access in the first rollout.
 - [ ] Decide whether clients receive accounts, purpose-scoped links, or no direct access, and whether subcontractors may ever receive a separately approved future link.
-- [ ] Approve project membership and cross-project visibility rules.
+- [x] Approve project membership and cross-project visibility rules. Office is company-wide for approved nonfinancial operations; Project Managers are restricted to explicitly assigned projects with minimum read-only related client/contact context.
 - [x] Restrict pricing/revenue/margin, project creation/assignment changes, Gmail filing, Calendar creation, file sharing, exports, and security-audit viewing to Administrators for the first rollout.
 - [ ] Decide discounts/change orders, message sending, mailbox/calendar reads, file view/download, job retry, routine non-Admin writes, and recovery authority; deny them in simulation until approved.
 - [x] Require an explicit application invitation for every employee in the local policy; durable invitation binding and Internal Google OAuth verification remain unimplemented.
@@ -91,7 +91,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 - [ ] Complete quarantine scan/release and permission behavior. Generic file/version/storage/link metadata, project-only reservation, quarantine-state finalization, and a conditional object-storage fake now exist; scanner behavior, release policy, authorized download, provider composition, and untrusted intake remain deferred.
 - [ ] Add optimistic concurrency, edit/archive, atomic conversion, project dates, tasks/follow-ups, notes, and conflict UI.
 - [ ] Split the frontend into durable routes and feature modules with typed errors, query freshness, partial-failure, accessibility, and responsive tests.
-  - Durable primary routes, bounded project/Settings/Inbox query state, direct-entry/refresh/history coverage, and route-level denial/404 tests are complete in the current source branch. Feature modules, freshness, partial-failure, conflict, and broader accessibility work remain.
+  - Durable primary routes, bounded project/Settings/Inbox query state, direct-entry/refresh/history coverage, route-level denial/404 tests, and the July readability/accessibility gap pass are merged through PR #25 and included in private Sites development version 37. Feature modules, freshness, partial-failure, conflict, CSS consolidation, and the remaining interactive-state visual harness remain.
 - [ ] Complete test-data transformation, duplicate reporting, backup/restore, cutover, and rollback tooling. The bounded core rehearsal already preserves test identifiers and verifies per-table counts plus content/identifier hashes, but it is not the full staging/cutover rehearsal.
 - [ ] Write ADRs and contract/state-transition tests for approved estimate, procurement, schedule/field, communications, closeout, and warranty behavior.
 
