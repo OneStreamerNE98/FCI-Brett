@@ -161,8 +161,8 @@ template.
 bytes; clients/projects 64,000 — match siblings), preserving validation and error shapes.
 Add `FILES: R2Bucket` to the Env interface. (Leave `GOOGLE_WORKSPACE_PUBSUB_TOPIC` to
 WS-03 — one owner.) Add oversized-body tests.
-**Accept:** `npm test` passes; oversized bodies return the same 4xx contract as
-POST /records does today; grep for raw `request.json()` in those routes returns nothing.
+**Accept:** `npm test` passes; oversized bodies return each route's explicit 413 JSON
+contract before persistence; grep for raw `request.json()` in those routes returns nothing.
 
 ### BE-03 · Retire the legacy /api/v1/records surface (small, after BE-02)
 **Status:** In review — draft PR #46 on `codex/retire-legacy-records`, July 19,
@@ -171,9 +171,10 @@ is removed, and the assistant's separate records-only answer mode remains covere
 The immutable D1 history is unchanged; BE-12 must classify the table as
 `records: excluded (legacy, no migration)`.
 
-**Why:** Generic JSON record store with no UI caller (verified: only
-`tests/api-correctness-behavior.test.mjs:174` and `tests/rendered-html.test.mjs:97`
-reference it); `actorFrom` in `app/api/v1/_workspace-data.ts:14` has zero call sites.
+**Why:** At packet start, the generic JSON record store had no UI caller and was
+referenced only by two source-contract tests; the adjacent `actorFrom` helper had zero
+call sites. The retirement regression now verifies that neither application surface
+returns.
 Porting dead surface to PostgreSQL would waste a packet.
 **Do:** Delete the route (or 410 stub — pick one, note in commit), remove `actorFrom`,
 update the two tests. **Keep** the assistant "records-only" assertion in
