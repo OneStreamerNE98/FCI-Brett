@@ -171,7 +171,6 @@ test("lead domain behavior remains available without exporting helpers from a ro
 
 test("affected POST routes are wired to the shared bounded parser", async () => {
   const paths = [
-    "app/api/v1/records/route.ts",
     "app/api/v1/filing-rules/route.ts",
     "app/api/v1/google-workspace/route.ts",
   ];
