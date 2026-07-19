@@ -179,7 +179,7 @@ this route. Do NOT touch `db/schema.ts` or drizzle history; record
 ### BE-04 · Workspace OIDC login, invitation redemption, session issuance on the Cloud Run router (large, no deps; VERIFIED)
 **Status:** In review — draft PR #38 on `codex/workspace-oidc-login`, July 19, 2026.
 Local acceptance is green (343 active tests, 13 environment-gated skips, lint, and Cloud
-Run build); GitHub Node/Terraform checks are green and Chromium is still running.
+Run build); all GitHub Node, Terraform, and Chromium checks are green.
 Source-only; production identity, infrastructure, sessions, and user admission remain
 unapplied.
 
@@ -415,7 +415,7 @@ mismatched or multiple approved accounts; `npm test` passes.
 **Status:** In review with WS-12 — draft PR #39 on
 `codex/workspace-rotation-sync-contracts`, July 19, 2026. Local acceptance is green (337
 active tests, 13 environment-gated skips, lint, focused strict TypeScript, and 10/10
-contract tests); GitHub Node/Terraform checks are green and Chromium is still running.
+contract tests); all GitHub Node, Terraform, and Chromium checks are green.
 Procedures, contracts, and local fakes only; no live provider resource is authorized.
 
 **Why:** No rotation or invalid_grant recovery procedure exists anywhere, though the code

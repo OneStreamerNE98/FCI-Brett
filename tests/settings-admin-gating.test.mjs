@@ -57,6 +57,6 @@ test("isolates rendered role tests from contributor environment files", async ()
 
   assert.match(viteConfig, /envFile: isE2eRuntime \? false : undefined/);
   assert.match(viteConfig, /process\.env\.CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV = "false"/);
-  assert.match(collaborationGuide, /FCI_E2E=true[^\n]+disables Vite and local Worker environment-file loading[^\n]+\.env\.local/);
+  assert.match(collaborationGuide, /FCI_E2E=true[^\n]+disables Vite environment-file loading[^\n]+Cloudflare Worker[^\n]+\.env\.local[^\n]+does not disable explicit `\.dev\.vars` bindings/);
   assert.match(continuousIntegration, /FCI_OFFICE_EMAILS: e2e-admin@example\.test,e2e-office@example\.test/);
 });
