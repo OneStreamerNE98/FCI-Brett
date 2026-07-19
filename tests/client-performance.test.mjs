@@ -94,6 +94,6 @@ test("keeps the bounded initial-load and rendering optimizations in place", asyn
   assert.match(app, /cachedGetJson[^\n]+\("\/api\/v1\/settings\/me"/);
   assert.match(app, /cachedGetJson[^\n]+\("\/api\/v1\/google-workspace"/);
   assert.match(app, /invalidateCachedGet\("\/api\/v1\/settings\/me"\)/);
-  assert.match(css, /\.pipeline-row,[^\n]+\{content-visibility:auto\}/);
+  assert.match(css, /\.operations-actionable-row,\.pipeline-row,[^\n]+\{content-visibility:auto\}/);
   assert.match(css, /contain-intrinsic-size:auto 68px/);
 });

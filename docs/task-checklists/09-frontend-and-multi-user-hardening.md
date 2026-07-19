@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with workflow decisions from the business owner
 
-Status: In progress — the July UI remediation, Reports drill-through, PR #29's first shared UI/filter boundary, and PR #30's semantic Settings rules table are merged; the latest private Sites development release remains version 39; actionable-list, structural, and multi-user work remains
+Status: In progress — PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's semantic Settings rules table at `aa8ed8f`; the source-only `codex/actionable-lists` slice is source-complete and ready for review without a pull request or deployment; later structural and multi-user work remains
 
 Depends on: Approved roles/capabilities and production API contracts
 
@@ -61,7 +61,8 @@ These are the eight implementation priorities confirmed against the hosted Sites
   - First boundary complete: PR #29 moved reusable operations primitives and the report-driven Leads/Projects filter/focus pattern outside `FloorOpsApp.tsx` and deployed it in private Sites development version 39; the durable route views remain to be split.
 - [ ] Consolidate duplicate Inbox and Settings Google workflows behind shared components and hooks.
 - [ ] Consolidate tabular and whole-row list presentations behind shared responsive semantic patterns without changing business behavior.
-  - First semantic-table slice merged source-only in PR #30 at `aa8ed8f`: **Settings → Inbox & file rules** now uses native headings, labeled mobile cards, and unchanged keyboard actions. It has not been deployed; keep the whole-row pipeline, Projects, and Clients views for the next actionable-list slice.
+  - First semantic-table slice merged in PR #30 at `aa8ed8f`: **Settings → Inbox & file rules** uses native headings, labeled mobile cards, and unchanged keyboard actions. PR #32 then merged at `adc79b8`, and that exact commit deployed as private Sites development version 40, so the semantic table is included in the controlled release.
+  - The source-only `codex/actionable-lists` branch is source-complete and ready for review for the whole-row Overview pipeline, Projects, and Clients views. It uses one native list/list-item/button contract with explicit list semantics, concise action names linked to complete descriptions, Enter/Space activation, Escape dismissal, and exact trigger focus restoration while preserving responsive decision metadata, empty states, filters, and drawer behavior. The isolated Playwright groups pass 58/58, all 13 routes pass serious/critical axe checks at desktop and 390 px, lint passes, and visual QA passes. It has no pull request and is not deployed; keep this broader checklist item open until the slice is reviewed and merged.
 
 ## Accessibility and feedback
 

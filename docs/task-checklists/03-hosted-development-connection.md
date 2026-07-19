@@ -2,7 +2,7 @@
 
 Owner: Business owner and Codex/developer
 
-Status: Connection not established; Workspace resource and OAuth verification remain pending. The last direct Settings check was on private Sites development version 37 on July 18, 2026; version 39 is the current controlled release, and the intervening releases did not change hosted Workspace configuration.
+Status: Connection not established; Workspace resource and OAuth verification remain pending. The last direct Settings check was on private Sites development version 37 on July 18, 2026; PR #32 at `adc79b8` is the current private Sites development version 40 baseline. The intervening releases did not connect Workspace or change its hosted credentials.
 
 Depends on: [Workspace resources](01-workspace-resources.md) and [Google Cloud/OAuth](02-google-cloud-and-oauth.md)
 
@@ -28,7 +28,7 @@ GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar-id>
 
 Keep the current ChatGPT development identity separately allowlisted through `FCI_OFFICE_EMAILS` and `FCI_ADMIN_EMAILS` until employee Google login is implemented.
 
-When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address. Gmail operates as the connected account (`users/me`); the application does not use domain-wide delegation to read another mailbox, and readiness fails closed when the two values differ. That safeguard is source-only until this change is merged and separately deployed; the live version 39 does not yet prove it is active.
+When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address. Gmail operates as the connected account (`users/me`); the application does not use domain-wide delegation to read another mailbox, and readiness fails closed when the two values differ. PR #32 merged that safeguard at `adc79b8`, and the exact commit is included in private Sites development version 40. The connection remains unconfigured, so the future per-service acceptance run must still capture live evidence.
 
 ## Secret hosted values
 

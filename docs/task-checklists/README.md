@@ -15,14 +15,14 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | July critique remediation, Reports drill-through, the first Phase 3 shared UI/filter boundary, and PR #30's Settings rules semantic table are merged; the latest private Sites development release remains version 39 | Build the separate actionable-list pattern, then continue feature splitting, primitive consolidation, and legacy CSS cleanup. |
+| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's Settings rules semantic table at `aa8ed8f`; the source-only `codex/actionable-lists` slice is source-complete, ready for review, and not deployed | Review and merge the Overview pipeline, Clients, and Projects actionable-list slice; only then begin SET-01 and later bounded frontend consolidation. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status reconciled on July 19, 2026 against `main` at `88b5b01` after PRs #30 and #31. Private Sites development version 39 remains the latest controlled deployment; PR #30 is merged source but has not been deployed.
+Status reconciled on July 19, 2026 against `main` at `adc79b855041db04cc3ca2a3eb232bc72408d33b` after PR #32. That exact commit is deployed as private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The current `codex/actionable-lists` slice is source-only, source-complete, and ready for review without a pull request or deployment.
 
 ### Jason / business owner
 
@@ -66,11 +66,11 @@ These checklists are owner-facing setup, decision, acceptance, and operations re
 
 ## Recommended next work
 
-The agent ledgers above own sequencing. The next UI slice is the accessible actionable-list pattern for the whole-row pipeline, Projects, and Clients views. Provider-neutral job/sync contracts and local migration-fixture work may proceed only within the boundaries recorded in the agent execution plan; no checklist item here authorizes a live provider, staging run, or deployment.
+The agent ledgers above own sequencing. The accessible actionable-list pattern for the whole-row Overview pipeline, Projects, and Clients views is source-complete and ready for review on the source-only `codex/actionable-lists` branch; SET-01 waits for it to merge. Provider-neutral job/sync contracts and local migration-fixture work may proceed only within the boundaries recorded in the agent execution plan; no checklist item here authorizes a live provider, staging run, or deployment.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-Private Sites development version 39 is the latest controlled release. The semantic-table slice merged source-only in PR #30 at `aa8ed8f` and still requires separate deployment approval. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
+Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. The source-only `codex/actionable-lists` branch is source-complete and ready for review, has no pull request, and is not deployed. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
 

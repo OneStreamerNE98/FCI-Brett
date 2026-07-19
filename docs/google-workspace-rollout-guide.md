@@ -135,7 +135,7 @@ Define separate staging and production project boundaries for their own OAuth cl
 
 Parts 6 through 8 change Google Cloud or Google Admin configuration. Complete them only after the Part 5 inventory has been reviewed and the owner has approved the exact changes.
 
-**One-account invariant for Parts 6–10:** use one exact company account as both the OAuth data-connection account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX`. The Gmail client calls Google as `users/me`, and domain-wide delegation is intentionally forbidden, so the app cannot read a different intake mailbox. Readiness now fails closed when Gmail is enabled and these values do not identify the same single approved account. That safeguard is source-only until this change is merged and separately deployed; the live version 39 does not yet prove it is active.
+**One-account invariant for Parts 6–10:** use one exact company account as both the OAuth data-connection account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX`. The Gmail client calls Google as `users/me`, and domain-wide delegation is intentionally forbidden, so the app cannot read a different intake mailbox. Readiness fails closed when Gmail is enabled and these values do not identify the same single approved account. PR #32 merged that safeguard at `adc79b8`, and the exact commit is included in private Sites development version 40. The live Google connection and per-service acceptance evidence remain pending.
 
 ## Part 6: configure the Google Auth platform
 

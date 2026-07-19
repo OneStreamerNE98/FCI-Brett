@@ -87,7 +87,7 @@ test("every open architecture-roadmap row has an explicit tracking owner", () =>
   }
 });
 
-test("merged semantic-table and production migration status stay truthful", () => {
+test("deployed semantic-table, source-complete actionable-list, and production migration status stay truthful", () => {
   const statusFiles = [
     "docs/codex-to-codex-handoff.md",
     "docs/complete-product-and-google-cloud-architecture-audit.md",
@@ -103,20 +103,44 @@ test("merged semantic-table and production migration status stay truthful", () =
     assert.doesNotMatch(status, /review and merge[^\n]*semantic/i, `${path} still asks to merge PR #30`);
     assert.doesNotMatch(status, /semantic[- ]table[^\n]*implemented in source for review/i, `${path} still calls PR #30 review-only`);
     assert.doesNotMatch(status, /semantic[- ]table[^\n]*pending separate merge/i, `${path} still calls PR #30 unmerged`);
+    assert.doesNotMatch(status, /PR #30[^\n]*(?:has not been deployed|not been deployed|requires separate deployment approval)/i, `${path} still calls PR #30 undeployed`);
     const pr30Passage = status.split(/\r?\n/).find((line) => line.includes("aa8ed8f"));
     assert.ok(pr30Passage, `${path} omits the merged PR #30 commit`);
     assert.match(pr30Passage, /PR #30/, `${path} does not couple aa8ed8f to PR #30`);
-    assert.match(pr30Passage, /source-only|source only|merged source/i, `${path} does not call PR #30 source-only`);
-    assert.match(
-      pr30Passage,
-      /not been deployed|has not been deployed|requires separate deployment approval|does not .*deployed Sites version|version 39 remains live|latest .* remains version 39/i,
-      `${path} does not distinguish PR #30's merged source from deployment in one passage`,
-    );
-    assert.match(status, /version 39/, `${path} omits the current deployed version`);
+    assert.match(pr30Passage, /version 40/i, `${path} does not place PR #30 in version 40`);
+    assert.match(pr30Passage, /included|deployed/i, `${path} does not call PR #30 deployed`);
+
+    const deploymentPassage = status.split(/\r?\n/).find((line) => line.includes("adc79b8"));
+    assert.ok(deploymentPassage, `${path} omits the PR #32 deployment commit`);
+    assert.match(deploymentPassage, /PR #32/i, `${path} does not couple adc79b8 to PR #32`);
+    assert.match(deploymentPassage, /version 40/i, `${path} omits the version 40 deployment`);
+    assert.match(deploymentPassage, /deploy/i, `${path} does not call the PR #32 baseline deployed`);
+
+    const actionablePassages = status.split(/\r?\n/).filter((line) => line.includes("codex/actionable-lists"));
+    assert.ok(actionablePassages.length > 0, `${path} omits the current actionable-list branch`);
+    assert.ok(actionablePassages.some((line) => /source-only|source only/i.test(line) && /source-complete/i.test(line) && /ready for review/i.test(line)), `${path} does not call the actionable-list slice source-only, source-complete, and ready for review`);
+    assert.ok(actionablePassages.some((line) => /no pull request|without a pull request|has no pull request/i.test(line)), `${path} does not record that the actionable-list slice has no PR`);
+    assert.ok(actionablePassages.some((line) => /not deployed|not been deployed|without a pull request or deployment|no deployment/i.test(line)), `${path} does not record that the actionable-list slice is undeployed`);
   }
 
   const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
   assert.match(audit, /migrations 1–5 exist only in source: none has been applied anywhere, and no Cloud SQL instance exists/);
+
+  const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
+  const startNow = section(plan, "**Start now, in parallel (no owner input needed):**", "**Chains:**");
+  assert.match(startNow, /codex\/actionable-lists/);
+  assert.match(startNow, /source-complete[\s\S]*ready for review/i);
+  assert.doesNotMatch(startNow, /SET-01,/, "SET-01 must not be listed as parallel with the FloorOpsApp actionable-list slice");
+  const firstWave = section(plan, "**Wave 1 — next PRs, in this order where they share files:**", "**Wave 2:**");
+  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*source-complete[\s\S]*ready for review[\s\S]*SET-01 Settings panel extraction[\s\S]*queued until the actionable-list slice merges/i);
+
+  const design = read("docs/design-critique-fix-plan.md");
+  assert.match(design, /- \[x\] Source-complete on `codex\/actionable-lists` and ready for review/i);
+  assert.match(design, /58 focused Playwright tests pass[\s\S]*isolated local-server groups/i);
+  assert.match(design, /13 routes pass[\s\S]*desktop and 390 px/i);
+  assert.match(design, /final `npm test` run passed 325 active tests with 13 skipped after the accessibility and test-runner adjustments/i);
+  assert.match(design, /Vinext development server exits during the monolithic run/i);
+  assert.match(design, /watcher now ignores generated `work` artifacts/i);
 });
 
 test("Workspace setup documents and examples enforce the one-account Gmail boundary", () => {
@@ -130,6 +154,10 @@ test("Workspace setup documents and examples enforce the one-account Gmail bound
   assert.match(rollout, /One-account invariant for Parts 6–10/);
   assert.match(rollout, /GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account/);
   assert.match(hostedChecklist, /readiness fails closed when the two values differ/);
+  assert.match(rollout, /PR #32[^\n]*adc79b8[^\n]*version 40/);
+  assert.match(hostedChecklist, /PR #32[^\n]*adc79b8[^\n]*version 40/);
+  assert.doesNotMatch(rollout, /safeguard is source-only until this change is merged/i);
+  assert.doesNotMatch(hostedChecklist, /safeguard is source-only until this change is merged/i);
   assert.match(readme, /docs\/google-workspace-organization\.md/);
   assert.match(readme, /ChatGPT Sites project's runtime environment settings/);
 });

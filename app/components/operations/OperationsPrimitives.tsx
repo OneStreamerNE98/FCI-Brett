@@ -15,7 +15,7 @@ export function PageTitle({ eyebrow, title, text, state, action }: { eyebrow: st
 }
 
 export function Avatar({ initials, color }: { initials: string; color: string }) {
-  return <div className={`mini-avatar ${color}`}>{initials}</div>;
+  return <span className={`mini-avatar ${color}`} aria-hidden="true">{initials}</span>;
 }
 
 export function Status({ text }: { text: string }) {
