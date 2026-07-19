@@ -10,12 +10,13 @@ Before changing code, read:
 2. `docs/architecture-decision-production-platform.md`
 3. `docs/architecture-decision-workspace-first-cost-controlled-rollout.md`
 4. `docs/20-user-product-and-architecture-review.md`
-5. `docs/complete-product-and-google-cloud-architecture-audit.md`
-6. `docs/google-cloud-runtime-foundation.md`
-7. `docs/ui-and-product-readiness-review.md`
-8. `docs/google-workspace-rollout-guide.md`
-9. `docs/task-checklists/README.md`
-10. `docs/collaboration-and-sharing.md`
+5. `docs/agent-plan-architecture-workspace-and-setup.md`
+6. `docs/complete-product-and-google-cloud-architecture-audit.md`
+7. `docs/google-cloud-runtime-foundation.md`
+8. `docs/ui-and-product-readiness-review.md`
+9. `docs/google-workspace-rollout-guide.md`
+10. `docs/task-checklists/README.md`
+11. `docs/collaboration-and-sharing.md`
 
 ## Current product boundary
 
@@ -57,14 +58,9 @@ npm.cmd run lint
 
 ## Current implementation order
 
-1. Costed, unapplied Google Cloud foundation definitions plus reviewable and testable migration, restore, and cutover procedures; do not provision optional services early.
-2. One production-persistence boundary for the remaining Cloud SQL schema/repositories, generic identity/security-audit persistence, integration/file metadata, and provider-neutral object storage.
-3. Approved 20-user role model plus cross-system Google access matrix. The owner may complete this in parallel, but it must be accepted before authorization behavior is implemented.
-4. Simulated access contexts, secure sessions, capabilities, roles, project-scoped queries, denial tests, and composition of the employee application on the production database/storage boundaries.
-5. With separate owner approval, on-demand staging migration, restore, reconciliation, rollback/forward-fix, and application smoke evidence.
-6. Google Workspace employee OIDC and live authorization verification only after the platform, persistence, authorization, and staging gates pass; do not admit a second user yet.
-7. Client/lead/project editing and archiving, atomic lead conversion, and durable tasks/follow-ups.
-8. Operational modules only after the preceding foundations pass acceptance.
+Use the status lines and dependency order in [`docs/agent-plan-architecture-workspace-and-setup.md`](docs/agent-plan-architecture-workspace-and-setup.md) for active backend, Workspace, and Settings work. Use the design-critique ledger for UI remediation and the task checklists for owner setup and acceptance. Pull requests and issues may mirror those ledgers, but they do not define a separate task sequence.
+
+Staging execution, infrastructure or migration apply, live Workspace identity, production deployment, a second user, real data, scheduling, messaging, and AI document indexing remain behind their recorded approval and acceptance gates.
 
 ## Handoff requirements
 

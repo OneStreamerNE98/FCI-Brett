@@ -28,21 +28,22 @@ The Workspace administrator can prepare the company resources in parallel. Keep 
 
 ### Production architecture
 
-- [ ] Introduce provider-neutral database, object-storage, secret/configuration, and queued-job interfaces while retaining the existing D1/R2 development adapters.
+- [x] Introduce the provider-neutral database and object-storage boundaries while retaining the existing D1/R2 development adapters. The PostgreSQL repositories, production persistence boundary, and object-storage port exist in source and remain unapplied/undeployed.
+- [ ] Complete the remaining secret/configuration and queued-job interfaces, production storage adapters, and route composition without activating a live provider.
 - [x] Add the first source-only PostgreSQL core schema and concurrent-runner-safe migration system with immutable checksums, foreign keys, constrained states, timestamps, version columns, idempotency, audit evidence, and an outbox. See [Production PostgreSQL foundation](production-postgresql-foundation.md).
 - [x] Add source-only PostgreSQL client/project adapters, atomic actor-scoped request replay, transactional activity/outbox writes, worker-safe outbox transitions, guarded PostgreSQL value parsing, and PostgreSQL 16 repository coverage. See [Production PostgreSQL repositories](production-postgresql-repositories.md).
-- [ ] Extend the production model with users, invitations, sessions, roles, capabilities, project memberships, and a separate general append-only security audit; the existing client/project activity timeline is not the security-audit store.
+- [x] Extend the production model with users, invitations, sessions, roles, capabilities, project memberships, and a separate general append-only security audit; the source-only production persistence boundary provides these structures and remains unapplied.
 - [x] Add the source-only fail-closed Cloud Run container/runtime, private Cloud SQL connector composition, bounded pools, separate migration/rehearsal commands, exact readiness, and least-privilege source policy without changing the hosted development environment. See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md). The full employee application is not yet containerized.
-- [ ] Add costed, reviewable infrastructure definitions that preserve Sites development, support on-demand staging, define standalone and regional-HA production database profiles, and keep optional modules disabled; do not apply them.
+- [x] Add costed, reviewable infrastructure definitions that preserve Sites development, support on-demand staging, define standalone and regional-HA production database profiles, and keep optional modules disabled. PR #15 merged the definitions source-only; calculator approval, owner inputs, and any plan or apply remain open.
 - [ ] Add Cloud Tasks handler contracts, retry/idempotency tests, and Cloud Storage quarantine interfaces using local fixtures.
 - [ ] Add Gmail Pub/Sub and Calendar HTTPS webhook boundaries using fixtures only; do not create live watches or channels yet.
 - [ ] Add structured errors, correlation IDs, security headers, request limits, connector health, and employee-application readiness integration. Source-only process liveness and exact database/migration/privilege readiness already exist.
 
 ### Authorization and core records
 
-- [ ] Build the authorization domain layer with simulated users before the Google OIDC adapter exists.
-- [ ] Enforce capabilities and project scope inside queries and API handlers; hidden controls are never the permission boundary.
-- [ ] Add negative tests for disabled users, expired sessions, outside-domain identities, and cross-project access.
+- [x] Build the authorization domain layer with simulated users before the Google OIDC adapter exists. The approved role ceilings, secure-session denial behavior, and source-only access contexts are implemented and not deployed.
+- [ ] Complete capability and project-scope enforcement across the full employee application; the narrow PostgreSQL/Cloud Run dashboard, search, project, client, logout, and fixed administration paths already enforce it. Hidden controls are never the permission boundary.
+- [ ] Complete negative coverage across the future OIDC and full rendered application. Disabled/expired-session and cross-project source denials exist; outside-domain live identity remains part of the employee-OIDC packet.
 - [ ] After the production schema exists, add safe edit/archive workflows for clients, contacts, leads, projects, and meetings.
 - [ ] Implement lead conversion as one transaction with duplicate protection and audit evidence.
 - [ ] Add project dates, durable tasks/follow-ups, notes, file metadata, activity history, and optimistic-concurrency handling.
@@ -92,11 +93,11 @@ Record only non-secret decisions in GitHub. Never enter passwords, OAuth client 
 8. **Completed in source; unapplied infrastructure definitions:** safe variables, costed core/profile definitions, and an on-demand staging procedure now exist. Missing owner inputs remain explicit provisioning blockers.
 9. **Completed in source; unapplied production persistence boundary:** remaining PostgreSQL schema/repositories, generic identity/security audit, integration/file metadata, exact runtime privileges, and provider-neutral object storage now exist without changing Sites behavior.
 10. **Completed source-only authorization and narrow route boundary:** approved role ceilings, secure-session/CSRF denial rules, scoped queries, fixed-operation provider gates, and dashboard/search/project/client/logout source routes exist. File/Gmail/Calendar paths are gated but provider-unavailable. No durable admission, session issuance, migration/apply, deployment, or live data is enabled. See [Authorization simulation](authorization-simulation.md).
-11. **Administration and Activity source milestones merged; production boundary unapplied:** the fixed catalog/commands, bounded People projection/page, and minimized Activity reader/tab now exist with rendered denial evidence. Their presentation adapter is deployed only to private Sites development; production migrations 4–5, reader grants, employee-session/CSRF composition, and live data remain unapplied. Keep role presets and security policy read-only; add Field Links only with the field-assignment model.
+11. **Administration and Activity source milestones merged; production boundary unapplied:** the fixed catalog/commands, bounded People projection/page, and minimized Activity reader/tab now exist with rendered denial evidence. Their presentation adapter is deployed only to private Sites development. All production PostgreSQL migrations 1–5 remain unapplied because no Cloud SQL instance exists; versions 4–5 are the administration-specific additions, and their reader grants, employee-session/CSRF composition, and live data also remain unapplied. Keep role presets and security policy read-only; add Field Links only with the field-assignment model.
 12. **Staging-proof worker:** create staging only with separate approval to prove migration, restore, reconciliation, rollback/forward-fix, and the application smoke path.
 13. **Workspace OIDC worker:** implement and verify live employee login only after the production foundation, tested migration/cutover path, provider-neutral database/storage boundaries, and authorization controls pass acceptance.
 14. **Core-record worker:** edit/archive workflows, atomic lead conversion, dates, tasks, notes, file metadata, activity, and concurrency behavior.
-15. **Frontend structure worker:** durable URLs are implemented in source; component splitting, broader partial-failure/freshness states, and responsive/accessibility tests remain.
+15. **Frontend structure worker:** durable URLs, the first shared operations UI/filter boundary, and PR #30's semantic Settings rules table are merged in source; the semantic table is not deployed. The actionable-list pattern, component splitting, broader partial-failure/freshness states, and remaining responsive/accessibility tests remain.
 16. **Workspace data-connector worker:** live connection and resource verification only after the administrator completes the required resources and secrets.
 
 Do not assign scheduling, outbound messaging, or AI document indexing until the production platform and authorization foundation are accepted.
@@ -149,7 +150,7 @@ See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) for th
 
 ## Next bounded developer assignments
 
-Continue the administration surface according to the [Administration and Access plan](administration-and-access-plan.md):
+Use the [agent execution plan](agent-plan-architecture-workspace-and-setup.md) for current packet status and dependency order. The administration-specific items below remain governed by the [Administration and Access plan](administration-and-access-plan.md):
 
 1. `codex/admin-audit-viewer`: merged in PR #21 with the separately privileged, projection-limited Activity reader and tab; production migration 5 and its reader grant remain unapplied.
 2. `codex/admin-field-links`: when field assignments are scheduled, add a separate hashed exact-project Field Link lifecycle and later tab.

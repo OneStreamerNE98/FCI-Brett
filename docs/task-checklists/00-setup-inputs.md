@@ -6,7 +6,7 @@ Status: Partially complete — access-policy inputs and platform direction recor
 
 Secrets required in GitHub: None
 
-Record only the following non-secret decisions in this file or a GitHub issue. Leave secret values in Google Secret Manager or the hosted platform's encrypted settings.
+Record only the following non-secret decisions in this file or a GitHub issue. Leave Sites development secret values in ChatGPT Sites runtime environment settings marked as secrets; future Google Cloud production secrets belong in Google Secret Manager.
 
 ## Required inputs
 

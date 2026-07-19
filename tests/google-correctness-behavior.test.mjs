@@ -57,7 +57,7 @@ function connectionDatabase(connection) {
   };
 }
 
-function workspaceConfigInput(encryptionKey) {
+function workspaceConfigInput(encryptionKey, overrides = {}) {
   return {
     NODE_ENV: "production",
     GOOGLE_INTEGRATION_MODE: "workspace",
@@ -69,6 +69,7 @@ function workspaceConfigInput(encryptionKey) {
     GOOGLE_WORKSPACE_ALLOWED_DOMAINS: "cherryhillfci.com",
     GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "operations@cherryhillfci.com",
     GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive",
+    ...overrides,
   };
 }
 
@@ -103,6 +104,30 @@ test("standard Google integration errors preserve the typed status and code", ()
     body: { error: "Safe fallback" },
     status: 503,
   });
+});
+
+test("Gmail readiness requires the intake mailbox to be the single approved connection account", () => {
+  const encryptionKey = Buffer.alloc(32, 9).toString("base64url");
+  const matching = oauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey, {
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail",
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "operations@cherryhillfci.com",
+  }));
+  assert.equal(matching.oauthReady, true);
+
+  const mismatched = oauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey, {
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail",
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "intake@cherryhillfci.com",
+  }));
+  assert.equal(mismatched.oauthReady, false);
+  assert.ok(mismatched.missing.includes("Google Workspace intake mailbox matching the single approved connection account"));
+
+  const multipleApprovedAccounts = oauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey, {
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail",
+    GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "operations@cherryhillfci.com,admincrm@cherryhillfci.com",
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "operations@cherryhillfci.com",
+  }));
+  assert.equal(multipleApprovedAccounts.oauthReady, false);
+  assert.ok(multipleApprovedAccounts.missing.includes("Google Workspace intake mailbox matching the single approved connection account"));
 });
 
 test("transient refresh failures keep the Google connection usable", async () => {

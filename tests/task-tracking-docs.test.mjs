@@ -1,0 +1,135 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { test } from "node:test";
+
+const root = fileURLToPath(new URL("../", import.meta.url));
+
+function read(path) {
+  return readFileSync(`${root}${path}`, "utf8");
+}
+
+function section(markdown, heading, nextHeading) {
+  const start = markdown.indexOf(heading);
+  assert.notEqual(start, -1, `Missing section: ${heading}`);
+  const end = markdown.indexOf(nextHeading, start + heading.length);
+  assert.notEqual(end, -1, `Missing section boundary: ${nextHeading}`);
+  return markdown.slice(start, end);
+}
+
+test("task-tracking surfaces point to their authoritative ledgers without duplicate lists", () => {
+  const readme = read("README.md");
+  const checklists = read("docs/task-checklists/README.md");
+  const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
+  const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
+
+  const rootTracking = section(readme, "## Prioritized next work", "## Google Workspace development validation");
+  for (const target of [
+    "docs/agent-plan-architecture-workspace-and-setup.md",
+    "docs/design-critique-fix-plan.md",
+    "docs/task-checklists/README.md",
+    "docs/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap",
+  ]) {
+    assert.match(rootTracking, new RegExp(target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.doesNotMatch(rootTracking, /^\d+\.\s/m);
+
+  assert.match(checklists, /These checklists are owner-facing/);
+  for (const target of [
+    "../agent-plan-architecture-workspace-and-setup.md",
+    "../design-critique-fix-plan.md",
+    "../complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap",
+    "../../README.md#prioritized-next-work",
+  ]) {
+    assert.match(checklists, new RegExp(target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  const checklistNextWork = section(checklists, "## Recommended next work", "## Safety boundary");
+  assert.doesNotMatch(checklistNextWork, /^\d+\.\s/m);
+
+  assert.match(audit, /Current packet status and dependency sequencing live in the \[agent execution plan\]/);
+  assert.match(plan, /This document \| Active agent work/);
+
+  const packetStatuses = ["BE-01", "WS-03", "TRK-01"].map((item) => {
+    const itemSection = plan.split(/^### /m).find((part) => part.startsWith(`${item} ·`));
+    assert.ok(itemSection, `Missing ${item} plan entry`);
+    const status = itemSection.match(/^\*\*Status:\*\* (.+)$/m)?.[1];
+    assert.ok(status, `Missing ${item} status`);
+    assert.match(
+      status,
+      /^(?:In progress — `codex\/doc-truth-reconciliation`, July 19, 2026\.|Complete — PR #\d+, July 19, 2026\.)$/,
+      `${item} has an invalid packet status`,
+    );
+    return status;
+  });
+  assert.equal(new Set(packetStatuses).size, 1, "The packet items must share one status");
+});
+
+test("every open architecture-roadmap row has an explicit tracking owner", () => {
+  const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
+  const expected = new Map([
+    [10, /Unassigned/],
+    [11, /BE-12/],
+    [12, /BE-04/],
+    [13, /WS-12.*BE-14/],
+    [14, /WS-12.*BE-14/],
+    [15, /Unassigned.*BE-05.*prerequisite storage adapters/i],
+    [16, /BE-10.*rate-limit subset.*Unassigned.*BE-11.*separate deployment/i],
+    [17, /Unassigned/],
+    [18, /SET-01–SET-12/],
+    [19, /Unassigned/],
+  ]);
+
+  const lines = audit.split(/\r?\n/);
+  for (const [order, owner] of expected) {
+    const row = lines.find((line) => line.startsWith(`| ${order} |`));
+    assert.ok(row, `Missing roadmap row ${order}`);
+    assert.match(row, owner, `Roadmap row ${order} is missing its tracking owner`);
+  }
+});
+
+test("merged semantic-table and production migration status stay truthful", () => {
+  const statusFiles = [
+    "docs/codex-to-codex-handoff.md",
+    "docs/complete-product-and-google-cloud-architecture-audit.md",
+    "docs/design-critique-fix-plan.md",
+    "docs/task-checklists/README.md",
+    "docs/task-checklists/09-frontend-and-multi-user-hardening.md",
+    "docs/task-checklists/10-complete-product-and-integration-architecture.md",
+    "docs/ui-and-product-readiness-review.md",
+  ];
+
+  for (const path of statusFiles) {
+    const status = read(path);
+    assert.doesNotMatch(status, /review and merge[^\n]*semantic/i, `${path} still asks to merge PR #30`);
+    assert.doesNotMatch(status, /semantic[- ]table[^\n]*implemented in source for review/i, `${path} still calls PR #30 review-only`);
+    assert.doesNotMatch(status, /semantic[- ]table[^\n]*pending separate merge/i, `${path} still calls PR #30 unmerged`);
+    const pr30Passage = status.split(/\r?\n/).find((line) => line.includes("aa8ed8f"));
+    assert.ok(pr30Passage, `${path} omits the merged PR #30 commit`);
+    assert.match(pr30Passage, /PR #30/, `${path} does not couple aa8ed8f to PR #30`);
+    assert.match(pr30Passage, /source-only|source only|merged source/i, `${path} does not call PR #30 source-only`);
+    assert.match(
+      pr30Passage,
+      /not been deployed|has not been deployed|requires separate deployment approval|does not .*deployed Sites version|version 39 remains live|latest .* remains version 39/i,
+      `${path} does not distinguish PR #30's merged source from deployment in one passage`,
+    );
+    assert.match(status, /version 39/, `${path} omits the current deployed version`);
+  }
+
+  const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
+  assert.match(audit, /migrations 1–5 exist only in source: none has been applied anywhere, and no Cloud SQL instance exists/);
+});
+
+test("Workspace setup documents and examples enforce the one-account Gmail boundary", () => {
+  const envExample = read(".env.example");
+  const rollout = read("docs/google-workspace-rollout-guide.md");
+  const hostedChecklist = read("docs/task-checklists/03-hosted-development-connection.md");
+  const readme = read("README.md");
+
+  assert.doesNotMatch(envExample, /GOOGLE_WORKSPACE_PUBSUB_TOPIC/);
+  assert.doesNotMatch(rollout, /jason\.grass@gmail\.com/i);
+  assert.match(rollout, /One-account invariant for Parts 6–10/);
+  assert.match(rollout, /GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account/);
+  assert.match(hostedChecklist, /readiness fails closed when the two values differ/);
+  assert.match(readme, /docs\/google-workspace-organization\.md/);
+  assert.match(readme, /ChatGPT Sites project's runtime environment settings/);
+});

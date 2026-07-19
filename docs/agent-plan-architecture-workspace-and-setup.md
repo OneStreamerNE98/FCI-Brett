@@ -3,6 +3,8 @@
 Date: July 18, 2026 · Baseline: `main` @ `aa8ed8f` (PR #30 merged; last recorded Sites
 release: version 39 per the design ledger's PR #29 note)
 
+Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
+
 This is the single distributable plan for three coordinated workstreams. It was produced by
 auditing the architecture decision docs, the Google Workspace rollout guide, every task
 checklist, the actual backend source (adapters, ports, platform, worker, API surface), and
@@ -37,8 +39,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
 ## Global guardrails (include in every packet)
 
 1. **Secrets never touch the repo or an agent.** OAuth client secrets, token-encryption
-   keys, and passwords go only into hosted secret settings (development) or Secret Manager
-   (production). Items that need them are OWNER items.
+   keys, and passwords go only into ChatGPT Sites runtime environment settings marked as
+   secrets (development) or Secret Manager (production). Items that need them are OWNER
+   items.
 2. **Fail-closed defaults are intentional, not bugs.** Zero-resource Terraform defaults,
    `503 feature_unavailable` provider routes on the Cloud Run image, and
    `cutoverReady:false` in the rehearsal are deliberate. "Fixing" them without the gate
@@ -63,9 +66,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
    real endpoint; backend-planned capabilities appear only as clearly-badged "Planned"
    placeholders. Server-side `requireOfficeUser({admin:true})` gates stay untouched — UI
    admin-gating is honesty, not security.
-8. Visual/design remediation already shipped (PRs #24–#29) and is tracked in
-   `docs/design-critique-fix-plan.md`. Do not re-litigate visuals; coordinate any Settings
-   component work with that ledger's items 94/103.
+8. Visual/design remediation already shipped or merged source-only (PRs #24–#30) and is
+   tracked in `docs/design-critique-fix-plan.md`. Do not re-litigate visuals; coordinate
+   Settings component work with the relevant Phase 3/4 entries in that ledger.
 
 ## Current state in one page
 
@@ -74,12 +77,14 @@ below, which also covers the state of GitHub itself (issues/PRs).
   (`app/lib/workspace-auth.ts`), `GOOGLE_INTEGRATION_MODE=simulation` — durable simulated
   Gmail/Drive/Calendar/Sheets, partitioned from live data by connectionKey
   (`workspace-simulation` vs `google-workspace`, `app/lib/google-oauth.ts:219`).
-- **Fully implemented, waiting on configuration:** the entire dev Google connection path —
+- **Implemented, waiting on configuration:** the dev Google connection path —
   OAuth+PKCE with AES-GCM refresh-token storage (`app/lib/google-oauth.ts`), real REST
   clients for Drive/Gmail/Calendar/Sheets (`app/lib/google-drive.ts`, `google-gmail.ts`,
   `google-calendar-client.ts`, `google-sheets.ts`), verification routes under
-  `app/api/v1/integrations/google/**`. **No connection code needs to be written to go
-  live in development** — the blockers are owner setup steps (WS-01…WS-08).
+  `app/api/v1/integrations/google/**`. WS-03 adds the missing fail-closed check that the
+  Gmail intake mailbox is the same single account authorized for OAuth; no new provider
+  flow is otherwise required to go live in development. The remaining blockers are owner
+  setup steps (WS-01…WS-08).
 - **Source-only production foundation (nothing provisioned):** fail-closed Cloud Run image
   (`Dockerfile.cloud-run`, `production-runtime/src/*`), PostgreSQL schema v1–v5 with
   identity/audit/integration/file tables, idempotency + outbox repositories, least-
@@ -111,27 +116,31 @@ without breaking the development environment. Order follows the audit roadmap
 (`docs/complete-product-and-google-cloud-architecture-audit.md`).
 
 ### BE-01 · Documentation truth pass (small, no deps) — DO FIRST
+**Status:** In progress — `codex/doc-truth-reconciliation`, July 19, 2026.
+
 **Why:** Stale docs will cause agents to redo finished work. README "Prioritized next
 work" items 1–3 present the costed infrastructure definitions, production-persistence
 boundary, and simulated access contexts as future although the audit doc (roadmap items
 3–5) records them merged. The amending ADR still carries a "Next worker assignment" that
 `infrastructure/google-cloud/README.md` already fulfills. The audit doc's "migrations 4–5
 remain unapplied" phrasing wrongly implies 1–3 are applied somewhere. Several checklist
-spots still cite Sites version 37 while version 38 is current — grep `version 37` across
-`docs/task-checklists/` rather than trusting locations (at the PR #30 baseline the stale
-refs are in checklists 03 and 09).
-**Do:** Replace the README next-work list with the still-open roadmap items (10–17, 19);
+passages use Sites version 37 as current-state evidence even though version 39 is the
+latest deployment; other version-37 references are accurate release history and must be
+preserved as such.
+**Do:** Replace the README next-work list with pointers to the authoritative ledgers;
 tighten the "normal paths 503" claim (dashboard/search/projects/clients/logout/admin are
 served from PostgreSQL on the foundation image; only provider actions 503). Annotate the
 ADR's worker assignment as fulfilled (dated note; don't delete accepted-ADR text). Rewrite
 the migration phrasing: NO migration (1–5) is applied anywhere; no Cloud SQL instance
-exists. Fix all four version-37 references. Sweep docs for a root `wrangler.jsonc` (only
-`wrangler.local.jsonc` exists; hosted bindings come from `.openai/hosting.json`).
-**Files:** `README.md`, `docs/architecture-decision-workspace-first-cost-controlled-rollout.md`,
-`docs/complete-product-and-google-cloud-architecture-audit.md`,
-`docs/task-checklists/{03,08,09}-*.md`.
-**Accept:** greps show corrected list, no misleading migration phrasing, zero
-"version 37" hits in task-checklists; `npm test` passes.
+exists. Distinguish stale current-state version references from accurate historical release
+evidence. Sweep docs for a root `wrangler.jsonc` (only `wrangler.local.jsonc` exists;
+hosted bindings come from `.openai/hosting.json`).
+**Files:** `README.md`, the fulfilled rollout ADR, architecture/status handoff docs,
+`docs/complete-product-and-google-cloud-architecture-audit.md`, and the affected owner
+checklists.
+**Accept:** the README is a ledger pointer, current/deployed version wording is explicit,
+historical release evidence remains truthful, no migration wording implies v1–v5 were
+applied, and `npm test` passes.
 
 ### BE-02 · Bounded request bodies on five dev mutation routes (small, no deps)
 **Why:** `app/lib/api-json-body.ts` (`parseBoundedJsonObject`) exists to cap JSON bodies,
@@ -364,15 +373,25 @@ immediately.
 never in repo.
 
 ### WS-03 · AGENT — Workspace docs reconciliation + env drift (small, no deps) — DO FIRST with BE-01
+**Status:** In progress — `codex/doc-truth-reconciliation`, July 19, 2026.
+
 **Do:** (1) State the intake==connection invariant explicitly in the rollout guide
-(Parts 6–10) and checklist 03. (2) Remove `GOOGLE_WORKSPACE_PUBSUB_TOPIC` from
+(Parts 6–10) and checklist 03, enforce it fail-closed in `getGoogleRuntimeConfig`, and add
+a regression test for matching, mismatched, and multiple approved accounts. Gmail uses
+`users/me`, so documentation alone cannot make a different intake mailbox reachable.
+(2) Remove `GOOGLE_WORKSPACE_PUBSUB_TOPIC` from
 `.env.example` (verified: zero code references; future watch transport is WS-12's
 decision). (3) Link `docs/google-workspace-organization.md` from the README validation
-section. (4) Name the concrete dev secret mechanism (ChatGPT Sites hosted settings) so
-"hosted secret settings" is unambiguous; Secret Manager remains production-only.
-(5) Replace the hardcoded `jason.grass@gmail.com` example in rollout guide Part 10 with a
-placeholder. (Version-37 refs are BE-01's — don't double-fix.)
-**Accept:** greps confirm each; `npm test` passes.
+section. (4) Name the concrete dev secret mechanism (ChatGPT Sites runtime environment
+settings, with sensitive values marked as secrets) so it is unambiguous and distinct from
+`.openai/hosting.json`; Secret Manager remains production-only.
+(5) Replace the hardcoded personal Gmail example in rollout guide Part 10 with a
+role-based placeholder. (Version-37 refs are BE-01's — don't double-fix.)
+**Files:** `.env.example`, `app/lib/google-oauth.ts`,
+`tests/google-correctness-behavior.test.mjs`, `README.md`, the Workspace rollout guide,
+and checklist 03.
+**Accept:** greps confirm each; Gmail readiness accepts one matching account and rejects
+mismatched or multiple approved accounts; `npm test` passes.
 
 ### WS-04 · AGENT — Rotation + token-failure recovery procedures (medium, no deps)
 **Why:** No rotation or invalid_grant recovery procedure exists anywhere, though the code
@@ -391,7 +410,8 @@ Enter the checklist-03 dotenv block into hosted settings: enabled services, clie
 redirect URI, key version 1, allowed domain `cherryhillfci.com`, authorized account =
 intake mailbox = `operations@cherryhillfci.com`, the four WS-01 IDs,
 `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false`. Secrets (client secret + a fresh
-`openssl rand -base64 32` token-encryption key) go into hosted secret settings only.
+`openssl rand -base64 32` token-encryption key) go into ChatGPT Sites runtime environment
+settings marked as secrets only.
 Leave mode=simulation; FCI_OFFICE/ADMIN_EMAILS unchanged (Workspace connection ≠ app
 login).
 **Accept:** Settings → Google Workspace readiness shows no missing values except the mode.
@@ -460,9 +480,9 @@ rejected unauthorized login, no FCI/Filed label without an archive row.
 sign-off.
 
 ### WS-12 · AGENT — Gmail watch/queue + Calendar channel contracts (medium, after WS-03; contracts + local fakes, no live resources)
-**Scope upgrade:** `docs/task-checklists/README.md` "Recommended next work" item 3
-explicitly authorizes provider-neutral job/failure/replay and Gmail/Calendar sync-state
-**contracts with local fakes** — so this item may ship typed contracts, port definitions
+**Scope:** this agent ledger authorizes provider-neutral job/failure/replay and
+Gmail/Calendar sync-state **contracts with local fakes** — so this item may ship typed
+contracts, port definitions
 targeting the existing postgres `integration_cursors`/`outbox_events` tables, and local
 fake implementations with tests, not only the design doc below. Live watches, channels,
 and Pub/Sub remain forbidden until the checklist-07 gates pass.
@@ -642,10 +662,11 @@ endpoints exist. No docs-path links in UI copy.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**State of GitHub at this writing:** there are **zero open GitHub issues and zero open
-PRs** — nothing is tracked or in flight there, so no work is stranded outside the repo
-docs. All task state lives in repo docs. (PR #30, the semantic Settings rules table,
-merged into the `aa8ed8f` baseline — see Sequencing for its effect on SET-01.)
+**GitHub baseline:** immediately after PRs #30 and #31 merged on July 19, 2026, GitHub had
+zero open issues and zero open PRs. Delivery PRs may be in flight later; they mirror items
+in these ledgers and do not become a separate task source of truth. PR #30, the semantic
+Settings rules table, is in the `aa8ed8f` baseline — see Sequencing for its effect on
+SET-01.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
@@ -666,7 +687,7 @@ merged into the `aa8ed8f` baseline — see Sequencing for its effect on SET-01.)
 | Surface | Role | Rule |
 |---|---|---|
 | This document | Active agent work for architecture / Workspace / Setup-UI | Status lines updated per PR (rules above) |
-| `docs/design-critique-fix-plan.md` | UI remediation ledger (PRs #24–#29) | Already canonical; SET-01 updates its item 94 only |
+| `docs/design-critique-fix-plan.md` | UI remediation ledger (PRs #24–#30) | Already canonical; SET work updates the relevant Phase 3/4 entries |
 | `docs/task-checklists/*` | **Owner-facing** setup, connection, acceptance, and operations checkboxes | Owners check boxes; agents only fix stale facts (BE-01) or add evidence templates (WS-11) |
 | `docs/complete-product-and-google-cloud-architecture-audit.md` roadmap | Architecture branch history and gates | TRK-01 cross-references its open items to BE/WS ids |
 | `README.md` "Prioritized next work" | Entry point / pointer | BE-01 fixes its content; TRK-01 makes it point to the ledgers instead of duplicating them |
@@ -674,15 +695,15 @@ merged into the `aa8ed8f` baseline — see Sequencing for its effect on SET-01.)
 | `docs/pre-workspace-development-plan.md` | What can start now vs. must wait for Workspace/credentials | Consistent with this plan's owner gate; TRK-01 cross-links it |
 | `docs/20-user-product-and-architecture-review.md` | P0/P1/P2 findings, corrected delivery order, go/no-go gates | The gates govern second-user/real-data admission; BE/WS items map onto its delivery order |
 
-**Alignment with the repo's own "Recommended next work"** (`docs/task-checklists/README.md`):
-item 1 (merge the semantic rules table) is done (PR #30); item 2 (actionable-list pattern,
-feature splitting, primitive consolidation, legacy CSS) is the design ledger's Phase 3 —
-SET-01 is its Settings slice; item 3 (provider-neutral job/failure/replay and
-Gmail/Calendar sync-state **contracts with local fakes**) authorizes WS-12 to go beyond a
-design doc — see the WS-12 note; item 4 (migration fixture expansion without staging) is
-BE-12. No surface disagrees with this plan; they interlock.
+**Alignment rule:** `docs/task-checklists/README.md` remains an owner-facing dashboard and
+points here instead of duplicating agent sequencing. The design ledger owns the
+actionable-list and later UI consolidation sequence; WS-12 owns provider-neutral
+job/sync-state contracts with local fakes; BE-12 owns migration-fixture expansion without
+staging. No checklist checkbox is added merely to mirror those agent packets.
 
 ### TRK-01 · Reconcile every task-tracking surface to a single source of truth (small, after BE-01) — assign together with BE-01
+**Status:** In progress — `codex/doc-truth-reconciliation`, July 19, 2026.
+
 **Why (owner's ask):** task state is currently spread across the README next-work list,
 ten task checklists, the audit-doc roadmap, and the design ledger — with the README and
 several checklists already contradicting merged source (see BE-01). Without one rule for
@@ -692,18 +713,22 @@ short pointer paragraph: active agent work → this document; UI remediation →
 ledger; owner setup/acceptance → `docs/task-checklists/README.md`; architecture branch
 history → the audit-doc roadmap. (2) In `docs/task-checklists/README.md`, add a
 "Where agent work is tracked" note pointing here, and state that checklists are
-owner-facing. (3) In the audit doc's roadmap, annotate each still-open item with the
-BE/WS id that now owns it (10→BE-06/07 scope, 11→BE-12, 12→BE-04, 13→WS-12 design,
-14→WS-12/BE-14, 15→BE-05 + file routes, 16→BE-10/BE-11, 17/19→unassigned domain work) —
-annotate, don't rewrite history. (4) Confirm no GitHub issues exist (none at this
-writing); if any appear later, the rule is: issues mirror items in these ledgers, they do
-not fork new state. (5) Add nothing new to any checklist — this item only wires the
-surfaces together.
-**Files:** `README.md`, `docs/task-checklists/README.md`,
-`docs/complete-product-and-google-cloud-architecture-audit.md`, this file.
-**Accept:** each of the four surfaces names its role and links the others; grep shows the
-README list is a pointer, not a duplicate task list; every open audit-roadmap item carries
-an owning BE/WS id or an explicit "unassigned" tag.
+owner-facing. (3) In the audit doc's roadmap, annotate each still-open item with its
+current owner: 10→unassigned pending the field-assignment domain, 11→BE-12, 12→BE-04,
+13→WS-12 then BE-14, 14→WS-12/BE-14, 15→unassigned (BE-05 supplies only the
+prerequisite storage adapters), 16→BE-10 for the rate-limit subset while the listed
+observability work remains unassigned, 17/19→unassigned domain work,
+and 18→the design ledger plus SET-01–SET-12. Annotate; don't rewrite completed history.
+(4) Record the dated GitHub baseline; if issues appear later, they mirror items in these
+ledgers and do not fork new state. (5) Add nothing new to any checklist — this item only
+wires the surfaces together.
+**Files:** `AGENTS.md`, `README.md`, `docs/task-checklists/README.md`, the architecture
+roadmap, this file, related handoff/status ledgers, and
+`tests/task-tracking-docs.test.mjs`.
+**Accept:** each of the four surfaces names its role and links the others; the README is a
+pointer, not a duplicate task list; every open audit-roadmap item carries an owning
+BE/WS/SET or design-ledger reference, or an explicit "Unassigned" tag; automated tracking
+contracts and `npm test` pass.
 
 ---
 
@@ -724,7 +749,8 @@ is schedulable independently.
 **Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Land SET-01 before any other SET item;
 don't run two FloorOpsApp-touching packets concurrently. **PR #30 (semantic Settings
 rules table) is merged into the baseline** — SET-01 is unblocked, must branch from
-`aa8ed8f` or later so `InboxRulesPanel` carries the new semantic `<table>` markup, and
+the latest `origin/main` (`88b5b01` at this reconciliation) so `InboxRulesPanel` carries
+the new semantic `<table>` markup, and
 must keep its regression suite green (`tests/e2e/settings-rules.spec.ts` plus the new
 assertions in `tests/e2e/accessibility-routes.spec.ts`).
 
@@ -733,8 +759,8 @@ assertions in `tests/e2e/accessibility-routes.spec.ts`).
 **Wave 1 — next PRs, in this order where they share files:**
 1. **Doc-truth bundle: BE-01 + TRK-01 + WS-03** (one small PR) — land before anything
    else so every later packet reads correct docs.
-2. **Actionable-list pattern slice** — the design ledger's and checklists README's own
-   named next slice: an accessible actionable-list for the whole-row pipeline, Projects,
+2. **Actionable-list pattern slice** — the design ledger's named next slice: an
+   accessible actionable-list for the whole-row pipeline, Projects,
    and Clients views (do not force interactive rows into table semantics), following the
    PR #30 review pattern. *Touches `FloorOpsApp.tsx` — run before SET-01, not alongside.*
 3. **SET-01 Settings panel extraction** — after the actionable-list slice merges.
@@ -756,7 +782,7 @@ open decisions live in checklists 00/06/10.
 **Cross-item coordination (implement once):** multi-key token decryption (WS-04 ↔ BE-08);
 calendar-ID single authority (SET-05 ↔ BE-07); integration events reader (SET-09 ↔ WS-10);
 `GOOGLE_WORKSPACE_PUBSUB_TOPIC` removal (WS-03, referenced by BE-02); version-37 doc fixes
-(BE-01, referenced by WS-03).
+(BE-01, referenced by WS-03; preserve accurate historical release evidence).
 
 ## Verification appendix
 
@@ -764,7 +790,8 @@ Formally adversarially verified by independent checkers: BE-03, BE-04, BE-09, BE
 (CONFIRMED), BE-12 (ADJUSTED — corrected doc citation and table count, reflected above).
 Additionally spot-verified directly against the repo for this document: the five unbounded
 `request.json()` call sites; `worker/index.ts` Env missing `FILES`; zero code references
-to `GOOGLE_WORKSPACE_PUBSUB_TOPIC`; four stale "version 37" checklist references;
+to `GOOGLE_WORKSPACE_PUBSUB_TOPIC`; stale current-state versus accurate historical
+"version 37" checklist references;
 `decryptGoogleSecret` single-key behavior (`app/lib/google-oauth.ts:159`); connectionKey
 partitioning (`:219`); `SettingsView`/`GoogleWorkspacePanel` anchors (`FloorOpsApp.tsx:
 1346`/`1618`); `SETTINGS_SECTIONS` (`operations-routes.ts:27`); absence of `isAdmin` in

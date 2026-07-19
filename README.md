@@ -54,9 +54,9 @@ The architecture decision is accepted. The current Sites/Workers/D1/R2 deploymen
 
 The [Workspace-first, cost-controlled rollout decision](docs/architecture-decision-workspace-first-cost-controlled-rollout.md) explains how the company will reuse its existing Workspace subscription, keep staging on demand, compare standalone and HA Cloud SQL before choosing, use budget alerts, and keep optional infrastructure disabled by default. Three isolated project boundaries do not mean three continuously running stacks, and Sheets remains a derived projection rather than the operational database.
 
-The first [Google Cloud runtime foundation](docs/google-cloud-runtime-foundation.md) is now reviewable in source: a separate fail-closed Cloud Run image, private Cloud SQL connector and bounded pools, a one-off migration command, exact migration-aware health checks, least-privilege role policy, and a test-only bounded core rehearsal. It has not been provisioned or deployed, and normal application paths intentionally return `503` until the Cloudflare-bound routes, storage, and identity boundary are ported.
+The first [Google Cloud runtime foundation](docs/google-cloud-runtime-foundation.md) is now reviewable in source: a separate fail-closed Cloud Run image, private Cloud SQL connector and bounded pools, a one-off migration command, exact migration-aware health checks, least-privilege role policy, and a test-only bounded core rehearsal. It has not been provisioned or deployed. PostgreSQL-backed dashboard, search, project list/detail, client list, logout, and fixed administration paths are source-composed; file, Gmail, and Calendar provider actions intentionally return `503 feature_unavailable` until their production adapters are supplied. The broader interface, employee OIDC/session issuance, and remaining routes are still outside this source-only boundary.
 
-Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the production boundary and the [cost-controlled rollout decision](docs/architecture-decision-workspace-first-cost-controlled-rollout.md) for provisioning phases, Workspace responsibilities, cost gates, and the next worker assignment. The [complete product and Google Cloud architecture audit](docs/complete-product-and-google-cloud-architecture-audit.md) adds the capability map, durable job/reminder design, integration reliability requirements, owner decisions, acceptance gates, and ordered source-only roadmap.
+Read [`docs/architecture-decision-production-platform.md`](docs/architecture-decision-production-platform.md) for the production boundary and the [cost-controlled rollout decision](docs/architecture-decision-workspace-first-cost-controlled-rollout.md) for provisioning phases, Workspace responsibilities, cost gates, and the historical infrastructure-definition assignment fulfilled in PR #15. The [active agent execution plan](docs/agent-plan-architecture-workspace-and-setup.md) owns current implementation status, while the [complete product and Google Cloud architecture audit](docs/complete-product-and-google-cloud-architecture-audit.md) retains the capability map, durable job/reminder design, integration reliability requirements, owner decisions, acceptance gates, and ordered branch history.
 
 ## Remaining launch decision
 
@@ -64,19 +64,7 @@ The one-user development environment may continue with the current allowlisted C
 
 ## Prioritized next work
 
-Complete the Cloud and application source work in this order. In parallel, the owner should approve the 20-user role/Google access matrix and complete the remaining non-secret Cloud inputs before the relevant persistence, authorization, or provisioning gate:
-
-1. Add costed, unapplied infrastructure definitions and reviewable migration/restore/cutover procedures: preserve Sites development, make staging on demand, define the minimum production core, compare standalone and HA Cloud SQL, and default optional modules to disabled.
-2. Complete one production-persistence boundary covering the remaining provider-neutral PostgreSQL repositories, generic identity/security-audit schema, integration metadata, and object-storage ports.
-3. Add simulated access contexts, capability and project-scoped queries, and negative authorization tests on that accepted persistence boundary.
-4. Port the remaining application routes so the full application—not only its fail-closed foundation—runs through the production database and storage boundaries.
-5. With separate approval, run the on-demand staging migration, bounded test-data rehearsal, restore test, reconciliation, and rollback/forward-fix exercise.
-6. Add Google Workspace OIDC for employee login only after the production foundation and authorization boundaries pass their source and staging gates.
-7. Add editing and archiving, atomic lead conversion, project dates, durable tasks/follow-ups, notes, file metadata, photo UI, and activity history.
-8. Make saved Calendar IDs authoritative and connect approved project-file workflows to Shared Drive destinations.
-9. Expand route, authorization, integration, restore, audit-viewer, and browser-behavior acceptance coverage.
-
-Only after the full production platform and server-enforced authorization foundation pass acceptance should the product add appointment state management and Calendar reconciliation; workers, crews, shifts, conflicts, publishing, and acknowledgements; provider-neutral messaging with consent and delivery tracking; durable Gmail review queues; and project closeout. Permission-filtered AI indexing, forecasting, retry dashboards, and a Workspace Marketplace add-on come later.
+Use the repository ledgers instead of copying a task list here: the [agent execution plan](docs/agent-plan-architecture-workspace-and-setup.md) is authoritative for active backend, Workspace, and Settings work; the [design-critique remediation plan](docs/design-critique-fix-plan.md) owns UI remediation; the [owner task checklists](docs/task-checklists/README.md) own setup and acceptance actions; and the [architecture audit roadmap](docs/complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap) preserves branch history and gates. The [Pre-Workspace development plan](docs/pre-workspace-development-plan.md) distinguishes work that can proceed locally from work that needs credentials or approval. GitHub issues and pull requests may mirror these ledgers for delivery and review, but they do not create a separate task source of truth.
 
 See the [20-user product and architecture review](docs/20-user-product-and-architecture-review.md) for the rollout verdict, architecture, access model, priority findings, and corrected delivery order. See [`docs/ui-and-product-readiness-review.md`](docs/ui-and-product-readiness-review.md) for the detailed page-by-page UI audit.
 
@@ -86,10 +74,10 @@ Development can continue safely before the live Google connection. Follow the [P
 
 Use only records named `FCI TEST — DO NOT USE` until the production acceptance checklist passes.
 
-1. Select a company-controlled Workspace connection account, ideally `operations@cherryhillfci.com`.
-2. Create the `FCI Operations` Shared Drive, `FCI Operations Directory` spreadsheet, `FCI • Client Appointments` calendar, and `FCI • Field Schedule` calendar.
+1. Select one company-controlled Workspace connection account, ideally `operations@cherryhillfci.com`, and use that exact same account as the Gmail intake mailbox. Gmail operates as the connected account and cannot silently read a different mailbox.
+2. Create the `FCI Operations` Shared Drive, `FCI Operations Directory` spreadsheet, `FCI • Client Appointments` calendar, and `FCI • Field Schedule` calendar according to the [Google Workspace organization blueprint](docs/google-workspace-organization.md).
 3. Inventory the reported company-account project candidate and verify its Google Cloud identifiers, parent organization, purpose, IAM, billing status, and enabled APIs. After the owner reviews that inventory, reuse the verified development project and approve any required API or Internal OAuth changes; do not create a duplicate.
-4. Store the OAuth secret and token-encryption key only in encrypted hosted secret settings. Never commit, email, document, or place them in Drive.
+4. Store the OAuth secret and token-encryption key only in the ChatGPT Sites project's runtime environment settings, with both entries marked as secrets. Google Secret Manager is reserved for the future production environment. Never commit, email, document, or place secret values in Drive.
 5. Deploy the runtime configuration with Drive provisioning disabled.
 6. Connect the exact authorized Workspace account and verify Gmail, Drive, Calendar, and Sheets independently.
 7. Enable Drive provisioning only after Shared Drive verification succeeds, then create and inspect one test project folder.

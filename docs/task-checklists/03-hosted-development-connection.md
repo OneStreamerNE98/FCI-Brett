@@ -2,11 +2,11 @@
 
 Owner: Business owner and Codex/developer
 
-Status: Connection not established; Workspace resource and OAuth verification remain pending — reverified against private Sites development version 37 on July 18, 2026
+Status: Connection not established; Workspace resource and OAuth verification remain pending. The last direct Settings check was on private Sites development version 37 on July 18, 2026; version 39 is the current controlled release, and the intervening releases did not change hosted Workspace configuration.
 
 Depends on: [Workspace resources](01-workspace-resources.md) and [Google Cloud/OAuth](02-google-cloud-and-oauth.md)
 
-The live Settings page on version 37 reports **Workspace connection: Not connected**. Add these values to the hosting platform only after the resource and OAuth prerequisites are approved; never add them to GitHub.
+The last direct Settings check reported **Workspace connection: Not connected**. Add these values to the ChatGPT Sites project's runtime environment settings only after the resource and OAuth prerequisites are approved; never add them to GitHub or `.openai/hosting.json`. A saved Sites version must be deployed separately before an environment-setting change takes effect.
 
 ## Non-secret hosted values
 
@@ -17,18 +17,22 @@ GOOGLE_WORKSPACE_CLIENT_ID=<data-connector-client-id>
 GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI=https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback
 GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION=1
 GOOGLE_WORKSPACE_ALLOWED_DOMAINS=cherryhillfci.com
-GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations-account>
+GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_SHARED_DRIVE_ID=<shared-drive-id>
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false
 GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<spreadsheet-id>
-GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations-account>
+GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar-id>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar-id>
 ```
 
 Keep the current ChatGPT development identity separately allowlisted through `FCI_OFFICE_EMAILS` and `FCI_ADMIN_EMAILS` until employee Google login is implemented.
 
+When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address. Gmail operates as the connected account (`users/me`); the application does not use domain-wide delegation to read another mailbox, and readiness fails closed when the two values differ. That safeguard is source-only until this change is merged and separately deployed; the live version 39 does not yet prove it is active.
+
 ## Secret hosted values
+
+Enter these in the same ChatGPT Sites runtime environment settings and mark both as secrets. Secret Manager is reserved for the future Google Cloud production environment.
 
 - [ ] `GOOGLE_WORKSPACE_CLIENT_SECRET`
 - [ ] `GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY` — a random 32-byte base64url value
