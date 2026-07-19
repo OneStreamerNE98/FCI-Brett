@@ -569,11 +569,10 @@ mark item 94's Settings scope fulfilled; don't touch item 103.
 **Accept:** `npm test` passes; per-section rendered HTML byte-identical (diff before/
 after); FloorOpsApp defines no panel bodies.
 
-### SET-02 · Expose `isAdmin`; render admin-only controls honestly (small, after SET-01; source acceptance complete in draft PR #37, not deployed)
-**Status:** In review — draft PR #37 on `codex/settings-admin-gating`, July 19, 2026.
-`npm test`, lint, rendered admin/Office coverage, conflicting-`.env.local` reproduction,
-and desktop/390 px visual QA pass. No server gate, schema, hosted configuration, or
-deployment changed.
+### SET-02 · Expose `isAdmin`; render admin-only controls honestly (small, after SET-01; merged in PR #37, not deployed)
+**Status:** Complete — PR #37, July 19, 2026. `npm test`, lint, rendered admin/Office
+coverage, conflicting-`.env.local` reproduction, and desktop/390 px visual QA passed. No
+server gate, schema, hosted configuration, or deployment changed.
 
 **Why:** Nine mutating routes are admin-gated server-side, but the UI renders
 Save/Sync/Reset/Connect identically for non-admin office users, who discover the
@@ -724,6 +723,8 @@ single-user development copy shows everything today; wire the gate through SET-0
 dependencies — see the exclusions in KPI-01's definitions doc.
 
 ### KPI-01 · Tier-1 KPI report from existing data + definitions doc (medium, after the FloorOpsApp queue clears — no schema change)
+**Status:** In progress — `codex/tier1-flooring-kpis`, July 19, 2026. SET-02 is merged in PR #37, so the implementation gates every dollar-value KPI directly with its authenticated `isAdmin` flag.
+
 **Why:** Six universal KPIs are computable today from fields that already exist on leads
 {status active/converted/lost, stage, source, estimatedValue, createdAt, updatedAt} and
 projects {status lifecycle, estimatedValue, createdAt, updatedAt}, but the Reports screen

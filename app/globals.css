@@ -417,3 +417,56 @@ button { color:inherit; }
   .operations-data-table td,.rules-data-table td:nth-child(2),.rules-data-table td:nth-child(3),.rules-data-table td:nth-child(5){grid-column:1}
   .operations-data-table td{grid-template-columns:96px minmax(0,1fr)}
 }
+
+/* Tier-1 flooring scorecard. */
+.business-kpis{margin:0 0 15px;overflow:hidden}
+.business-kpis-header{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:18px;border-bottom:1px solid #ebefeb;background:linear-gradient(135deg,#fff 0%,#f7faf7 100%)}
+.business-kpis-header>div{display:grid;gap:4px;min-width:0}
+.business-kpis-header .eyebrow{margin:0;color:#6f5c4d}
+.business-kpis-header h2{margin:0;font:700 19px var(--font-display)}
+.business-kpis-header>div>span{color:var(--text-muted);font-size:12px;line-height:1.45}
+.business-kpis-header label{display:grid;flex:0 0 190px;gap:6px;color:#5a504a;font-size:12px;font-weight:800}
+.business-kpis-header input{width:100%;min-height:42px;border:1px solid #cbc4bd;border-radius:8px;background:#fff;color:var(--ink);padding:7px 10px;font-size:14px}
+.business-kpis-scope{display:flex;align-items:flex-start;gap:7px;margin:0;padding:11px 18px;border-bottom:1px solid #edf0ed;background:#faf8f5;color:#655f59;font-size:12px;line-height:1.45}
+.business-kpis-scope svg{flex:0 0 auto;margin-top:1px;color:#397056}
+.business-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:16px 18px}
+.business-kpi-card{display:flex;flex-direction:column;min-height:188px;padding:15px}
+.business-kpi-card>strong{overflow-wrap:anywhere}
+.business-kpi-card>p{line-height:1.45}
+.business-kpi-access{display:flex;align-items:flex-start;gap:5px;margin-top:9px;color:#655548;font-size:12px;font-weight:700;line-height:1.35}
+.business-kpi-access svg{flex:0 0 auto;margin-top:1px;color:#8b5d35}
+.business-kpi-link{display:flex;align-items:center;gap:3px;width:max-content;max-width:100%;min-height:36px;margin-top:auto;padding-top:9px;color:#397056;font-size:12px;font-weight:800;text-decoration:none}
+.business-kpi-link:hover{text-decoration:underline;text-underline-offset:3px}
+.business-kpi-breakdown{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr);border-top:1px solid #e6ebe7}
+.business-kpi-breakdown>section{padding:17px 18px}
+.business-kpi-breakdown>section>div:first-child{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+.business-kpi-breakdown h3{margin:0;font:700 14px var(--font-display)}
+.business-kpi-breakdown>section>div:first-child>span{color:var(--text-muted);font-size:12px}
+.business-kpi-table-wrap{overflow-x:auto;border:1px solid #e2e8e3;border-radius:8px}
+.business-kpi-table-wrap table{width:100%;border-collapse:collapse;table-layout:fixed}
+.business-kpi-table-wrap th,.business-kpi-table-wrap td{padding:10px 11px;border-top:1px solid #edf0ed;color:#4d4541;font-size:12px;text-align:right}
+.business-kpi-table-wrap thead th{border-top:0;background:#faf8f5;color:#655f59;font-weight:800}
+.business-kpi-table-wrap th:first-child{width:46%;text-align:left;overflow-wrap:anywhere}
+.business-kpi-table-wrap tbody th{font-weight:700}
+.business-kpi-breakdown>aside{display:flex;align-items:flex-start;gap:9px;padding:17px 18px;border-left:1px solid #e6ebe7;background:#f7faf7}
+.business-kpi-breakdown>aside>svg{flex:0 0 auto;color:#397056}
+.business-kpi-breakdown>aside strong{font:700 13px var(--font-display)}
+.business-kpi-breakdown>aside p{margin:5px 0 0;color:#5f6d65;font-size:12px;line-height:1.55}
+
+@media (max-width:980px){
+  .business-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .business-kpi-breakdown{grid-template-columns:1fr}
+  .business-kpi-breakdown>aside{border-top:1px solid #e6ebe7;border-left:0}
+}
+
+@media (max-width:560px){
+  .business-kpis-header{display:grid;align-items:stretch;padding:16px}
+  .business-kpis-header label{width:100%}
+  .business-kpis-header input{font-size:16px}
+  .business-kpis-scope{padding:11px 16px}
+  .business-kpi-grid{grid-template-columns:1fr;padding:14px 16px}
+  .business-kpi-card{min-height:170px}
+  .business-kpi-breakdown>section,.business-kpi-breakdown>aside{padding:16px}
+  .business-kpi-breakdown>section>div:first-child{display:grid}
+  .business-kpi-table-wrap th,.business-kpi-table-wrap td{padding:9px 7px}
+}
