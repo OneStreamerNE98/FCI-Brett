@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
-import { getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth";
+import { getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
 import { resetWorkspaceSimulation } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";

@@ -53,9 +53,9 @@ Security audit is separate from the client/project activity timeline. It records
 - `integration_cursors`
 - `integration_events`
 
-The company connector remains separate from employee OIDC identity. Credential, PKCE, and cursor material is encrypted and key-versioned where represented. The general runtime has no direct access to `integration_credentials`; a later connector-specific credential boundary must be reviewed before live authorization. Operational integration events are append-only at the database layer, but the runtime has no access until a reviewed event-writer adapter exists.
+The company connector remains separate from employee OIDC identity. A source-only production OAuth workflow now hashes state and browser nonce, encrypts PKCE and refresh-token material with AES-GCM plus purpose-bound AAD, resolves ciphertext by its exact stored key version, and consumes OAuth attempts once through `IntegrationMetadataRepository`. OAuth completion atomically binds verified external identity, the current-version refresh ciphertext, granted scopes, and security-audit evidence in the version-3 tables. Its source-only rotation operation decrypts an exact old version, re-encrypts with the current writer, verifies the new ciphertext before persistence, and applies an exact-version-fenced audited update. The general runtime still has no direct `integration_credentials` or `integration_connection_scopes` grant, and the workflow is not composed into a route; its credential-specific grant/composition review remains part of Gate C. Operational integration events remain append-only at the database layer, but the runtime has no access until a reviewed event-writer adapter exists.
 
-The development D1 Workspace connector and its encrypted token remain untouched. Its credential is not eligible for automatic production migration; production connection requires a separately approved reauthorization.
+The development D1 Workspace connector keeps its existing data and behavior behind thin D1 composition adapters. It remains current-key-only, so WS-04's documented disconnect/rotate/reconnect procedure still governs Sites; production multi-key support does not silently change that procedure. The development credential is not eligible for automatic production migration; production connection requires a separately approved reauthorization.
 
 ### File and provider-neutral object metadata
 
@@ -81,7 +81,7 @@ The source includes these ports and adapters:
 - `IdentityPersistenceRepository`: user/external-identity registration plus secure session issuance/revocation. Generic role/capability/assignment mutation methods were removed.
 - `AdminAccessPersistenceRepository`: the five fixed Administrator commands only—create/revoke invitation, set one role and any Project Manager projects, disable, and sign out everywhere. The immutable role/capability catalog has no mutation method.
 - `SecurityAuditRepository`: standalone append plus a same-client helper for atomic evidence inside another repository transaction.
-- `IntegrationMetadataRepository`: connection, one-time OAuth-attempt, and typed external-resource metadata. It does not call Google or decrypt credentials.
+- `IntegrationMetadataRepository`: connection, one-time OAuth-attempt, atomic OAuth identity/refresh-credential/scope completion, and typed external-resource metadata. Provider calls and AES-GCM work remain outside its PostgreSQL transactions.
 - `FileMetadataRepository`: atomic project upload reservation, stored-object confirmation/failure, and released-reference lookup. It does not stream bytes inside PostgreSQL.
 - `ObjectStorage`: provider-neutral conditional object storage with memory and R2 contract adapters plus a GCS adapter using injected configuration. The development upload route uses the R2 adapter. The GCS adapter is not composed into Cloud Run, and no Cloud Storage bucket is provisioned.
 

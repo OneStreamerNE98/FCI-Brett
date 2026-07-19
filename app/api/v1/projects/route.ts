@@ -9,8 +9,8 @@ import { normalizeProjectManagerId } from "../../../domain/project-creation";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { projectCreationHttpResult } from "../../../lib/creation-http-result";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
-import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
 const MAX_PROJECT_BODY_BYTES = 64_000;

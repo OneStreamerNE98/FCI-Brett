@@ -233,6 +233,8 @@ For a US sender, the owner will need to choose an approved messaging route such 
 - Add request deadlines, bounded retry/backoff, correlation IDs, quota handling, redaction, and metrics to every Google client.
 - Do not use domain-wide delegation when interactive OAuth for one approved operations account satisfies the requirement.
 
+The source-only BE-08 boundary now implements exact-version AES-GCM decryption, current-version writes, one-shot production OAuth attempt persistence, atomic refresh-credential/scope completion, and verified exact-version-fenced refresh-token re-encryption. It is not route-composed and receives no production secret or credential-table grant; live connector composition, credential-specific grants and secret delivery, single-flight refresh, retries/metrics, and provider activation remain gated work.
+
 ## Files and document safety
 
 1. Create a durable file row and authorized upload intent before accepting bytes.

@@ -2,8 +2,8 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../lib/google-drive";
 import { mapGoogleIntegrationError } from "../../../../../lib/google-integration-error";
-import { GoogleIntegrationError, getGoogleAccessToken, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth";
-import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets";
+import { GoogleIntegrationError, getGoogleAccessToken, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
+import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 

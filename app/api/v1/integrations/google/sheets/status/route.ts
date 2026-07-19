@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
-import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth";
-import { getGoogleSheetMirrorStatus } from "../../../../../../lib/google-sheets";
+import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
+import { getGoogleSheetMirrorStatus } from "../../../../../../lib/google-sheets-sites";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 
 /** Read-only health for the generated Client Directory / Project Register workbook. */

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGmailClient, assertWorkspaceGmailConnection } from "../../../../../lib/google-gmail";
-import { GoogleIntegrationError, assertGoogleService, getGoogleAccessToken, getGoogleRuntimeConfig, type GoogleRuntimeConfig } from "../../../../../lib/google-oauth";
+import { GoogleIntegrationError, assertGoogleService, getGoogleAccessToken, getGoogleRuntimeConfig, type GoogleRuntimeConfig } from "../../../../../lib/google-oauth-sites";
 import { WorkspaceSimulationGmailClient } from "../../../../../lib/workspace-simulation";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 

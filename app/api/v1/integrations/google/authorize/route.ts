@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildGoogleAuthorizationUrl, createGoogleOauthAttempt, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth";
+import { buildGoogleAuthorizationUrl, createGoogleOauthAttempt, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../lib/google-drive";
-import { assertExpectedGoogleAccount, assertGrantedGoogleServiceScopes, consumeGoogleOauthAttempt, exchangeGoogleAuthorizationCode, fetchGoogleUserProfile, getGoogleRuntimeConfig, saveGoogleConnection, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth";
+import { assertExpectedGoogleAccount, assertGrantedGoogleServiceScopes, consumeGoogleOauthAttempt, exchangeGoogleAuthorizationCode, fetchGoogleUserProfile, getGoogleRuntimeConfig, saveGoogleConnection, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
 import { requireOfficeUser } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 

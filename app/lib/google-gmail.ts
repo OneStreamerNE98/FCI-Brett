@@ -1,7 +1,8 @@
-import { GoogleIntegrationError, type GoogleRuntimeConfig } from "./google-oauth";
+import { GoogleIntegrationError, type GoogleFetch, type GoogleRuntimeConfig } from "./google-oauth";
 
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const MAX_MESSAGE_RESULTS = 20;
+const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
 const MAX_SEARCH_QUERY_LENGTH = 240;
 const MAX_ARCHIVE_MESSAGE_PARTS = 160;
 const MEBIBYTE = 1024 * 1024;
@@ -478,12 +479,15 @@ export function createReplyDraftRaw(input: { recipient: string; subject: string;
 }
 
 export class GoogleGmailClient {
-  constructor(private readonly accessToken: string) {}
+  constructor(
+    private readonly accessToken: string,
+    private readonly fetcher: GoogleFetch = DEFAULT_GOOGLE_FETCH,
+  ) {}
 
   private async request<T>(path: string, init: RequestInit = {}) {
     let response: Response;
     try {
-      response = await fetch(`${GMAIL_API}/${path}`, {
+      response = await this.fetcher(`${GMAIL_API}/${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,

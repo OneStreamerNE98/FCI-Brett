@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleIntegrationError, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth";
-import { listWorkspaceCalendarEvents } from "../../../../../../lib/google-calendar-client";
+import { GoogleIntegrationError, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
+import { listWorkspaceCalendarEvents } from "../../../../../../lib/google-calendar-sites";
 import { listSimulationCalendarEvents } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";

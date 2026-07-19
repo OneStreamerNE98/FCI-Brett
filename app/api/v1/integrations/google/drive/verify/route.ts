@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../../lib/google-drive";
 import { mapGoogleIntegrationError } from "../../../../../../lib/google-integration-error";
-import { getGoogleAccessToken, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth";
+import { getGoogleAccessToken, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 

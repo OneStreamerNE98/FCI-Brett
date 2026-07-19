@@ -1,8 +1,9 @@
 import { DRIVE_BLUEPRINT } from "./google-workspace";
-import { GoogleIntegrationError, type GoogleRuntimeConfig } from "./google-oauth";
+import { GoogleIntegrationError, type GoogleFetch, type GoogleRuntimeConfig } from "./google-oauth";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const MAX_MANAGED_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_MANAGED_APP_PROPERTIES = 12;
@@ -152,7 +153,11 @@ function multipartUploadBody(metadata: Record<string, unknown>, bytes: Uint8Arra
 }
 
 export class GoogleDriveClient {
-  constructor(private readonly accessToken: string, private readonly config: GoogleRuntimeConfig) {}
+  constructor(
+    private readonly accessToken: string,
+    private readonly config: GoogleRuntimeConfig,
+    private readonly fetcher: GoogleFetch = DEFAULT_GOOGLE_FETCH,
+  ) {}
 
   /**
    * files.list accepts Shared Drive search selectors in addition to the general
@@ -190,7 +195,7 @@ export class GoogleDriveClient {
   private async request<T>(path: string, init: RequestInit = {}) {
     let response: Response;
     try {
-      response = await fetch(`${DRIVE_API}/${path}`, {
+      response = await this.fetcher(`${DRIVE_API}/${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -215,14 +220,15 @@ export class GoogleDriveClient {
   private async uploadRequest<T>(path: string, body: Uint8Array, contentType: string) {
     let response: Response;
     try {
-      response = await fetch(`${DRIVE_UPLOAD_API}/${path}`, {
+      const uploadBody = Uint8Array.from(body).buffer;
+      response = await this.fetcher(`${DRIVE_UPLOAD_API}/${path}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
           Accept: "application/json",
           "Content-Type": contentType,
         },
-        body: new Blob([body], { type: contentType }),
+        body: new Blob([uploadBody], { type: contentType }),
       });
     } catch {
       throw new GoogleIntegrationError("drive_unavailable", "Google Drive is temporarily unavailable. Try again.", 503);

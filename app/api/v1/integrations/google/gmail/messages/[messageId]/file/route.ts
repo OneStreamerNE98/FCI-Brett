@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../../../../lib/google-drive";
 import { gmailAttachmentArtifactKey } from "../../../../../../../../lib/google-gmail-artifacts";
-import { GoogleIntegrationError, getGoogleAccessToken, type GoogleRuntimeConfig } from "../../../../../../../../lib/google-oauth";
+import { GoogleIntegrationError, getGoogleAccessToken, type GoogleRuntimeConfig } from "../../../../../../../../lib/google-oauth-sites";
 import { validateGmailMessageId } from "../../../../../../../../lib/google-gmail";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../../lib/workspace-auth";
 import { getWorkspaceGmailClient, gmailErrorResponse, readBoundedJson } from "../../../_route-helpers";

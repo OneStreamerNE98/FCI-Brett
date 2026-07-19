@@ -44,12 +44,15 @@ test("enforces the office allowlist before rendering the operational app shell",
 });
 
 test("requires and revalidates the explicitly approved Workspace connection account", async () => {
-  const oauth = await read("app/lib/google-oauth.ts");
+  const [oauth, d1] = await Promise.all([
+    read("app/lib/google-oauth.ts"),
+    read("app/adapters/d1/google-oauth-persistence.ts"),
+  ]);
 
   assert.match(oauth, /approved Google Workspace connection account/);
-  assert.match(oauth, /googleAccountIsAllowed\(config, connection\.google_email\)/);
-  assert.match(oauth, /account_no_longer_allowed/);
-  assert.match(oauth, /status = 'reauthorization-required'/);
+  assert.match(oauth, /googleAccountIsAllowed\(config, connection\.googleEmail\)/);
+  assert.match(d1, /account_no_longer_allowed/);
+  assert.match(d1, /status = 'reauthorization-required'/);
 });
 
 test("scopes dashboard Gmail archive totals to the active Google connection", async () => {

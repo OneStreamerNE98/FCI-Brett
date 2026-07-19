@@ -1,10 +1,12 @@
 import type {
+  CompleteIntegrationOauthConnectionIntent,
   ConsumeIntegrationOauthAttemptIntent,
   CreateIntegrationOauthAttemptIntent,
   IntegrationMetadataRepository,
   IntegrationMetadataResult,
   RegisterIntegrationConnectionIntent,
   RegisterIntegrationResourceIntent,
+  RotateIntegrationCredentialIntent,
 } from "../../ports/integration-metadata";
 import type { SecurityAuditEvent } from "../../ports/security-audit";
 import { insertPostgresSecurityAuditEvent } from "./security-audit-repository";
@@ -107,6 +109,59 @@ function validateOauthAttempt(intent: CreateIntegrationOauthAttemptIntent) {
     throw new TypeError("Integration OAuth expiry and purge times must be ordered");
   }
   return { createdAt, expiresAt, purgeAfter };
+}
+
+function validateOauthCompletion(intent: CompleteIntegrationOauthConnectionIntent) {
+  assertPersistenceUuid(intent.connectionId, "Integration OAuth connection ID");
+  const expectedConnectionVersion = persistenceVersion(
+    intent.expectedConnectionVersion,
+    "Expected Integration connection version",
+  );
+  assertPersistenceText(intent.issuer, "Integration OAuth issuer", 2_048);
+  assertPersistenceText(intent.externalSubject, "Integration OAuth subject", 1_024);
+  assertPersistenceText(intent.externalEmail, "Integration OAuth email", 320);
+  if (
+    intent.externalEmail !== intent.externalEmail.trim().toLowerCase()
+    || !/^[^\s@]+@[^\s@]+$/.test(intent.externalEmail)
+  ) {
+    throw new TypeError("Integration OAuth email must be normalized");
+  }
+  assertPersistenceText(intent.hostedDomain, "Integration OAuth hosted domain", 255);
+  if (intent.hostedDomain !== intent.hostedDomain.trim().toLowerCase()) {
+    throw new TypeError("Integration OAuth hosted domain must be normalized");
+  }
+  assertPersistenceUuid(intent.credentialId, "Integration OAuth credential ID");
+  assertPersistenceCiphertext(intent.refreshTokenCiphertext, "Integration OAuth refresh ciphertext");
+  assertPersistenceText(intent.keyVersion, "Integration OAuth key version", 255);
+  if (
+    !Array.isArray(intent.grantedScopes)
+    || intent.grantedScopes.length === 0
+    || intent.grantedScopes.length > 100
+    || new Set(intent.grantedScopes).size !== intent.grantedScopes.length
+  ) {
+    throw new TypeError("Integration OAuth granted scopes must be a nonempty unique bounded list");
+  }
+  for (const scope of intent.grantedScopes) {
+    assertPersistenceText(scope, "Integration OAuth granted scope", 512);
+  }
+  assertPersistenceUuid(intent.completedByUserId, "Integration OAuth completing user ID");
+  assertPersistenceText(intent.completedByActorKey, "Integration OAuth completing actor key", 255);
+  const completedAt = persistenceDate(intent.completedAt, "Integration OAuth completed_at");
+  return { expectedConnectionVersion, completedAt };
+}
+
+function validateCredentialRotation(intent: RotateIntegrationCredentialIntent) {
+  assertPersistenceUuid(intent.connectionId, "Integration credential connection ID");
+  assertPersistenceUuid(intent.credentialId, "Integration credential ID");
+  assertPersistenceKey(intent.credentialKind, "Integration credential kind");
+  const expectedVersion = persistenceVersion(
+    intent.expectedVersion,
+    "Expected Integration credential version",
+  );
+  assertPersistenceCiphertext(intent.ciphertext, "Integration rotated credential ciphertext");
+  assertPersistenceText(intent.keyVersion, "Integration rotated credential key version", 255);
+  const rotatedAt = persistenceDate(intent.rotatedAt, "Integration credential rotated_at");
+  return { expectedVersion, rotatedAt };
 }
 
 function validateResource(intent: RegisterIntegrationResourceIntent) {
@@ -317,6 +372,174 @@ export function createPostgresIntegrationMetadataRepository(
             version,
           },
         };
+      });
+    },
+
+    async completeOauthConnection(intent) {
+      const values = validateOauthCompletion(intent);
+      return transaction(async (client) => {
+        const locked = await client.query<{ id: unknown }>(
+          `SELECT id::text AS id
+           FROM integration_connections
+           WHERE id = $1
+             AND version = $2::bigint
+             AND status IN ('pending', 'connected', 'degraded', 'reauthorization_required')
+           FOR UPDATE`,
+          [intent.connectionId, values.expectedConnectionVersion],
+        );
+        if (locked.rowCount === 0 && locked.rows.length === 0) {
+          await insertPostgresSecurityAuditEvent(client, mutationAudit(
+            intent.audit,
+            "integration.oauth_connection_completed",
+            "integration_connection",
+            intent.connectionId,
+            "stale_connection",
+          ));
+          return { outcome: "stale" as const };
+        }
+        if (locked.rowCount !== 1 || locked.rows.length !== 1) {
+          throw new Error("PostgreSQL integration connection was not locked exactly once");
+        }
+        assertPersistenceUuid(locked.rows[0]?.id, "Locked Integration connection ID");
+
+        await client.query(
+          `INSERT INTO integration_credentials (
+             id, connection_id, credential_kind, ciphertext, key_version,
+             status, rotated_at, revoked_at, created_at, updated_at, version
+           ) VALUES ($1, $2, 'refresh_token', $3, $4, 'active', NULL, NULL, $5, $5, 1)
+           ON CONFLICT (connection_id, credential_kind) DO UPDATE
+           SET ciphertext = EXCLUDED.ciphertext,
+               key_version = EXCLUDED.key_version,
+               status = 'active',
+               rotated_at = CASE
+                 WHEN integration_credentials.key_version <> EXCLUDED.key_version THEN EXCLUDED.updated_at
+                 ELSE integration_credentials.rotated_at
+               END,
+               revoked_at = NULL,
+               updated_at = EXCLUDED.updated_at,
+               version = integration_credentials.version + 1`,
+          [intent.credentialId, intent.connectionId,
+            Buffer.from(intent.refreshTokenCiphertext), intent.keyVersion,
+            values.completedAt],
+        );
+
+        await client.query(
+          "DELETE FROM integration_connection_scopes WHERE connection_id = $1",
+          [intent.connectionId],
+        );
+        for (const scope of intent.grantedScopes) {
+          await client.query(
+            `INSERT INTO integration_connection_scopes (connection_id, scope, granted_at)
+             VALUES ($1, $2, $3)`,
+            [intent.connectionId, scope, values.completedAt],
+          );
+        }
+
+        const updated = await client.query<{ version: unknown }>(
+          `UPDATE integration_connections
+           SET issuer = $3, external_subject = $4, external_email = $5,
+               hosted_domain = $6, status = 'connected',
+               last_connected_at = $7, last_success_at = $7,
+               last_error_at = NULL, last_error_code = NULL,
+               updated_by_user_id = $8, updated_by_actor_key = $9,
+               revoked_at = NULL, updated_at = $7, version = version + 1
+           WHERE id = $1 AND version = $2::bigint
+           RETURNING version::text AS version`,
+          [intent.connectionId, values.expectedConnectionVersion,
+            intent.issuer, intent.externalSubject, intent.externalEmail,
+            intent.hostedDomain, values.completedAt,
+            intent.completedByUserId, intent.completedByActorKey],
+        );
+        const version = exactVersion(updated, "PostgreSQL completed Integration OAuth connection");
+        await insertPostgresSecurityAuditEvent(client, mutationAudit(
+          intent.audit,
+          "integration.oauth_connection_completed",
+          "integration_connection",
+          intent.connectionId,
+        ));
+        return accepted(version);
+      }, mutationAudit(
+        intent.audit,
+        "integration.oauth_connection_completed",
+        "integration_connection",
+        intent.connectionId,
+        "conflict",
+      )) as Promise<IntegrationMetadataResult>;
+    },
+
+    async getActiveCredential(connectionId, credentialKind) {
+      assertPersistenceUuid(connectionId, "Integration credential connection ID");
+      assertPersistenceKey(credentialKind, "Integration credential kind");
+      return withPostgresTransaction(pool, transactionOptions, async (client) => {
+        const selected = await client.query<{
+          id: unknown;
+          connection_id: unknown;
+          credential_kind: unknown;
+          ciphertext: unknown;
+          key_version: unknown;
+          version: unknown;
+        }>(
+          `SELECT id::text AS id, connection_id::text AS connection_id,
+                  credential_kind, ciphertext, key_version,
+                  version::text AS version
+           FROM integration_credentials
+           WHERE connection_id = $1 AND credential_kind = $2 AND status = 'active'`,
+          [connectionId, credentialKind],
+        );
+        if (selected.rowCount === 0 && selected.rows.length === 0) return null;
+        if (selected.rowCount !== 1 || selected.rows.length !== 1) {
+          throw new Error("PostgreSQL active Integration credential was not unique");
+        }
+        const row = selected.rows[0];
+        assertPersistenceUuid(row?.id, "Active Integration credential ID");
+        assertPersistenceUuid(row?.connection_id, "Active Integration credential connection ID");
+        assertPersistenceKey(row?.credential_kind, "Active Integration credential kind");
+        assertPersistenceCiphertext(row?.ciphertext, "Active Integration credential ciphertext");
+        assertPersistenceText(row?.key_version, "Active Integration credential key version", 255);
+        return {
+          id: row.id,
+          connectionId: row.connection_id,
+          credentialKind: row.credential_kind,
+          ciphertext: new Uint8Array(row.ciphertext),
+          keyVersion: row.key_version,
+          version: persistenceVersion(row?.version, "Active Integration credential version"),
+        };
+      });
+    },
+
+    async rotateCredential(intent) {
+      const values = validateCredentialRotation(intent);
+      return withPostgresTransaction(pool, transactionOptions, async (client) => {
+        const rotated = await client.query<{ version: unknown }>(
+          `UPDATE integration_credentials
+           SET ciphertext = $5, key_version = $6, status = 'active',
+               rotated_at = $7, revoked_at = NULL, updated_at = $7,
+               version = version + 1
+           WHERE id = $1 AND connection_id = $2 AND credential_kind = $3
+             AND version = $4::bigint AND status = 'active'
+           RETURNING version::text AS version`,
+          [intent.credentialId, intent.connectionId, intent.credentialKind,
+            values.expectedVersion, Buffer.from(intent.ciphertext),
+            intent.keyVersion, values.rotatedAt],
+        );
+        if (rotated.rowCount === 0 && rotated.rows.length === 0) {
+          await insertPostgresSecurityAuditEvent(client, mutationAudit(
+            intent.audit,
+            "integration.credential_rotated",
+            "integration_connection",
+            intent.connectionId,
+            "stale_credential",
+          ));
+          return { outcome: "stale" as const };
+        }
+        const version = exactVersion(rotated, "PostgreSQL rotated Integration credential");
+        await insertPostgresSecurityAuditEvent(client, mutationAudit(
+          intent.audit,
+          "integration.credential_rotated",
+          "integration_connection",
+          intent.connectionId,
+        ));
+        return accepted(version);
       });
     },
 
