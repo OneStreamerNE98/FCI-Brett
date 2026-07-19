@@ -1,6 +1,6 @@
 # Production PostgreSQL foundation
 
-Reviewed: July 13, 2026
+Reviewed: July 19, 2026
 
 Status: Implemented and tested in source. Not provisioned, applied, or deployed.
 
@@ -8,11 +8,11 @@ Status: Implemented and tested in source. Not provisioned, applied, or deployed.
 
 The production PostgreSQL foundation is deliberately separate from the current D1 development environment. It defines the first production data model and migration safety controls without changing API routes, D1 migration versions 1–3, the hosted development environment, Google Workspace, or any live data.
 
-This document describes the earlier schema and migration-runner slice. The later source-only [PostgreSQL repository slice](production-postgresql-repositories.md) implements client/project adapters, application idempotency, and worker-safe outbox state transitions. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) now composes those adapters around a bounded private Cloud SQL pool, provides separate service/migration/rehearsal entry points, and defines least-privilege source policy. The full application runtime, a live outbox worker, users/roles, provisioned Cloud resources/secrets, and complete development-data migration remain later assignments.
+This document describes the schema and migration-runner boundary through immutable migration v6. The source-only [PostgreSQL repository slice](production-postgresql-repositories.md) implements client/project/lead/project-meeting adapters, application idempotency, and worker-safe outbox state transitions. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) composes those adapters around a bounded private Cloud SQL pool, provides separate service/migration/rehearsal entry points, and defines least-privilege source policy. The full application runtime, a live outbox worker, provisioned Cloud resources/secrets, and complete development-data migration remain later assignments.
 
 ## Core model
 
-The initial registry creates only these production tables:
+The record and delivery migrations create these production tables; the generic persistence and administration tables added by v3–v5 are documented in their dedicated boundaries:
 
 | Table | Production purpose |
 | --- | --- |
@@ -20,7 +20,9 @@ The initial registry creates only these production tables:
 | `clients` | Unique client code and normalized client-name key, constrained state, audit actors/timestamps, and optimistic-concurrency version. |
 | `contacts` | Client-owned contacts with a real foreign key and at most one primary contact per client. |
 | `projects` | Client-owned projects with unique project numbers, constrained state, whole-number nonnegative estimated value, and a version field. |
-| `activity_events` | Append-only client- or project-scoped business activity evidence with actor, correlation ID, result, optional reason, structured detail, and occurrence time. It is not the general security-audit store. |
+| `leads` | Independent flooring leads with `L-YYYY-XXXXXXXX` identifiers, bounded contact/project/action fields, constrained status/value, audit actors/timestamps, and a version field. Added by migration v6. |
+| `project_meetings` | Project-owned meeting evidence with bounded type/source/link/text/list fields and a required evidence invariant. Added by migration v6. |
+| `activity_events` | Append-only client-, project-, or lead-scoped business activity evidence with actor, correlation ID, result, optional reason, structured detail, and occurrence time. It is not the general security-audit store. |
 | `idempotency_requests` | Actor-scoped operation/request keys, request fingerprints, response state, expiry, and a version field. |
 | `outbox_events` | Transactional delivery intent with actor/correlation evidence, an event-type-to-record constraint, retry availability, lease state, dead-letter time, and a version field. |
 
@@ -54,7 +56,7 @@ Do not use `CREATE INDEX CONCURRENTLY` inside these migration transactions. If a
 
 ## Implemented idempotency and outbox contract
 
-The later [PostgreSQL repository slice](production-postgresql-repositories.md) uses the schema constraints for atomic actor/operation/key claims. Client/project creation, activity evidence, matching outbox intent, and the completed replay response commit in one short transaction. Deterministic 404/409 failures also retain the key binding. A same-fingerprint retry returns the stored winning response or failure; a changed normalized request is rejected.
+The later [PostgreSQL repository slice](production-postgresql-repositories.md) uses the schema constraints for atomic actor/operation/key claims. Client/project/lead/project-meeting creation, activity evidence, matching outbox intent, and the completed replay response commit in one short transaction. Deterministic 404/409 failures also retain the key binding. A same-fingerprint retry returns the stored winning response or failure; a changed normalized request is rejected.
 
 The outbox adapter claims small ordered batches with `FOR UPDATE SKIP LOCKED` and commits before any provider work. Version-fenced completion, retry/dead-letter, and expired-lease recovery prevent stale workers from overwriting a newer claim. A live queue worker and provider calls remain deliberately unwired.
 

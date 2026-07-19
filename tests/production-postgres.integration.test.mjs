@@ -58,16 +58,16 @@ test(
       ]);
       assert.deepEqual(
         concurrentResults.flatMap(({ appliedVersions }) => appliedVersions).sort(),
-        [1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 6],
       );
-      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [5, 5]);
+      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [6, 6]);
 
       const rerun = await runProductionSchemaMigrations(
         pool,
         PRODUCTION_SCHEMA_MIGRATIONS,
         migrationOptions,
       );
-      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 5 });
+      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 6 });
 
       const history = await pool.query(
         `SELECT version, name, checksum
@@ -113,9 +113,11 @@ test(
           "integration_resources",
           "invitation_project_assignments",
           "invitations",
+          "leads",
           "outbox_events",
           "production_schema_migrations",
           "project_memberships",
+          "project_meetings",
           "projects",
           "role_capabilities",
           "roles",
@@ -255,6 +257,69 @@ test(
         [projectId],
       );
       assert.equal(estimatedValue.rows[0].estimated_value, "9007199254740991");
+
+      const leadId = randomUUID();
+      await pool.query(
+        `INSERT INTO ${schema}.leads (
+           id, lead_number, company, contact_name, project_name, source, stage,
+           site, estimated_value, next_action, owner_email, status,
+           created_by, updated_by
+         ) VALUES ($1, $2, 'FCI TEST — DO NOT USE', 'Test Contact',
+           'FCI TEST — DO NOT USE Project', 'Referral', 'Qualified',
+           'FCI TEST — DO NOT USE Site', 125000, 'Schedule site walk',
+           'owner@example.test', 'active', 'actor-1', 'actor-1')`,
+        [leadId, `L-2026-${leadId.replaceAll("-", "").slice(0, 8).toUpperCase()}`],
+      );
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.leads (
+             id, lead_number, company, contact_name, project_name, source, stage,
+             site, estimated_value, next_action, owner_email, status,
+             created_by, updated_by
+           ) VALUES ($1, $2, 'FCI TEST — DO NOT USE', 'Test Contact',
+             'FCI TEST — DO NOT USE Project', 'Referral', 'Qualified',
+             'FCI TEST — DO NOT USE Site', -1, 'Schedule site walk',
+             'owner@example.test', 'active', 'actor-1', 'actor-1')`,
+          [randomUUID(), `L-2026-${randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`],
+        ),
+        "23514",
+        "leads_estimated_value_check",
+      );
+
+      const meetingId = randomUUID();
+      await pool.query(
+        `INSERT INTO ${schema}.project_meetings (
+           id, project_id, title, meeting_at, meeting_type, source_provider,
+           source_url, attendees, notes, action_items, created_by
+         ) VALUES ($1, $2, 'FCI TEST — DO NOT USE kickoff', now(), 'client',
+           'otter', 'https://otter.ai/u/fci-test', '["Test Contact"]'::jsonb,
+           'FCI TEST — DO NOT USE notes', '["Schedule site walk"]'::jsonb, 'actor-1')`,
+        [meetingId, projectId],
+      );
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.project_meetings (
+             id, project_id, title, meeting_at, meeting_type, source_provider,
+             attendees, action_items, created_by
+           ) VALUES ($1, $2, 'FCI TEST — DO NOT USE empty evidence', now(),
+             'internal', 'manual', '[]'::jsonb, '[]'::jsonb, 'actor-1')`,
+          [randomUUID(), projectId],
+        ),
+        "23514",
+        "project_meetings_evidence_check",
+      );
+      await expectPostgresError(
+        pool.query(
+          `INSERT INTO ${schema}.project_meetings (
+             id, project_id, title, meeting_at, meeting_type, source_provider,
+             attendees, notes, action_items, created_by
+           ) VALUES ($1, $2, 'FCI TEST — DO NOT USE invalid attendees', now(),
+             'internal', 'manual', '[1]'::jsonb, 'Test notes', '[]'::jsonb, 'actor-1')`,
+          [randomUUID(), projectId],
+        ),
+        "23514",
+        "project_meetings_attendees_check",
+      );
 
       for (const invalidValue of ["-1", "12.5", "9007199254740992"]) {
         await expectPostgresError(
@@ -630,7 +695,7 @@ test(
       assert.deepEqual(missingForeignKeyIndexes.rows, []);
 
       const rollbackProbe = {
-        version: 6,
+        version: 7,
         name: "rollback_probe",
         checksum: "",
         statements: [
@@ -645,7 +710,7 @@ test(
           [...PRODUCTION_SCHEMA_MIGRATIONS, rollbackProbe],
           migrationOptions,
         ),
-        /migration 6 \(rollback_probe\) did not complete cleanly/,
+        /migration 7 \(rollback_probe\) did not complete cleanly/,
       );
       const rollbackState = await pool.query(
         `SELECT to_regclass('${schema}.rollback_probe') AS relation,
@@ -653,7 +718,7 @@ test(
                  FROM ${schema}.production_schema_migrations) AS migration_count`,
       );
       assert.equal(rollbackState.rows[0].relation, null);
-      assert.equal(rollbackState.rows[0].migration_count, 5);
+      assert.equal(rollbackState.rows[0].migration_count, 6);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();
@@ -691,7 +756,7 @@ test(
         PRODUCTION_SCHEMA_MIGRATIONS,
         { schema },
       );
-      assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4, 5], currentVersion: 5 });
+      assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4, 5, 6], currentVersion: 6 });
 
       const targetHistory = await pool.query(
         `SELECT count(*)::integer AS count FROM ${schema}.production_schema_migrations`,
@@ -699,7 +764,7 @@ test(
       const temporaryHistory = await pool.query(
         "SELECT count(*)::integer AS count FROM pg_temp.production_schema_migrations",
       );
-      assert.equal(targetHistory.rows[0].count, 5);
+      assert.equal(targetHistory.rows[0].count, 6);
       assert.equal(temporaryHistory.rows[0].count, 0);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);

@@ -1,8 +1,11 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import type { D1Database } from "../../../../adapters/d1/d1-database";
+import { createD1LeadRepository } from "../../../../adapters/d1/lead-repository";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
-import { MAX_LEAD_BODY_BYTES, type LeadRow, leadResponse, validateLeadValues } from "../../../../domain/lead";
+import { MAX_LEAD_BODY_BYTES, leadResponse, validateLeadValues } from "../../../../domain/lead";
+import type { LeadActivityIntent } from "../../../../ports/lead-repository";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 
 type RouteContext = { params: Promise<{ leadId: string }> };
@@ -28,7 +31,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   await ensureWorkspaceSchema();
-  const current = await env.DB.prepare("SELECT * FROM leads WHERE id = ?").bind(leadId).first<LeadRow>();
+  const repository = createD1LeadRepository(env.DB as unknown as D1Database);
+  const current = await repository.findById(leadId);
   if (!current) return NextResponse.json({ error: "Lead not found." }, { status: 404 });
   const currentValues: Record<string, unknown> = {
     company: current.company,
@@ -49,20 +53,37 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (!values) return NextResponse.json({ error: "One or more lead fields are invalid." }, { status: 400 });
 
   const now = Date.now();
-  const statements = [
-    env.DB.prepare("UPDATE leads SET company = ?, contact_name = ?, contact_email = ?, contact_phone = ?, project_name = ?, source = ?, stage = ?, site = ?, estimated_value = ?, next_action = ?, next_action_at = ?, owner_email = ?, status = ?, updated_at = ? WHERE id = ?")
-      .bind(values.company, values.contactName, values.contactEmail, values.contactPhone, values.projectName, values.source, values.stage, values.site, values.estimatedValue, values.nextAction, values.nextActionAt, values.ownerEmail, values.status, now, leadId),
-  ];
+  const activities: LeadActivityIntent[] = [];
   if (values.stage !== current.stage) {
-    statements.push(env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), leadId, "Lead stage changed", auth.user.email, `${current.stage} → ${values.stage}`, now));
+    activities.push({
+      id: crypto.randomUUID(),
+      recordId: leadId,
+      action: "Lead stage changed",
+      actor: auth.user.email,
+      detail: `${current.stage} → ${values.stage}`,
+      createdAt: now,
+    });
   }
   if (values.nextAction !== current.next_action || values.nextActionAt !== current.next_action_at) {
     const due = values.nextActionAt ? ` · due ${new Date(values.nextActionAt).toISOString()}` : "";
-    statements.push(env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), leadId, "Lead next action changed", auth.user.email, `${values.nextAction}${due}`, now));
+    activities.push({
+      id: crypto.randomUUID(),
+      recordId: leadId,
+      action: "Lead next action changed",
+      actor: auth.user.email,
+      detail: `${values.nextAction}${due}`,
+      createdAt: now,
+    });
   }
-  await env.DB.batch(statements);
-  const updated = await env.DB.prepare("SELECT * FROM leads WHERE id = ?").bind(leadId).first<LeadRow>();
-  return NextResponse.json({ lead: leadResponse(updated!) });
+  const result = await repository.update({
+    leadId,
+    values,
+    updatedAt: now,
+    updatedBy: auth.user.email,
+    activities,
+  });
+  if (result.outcome === "lead-not-found") {
+    return NextResponse.json({ error: "Lead not found." }, { status: 404 });
+  }
+  return NextResponse.json({ lead: leadResponse(result.value) });
 }

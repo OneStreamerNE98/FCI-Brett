@@ -139,7 +139,7 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
   }
 
   const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
-  assert.match(audit, /migrations 1–5 exist only in source: none has been applied anywhere, and no Cloud SQL instance exists/);
+  assert.match(audit, /migrations 1–6 exist only in source: none has been applied anywhere, and no Cloud SQL instance exists/);
 
   const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
   const startNow = section(plan, "**Start now, in parallel (no owner input needed):**", "**Chains:**");

@@ -22,6 +22,7 @@ after(async () => {
 const EVENT_ID = "11111111-1111-4111-8111-111111111111";
 const CLIENT_ID = "22222222-2222-4222-8222-222222222222";
 const PROJECT_ID = "33333333-3333-4333-8333-333333333333";
+const LEAD_ID = "55555555-5555-4555-8555-555555555555";
 
 test("dead-letter activity IDs are deterministic UUIDs distinct from their outbox IDs", () => {
   const activityId = deadLetterActivityId(EVENT_ID);
@@ -99,6 +100,7 @@ test("claim uses the pending index order, SKIP LOCKED, a short transaction, and 
       event_type: "project.created",
       client_id: null,
       project_id: PROJECT_ID,
+      lead_id: null,
       actor_id: "actor-1",
       correlation_id: "request-1",
       payload: { projectId: PROJECT_ID },
@@ -119,6 +121,7 @@ test("claim uses the pending index order, SKIP LOCKED, a short transaction, and 
     eventType: "project.created",
     clientId: null,
     projectId: PROJECT_ID,
+    leadId: null,
     actorId: "actor-1",
     correlationId: "request-1",
     payload: { projectId: PROJECT_ID },
@@ -229,6 +232,7 @@ test("failure atomically chooses retry or dead-letter and retains its fencing co
         event_type: "client.created",
         client_id: CLIENT_ID,
         project_id: null,
+        lead_id: null,
         actor_id: "actor-1",
         correlation_id: "request-1",
         attempt_count: 3,
@@ -250,15 +254,16 @@ test("failure atomically chooses retry or dead-letter and retains its fencing co
   assert.match(deadQueries[1].sql, /INSERT INTO activity_events/);
   assert.match(deadQueries[1].sql, /'Outbox event dead-lettered'/);
   assert.match(deadQueries[1].sql, /'failed'/);
-  assert.deepEqual(deadQueries[1].values.slice(0, 6), [
+  assert.deepEqual(deadQueries[1].values.slice(0, 7), [
     deadLetterActivityId(EVENT_ID),
     CLIENT_ID,
+    null,
     null,
     "actor-1",
     "request-1",
     "provider_unavailable",
   ]);
-  assert.deepEqual(JSON.parse(deadQueries[1].values[6]), {
+  assert.deepEqual(JSON.parse(deadQueries[1].values[7]), {
     outboxEventId: EVENT_ID,
     eventKey: `client.created:${CLIENT_ID}`,
     eventType: "client.created",
@@ -266,7 +271,7 @@ test("failure atomically chooses retry or dead-letter and retains its fencing co
     errorCode: "provider_unavailable",
     errorMessage: "The provider is temporarily unavailable.",
   });
-  assert.equal(deadQueries[1].values[7].getTime(), deadAt.getTime());
+  assert.equal(deadQueries[1].values[8].getTime(), deadAt.getTime());
   assert.equal(deadFake.queries.at(-1).sql, "COMMIT");
 });
 
@@ -282,6 +287,7 @@ test("provider error evidence replaces NUL and unpaired surrogates without split
         event_type: "client.created",
         client_id: CLIENT_ID,
         project_id: null,
+        lead_id: null,
         actor_id: "actor-1",
         correlation_id: "request-1",
         attempt_count: 1,
@@ -309,7 +315,7 @@ test("provider error evidence replaces NUL and unpaired surrogates without split
   assert.equal(Array.from(transition.values[5]).at(0), "�");
   assert.equal(Array.from(transition.values[5]).at(-1), "😀");
   assert.doesNotMatch(transition.values[5], /\u0000|[\ud800-\udfff]/u);
-  const detail = JSON.parse(activity.values[6]);
+  const detail = JSON.parse(activity.values[7]);
   assert.equal(detail.errorCode, transition.values[4]);
   assert.equal(detail.errorMessage, transition.values[5]);
   assert.equal(fake.queries.at(-1).sql, "COMMIT");
@@ -337,6 +343,7 @@ test("expired-lease recovery is ordered, nonblocking, bounded, and increments ea
           event_type: "project.created",
           client_id: null,
           project_id: PROJECT_ID,
+          lead_id: null,
           actor_id: "actor-2",
           correlation_id: "request-2",
           attempt_count: 3,
@@ -372,15 +379,16 @@ test("expired-lease recovery is ordered, nonblocking, bounded, and increments ea
   assert.deepEqual(values, [10, 1_000, 3]);
   assert.equal(recoveryQueries.length, 2);
   assert.match(recoveryQueries[1].sql, /INSERT INTO activity_events/);
-  assert.deepEqual(recoveryQueries[1].values.slice(0, 6), [
+  assert.deepEqual(recoveryQueries[1].values.slice(0, 7), [
     deadLetterActivityId(secondEventId),
     null,
     PROJECT_ID,
+    null,
     "actor-2",
     "request-2",
     "lease_expired",
   ]);
-  assert.deepEqual(JSON.parse(recoveryQueries[1].values[6]), {
+  assert.deepEqual(JSON.parse(recoveryQueries[1].values[7]), {
     outboxEventId: secondEventId,
     eventKey: `project.created:${PROJECT_ID}`,
     eventType: "project.created",
@@ -405,6 +413,7 @@ test("a dead-letter activity failure rolls back the terminal queue transition", 
         event_type: "client.created",
         client_id: CLIENT_ID,
         project_id: null,
+        lead_id: null,
         actor_id: "actor-1",
         correlation_id: "request-1",
         attempt_count: 3,
@@ -456,6 +465,7 @@ test("invalid queue inputs and malformed PostgreSQL rows fail before unsafe work
       event_type: "client.created",
       client_id: CLIENT_ID,
       project_id: null,
+      lead_id: null,
       actor_id: "actor-1",
       correlation_id: "request-1",
       payload: [],
@@ -473,4 +483,35 @@ test("invalid queue inputs and malformed PostgreSQL rows fail before unsafe work
   );
   assert.equal(malformed.queries.at(-1).sql, "ROLLBACK");
   assert.deepEqual(malformed.releases, [undefined]);
+});
+
+test("claim preserves the v6 lead target for lead creation delivery", async () => {
+  const fake = fakePool(async () => ({
+    rowCount: 1,
+    rows: [{
+      id: EVENT_ID,
+      event_key: `lead.created:${LEAD_ID}`,
+      event_type: "lead.created",
+      client_id: null,
+      project_id: null,
+      lead_id: LEAD_ID,
+      actor_id: "actor-1",
+      correlation_id: "request-1",
+      payload: { leadId: LEAD_ID },
+      available_at: new Date("2026-07-13T12:00:00.000Z"),
+      attempt_count: 1,
+      lease_expires_at: new Date("2026-07-13T12:01:00.000Z"),
+      created_at: new Date("2026-07-13T11:59:00.000Z"),
+      version: "2",
+    }],
+  }));
+
+  const [claimed] = await createPostgresOutboxRepository(fake.pool).claimAvailable({
+    batchSize: 1,
+    leaseDurationMs: 60_000,
+  });
+  assert.equal(claimed.eventType, "lead.created");
+  assert.equal(claimed.leadId, LEAD_ID);
+  assert.equal(claimed.clientId, null);
+  assert.equal(claimed.projectId, null);
 });

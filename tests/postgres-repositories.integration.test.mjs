@@ -16,9 +16,11 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24681 } },
 });
 
-const [clientAdapterModule, projectAdapterModule, outboxAdapterModule] = await Promise.all([
+const [clientAdapterModule, projectAdapterModule, leadAdapterModule, meetingAdapterModule, outboxAdapterModule] = await Promise.all([
   vite.ssrLoadModule("/app/adapters/postgres/client-repository.ts"),
   vite.ssrLoadModule("/app/adapters/postgres/project-repository.ts"),
+  vite.ssrLoadModule("/app/adapters/postgres/lead-repository.ts"),
+  vite.ssrLoadModule("/app/adapters/postgres/project-meeting-repository.ts"),
   vite.ssrLoadModule("/app/adapters/postgres/outbox-repository.ts"),
 ]);
 
@@ -28,6 +30,8 @@ after(async () => {
 
 const { createPostgresClientRepository } = clientAdapterModule;
 const { createPostgresProjectRepository } = projectAdapterModule;
+const { createPostgresLeadRepository } = leadAdapterModule;
+const { createPostgresProjectMeetingRepository } = meetingAdapterModule;
 const { createPostgresOutboxRepository, deadLetterActivityId } = outboxAdapterModule;
 
 const postgresTestUrl = process.env.TEST_POSTGRES_URL?.trim();
@@ -126,6 +130,71 @@ function projectIntent({
       action: "Project created",
       actor: actorId,
       detail: `${number} · ${name}`,
+      createdAt,
+    },
+  };
+}
+
+function leadIntent({ actorId, createdAt, id = randomUUID(), activityId = randomUUID() }) {
+  const leadNumber = `L-${new Date(createdAt).getUTCFullYear()}-${id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+  return {
+    lead: {
+      id,
+      lead_number: leadNumber,
+      company: "FCI TEST — DO NOT USE Lead Company",
+      contact_name: "FCI TEST Contact",
+      contact_email: "lead@example.test",
+      contact_phone: "555-0110",
+      project_name: "FCI TEST — DO NOT USE Lead Project",
+      source: "Referral",
+      stage: "Qualified",
+      site: "FCI TEST — DO NOT USE Site",
+      estimated_value: 125000,
+      next_action: "Schedule site walk",
+      next_action_at: createdAt + 86_400_000,
+      owner_email: actorId,
+      status: "active",
+      created_by: actorId,
+      created_at: createdAt,
+      updated_at: createdAt,
+    },
+    activity: {
+      id: activityId,
+      recordId: id,
+      action: "Lead created",
+      actor: actorId,
+      detail: `${leadNumber} · FCI TEST — DO NOT USE Lead Company · FCI TEST — DO NOT USE Lead Project`,
+      createdAt,
+    },
+  };
+}
+
+function meetingIntent({ actorId, projectId, createdAt, id = randomUUID(), activityId = randomUUID() }) {
+  return {
+    meeting: {
+      id,
+      project_id: projectId,
+      title: "FCI TEST — DO NOT USE project meeting",
+      meeting_at: createdAt,
+      meeting_type: "client",
+      source_provider: "otter",
+      source_url: "https://otter.ai/u/fci-test",
+      attendees_json: JSON.stringify(["FCI TEST Contact"]),
+      notes: "FCI TEST — DO NOT USE notes.",
+      transcript: null,
+      summary: "FCI TEST — DO NOT USE summary.",
+      decisions: null,
+      action_items_json: JSON.stringify(["Schedule site walk"]),
+      created_by: actorId,
+      created_at: createdAt,
+      updated_at: createdAt,
+    },
+    activity: {
+      id: activityId,
+      recordId: projectId,
+      action: "Meeting notes captured",
+      actor: actorId,
+      detail: "FCI TEST — DO NOT USE project meeting · Otter",
       createdAt,
     },
   };
@@ -1036,6 +1105,157 @@ test(
         dead_lettered_at: null,
         version: "2",
       });
+
+      const leadCreatedAt = Date.now();
+      const acceptedLeadIntent = leadIntent({ actorId: actorA, createdAt: leadCreatedAt });
+      const leadRequest = creationRequest({
+        idempotencyKey: "lead-create",
+        requestFingerprint: UNTRUSTED_FINGERPRINT,
+        createdAt: leadCreatedAt,
+      });
+      const leadRepository = createPostgresLeadRepository(pool, {
+        schema,
+        request: leadRequest,
+      });
+      const acceptedLead = await leadRepository.create(acceptedLeadIntent);
+      assert.equal(acceptedLead.outcome, "accepted");
+      assert.equal(acceptedLead.replayed, false);
+      assert.deepEqual(acceptedLead.value.row, acceptedLeadIntent.lead);
+      assert.deepEqual(await leadRepository.create(acceptedLeadIntent), {
+        ...acceptedLead,
+        replayed: true,
+      });
+      const leadState = await oneRow(
+        pool,
+        `SELECT version::text AS version,
+                (SELECT count(*)::integer FROM ${schema}.activity_events WHERE lead_id = $1) AS activities,
+                (SELECT count(*)::integer FROM ${schema}.outbox_events WHERE lead_id = $1) AS outbox_events,
+                (SELECT count(*)::integer FROM ${schema}.idempotency_requests
+                  WHERE actor_id = $2 AND operation = 'leads.create' AND idempotency_key = $3) AS requests
+         FROM ${schema}.leads WHERE id = $1`,
+        [acceptedLeadIntent.lead.id, actorA, "lead-create"],
+      );
+      assert.deepEqual(leadState, {
+        version: "1",
+        activities: 1,
+        outbox_events: 1,
+        requests: 1,
+      });
+
+      const readingLeads = createPostgresLeadRepository(pool, { schema });
+      assert.equal((await readingLeads.findById(acceptedLeadIntent.lead.id)).lead_number, acceptedLeadIntent.lead.lead_number);
+      assert.equal((await readingLeads.list()).some(({ id }) => id === acceptedLeadIntent.lead.id), true);
+      const leadUpdateActivityId = randomUUID();
+      const leadUpdate = await readingLeads.update({
+        leadId: acceptedLeadIntent.lead.id,
+        values: {
+          company: acceptedLeadIntent.lead.company,
+          contactName: acceptedLeadIntent.lead.contact_name,
+          contactEmail: acceptedLeadIntent.lead.contact_email,
+          contactPhone: acceptedLeadIntent.lead.contact_phone,
+          projectName: acceptedLeadIntent.lead.project_name,
+          source: acceptedLeadIntent.lead.source,
+          stage: "Proposal",
+          site: acceptedLeadIntent.lead.site,
+          estimatedValue: acceptedLeadIntent.lead.estimated_value,
+          nextAction: "Send proposal",
+          nextActionAt: acceptedLeadIntent.lead.next_action_at,
+          ownerEmail: acceptedLeadIntent.lead.owner_email,
+          status: "active",
+        },
+        updatedAt: leadCreatedAt + 1_000,
+        updatedBy: actorA,
+        activities: [{
+          id: leadUpdateActivityId,
+          recordId: acceptedLeadIntent.lead.id,
+          action: "Lead stage changed",
+          actor: actorA,
+          detail: "Qualified → Proposal",
+          createdAt: leadCreatedAt + 1_000,
+        }],
+      });
+      assert.equal(leadUpdate.outcome, "updated");
+      assert.equal(leadUpdate.value.stage, "Proposal");
+      assert.equal(
+        (await oneRow(pool, `SELECT count(*)::integer AS count FROM ${schema}.activity_events WHERE id = $1`, [leadUpdateActivityId])).count,
+        1,
+      );
+
+      const missingMeetingCreatedAt = Date.now();
+      const missingMeetingIntent = meetingIntent({
+        actorId: actorA,
+        projectId: randomUUID(),
+        createdAt: missingMeetingCreatedAt,
+      });
+      const missingMeetingRequest = creationRequest({
+        idempotencyKey: "meeting-missing-project",
+        requestFingerprint: UNTRUSTED_FINGERPRINT,
+        createdAt: missingMeetingCreatedAt,
+      });
+      assert.deepEqual(
+        await createPostgresProjectMeetingRepository(pool, {
+          schema,
+          request: missingMeetingRequest,
+        }).create(missingMeetingIntent),
+        { outcome: "project-not-found" },
+      );
+
+      const meetingCreatedAt = Date.now();
+      const acceptedMeetingIntent = meetingIntent({
+        actorId: actorA,
+        projectId: acceptedProjectIntent.project.id,
+        createdAt: meetingCreatedAt,
+      });
+      const meetingRequest = creationRequest({
+        idempotencyKey: "meeting-create",
+        requestFingerprint: UNTRUSTED_FINGERPRINT,
+        createdAt: meetingCreatedAt,
+      });
+      const meetingRepository = createPostgresProjectMeetingRepository(pool, {
+        schema,
+        request: meetingRequest,
+      });
+      const acceptedMeeting = await meetingRepository.create(acceptedMeetingIntent);
+      assert.equal(acceptedMeeting.outcome, "accepted");
+      assert.equal(acceptedMeeting.replayed, false);
+      assert.deepEqual(acceptedMeeting.value.row, acceptedMeetingIntent.meeting);
+      assert.deepEqual(await meetingRepository.create(acceptedMeetingIntent), {
+        ...acceptedMeeting,
+        replayed: true,
+      });
+      const meetingState = await oneRow(
+        pool,
+        `SELECT version::text AS version,
+                (SELECT count(*)::integer FROM ${schema}.activity_events WHERE id = $2) AS activities,
+                (SELECT count(*)::integer FROM ${schema}.outbox_events WHERE id = $3) AS outbox_events,
+                (SELECT count(*)::integer FROM ${schema}.idempotency_requests
+                  WHERE actor_id = $4 AND operation = 'project_meetings.create' AND idempotency_key = $5) AS requests
+         FROM ${schema}.project_meetings WHERE id = $1`,
+        [
+          acceptedMeetingIntent.meeting.id,
+          acceptedMeetingIntent.activity.id,
+          meetingRequest.outboxEventId,
+          actorA,
+          "meeting-create",
+        ],
+      );
+      assert.deepEqual(meetingState, {
+        version: "1",
+        activities: 1,
+        outbox_events: 1,
+        requests: 1,
+      });
+      const readingMeetings = createPostgresProjectMeetingRepository(pool, { schema });
+      assert.equal(await readingMeetings.projectExists(acceptedProjectIntent.project.id), true);
+      assert.equal(
+        (await readingMeetings.findProjectForCreation(acceptedProjectIntent.project.id)).projectNumber,
+        acceptedProjectIntent.project.projectNumber,
+      );
+      assert.equal(
+        (await readingMeetings.listForProject(acceptedProjectIntent.project.id))
+          .some(({ id }) => id === acceptedMeetingIntent.meeting.id),
+        true,
+      );
     } finally {
       if (schemaCreated) await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();
