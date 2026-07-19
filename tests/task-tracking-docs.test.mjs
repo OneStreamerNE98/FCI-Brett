@@ -87,7 +87,7 @@ test("every open architecture-roadmap row has an explicit tracking owner", () =>
   }
 });
 
-test("deployed semantic-table, draft actionable-list PR, and production migration status stay truthful", () => {
+test("deployed semantic-table, completed actionable-list source, and production migration status stay truthful", () => {
   const statusFiles = [
     "docs/codex-to-codex-handoff.md",
     "docs/complete-product-and-google-cloud-architecture-audit.md",
@@ -118,9 +118,9 @@ test("deployed semantic-table, draft actionable-list PR, and production migratio
 
     const actionablePassages = status.split(/\r?\n/).filter((line) => line.includes("codex/actionable-lists"));
     assert.ok(actionablePassages.length > 0, `${path} omits the current actionable-list branch`);
-    assert.ok(actionablePassages.some((line) => /source-only|source only/i.test(line) && /source-complete/i.test(line) && /ready for review/i.test(line)), `${path} does not call the actionable-list slice source-only, source-complete, and ready for review`);
-    assert.ok(actionablePassages.some((line) => /draft PR #33/i.test(line)), `${path} does not place the actionable-list slice in draft PR #33`);
+    assert.ok(actionablePassages.some((line) => /source-only|source only/i.test(line) && /(?:complete[^\n]*PR #33|PR #33[^\n]*complete)/i.test(line)), `${path} does not call the actionable-list slice source-only and complete in PR #33`);
     assert.ok(actionablePassages.some((line) => /not deployed|not been deployed|no deployment/i.test(line)), `${path} does not record that the actionable-list slice is undeployed`);
+    assert.ok(actionablePassages.every((line) => !/draft|ready for review|must merge before/i.test(line)), `${path} still describes PR #33 as awaiting review or merge`);
     assert.ok(actionablePassages.every((line) => !/no pull request|without a pull request|has no pull request/i.test(line)), `${path} still calls the actionable-list slice PR-less`);
   }
 
@@ -130,13 +130,13 @@ test("deployed semantic-table, draft actionable-list PR, and production migratio
   const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
   const startNow = section(plan, "**Start now, in parallel (no owner input needed):**", "**Chains:**");
   assert.match(startNow, /codex\/actionable-lists/);
-  assert.match(startNow, /source-complete[\s\S]*ready for review/i);
-  assert.doesNotMatch(startNow, /SET-01,/, "SET-01 must not be listed as parallel with the FloorOpsApp actionable-list slice");
+  assert.match(startNow, /PR #33[\s\S]*complete/i);
+  assert.match(startNow, /SET-01[\s\S]*next/i);
   const firstWave = section(plan, "**Wave 1 — next PRs, in this order where they share files:**", "**Wave 2:**");
-  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*source-complete[\s\S]*ready for review[\s\S]*SET-01 Settings panel extraction[\s\S]*queued until the actionable-list slice merges/i);
+  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*next/i);
 
   const design = read("docs/design-critique-fix-plan.md");
-  assert.match(design, /- \[x\] Source-complete on `codex\/actionable-lists` and ready for review/i);
+  assert.match(design, /- \[x\] Complete in source in PR #33 from `codex\/actionable-lists`/i);
   assert.match(design, /58 focused Playwright tests pass[\s\S]*isolated local-server groups/i);
   assert.match(design, /13 routes pass[\s\S]*desktop and 390 px/i);
   assert.match(design, /final `npm test` run passed 325 active tests with 13 skipped after the accessibility and test-runner adjustments/i);

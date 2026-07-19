@@ -67,9 +67,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
    placeholders. Server-side `requireOfficeUser({admin:true})` gates stay untouched — UI
    admin-gating is honesty, not security.
 8. Visual/design remediation through PR #30 is included in private Sites development
-   version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only,
-   source-complete `codex/actionable-lists` Phase 3 slice is ready for review in draft PR
-   #33 and must merge before SET-01 begins. Do not
+   version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
+   `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
+   SET-01 is the next `FloorOpsApp.tsx` packet. Do not
    re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
    entries in that ledger.
 
@@ -524,7 +524,7 @@ anchors at the `aa8ed8f` baseline: `SettingsView` at `app/FloorOpsApp.tsx:1354`,
 `GET /api/v1/settings/me` returns no `isAdmin` today; no audit route exists. (Anchors
 drift — locate by symbol name.)
 
-### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, after the actionable-list slice merges) — DO FIRST in the SET workstream
+### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, next after PR #33) — DO FIRST in the SET workstream
 **Why:** Every Settings panel is inline in the ~2,100-line `FloorOpsApp.tsx`; every other
 SET item edits those regions; the design ledger (items 94/103) already calls for the
 split. Parallel packets collide without it.
@@ -670,8 +670,8 @@ endpoints exist. No docs-path links in UI copy.
 deployed as private Sites development version 40. The deployment includes PR #30's
 semantic Settings rules table. Delivery PRs may be in flight later; they mirror items in
 these ledgers and do not become a separate task source of truth. The source-only
-`codex/actionable-lists` branch is source-complete and ready for review in draft PR #33;
-it is not deployed and must merge before SET-01 starts.
+`codex/actionable-lists` branch is complete in PR #33; it is not deployed. SET-01 is the
+next `FloorOpsApp.tsx` packet from the latest `main`.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
@@ -740,11 +740,12 @@ contracts and `npm test` pass.
 ## Sequencing at a glance
 
 **Start now, in parallel (no owner input needed):**
-The source-only `codex/actionable-lists` slice is source-complete and ready for review in
-draft PR #33 as the current `FloorOpsApp.tsx` packet; it is not deployed.
+The source-only `codex/actionable-lists` slice in PR #33 is complete as the current
+`FloorOpsApp.tsx` packet; it is not deployed. SET-01 is the next `FloorOpsApp.tsx` packet
+from the latest `main`.
 BE-02, BE-13, WS-04, BE-04, BE-05, BE-06, BE-08, BE-11 (authoring), WS-12, and WS-13 may
 proceed in parallel when they do not touch that file. BE-01 + WS-03 and TRK-01 completed
-in PR #32. SET-01 must wait for the actionable-list slice to merge.
+in PR #32.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
@@ -755,9 +756,9 @@ half) → WS-11. Agents should never be blocked idle on this track — every age
 is schedulable independently.
 
 **Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Do not run two packets that touch it
-concurrently. The source-only `codex/actionable-lists` branch is source-complete and ready
-for review in draft PR #33; SET-01 remains queued until the slice merges. SET-01 must then branch from the latest
-`origin/main`, preserve both the shared actionable-list pattern and `InboxRulesPanel`'s
+concurrently. The source-only `codex/actionable-lists` branch is complete in PR #33.
+SET-01 is next and must branch from the latest `origin/main`, preserve both the shared
+actionable-list pattern and `InboxRulesPanel`'s
 semantic `<table>` markup, and keep their focused regression suites plus
 `tests/e2e/accessibility-routes.spec.ts` green. Once started, land SET-01 before any other
 SET item.
@@ -767,12 +768,12 @@ SET item.
 **Wave 1 — next PRs, in this order where they share files:**
 1. **Doc-truth bundle: BE-01 + TRK-01 + WS-03** — complete in PR #32 at `adc79b8` and
    deployed as private Sites development version 40.
-2. **Actionable-list pattern slice** — source-complete and ready for review in draft PR
-   #33, source-only on `codex/actionable-lists`: an accessible actionable-list for the whole-row Overview
+2. **Actionable-list pattern slice** — complete in PR #33, source-only on
+   `codex/actionable-lists`: an accessible actionable-list for the whole-row Overview
    pipeline, Projects, and Clients views (do not force interactive rows into table
    semantics), following the PR #30 review pattern. It is not deployed. *Touches
-   `FloorOpsApp.tsx` — review and merge before SET-01, not alongside.*
-3. **SET-01 Settings panel extraction** — queued until the actionable-list slice merges.
+   `FloorOpsApp.tsx` — do not overlap it with SET-01.*
+3. **SET-01 Settings panel extraction** — next from the latest `main`.
 4. **BE-04 OIDC** (large; start now in parallel — it is the 20-user review's P0 #1 and
    the longest production pole) · **BE-02 + BE-13** (small hardening pair) ·
    **WS-04 rotation procedures** · **WS-12 contracts + fakes**.
