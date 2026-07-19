@@ -68,8 +68,8 @@ below, which also covers the state of GitHub itself (issues/PRs).
    admin-gating is honesty, not security.
 8. Visual/design remediation through PR #30 is included in private Sites development
    version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only,
-   source-complete `codex/actionable-lists` Phase 3 slice is ready for review and must
-   merge before SET-01 begins. Do not
+   source-complete `codex/actionable-lists` Phase 3 slice is ready for review in draft PR
+   #33 and must merge before SET-01 begins. Do not
    re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
    entries in that ledger.
 
@@ -670,8 +670,8 @@ endpoints exist. No docs-path links in UI copy.
 deployed as private Sites development version 40. The deployment includes PR #30's
 semantic Settings rules table. Delivery PRs may be in flight later; they mirror items in
 these ledgers and do not become a separate task source of truth. The source-only
-`codex/actionable-lists` branch is source-complete and ready for review without a pull
-request or deployment; it must merge before SET-01 starts.
+`codex/actionable-lists` branch is source-complete and ready for review in draft PR #33;
+it is not deployed and must merge before SET-01 starts.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
@@ -740,8 +740,8 @@ contracts and `npm test` pass.
 ## Sequencing at a glance
 
 **Start now, in parallel (no owner input needed):**
-The source-only `codex/actionable-lists` slice is source-complete and ready for review as
-the current `FloorOpsApp.tsx` packet; it has no pull request and is not deployed.
+The source-only `codex/actionable-lists` slice is source-complete and ready for review in
+draft PR #33 as the current `FloorOpsApp.tsx` packet; it is not deployed.
 BE-02, BE-13, WS-04, BE-04, BE-05, BE-06, BE-08, BE-11 (authoring), WS-12, and WS-13 may
 proceed in parallel when they do not touch that file. BE-01 + WS-03 and TRK-01 completed
 in PR #32. SET-01 must wait for the actionable-list slice to merge.
@@ -756,7 +756,7 @@ is schedulable independently.
 
 **Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Do not run two packets that touch it
 concurrently. The source-only `codex/actionable-lists` branch is source-complete and ready
-for review in that file; SET-01 remains queued until the slice merges. SET-01 must then branch from the latest
+for review in draft PR #33; SET-01 remains queued until the slice merges. SET-01 must then branch from the latest
 `origin/main`, preserve both the shared actionable-list pattern and `InboxRulesPanel`'s
 semantic `<table>` markup, and keep their focused regression suites plus
 `tests/e2e/accessibility-routes.spec.ts` green. Once started, land SET-01 before any other
@@ -767,11 +767,11 @@ SET item.
 **Wave 1 — next PRs, in this order where they share files:**
 1. **Doc-truth bundle: BE-01 + TRK-01 + WS-03** — complete in PR #32 at `adc79b8` and
    deployed as private Sites development version 40.
-2. **Actionable-list pattern slice** — source-complete and ready for review, source-only on
-   `codex/actionable-lists`: an accessible actionable-list for the whole-row Overview
+2. **Actionable-list pattern slice** — source-complete and ready for review in draft PR
+   #33, source-only on `codex/actionable-lists`: an accessible actionable-list for the whole-row Overview
    pipeline, Projects, and Clients views (do not force interactive rows into table
-   semantics), following the PR #30 review pattern. It has no pull request and is not
-   deployed. *Touches `FloorOpsApp.tsx` — review and merge before SET-01, not alongside.*
+   semantics), following the PR #30 review pattern. It is not deployed. *Touches
+   `FloorOpsApp.tsx` — review and merge before SET-01, not alongside.*
 3. **SET-01 Settings panel extraction** — queued until the actionable-list slice merges.
 4. **BE-04 OIDC** (large; start now in parallel — it is the 20-user review's P0 #1 and
    the longest production pole) · **BE-02 + BE-13** (small hardening pair) ·

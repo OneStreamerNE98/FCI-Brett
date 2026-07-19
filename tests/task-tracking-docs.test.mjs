@@ -87,7 +87,7 @@ test("every open architecture-roadmap row has an explicit tracking owner", () =>
   }
 });
 
-test("deployed semantic-table, source-complete actionable-list, and production migration status stay truthful", () => {
+test("deployed semantic-table, draft actionable-list PR, and production migration status stay truthful", () => {
   const statusFiles = [
     "docs/codex-to-codex-handoff.md",
     "docs/complete-product-and-google-cloud-architecture-audit.md",
@@ -119,8 +119,9 @@ test("deployed semantic-table, source-complete actionable-list, and production m
     const actionablePassages = status.split(/\r?\n/).filter((line) => line.includes("codex/actionable-lists"));
     assert.ok(actionablePassages.length > 0, `${path} omits the current actionable-list branch`);
     assert.ok(actionablePassages.some((line) => /source-only|source only/i.test(line) && /source-complete/i.test(line) && /ready for review/i.test(line)), `${path} does not call the actionable-list slice source-only, source-complete, and ready for review`);
-    assert.ok(actionablePassages.some((line) => /no pull request|without a pull request|has no pull request/i.test(line)), `${path} does not record that the actionable-list slice has no PR`);
-    assert.ok(actionablePassages.some((line) => /not deployed|not been deployed|without a pull request or deployment|no deployment/i.test(line)), `${path} does not record that the actionable-list slice is undeployed`);
+    assert.ok(actionablePassages.some((line) => /draft PR #33/i.test(line)), `${path} does not place the actionable-list slice in draft PR #33`);
+    assert.ok(actionablePassages.some((line) => /not deployed|not been deployed|no deployment/i.test(line)), `${path} does not record that the actionable-list slice is undeployed`);
+    assert.ok(actionablePassages.every((line) => !/no pull request|without a pull request|has no pull request/i.test(line)), `${path} still calls the actionable-list slice PR-less`);
   }
 
   const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
