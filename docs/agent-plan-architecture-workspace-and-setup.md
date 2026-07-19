@@ -1,7 +1,7 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
 Date: July 18, 2026 · Baseline: `main` @ `aa8ed8f` (PR #30 merged; last recorded Sites
-release: version 38)
+release: version 39 per the design ledger's PR #29 note)
 
 This is the single distributable plan for three coordinated workstreams. It was produced by
 auditing the architecture decision docs, the Google Workspace rollout guide, every task
@@ -175,7 +175,11 @@ conventions (30-min idle / 8-h absolute). Extend `production-config.ts` with fai
 OIDC vars (exactly-one-of secret/secret-file, like the postgres password pair); absent
 config leaves the image byte-identical. Uses the **employee-login** OAuth client only.
 Emit security-audit events. Never read `oai-authenticated-user-email` in the platform
-layer. JWKS-stubbed verifier in tests.
+layer. JWKS-stubbed verifier in tests. **Conform to
+`docs/administration-and-access-plan.md`:** the fixed policy (three roles, single-use
+7-day invitations, 30-min/8-h sessions, final-Administrator protection, initial
+Administrators `admincrm@cherryhillfci.com` and `brett@cherryhillfci.com` pending live
+identity verification) is approved and not open for redesign.
 **Accept:** `npm run build:cloud-run` + `npm test` pass; new suite covers happy path,
 wrong hd, bad signature, expired/second redemption, idle+absolute expiry, logout; grep
 confirms no ChatGPT header reads in `app/platform/`.
@@ -455,7 +459,13 @@ rejected unauthorized login, no FCI/Filed label without an archive row.
 **Accept:** development half of checklist 05 fully checked with dated evidence + owner
 sign-off.
 
-### WS-12 · AGENT — Design doc: durable Gmail watch/queue + Calendar channels (medium, after WS-03; design only)
+### WS-12 · AGENT — Gmail watch/queue + Calendar channel contracts (medium, after WS-03; contracts + local fakes, no live resources)
+**Scope upgrade:** `docs/task-checklists/README.md` "Recommended next work" item 3
+explicitly authorizes provider-neutral job/failure/replay and Gmail/Calendar sync-state
+**contracts with local fakes** — so this item may ship typed contracts, port definitions
+targeting the existing postgres `integration_cursors`/`outbox_events` tables, and local
+fake implementations with tests, not only the design doc below. Live watches, channels,
+and Pub/Sub remain forbidden until the checklist-07 gates pass.
 Write `docs/google-workspace-watch-and-queue-design.md`: Gmail users.watch-vs-polling
 decision (align with the guide's no-Pub/Sub direction or reverse it explicitly), historyId
 cursors in the existing postgres `integration_cursors`, renewal/expiry monitoring,
@@ -660,6 +670,17 @@ merged into the `aa8ed8f` baseline — see Sequencing for its effect on SET-01.)
 | `docs/task-checklists/*` | **Owner-facing** setup, connection, acceptance, and operations checkboxes | Owners check boxes; agents only fix stale facts (BE-01) or add evidence templates (WS-11) |
 | `docs/complete-product-and-google-cloud-architecture-audit.md` roadmap | Architecture branch history and gates | TRK-01 cross-references its open items to BE/WS ids |
 | `README.md` "Prioritized next work" | Entry point / pointer | BE-01 fixes its content; TRK-01 makes it point to the ledgers instead of duplicating them |
+| `docs/administration-and-access-plan.md` | **Approved first-release access design** (fixed roles, five admin workflows, initial Administrators `admincrm@`/`brett@cherryhillfci.com`) | BE-04 and any access work must conform to it; do not re-open its decisions |
+| `docs/pre-workspace-development-plan.md` | What can start now vs. must wait for Workspace/credentials | Consistent with this plan's owner gate; TRK-01 cross-links it |
+| `docs/20-user-product-and-architecture-review.md` | P0/P1/P2 findings, corrected delivery order, go/no-go gates | The gates govern second-user/real-data admission; BE/WS items map onto its delivery order |
+
+**Alignment with the repo's own "Recommended next work"** (`docs/task-checklists/README.md`):
+item 1 (merge the semantic rules table) is done (PR #30); item 2 (actionable-list pattern,
+feature splitting, primitive consolidation, legacy CSS) is the design ledger's Phase 3 —
+SET-01 is its Settings slice; item 3 (provider-neutral job/failure/replay and
+Gmail/Calendar sync-state **contracts with local fakes**) authorizes WS-12 to go beyond a
+design doc — see the WS-12 note; item 4 (migration fixture expansion without staging) is
+BE-12. No surface disagrees with this plan; they interlock.
 
 ### TRK-01 · Reconcile every task-tracking surface to a single source of truth (small, after BE-01) — assign together with BE-01
 **Why (owner's ask):** task state is currently spread across the README next-work list,
@@ -706,6 +727,31 @@ rules table) is merged into the baseline** — SET-01 is unblocked, must branch 
 `aa8ed8f` or later so `InboxRulesPanel` carries the new semantic `<table>` markup, and
 must keep its regression suite green (`tests/e2e/settings-rules.spec.ts` plus the new
 assertions in `tests/e2e/accessibility-routes.spec.ts`).
+
+### Recommended first waves (July 18, 2026)
+
+**Wave 1 — next PRs, in this order where they share files:**
+1. **Doc-truth bundle: BE-01 + TRK-01 + WS-03** (one small PR) — land before anything
+   else so every later packet reads correct docs.
+2. **Actionable-list pattern slice** — the design ledger's and checklists README's own
+   named next slice: an accessible actionable-list for the whole-row pipeline, Projects,
+   and Clients views (do not force interactive rows into table semantics), following the
+   PR #30 review pattern. *Touches `FloorOpsApp.tsx` — run before SET-01, not alongside.*
+3. **SET-01 Settings panel extraction** — after the actionable-list slice merges.
+4. **BE-04 OIDC** (large; start now in parallel — it is the 20-user review's P0 #1 and
+   the longest production pole) · **BE-02 + BE-13** (small hardening pair) ·
+   **WS-04 rotation procedures** · **WS-12 contracts + fakes**.
+
+**Wave 2:** SET-02 → SET-03/SET-04 (get the guided setup stepper and env-prerequisites
+table in place **before** the owner performs WS-05/WS-06, so the connection steps are
+self-verifying in the UI) · BE-05 · BE-06 → BE-12 · design ledger Phase 4 guardrails
+(state-coverage axe, hardened screenshot harness) before the big primitive/CSS
+consolidation tracks.
+
+**Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
+inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only
+things gating the live connection; every agent item above proceeds without them. Jason's
+open decisions live in checklists 00/06/10.
 
 **Cross-item coordination (implement once):** multi-key token decryption (WS-04 ↔ BE-08);
 calendar-ID single authority (SET-05 ↔ BE-07); integration events reader (SET-09 ↔ WS-10);
