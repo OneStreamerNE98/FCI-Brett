@@ -117,6 +117,8 @@ SET-02 has passed source acceptance in draft PR #37 on `codex/settings-admin-gat
 
 PR #34, which adds the KPI-01–KPI-04 workstream, is merged. BE-02 + BE-13 are in review with green checks in PR #36. BE-04 is in review in draft PR #38 on `codex/workspace-oidc-login`, with local acceptance and all GitHub checks green. WS-04 + WS-12 are in review in PR #39 on `codex/workspace-rotation-sync-contracts`, with local acceptance and all GitHub checks green. All remain source-only and none authorizes live identity, provider resources, infrastructure, migration/apply, or deployment.
 
+BE-03 is in review in draft PR #46 on `codex/retire-legacy-records`. It deletes the unused generic `/api/v1/records` route and its unreferenced `actorFrom` helper while preserving the assistant's unrelated records-only answer mode and its test assertion. No D1 or Drizzle history changed, no stored data was removed, and BE-12 must classify the retained legacy table as `records: excluded (legacy, no migration)`.
+
 ## Recommended next worker assignments
 
 The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. The next local sequence does not require Brett's Workspace or Cloud input:

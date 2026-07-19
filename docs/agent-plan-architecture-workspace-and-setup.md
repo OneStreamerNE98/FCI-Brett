@@ -165,6 +165,12 @@ WS-03 — one owner.) Add oversized-body tests.
 POST /records does today; grep for raw `request.json()` in those routes returns nothing.
 
 ### BE-03 · Retire the legacy /api/v1/records surface (small, after BE-02)
+**Status:** In review — draft PR #46 on `codex/retire-legacy-records`, July 19,
+2026. The unused route is deleted rather than retained as a 410 stub, `actorFrom`
+is removed, and the assistant's separate records-only answer mode remains covered.
+The immutable D1 history is unchanged; BE-12 must classify the table as
+`records: excluded (legacy, no migration)`.
+
 **Why:** Generic JSON record store with no UI caller (verified: only
 `tests/api-correctness-behavior.test.mjs:174` and `tests/rendered-html.test.mjs:97`
 reference it); `actorFrom` in `app/api/v1/_workspace-data.ts:14` has zero call sites.
