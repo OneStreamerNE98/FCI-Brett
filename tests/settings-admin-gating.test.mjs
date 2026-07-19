@@ -49,12 +49,14 @@ test("keeps every existing Settings mutation gate enforced on the server", async
 });
 
 test("isolates rendered role tests from contributor environment files", async () => {
-  const [viteConfig, collaborationGuide] = await Promise.all([
+  const [viteConfig, collaborationGuide, continuousIntegration] = await Promise.all([
     read("vite.config.ts"),
     read("docs/collaboration-and-sharing.md"),
+    read(".github/workflows/ci.yml"),
   ]);
 
   assert.match(viteConfig, /envFile: isE2eRuntime \? false : undefined/);
   assert.match(viteConfig, /process\.env\.CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV = "false"/);
   assert.match(collaborationGuide, /FCI_E2E=true[^\n]+disables Vite and local Worker environment-file loading[^\n]+\.env\.local/);
+  assert.match(continuousIntegration, /FCI_OFFICE_EMAILS: e2e-admin@example\.test,e2e-office@example\.test/);
 });
