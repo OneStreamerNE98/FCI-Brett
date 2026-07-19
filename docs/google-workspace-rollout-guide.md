@@ -248,25 +248,24 @@ For the current development environment, `FCI_OFFICE_EMAILS` is the ChatGPT sign
 
 Keep folder provisioning `false` until Drive verification passes. Saving source files or `.openai/hosting.json` does not configure these values; a saved Sites version must be deployed separately before a hosted environment-setting change takes effect.
 
+Settings → Google Workspace reports missing prerequisites in a semantic table with the business label, exact environment key, and either **Hosted environment value** or **Hosted secret — never in the app or Git**. The table reports presence or absence only; it never returns a configured value or secret. It also reports the cross-field requirement **Google Workspace intake mailbox matching the single approved connection account**, not merely the two individual variables.
+
 ## Part 11: connect and verify Google Workspace
 
 1. Deploy the runtime values.
 2. Open FCI Operations.
-3. Go to **Settings → Google Workspace**.
-4. Run **Check readiness**.
-5. Resolve every missing item before selecting Connect.
-6. Select **Connect Google Workspace**.
-7. Sign in with the exact single account listed in `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`; it must also be the address in `GOOGLE_WORKSPACE_INTAKE_MAILBOX`.
-8. Review the consent screen and approve the required scopes.
-9. Return to the application and confirm the connection account is correct.
-10. Verify each service separately:
-    - Shared Drive verification
-    - Gmail message listing and label preparation
-    - Calendar event listing and a test hold
-    - Google Sheets synchronization
-11. Use only clearly marked test records.
-12. After Shared Drive verification, set `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=true` and deploy the environment update.
-13. Create one test project folder and confirm it is inside the correct Shared Drive.
+3. Go to **Settings → Google Workspace** and run **Check readiness**.
+4. Resolve every row in **Hosted Workspace configuration** before selecting Connect. Configure each named value in the hosting environment, not in the application.
+5. Complete the five ordered setup steps shown in the application:
+    1. **Connect Google Workspace** — select Connect, sign in with the exact single account listed in `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, confirm it is also `GOOGLE_WORKSPACE_INTAKE_MAILBOX`, and approve the required scopes. After the callback, the page removes the callback parameter and refreshes readiness automatically.
+    2. **Verify the Shared Drive** — run the direct Drive verification before continuing.
+    3. **Prepare Gmail** — prepare the three FCI labels, then verify message listing and the explicit review-first tools.
+    4. **Verify Calendar** — list events and create a private test hold.
+    5. **Sync the Sheets mirror** — refresh status and sync the Client Directory and Project Register.
+6. Later steps remain visible but blocked until the prior step is confirmed by its endpoint. In simulation, all five steps are marked **Simulated** and their controls remain testable without Google access.
+7. Use only clearly marked test records.
+8. After Shared Drive verification, set `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=true` in the hosted environment and deploy the environment update; it is not an in-app toggle.
+9. Create one test project folder and confirm it is inside the correct Shared Drive.
 
 ## Part 12: test the complete current development environment
 

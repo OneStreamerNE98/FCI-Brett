@@ -13,6 +13,7 @@ const operationsRoutes = [
   "/assistant",
   "/reports",
   "/settings",
+  "/settings?section=google-workspace",
   "/settings?section=inbox-rules",
   "/management/access",
 ] as const;
