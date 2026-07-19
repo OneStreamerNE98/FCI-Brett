@@ -68,10 +68,14 @@ test("does not retain failed client GETs", async () => {
 });
 
 test("keeps the bounded initial-load and rendering optimizations in place", async () => {
-  const [app, css] = await Promise.all([
+  const [app, css, dataSecurity, myAccount, googleWorkspace] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
     read("app/globals.css"),
+    read("app/settings/components/DataSecurityPanel.tsx"),
+    read("app/settings/components/MyAccountPanel.tsx"),
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
   ]);
+  const settingsSources = `${myAccount}\n${googleWorkspace}`;
   const rootComponent = app.slice(
     app.indexOf("export function FloorOpsApp"),
     app.indexOf("function LiveDataBanner"),
@@ -82,18 +86,18 @@ test("keeps the bounded initial-load and rendering optimizations in place", asyn
   );
 
   assert.match(app, /const currencyFormatter = new Intl\.NumberFormat/);
-  assert.match(app, /const PhoneInstallPanel = dynamic\(/);
-  assert.match(app, /import\("\.\/PhoneInstallPanel"\)/);
-  assert.doesNotMatch(app, /import \{ PhoneInstallPanel \} from/);
+  assert.match(dataSecurity, /const PhoneInstallPanel = dynamic\(/);
+  assert.match(dataSecurity, /import\("\.\.\/\.\.\/PhoneInstallPanel"\)/);
+  assert.doesNotMatch(dataSecurity, /import \{ PhoneInstallPanel \} from/);
   assert.match(rootComponent, /void refreshDirectoryData\(\);\s*\}, \[refreshDirectoryData\]\)/);
   assert.doesNotMatch(rootComponent, /setTimeout\(\(\) => \{ void refreshDirectoryData/);
   assert.doesNotMatch(rootComponent, /currentTime|setCurrentTime/);
   assert.match(overviewComponent, /setInterval\(\(\) => setCurrentTime\(Date\.now\(\)\), 60_000\)/);
   assert.match(app, /for \(const project of projectItems\)/);
   assert.doesNotMatch(app, /clients\.map\(\(client\) => \[client\.id, projectItems\.filter/);
-  assert.match(app, /cachedGetJson[^\n]+\("\/api\/v1\/settings\/me"/);
-  assert.match(app, /cachedGetJson[^\n]+\("\/api\/v1\/google-workspace"/);
-  assert.match(app, /invalidateCachedGet\("\/api\/v1\/settings\/me"\)/);
+  assert.match(settingsSources, /cachedGetJson[^\n]+\("\/api\/v1\/settings\/me"/);
+  assert.match(settingsSources, /cachedGetJson[^\n]+\("\/api\/v1\/google-workspace"/);
+  assert.match(settingsSources, /invalidateCachedGet\("\/api\/v1\/settings\/me"\)/);
   assert.match(css, /\.operations-actionable-row,\.pipeline-row,[^\n]+\{content-visibility:auto\}/);
   assert.match(css, /contain-intrinsic-size:auto 68px/);
 });

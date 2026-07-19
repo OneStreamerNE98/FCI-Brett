@@ -15,14 +15,14 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's Settings rules semantic table at `aa8ed8f`; the source-only `codex/actionable-lists` slice is complete in PR #33 but is not deployed | Begin SET-01 from the latest `main`, then continue later bounded frontend consolidation. |
+| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's Settings rules semantic table at `aa8ed8f`; the source-only `codex/actionable-lists` slice is complete in PR #33 but is not deployed; the source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 but is not deployed | Begin SET-02 from the latest `main`, then continue later bounded frontend consolidation. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status reconciled on July 19, 2026 against the PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`. That exact commit is deployed as private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The source-only `codex/actionable-lists` slice is complete in PR #33; it is not deployed.
+Status reconciled on July 19, 2026 against the PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`. That exact commit is deployed as private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The source-only `codex/actionable-lists` slice is complete in PR #33, and the source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35; neither is deployed.
 
 ### Jason / business owner
 
@@ -66,11 +66,11 @@ These checklists are owner-facing setup, decision, acceptance, and operations re
 
 ## Recommended next work
 
-The agent ledgers above own sequencing. The accessible actionable-list pattern for the whole-row Overview pipeline, Projects, and Clients views is complete in PR #33 from the source-only `codex/actionable-lists` branch; SET-01 is the next `FloorOpsApp.tsx` packet from the latest `main`. Provider-neutral job/sync contracts and local migration-fixture work may proceed only within the boundaries recorded in the agent execution plan; no checklist item here authorizes a live provider, staging run, or deployment.
+The agent ledgers above own sequencing. The accessible actionable-list pattern for the whole-row Overview pipeline, Projects, and Clients views is complete in PR #33 from the source-only `codex/actionable-lists` branch. The Settings-only SET-01 extraction is complete in source in PR #35 from the source-only `codex/settings-panel-extraction` branch; SET-02 is the next Settings packet from the latest `main`. Provider-neutral job/sync contracts and local migration-fixture work may proceed only within the boundaries recorded in the agent execution plan; no checklist item here authorizes a live provider, staging run, or deployment.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. The source-only `codex/actionable-lists` branch is complete in PR #33, and it is not deployed. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
+Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. The source-only `codex/actionable-lists` branch is complete in PR #33, and the source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35; neither is deployed. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
 

@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with workflow decisions from the business owner
 
-Status: In progress — PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's semantic Settings rules table at `aa8ed8f`; the source-only `codex/actionable-lists` slice is complete in PR #33 but is not deployed; SET-01 and later structural and multi-user work remain
+Status: In progress — PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's semantic Settings rules table at `aa8ed8f`; the source-only `codex/actionable-lists` slice is complete in PR #33 but is not deployed; the source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 but is not deployed; SET-02 and later structural and multi-user work remain
 
 Depends on: Approved roles/capabilities and production API contracts
 
@@ -24,7 +24,7 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [x] **P2 — Mobile project comparison:** retain status, site/date, and value in a compact stacked mobile row instead of hiding decision-useful fields; do not imply that placeholder dates are durable schedule data.
 - [ ] **P2 — Initial-load and bundle performance:** break the monolithic client surface into feature boundaries, dynamically load rare/heavy panels, start critical data earlier where safe, deduplicate shared reads, and bound long record lists.
   - First pass complete: initial client loading starts immediately; duplicated account/Workspace reads share a TTL cache; the overview clock no longer rerenders the app shell; project counts are one-pass; the phone panel is lazy-loaded; long rows defer off-screen rendering; and fixed App Router wrappers now support direct entry.
-  - PR #29's first Phase 3 boundary, merged at `1c2f991` and deployed in private Sites development version 39, moves shared page/panel/metric/avatar/status UI and report-filter navigation behavior out of the monolith without changing rendered behavior. Feature-level route splitting, rare-panel chunks, and server-started core data remain open.
+  - PR #29's first Phase 3 boundary, merged at `1c2f991` and deployed in private Sites development version 39, moves shared page/panel/metric/avatar/status UI and report-filter navigation behavior out of the monolith without changing rendered behavior. The Settings-only component boundary is complete in source in PR #35 from `codex/settings-panel-extraction` and is not deployed. Feature-level route splitting, other rare-panel chunks, and server-started core data remain open.
 - [x] **P2 — Rendered regression coverage:** add browser-level coverage for mobile navigation, overlays, search focus/keyboard behavior, feature-state labels, responsive project rows, console health, and primary accessibility checks.
 
 ## P0 integrity fixes
@@ -62,7 +62,7 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [ ] Consolidate duplicate Inbox and Settings Google workflows behind shared components and hooks.
 - [ ] Consolidate tabular and whole-row list presentations behind shared responsive semantic patterns without changing business behavior.
   - First semantic-table slice merged in PR #30 at `aa8ed8f`: **Settings → Inbox & file rules** uses native headings, labeled mobile cards, and unchanged keyboard actions. PR #32 then merged at `adc79b8`, and that exact commit deployed as private Sites development version 40, so the semantic table is included in the controlled release.
-  - The source-only `codex/actionable-lists` branch is complete in PR #33 for the whole-row Overview pipeline, Projects, and Clients views. It uses one native list/list-item/button contract with explicit list semantics, concise action names linked to complete descriptions, Enter/Space activation, Escape dismissal, and exact trigger focus restoration while preserving responsive decision metadata, empty states, filters, and drawer behavior. The isolated Playwright groups pass 58/58, all 13 routes pass serious/critical axe checks at desktop and 390 px, lint passes, and visual QA passes. It is not deployed; keep this broader checklist item open for SET-01 and the later structural work.
+  - The source-only `codex/actionable-lists` branch is complete in PR #33 for the whole-row Overview pipeline, Projects, and Clients views. It uses one native list/list-item/button contract with explicit list semantics, concise action names linked to complete descriptions, Enter/Space activation, Escape dismissal, and exact trigger focus restoration while preserving responsive decision metadata, empty states, filters, and drawer behavior. The isolated Playwright groups pass 58/58, all 13 routes pass serious/critical axe checks at desktop and 390 px, lint passes, and visual QA passes. It is not deployed. The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is also not deployed; keep this broader checklist item open for SET-02 and the later structural work.
 
 ## Accessibility and feedback
 

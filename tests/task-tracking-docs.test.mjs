@@ -87,7 +87,7 @@ test("every open architecture-roadmap row has an explicit tracking owner", () =>
   }
 });
 
-test("deployed semantic-table, completed actionable-list source, and production migration status stay truthful", () => {
+test("deployed semantic-table, completed actionable-list and Settings source, and production migration status stay truthful", () => {
   const statusFiles = [
     "docs/codex-to-codex-handoff.md",
     "docs/complete-product-and-google-cloud-architecture-audit.md",
@@ -124,6 +124,20 @@ test("deployed semantic-table, completed actionable-list source, and production 
     assert.ok(actionablePassages.every((line) => !/no pull request|without a pull request|has no pull request/i.test(line)), `${path} still calls the actionable-list slice PR-less`);
   }
 
+  const settingsStatusFiles = [
+    ...statusFiles,
+    "docs/agent-plan-architecture-workspace-and-setup.md",
+    "docs/pre-workspace-development-plan.md",
+  ];
+  for (const path of settingsStatusFiles) {
+    const status = read(path);
+    const settingsPassages = status.split(/\r?\n/).filter((line) => line.includes("codex/settings-panel-extraction"));
+    assert.ok(settingsPassages.length > 0, `${path} omits the SET-01 branch`);
+    assert.ok(settingsPassages.some((line) => /PR #35/i.test(line) && /complete in source|source[- ]complete/i.test(line)), `${path} does not call SET-01 complete in source in PR #35`);
+    assert.ok(settingsPassages.some((line) => /not deployed|not been deployed|no deployment|undeployed/i.test(line)), `${path} does not record that SET-01 is undeployed`);
+    assert.ok(settingsPassages.every((line) => !/draft|ready for review|must merge before|waiting to merge|awaiting merge/i.test(line)), `${path} still describes SET-01 as awaiting review or merge`);
+  }
+
   const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
   assert.match(audit, /migrations 1–5 exist only in source: none has been applied anywhere, and no Cloud SQL instance exists/);
 
@@ -131,12 +145,13 @@ test("deployed semantic-table, completed actionable-list source, and production 
   const startNow = section(plan, "**Start now, in parallel (no owner input needed):**", "**Chains:**");
   assert.match(startNow, /codex\/actionable-lists/);
   assert.match(startNow, /PR #33[\s\S]*complete/i);
-  assert.match(startNow, /SET-01[\s\S]*next/i);
+  assert.match(startNow, /SET-01[\s\S]*(?:complete in source|source-complete)[\s\S]*PR #35[\s\S]*SET-02[\s\S]*next/i);
   const firstWave = section(plan, "**Wave 1 — next PRs, in this order where they share files:**", "**Wave 2:**");
-  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*next/i);
+  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*(?:complete in source|source-complete)[\s\S]*PR #35[\s\S]*SET-02[\s\S]*next/i);
 
   const design = read("docs/design-critique-fix-plan.md");
   assert.match(design, /- \[x\] Complete in source in PR #33 from `codex\/actionable-lists`/i);
+  assert.match(design, /Settings-only panel-extraction scope is complete in source in PR #35 from `codex\/settings-panel-extraction` and is not deployed; the remaining feature-boundary, primitive, Google-workflow, and CSS tracks stay open/i);
   assert.match(design, /58 focused Playwright tests pass[\s\S]*isolated local-server groups/i);
   assert.match(design, /13 routes pass[\s\S]*desktop and 390 px/i);
   assert.match(design, /final `npm test` run passed 325 active tests with 13 skipped after the accessibility and test-runner adjustments/i);

@@ -1,26 +1,24 @@
 "use client";
 
 import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Activity, Bell, Bot, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, ExternalLink, FileText, FolderOpen, FolderTree, HardHat,
   Inbox, Info, LayoutDashboard, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal,
-  ListFilter, LogOut, Plus, RefreshCw, Reply, Search, Send, Settings, ShieldCheck, Sparkles, Trash2, Users, X, Zap,
+  ListFilter, LogOut, Plus, RefreshCw, Reply, Search, Send, Settings, ShieldCheck, Sparkles, Users, X, Zap,
 } from "lucide-react";
 import type { AppEnvironment } from "./lib/app-environment";
-import { DEFAULT_FILING_RULES, DRIVE_BLUEPRINT, evaluateInboxFilingRules, type FilingRuleDraft } from "./lib/google-workspace";
+import { DEFAULT_FILING_RULES, evaluateInboxFilingRules, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
 import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
 import { Avatar, Metric, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
 import { OperationsActionableList, OperationsActionableListItem } from "./components/operations/OperationsActionableList";
-import { OperationsDataTable, OperationsDataTableCell } from "./components/operations/OperationsDataTable";
 import { ActiveRouteFilter } from "./features/reports/ActiveRouteFilter";
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
-import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
+import { cachedGetJson } from "./lib/client-get-cache";
 import {
   canonicalOperationsSearch,
   inboxBucketFromSearch,
@@ -43,6 +41,13 @@ import {
   type ProjectStatusFilter,
   type SettingsSection,
 } from "./lib/operations-routes";
+import { DataSecurityPanel } from "./settings/components/DataSecurityPanel";
+import { DirectorySyncPanel } from "./settings/components/DirectorySyncPanel";
+import { GmailFilingModal, GoogleWorkspacePanel, type GmailFilingPreview, type WorkspaceMessage } from "./settings/components/GoogleWorkspacePanel";
+import { InboxRulesPanel, RuleModal } from "./settings/components/InboxRulesPanel";
+import { MyAccountPanel } from "./settings/components/MyAccountPanel";
+import { TestingLaunchPanel } from "./settings/components/TestingLaunchPanel";
+import { WorkspaceDefaultsPanel } from "./settings/components/WorkspaceDefaultsPanel";
 
 type Lead = { id: string; number: string; company: string; contact: string; project: string; value: string; estimatedValue: number; stage: string; source: string; next: string; site: string; status: string; initials: string; color: string };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; driveFolderId?: string; driveUrl?: string };
@@ -55,7 +60,6 @@ type DashboardSummary = {
   readiness: { scheduleDataAvailable: boolean; scheduleReason: string; reportsUseLiveProjectLeadTotals: boolean };
 };
 type LiveDataState = "loading" | "ready" | "error";
-type LoadState = "loading" | "ready" | "error";
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
 type AppNotification = { message: string; kind: NotificationKind; action?: NotificationAction };
@@ -95,20 +99,9 @@ const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
 const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const INBOX_RULE_COLUMNS = [
-  { key: "priority", label: "Priority" },
-  { key: "rule", label: "Rule" },
-  { key: "match", label: "When it matches" },
-  { key: "action", label: "Action" },
-  { key: "destination", label: "Destination" },
-] as const;
 const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
 const CLIENT_ACTIONABLE_COLUMNS = ["Client", "Primary contact", "Projects", ""] as const;
 const PROJECT_ACTIONABLE_COLUMNS = ["Project", "Status", "Schedule & site", "Value", ""] as const;
-const PhoneInstallPanel = dynamic(
-  () => import("./PhoneInstallPanel").then((module) => module.PhoneInstallPanel),
-  { ssr: false, loading: () => <div className="phone-install-loading" role="status">Loading install guidance…</div> },
-);
 const focusableControlSelector = [
   "a[href]",
   "button:not([disabled])",
@@ -1401,20 +1394,7 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, rules, pro
       {section === "My account" && <MyAccountPanel notify={notify} userName={userName} userEmail={userEmail} onGoogleSetup={onGoogleSetup} onTimezoneChange={onTimezoneChange} />}
       {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
       {section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} />}
-      {section === "Inbox & file rules" && <section aria-labelledby="inbox-rules-heading" className="panel rule-settings">
-        <div className="settings-heading"><div><p className="eyebrow">Gmail intake rules</p><h2 id="inbox-rules-heading">Inbox & file rules</h2><p>Rules run in priority order. Paused rules do not influence suggestions, and every filing still requires approval.</p></div><button className="primary-button" onClick={onAddRule}><Plus size={16} /> Add rule</button></div>
-        <div className="rule-callout"><ShieldCheck size={19} /><p><strong>Multi-project protection</strong><br />A project number is the safest match. A client with multiple independent projects is always kept in review until you choose the exact job.</p></div>
-        <OperationsDataTable className="rules-data-table" columns={INBOX_RULE_COLUMNS} labelledBy="inbox-rules-heading">
-          {rules.map((rule) => <tr key={rule.id ?? rule.name}>
-            <OperationsDataTableCell label="Priority"><span className="rule-priority">{rule.priority}</span></OperationsDataTableCell>
-            <OperationsDataTableCell label="Rule"><div className="rule-name"><strong>{rule.name}</strong><small>{rule.enabled ? "Enabled" : "Paused"} · approval required</small><div className="rule-inline-actions"><button className="soft-button" onClick={() => void onUpdateRule(rule, { enabled: !rule.enabled })}>{rule.enabled ? "Pause" : "Enable"}</button>{rule.id && <button className="icon-text-button danger" aria-label={`Delete ${rule.name}`} onClick={() => { if (window.confirm(`Delete the email rule “${rule.name}”?`)) void onDeleteRule(rule); }}><Trash2 size={14} /> Delete</button>}</div></div></OperationsDataTableCell>
-            <OperationsDataTableCell label="When it matches">{rule.matchSummary}</OperationsDataTableCell>
-            <OperationsDataTableCell label="Action"><Status text={rule.action === "review" ? "Needs review" : rule.action === "ignore" ? "Ignored" : "Suggest"} /></OperationsDataTableCell>
-            <OperationsDataTableCell label="Destination">{rule.targetCategory}</OperationsDataTableCell>
-          </tr>)}
-        </OperationsDataTable>
-        <div className="rule-footnote"><Mail size={15} /><span>Custom rules are saved as review-first policies until a supported matcher is added. Keep Gmail simple: use only <b>{DRIVE_BLUEPRINT.gmailLabels.join(", ")}</b>. The project’s Drive folder—not a Gmail label per project—is the permanent filing location.</span></div>
-      </section>}
+      {section === "Inbox & file rules" && <InboxRulesPanel rules={rules} onAddRule={onAddRule} onUpdateRule={onUpdateRule} onDeleteRule={onDeleteRule} />}
       {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets", "info"); }} />}
       {section === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} />}
       {section === "Data & security" && <DataSecurityPanel />}
@@ -1422,652 +1402,8 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, rules, pro
     </div></>;
 }
 
-type UserAccountPreferences = { displayTimezone: string; replySignature: string };
-type WorkspacePreferenceValues = {
-  timezone: string;
-  appointmentCalendarName: string;
-  fieldCalendarName: string;
-  calendarSetupMode: "create-shared" | "use-existing";
-  appointmentCalendarId: string;
-  fieldCalendarId: string;
-  calendarEditPolicy: "app-authoritative";
-  appointmentReminderHours: number;
-  crewReminderHours: number;
-  inboxReviewMode: "review-first";
-  officeNotificationEmail: string;
-};
-
-const defaultUserAccountPreferences: UserAccountPreferences = { displayTimezone: "America/New_York", replySignature: "" };
-const defaultWorkspacePreferences: WorkspacePreferenceValues = {
-  timezone: "America/New_York",
-  appointmentCalendarName: "FCI • Client Appointments",
-  fieldCalendarName: "FCI • Field Schedule",
-  calendarSetupMode: "create-shared",
-  appointmentCalendarId: "",
-  fieldCalendarId: "",
-  calendarEditPolicy: "app-authoritative",
-  appointmentReminderHours: 24,
-  crewReminderHours: 24,
-  inboxReviewMode: "review-first",
-  officeNotificationEmail: "",
-};
-
-function SettingsDataNotice({ state, error, onRetry }: { state: Exclude<LoadState, "ready">; error: string; onRetry: () => void }) {
-  const failed = state === "error";
-  return <div className={`settings-data-notice ${failed ? "error" : "loading"}`} role={failed ? "alert" : "status"} aria-live={failed ? "assertive" : "polite"}>
-    {failed ? <CircleAlert size={19} aria-hidden="true" /> : <RefreshCw size={19} aria-hidden="true" />}
-    <div><strong>{failed ? "Saved settings could not be loaded" : "Loading saved settings…"}</strong><span>{failed ? error : "Editing and saving will be available after the server values arrive."}</span></div>
-    {failed && <button type="button" className="soft-button" onClick={onRetry}><RefreshCw size={14} /> Retry</button>}
-  </div>;
-}
-
-function MyAccountPanel({ notify, userName, userEmail, onGoogleSetup, onTimezoneChange }: { notify: Notify; userName: string; userEmail: string; onGoogleSetup: () => void; onTimezoneChange: (timezone: string) => void }) {
-  const [preferences, setPreferences] = useState<UserAccountPreferences>(defaultUserAccountPreferences);
-  const [connectionAccount, setConnectionAccount] = useState<string | null>(null);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [loadError, setLoadError] = useState("");
-  const [saving, setSaving] = useState(false);
-  const loadRequestRef = useRef(0);
-  const hasDistinctDisplayName = Boolean(userName.trim()) && userName.trim().toLowerCase() !== userEmail.trim().toLowerCase();
-  const accountTitle = hasDistinctDisplayName ? userName.trim() : "FCI operations account";
-  const accountSubtitle = hasDistinctDisplayName ? userEmail : `${userEmail} · FCI Operations workspace`;
-
-  const loadAccountSettings = useCallback(async (force = false) => {
-    const requestId = ++loadRequestRef.current;
-    setLoadState("loading");
-    setLoadError("");
-    try {
-      const [preferenceData, googleData] = await Promise.all([
-        cachedGetJson<{ preferences?: UserAccountPreferences }>("/api/v1/settings/me", { force }),
-        cachedGetJson<{ workspace?: { connectionAccount?: unknown } }>("/api/v1/google-workspace", { force }),
-      ]);
-      if (requestId !== loadRequestRef.current) return;
-      if (!preferenceData.preferences) throw new Error("The server returned no saved account preferences.");
-      const nextPreferences = { ...defaultUserAccountPreferences, ...preferenceData.preferences };
-      setPreferences(nextPreferences);
-      setConnectionAccount(typeof googleData.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
-      onTimezoneChange(nextPreferences.displayTimezone);
-      setLoadState("ready");
-    } catch (error) {
-      if (requestId !== loadRequestRef.current) return;
-      setLoadError(error instanceof Error ? error.message : "Your saved account preferences could not be loaded.");
-      setLoadState("error");
-    }
-  }, [onTimezoneChange]);
-
-  useEffect(() => {
-    void Promise.resolve().then(() => loadAccountSettings());
-    return () => { loadRequestRef.current += 1; };
-  }, [loadAccountSettings]);
-
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (loadState !== "ready") return;
-    setSaving(true);
-    try {
-      const response = await fetch("/api/v1/settings/me", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(preferences) });
-      const data = await response.json().catch(() => ({})) as { preferences?: UserAccountPreferences; error?: string };
-      if (!response.ok || !data.preferences) throw new Error(data.error ?? "Your account preferences could not be saved.");
-      invalidateCachedGet("/api/v1/settings/me");
-      setPreferences({ ...defaultUserAccountPreferences, ...data.preferences });
-      onTimezoneChange(data.preferences.displayTimezone);
-      notify("Your preferences are saved to your signed-in FCI account", "success");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Your account preferences could not be saved.", "error");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Signed-in account</p><h2>My account</h2><p>Your timezone and reply signature are saved to this FCI account and follow you between browsers.</p></div></div><div className="account-identity"><div className="avatar">{accountTitle.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC"}</div><div><strong>{accountTitle}</strong><span>{accountSubtitle}</span></div></div>{loadState !== "ready" ? <SettingsDataNotice state={loadState} error={loadError} onRetry={() => void loadAccountSettings(true)} /> : <form onSubmit={save}><div className="form-row"><label>My display timezone<select value={preferences.displayTimezone} onChange={(event) => setPreferences((current) => ({ ...current, displayTimezone: event.target.value }))} disabled={saving}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label><label>Workspace connection<input value={connectionAccount ?? "Not connected"} readOnly /></label></div><label>Default reply signature<textarea value={preferences.replySignature} onChange={(event) => setPreferences((current) => ({ ...current, replySignature: event.target.value }))} placeholder="Name, title, phone, and company" maxLength={2000} disabled={saving} /></label><p className="form-help"><Reply size={14} /> Local simulation never connects a Google account. When the company Workspace is ready, one administrator-approved connection supplies Gmail, Calendar, Shared Drive, and Sheets.</p><footer><button type="button" className="soft-button" onClick={onGoogleSetup}><Building2 size={15} /> Manage Google Workspace</button><button type="submit" className="primary-button" disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save my preferences</>}</button></footer></form>}</section>;
-}
-
-function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calendar" | "workflow"; notify: Notify; onGoogleSetup: () => void }) {
-  const [settings, setSettings] = useState<WorkspacePreferenceValues>(defaultWorkspacePreferences);
-  const [saving, setSaving] = useState(false);
-  const [calendarAccount, setCalendarAccount] = useState<string | null>(null);
-  const [calendarConnected, setCalendarConnected] = useState(false);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [loadError, setLoadError] = useState("");
-  const loadRequestRef = useRef(0);
-
-  const loadWorkspaceSettings = useCallback(async (force = false) => {
-    const requestId = ++loadRequestRef.current;
-    setLoadState("loading");
-    setLoadError("");
-    try {
-      const [settingsData, googleData] = await Promise.all([
-        cachedGetJson<{ settings?: WorkspacePreferenceValues }>("/api/v1/settings/workspace", { force }),
-        cachedGetJson<{ workspace?: { connectionAccount?: unknown; calendarConnected?: boolean; calendarEnabled?: boolean; connectionStatus?: string } }>("/api/v1/google-workspace", { force }),
-      ]);
-      if (requestId !== loadRequestRef.current) return;
-      if (!settingsData.settings) throw new Error("The server returned no saved Workspace defaults.");
-      setSettings({ ...defaultWorkspacePreferences, ...settingsData.settings });
-      setCalendarAccount(typeof googleData.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
-      setCalendarConnected(googleData.workspace?.calendarConnected === true && googleData.workspace?.calendarEnabled === true && googleData.workspace?.connectionStatus === "connected");
-      setLoadState("ready");
-    } catch (error) {
-      if (requestId !== loadRequestRef.current) return;
-      setLoadError(error instanceof Error ? error.message : "The saved Workspace defaults could not be loaded.");
-      setLoadState("error");
-    }
-  }, []);
-
-  useEffect(() => {
-    void Promise.resolve().then(() => loadWorkspaceSettings());
-    return () => { loadRequestRef.current += 1; };
-  }, [loadWorkspaceSettings]);
-
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (loadState !== "ready") return;
-    setSaving(true);
-    try {
-      const response = await fetch("/api/v1/settings/workspace", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
-      const data = await response.json().catch(() => ({})) as { settings?: WorkspacePreferenceValues; error?: string };
-      if (!response.ok || !data.settings) throw new Error(data.error ?? "Settings could not be saved.");
-      invalidateCachedGet("/api/v1/settings/workspace");
-      setSettings({ ...defaultWorkspacePreferences, ...data.settings });
-      notify(mode === "calendar" ? "Calendar defaults saved" : "Workflow and notification defaults saved", "success");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Settings could not be saved.", "error");
-    } finally {
-      setSaving(false);
-    }
-  }
-  if (loadState !== "ready") {
-    return <section className="panel settings-form-panel">
-      <div className="settings-heading">
-        <div><p className="eyebrow">{mode === "calendar" ? "Organization calendar plan" : "Operating defaults"}</p><h2>{mode === "calendar" ? "Calendar & appointments" : "Workflow & notifications"}</h2><p>{mode === "calendar" ? "Keep company work in two shared FCI Workspace calendars: one for client appointments and one for field scheduling." : "Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled."}</p></div>
-        <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
-      </div>
-      <SettingsDataNotice state={loadState} error={loadError} onRetry={() => void loadWorkspaceSettings(true)} />
-    </section>;
-  }
-  if (mode === "calendar") {
-    return <section className="panel settings-form-panel">
-      <div className="settings-heading">
-        <div>
-          <p className="eyebrow">Organization calendar plan</p>
-          <h2>Calendar & appointments</h2>
-          <p>Keep company work in two shared FCI Workspace calendars: one for client appointments and one for field scheduling.</p>
-        </div>
-        <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
-      </div>
-      <div className={`settings-connection ${calendarConnected ? "ready" : ""}`}>
-        <CalendarDays size={18} />
-        <div>
-          <strong>{calendarConnected ? "Google Calendar connection ready" : "Google Calendar connection required"}</strong>
-          <span>{calendarConnected ? `${calendarAccount ?? "Connected Workspace account"} can access Google Calendar. Verify both shared calendar IDs before appointment testing.` : "Connect Google Workspace and approve Calendar before publishing appointments."}</span>
-        </div>
-      </div>
-      <form onSubmit={save}>
-        <div className="settings-static-row">
-          <CalendarDays size={16} />
-          <div><strong>Recommended setup</strong><span>Create or select one shared <b>FCI • Client Appointments</b> calendar and one shared <b>FCI • Field Schedule</b> calendar. Do not create one calendar per user; invite assigned people to the same company event instead.</span></div>
-        </div>
-        <div className="form-row">
-          <label>Calendar setup<select value={settings.calendarSetupMode} onChange={(event) => setSettings((current) => ({ ...current, calendarSetupMode: event.target.value as WorkspacePreferenceValues["calendarSetupMode"] }))}><option value="create-shared">Plan to create two shared FCI calendars (recommended)</option><option value="use-existing">Use existing company calendars</option></select></label>
-          <label>Workspace timezone<select value={settings.timezone} onChange={(event) => setSettings((current) => ({ ...current, timezone: event.target.value }))}><option>America/New_York</option><option>America/Chicago</option><option>America/Denver</option><option>America/Los_Angeles</option></select></label>
-        </div>
-        <div className="form-row">
-          <label>Client appointments calendar name<input value={settings.appointmentCalendarName} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarName: event.target.value }))} /></label>
-          <label>Field schedule calendar name<input value={settings.fieldCalendarName} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarName: event.target.value }))} /></label>
-        </div>
-        {settings.calendarSetupMode === "use-existing" && <div className="form-row">
-          <label>Client appointments calendar ID<input value={settings.appointmentCalendarId} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /></label>
-          <label>Field schedule calendar ID<input value={settings.fieldCalendarId} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /></label>
-        </div>}
-        <div className="form-row">
-          <label>Appointment reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label>
-          <label>Scheduling source<input value="FCI Operations + shared Workspace calendars" readOnly /></label>
-        </div>
-        <div className="settings-static-row">
-          <ShieldCheck size={16} />
-          <div><strong>Sync & conflict policy</strong><span>FCI Operations will remain authoritative. A later edit to an app-created Google event will be flagged for review instead of silently overwriting the project schedule.</span></div>
-        </div>
-        <div className="settings-static-row">
-          <Mail size={16} />
-          <div><strong>Gmail relationship</strong><span>Gmail and Calendar are separate. When a message becomes an appointment, the app will link the thread to the appointment; Gmail-generated travel or reservation events are never imported into the company schedule automatically.</span></div>
-        </div>
-        <p className="form-help"><CalendarDays size={14} /> Local simulation stores safe sample holds without contacting Google. Live mode uses the configured company calendar IDs and keeps FCI Operations authoritative.</p>
-        <footer><button type="submit" className="primary-button" disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save calendar plan</>}</button></footer>
-      </form>
-    </section>;
-  }
-  return <section className="panel settings-form-panel">
-    <div className="settings-heading">
-      <div><p className="eyebrow">Operating defaults</p><h2>Workflow & notifications</h2><p>Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled.</p></div>
-      <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
-    </div>
-    <form onSubmit={save}>
-      <div className="form-row">
-        <label>Client reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label>
-        <label>Crew reminder hours<input type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} /></label>
-      </div>
-      <label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label>
-      <div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div>
-      <footer><button type="submit" className="primary-button" disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</button></footer>
-    </form>
-  </section>;
-}
-
-function DataSecurityPanel() {
-  return <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Safety & access</p><h2>Data & security</h2><p>These safeguards protect the development workspace and identify what must be completed before staff-wide production use.</p></div></div><div className="settings-security-list"><div><ShieldCheck size={18} /><span><strong>Review-first email filing</strong><small>Messages retain Inbox; project copies and FCI/Filed occur only after a direct approval.</small></span></div><div><Users size={18} /><span><strong>One administrator-approved Workspace connection</strong><small>The company connection supplies Gmail, Calendar, Shared Drive, and Sheets. Consumer Google accounts are rejected in live mode.</small></span></div><div><Building2 size={18} /><span><strong>Local Workspace simulation is isolated</strong><small>Simulation uses local sample data, creates no OAuth tokens, and never sends requests to Google services.</small></span></div><div><Settings size={18} /><span><strong>Installable development web app</strong><small>This development site includes a web-app manifest. The future production app will be installed from its Google Cloud address.</small></span></div></div><PhoneInstallPanel /></section>;
-}
-
-function formatSyncTime(value: number | null) {
-  return value ? new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "Not yet synced";
-}
-
-function DirectorySyncPanel({ mirror, syncing, onSync, onConfigure }: { mirror: SheetMirrorStatus | null; syncing: boolean; onSync: () => Promise<void>; onConfigure: () => void }) {
-  const ready = Boolean(mirror?.configured && mirror.enabled && mirror.connected);
-  const clientsStatus = mirror?.clients.status ?? "checking";
-  const projectsStatus = mirror?.projects.status ?? "checking";
-  return <section className="panel client-directory-settings"><div className="settings-heading"><div><p className="eyebrow">Google Sheets mirror</p><h2>Client Directory & Project Register</h2><p>FCI Operations stores the working metadata and relationships. Google Sheets provides a one-way mirror that updates after app changes and when you run a manual sync.</p></div><div className="workspace-actions">{mirror?.spreadsheetUrl && <a className="soft-button" href={mirror.spreadsheetUrl} target="_blank" rel="noreferrer"><FolderOpen size={15} /> Open spreadsheet</a>}<button className="primary-button" onClick={() => void onSync()} disabled={syncing || !ready}>{syncing ? "Syncing…" : "Sync now"}</button></div></div>
-    {!ready && <div className="workspace-missing"><CircleAlert size={16} /><span>{mirror?.reason ?? "Checking Google Sheets configuration…"}</span><button className="soft-button" onClick={onConfigure}>Google setup</button></div>}
-    <div className="directory-sync-summary"><article><div><FolderTree size={17} /></div><span>Client Directory</span><strong>{clientsStatus === "synced" ? "Synced" : clientsStatus === "failed" ? "Needs attention" : clientsStatus}</strong><small>{formatSyncTime(mirror?.clients.lastSyncedAt ?? null)}</small><p>Updates client code, contacts, project count, folder link, status, and last update. Your Account Notes column remains yours.</p></article><article><div><BriefcaseBusiness size={17} /></div><span>Project Register</span><strong>{projectsStatus === "synced" ? "Synced" : projectsStatus === "failed" ? "Needs attention" : projectsStatus}</strong><small>{formatSyncTime(mirror?.projects.lastSyncedAt ?? null)}</small><p>Generated from independent project records, including the client, status, site, value, manager, and Drive workspace link.</p></article></div>
-    {(mirror?.clients.lastError || mirror?.projects.lastError) && <div className="workspace-missing"><CircleAlert size={16} /><span>{mirror.clients.lastError ?? mirror.projects.lastError}</span></div>}
-    <div className="directory-layout"><div><h3>What lives in the app</h3><ul><li>Client-to-project relationships and project numbers</li><li>Contacts, statuses, dates, values, and Drive mappings</li><li>Future tasks, notes, meetings, communications, schedules, and activity history</li></ul></div><div><h3>How to use the spreadsheet</h3><p>Use it to view, filter, export, and add account notes. Do not edit the generated Project Register; the next sync rebuilds it from FCI Operations. Spreadsheet edits do not write back to the app yet.</p></div></div></section>;
-}
-
-type WorkspaceMessage = { id: string; threadId?: string | null; from: string | null; to?: string | null; subject: string | null; date: string | null; snippet: string; labelIds?: string[] };
-type GmailFilingPreview = {
-  message: { id: string; threadId: string | null; from: string | null; to: string | null; subject: string | null; date: string | null; attachmentCount: number; attachments: Array<{ filename: string; mimeType: string; byteSize: number }> };
-  project: { id: string; number: string; name: string; client: string };
-  destinations: { emailArchive: string; attachments: string };
-  existing: { status: string; filed: boolean; emailDriveUrl: string | null; attachmentCount: number; filedAt: number | null } | null;
-  inboxRetained: boolean;
-};
-
-function GoogleWorkspacePanel({ notify, projects }: { notify: Notify; projects: Project[] }) {
-  const [checking, setChecking] = useState(false);
-  const [working, setWorking] = useState(false);
-  const [status, setStatus] = useState<"unknown" | "missing" | "credentials">("unknown");
-  const [missing, setMissing] = useState<string[]>([]);
-  const [workspace, setWorkspace] = useState<{
-    mode?: "shared-drive";
-    runtimeMode?: "simulation" | "workspace";
-    simulation?: boolean;
-    storageLabel?: string;
-    storageName?: string;
-    storageConfigured?: boolean;
-    connectionStatus?: string;
-    connectionAccount?: string | null;
-    driveConnected?: boolean;
-    gmailConnected?: boolean;
-    calendarConnected?: boolean;
-    sheetsConnected?: boolean;
-    requiresReauthorization?: boolean;
-    provisioningEnabled?: boolean;
-    gmailEnabled?: boolean;
-    calendarEnabled?: boolean;
-    sheetsEnabled?: boolean;
-    clientDirectorySheetConfigured?: boolean;
-    enabledServices?: string[];
-    broadScopeAcknowledged?: boolean;
-  } | null>(null);
-  const [gmailMessages, setGmailMessages] = useState<WorkspaceMessage[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<Array<{ id: string; title: string; start: string; end: string; url?: string }>>([]);
-  const [gmailWorking, setGmailWorking] = useState(false);
-  const [calendarWorking, setCalendarWorking] = useState(false);
-  const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
-  const [filingMessage, setFilingMessage] = useState<WorkspaceMessage | null>(null);
-  const [filingProjectId, setFilingProjectId] = useState("");
-  const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
-  const [filingLoading, setFilingLoading] = useState(false);
-  const [filingSubmitting, setFilingSubmitting] = useState(false);
-  const [oauthResult, setOauthResult] = useState<string | null>(null);
-  const readinessChecked = useRef(false);
-
-  const checkSetup = useCallback(async (force = false) => {
-    setChecking(true);
-    try {
-      const data = await cachedGetJson<{
-        credentialsPresent?: boolean;
-        missing?: string[];
-        workspace?: {
-          mode?: "shared-drive";
-          runtimeMode?: "simulation" | "workspace";
-          simulation?: boolean;
-          storageLabel?: string;
-          storageName?: string;
-          storageConfigured?: boolean;
-          connectionStatus?: string;
-          connectionAccount?: string | null;
-          driveConnected?: boolean;
-          gmailConnected?: boolean;
-          calendarConnected?: boolean;
-          sheetsConnected?: boolean;
-          requiresReauthorization?: boolean;
-          provisioningEnabled?: boolean;
-          gmailEnabled?: boolean;
-          calendarEnabled?: boolean;
-          sheetsEnabled?: boolean;
-          clientDirectorySheetConfigured?: boolean;
-          enabledServices?: string[];
-          broadScopeAcknowledged?: boolean;
-        };
-      }>("/api/v1/google-workspace", { force });
-      setMissing(data.missing ?? []);
-      setWorkspace(data.workspace ?? null);
-      setStatus(data.credentialsPresent ? "credentials" : "missing");
-      notify(data.workspace?.simulation ? "Local Workspace simulation is ready. No Google account is connected." : data.credentialsPresent ? "Workspace configuration is present. Finish OAuth authorization before Google data can be accessed." : `Workspace setup still needs ${Math.max(1, data.missing?.length ?? 0)} item(s)`, data.workspace?.simulation || data.credentialsPresent ? "info" : "warning");
-    } catch {
-      setStatus("missing");
-      notify("Workspace readiness could not be checked. Confirm the app is running and try again.", "error");
-    } finally {
-      setChecking(false);
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    if (readinessChecked.current) return;
-    readinessChecked.current = true;
-    void checkSetup();
-  }, [checkSetup]);
-
-  useEffect(() => {
-    const current = new URL(window.location.href);
-    const result = current.searchParams.get("google");
-    if (result === null) return;
-    void Promise.resolve().then(() => setOauthResult(result));
-    current.searchParams.delete("google");
-    window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
-  }, []);
-
-  async function connectGoogleDrive() {
-    setWorking(true);
-    try {
-      const response = await fetch("/api/v1/integrations/google/authorize", { method: "POST" });
-      const data = await response.json() as { authorizationUrl?: string; error?: string };
-      if (!response.ok || !data.authorizationUrl) throw new Error(data.error ?? "Google Drive could not be authorized.");
-      window.location.assign(data.authorizationUrl);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Google Drive could not be authorized.", "error");
-      setWorking(false);
-    }
-  }
-
-  async function verifyGoogleDrive() {
-    setWorking(true);
-    try {
-      const response = await fetch("/api/v1/integrations/google/drive/verify", { method: "POST" });
-      const data = await response.json() as { verified?: boolean; error?: string };
-      if (!response.ok || !data.verified) throw new Error(data.error ?? "The Drive workspace could not be verified.");
-      notify("The active Drive workspace was verified. You can now enable project-folder testing when ready.", "success");
-      invalidateCachedGet("/api/v1/google-workspace");
-      await checkSetup(true);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The Drive workspace could not be verified.", "error");
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  async function disconnectGoogleDrive() {
-    setWorking(true);
-    try {
-      const response = await fetch("/api/v1/integrations/google/connection", { method: "DELETE" });
-      const data = await response.json() as { disconnected?: boolean; error?: string };
-      if (!response.ok || !data.disconnected) throw new Error(data.error ?? "The Google connection could not be removed.");
-      notify("The active Google connection was removed from FCI Operations.", "success");
-      invalidateCachedGet("/api/v1/google-workspace");
-      await checkSetup(true);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The Google connection could not be removed.", "error");
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  async function readApi<T>(url: string, init?: RequestInit) {
-    const response = await fetch(url, init);
-    const data = await response.json().catch(() => ({})) as T & { error?: string };
-    if (!response.ok) throw new Error(data.error ?? "The Workspace action could not be completed.");
-    return data;
-  }
-
-  async function prepareTestGmailLabels() {
-    setGmailWorking(true);
-    try {
-      await readApi<{ prepared: boolean }>("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
-      setGmailLabelsReady(true);
-      notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Gmail labels could not be prepared.", "error");
-    } finally {
-      setGmailWorking(false);
-    }
-  }
-
-  async function refreshTestGmail() {
-    setGmailWorking(true);
-    try {
-      const data = await readApi<{ messages?: WorkspaceMessage[]; labelReady?: boolean }>("/api/v1/integrations/google/gmail/messages?label=inbox");
-      setGmailMessages(data.messages ?? []);
-      setGmailLabelsReady((current) => current || Boolean(data.labelReady));
-      notify(`Loaded ${data.messages?.length ?? 0} Workspace inbox message(s).`, "info");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The test inbox could not be loaded.", "error");
-    } finally {
-      setGmailWorking(false);
-    }
-  }
-
-  async function sendSelfTestEmail() {
-    setGmailWorking(true);
-    try {
-      await readApi<{ sent: boolean }>("/api/v1/integrations/google/gmail/send-test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      notify(workspace?.simulation ? "A sample email was added to the simulated Workspace inbox." : "A test email was sent only to the configured Workspace mailbox.", "success");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The self-test email could not be sent.", "error");
-    } finally {
-      setGmailWorking(false);
-    }
-  }
-
-  function openFilingReview(message: WorkspaceMessage) {
-    setFilingMessage(message);
-    setFilingProjectId("");
-    setFilingPreview(null);
-  }
-
-  function closeFilingReview() {
-    if (filingLoading || filingSubmitting) return;
-    setFilingMessage(null);
-    setFilingProjectId("");
-    setFilingPreview(null);
-  }
-
-  async function previewGmailFiling() {
-    if (!filingMessage || !filingProjectId) {
-      notify("Choose the exact independent project before reviewing this email filing.", "warning");
-      return;
-    }
-    setFilingLoading(true);
-    try {
-      const data = await readApi<GmailFilingPreview>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
-      setFilingPreview(data);
-      notify(`Ready to review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
-    } catch (error) {
-      setFilingPreview(null);
-      notify(error instanceof Error ? error.message : "The Gmail filing preview could not be loaded.", "error");
-    } finally {
-      setFilingLoading(false);
-    }
-  }
-
-  async function confirmGmailFiling() {
-    if (!filingMessage || !filingProjectId || !filingPreview) return;
-    setFilingSubmitting(true);
-    try {
-      const data = await readApi<{ filed: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number } }>(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: filingProjectId }),
-      });
-      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`, data.alreadyFiled ? "info" : "success");
-      setFilingMessage(null);
-      setFilingProjectId("");
-      setFilingPreview(null);
-      await refreshTestGmail();
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The Gmail filing could not be completed.", "error");
-    } finally {
-      setFilingSubmitting(false);
-    }
-  }
-
-  async function refreshTestCalendar() {
-    setCalendarWorking(true);
-    try {
-      const data = await readApi<{ events?: Array<{ id: string; title: string; start: string; end: string; url?: string }> }>("/api/v1/integrations/google/calendar/events");
-      setCalendarEvents(data.events ?? []);
-      notify(`Loaded ${data.events?.length ?? 0} upcoming Workspace Calendar event(s).`, "info");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The Workspace Calendar could not be loaded.", "error");
-    } finally {
-      setCalendarWorking(false);
-    }
-  }
-
-  async function createTestCalendarHold() {
-    setCalendarWorking(true);
-    try {
-      await readApi<{ event: { start: string } }>("/api/v1/integrations/google/calendar/test-hold", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      notify(workspace?.simulation ? "A 30-minute hold was added to the simulated Workspace calendar." : "A private 30-minute Workspace test hold was created with no attendees or notifications.", "success");
-      await refreshTestCalendar();
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "The test calendar hold could not be created.", "error");
-    } finally {
-      setCalendarWorking(false);
-    }
-  }
-
-  async function resetSimulation() {
-    setWorking(true);
-    try {
-      const data = await readApi<{ reset: boolean; messages: number; events: number }>("/api/v1/integrations/google/simulation/reset", { method: "POST" });
-      setGmailMessages([]);
-      setCalendarEvents([]);
-      setGmailLabelsReady(true);
-      notify(`Workspace simulation reset with ${data.messages} sample messages and ${data.events} calendar events.`, "success");
-      invalidateCachedGet("/api/v1/google-workspace");
-      await checkSetup(true);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Workspace simulation could not be reset.", "error");
-    } finally {
-      setWorking(false);
-    }
-  }
-
-  const configured = status === "credentials";
-  const simulation = workspace?.simulation === true;
-  const connected = workspace?.connectionStatus === "connected";
-  const gmailReady = connected && workspace?.gmailEnabled === true && workspace?.gmailConnected === true;
-  const calendarReady = connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
-  const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
-  const reconnectRequired = workspace?.requiresReauthorization === true;
-  const selectedServices = workspace?.enabledServices?.join(", ") ?? "drive";
-  const storageName = workspace?.storageName ?? "FCI Operations";
-  const oauthMessage = oauthResult === "connected"
-    ? "Google was connected. Run the readiness check to refresh this panel."
-    : oauthResult === "authorization-cancelled"
-      ? "Google authorization was cancelled; no connection was saved."
-      : oauthResult === "authorization-expired"
-        ? "Google authorization expired. Start the connection again from this page."
-        : oauthResult === "admin-required"
-          ? "An approved FCI administrator must complete the Google connection."
-          : oauthResult === "setup-needed"
-              ? "Google setup is incomplete. Review the missing configuration below."
-            : oauthResult === "connection-failed"
-              ? "Google could not be connected. Confirm the approved account, folder, and requested services, then try again."
-              : null;
-
-  return <section className="panel workspace-settings">
-    <div className="settings-heading">
-      <div><p className="eyebrow">Company integration</p><h2>Google Workspace</h2><p>Use one company Workspace connection for development verification. Local simulation keeps each development workflow testable without Google access.</p></div>
-      <button className="primary-button" onClick={() => void checkSetup(true)} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
-    </div>
-    <div className={`workspace-mode-card ${simulation ? "simulation" : "live"}`}>
-      {simulation ? <Zap size={18} /> : <Building2 size={18} />}
-      <span><strong>{simulation ? "Local Workspace simulation" : "Company Google Workspace"}</strong><small>{simulation ? "Sample data only · no Google account connected · nothing is sent to Google" : "One administrator-approved organization connection"}</small></span>
-      <b>{simulation ? "LOCAL" : connected ? "CONNECTED" : "SETUP"}</b>
-    </div>
-    <div className={`workspace-connection ${connected ? "ready" : ""}`}>
-      <div className="integration-logo google"><Mail size={20} /></div>
-      <div><strong>{simulation ? "All four simulated services are ready" : connected ? "Google Workspace services connected" : reconnectRequired ? "Google permission update required" : configured ? "Ready to connect Google Workspace" : "Google Workspace setup required"}</strong><span>{simulation ? "Gmail, Calendar, Shared Drive, and Sheets use local sample state." : connected ? `${workspace?.connectionAccount ?? "Approved Workspace account"} is connected with ${selectedServices}.` : reconnectRequired ? "Reconnect and approve every selected service." : configured ? `The company connection will request ${selectedServices}.` : "Add the missing company Workspace settings below."}</span></div>
-      <span>{simulation ? "Simulated" : connected ? "Connected" : reconnectRequired ? "Reconnect" : configured ? "Authorize next" : "Not connected"}</span>
-    </div>
-    {simulation && <p className="workspace-warning"><ShieldCheck size={15} /><span><strong>Safe local testing:</strong> OAuth is disabled, no refresh token exists, and all messages, events, folders, and Sheet sync results stay inside this local development environment.</span></p>}
-    {!simulation && workspace?.sheetsEnabled && <p className="workspace-warning"><FileText size={15} /><span><strong>Google Sheets:</strong> {sheetsReady ? "the Client Directory and Project Register mirror are ready." : workspace.clientDirectorySheetConfigured ? "reconnect Workspace to approve Sheets." : "add the Client Directory spreadsheet ID before syncing."}</span></p>}
-    {!simulation && oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
-    {!simulation && missing.length > 0 && <p className="workspace-missing"><strong>Still needed:</strong> {missing.join(", ")}</p>}
-    <div className="workspace-actions">
-      {simulation ? <button className="primary-button" onClick={resetSimulation} disabled={working}>{working ? "Resetting…" : "Reset simulation data"}</button> : <>
-        {!connected && <button className="primary-button" onClick={connectGoogleDrive} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</button>}
-        {connected && <button className="primary-button" onClick={verifyGoogleDrive} disabled={working}>{working ? "Verifying…" : "Verify Shared Drive"}</button>}
-        {connected && <button className="soft-button" onClick={disconnectGoogleDrive} disabled={working}>Disconnect Workspace</button>}
-      </>}
-    </div>
-    {!simulation && connected && !workspace?.provisioningEnabled && <p className="workspace-missing"><strong>Folder creation remains off:</strong> enable Workspace Drive provisioning only after the company Shared Drive is verified.</p>}
-    <section className="test-google-services" aria-label="Workspace service controls">
-      <header><div><p className="eyebrow">{simulation ? "Simulation controls" : "Workspace controls"}</p><h3>Gmail & Calendar</h3><p>{simulation ? "Use the same actions as live mode with local sample data." : "Every Gmail and Calendar change still requires a direct action."}</p></div></header>
-      <div className="test-service-grid">
-        <section className="test-service-card">
-          <div className="test-service-heading"><Mail size={17} /><div><strong>{simulation ? "Simulated Workspace Gmail" : "Workspace Gmail"}</strong><span>{gmailReady ? "Ready for explicit actions" : "Connect Workspace and approve Gmail"}</span></div></div>
-          <p>Prepare FCI labels, view up to 20 messages, add a sample email in simulation, and review-file one message into the exact project. Inbox stays intact.</p>
-          <div className="workspace-actions"><button className="soft-button" onClick={prepareTestGmailLabels} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</button><button className="soft-button" onClick={refreshTestGmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</button><button className="primary-button" onClick={sendSelfTestEmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : simulation ? "Add sample email" : "Send Workspace test"}</button></div>
-          {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><button className="primary-button" onClick={() => openFilingReview(message)} disabled={gmailWorking}>Review & copy</button></div></article>)}</div>}
-        </section>
-        <section className="test-service-card">
-          <div className="test-service-heading"><CalendarDays size={17} /><div><strong>{simulation ? "Simulated shared calendars" : "Workspace shared calendars"}</strong><span>{calendarReady ? "Ready for appointment testing" : "Connect Workspace and approve Calendar"}</span></div></div>
-          <p>View a seven-day appointments window or create one 30-minute hold. Simulation stores it locally; live mode uses the configured company calendar.</p>
-          <div className="workspace-actions"><button className="soft-button" onClick={refreshTestCalendar} disabled={!calendarReady || calendarWorking}>{calendarWorking ? "Loading…" : "View upcoming events"}</button><button className="primary-button" onClick={createTestCalendarHold} disabled={!calendarReady || calendarWorking}>{calendarWorking ? "Creating…" : "Create test hold"}</button></div>
-          {calendarEvents.length > 0 && <div className="test-service-list">{calendarEvents.map((event) => <article key={event.id}><div><strong>{event.title}</strong><span>{new Date(event.start).toLocaleString()} – {new Date(event.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></div>{event.url && <button className="soft-button" onClick={() => window.open(event.url, "_blank", "noopener,noreferrer")}>Open</button>}</article>)}</div>}
-        </section>
-      </div>
-    </section>
-    <div className="drive-blueprint"><div><h3>{simulation ? "Simulated Shared Drive blueprint" : "Company Shared Drive blueprint"}</h3><p>{storageName}</p></div><ol>{DRIVE_BLUEPRINT.roots.map((item) => <li key={item}>{item}</li>)}</ol><div className="project-folder-list"><strong>Every independent project receives:</strong>{DRIVE_BLUEPRINT.projectFolders.map((item) => <span key={item}><FolderOpen size={13} />{item}</span>)}</div></div>
-    <div className="workspace-checklist"><h3>{simulation ? "Simulation safeguards" : "Workspace launch safeguards"}</h3><label><input type="checkbox" /> {simulation ? "Use only seeded sample data" : "Use a company-owned Shared Drive and sender mailbox"}</label><label><input type="checkbox" /> {simulation ? "Confirm no OAuth account or Google token is connected" : "Restrict authorization to the approved Workspace domain"}</label><label><input type="checkbox" /> Keep Gmail filing review-first and project-specific</label><label><input type="checkbox" /> Verify the two shared calendars and Sheet mirror before staff launch</label></div>
-    {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
-  </section>;
-}
-
-function GmailFilingModal({ message, projects, projectId, preview, loading, submitting, onProject, onPreview, onConfirm, onClose }: {
-  message: WorkspaceMessage;
-  projects: Project[];
-  projectId: string;
-  preview: GmailFilingPreview | null;
-  loading: boolean;
-  submitting: boolean;
-  onProject: (projectId: string) => void;
-  onPreview: () => void;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  const selectedProject = projects.find((project) => project.id === projectId);
-  const attachmentLabel = preview?.message.attachmentCount ?? 0;
-  const formatBytes = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  const alreadyFiled = preview?.existing?.filed === true;
-  return <AccessibleOverlay ariaLabel="File email to one project" contentClassName="modal gmail-filing-modal" onClose={onClose} busy={loading || submitting}><header><div><p className="eyebrow">Review-approved Gmail filing</p><h2>File to one project</h2></div><button onClick={onClose} aria-label="Close" disabled={loading || submitting}><X size={20} /></button></header><div className="modal-detail"><div className="filing-message-summary"><Mail size={17} /><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span></div></div><label className="filing-project-select">Exact independent project<select data-overlay-initial-focus value={projectId} onChange={(event) => onProject(event.target.value)} disabled={loading || submitting}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name} · {project.client}</option>)}</select></label>{selectedProject && <p className={selectedProject.driveFolderId ? "filing-workspace-ready" : "filing-workspace-pending"}>{selectedProject.driveFolderId ? <><CheckCircle2 size={14} /> Managed Drive workspace detected for this project.</> : <><CircleAlert size={14} /> This project needs its managed Drive workspace before email can be filed. The review will not create a folder.</>}</p>}<p className="form-help"><ShieldCheck size={14} /> The original email becomes an <b>.eml</b> in <b>05_Correspondence / Email Archive</b>. Attachments go to <b>05_Correspondence / Email Attachments</b>. Your Gmail Inbox label is retained.</p>{preview && <div className="filing-preview"><div className="filing-preview-heading"><div><FolderOpen size={16} /><strong>{preview.project.number} — {preview.project.name}</strong><span>{preview.project.client}</span></div>{alreadyFiled && <Status text="Filed" />}</div>{alreadyFiled ? <p className="filing-existing">This email was already filed to this project. No second copy will be made.</p> : <><dl><div><dt>Email archive</dt><dd>{preview.destinations.emailArchive}</dd></div><div><dt>Attachments</dt><dd>{preview.destinations.attachments}</dd></div></dl><div className="filing-attachments"><strong>{attachmentLabel} attachment{attachmentLabel === 1 ? "" : "s"}</strong>{preview.message.attachments.length ? <ul>{preview.message.attachments.map((attachment, index) => <li key={`${attachment.filename}-${index}`}><FileText size={13} /><span>{attachment.filename}</span><small>{attachment.mimeType} · {formatBytes(attachment.byteSize)}</small></li>)}</ul> : <p>No separate attachments were found. The original email will still be copied as an .eml file.</p>}</div><p className="filing-confirmation"><ShieldCheck size={14} /> Nothing has been copied yet. Select <b>Copy email to project</b> to complete this one approved filing.</p></>}</div>}</div><footer className="modal-footer"><button className="soft-button" onClick={onClose} disabled={loading || submitting}>Cancel</button>{preview ? <button className="primary-button" onClick={onConfirm} disabled={loading || submitting || alreadyFiled}>{submitting ? "Copying…" : alreadyFiled ? "Already filed" : `Copy email + ${attachmentLabel} attachment${attachmentLabel === 1 ? "" : "s"}`}</button> : <button className="primary-button" onClick={onPreview} disabled={!projectId || loading || submitting}>{loading ? "Reviewing…" : "Review destination"}</button>}</footer></AccessibleOverlay>;
-}
-
 function GmailReplyModal({ message, body, saving, onBody, onSave, onClose }: { message: WorkspaceMessage; body: string; saving: boolean; onBody: (value: string) => void; onSave: () => void; onClose: () => void }) {
   return <AccessibleOverlay ariaLabel="Save a Gmail reply draft" contentClassName="modal gmail-reply-modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Workspace Gmail draft</p><h2>Save a reply draft</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={(event) => { event.preventDefault(); onSave(); }}><div className="modal-detail"><div className="filing-message-summary"><Mail size={17} /><div><strong>{message.subject || "(No subject)"}</strong><span>Reply target: {message.from || "original sender"}</span></div></div><label>Reply message<textarea data-overlay-initial-focus value={body} onChange={(event) => onBody(event.target.value)} placeholder="Write your reply…" maxLength={6000} required disabled={saving} /></label><p className="form-help"><ShieldCheck size={14} /> Live mode saves an unsent draft in the original Workspace Gmail thread. Simulation stores a local draft only. Sending remains a separate, deliberate action.</p></div><footer className="modal-footer"><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || !body.trim()}>{saving ? "Saving…" : <><Reply size={16} /> Save draft</>}</button></footer></form></AccessibleOverlay>;
-}
-
-function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => void }) {
-  return <section className="panel test-launch"><div className="settings-heading"><div><p className="eyebrow">Development verification</p><h2>Test & launch checklist</h2><p>Use this working development copy to verify durable workflows before the Google Cloud production environment is opened to staff.</p></div><button className="primary-button" onClick={onGoogleSetup}>Open Workspace check</button></div><ol className="test-checklist"><li><strong>Environment boundary:</strong> this Sites deployment is the working development copy. Production will run on Cloud Run and Cloud SQL PostgreSQL.</li><li><strong>Clients and projects:</strong> add a test client, create two independent projects, create their folders, refresh, and verify the relationships persist.</li><li><strong>Meetings:</strong> save an Otter-linked summary with decisions and action items, reload it, and ask the assistant about the meeting.</li><li><strong>Inbox:</strong> connect the approved test Workspace mailbox, prepare labels, save a reply draft, and review-file one message to the exact project.</li><li><strong>Calendar:</strong> verify connected calendar readiness. Shift, crew, conflict, publishing, and acknowledgement tests remain blocked until those durable models exist.</li><li><strong>AI:</strong> ask a project question and open every cited source. Configure OpenAI separately before evaluating generated answers.</li><li><strong>Production readiness:</strong> verify Google Cloud deployment, Workspace OIDC, backups, audit access, Shared Drive, mailbox, Sheet, calendars, OAuth client, and allowed domain before staff launch.</li></ol></section>;
 }
 
 function SourceDetailModal({ citation, onClose }: { citation: AssistantCitation; onClose: () => void }) {
@@ -2089,12 +1425,6 @@ function NewProjectModal({ clients, initialClientId, managerId, managerLabel, on
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: form.get("value") ? money(Number(form.get("value"))) : "TBD", site: String(form.get("site")), managerId, lead: projectManagerLabel(managerId, managerId, managerLabel), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
   const selectedClientId = initialClientId && clients.some((client) => client.id === initialClientId) ? initialClientId : clients[0]?.id ?? "";
   return <AccessibleOverlay ariaLabel="Create a project" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client<select data-overlay-initial-focus name="clientId" required defaultValue={selectedClientId} disabled={clients.length === 0}>{clients.length === 0 && <option value="">Create a client first</option>}{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="Project name" /></label><div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><div className="assigned-manager-field" aria-label={`Project manager: ${managerLabel}, signed-in account`}><span>Project manager</span><strong>{managerLabel}</strong><small>{managerId} · signed-in account</small></div></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value<input name="value" type="number" min="0" placeholder="Estimated amount" /></label></div><p className="form-help"><ShieldCheck size={14} /> The project is assigned to your authorized signed-in account. An administrator can correct an unassigned legacy project from its project drawer.</p><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || clients.length === 0}>{saving ? "Creating…" : clients.length === 0 ? "Add a client first" : "Create project"}</button></footer></form></AccessibleOverlay>;
-}
-
-function RuleModal({ onClose, onSave }: { onClose: () => void; onSave: (rule: FilingRuleDraft) => Promise<void> }) {
-  const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); try { await onSave({ name: String(form.get("name")), enabled: true, priority: Number(form.get("priority")), matchSummary: String(form.get("matchSummary")), action: String(form.get("action")) as FilingRuleDraft["action"], targetCategory: String(form.get("targetCategory")), approvalRequired: true }); } finally { setSaving(false); } }
-  return <AccessibleOverlay ariaLabel="Add an email filing rule" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Gmail intake</p><h2>Add an email filing rule</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Rule name<input data-overlay-initial-focus name="name" required placeholder="e.g. Estimator bid invitations" /></label><div className="form-row"><label>Priority<input name="priority" type="number" min="1" defaultValue="10" required /></label><label>Action<select name="action"><option value="suggest">Suggest a project</option><option value="review">Send to review</option><option value="ignore">Ignore</option></select></label></div><label>When this matches<textarea name="matchSummary" required placeholder="Example: sender is estimator@builder.com and subject contains BID" /></label><label>Default Drive destination<input name="targetCategory" required defaultValue="05_Correspondence / Email Archive" /></label><p className="form-help"><ShieldCheck size={14} /> New rules always require review before Gmail labels, email archives, or attachments are changed.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add rule"}</button></footer></form></AccessibleOverlay>;
 }
 
 function LeadDrawer({ lead, onClose, onAdvance, returnFocusRef }: { lead: Lead; onClose: () => void; onAdvance: (id: string) => Promise<void>; returnFocusRef?: RefObject<HTMLElement | null> }) {
