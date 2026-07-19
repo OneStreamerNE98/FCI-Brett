@@ -208,6 +208,9 @@ wrong hd, bad signature, expired/second redemption, idle+absolute expiry, logout
 confirms no ChatGPT header reads in `app/platform/`.
 
 ### BE-05 · Object storage behind the port: R2 + GCS adapters, wire uploads route (medium, no deps)
+**Status:** In progress — `codex/object-storage-adapters`, July 19, 2026. Source-only;
+no GCS adapter composition, bucket provisioning, hosted configuration, or deployment.
+
 **Why:** `app/ports/object-storage.ts` (create-only putIfAbsent/head/openRead,
 sha256+generation) has only the in-memory adapter; the one real call site
 (`app/api/v1/uploads/route.ts`) bypasses the port with `env.FILES.put`; Cloud Run file

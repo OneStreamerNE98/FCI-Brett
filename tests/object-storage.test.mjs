@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import test from "node:test";
 
+import { Storage } from "@google-cloud/storage";
+
+import { GcsObjectStorage } from "../app/adapters/gcs/object-storage.ts";
 import { MemoryObjectStorage } from "../app/adapters/memory/object-storage.ts";
+import { R2ObjectStorage } from "../app/adapters/r2/object-storage.ts";
 import {
   OBJECT_STORAGE_LIMITS,
   ObjectStorageValidationError,
@@ -40,6 +44,208 @@ function validationCode(code) {
     return true;
   };
 }
+
+function copiedArrayBuffer(value) {
+  const bytes = value instanceof ArrayBuffer
+    ? new Uint8Array(value)
+    : value instanceof Uint8Array
+      ? value
+      : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  return Uint8Array.from(bytes).buffer;
+}
+
+class FakeR2Bucket {
+  objects = new Map();
+  lastPut = null;
+  nextVersion = 1;
+
+  cloneMetadata(entry) {
+    return {
+      key: entry.key,
+      version: entry.version,
+      size: entry.size,
+      etag: entry.etag,
+      uploaded: new Date(entry.uploaded),
+      httpMetadata: { ...entry.httpMetadata },
+      customMetadata: { ...entry.customMetadata },
+      checksums: { sha256: entry.checksums.sha256.slice(0) },
+    };
+  }
+
+  async head(key) {
+    const entry = this.objects.get(key);
+    return entry ? this.cloneMetadata(entry) : null;
+  }
+
+  async put(key, value, options = {}) {
+    this.lastPut = { key, options };
+    if (options.onlyIf?.etagDoesNotMatch === "*" && this.objects.has(key)) return null;
+    const bytes = Uint8Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+    const digest = options.sha256 ? copiedArrayBuffer(options.sha256) : new ArrayBuffer(0);
+    const entry = {
+      key,
+      version: `fake-r2-generation-${this.nextVersion++}`,
+      size: bytes.byteLength,
+      etag: createHash("sha256").update(bytes).digest("hex"),
+      uploaded: new Date(1_783_939_200_000 + this.nextVersion),
+      httpMetadata: { ...(options.httpMetadata ?? {}) },
+      customMetadata: { ...(options.customMetadata ?? {}) },
+      checksums: { sha256: digest },
+      bytes,
+    };
+    this.objects.set(key, entry);
+    return this.cloneMetadata(entry);
+  }
+
+  async get(key, options = {}) {
+    const entry = this.objects.get(key);
+    if (!entry) return null;
+    const metadata = this.cloneMetadata(entry);
+    if (options.onlyIf?.etagMatches && options.onlyIf.etagMatches !== entry.etag) return metadata;
+    return {
+      ...metadata,
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(entry.bytes.slice());
+          controller.close();
+        },
+      }),
+    };
+  }
+}
+
+const gcsBucketName = process.env.TEST_GCS_OBJECT_STORAGE_BUCKET?.trim() ?? "";
+const gcsGateOpen =
+  process.env.TEST_GCS_OBJECT_STORAGE_ACK === "FCI TEST — DO NOT USE" &&
+  gcsBucketName.length > 0;
+
+const storageContracts = [
+  {
+    name: "memory",
+    async createHarness() {
+      return { storage: new MemoryObjectStorage() };
+    },
+  },
+  {
+    name: "fake R2",
+    async createHarness() {
+      return { storage: new R2ObjectStorage({ bucket: new FakeR2Bucket() }) };
+    },
+  },
+  {
+    name: "gated GCS",
+    skip: gcsGateOpen
+      ? undefined
+      : "TEST_GCS_OBJECT_STORAGE_BUCKET and the exact FCI test-only acknowledgment are not configured",
+    async createHarness() {
+      const client = new Storage();
+      const keys = new Set();
+      return {
+        storage: new GcsObjectStorage({ bucketName: gcsBucketName, storage: client }),
+        key(label) {
+          const key = `fci-test/object-storage-contract/${randomUUID()}/${label}`;
+          keys.add(key);
+          return key;
+        },
+        async cleanup() {
+          await Promise.all(
+            [...keys].map((key) => client.bucket(gcsBucketName).file(key).delete({ ignoreNotFound: true })),
+          );
+        },
+      };
+    },
+  },
+];
+
+for (const contract of storageContracts) {
+  test(`object-storage contract (${contract.name}) stores once and fences reads by generation`, {
+    skip: contract.skip,
+  }, async (t) => {
+    const harness = await contract.createHarness();
+    if (harness.cleanup) t.after(harness.cleanup);
+    const key = harness.key?.("stores-once") ?? `contract/${randomUUID()}/stores-once`;
+    const bytes = Uint8Array.from([10, 20, 30, 40]);
+    const stored = await harness.storage.putIfAbsent(input(key, bytes));
+    assert.equal(stored.outcome, "stored");
+    assert.equal(stored.object.key, key);
+    assert.equal(stored.object.byteSize, bytes.byteLength);
+    assert.equal(stored.object.sha256, sha256(bytes));
+    assert.ok(Number.isSafeInteger(stored.object.createdAt));
+
+    let losingBodyReads = 0;
+    const duplicate = await harness.storage.putIfAbsent({
+      ...input(key, Uint8Array.from([99])),
+      chunks: (async function* () {
+        losingBodyReads += 1;
+        yield Uint8Array.from([99]);
+      })(),
+    });
+    assert.equal(duplicate.outcome, "already-exists");
+    assert.deepEqual(duplicate.object, stored.object);
+    assert.equal(losingBodyReads, 0);
+
+    assert.equal(await harness.storage.head({ key, generation: "1" }), null);
+    assert.deepEqual(await harness.storage.head({ key, generation: stored.object.generation }), stored.object);
+    const opened = await harness.storage.openRead({ key, generation: stored.object.generation });
+    assert.ok(opened);
+    assert.deepEqual(await readAll(opened.chunks), bytes);
+  });
+
+  test(`object-storage contract (${contract.name}) coalesces same-process concurrent creates`, {
+    skip: contract.skip,
+  }, async (t) => {
+    const harness = await contract.createHarness();
+    if (harness.cleanup) t.after(harness.cleanup);
+    const key = harness.key?.("concurrent") ?? `contract/${randomUUID()}/concurrent`;
+    let releaseWinner;
+    const winnerGate = new Promise((resolve) => { releaseWinner = resolve; });
+    let winnerStarted;
+    const winnerStartedPromise = new Promise((resolve) => { winnerStarted = resolve; });
+    let losingBodyReads = 0;
+    const winnerBytes = Uint8Array.from([1, 2, 3]);
+
+    const winner = harness.storage.putIfAbsent({
+      ...input(key, winnerBytes),
+      chunks: (async function* () {
+        winnerStarted();
+        await winnerGate;
+        yield winnerBytes;
+      })(),
+    });
+    await winnerStartedPromise;
+    const loser = harness.storage.putIfAbsent({
+      ...input(key, Uint8Array.from([9])),
+      chunks: (async function* () {
+        losingBodyReads += 1;
+        yield Uint8Array.from([9]);
+      })(),
+    });
+    releaseWinner();
+    const [winnerResult, loserResult] = await Promise.all([winner, loser]);
+    assert.equal(winnerResult.outcome, "stored");
+    assert.equal(loserResult.outcome, "already-exists");
+    assert.deepEqual(loserResult.object, winnerResult.object);
+    assert.equal(losingBodyReads, 0);
+  });
+}
+
+test("R2 adapter preserves development upload metadata and provider integrity guards", async () => {
+  const bucket = new FakeR2Bucket();
+  const storage = new R2ObjectStorage({
+    bucket,
+    customMetadata: { originalName: "FCI TEST — DO NOT USE.pdf", uploadedBy: "tester@example.test" },
+  });
+  const bytes = Uint8Array.from([1, 2, 3]);
+  await storage.putIfAbsent(input("uploads/metadata", bytes, { contentType: "application/pdf" }));
+
+  assert.deepEqual(bucket.lastPut.options.onlyIf, { etagDoesNotMatch: "*" });
+  assert.deepEqual(bucket.lastPut.options.httpMetadata, { contentType: "application/pdf" });
+  assert.deepEqual({ ...bucket.lastPut.options.customMetadata }, {
+    originalName: "FCI TEST — DO NOT USE.pdf",
+    uploadedBy: "tester@example.test",
+  });
+  assert.equal(Buffer.from(bucket.lastPut.options.sha256).toString("hex"), sha256(bytes).slice("sha256:".length));
+});
 
 test("stores once and requires the exact opaque generation for metadata and reads", async () => {
   const storage = new MemoryObjectStorage({
@@ -246,12 +452,21 @@ test("bounds stream chunk count and validates generated and supplied generations
 });
 
 test("public surface exposes no overwrite, list, delete, or URL escape hatch", () => {
-  const storage = new MemoryObjectStorage();
-  assert.deepEqual(
-    Object.getOwnPropertyNames(Object.getPrototypeOf(storage)).sort(),
-    ["constructor", "head", "openRead", "putIfAbsent"],
-  );
-  for (const forbidden of ["put", "overwrite", "list", "delete", "publicUrl", "signedUrl"]) {
-    assert.equal(forbidden in storage, false);
+  const storages = [
+    new MemoryObjectStorage(),
+    new R2ObjectStorage({ bucket: new FakeR2Bucket() }),
+    new GcsObjectStorage({
+      bucketName: "fci-test-bucket",
+      storage: { bucket: () => ({ file: () => { throw new Error("not called"); } }) },
+    }),
+  ];
+  for (const storage of storages) {
+    assert.deepEqual(
+      Object.getOwnPropertyNames(Object.getPrototypeOf(storage)).sort(),
+      ["constructor", "head", "openRead", "putIfAbsent"],
+    );
+    for (const forbidden of ["put", "overwrite", "list", "delete", "publicUrl", "signedUrl"]) {
+      assert.equal(forbidden in storage, false);
+    }
   }
 });

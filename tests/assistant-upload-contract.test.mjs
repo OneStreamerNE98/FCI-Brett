@@ -25,4 +25,21 @@ test("upload rejects malformed and oversized declared bodies before parsing mult
   assert.match(source, /if \(!\/\^\\d\+\$\/\.test\(contentLengthHeader\)\)/);
   assert.match(source, /if \(!Number\.isSafeInteger\(declaredLength\)\)/);
   assert.match(source, /declaredLength > MAX_MULTIPART_BYTES/);
+  assert.match(source, /new R2ObjectStorage/);
+  assert.match(source, /sha256:\s*`sha256:/);
+  assert.match(source, /file\.name\.replace\(\/\[\^a-zA-Z0-9\._-\]\/g, "-"\)/);
+  assert.doesNotMatch(source, /env\.FILES\.put/);
+});
+
+test("the source-only GCS adapter is not composed into fail-closed Cloud Run provider routes", async () => {
+  const [adapter, router, composition] = await Promise.all([
+    read("app/adapters/gcs/object-storage.ts"),
+    read("app/platform/google-cloud/employee-request-router.ts"),
+    read("app/platform/google-cloud/production-composition.ts"),
+  ]);
+
+  assert.match(adapter, /ifGenerationMatch:\s*0/);
+  assert.match(adapter, /GCS_SHA256_METADATA_KEY/);
+  assert.doesNotMatch(router, /adapters\/gcs\/object-storage|GcsObjectStorage/);
+  assert.doesNotMatch(composition, /adapters\/gcs\/object-storage|GcsObjectStorage/);
 });
