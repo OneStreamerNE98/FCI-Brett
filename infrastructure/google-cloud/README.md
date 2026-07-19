@@ -45,6 +45,15 @@ application.
   one. A future approved service plan requires an immutable `@sha256:` image
   from that environment's Terraform-managed Artifact Registry repository and a
   pinned numeric Secret Manager version.
+- `deployment_config.enable_identity`, `cloud_run_jobs.deploy_migration_job`,
+  and `cloud_run_jobs.deploy_rehearsal_job` also default to `false`. The
+  rehearsal definition is staging-only. A Job flag creates a definition in an
+  approved plan; it never starts an execution.
+- The keyless deployment identity is deliberately an image publisher, not a
+  Terraform applier or Cloud Run operator. Its Workload Identity binding accepts
+  only immutable GitHub repository ID `1298731126` (FCI-Brett) in the
+  environment project, and its only workload permission is repository-level
+  Artifact Registry writer. No service-account key is created.
 - No `allUsers` Cloud Run invoker grant exists. Public access and application
   authentication must be reviewed together after the employee app is composed.
 - Secret Manager containers and resource-level accessor grants are defined;
@@ -69,18 +78,64 @@ defines:
 - separate runtime, migration, and staging rehearsal Secret Manager containers
   with resource-level accessor grants;
 - an Artifact Registry Docker repository;
+- a separately gated, keyless, repository-scoped image-publisher identity;
 - one private-IP PostgreSQL 16 Enterprise Cloud SQL instance with SSD
   autoresize, backups, PITR, retention, connector enforcement, and production
   deletion protection;
 - one Cloud Run v2 modular-monolith service definition with min `0`, max `2`,
   Direct VPC egress, `/readyz` startup/readiness, and `/healthz` liveness probes;
+- separately gated Cloud Run v2 Job definitions for one-task, one-connection,
+  zero-retry migrations and a staging-only bounded core rehearsal. Both use the
+  same approved immutable service-image digest, dedicated database identities
+  and pinned Secret Manager versions; the rehearsal mounts one approved
+  test-data bucket read-only and requires an `fci_rehearsal_` schema;
 - email notification channels, a project-scoped budget alert, Cloud SQL CPU,
   disk, and connection alerts; a log-based failed/skipped-backup alert; plus a
   Cloud Run 5xx alert when the service is separately enabled.
 
 The module does not create OAuth clients, Google Admin settings, DNS, service
-account keys, PostgreSQL principals, secret values, Cloud Run Jobs, or any live
-optional-feature resource.
+account keys, PostgreSQL principals, secret values, Job executions, public Cloud
+Run invoker grants, or any live optional-feature resource.
+
+## Image build and release boundary
+
+[`cloud-run-image.yml`](../../.github/workflows/cloud-run-image.yml) builds
+`Dockerfile.cloud-run` for every pull request and never publishes from that
+event. A manual dispatch from `main` can publish the current commit tag only
+after the selected protected GitHub environment approves the job. It
+authenticates with Workload Identity Federation and a five-minute access token;
+no stored service account key is supported.
+
+Before enabling manual publication, create and review both protected GitHub
+environments, `fci-cloud-run-image-staging` and
+`fci-cloud-run-image-production`, with required reviewers and restricted
+deployment branches. Each environment supplies only these non-secret variables:
+
+- `GCP_PROJECT_ID` and `GCP_REGION` for that isolated environment;
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`, naming the approved pool/provider in the
+  same environment project; and
+- `GCP_IMAGE_PUBLISHER_SERVICE_ACCOUNT`, the separately applied Terraform
+  output for that environment's publisher identity.
+
+The provider must map `google.subject=assertion.sub` and
+`attribute.repository_id=assertion.repository_id`. Before enabling the identity,
+verify and record this exact provider attribute condition, substituting the
+selected protected environment name:
+
+```text
+assertion.repository_id == '1298731126' && assertion.ref == 'refs/heads/main' && assertion.environment == 'fci-cloud-run-image-staging'
+```
+
+Production uses the same condition with
+`fci-cloud-run-image-production`. This immutable repository ID, main-ref, and
+environment condition is part of the authentication boundary, not optional
+workflow documentation.
+
+The workflow's result is an Artifact Registry digest candidate. Publishing does
+not authorize or perform a Terraform apply, Cloud Run service deployment, Job
+execution, database migration, rehearsal, or production release. Record the
+digest in the private approval evidence, review the resulting source-only plan,
+and follow the runbook under a separate owner-approved execution procedure.
 
 ## Environment boundaries
 
@@ -122,9 +177,11 @@ terraform -chdir=infrastructure/google-cloud/environments/production validate
 terraform -chdir=infrastructure/google-cloud/environments/production test
 ```
 
-Do not run `plan` with real values, initialize a real backend, or run `apply`
-without a separate owner-approved procedure. A successful validation is source
-evidence only, not migration, restore, security, cost, or deployment acceptance.
+The environment tests use a mocked provider and include a default-input plan
+assertion proving zero resources. Do not run `plan` with real values, initialize
+a real backend, or run `apply` without a separate owner-approved procedure. A
+successful validation is source evidence only, not migration, restore, security,
+cost, or deployment acceptance.
 
 ## Required future inputs
 
@@ -145,7 +202,13 @@ Before an approved environment plan, record outside public source control:
   reference, plus a separately reviewed backend bucket and keyless state
   identity;
 - immutable image digest, database principal, and pinned secret version only
-  when Cloud Run deployment is authorized.
+  when Cloud Run service or Job definition is authorized;
+- exact repository-scoped Workload Identity principal, reviewed protected
+  GitHub environment, and publisher service-account email before an image can be
+  published; and
+- for the staging rehearsal only, a reviewed `fci_rehearsal_` schema, pinned
+  rehearsal database secret version, and existing test-data-only snapshot
+  bucket/object.
 
 See [cost inputs](cost/README.md), [connection budget](CONNECTION-BUDGET.md),
 [optional activation gates](OPTIONAL-FEATURES.md), and the
@@ -159,4 +222,7 @@ See [cost inputs](cost/README.md), [connection budget](CONNECTION-BUDGET.md),
 - [Cloud Run Direct VPC egress](https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc)
 - [Cloud Run health checks](https://docs.cloud.google.com/run/docs/configuring/healthchecks)
 - [Cloud Run secrets](https://docs.cloud.google.com/run/docs/configuring/services/secrets)
+- [Cloud Run Jobs](https://docs.cloud.google.com/run/docs/create-jobs)
+- [Artifact Registry access control](https://docs.cloud.google.com/artifact-registry/docs/access-control)
+- [Workload Identity Federation for deployment pipelines](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines)
 - [Cloud Billing budgets](https://docs.cloud.google.com/billing/docs/how-to/budgets)

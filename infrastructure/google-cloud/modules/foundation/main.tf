@@ -20,7 +20,19 @@ locals {
     "sqladmin.googleapis.com",
   ])
 
-  core_services = setunion(local.guardrail_services, local.workload_services)
+  deployment_services = toset(concat(
+    var.deployment_config.enable_identity ? [
+      "iamcredentials.googleapis.com",
+      "sts.googleapis.com",
+    ] : [],
+    var.cloud_run_jobs.deploy_rehearsal_job ? ["storage.googleapis.com"] : [],
+  ))
+
+  core_services = setunion(
+    local.guardrail_services,
+    local.workload_services,
+    local.deployment_services,
+  )
   enabled_services = (
     var.enable_core ? local.core_services :
     var.enable_guardrails ? local.guardrail_services : toset([])
@@ -885,7 +897,7 @@ resource "google_cloud_run_v2_service" "application" {
     google_project_iam_member.core_identities,
     google_secret_manager_secret_iam_member.runtime,
     google_service_networking_connection.private_vpc,
-    terraform_data.approval_gate,
+    terraform_data.deployment_gate,
   ]
 }
 
