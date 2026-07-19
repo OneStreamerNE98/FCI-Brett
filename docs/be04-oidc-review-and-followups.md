@@ -39,7 +39,7 @@ fixing).
 ---
 
 ## OIDC-01 · Accept Google's real callback parameters (launch-blocker; CONFIRMED) — DO FIRST
-**Status:** Open.
+**Status:** In progress — `codex/oidc-login-followups`, July 19, 2026.
 **Why:** `employeeLoginCallbackQuery` (`app/platform/google-cloud/employee-request-router.ts`,
 ~lines 458-469) rejects the callback if **any** query key is not exactly `code` or `state`:
 `if (keys.some((key) => key !== "code" && key !== "state")) throw new

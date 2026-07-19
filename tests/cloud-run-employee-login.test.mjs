@@ -180,7 +180,9 @@ test("Cloud Run login start and callback issue only hashed persistence credentia
     assert.match(startCookies[0], /; SameSite=Lax/);
 
     const callback = await running.request(
-      "/api/v1/session/google/callback?code=FCI_TEST_CODE&state=FCI_TEST_STATE",
+      "/api/v1/session/google/callback?state=FCI_TEST_STATE&code=FCI_TEST_CODE"
+        + "&scope=openid%20email%20profile&authuser=0&hd=cherryhillfci.com"
+        + "&prompt=consent",
       {
         headers: {
           Cookie: `__Host-fci_oidc_attempt=${ATTEMPT_COOKIE_VALUE}`,
@@ -235,6 +237,58 @@ test("Cloud Run login start and callback issue only hashed persistence credentia
     assert.doesNotMatch(sessionCookie, /; Domain=/i);
   } finally {
     await running.close();
+  }
+});
+
+test("Cloud Run records provider cancellation and rejects ambiguous callback credentials", async () => {
+  const cancelled = await startHarness();
+  try {
+    const response = await cancelled.request(
+      "/api/v1/session/google/callback?error=access_denied&state=FCI_TEST_STATE"
+        + "&error_description=The%20user%20cancelled",
+      {
+        headers: {
+          Cookie: `__Host-fci_oidc_attempt=${ATTEMPT_COOKIE_VALUE}`,
+        },
+      },
+    );
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "login_not_authorized" });
+    assert.equal(cancelled.completions.length, 0);
+    assert.equal(cancelled.identityCalls.length, 0);
+    assert.equal(cancelled.audits.length, 1);
+    assert.equal(cancelled.audits[0].action, "identity.login_failed");
+    assert.equal(cancelled.audits[0].reasonCode, "authorization_denied");
+    const cookies = setCookies(response);
+    assert.equal(cookies.length, 1);
+    assert.match(cookies[0], /^__Host-fci_oidc_attempt=;/);
+    assert.match(cookies[0], /Max-Age=0/);
+  } finally {
+    await cancelled.close();
+  }
+
+  for (const query of [
+    "code=FIRST&code=SECOND&state=FCI_TEST_STATE",
+    "code=FCI_TEST_CODE&state=FIRST&state=SECOND",
+  ]) {
+    const ambiguous = await startHarness();
+    try {
+      const response = await ambiguous.request(
+        `/api/v1/session/google/callback?${query}`,
+        {
+          headers: {
+            Cookie: `__Host-fci_oidc_attempt=${ATTEMPT_COOKIE_VALUE}`,
+          },
+        },
+      );
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), { error: "login_not_authorized" });
+      assert.equal(ambiguous.completions.length, 0);
+      assert.equal(ambiguous.identityCalls.length, 0);
+      assert.equal(ambiguous.audits.at(-1)?.reasonCode, "authorization_denied");
+    } finally {
+      await ambiguous.close();
+    }
   }
 });
 
