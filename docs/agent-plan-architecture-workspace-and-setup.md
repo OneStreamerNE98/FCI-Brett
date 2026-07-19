@@ -116,7 +116,7 @@ without breaking the development environment. Order follows the audit roadmap
 (`docs/complete-product-and-google-cloud-architecture-audit.md`).
 
 ### BE-01 · Documentation truth pass (small, no deps) — DO FIRST
-**Status:** In progress — `codex/doc-truth-reconciliation`, July 19, 2026.
+**Status:** Complete — PR #32, July 19, 2026.
 
 **Why:** Stale docs will cause agents to redo finished work. README "Prioritized next
 work" items 1–3 present the costed infrastructure definitions, production-persistence
@@ -373,7 +373,7 @@ immediately.
 never in repo.
 
 ### WS-03 · AGENT — Workspace docs reconciliation + env drift (small, no deps) — DO FIRST with BE-01
-**Status:** In progress — `codex/doc-truth-reconciliation`, July 19, 2026.
+**Status:** Complete — PR #32, July 19, 2026.
 
 **Do:** (1) State the intake==connection invariant explicitly in the rollout guide
 (Parts 6–10) and checklist 03, enforce it fail-closed in `getGoogleRuntimeConfig`, and add
@@ -702,7 +702,7 @@ job/sync-state contracts with local fakes; BE-12 owns migration-fixture expansio
 staging. No checklist checkbox is added merely to mirror those agent packets.
 
 ### TRK-01 · Reconcile every task-tracking surface to a single source of truth (small, after BE-01) — assign together with BE-01
-**Status:** In progress — `codex/doc-truth-reconciliation`, July 19, 2026.
+**Status:** Complete — PR #32, July 19, 2026.
 
 **Why (owner's ask):** task state is currently spread across the README next-work list,
 ten task checklists, the audit-doc roadmap, and the design ledger — with the README and
