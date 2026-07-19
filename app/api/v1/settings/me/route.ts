@@ -58,7 +58,8 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  return NextResponse.json(await readPreferences(auth.user.email), { headers: { "Cache-Control": "no-store" } });
+  const account = await readPreferences(auth.user.email);
+  return NextResponse.json({ ...account, isAdmin: auth.user.isAdmin }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(request: NextRequest) {

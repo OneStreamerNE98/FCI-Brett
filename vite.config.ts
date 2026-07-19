@@ -14,7 +14,13 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 // Rendered regression tests use synthetic, non-production identities. Opt in
 // explicitly so normal local development and hosted builds never receive
 // test-only authorization bindings.
-const e2eRuntimeVars = process.env.FCI_E2E === "true"
+const isE2eRuntime = process.env.FCI_E2E === "true";
+if (isE2eRuntime) {
+  // The Cloudflare Vite plugin loads Worker variables independently of Vite.
+  // Disable its dotenv inference before the plugin is imported below.
+  process.env.CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV = "false";
+}
+const e2eRuntimeVars = isE2eRuntime
   ? {
       FCI_OFFICE_EMAILS: process.env.FCI_OFFICE_EMAILS ?? "",
       FCI_ADMIN_EMAILS: process.env.FCI_ADMIN_EMAILS ?? "",
@@ -56,6 +62,9 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    // E2E identities must come only from Playwright's explicit environment.
+    // A contributor's local overrides would otherwise make role tests untruthful.
+    envFile: isE2eRuntime ? false : undefined,
     server: {
       watch: {
         // Generated builds, reports, and Playwright traces are not application

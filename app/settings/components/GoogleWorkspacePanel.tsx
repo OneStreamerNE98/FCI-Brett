@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Building2, CalendarDays, CheckCircle2, CircleAlert, FileText, FolderOpen, Mail, ShieldCheck, X, Zap } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
+import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { Status } from "../../components/operations/OperationsPrimitives";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { DRIVE_BLUEPRINT } from "../../lib/google-workspace";
@@ -20,7 +21,7 @@ export type GmailFilingPreview = {
   inboxRetained: boolean;
 };
 
-export function GoogleWorkspacePanel({ notify, projects }: { notify: Notify; projects: Project[] }) {
+export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: Notify; projects: Project[]; isAdmin: boolean }) {
   const [checking, setChecking] = useState(false);
   const [working, setWorking] = useState(false);
   const [status, setStatus] = useState<"unknown" | "missing" | "credentials">("unknown");
@@ -353,10 +354,10 @@ export function GoogleWorkspacePanel({ notify, projects }: { notify: Notify; pro
     {!simulation && oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
     {!simulation && missing.length > 0 && <p className="workspace-missing"><strong>Still needed:</strong> {missing.join(", ")}</p>}
     <div className="workspace-actions">
-      {simulation ? <button className="primary-button" onClick={resetSimulation} disabled={working}>{working ? "Resetting…" : "Reset simulation data"}</button> : <>
-        {!connected && <button className="primary-button" onClick={connectGoogleDrive} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</button>}
-        {connected && <button className="primary-button" onClick={verifyGoogleDrive} disabled={working}>{working ? "Verifying…" : "Verify Shared Drive"}</button>}
-        {connected && <button className="soft-button" onClick={disconnectGoogleDrive} disabled={working}>Disconnect Workspace</button>}
+      {simulation ? <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void resetSimulation()} disabled={working}>{working ? "Resetting…" : "Reset simulation data"}</AdministratorActionButton> : <>
+        {!connected && <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void connectGoogleDrive()} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</AdministratorActionButton>}
+        {connected && <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void verifyGoogleDrive()} disabled={working}>{working ? "Verifying…" : "Verify Shared Drive"}</AdministratorActionButton>}
+        {connected && <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void disconnectGoogleDrive()} disabled={working}>Disconnect Workspace</AdministratorActionButton>}
       </>}
     </div>
     {!simulation && connected && !workspace?.provisioningEnabled && <p className="workspace-missing"><strong>Folder creation remains off:</strong> enable Workspace Drive provisioning only after the company Shared Drive is verified.</p>}
@@ -366,13 +367,13 @@ export function GoogleWorkspacePanel({ notify, projects }: { notify: Notify; pro
         <section className="test-service-card">
           <div className="test-service-heading"><Mail size={17} /><div><strong>{simulation ? "Simulated Workspace Gmail" : "Workspace Gmail"}</strong><span>{gmailReady ? "Ready for explicit actions" : "Connect Workspace and approve Gmail"}</span></div></div>
           <p>Prepare FCI labels, view up to 20 messages, add a sample email in simulation, and review-file one message into the exact project. Inbox stays intact.</p>
-          <div className="workspace-actions"><button className="soft-button" onClick={prepareTestGmailLabels} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</button><button className="soft-button" onClick={refreshTestGmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</button><button className="primary-button" onClick={sendSelfTestEmail} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : simulation ? "Add sample email" : "Send Workspace test"}</button></div>
-          {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><button className="primary-button" onClick={() => openFilingReview(message)} disabled={gmailWorking}>Review & copy</button></div></article>)}</div>}
+          <div className="workspace-actions"><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void prepareTestGmailLabels()} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</AdministratorActionButton><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void refreshTestGmail()} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</AdministratorActionButton><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void sendSelfTestEmail()} disabled={!gmailReady || gmailWorking}>{gmailWorking ? "Working…" : simulation ? "Add sample email" : "Send Workspace test"}</AdministratorActionButton></div>
+          {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => openFilingReview(message)} disabled={gmailWorking}>Review & copy</AdministratorActionButton></div></article>)}</div>}
         </section>
         <section className="test-service-card">
           <div className="test-service-heading"><CalendarDays size={17} /><div><strong>{simulation ? "Simulated shared calendars" : "Workspace shared calendars"}</strong><span>{calendarReady ? "Ready for appointment testing" : "Connect Workspace and approve Calendar"}</span></div></div>
           <p>View a seven-day appointments window or create one 30-minute hold. Simulation stores it locally; live mode uses the configured company calendar.</p>
-          <div className="workspace-actions"><button className="soft-button" onClick={refreshTestCalendar} disabled={!calendarReady || calendarWorking}>{calendarWorking ? "Loading…" : "View upcoming events"}</button><button className="primary-button" onClick={createTestCalendarHold} disabled={!calendarReady || calendarWorking}>{calendarWorking ? "Creating…" : "Create test hold"}</button></div>
+          <div className="workspace-actions"><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void refreshTestCalendar()} disabled={!calendarReady || calendarWorking}>{calendarWorking ? "Loading…" : "View upcoming events"}</AdministratorActionButton><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void createTestCalendarHold()} disabled={!calendarReady || calendarWorking}>{calendarWorking ? "Creating…" : "Create test hold"}</AdministratorActionButton></div>
           {calendarEvents.length > 0 && <div className="test-service-list">{calendarEvents.map((event) => <article key={event.id}><div><strong>{event.title}</strong><span>{new Date(event.start).toLocaleString()} – {new Date(event.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></div>{event.url && <button className="soft-button" onClick={() => window.open(event.url, "_blank", "noopener,noreferrer")}>Open</button>}</article>)}</div>}
         </section>
       </div>
