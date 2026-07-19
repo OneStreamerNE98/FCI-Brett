@@ -1,5 +1,7 @@
 import { env } from "cloudflare:workers";
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { R2ObjectStorage } from "../../../adapters/r2/object-storage";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
@@ -15,6 +17,10 @@ async function hasAllowedContentSignature(file: File) {
   if (file.type === "application/pdf") return startsWith(0x25, 0x50, 0x44, 0x46, 0x2d);
   if (file.type === "text/plain") return !bytes.includes(0);
   return false;
+}
+
+async function* uploadBody(bytes: Uint8Array) {
+  if (bytes.byteLength > 0) yield bytes;
 }
 
 export async function POST(request: NextRequest) {
@@ -59,6 +65,20 @@ export async function POST(request: NextRequest) {
     if (!project) return NextResponse.json({ error: "project not found" }, { status: 404 });
   }
   const key = `${projectId || "unassigned"}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
-  await env.FILES.put(key, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { originalName: file.name, uploadedBy: auth.user.email } });
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const storage = new R2ObjectStorage({
+    bucket: env.FILES,
+    customMetadata: { originalName: file.name, uploadedBy: auth.user.email },
+  });
+  const stored = await storage.putIfAbsent({
+    key,
+    contentType: file.type,
+    byteSize: bytes.byteLength,
+    sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    chunks: uploadBody(bytes),
+  });
+  if (stored.outcome === "already-exists") {
+    return NextResponse.json({ error: "upload key already exists; retry the upload" }, { status: 409 });
+  }
   return NextResponse.json({ key, name: file.name, size: file.size }, { status: 201 });
 }

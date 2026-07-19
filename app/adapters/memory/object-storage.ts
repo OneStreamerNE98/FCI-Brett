@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import {
   OBJECT_STORAGE_LIMITS,
@@ -13,6 +13,7 @@ import {
   type PutObjectIfAbsentResult,
   type StoredObjectMetadata,
 } from "../../ports/object-storage.ts";
+import { collectValidatedObjectBody } from "../object-storage-body.ts";
 
 type StoredEntry = Readonly<{
   object: StoredObjectMetadata;
@@ -31,44 +32,12 @@ function validatedCreatedAt(value: unknown): number {
   return value;
 }
 
-async function collectBody(input: PutObjectIfAbsent): Promise<Uint8Array> {
-  const bytes = new Uint8Array(input.byteSize);
-  const hash = createHash("sha256");
-  let offset = 0;
-  let chunkCount = 0;
-
-  for await (const chunk of input.chunks) {
-    chunkCount += 1;
-    if (chunkCount > OBJECT_STORAGE_LIMITS.maxStreamChunks) {
-      throw new ObjectStorageValidationError("invalid-body", "Object body contains too many chunks");
-    }
-    if (!(chunk instanceof Uint8Array) || chunk.byteLength === 0) {
-      throw new ObjectStorageValidationError("invalid-body", "Object body chunks must be nonempty Uint8Array values");
-    }
-    if (offset + chunk.byteLength > input.byteSize) {
-      throw new ObjectStorageValidationError("body-size-mismatch", "Object body exceeds its declared byte size");
-    }
-    bytes.set(chunk, offset);
-    hash.update(chunk);
-    offset += chunk.byteLength;
-  }
-
-  if (offset !== input.byteSize) {
-    throw new ObjectStorageValidationError("body-size-mismatch", "Object body does not match its declared byte size");
-  }
-  const actualSha256 = `sha256:${hash.digest("hex")}`;
-  if (actualSha256 !== input.sha256) {
-    throw new ObjectStorageValidationError("body-checksum-mismatch", "Object body does not match its declared SHA-256");
-  }
-  return bytes;
-}
-
 async function createEntry(
   input: PutObjectIfAbsent,
   generation: string,
   createdAt: number,
 ): Promise<StoredEntry> {
-  const bytes = await collectBody(input);
+  const bytes = await collectValidatedObjectBody(input);
   const object = Object.freeze({
     key: input.key,
     generation,

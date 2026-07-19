@@ -10,7 +10,7 @@ The repository now defines the production-owned persistence and storage seams th
 
 - PostgreSQL migration `3`, `production_persistence_boundary`, adds generic identity, security-audit, integration, and file metadata. Unapplied migration `4`, `admin_access_persistence`, adds the fixed three-role catalog and bounded assignment/invitation state. Unapplied migration `5`, `admin_audit_activity`, adds the security-barrier minimized Activity projection and separately granted reader boundary.
 - Aggregate-oriented PostgreSQL repositories keep protected mutations and their audit evidence in one bounded transaction.
-- A provider-neutral object-storage port and in-memory contract adapter define conditional write, exact-generation metadata, and chunked reads without exposing provider URLs or overwrite/list/delete operations.
+- A provider-neutral object-storage port plus memory, R2, and source-only GCS adapters define conditional write, exact-generation metadata, and chunked reads without exposing provider URLs or overwrite/list/delete operations. The existing development upload route is composed through R2; GCS remains deliberately uncomposed.
 - Production source composition creates singleton identity, fixed administration, minimized audit-reader, integration, and file repositories around the existing bounded pool. The five Administrator commands, bounded People projection/page, and minimized Activity reader exist in source; invitation fulfillment, login/session issuance, migration/grant apply, and provider actions remain absent.
 - Runtime readiness verifies an exact relation/privilege matrix as well as the immutable migration history.
 
@@ -83,7 +83,7 @@ The source includes these ports and adapters:
 - `SecurityAuditRepository`: standalone append plus a same-client helper for atomic evidence inside another repository transaction.
 - `IntegrationMetadataRepository`: connection, one-time OAuth-attempt, and typed external-resource metadata. It does not call Google or decrypt credentials.
 - `FileMetadataRepository`: atomic project upload reservation, stored-object confirmation/failure, and released-reference lookup. It does not stream bytes inside PostgreSQL.
-- `ObjectStorage`: provider-neutral conditional object storage with an in-memory contract adapter. No Cloud Storage adapter or bucket is provisioned.
+- `ObjectStorage`: provider-neutral conditional object storage with memory and R2 contract adapters plus a GCS adapter using injected configuration. The development upload route uses the R2 adapter. The GCS adapter is not composed into Cloud Run, and no Cloud Storage bucket is provisioned.
 
 Network, provider, encryption, and decryption work must stay outside PostgreSQL transactions. Mutable transitions use state and `bigint` version fences; versions remain decimal strings in TypeScript so values above JavaScript's safe-integer range are not truncated. Session issuance holds a shared user-row lock and rejects disabled users, changed authorization versions, and issuance before `sessions_valid_after`. Each mutation repository derives its own audit action, target, result, and stale/conflict reason instead of trusting caller-selected semantics. Named uniqueness conflicts roll back all attempted state and then require a separate denied audit transaction before returning a conflict result; if that audit cannot be recorded, the repository fails closed instead of reporting a handled conflict.
 
@@ -109,9 +109,9 @@ The SQL policy and readiness checks remain source-only. Applying the role policy
 - durable invitation fulfillment and production employee-session/CSRF composition for the People & Access and Activity routes;
 - Google Workspace employee OIDC or a second user;
 - live company-connector OAuth, credential brokering, watches, notification channels, or provider calls;
-- Cloud Storage provisioning or adapter composition;
+- Cloud Storage provisioning or GCS adapter composition;
 - malware scanning, release decisions, retention holds, purge, download/share authorization, and untrusted uploads;
-- D1/R2 route replacement, data migration, staging application, and production cutover;
+- D1 route replacement, D1/R2 data migration, staging application, and production cutover;
 - scheduling, messaging, durable job expansion, and AI document indexing.
 
 ## Acceptance and next gate
