@@ -15,14 +15,14 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | July critique remediation and Reports drill-through are deployed through version 38; P0 project-manager integrity is complete | Continue Phase 3 shared primitives, semantic patterns, feature splitting, and legacy CSS consolidation. |
+| Frontend multi-user hardening | Codex/developer | July critique remediation and Reports drill-through are deployed through version 38; P0 project-manager integrity is complete; the first Phase 3 shared UI/filter boundary is implemented for review | Continue semantic table/list patterns, feature splitting, broader primitive consolidation, and legacy CSS cleanup. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status checked against `main` and private Sites development version 38 on July 18, 2026.
+Status checked against `main`, the `codex/operations-ui-boundary` source branch, and private Sites development version 38 on July 18, 2026.
 
 ### Jason / business owner
 
@@ -62,7 +62,7 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 ## Recommended next work
 
-1. Complete the remaining Phase 3 frontend structure work: shared UI primitives, semantic table/list patterns, feature-level client splitting, and legacy CSS consolidation.
+1. Complete the remaining Phase 3 frontend structure work: semantic table/list patterns, feature-level client splitting, broader pill/field/button consolidation, and legacy CSS cleanup.
 2. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
 3. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
 

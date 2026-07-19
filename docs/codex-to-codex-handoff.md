@@ -101,11 +101,13 @@ PR #22 merged the durable routes at `03223c1`: Overview, Leads, Clients, Project
 
 PR #27 merged the Reports drill-through follow-on into `main` at `cf32a9e`; the exact merged commit was deployed successfully as private Sites development version 38. Pipeline links use five bounded active-lead buckets (`new-inquiry`, `site-visit`, `proposal`, `decision`, and `other`), and project links use the seven exact lifecycle statuses from Planning through Archived. Destination filters are visible, clearable, reloadable, history-aware, and fail safely on invalid or duplicate values; rendered tests cover keyboard activation, Back focus, a `$0` custom-stage record, desktop/mobile accessibility, and overflow. The release changed no database schema, access policy, hosted environment values, or Google connection.
 
+The first Phase 3 frontend-structure slice is implemented for review on `codex/operations-ui-boundary`. It extracts reusable operations page/panel/metric/avatar/status components and one shared report-filter/focus boundary while preserving the current DOM, styles, URLs, and data behavior. The remaining semantic table/list migrations, route-level client splits, broader primitive consolidation, and legacy CSS cleanup stay intentionally separate. No hosted deployment or external configuration change is included.
+
 ## Recommended next worker assignments
 
 The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. The next local sequence does not require Brett's Workspace or Cloud input:
 
-1. Phase 3 frontend structure: consolidate shared UI primitives and semantic table/list patterns, split feature-level client code, and remove redundant legacy CSS without regressing the completed type/contrast and accessibility acceptance.
+1. Continue Phase 3 frontend structure after the shared UI/filter boundary: migrate semantic table/list patterns, split feature-level client code, consolidate the remaining pill/field/button systems, and remove redundant legacy CSS without regressing the completed type/contrast and accessibility acceptance.
 2. Source-only jobs and Google sync contracts: model job/attempt/failure/replay plus Gmail/Calendar cursor and renewal state with fakes only; do not activate Scheduler, watches, channels, or delivery.
 3. Local migration fixtures: extend transformation, duplicate-reporting, reconciliation, and rollback evidence without creating or using staging.
 

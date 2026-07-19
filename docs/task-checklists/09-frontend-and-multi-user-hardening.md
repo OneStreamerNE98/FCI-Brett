@@ -23,7 +23,8 @@ These are the eight implementation priorities confirmed against the hosted Sites
   - The July 18 gap pass completes the stylesheet-wide 12 px declaration floor and higher-contrast muted-text sweep, including integration, filing, meeting, rule, popover, client, and assistant states. Phase 3 still tracks removal of redundant legacy declarations without reopening this acceptance item.
 - [x] **P2 — Mobile project comparison:** retain status, site/date, and value in a compact stacked mobile row instead of hiding decision-useful fields; do not imply that placeholder dates are durable schedule data.
 - [ ] **P2 — Initial-load and bundle performance:** break the monolithic client surface into feature boundaries, dynamically load rare/heavy panels, start critical data earlier where safe, deduplicate shared reads, and bound long record lists.
-  - First pass complete: initial client loading starts immediately; duplicated account/Workspace reads share a TTL cache; the overview clock no longer rerenders the app shell; project counts are one-pass; the phone panel is lazy-loaded; long rows defer off-screen rendering; and fixed App Router wrappers now support direct entry. Feature-level client splitting and server-started core data remain open.
+  - First pass complete: initial client loading starts immediately; duplicated account/Workspace reads share a TTL cache; the overview clock no longer rerenders the app shell; project counts are one-pass; the phone panel is lazy-loaded; long rows defer off-screen rendering; and fixed App Router wrappers now support direct entry.
+  - The first Phase 3 boundary now moves shared page/panel/metric/avatar/status UI and report-filter navigation behavior out of the monolith without changing rendered behavior. Feature-level route splitting, rare-panel chunks, and server-started core data remain open.
 - [x] **P2 — Rendered regression coverage:** add browser-level coverage for mobile navigation, overlays, search focus/keyboard behavior, feature-state labels, responsive project rows, console health, and primary accessibility checks.
 
 ## P0 integrity fixes
@@ -57,6 +58,7 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [ ] Preserve filters, selected project, and useful search state in the URL where appropriate.
   - Project status, exact report lifecycle, Lead report stage, Settings section, and Inbox bucket now use bounded canonical query values with safe invalid/duplicate fallback and Back/Forward behavior. Selected-record drawers and free-form search remain intentionally transient until record-detail routing and privacy-safe search-link behavior are designed.
 - [ ] Split the large client component by route and feature; prefer server rendering for stable shells and dynamically load heavy, rarely used panels.
+  - First boundary implemented for review: reusable operations primitives and the report-driven Leads/Projects filter/focus pattern now live outside `FloorOpsApp.tsx`; the durable route views themselves remain to be split.
 - [ ] Consolidate duplicate Inbox and Settings Google workflows behind shared components and hooks.
 
 ## Accessibility and feedback

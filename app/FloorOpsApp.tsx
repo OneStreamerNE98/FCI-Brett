@@ -15,6 +15,9 @@ import { DEFAULT_FILING_RULES, DRIVE_BLUEPRINT, evaluateInboxFilingRules, type F
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
 import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
+import { Avatar, Metric, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
+import { ActiveRouteFilter } from "./features/reports/ActiveRouteFilter";
+import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
 import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
 import {
   canonicalOperationsSearch,
@@ -89,8 +92,6 @@ type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: strin
 const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((stage) => LEAD_STAGE_LABELS[stage]);
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
 const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
-const reportsReturnFocusHistoryKey = "fciReportsReturnFocusId";
-const reportsDestinationFocusStorageKey = "fci-reports-destination-focus";
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const PhoneInstallPanel = dynamic(
   () => import("./PhoneInstallPanel").then((module) => module.PhoneInstallPanel),
@@ -963,7 +964,6 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, onVi
 }
 
 function LeadsView({ leads, state, filter, onAdd, onAdvance, onLead }: { leads: Lead[]; state: LiveDataState; filter: LeadStageFilter | null; onAdd: () => void; onAdvance: (id: string) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
-  const filterSummaryRef = useRef<HTMLElement>(null);
   const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
   const visibleActiveLeads = filter ? activeLeads.filter((lead) => leadMatchesStageFilter(lead, filter)) : activeLeads;
   const knownStages = new Set(leadStages.map((stage) => stage.toLowerCase()));
@@ -979,20 +979,8 @@ function LeadsView({ leads, state, filter, onAdd, onAdvance, onLead }: { leads: 
     : "Loading current pipeline totals…";
   const stagesToRender = filter && filter !== "other" ? [LEAD_STAGE_LABELS[filter]] : leadStages;
 
-  useEffect(() => {
-    if (!filter) return;
-    const expectedFocusKey = `lead:${filter}`;
-    if (window.sessionStorage.getItem(reportsDestinationFocusStorageKey) !== expectedFocusKey) return;
-    const focusFrame = window.requestAnimationFrame(() => {
-      filterSummaryRef.current?.focus();
-      window.sessionStorage.removeItem(reportsDestinationFocusStorageKey);
-      clearReportReturnFocusFromCurrentHistoryEntry();
-    });
-    return () => window.cancelAnimationFrame(focusFrame);
-  }, [filter]);
-
   return <><PageTitle eyebrow="Sales pipeline" title="Leads & opportunities" text={summary} state="In development" action={<button className="primary-button" onClick={onAdd}><Plus size={17} /> Add lead</button>} />
-    {filterLabel && <section className="active-route-filter" ref={filterSummaryRef} tabIndex={-1} aria-labelledby="lead-stage-filter-title"><div><ListFilter size={18} aria-hidden="true" /><div><span>Report filter</span><strong id="lead-stage-filter-title">Filtered to {filterLabel}</strong><p>Showing active leads that match the selected pipeline row.</p></div></div><Link className="soft-button" href={operationsHref("Leads")}>Clear filter</Link></section>}
+    {filterLabel && <ActiveRouteFilter focusKey={`lead:${filter}`} headingId="lead-stage-filter-title" title={`Filtered to ${filterLabel}`} description="Showing active leads that match the selected pipeline row." clearHref={operationsHref("Leads")} />}
     {visibleActiveLeads.length === 0 && state === "ready" ? <section className="panel empty-tab"><div><Zap size={25} /></div><h2>{filterLabel ? `No active leads in ${filterLabel}` : "No active leads"}</h2><p>{filterLabel ? "The report filter is valid, but no current records match it." : "Add your first lead. Inactive records remain listed below."}</p>{filterLabel ? <Link className="soft-button" href={operationsHref("Leads")}>Show all active leads</Link> : <button className="primary-button" onClick={onAdd}><Plus size={16} /> Add first lead</button>}</section> : standardLeads.length > 0 ? <div className={`board${filter ? " filtered-board" : ""}`}>{stagesToRender.map((stage) => { const stageLeads = standardLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()); return <section className="board-column" key={stage}><header><h2>{stage}</h2><b>{stageLeads.length}</b></header>{stageLeads.map((lead) => <article className="lead-card" key={lead.id}><div className="lead-card-head"><Avatar initials={lead.initials} color={lead.color} /><span>{lead.number}</span></div><h3>{lead.company}</h3><p>{lead.project}</p><div className="lead-value">{lead.value}</div><div className="lead-contact"><Users size={14} />{lead.contact}</div><button type="button" className="lead-detail-button" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button><footer><span>{lead.source}</span><button onClick={() => onAdvance(lead.id)} aria-label={`Advance ${lead.company} from ${lead.stage}`}>Advance <ChevronRight size={15} /></button></footer></article>)}{stageLeads.length === 0 && <p className="board-empty">No leads in this stage.</p>}</section>; })}</div> : null}
     {customStageLeads.length > 0 && <LeadStatusPanel title="Custom pipeline stages" subtitle="These leads use stages outside the current pipeline. Review their stage before advancing them." leads={customStageLeads} onLead={onLead} />}
     {!filter && inactiveLeads.length > 0 && <LeadStatusPanel title="Inactive leads" subtitle="Converted, lost, closed, and archived leads are excluded from active totals." leads={inactiveLeads} showRecordStatus onLead={onLead} />}
@@ -1026,7 +1014,6 @@ function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProj
 }
 
 function ProjectsView({ projects, state, filter, lifecycle, onFilter, onProject, onNewProject }: { projects: Project[]; state: LiveDataState; filter: ProjectStatusFilter; lifecycle: ProjectLifecycleFilter | null; onFilter: (filter: ProjectStatusFilter) => void; onProject: (p: Project) => void; onNewProject: () => void }) {
-  const filterSummaryRef = useRef<HTMLElement>(null);
   const filteredProjects = projects.filter((project) => {
     const status = project.status.toLowerCase();
     if (lifecycle) return status === lifecycle;
@@ -1035,21 +1022,9 @@ function ProjectsView({ projects, state, filter, lifecycle, onFilter, onProject,
   const filterCount = (stage: string) => stage === "Active" ? projects.filter(isActiveProject).length : projects.filter((project) => project.status.toLowerCase() === stage.toLowerCase()).length;
   const lifecycleLabel = lifecycle ? displayStatus(lifecycle, "Unknown") : null;
 
-  useEffect(() => {
-    if (!lifecycle) return;
-    const expectedFocusKey = `project:${lifecycle}`;
-    if (window.sessionStorage.getItem(reportsDestinationFocusStorageKey) !== expectedFocusKey) return;
-    const focusFrame = window.requestAnimationFrame(() => {
-      filterSummaryRef.current?.focus();
-      window.sessionStorage.removeItem(reportsDestinationFocusStorageKey);
-      clearReportReturnFocusFromCurrentHistoryEntry();
-    });
-    return () => window.cancelAnimationFrame(focusFrame);
-  }, [lifecycle]);
-
   return <><PageTitle eyebrow="Project delivery" title="Projects" text="Track every project separately, including repeat work for the same client." state="In development" action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
     <div className="filterbar"><div className="tabs" aria-label="Project status filter">{PROJECT_STATUS_FILTERS.map((stage) => <button className={filter === stage ? "active" : ""} aria-pressed={filter === stage} key={stage} onClick={() => onFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
-    {lifecycleLabel && <section className="active-route-filter" ref={filterSummaryRef} tabIndex={-1} aria-labelledby="project-lifecycle-filter-title"><div><ListFilter size={18} aria-hidden="true" /><div><span>Report filter</span><strong id="project-lifecycle-filter-title">Filtered to {lifecycleLabel}</strong><p>Showing projects with this exact lifecycle status.</p></div></div><Link className="soft-button" href={operationsHref("Projects")}>Clear filter</Link></section>}
+    {lifecycleLabel && <ActiveRouteFilter focusKey={`project:${lifecycle}`} headingId="project-lifecycle-filter-title" title={`Filtered to ${lifecycleLabel}`} description="Showing projects with this exact lifecycle status." clearHref={operationsHref("Projects")} />}
     <div className="projects-table panel"><div className="projects-table-head"><span>Project</span><span>Status</span><span>Schedule &amp; site</span><span>Value</span><span /></div>{filteredProjects.map((p) => <button className="projects-table-row" key={p.id} onClick={() => onProject(p)}><div className="project-row-identity"><Avatar initials={recordInitials(p.client)} color={p.accent} /><span><strong>{p.name}</strong><small>{p.number} · {p.client}</small></span></div><span className="project-row-status"><Status text={p.status} /></span><span className="project-row-details"><span className={p.date.toLowerCase() === "not scheduled" ? "is-unscheduled" : ""}>{p.date}</span><small><MapPin size={12} />{p.site}</small></span><strong className="project-row-value"><span>Estimated value</span>{p.value}</strong><ChevronRight size={17} aria-hidden="true" /></button>)}{!filteredProjects.length && <div className="empty-table">{state === "ready" ? lifecycleLabel ? `There are no projects in ${lifecycleLabel}.` : filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</div>}</div>
   </>;
 }
@@ -1312,19 +1287,6 @@ function AssistantView({ projects }: { projects: Project[] }) {
     <div className="assistant-layout"><section className="assistant-main panel"><div className="assistant-hero"><div className="ai-orb"><Bot size={29} /></div><h2>What would you like to know?</h2><p>Choose one project so every answer has a clear, reviewable evidence boundary.</p></div><label className="assistant-project-scope">Project context<select value={activeProjectId} onChange={(event) => { setProjectId(event.target.value); setAnswer(null); }} disabled={!projects.length || loading}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name}</option>)}</select></label>{!projects.length && <div className="assistant-blocker"><CircleAlert size={18} /><div><strong>Create a project first</strong><span>The assistant answers project-specific questions and needs a project record before it can search evidence.</span></div></div>}{answer && <article className="ai-answer" aria-live="polite"><div><Sparkles size={18} /><strong>{answer.mode === "ai-grounded" ? "AI-grounded answer" : "Project-record summary"}</strong><span className="assistant-mode">{answer.mode === "ai-grounded" ? "OpenAI enabled" : "Records-only mode"}</span></div><p>{answer.answer}</p>{answer.missingEvidence && <p className="assistant-missing"><CircleAlert size={14} /> {answer.missingEvidence}</p>}<h4>Sources</h4>{answer.citations.length ? answer.citations.map((citation, index) => <button key={citation.id} onClick={() => setSourceDetail(citation)}><FileText size={14} /><span>[{index + 1}] {citation.label}</span><ChevronRight size={14} /></button>) : <p className="source-empty">No verified sources were returned for this answer.</p>}</article>}<form className="ask-box" onSubmit={(event) => { event.preventDefault(); void ask(); }}><div><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about the selected project record…" aria-label="Ask FCI Assistant" maxLength={2000} disabled={!projects.length || loading} /><button disabled={loading || !question.trim() || !activeProjectId} aria-label="Send question">{loading ? <span className="spinner" /> : <Send size={18} />}</button></div><small><Sparkles size={12} /> Every answer is read-only and cites only server-selected project evidence.</small></form></section><aside className="panel recent-questions"><h3>Suggested questions</h3>{["What is the current project status?", "Who is the primary contact?", "How many email archives are linked?", "What evidence has not been captured yet?"].map((q) => <button key={q} onClick={() => void ask(q)} disabled={loading || !activeProjectId}><MessageSquareText size={15} /><span>{q}<small>Selected project only</small></span></button>)}<div className="privacy-note"><CheckCircle2 size={17} /><p><strong>Office-record scope</strong><br />This first version uses the operational records available to approved office users. Project-specific permissions are the next access-control layer.</p></div></aside></div>
     {sourceDetail && <SourceDetailModal citation={sourceDetail} onClose={() => setSourceDetail(null)} />}
   </>;
-}
-
-function rememberReportReturnFocus(id: string, destinationFocusKey: string) {
-  window.history.replaceState({ ...(window.history.state ?? {}), [reportsReturnFocusHistoryKey]: id }, "", window.location.href);
-  window.sessionStorage.setItem(reportsDestinationFocusStorageKey, destinationFocusKey);
-}
-
-function clearReportReturnFocusFromCurrentHistoryEntry() {
-  const currentState = window.history.state as Record<string, unknown> | null;
-  if (!currentState || !(reportsReturnFocusHistoryKey in currentState)) return;
-  const nextState = { ...currentState };
-  delete nextState[reportsReturnFocusHistoryKey];
-  window.history.replaceState(nextState, "", window.location.href);
 }
 
 function ReportBarRow({ label, measure, width, href, accessibleName, focusId, destinationFocusKey }: { label: string; measure: string; width: number; href?: string; accessibleName?: string; focusId?: string; destinationFocusKey?: string }) {
@@ -2265,9 +2227,3 @@ function MeetingModal({ project, onClose, onSaved }: { project: Project; onClose
 }
 
 function ClientDrawer({ client, projects, onClose, onNewProject, onProject, returnFocusRef }: { client: Client; projects: Project[]; onClose: () => void; onNewProject: () => void; onProject: (project: Project) => void; returnFocusRef?: RefObject<HTMLElement | null> }) { return <AccessibleOverlay variant="drawer" ariaLabel={`${client.name} client account`} contentClassName="project-drawer client-drawer" onClose={onClose} returnFocusRef={returnFocusRef}><header><button data-overlay-initial-focus onClick={onClose} aria-label="Close client"><X size={20} /></button><Status text={client.status} /><span>{client.code}</span></header><div className="drawer-title"><p>Client account</p><h2>{client.name}</h2><div><span><ContactRound size={14} />{client.contact}</span><span><Mail size={14} />{client.email || "Contact email pending"}</span></div></div><div className="client-drawer-body"><section className="client-account-card"><div className="directory-badge"><FolderTree size={19} /></div><div><strong>Client account folder</strong><span>{client.driveUrl ? "Google Drive folder ready" : "Google Drive folder not created yet"}</span></div></section><div className="client-summary-grid"><div><span>Industry</span><strong>{client.industry}</strong></div><div><span>Independent projects</span><strong>{projects.length}</strong></div></div><section className="client-project-section"><header><h3>Projects for this client</h3><button onClick={onNewProject}><Plus size={14} /> New project</button></header>{projects.map((project) => <button type="button" className="client-project-link" key={project.id} onClick={() => onProject(project)}><div><Status text={project.status} /><strong>{project.name}</strong><span>{project.number} · {project.site}</span></div><ChevronRight size={16} /></button>)}{!projects.length && <p className="empty-client-projects">No projects yet. Create the first independent project for this client.</p>}</section><section className="client-account-notes"><h3>Account-level documents</h3><p>Store reusable client documents here. Project-specific documents stay inside their own project folders.</p></section></div></AccessibleOverlay>; }
-
-function Metric({ label, value, note, trend, icon: Icon, color }: { label: string; value: string; note: string; trend?: string; icon: typeof Zap; color: string }) { return <article className="metric-card"><div className={`metric-icon ${color}`}><Icon size={19} /></div><div className="metric-top"><span>{label}</span>{trend && <small>{trend}</small>}</div><strong>{value}</strong><p>{note}</p></article> }
-function PanelHeader({ title, subtitle, action, onAction }: { title: string; subtitle?: string; action?: string; onAction?: () => void }) { return <header className="panel-header"><div><h2>{title}</h2>{subtitle && <span>{subtitle}</span>}</div>{action && <button onClick={onAction}>{action}<ChevronRight size={15} /></button>}</header> }
-function PageTitle({ eyebrow, title, text, state, action }: { eyebrow: string; title: string; text: string; state?: FeatureState; action?: React.ReactNode }) { return <div className="page-heading"><div><div className="page-title-kicker"><p className="eyebrow">{eyebrow}</p>{state && <FeatureStateBadge state={state} />}</div><h1>{title}</h1><p>{text}</p></div>{action}</div> }
-function Avatar({ initials, color }: { initials: string; color: string }) { return <div className={`mini-avatar ${color}`}>{initials}</div> }
-function Status({ text }: { text: string }) { return <span className={`status status-${text.toLowerCase().replaceAll(" ", "-")}`}>{text}</span> }

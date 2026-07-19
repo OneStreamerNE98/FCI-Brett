@@ -107,6 +107,8 @@ These items remain open. They are split into reviewable tracks so a visual clean
    - Normalize the remaining green-tinted legacy surface colors into the approved warm neutral palette.
    - Replace fixed-height overrides with the shared minimum-size scale.
 
+Phase 3 progress on July 18, 2026: the first behavior-preserving boundary extracts the shared page title, panel header, metric, avatar, and status components from `FloorOpsApp.tsx`. It also replaces the duplicated Leads/Projects report-filter banner and destination-focus effects with one shared component and one history/session helper. Existing markup, class names, responsive behavior, route URLs, records, and mutations remain unchanged. Semantic table/list migrations, feature-level route splitting, broader pill/field/button consolidation, and legacy CSS removal remain open as separate reviewable slices.
+
 ### Phase 4 — durable guardrails
 
 - [x] Axe serious/critical checks exist for the primary durable routes and run in CI.
