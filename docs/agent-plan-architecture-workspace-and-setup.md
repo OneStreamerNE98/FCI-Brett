@@ -723,7 +723,7 @@ single-user development copy shows everything today; wire the gate through SET-0
 dependencies — see the exclusions in KPI-01's definitions doc.
 
 ### KPI-01 · Tier-1 KPI report from existing data + definitions doc (medium, after the FloorOpsApp queue clears — no schema change)
-**Status:** In progress — `codex/tier1-flooring-kpis`, July 19, 2026. SET-02 is merged in PR #37, so the implementation gates every dollar-value KPI directly with its authenticated `isAdmin` flag.
+**Status:** In review — draft PR #41 on `codex/tier1-flooring-kpis`, July 19, 2026. SET-02 is merged in PR #37, so the implementation gates every dollar-value KPI directly with its authenticated `isAdmin` flag. Full builds, 350/350 runnable Node tests, lint, and 2/2 focused desktop/mobile Playwright checks pass; no deployment, schema, migration, or hosted configuration changed.
 
 **Why:** Six universal KPIs are computable today from fields that already exist on leads
 {status active/converted/lost, stage, source, estimatedValue, createdAt, updatedAt} and

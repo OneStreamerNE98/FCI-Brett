@@ -96,5 +96,5 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
   assert.match(definitions, /A denominator of zero.*em dash/si);
   assert.match(definitions, /Project\/install cycle time/);
   assert.match(designLedger, /LeadStatusPanel.*intentionally remain a static list/);
-  assert.match(executionLedger, /KPI-01[\s\S]+In progress — `codex\/tier1-flooring-kpis`/);
+  assert.match(executionLedger, /KPI-01[\s\S]+In review — draft PR #41 on `codex\/tier1-flooring-kpis`/);
 });
