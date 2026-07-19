@@ -1,7 +1,7 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
-Date: July 18, 2026 · Baseline: `main` @ `aa8ed8f` (PR #30 merged; last recorded Sites
-release: version 39 per the design ledger's PR #29 note)
+Date: July 19, 2026 · Baseline: `main` @ `adc79b8` (PR #32 merged; that exact commit is
+deployed as private Sites development version 40 and includes PR #30)
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
 
@@ -66,9 +66,12 @@ below, which also covers the state of GitHub itself (issues/PRs).
    real endpoint; backend-planned capabilities appear only as clearly-badged "Planned"
    placeholders. Server-side `requireOfficeUser({admin:true})` gates stay untouched — UI
    admin-gating is honesty, not security.
-8. Visual/design remediation already shipped or merged source-only (PRs #24–#30) and is
-   tracked in `docs/design-critique-fix-plan.md`. Do not re-litigate visuals; coordinate
-   Settings component work with the relevant Phase 3/4 entries in that ledger.
+8. Visual/design remediation through PR #30 is included in private Sites development
+   version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
+   `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
+   SET-01 is the next `FloorOpsApp.tsx` packet. Do not
+   re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
+   entries in that ledger.
 
 ## Current state in one page
 
@@ -124,9 +127,9 @@ boundary, and simulated access contexts as future although the audit doc (roadma
 3–5) records them merged. The amending ADR still carries a "Next worker assignment" that
 `infrastructure/google-cloud/README.md` already fulfills. The audit doc's "migrations 4–5
 remain unapplied" phrasing wrongly implies 1–3 are applied somewhere. Several checklist
-passages use Sites version 37 as current-state evidence even though version 39 is the
-latest deployment; other version-37 references are accurate release history and must be
-preserved as such.
+passages used Sites version 37 as current-state evidence even though version 39 was the
+latest deployment at the time of reconciliation; other version-37 references were
+accurate release history and had to be preserved as such.
 **Do:** Replace the README next-work list with pointers to the authoritative ledgers;
 tighten the "normal paths 503" claim (dashboard/search/projects/clients/logout/admin are
 served from PostgreSQL on the foundation image; only provider actions 503). Annotate the
@@ -521,7 +524,7 @@ anchors at the `aa8ed8f` baseline: `SettingsView` at `app/FloorOpsApp.tsx:1354`,
 `GET /api/v1/settings/me` returns no `isAdmin` today; no audit route exists. (Anchors
 drift — locate by symbol name.)
 
-### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, no deps) — DO FIRST in this workstream
+### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, next after PR #33) — DO FIRST in the SET workstream
 **Why:** Every Settings panel is inline in the ~2,100-line `FloorOpsApp.tsx`; every other
 SET item edits those regions; the design ledger (items 94/103) already calls for the
 split. Parallel packets collide without it.
@@ -662,11 +665,13 @@ endpoints exist. No docs-path links in UI copy.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** immediately after PRs #30 and #31 merged on July 19, 2026, GitHub had
-zero open issues and zero open PRs. Delivery PRs may be in flight later; they mirror items
-in these ledgers and do not become a separate task source of truth. PR #30, the semantic
-Settings rules table, is in the `aa8ed8f` baseline — see Sequencing for its effect on
-SET-01.
+**GitHub baseline:** PR #32 merged to `main` as
+`adc79b855041db04cc3ca2a3eb232bc72408d33b` on July 19, 2026, and that exact commit is
+deployed as private Sites development version 40. The deployment includes PR #30's
+semantic Settings rules table. Delivery PRs may be in flight later; they mirror items in
+these ledgers and do not become a separate task source of truth. The source-only
+`codex/actionable-lists` branch is complete in PR #33; it is not deployed. SET-01 is the
+next `FloorOpsApp.tsx` packet from the latest `main`.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
@@ -735,8 +740,12 @@ contracts and `npm test` pass.
 ## Sequencing at a glance
 
 **Start now, in parallel (no owner input needed):**
-BE-01 + WS-03 (doc truth — land these first so every later packet reads correct docs),
-BE-02, BE-13, WS-04, SET-01, BE-04, BE-05, BE-06, BE-08, BE-11 (authoring), WS-12, WS-13.
+The source-only `codex/actionable-lists` slice in PR #33 is complete as the current
+`FloorOpsApp.tsx` packet; it is not deployed. SET-01 is the next `FloorOpsApp.tsx` packet
+from the latest `main`.
+BE-02, BE-13, WS-04, BE-04, BE-05, BE-06, BE-08, BE-11 (authoring), WS-12, and WS-13 may
+proceed in parallel when they do not touch that file. BE-01 + WS-03 and TRK-01 completed
+in PR #32.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
@@ -746,24 +755,25 @@ SET-03→SET-10 · SET-04→SET-11.
 half) → WS-11. Agents should never be blocked idle on this track — every agent item above
 is schedulable independently.
 
-**Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Land SET-01 before any other SET item;
-don't run two FloorOpsApp-touching packets concurrently. **PR #30 (semantic Settings
-rules table) is merged into the baseline** — SET-01 is unblocked, must branch from
-the latest `origin/main` (`88b5b01` at this reconciliation) so `InboxRulesPanel` carries
-the new semantic `<table>` markup, and
-must keep its regression suite green (`tests/e2e/settings-rules.spec.ts` plus the new
-assertions in `tests/e2e/accessibility-routes.spec.ts`).
+**Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Do not run two packets that touch it
+concurrently. The source-only `codex/actionable-lists` branch is complete in PR #33.
+SET-01 is next and must branch from the latest `origin/main`, preserve both the shared
+actionable-list pattern and `InboxRulesPanel`'s
+semantic `<table>` markup, and keep their focused regression suites plus
+`tests/e2e/accessibility-routes.spec.ts` green. Once started, land SET-01 before any other
+SET item.
 
-### Recommended first waves (July 18, 2026)
+### Recommended first waves (reconciled July 19, 2026)
 
 **Wave 1 — next PRs, in this order where they share files:**
-1. **Doc-truth bundle: BE-01 + TRK-01 + WS-03** (one small PR) — land before anything
-   else so every later packet reads correct docs.
-2. **Actionable-list pattern slice** — the design ledger's named next slice: an
-   accessible actionable-list for the whole-row pipeline, Projects,
-   and Clients views (do not force interactive rows into table semantics), following the
-   PR #30 review pattern. *Touches `FloorOpsApp.tsx` — run before SET-01, not alongside.*
-3. **SET-01 Settings panel extraction** — after the actionable-list slice merges.
+1. **Doc-truth bundle: BE-01 + TRK-01 + WS-03** — complete in PR #32 at `adc79b8` and
+   deployed as private Sites development version 40.
+2. **Actionable-list pattern slice** — complete in PR #33, source-only on
+   `codex/actionable-lists`: an accessible actionable-list for the whole-row Overview
+   pipeline, Projects, and Clients views (do not force interactive rows into table
+   semantics), following the PR #30 review pattern. It is not deployed. *Touches
+   `FloorOpsApp.tsx` — do not overlap it with SET-01.*
+3. **SET-01 Settings panel extraction** — next from the latest `main`.
 4. **BE-04 OIDC** (large; start now in parallel — it is the 20-user review's P0 #1 and
    the longest production pole) · **BE-02 + BE-13** (small hardening pair) ·
    **WS-04 rotation procedures** · **WS-12 contracts + fakes**.

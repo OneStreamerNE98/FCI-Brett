@@ -16,6 +16,7 @@ import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
 import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
 import { Avatar, Metric, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
+import { OperationsActionableList, OperationsActionableListItem } from "./components/operations/OperationsActionableList";
 import { OperationsDataTable, OperationsDataTableCell } from "./components/operations/OperationsDataTable";
 import { ActiveRouteFilter } from "./features/reports/ActiveRouteFilter";
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
@@ -101,6 +102,9 @@ const INBOX_RULE_COLUMNS = [
   { key: "action", label: "Action" },
   { key: "destination", label: "Destination" },
 ] as const;
+const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
+const CLIENT_ACTIONABLE_COLUMNS = ["Client", "Primary contact", "Projects", ""] as const;
+const PROJECT_ACTIONABLE_COLUMNS = ["Project", "Status", "Schedule & site", "Value", ""] as const;
 const PhoneInstallPanel = dynamic(
   () => import("./PhoneInstallPanel").then((module) => module.PhoneInstallPanel),
   { ssr: false, loading: () => <div className="phone-install-loading" role="status">Loading install guidance…</div> },
@@ -957,7 +961,20 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, onVi
     <section className="dashboard-grid">
       <div className="panel pipeline-panel">
         <PanelHeader title="Lead pipeline" subtitle={`${activeLeads.length} active records`} action="View all" onAction={() => onView("Leads")} />
-        {activeLeads.length > 0 ? <><div className="pipeline-head"><span>Client / opportunity</span><span>Stage</span><span>Est. value</span><span>Next action</span></div>{activeLeads.slice(0, 4).map((lead) => <button type="button" className="pipeline-row pipeline-row-button" key={lead.id} onClick={(event) => onLead(lead, event.currentTarget)}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell"><Clock3 size={14} />{lead.next}</div></button>)}</> : state === "ready" ? <div className="empty-table">No active leads yet. Add the first opportunity to begin the live pipeline.</div> : null}
+        {activeLeads.length > 0 ? <OperationsActionableList ariaLabel="Lead pipeline records" columns={PIPELINE_ACTIONABLE_COLUMNS} headerClassName="pipeline-head">
+          {activeLeads.slice(0, 4).map((lead) => <OperationsActionableListItem
+            key={lead.id}
+            className="pipeline-row pipeline-row-button"
+            accessibleName={`Open lead details for ${lead.company}: ${lead.project}`}
+            accessibleDescription={`Stage ${lead.stage}. Estimated value ${lead.value}. Next action ${lead.next}.`}
+            onActivate={(trigger) => onLead(lead, trigger)}
+          >
+            <span className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><span className="client-cell-copy"><strong>{lead.company}</strong><span>{lead.project}</span></span></span>
+            <span><Status text={lead.stage} /></span>
+            <strong className="value-cell">{lead.value}</strong>
+            <span className="next-cell"><Clock3 size={14} aria-hidden="true" />{lead.next}</span>
+          </OperationsActionableListItem>)}
+        </OperationsActionableList> : state === "ready" ? <div className="empty-table">No active leads yet. Add the first opportunity to begin the live pipeline.</div> : null}
       </div>
       <div className="panel schedule-panel">
         <PanelHeader title="Scheduling" subtitle="Planned" action="View status" onAction={() => onView("Schedule")} />
@@ -996,7 +1013,7 @@ function LeadsView({ leads, state, filter, onAdd, onAdvance, onLead }: { leads: 
 }
 
 function LeadStatusPanel({ title, subtitle, leads, showRecordStatus = false, onLead }: { title: string; subtitle: string; leads: Lead[]; showRecordStatus?: boolean; onLead?: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
-  return <section className="panel pipeline-panel"><PanelHeader title={title} subtitle={subtitle} /><div className="pipeline-head"><span>Client / opportunity</span><span>{showRecordStatus ? "Status" : "Stage"}</span><span>Est. value</span><span>Next action</span></div>{leads.map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={showRecordStatus ? displayStatus(lead.status, "Inactive") : lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell lead-status-next"><span><Clock3 size={14} />{lead.next}</span>{onLead && <button type="button" className="lead-status-detail" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button>}</div></div>)}</section>;
+  return <section className="panel pipeline-panel"><PanelHeader title={title} subtitle={subtitle} /><div className="pipeline-head"><span>Client / opportunity</span><span>{showRecordStatus ? "Status" : "Stage"}</span><span>Est. value</span><span>Next action</span></div>{leads.map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div className="client-cell-copy"><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={showRecordStatus ? displayStatus(lead.status, "Inactive") : lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell lead-status-next"><span><Clock3 size={14} />{lead.next}</span>{onLead && <button type="button" className="lead-status-detail" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button>}</div></div>)}</section>;
 }
 
 function sheetStateLabel(mirror: SheetMirrorStatus | null) {
@@ -1007,7 +1024,7 @@ function sheetStateLabel(mirror: SheetMirrorStatus | null) {
   return "Not synced";
 }
 
-function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProject, sheetMirror, onSyncGoogleSheet, syncingSheet }: { clients: Client[]; state: LiveDataState; projectCounts: Map<string, number>; onAdd: () => void; onClient: (client: Client) => void; onNewProject: () => void; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
+function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProject, sheetMirror, onSyncGoogleSheet, syncingSheet }: { clients: Client[]; state: LiveDataState; projectCounts: Map<string, number>; onAdd: () => void; onClient: (client: Client, returnFocusTarget?: HTMLElement | null) => void; onNewProject: () => void; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
   const [clientFilter, setClientFilter] = useState("");
   const syncLabel = sheetStateLabel(sheetMirror);
   const synced = syncLabel === "Synced";
@@ -1017,11 +1034,24 @@ function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProj
   const visibleClients = normalizedFilter ? clients.filter((client) => [client.name, client.code, client.contact, client.email].some((value) => value.toLowerCase().includes(normalizedFilter))) : clients;
   return <><PageTitle eyebrow="Client directory" title="Clients" text="Keep each client’s contacts, account documents, and projects together." state="In development" action={<div className="title-actions"><button className="soft-button" onClick={onNewProject} disabled={clients.length === 0}><BriefcaseBusiness size={16} /> New project</button><button className="primary-button" onClick={onAdd}><Plus size={17} /> Add client</button></div>} />
     <section className="client-directory-banner"><div className="directory-badge"><FolderTree size={20} /></div><div><strong>Client records are managed here and mirrored to Google Sheets</strong><span>{sheetMirror?.reason ?? "The Client Directory preserves account notes, while the Project Register is generated from the app."}</span></div><div className="directory-sync-actions"><span className={`directory-status ${syncStateClass}`}>{synced ? <CircleCheckBig size={14} /> : <Clock3 size={14} />}{syncLabel}</span><button className="soft-button" onClick={() => void onSyncGoogleSheet()} disabled={syncingSheet}>{syncingSheet ? "Syncing…" : "Sync directory"}</button></div></section>
-    <div className="client-directory panel"><div className="client-directory-toolbar"><label><span>Find a client</span><div><Search size={15} /><input value={clientFilter} onChange={(event) => setClientFilter(event.target.value)} placeholder="Name, code, or email" /></div></label><small>{visibleClients.length} of {clients.length} clients</small></div><div className="client-table-head"><span>Client</span><span>Primary contact</span><span>Projects</span><span /></div>{visibleClients.map((client) => { const projectCount = projectCounts.get(client.id) ?? 0; return <button className="client-table-row" key={client.id} onClick={() => onClient(client)}><div className="client-identity"><Avatar initials={client.initials} color={client.color} /><span><strong>{client.name}</strong><small>{client.code} · {client.industry}</small></span></div><span><strong>{client.contact}</strong><small>{client.email || "Email to add"}</small></span><span className="client-project-count"><b>{projectCount}</b><small>{projectCount === 1 ? "project" : "projects"}</small></span><ChevronRight size={17} /></button>})}{clients.length === 0 && state === "ready" ? <div className="empty-table">No clients yet. Add the first client to create the live directory.</div> : visibleClients.length === 0 && state === "ready" ? <div className="empty-table">No clients match “{clientFilter.trim()}”.</div> : null}</div>
+    <div className="client-directory panel"><div className="client-directory-toolbar"><label><span>Find a client</span><div><Search size={15} /><input value={clientFilter} onChange={(event) => setClientFilter(event.target.value)} placeholder="Name, code, or email" /></div></label><small>{visibleClients.length} of {clients.length} clients</small></div><OperationsActionableList ariaLabel="Client directory" columns={CLIENT_ACTIONABLE_COLUMNS} headerClassName="client-table-head">
+      {visibleClients.map((client) => { const projectCount = projectCounts.get(client.id) ?? 0; return <OperationsActionableListItem
+        key={client.id}
+        className="client-table-row"
+        accessibleName={`Open client ${client.name}, ${client.code}`}
+        accessibleDescription={`Industry ${client.industry}. Primary contact ${client.contact}, ${client.email || "email to add"}. ${projectCount} ${projectCount === 1 ? "project" : "projects"}.`}
+        onActivate={(trigger) => onClient(client, trigger)}
+      >
+        <span className="client-identity"><Avatar initials={client.initials} color={client.color} /><span className="client-identity-copy"><strong>{client.name}</strong><small>{client.code} · {client.industry}</small></span></span>
+        <span className="client-primary-contact"><strong>{client.contact}</strong><small>{client.email || "Email to add"}</small></span>
+        <span className="client-project-count"><b>{projectCount}</b><small>{projectCount === 1 ? "project" : "projects"}</small></span>
+        <ChevronRight size={17} aria-hidden="true" />
+      </OperationsActionableListItem>})}
+    </OperationsActionableList>{clients.length === 0 && state === "ready" ? <div className="empty-table">No clients yet. Add the first client to create the live directory.</div> : visibleClients.length === 0 && state === "ready" ? <div className="empty-table">No clients match “{clientFilter.trim()}”.</div> : null}</div>
   </>;
 }
 
-function ProjectsView({ projects, state, filter, lifecycle, onFilter, onProject, onNewProject }: { projects: Project[]; state: LiveDataState; filter: ProjectStatusFilter; lifecycle: ProjectLifecycleFilter | null; onFilter: (filter: ProjectStatusFilter) => void; onProject: (p: Project) => void; onNewProject: () => void }) {
+function ProjectsView({ projects, state, filter, lifecycle, onFilter, onProject, onNewProject }: { projects: Project[]; state: LiveDataState; filter: ProjectStatusFilter; lifecycle: ProjectLifecycleFilter | null; onFilter: (filter: ProjectStatusFilter) => void; onProject: (project: Project, returnFocusTarget?: HTMLElement | null) => void; onNewProject: () => void }) {
   const filteredProjects = projects.filter((project) => {
     const status = project.status.toLowerCase();
     if (lifecycle) return status === lifecycle;
@@ -1033,7 +1063,21 @@ function ProjectsView({ projects, state, filter, lifecycle, onFilter, onProject,
   return <><PageTitle eyebrow="Project delivery" title="Projects" text="Track every project separately, including repeat work for the same client." state="In development" action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
     <div className="filterbar"><div className="tabs" aria-label="Project status filter">{PROJECT_STATUS_FILTERS.map((stage) => <button className={filter === stage ? "active" : ""} aria-pressed={filter === stage} key={stage} onClick={() => onFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
     {lifecycleLabel && <ActiveRouteFilter focusKey={`project:${lifecycle}`} headingId="project-lifecycle-filter-title" title={`Filtered to ${lifecycleLabel}`} description="Showing projects with this exact lifecycle status." clearHref={operationsHref("Projects")} />}
-    <div className="projects-table panel"><div className="projects-table-head"><span>Project</span><span>Status</span><span>Schedule &amp; site</span><span>Value</span><span /></div>{filteredProjects.map((p) => <button className="projects-table-row" key={p.id} onClick={() => onProject(p)}><div className="project-row-identity"><Avatar initials={recordInitials(p.client)} color={p.accent} /><span><strong>{p.name}</strong><small>{p.number} · {p.client}</small></span></div><span className="project-row-status"><Status text={p.status} /></span><span className="project-row-details"><span className={p.date.toLowerCase() === "not scheduled" ? "is-unscheduled" : ""}>{p.date}</span><small><MapPin size={12} />{p.site}</small></span><strong className="project-row-value"><span>Estimated value</span>{p.value}</strong><ChevronRight size={17} aria-hidden="true" /></button>)}{!filteredProjects.length && <div className="empty-table">{state === "ready" ? lifecycleLabel ? `There are no projects in ${lifecycleLabel}.` : filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</div>}</div>
+    <div className="projects-table panel"><OperationsActionableList ariaLabel="Projects" columns={PROJECT_ACTIONABLE_COLUMNS} headerClassName="projects-table-head">
+      {filteredProjects.map((project) => <OperationsActionableListItem
+        key={project.id}
+        className="projects-table-row"
+        accessibleName={`Open project ${project.number}: ${project.name}`}
+        accessibleDescription={`Client ${project.client}. Status ${project.status}. Schedule ${project.date}. Site ${project.site}. Estimated value ${project.value}.`}
+        onActivate={(trigger) => onProject(project, trigger)}
+      >
+        <span className="project-row-identity"><Avatar initials={recordInitials(project.client)} color={project.accent} /><span><strong>{project.name}</strong><small>{project.number} · {project.client}</small></span></span>
+        <span className="project-row-status"><Status text={project.status} /></span>
+        <span className="project-row-details"><span className={project.date.toLowerCase() === "not scheduled" ? "is-unscheduled" : ""}>{project.date}</span><small><MapPin size={12} aria-hidden="true" />{project.site}</small></span>
+        <strong className="project-row-value"><span>Estimated value</span>{project.value}</strong>
+        <ChevronRight size={17} aria-hidden="true" />
+      </OperationsActionableListItem>)}
+    </OperationsActionableList>{!filteredProjects.length && <div className="empty-table">{state === "ready" ? lifecycleLabel ? `There are no projects in ${lifecycleLabel}.` : filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</div>}</div>
   </>;
 }
 

@@ -72,6 +72,7 @@ test("Inbox rules use a responsive semantic table and retain keyboard actions", 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".main-area")).toHaveCSS("margin-left", "0px");
   await expect(row).toBeVisible();
   const mobileCells = await row.getByRole("cell").evaluateAll((cells) => cells.map((cell) => {
     const bounds = cell.getBoundingClientRect();
