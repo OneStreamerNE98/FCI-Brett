@@ -33,8 +33,8 @@ below, which also covers the state of GitHub itself (issues/PRs).
   build, and a short data/security impact note (README repository rules).
 - An item is done only when its **Acceptance** line passes in this repo.
 - IDs: `BE-*` backend architecture & data storage · `WS-*` Google Workspace connection ·
-  `SET-*` Settings/Setup UI · `TRK-*` task tracking/doc reconciliation. Dependencies are
-  listed per item.
+  `SET-*` Settings/Setup UI · `TRK-*` task tracking/doc reconciliation · `KPI-*` flooring
+  KPIs & reporting. Dependencies are listed per item.
 
 ## Global guardrails (include in every packet)
 
@@ -660,6 +660,151 @@ endpoints exist. No docs-path links in UI copy.
 
 ---
 
+# Workstream D — Flooring KPIs & reporting (KPI)
+
+Goal: give the owner the handful of numbers every flooring-installation business runs on,
+computed truthfully from data the app already captures, then sharpened with a minimal set
+of additive inputs. Grounded in the real business: Floor Coverings International Cherry
+Hill is a design-led franchise (mobile showroom, in-home consultation, subcontracted
+installation crews, post-installation follow-up walkthrough) selling hardwood, carpet,
+luxury vinyl, tile/stone, laminate, and specialty flooring; the franchisor's own headline
+franchise metric is **gross booked-job revenue**, and the industry's universal operator
+KPIs are close rate, average ticket/job value, booked and installed revenue, backlog,
+install cycle time, and callback rate.
+
+Rules for this workstream: (1) **simple over complete** — only KPIs every flooring
+installer recognizes instantly; (2) every formula is pinned in one definitions doc so all
+agents and reports compute identical numbers; (3) **dollar-value KPIs are
+Administrator-only at rollout** per `docs/administration-and-access-plan.md` (the
+single-user development copy shows everything today; wire the gate through SET-02's
+`isAdmin` when available); (4) schema changes are additive-only and follow
+`docs/development-d1-schema-migrations.md` (D1) and the append-only checksummed registry
+(PostgreSQL); (5) no cost/margin capture, no external review data, no scheduling
+dependencies — see the exclusions in KPI-01's definitions doc.
+
+### KPI-01 · Tier-1 KPI report from existing data + definitions doc (medium, after the FloorOpsApp queue clears — no schema change)
+**Why:** Six universal KPIs are computable today from fields that already exist on leads
+{status active/converted/lost, stage, source, estimatedValue, createdAt, updatedAt} and
+projects {status lifecycle, estimatedValue, createdAt, updatedAt}, but the Reports screen
+only shows pipeline-by-stage and projects-by-status. The owner currently has no close
+rate, booked-revenue, or backlog number anywhere.
+**Do:** (1) Write `docs/flooring-kpis.md` — the single source of truth: each KPI's name,
+exact formula, fields used, admin-only flag, and known approximations. Tier-1 set:
+**Win rate** = converted ÷ (converted + lost) leads in period, overall and by `source`
+(non-financial); **Booked value per month** = Σ estimatedValue of leads whose status
+became converted in the month (financial — mirrors the franchisor's booked-jobs metric);
+**Average job value** = mean estimatedValue of converted leads (and of created projects)
+in period (financial); **Sales cycle days** = mean(conversion time − createdAt) for
+converted leads (non-financial); **Backlog** = count and Σ estimatedValue of projects in
+planning/mobilizing/installation/closeout (count non-financial, value financial);
+**Jobs completed per month** = projects whose status became completed in the month
+(non-financial). Document honestly that until KPI-02 lands, status-change time is
+approximated by `updatedAt` (and improved by `activity_events` where loaded), and project
+cycle time is deliberately EXCLUDED until real installation dates exist — no fake
+precision. Record deliberate exclusions with reasons: gross margin (no cost capture),
+material-vs-labor split (no invoice data), NPS/Google reviews (external data; candidate
+later Google Business Profile integration for this Google-first company), crew utilization
+(scheduling unbuilt). (2) Add a "Business KPIs" panel to the Reports view computing these
+client-side from the already-loaded lead/project arrays (the same pattern as the existing
+stage-value computation), with a month selector for the two per-month KPIs, the shared
+panel/stat conventions, and each dollar KPI marked with the admin-only note (gate via
+`isAdmin` if SET-02 has landed; otherwise render with a code comment referencing the
+gate). Extract the formulas into a pure helper module (e.g.
+`app/features/reports/flooring-kpis.ts`) so unit tests pin the math to the definitions
+doc. (3) Keep drill-through consistency: where a KPI has a natural destination (win rate →
+Leads, backlog → Projects Active filter), reuse the PR #27 bounded-filter links.
+**Files:** `docs/flooring-kpis.md` (new), `app/features/reports/flooring-kpis.ts` (new),
+`app/FloorOpsApp.tsx` (Reports region), `app/globals.css` (reuse existing panel/stat
+classes; additions only if unavoidable), `tests/` (unit for every formula incl. zero-
+denominator and empty-period cases; rendered coverage per repo convention).
+**Accept:** unit tests pin every formula from the definitions doc (win rate with 0
+decided leads renders an em-dash, not NaN — honest-empty-state rule); Reports renders the
+panel with seeded data at desktop and 390px with axe serious/critical clean; `npm test`
+and the Playwright suites pass; the ledger status line updates in the same PR.
+**Deps:** FloorOpsApp queue (after PR #33 and SET-01 merge — one FloorOpsApp packet at a
+time). Effort: medium.
+
+### KPI-02 · Tier-2 minimal inputs: flooring category, square feet, contract value (medium, after KPI-01)
+**Why:** Three additive fields unlock the flooring-specific KPIs no generic CRM field can:
+what we sell (product mix), how big jobs are (sq ft), and what they actually sold for
+(vs. the estimate). All are known at booking time in this business model (the design
+consultation produces exactly these), so they belong on the create-project form — no
+workflow redesign.
+**Do:** (1) `db/schema.ts`: add nullable columns to `projects` — `flooring_category`
+(text; suggested values hardwood / carpet / luxury-vinyl / tile-stone / laminate /
+specialty / mixed — validate against the list server-side but store text),
+`square_feet` (integer), `contract_value` (integer dollars, the sold price at booking);
+run `npm run db:generate` for immutable migration 0012 per
+`docs/development-d1-schema-migrations.md` (additive, no unique indexes, no backfill).
+(2) Extend POST /api/v1/projects validation (bounded, all three optional) and the
+New-project modal with the three optional inputs (category select, sq ft, contract
+value — modal field conventions from the accessibility pass); render them in the project
+drawer stats. (3) Update `docs/flooring-kpis.md` and the KPI helper: **Product mix** =
+job count and value share by category (value share financial); **Revenue per square
+foot** = contract_value (fallback estimatedValue) ÷ square_feet, per job and period
+average (financial); **Estimate accuracy** = contract_value ÷ estimatedValue where both
+exist (financial); Booked value and Average job value now prefer contract_value with
+estimatedValue fallback — the fallback rule is pinned in the definitions doc. KPIs render
+only when at least one record carries the field ("Not yet captured" otherwise — never a
+fake zero). (4) Do NOT add installation dates or callbacks here — that is KPI-03.
+**Files:** `db/schema.ts`, `drizzle/` (generated), `app/domain/` project validation,
+`app/api/v1/projects/route.ts`, `app/FloorOpsApp.tsx` (modal + drawer + Reports),
+`docs/flooring-kpis.md`, `tests/`.
+**Accept:** migration 0012 is additive-only and `npm run db:migrate:local` applies it;
+create-project round-trips the three fields (API + e2e); KPI panel shows the new KPIs
+with captured data and "Not yet captured" without; existing projects (null fields) never
+break any KPI; full suites pass.
+**Deps:** KPI-01. Effort: medium.
+
+### KPI-03 · Installation dates + callback capture via audited drawer actions (medium, after KPI-02)
+**Why:** Install cycle time and callback rate are the two operations/quality KPIs every
+installer tracks — and this franchise's post-installation follow-up walkthrough makes the
+callback question a natural existing step. But project editing does not exist yet
+(tracked step-7 roadmap work). The repo already has the right interim pattern: the
+audited, admin-only "Assign to me" drawer action.
+**Do:** (1) Additive migration (0013): `installation_started_at` (ms),
+`installation_completed_at` (ms), `had_callback` (integer boolean default 0),
+`callback_note` (text, bounded) on `projects`. (2) Following the manager-assignment
+pattern exactly (admin-only, same-origin, reason-free single-purpose action, activity
+event on success): drawer actions "Record installation dates" (small modal, two date
+inputs, completed ≥ started validation) and "Record follow-up result" (callback yes/no +
+optional bounded note). (3) KPI updates in the definitions doc + helper: **Install cycle
+days** = completed − started per job and period average (non-financial); **Callback
+rate** = had_callback jobs ÷ completed jobs in period (non-financial); replace KPI-01's
+documented `updatedAt` approximation for jobs-completed timing with
+`installation_completed_at` where present (fallback rule pinned in the doc). (4) These
+fields are the forward-compatible seed for the future Scheduling milestone — note in the
+definitions doc that Scheduling must consume, not duplicate, them.
+**Files:** `db/schema.ts`, `drizzle/`, `app/api/v1/projects/[projectId]/route.ts` (extend
+the existing audited-action PATCH surface), `app/FloorOpsApp.tsx` (drawer),
+`docs/flooring-kpis.md`, `tests/`.
+**Accept:** both actions are admin-gated server-side and append activity events; invalid
+date order fails closed; KPIs compute from the new fields with pinned fallbacks; full
+suites pass.
+**Deps:** KPI-02. Effort: medium.
+
+### KPI-04 · PostgreSQL parity and rehearsal coverage for KPI fields (small, after KPI-02/03 + BE-06)
+**Why:** Guardrail: the D1 dev schema and the production PostgreSQL boundary must not
+drift. The postgres `projects` table (migration v1) predates the KPI columns.
+**Do:** Append a new checksummed PostgreSQL migration (next free version after the ones
+BE-06/BE-07 claim — coordinate version numbers via the registry, never renumber) adding
+the same nullable columns with CHECK constraints (category allowlist, square_feet > 0,
+contract_value ≥ 0, completed ≥ started); extend `infrastructure/postgres/
+least-privilege.sql` grants and readiness expectations; extend the postgres project
+repository row mapping; add the columns to the BE-12 rehearsal snapshot format and
+inventory classification so migrated projects carry their KPI data.
+**Files:** `app/platform/postgres/production-schema-migrations.ts` (append only),
+`infrastructure/postgres/least-privilege.sql`,
+`app/platform/google-cloud/database-readiness.ts`,
+`app/adapters/postgres/project-repository.ts`, rehearsal modules per BE-12, `tests/`.
+**Accept:** existing checksums unchanged, new version registered; gated PG16 integration
+tests apply and round-trip the columns; rehearsal imports KPI fields with hash
+verification; `npm test` passes.
+**Deps:** KPI-02 (columns exist), BE-06 (version-number coordination), BE-12 (snapshot
+format). Effort: small.
+
+---
+
 # Task tracking and doc reconciliation (the no-confusion rule)
 
 **GitHub baseline:** immediately after PRs #30 and #31 merged on July 19, 2026, GitHub had
@@ -778,6 +923,12 @@ consolidation tracks.
 inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only
 things gating the live connection; every agent item above proceeds without them. Jason's
 open decisions live in checklists 00/06/10.
+
+**FloorOpsApp single-file queue (one packet at a time):** PR #33 (actionable lists) →
+SET-01 (Settings extraction) → KPI-01 (Tier-1 KPI panel) → KPI-02 → KPI-03, interleaving
+other SET items as they become independent after SET-01. Workstream D's KPI packets are
+otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
+version numbers with BE-06).
 
 **Cross-item coordination (implement once):** multi-key token decryption (WS-04 ↔ BE-08);
 calendar-ID single authority (SET-05 ↔ BE-07); integration events reader (SET-09 ↔ WS-10);
