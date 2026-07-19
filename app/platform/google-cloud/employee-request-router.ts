@@ -15,6 +15,7 @@ import {
   type AdminAuditResult,
 } from "../../ports/admin-audit-reader";
 import type { AuthorizationRepository } from "../../ports/authorization";
+import type { IdentityPersistenceRepository } from "../../ports/identity-persistence";
 import type {
   SecurityAuditEvent,
   SecurityAuditRepository,
@@ -28,10 +29,17 @@ import {
 import type { createAuthorizationService } from "../../application/authorization-service";
 import {
   CLEAR_SESSION_COOKIE,
+  createSessionCookie,
   readCsrfCredential,
   readSessionCredential,
   requestIsSameOrigin,
 } from "./secure-session-transport.ts";
+import {
+  CLEAR_EMPLOYEE_OIDC_ATTEMPT_COOKIE,
+  EmployeeOidcFailure,
+  readEmployeeOidcAttemptCookie,
+  type EmployeeOidcClient,
+} from "./employee-oidc.ts";
 
 const MAX_URL_LENGTH = 2_048;
 const MAX_SEARCH_LENGTH = 200;
@@ -73,6 +81,9 @@ export type EmployeeRequestRouterDependencies = Readonly<{
   adminAudit: AdminAuditReader;
   adminAccess: AdminAccessPersistenceRepository;
   audit: SecurityAuditRepository;
+  /** Both are absent until the fail-closed employee OIDC config is complete. */
+  oidc?: EmployeeOidcClient;
+  identity?: Pick<IdentityPersistenceRepository, "authenticateEmployeeSession">;
   /**
    * Test-only callback seam for proving provider work cannot run after denial.
    * Production provider adapters require closed DTOs and durable authorized
@@ -83,6 +94,8 @@ export type EmployeeRequestRouterDependencies = Readonly<{
   now?: () => number;
   newId?: () => string;
   newInvitationCredential?: () => string;
+  newSessionCredential?: () => string;
+  newCsrfCredential?: () => string;
 }>;
 
 type RouteMatch = Readonly<{
@@ -104,6 +117,8 @@ type RouteMatch = Readonly<{
     | "admin_user_access_change"
     | "admin_user_disable"
     | "admin_sessions_invalidate"
+    | "employee_login_start"
+    | "employee_login_callback"
     | "logout";
   method: "GET" | "POST";
   projectId: string | null;
@@ -138,6 +153,22 @@ function uuid(value: string) {
 }
 
 function route(path: string): RouteMatch | null {
+  if (path === "/api/v1/session/google/start") {
+    return {
+      kind: "employee_login_start",
+      method: "POST",
+      projectId: null,
+      fileId: null,
+    };
+  }
+  if (path === "/api/v1/session/google/callback") {
+    return {
+      kind: "employee_login_callback",
+      method: "GET",
+      projectId: null,
+      fileId: null,
+    };
+  }
   if (path === "/api/v1/dashboard") {
     return { kind: "dashboard", method: "GET", projectId: null, fileId: null };
   }
@@ -276,9 +307,10 @@ function jsonResponse(
   status: number,
   body: unknown,
   clearSession = false,
+  cookies: readonly string[] = [],
 ) {
   const payload = JSON.stringify(body);
-  const headers: Record<string, string | number> = {
+  const headers: Record<string, string | number | string[]> = {
     "Cache-Control": "no-store",
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(payload),
@@ -287,10 +319,32 @@ function jsonResponse(
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
   };
-  if (clearSession) headers["Set-Cookie"] = CLEAR_SESSION_COOKIE;
+  const responseCookies = clearSession
+    ? [CLEAR_SESSION_COOKIE, ...cookies]
+    : [...cookies];
+  if (responseCookies.length === 1) headers["Set-Cookie"] = responseCookies[0]!;
+  else if (responseCookies.length > 1) headers["Set-Cookie"] = responseCookies;
   response.writeHead(status, headers);
   if (request.method === "HEAD") response.end();
   else response.end(payload);
+}
+
+function redirectResponse(
+  response: ServerResponse,
+  location: string,
+  cookies: readonly string[],
+) {
+  response.writeHead(303, {
+    "Cache-Control": "no-store",
+    "Content-Length": 0,
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    Location: location,
+    "Referrer-Policy": "no-referrer",
+    "Set-Cookie": [...cookies],
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+  });
+  response.end();
 }
 
 function discardUnreadBody(request: IncomingMessage) {
@@ -301,6 +355,7 @@ function failureResponse(
   request: IncomingMessage,
   response: ServerResponse,
   failure: HttpFailure,
+  cookies: readonly string[] = [],
 ) {
   discardUnreadBody(request);
   jsonResponse(
@@ -309,6 +364,7 @@ function failureResponse(
     failure.status,
     { error: failure.code },
     failure.clearSession,
+    cookies,
   );
 }
 
@@ -380,6 +436,36 @@ function exactAdminBody(body: JsonObject, keys: readonly string[]) {
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
     throw new HttpFailure(400, "invalid_admin_request");
   }
+}
+
+function employeeLoginStartBody(body: JsonObject) {
+  const keys = Object.keys(body);
+  if (keys.length !== 1 || keys[0] !== "invitationCredential") {
+    throw new HttpFailure(400, "invalid_login_request");
+  }
+  if (body.invitationCredential === null) {
+    return Object.freeze({ invitationCredential: null });
+  }
+  if (
+    typeof body.invitationCredential !== "string"
+    || !GENERATED_CREDENTIAL_PATTERN.test(body.invitationCredential)
+  ) {
+    throw new HttpFailure(400, "invalid_login_request");
+  }
+  return Object.freeze({ invitationCredential: body.invitationCredential });
+}
+
+function employeeLoginCallbackQuery(url: URL) {
+  const keys = [...url.searchParams.keys()];
+  if (keys.some((key) => key !== "code" && key !== "state")) {
+    throw new EmployeeOidcFailure("authorization_denied");
+  }
+  const codes = url.searchParams.getAll("code");
+  const states = url.searchParams.getAll("state");
+  if (codes.length !== 1 || states.length !== 1) {
+    throw new EmployeeOidcFailure("authorization_denied");
+  }
+  return Object.freeze({ code: codes[0] ?? "", state: states[0] ?? "" });
 }
 
 function adminText(value: unknown, maximum: number) {
@@ -482,8 +568,43 @@ function generatedInvitationCredential(value: string) {
   return value;
 }
 
+function generatedLoginCredential(value: string, label: string) {
+  if (typeof value !== "string" || !GENERATED_CREDENTIAL_PATTERN.test(value)) {
+    throw new Error(`Generated ${label} credential is invalid`);
+  }
+  return value;
+}
+
 function invitationHash(value: string) {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
+}
+
+function employeeLoginAudit(
+  id: string,
+  requestId: string,
+  correlationId: string,
+  occurredAt: number,
+): SecurityAuditEvent {
+  return {
+    id,
+    executorType: "anonymous",
+    executorUserId: null,
+    executorKey: "anonymous",
+    originatingUserId: null,
+    originatingActorKey: null,
+    action: "identity.login_failed",
+    targetType: "login_attempt",
+    targetId: correlationId,
+    result: "denied",
+    reasonCode: "invalid_request",
+    requestId,
+    correlationId,
+    source: "employee_login",
+    metadata: { provider: "google_oidc" },
+    occurredAt,
+    retentionPolicyKey: "security_audit",
+    retentionUntil: null,
+  };
 }
 
 function adminMutationAudit(
@@ -733,10 +854,18 @@ export function createEmployeeRequestRouter(
   if (dependencies.testActions && dependencies.testMode !== true) {
     throw new Error("Employee route test actions require explicit test mode");
   }
+  if (Boolean(dependencies.oidc) !== Boolean(dependencies.identity)) {
+    throw new Error("Employee OIDC routing requires both verification and identity persistence");
+  }
   const now = dependencies.now ?? Date.now;
   const newId = dependencies.newId ?? randomUUID;
   const newInvitationCredential = dependencies.newInvitationCredential
     ?? (() => randomBytes(32).toString("base64url"));
+  const newSessionCredential = dependencies.newSessionCredential
+    ?? (() => randomBytes(32).toString("base64url"));
+  const newCsrfCredential = dependencies.newCsrfCredential
+    ?? (() => randomBytes(32).toString("base64url"));
+  const employeeLoginEnabled = Boolean(dependencies.oidc && dependencies.identity);
   const testActions = dependencies.testMode === true ? dependencies.testActions : undefined;
 
   return async function handleEmployeeRequest(
@@ -745,12 +874,20 @@ export function createEmployeeRequestRouter(
   ): Promise<void> {
     const requestId = newId();
     const correlationId = newId();
+    let clearOidcAttemptOnFailure = false;
     response.setHeader("X-Request-Id", requestId);
 
     try {
       const url = requestUrl(request);
       const matched = matchRoute(url.pathname, request.method);
       if (!matched) throw new HttpFailure(404, "not_found");
+      if (
+        (matched.kind === "employee_login_start" || matched.kind === "employee_login_callback")
+        && !employeeLoginEnabled
+      ) {
+        throw new HttpFailure(404, "not_found");
+      }
+      clearOidcAttemptOnFailure = matched.kind === "employee_login_callback";
       if (request.method !== matched.method) {
         response.setHeader(
           "Allow",
@@ -758,7 +895,12 @@ export function createEmployeeRequestRouter(
         );
         throw new HttpFailure(405, "method_not_allowed");
       }
-      if (matched.kind !== "search" && matched.kind !== "admin_audit_view" && url.search) {
+      if (
+        matched.kind !== "search"
+        && matched.kind !== "admin_audit_view"
+        && matched.kind !== "employee_login_callback"
+        && url.search
+      ) {
         throw new HttpFailure(400, "invalid_query");
       }
 
@@ -792,6 +934,105 @@ export function createEmployeeRequestRouter(
         await dependencies.audit.append(event);
         throw new HttpFailure(403, "request_not_authorized");
       };
+
+      if (matched.kind === "employee_login_start") {
+        if (!requestIsSameOrigin(request)) return await denyTransport("origin_mismatch");
+        const input = employeeLoginStartBody(await jsonBody(request));
+        const initiation = dependencies.oidc!.initiate(input.invitationCredential, now());
+        redirectResponse(response, initiation.authorizationUrl, [initiation.attemptCookie]);
+        return;
+      }
+
+      if (matched.kind === "employee_login_callback") {
+        requireEmptyBody(request);
+        try {
+          const query = employeeLoginCallbackQuery(url);
+          const attemptCookie = readEmployeeOidcAttemptCookie(request);
+          if (attemptCookie === null) throw new EmployeeOidcFailure("attempt_missing");
+          const completion = await dependencies.oidc!.complete({
+            attemptCookie,
+            state: query.state,
+            code: query.code,
+            completedAt: now(),
+          });
+          const sessionCredential = generatedLoginCredential(
+            newSessionCredential(),
+            "session",
+          );
+          const csrfCredential = generatedLoginCredential(newCsrfCredential(), "CSRF");
+          const issuedAt = now();
+          const idleExpiresAt = issuedAt + AUTHORIZATION_ACCESS_DEFAULTS.sessionIdleLifetimeMs;
+          const absoluteExpiresAt = issuedAt
+            + AUTHORIZATION_ACCESS_DEFAULTS.sessionAbsoluteLifetimeMs;
+          const loginAudit = employeeLoginAudit(
+            newId(),
+            requestId,
+            correlationId,
+            issuedAt,
+          );
+          const result = await dependencies.identity!.authenticateEmployeeSession({
+            identity: completion.identity,
+            invitationTokenHash: completion.invitationCredential === null
+              ? null
+              : invitationHash(completion.invitationCredential),
+            newUserId: newId(),
+            newExternalIdentityId: newId(),
+            session: {
+              id: newId(),
+              tokenHash: invitationHash(sessionCredential),
+              csrfHash: invitationHash(csrfCredential),
+              issuedAt,
+              idleExpiresAt,
+              absoluteExpiresAt,
+              purgeAfter: absoluteExpiresAt
+                + AUTHORIZATION_ACCESS_DEFAULTS.invitationLifetimeMs,
+            },
+            loginAudit,
+            invitationAudit: employeeLoginAudit(
+              newId(),
+              requestId,
+              correlationId,
+              issuedAt,
+            ),
+          });
+          if (result.outcome !== "accepted") {
+            throw new HttpFailure(403, "login_not_authorized");
+          }
+          jsonResponse(
+            request,
+            response,
+            200,
+            {
+              data: {
+                outcome: "authenticated",
+                csrfToken: csrfCredential,
+                idleExpiresAt,
+                absoluteExpiresAt,
+              },
+            },
+            false,
+            [
+              CLEAR_EMPLOYEE_OIDC_ATTEMPT_COOKIE,
+              createSessionCookie(sessionCredential, issuedAt, absoluteExpiresAt),
+            ],
+          );
+          return;
+        } catch (error) {
+          if (error instanceof EmployeeOidcFailure) {
+            const failedAt = now();
+            await dependencies.audit.append({
+              ...employeeLoginAudit(newId(), requestId, correlationId, failedAt),
+              reasonCode: error.reason,
+              occurredAt: failedAt,
+            });
+            throw new HttpFailure(
+              error.retryable ? 503 : 403,
+              error.retryable ? "login_unavailable" : "login_not_authorized",
+            );
+          }
+          throw error;
+        }
+      }
 
       if (matched.kind === "logout") {
         if (!requestIsSameOrigin(request)) {
@@ -1225,11 +1466,23 @@ export function createEmployeeRequestRouter(
         return;
       }
       if (error instanceof HttpFailure) {
-        failureResponse(request, response, error);
+        failureResponse(
+          request,
+          response,
+          error,
+          clearOidcAttemptOnFailure ? [CLEAR_EMPLOYEE_OIDC_ATTEMPT_COOKIE] : [],
+        );
         return;
       }
       discardUnreadBody(request);
-      jsonResponse(request, response, 503, { error: "service_unavailable" });
+      jsonResponse(
+        request,
+        response,
+        503,
+        { error: "service_unavailable" },
+        false,
+        clearOidcAttemptOnFailure ? [CLEAR_EMPLOYEE_OIDC_ATTEMPT_COOKIE] : [],
+      );
     }
   };
 }

@@ -14,6 +14,9 @@ import {
   createEmployeeRequestRouter,
 } from "../../app/platform/google-cloud/employee-request-router.ts";
 import {
+  createEmployeeOidcClient,
+} from "../../app/platform/google-cloud/employee-oidc.ts";
+import {
   createProductionComposition,
   type ProductionComposition,
 } from "../../app/platform/google-cloud/production-composition.ts";
@@ -69,6 +72,12 @@ export async function startCloudRunFoundation(
     adminAudit: composition.repositories.adminAudit,
     adminAccess: composition.repositories.adminAccess,
     audit: composition.repositories.securityAudit,
+    ...(config.employeeOidc
+      ? {
+          oidc: createEmployeeOidcClient(config.employeeOidc),
+          identity: composition.repositories.identity,
+        }
+      : {}),
   });
   const controller = createFoundationServer({
     readiness,

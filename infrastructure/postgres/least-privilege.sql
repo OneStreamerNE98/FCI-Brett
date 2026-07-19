@@ -120,9 +120,10 @@ GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.idempotency_requests TO fci_runtim
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.outbox_events TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.users TO fci_runtime;
 GRANT UPDATE (status, disabled_at, authorization_version, sessions_valid_after, updated_at, version) ON TABLE fci_app.users TO fci_runtime;
-GRANT INSERT ON TABLE fci_app.external_identities TO fci_runtime;
+GRANT SELECT, INSERT ON TABLE fci_app.external_identities TO fci_runtime;
+GRANT UPDATE (email, hosted_domain, email_verified, last_authenticated_at, updated_at, version) ON TABLE fci_app.external_identities TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.invitations TO fci_runtime;
-GRANT UPDATE (token_hash, status, revoked_by_user_id, revoked_at, expired_at, updated_at, version) ON TABLE fci_app.invitations TO fci_runtime;
+GRANT UPDATE (token_hash, status, accepted_user_id, accepted_at, revoked_by_user_id, revoked_at, expired_at, updated_at, version) ON TABLE fci_app.invitations TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.invitation_project_assignments TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.sessions TO fci_runtime;
 GRANT UPDATE (token_hash, csrf_hash, revoked_at, revoked_by_actor_key, revocation_reason_code, version) ON TABLE fci_app.sessions TO fci_runtime;

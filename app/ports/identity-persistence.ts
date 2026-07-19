@@ -54,6 +54,64 @@ export type RevokeSessionIntent = Readonly<{
   audit: SecurityAuditEvent;
 }>;
 
+export type AuthenticateEmployeeIdentity = Readonly<{
+  provider: "google_oidc";
+  issuer: string;
+  subject: string;
+  email: string;
+  hostedDomain: string;
+  emailVerified: true;
+  displayName: string;
+}>;
+
+/**
+ * One short database transaction either signs in an already-bound immutable
+ * identity or consumes one exact invitation while creating its user, fixed
+ * role/project scope, external identity, and first session.
+ */
+export type AuthenticateEmployeeSessionIntent = Readonly<{
+  identity: AuthenticateEmployeeIdentity;
+  /** Null for an already-bound employee; required for first admission. */
+  invitationTokenHash: string | null;
+  newUserId: string;
+  newExternalIdentityId: string;
+  session: Readonly<{
+    id: string;
+    tokenHash: string;
+    csrfHash: string;
+    issuedAt: number;
+    idleExpiresAt: number;
+    absoluteExpiresAt: number;
+    purgeAfter: number;
+  }>;
+  loginAudit: SecurityAuditEvent;
+  invitationAudit: SecurityAuditEvent;
+}>;
+
+export type AuthenticateEmployeeSessionDenialReason =
+  | "invitation_required"
+  | "invitation_invalid"
+  | "invitation_expired"
+  | "invitation_email_mismatch"
+  | "identity_conflict"
+  | "user_unavailable"
+  | "role_not_approved";
+
+export type AuthenticateEmployeeSessionResult =
+  | Readonly<{
+      outcome: "accepted";
+      userId: string;
+      email: string;
+      authorizationVersion: string;
+      sessionVersion: string;
+      invitationRedeemed: boolean;
+    }>
+  | Readonly<{
+      outcome: "denied";
+      reason: AuthenticateEmployeeSessionDenialReason;
+    }>
+  | Readonly<{ outcome: "conflict" }>;
+
 export type IdentityPersistenceResult =
   | { outcome: "accepted"; version: string }
   | { outcome: "conflict" }
@@ -65,6 +123,9 @@ export type IdentityPersistenceResult =
  */
 export interface IdentityPersistenceRepository {
   registerExternalIdentity(intent: RegisterExternalIdentityIntent): Promise<IdentityPersistenceResult>;
+  authenticateEmployeeSession(
+    intent: AuthenticateEmployeeSessionIntent,
+  ): Promise<AuthenticateEmployeeSessionResult>;
   createSession(intent: CreateSessionIntent): Promise<IdentityPersistenceResult>;
   revokeSession(intent: RevokeSessionIntent): Promise<IdentityPersistenceResult>;
 }
