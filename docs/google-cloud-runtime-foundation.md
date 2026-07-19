@@ -1,6 +1,6 @@
 # Google Cloud runtime foundation
 
-Reviewed: July 16, 2026
+Reviewed: July 19, 2026
 
 Status: Implemented and tested in source only. Not provisioned, connected, migrated, or deployed.
 
@@ -47,12 +47,15 @@ The Google Cloud entry points deliberately do not use the development environmen
 | `FCI_POSTGRES_DATABASE` | Lowercase database identifier. |
 | `FCI_POSTGRES_USER` | Environment-specific runtime, migration, or rehearsal login/IAM database principal. |
 | `FCI_POSTGRES_PASSWORD` or `FCI_POSTGRES_PASSWORD_FILE` | Configure exactly one. Prefer a dedicated Secret Manager mount such as `/secrets/postgres/password`. |
-| `FCI_POSTGRES_SCHEMA` | Lowercase target schema. Production should use a dedicated application schema; rehearsal schemas must begin `fci_rehearsal_`. |
+| `FCI_POSTGRES_SCHEMA` | Required lowercase target schema in every stage and access mode. Staging and production must use a dedicated application schema unless the reviewed exception below is acknowledged; rehearsal schemas must begin `fci_rehearsal_`. |
+| `FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT` | Leave unset for a dedicated schema. If staging or production deliberately targets literal `public`, set exactly `I ACKNOWLEDGE THAT THIS STAGING OR PRODUCTION DATABASE USES THE PUBLIC POSTGRESQL SCHEMA`; any missing, approximate, or stale acknowledgment fails before secret access or a database connection. Dev-stage schema behavior is unchanged. |
 | `FCI_POSTGRES_MIGRATION_ROLE` | Required only for migration mode; use the reviewed schema-owner role name. |
 | `FCI_POSTGRES_POOL_MAX` | Runtime defaults to `5` and is capped at `10`; migration and rehearsal must be `1`. |
 | `PORT` | Defaults to `8080`; Cloud Run supplies this for the ingress container. |
 
 Optional bounded timeout/lifetime values are documented in `.env.example`. They are non-secret configuration; passwords and other credentials still belong only in Secret Manager or another approved encrypted runtime setting.
+
+The low-level migration runner retains its `public` default for isolated library callers and existing development tests. Google Cloud service, migration, and rehearsal entry points all pass through `loadProductionConfig`, which requires an explicit `FCI_POSTGRES_SCHEMA`; staging and production therefore cannot silently inherit that low-level default. Literal `public` is an exceptional, acknowledged target rather than the production default.
 
 The Cloud SQL Node.js connector uses Application Default Credentials and private IP. Do not set `GOOGLE_APPLICATION_CREDENTIALS` to a committed or mounted service-account key in Cloud Run. Assign the service identity only the IAM permissions required to connect to its intended Cloud SQL instance and secrets.
 

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
-import { loadProductionConfig } from "../app/platform/google-cloud/production-config.ts";
+import {
+  loadProductionConfig,
+  PUBLIC_POSTGRES_SCHEMA_ACKNOWLEDGMENT,
+} from "../app/platform/google-cloud/production-config.ts";
 
 const TEST_PASSWORD = "test-only-secret-that-must-not-be-logged";
 const TEST_OIDC_CLIENT_SECRET = "test-only-oidc-client-secret";
@@ -71,6 +74,95 @@ test("fails closed on missing or approximate environment and access selectors", 
       pattern,
     );
   }
+});
+
+test("requires an explicit schema for every valid staging and production access-mode combination", () => {
+  const validCombinations = [
+    ["staging", "runtime"],
+    ["staging", "migration"],
+    ["staging", "rehearsal"],
+    ["production", "runtime"],
+    ["production", "migration"],
+  ];
+
+  for (const [deploymentStage, accessMode] of validCombinations) {
+    const environment = runtimeEnvironment({
+      FCI_DEPLOYMENT_STAGE: deploymentStage,
+      FCI_POSTGRES_ACCESS_MODE: accessMode,
+      FCI_POSTGRES_SCHEMA: undefined,
+      ...(accessMode === "migration" ? { FCI_POSTGRES_MIGRATION_ROLE: "fci_migration" } : {}),
+    });
+    assert.throws(
+      () => loadProductionConfig(environment),
+      /FCI_POSTGRES_SCHEMA must be configured/,
+      `${deploymentStage}/${accessMode}`,
+    );
+  }
+});
+
+test("requires the exact public-schema acknowledgment in staging and production", () => {
+  for (const deploymentStage of ["staging", "production"]) {
+    const publicEnvironment = runtimeEnvironment({
+      FCI_DEPLOYMENT_STAGE: deploymentStage,
+      FCI_POSTGRES_SCHEMA: "public",
+    });
+    assert.throws(
+      () => loadProductionConfig(publicEnvironment),
+      /FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT must contain the exact documented acknowledgment/,
+    );
+    assert.throws(
+      () => loadProductionConfig({
+        ...publicEnvironment,
+        FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT: "yes",
+      }),
+      /FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT must contain the exact documented acknowledgment/,
+    );
+
+    const acknowledged = loadProductionConfig({
+      ...publicEnvironment,
+      FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT: PUBLIC_POSTGRES_SCHEMA_ACKNOWLEDGMENT,
+    });
+    assert.equal(acknowledged.postgres.schema, "public");
+  }
+
+  assert.throws(
+    () => loadProductionConfig(
+      runtimeEnvironment({
+        FCI_POSTGRES_SCHEMA: "public",
+        FCI_POSTGRES_PASSWORD: undefined,
+        FCI_POSTGRES_PASSWORD_FILE: resolve("work", "must-not-be-read"),
+      }),
+      {
+        readPasswordFile() {
+          assert.fail("public-schema acknowledgment must fail before secret file access");
+        },
+      },
+    ),
+    /FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT must contain the exact documented acknowledgment/,
+  );
+
+  assert.throws(
+    () => loadProductionConfig(runtimeEnvironment({
+      FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT: PUBLIC_POSTGRES_SCHEMA_ACKNOWLEDGMENT,
+    })),
+    /must be unset unless staging or production targets the public schema/,
+  );
+});
+
+test("keeps dev-stage schema requirements and public-schema behavior unchanged", () => {
+  assert.throws(
+    () => loadProductionConfig(runtimeEnvironment({
+      FCI_DEPLOYMENT_STAGE: "dev",
+      FCI_POSTGRES_SCHEMA: undefined,
+    })),
+    /FCI_POSTGRES_SCHEMA must be configured/,
+  );
+
+  const config = loadProductionConfig(runtimeEnvironment({
+    FCI_DEPLOYMENT_STAGE: "dev",
+    FCI_POSTGRES_SCHEMA: "public",
+  }));
+  assert.equal(config.postgres.schema, "public");
 });
 
 test("validates runtime pool caps, timeouts, identifiers, and service port", () => {

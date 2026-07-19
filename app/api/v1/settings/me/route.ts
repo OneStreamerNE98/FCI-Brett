@@ -2,6 +2,9 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
+import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
+
+const MAX_ACCOUNT_PREFERENCES_BODY_BYTES = 8_000;
 
 const DEFAULT_PREFERENCES = {
   displayTimezone: "America/New_York",
@@ -69,7 +72,13 @@ export async function PATCH(request: NextRequest) {
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
 
-  const body = await request.json().catch(() => null);
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_ACCOUNT_PREFERENCES_BODY_BYTES,
+    invalidMessage: "Send one or more valid account preference fields.",
+    tooLargeMessage: "Account preference update is too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const body = parsed.body;
   if (!isRecord(body) || Object.keys(body).length === 0 || Object.keys(body).some((key) => !PREFERENCE_KEYS.has(key))) {
     return NextResponse.json({ error: "Send one or more valid account preference fields." }, { status: 400 });
   }

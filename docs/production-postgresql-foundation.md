@@ -1,6 +1,6 @@
 # Production PostgreSQL foundation
 
-Reviewed: July 13, 2026
+Reviewed: July 19, 2026
 
 Status: Implemented and tested in source. Not provisioned, applied, or deployed.
 
@@ -41,7 +41,7 @@ The runner:
 1. Validates positive contiguous versions, unique lowercase names, nonempty statements, and every declared SHA-256 checksum before connecting.
 2. Normalizes CRLF/CR line endings to LF when calculating checksums. Any other change to an applied migration is a history mismatch; add a new version instead.
 3. Obtains a dedicated database connection because the migration lock is session-scoped.
-4. Acquires one explicit PostgreSQL session advisory lock with bounded `pg_try_advisory_lock` retries before any DDL, validates that the configured lowercase target schema exists, verifies its activated owner role when supplied, and sets a deterministic target-schema, `pg_catalog`, then `pg_temp` search path on that dedicated connection. Explicitly placing `pg_temp` last prevents a reused session's temporary relation from shadowing migration history. The default lock wait is 10 seconds and the default target is `public`; production provisioning may pass another pre-created schema explicitly.
+4. Acquires one explicit PostgreSQL session advisory lock with bounded `pg_try_advisory_lock` retries before any DDL, validates that the configured lowercase target schema exists, verifies its activated owner role when supplied, and sets a deterministic target-schema, `pg_catalog`, then `pg_temp` search path on that dedicated connection. Explicitly placing `pg_temp` last prevents a reused session's temporary relation from shadowing migration history. The low-level runner keeps a 10-second default lock wait and a `public` schema default for isolated library callers and existing development tests. Every Google Cloud service, migration, and rehearsal entry point instead requires an explicit `FCI_POSTGRES_SCHEMA`; staging and production must target a dedicated schema unless literal `public` is deliberately paired with `FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT=I ACKNOWLEDGE THAT THIS STAGING OR PRODUCTION DATABASE USES THE PUBLIC POSTGRESQL SCHEMA`. A missing, approximate, or stale acknowledgment fails closed before secret access or connection, while dev-stage behavior remains unchanged.
 5. Creates the migration-history table if missing. This bootstrap is the only production statement allowed to use `IF NOT EXISTS`, and it is serialized by the advisory lock.
 6. Re-reads history after acquiring the lock so a concurrent runner cannot use stale history.
 7. Rejects unknown versions, gaps, reordered history, or changed names/checksums. Applied history must be an exact prefix of the source registry.
