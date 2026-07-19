@@ -10,6 +10,8 @@ Completed release: PR #25, merged to `main` as `13241fc` and deployed to the pri
 
 Completed follow-on: PR #27, merged to `main` as `cf32a9e` and deployed to the private Sites development environment as version 38. It completes the bounded Reports chart-to-list contract and its rendered regression coverage.
 
+Completed structural follow-on: PR #29, merged to `main` as `1c2f991` and deployed to the private Sites development environment as version 39. It completes the first behavior-preserving Phase 3 shared operations UI and report-filter boundary.
+
 ## Purpose
 
 This is the canonical, checked-in status ledger for the July full-app design critique. It preserves every systemic finding (A1–A8), every screen finding (B1–B16), the intended structural work, and the verification gates. An item is only marked complete when the source change and proportionate automated or rendered verification exist.
@@ -33,7 +35,7 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 | A4 — desktop sidebar wrapping | Complete | Nav labels remain one line with ellipsis and compact feature-state labels where needed. | Preserve at desktop, tablet, and mobile drawer widths. |
 | A5 — eyebrow readability | Complete | Global 12 px eyebrow styling uses the compliant brown token. | Remove losing legacy declarations during Phase 3 CSS cleanup. |
 | A6 — competing primary actions | Complete for current routes | Topbar lead capture is demoted/contextual, mobile hides the extra topbar action, Inbox has one primary load action, Refresh is soft, and the global placeholder is the short “Search.” | Reassess when future route-specific creation actions become real. |
-| A7 — design-system pattern drift | Planned, Phase 3 | The critique’s table, pill, empty-state, field, and button inventories are retained below. | Build shared primitives and migrate screens deliberately; do not claim consolidation from visual overrides alone. |
+| A7 — design-system pattern drift | Partial, Phase 3 | PR #29 added the first shared operations primitives. The current semantic-table slice adds one reusable native table/card pattern and migrates Settings rules with rendered keyboard, mobile, and accessibility coverage. | Build the separate actionable-list pattern and migrate remaining pill, empty-state, field, and button systems deliberately; do not claim consolidation from visual overrides alone. |
 | A8 — token/cascade/style debt | Partial | Live cascade bugs, font token, warm active nav, responsive Reports, and current readability issues are fixed. | Remove dead sidebar theme rules, aliases, losing declarations, duplicated media queries, high-specificity overrides, and the remaining green-tinted legacy surface palette in the Phase 3 CSS track. |
 
 ## Screen findings ledger
@@ -52,7 +54,7 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 | B10 | Assistant | Complete | Project context is a visible labeled 42 px field near the hero, only one canned-question family remains, fixed empty-state height is removed, composer controls meet the target floor, and the mobile textarea is 16 px. | Default desktop/mobile target-size scans pass; add answer and citation-state coverage. |
 | B11 | Schedule | Complete | Schedule has durable navigation, one “planned for a later milestone” message, a consistent Planned state, and aligned Overview wording/action. | Keep Schedule in route and mobile accessibility coverage. |
 | B12 | People & Access | Partial by design | The development/session boundary is informational, Retry is omitted for the known boundary, Invite is explained and visually secondary when unavailable, copy is plain language, the standard In development badge is visible, and the solid focus ring is restored. | Hydration-gate removal is deferred until dedicated SSR/hydration tests pass. App-shell integration remains a separate structural task. |
-| B13 | Projects | Complete | “Schedule & site” is the header, “Not scheduled” is muted regular text, row hover/focus is visible, tabs are readable, and named status colors pass. | Preserve through semantic-table migration. |
+| B13 | Projects | Complete | “Schedule & site” is the header, “Not scheduled” is muted regular text, row hover/focus is visible, tabs are readable, and named status colors pass. | Preserve through the actionable-list migration. |
 | B14 | Reports | Complete | Active-project copy is “X of Y … active,” status rows use lifecycle order, meaningless Current pills are removed, and chart rows now open exact bounded list filters. Lead links use the bounded `stage` values `new-inquiry`, `site-visit`, `proposal`, `decision`, and `other` and include active leads only; `other` contains active nonstandard stages. Project links use the bounded `status` values from `planning` through `archived` and match the exact lifecycle status. Invalid, duplicate, or obsolete values return to the normal page, and Back returns to Reports. | Keep bounded-filter regression coverage; deeper record-level and financial drilldowns remain future reporting work. |
 | B15 | Global heading/copy | Complete | Lead columns and Inbox empty states use h2; Clients says “Projects” and removes repeated “independently managed” copy. | Enforce heading order in route accessibility checks. |
 | B16 | Settings | Complete | When display name equals email, the account card renders the address once and uses a workspace identity line instead of duplicating it. | None. |
@@ -89,10 +91,10 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 
 These items remain open. They are split into reviewable tracks so a visual cleanup does not become an unsafe application rewrite.
 
-1. **Semantic table track**
-   - Create one shared data-table pattern based on the Access semantic table.
-   - Migrate pipeline, Projects, Clients, and Settings rules.
-   - Preserve current mobile field visibility and keyboard behavior.
+1. **Semantic table and actionable-list track**
+   - [x] First slice: create one shared responsive semantic table based on the Access People/Activity pattern and migrate **Settings → Inbox & file rules**.
+   - [x] Preserve all five rule fields at desktop and mobile, native Pause/Enable and Delete keyboard behavior, focus visibility, and serious/critical axe coverage.
+   - [ ] Later slice: define an accessible actionable-list pattern for the whole-row pipeline, Projects, and Clients views; do not force interactive rows into table semantics.
 2. **UI primitive track**
    - Consolidate the five pill systems into one accessible pill/feature-state base.
    - Consolidate empty states and field conventions without erasing purposeful screen differences.
@@ -107,7 +109,7 @@ These items remain open. They are split into reviewable tracks so a visual clean
    - Normalize the remaining green-tinted legacy surface colors into the approved warm neutral palette.
    - Replace fixed-height overrides with the shared minimum-size scale.
 
-Phase 3 progress on July 18, 2026: the first behavior-preserving boundary extracts the shared page title, panel header, metric, avatar, and status components from `FloorOpsApp.tsx`. It also replaces the duplicated Leads/Projects report-filter banner and destination-focus effects with one shared component and one history/session helper. Existing markup, class names, responsive behavior, route URLs, records, and mutations remain unchanged. Semantic table/list migrations, feature-level route splitting, broader pill/field/button consolidation, and legacy CSS removal remain open as separate reviewable slices.
+Phase 3 progress on July 18, 2026: PR #29 merged the first behavior-preserving boundary into `main` at `1c2f991`, and the exact merged source was deployed as private Sites development version 39. That slice extracts the shared page title, panel header, metric, avatar, and status components from `FloorOpsApp.tsx` and replaces the duplicated Leads/Projects report-filter banner and destination-focus effects with one shared component and history/session helper. The current `codex/semantic-rules-table` slice implements the first shared semantic table for **Settings → Inbox & file rules** with native headings, labeled mobile cards, and unchanged rule mutations. Actionable-list migrations, feature-level route splitting, broader pill/field/button consolidation, and legacy CSS removal remain open as separate reviewable slices.
 
 ### Phase 4 — durable guardrails
 
@@ -149,6 +151,15 @@ Phase 3 progress on July 18, 2026: the first behavior-preserving boundary extrac
 - Reports and filtered Lead/Project routes pass serious/critical axe checks at 1280×720 and 390×844; the focused mobile check also verifies a 44 px chart-row target and no horizontal viewport overflow.
 - Desktop and 390 px screenshots were reviewed for Reports and the filtered Lead/Project destinations. PR #27 merged at `cf32a9e`, all merged-commit CI checks passed, and the exact merged commit deployed successfully as private Sites development version 38. Authenticated read-only live smoke verified Reports, exact Planning-project filtering, Back focus restoration, a valid empty Proposal-lead filter, and a clean browser console. The follow-on changed no database schema, access policy, hosted environment values, or Google connection.
 
+### Semantic rules-table slice evidence
+
+- `npm run lint` passed.
+- `npm test` passed: 333 tests total, 320 passed, 13 environment-gated tests skipped, 0 failed; both production builds completed.
+- `npm run test:e2e` passed: all 55 Playwright tests passed.
+- Focused browser coverage verifies the native five-column table contract, Space-key Pause/Enable behavior and request body, Enter-key Delete behavior, exact responsive field labels, and no viewport overflow at 1024 px or 390 px.
+- Populated Settings inbox rules pass serious/critical axe checks at 1280×720 and 390×844, including the corrected Needs review contrast. Desktop, 1024 px, and 390 px rendered QA showed the expected table/card layouts with no unresolved console warning or error.
+- This slice changes presentation components, styles, tests, and documentation only. It changes no database schema, API contract, access policy, hosted configuration, migration, Google connection, or deployed Sites version; private version 39 remains live pending separate merge and deployment approval.
+
 ## Intentionally preserved behavior
 
 - Honest feature-state badges and empty states.
@@ -161,4 +172,4 @@ Phase 3 progress on July 18, 2026: the first behavior-preserving boundary extrac
 
 ## Follow-on release boundary
 
-The owner separately authorized this critique pass for the controlled, single-user Sites development environment, and version 37 was deployed successfully on July 18, 2026. That release did not change hosted access, data, migrations, or Google Workspace configuration. Production deployment, production configuration, data migration, multi-user admission, and live Google Workspace changes remain governed by the production-platform, authorization, and rollout acceptance gates in the repository guidance.
+The owner separately authorized this critique pass for the controlled, single-user Sites development environment, and version 37 was deployed successfully on July 18, 2026. The bounded Reports follow-on then shipped as version 38, and PR #29's first Phase 3 shared UI/filter boundary shipped as version 39. Those releases did not change hosted access, data, migrations, or Google Workspace configuration. The current semantic-table slice remains source-only pending separate merge and deployment approval. Production deployment, production configuration, data migration, multi-user admission, and live Google Workspace changes remain governed by the production-platform, authorization, and rollout acceptance gates in the repository guidance.

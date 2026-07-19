@@ -16,6 +16,7 @@ import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
 import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
 import { Avatar, Metric, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
+import { OperationsDataTable, OperationsDataTableCell } from "./components/operations/OperationsDataTable";
 import { ActiveRouteFilter } from "./features/reports/ActiveRouteFilter";
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
 import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
@@ -93,6 +94,13 @@ const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
 const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const INBOX_RULE_COLUMNS = [
+  { key: "priority", label: "Priority" },
+  { key: "rule", label: "Rule" },
+  { key: "match", label: "When it matches" },
+  { key: "action", label: "Action" },
+  { key: "destination", label: "Destination" },
+] as const;
 const PhoneInstallPanel = dynamic(
   () => import("./PhoneInstallPanel").then((module) => module.PhoneInstallPanel),
   { ssr: false, loading: () => <div className="phone-install-loading" role="status">Loading install guidance…</div> },
@@ -1349,7 +1357,20 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, rules, pro
       {section === "My account" && <MyAccountPanel notify={notify} userName={userName} userEmail={userEmail} onGoogleSetup={onGoogleSetup} onTimezoneChange={onTimezoneChange} />}
       {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
       {section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} />}
-      {section === "Inbox & file rules" && <section className="panel rule-settings"><div className="settings-heading"><div><p className="eyebrow">Gmail intake rules</p><h2>Inbox & file rules</h2><p>Rules run in priority order. Paused rules do not influence suggestions, and every filing still requires approval.</p></div><button className="primary-button" onClick={onAddRule}><Plus size={16} /> Add rule</button></div><div className="rule-callout"><ShieldCheck size={19} /><p><strong>Multi-project protection</strong><br />A project number is the safest match. A client with multiple independent projects is always kept in review until you choose the exact job.</p></div><div className="rules-table"><div className="rules-table-head"><span>Priority</span><span>Rule</span><span>When it matches</span><span>Action</span><span>Destination</span></div>{rules.map((rule) => <div className="rule-row" key={rule.id ?? rule.name}><span className="rule-priority">{rule.priority}</span><span><strong>{rule.name}</strong><small>{rule.enabled ? "Enabled" : "Paused"} · approval required</small><div className="rule-inline-actions"><button className="soft-button" onClick={() => void onUpdateRule(rule, { enabled: !rule.enabled })}>{rule.enabled ? "Pause" : "Enable"}</button>{rule.id && <button className="icon-text-button danger" aria-label={`Delete ${rule.name}`} onClick={() => { if (window.confirm(`Delete the email rule “${rule.name}”?`)) void onDeleteRule(rule); }}><Trash2 size={14} /> Delete</button>}</div></span><span>{rule.matchSummary}</span><Status text={rule.action === "review" ? "Needs review" : rule.action === "ignore" ? "Ignored" : "Suggest"} /><span>{rule.targetCategory}</span></div>)}</div><div className="rule-footnote"><Mail size={15} /><span>Custom rules are saved as review-first policies until a supported matcher is added. Keep Gmail simple: use only <b>{DRIVE_BLUEPRINT.gmailLabels.join(", ")}</b>. The project’s Drive folder—not a Gmail label per project—is the permanent filing location.</span></div></section>}
+      {section === "Inbox & file rules" && <section aria-labelledby="inbox-rules-heading" className="panel rule-settings">
+        <div className="settings-heading"><div><p className="eyebrow">Gmail intake rules</p><h2 id="inbox-rules-heading">Inbox & file rules</h2><p>Rules run in priority order. Paused rules do not influence suggestions, and every filing still requires approval.</p></div><button className="primary-button" onClick={onAddRule}><Plus size={16} /> Add rule</button></div>
+        <div className="rule-callout"><ShieldCheck size={19} /><p><strong>Multi-project protection</strong><br />A project number is the safest match. A client with multiple independent projects is always kept in review until you choose the exact job.</p></div>
+        <OperationsDataTable className="rules-data-table" columns={INBOX_RULE_COLUMNS} labelledBy="inbox-rules-heading">
+          {rules.map((rule) => <tr key={rule.id ?? rule.name}>
+            <OperationsDataTableCell label="Priority"><span className="rule-priority">{rule.priority}</span></OperationsDataTableCell>
+            <OperationsDataTableCell label="Rule"><div className="rule-name"><strong>{rule.name}</strong><small>{rule.enabled ? "Enabled" : "Paused"} · approval required</small><div className="rule-inline-actions"><button className="soft-button" onClick={() => void onUpdateRule(rule, { enabled: !rule.enabled })}>{rule.enabled ? "Pause" : "Enable"}</button>{rule.id && <button className="icon-text-button danger" aria-label={`Delete ${rule.name}`} onClick={() => { if (window.confirm(`Delete the email rule “${rule.name}”?`)) void onDeleteRule(rule); }}><Trash2 size={14} /> Delete</button>}</div></div></OperationsDataTableCell>
+            <OperationsDataTableCell label="When it matches">{rule.matchSummary}</OperationsDataTableCell>
+            <OperationsDataTableCell label="Action"><Status text={rule.action === "review" ? "Needs review" : rule.action === "ignore" ? "Ignored" : "Suggest"} /></OperationsDataTableCell>
+            <OperationsDataTableCell label="Destination">{rule.targetCategory}</OperationsDataTableCell>
+          </tr>)}
+        </OperationsDataTable>
+        <div className="rule-footnote"><Mail size={15} /><span>Custom rules are saved as review-first policies until a supported matcher is added. Keep Gmail simple: use only <b>{DRIVE_BLUEPRINT.gmailLabels.join(", ")}</b>. The project’s Drive folder—not a Gmail label per project—is the permanent filing location.</span></div>
+      </section>}
       {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets", "info"); }} />}
       {section === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} />}
       {section === "Data & security" && <DataSecurityPanel />}
