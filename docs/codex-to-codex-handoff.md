@@ -111,11 +111,13 @@ PR #32 merged the documentation-truth and one-account Gmail-boundary packet into
 
 The source-only `codex/actionable-lists` slice is complete in PR #33. It migrates the whole-row Overview pipeline, Clients, and Projects views to one shared native list/list-item/button pattern with explicit list semantics, concise action names linked to descriptions that preserve all decision metadata, Enter/Space activation, Escape dismissal, exact trigger focus return, responsive behavior, and empty states. The focused Playwright groups pass 58/58, all 13 routes pass serious/critical axe checks at desktop and 390 px, lint and rendered visual QA pass, and the final `npm test` run passed 325 active tests with 13 skipped after the accessibility and test-runner adjustments. On Windows, Vinext exits during the monolithic Playwright run, so use the recorded isolated local-server groups. It has not been deployed; private Sites development version 40 remains at `adc79b8` with no hosted configuration, data, API, migration, or security change from this slice.
 
+The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35. It moves the eight Settings panel boundaries into `app/settings/components/`, leaves `SettingsView` as the thin section switcher, and preserves the existing markup, copy, class names, URLs, state ownership, and API behavior. It has not been deployed; private Sites development version 40 remains live at `adc79b8`, and this slice changes no hosted configuration, data, database schema, API contract, access policy, migration, Google connection, or security boundary.
+
 ## Recommended next worker assignments
 
 The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. The next local sequence does not require Brett's Workspace or Cloud input:
 
-1. Begin SET-01 from the latest `main`, preserving PR #33's completed source-only `codex/actionable-lists` pattern for the whole-row Overview pipeline, Projects, and Clients views. Continue feature-level client splitting, pill/field/button consolidation, and legacy CSS removal only in later bounded slices.
+1. Begin SET-02 from the latest `main`, preserving PR #35's extracted Settings component boundary and PR #33's completed actionable-list pattern. Continue feature-level client splitting, pill/field/button consolidation, and legacy CSS removal only in later bounded slices.
 2. Source-only jobs and Google sync contracts: model job/attempt/failure/replay plus Gmail/Calendar cursor and renewal state with fakes only; do not activate Scheduler, watches, channels, or delivery.
 3. Local migration fixtures: extend transformation, duplicate-reporting, reconciliation, and rollback evidence without creating or using staging.
 

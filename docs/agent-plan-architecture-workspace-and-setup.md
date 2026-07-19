@@ -69,7 +69,8 @@ below, which also covers the state of GitHub itself (issues/PRs).
 8. Visual/design remediation through PR #30 is included in private Sites development
    version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
    `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
-   SET-01 is the next `FloorOpsApp.tsx` packet. Do not
+   The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35
+   and is not deployed. SET-02 is the next Settings packet. Do not
    re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
    entries in that ledger.
 
@@ -524,7 +525,7 @@ anchors at the `aa8ed8f` baseline: `SettingsView` at `app/FloorOpsApp.tsx:1354`,
 `GET /api/v1/settings/me` returns no `isAdmin` today; no audit route exists. (Anchors
 drift — locate by symbol name.)
 
-### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, next after PR #33) — DO FIRST in the SET workstream
+### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
 **Why:** Every Settings panel is inline in the ~2,100-line `FloorOpsApp.tsx`; every other
 SET item edits those regions; the design ledger (items 94/103) already calls for the
 split. Parallel packets collide without it.
@@ -670,8 +671,9 @@ endpoints exist. No docs-path links in UI copy.
 deployed as private Sites development version 40. The deployment includes PR #30's
 semantic Settings rules table. Delivery PRs may be in flight later; they mirror items in
 these ledgers and do not become a separate task source of truth. The source-only
-`codex/actionable-lists` branch is complete in PR #33; it is not deployed. SET-01 is the
-next `FloorOpsApp.tsx` packet from the latest `main`.
+`codex/actionable-lists` branch is complete in PR #33; it is not deployed. The source-only
+`codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed.
+SET-02 is the next Settings packet from the latest `main`.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
@@ -741,8 +743,9 @@ contracts and `npm test` pass.
 
 **Start now, in parallel (no owner input needed):**
 The source-only `codex/actionable-lists` slice in PR #33 is complete as the current
-`FloorOpsApp.tsx` packet; it is not deployed. SET-01 is the next `FloorOpsApp.tsx` packet
-from the latest `main`.
+actionable-list packet; it is not deployed. The source-only
+`codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed.
+SET-02 is the next Settings packet from the latest `main`.
 BE-02, BE-13, WS-04, BE-04, BE-05, BE-06, BE-08, BE-11 (authoring), WS-12, and WS-13 may
 proceed in parallel when they do not touch that file. BE-01 + WS-03 and TRK-01 completed
 in PR #32.
@@ -757,11 +760,11 @@ is schedulable independently.
 
 **Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Do not run two packets that touch it
 concurrently. The source-only `codex/actionable-lists` branch is complete in PR #33.
-SET-01 is next and must branch from the latest `origin/main`, preserve both the shared
-actionable-list pattern and `InboxRulesPanel`'s
+The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35.
+SET-02 is next and must branch from the latest `origin/main`, preserve the extracted
+Settings component boundary, the shared actionable-list pattern, and `InboxRulesPanel`'s
 semantic `<table>` markup, and keep their focused regression suites plus
-`tests/e2e/accessibility-routes.spec.ts` green. Once started, land SET-01 before any other
-SET item.
+`tests/e2e/accessibility-routes.spec.ts` green.
 
 ### Recommended first waves (reconciled July 19, 2026)
 
@@ -773,7 +776,8 @@ SET item.
    pipeline, Projects, and Clients views (do not force interactive rows into table
    semantics), following the PR #30 review pattern. It is not deployed. *Touches
    `FloorOpsApp.tsx` — do not overlap it with SET-01.*
-3. **SET-01 Settings panel extraction** — next from the latest `main`.
+3. **SET-01 Settings panel extraction** — complete in source in PR #35 from
+   `codex/settings-panel-extraction`; it is not deployed. **SET-02 is next.**
 4. **BE-04 OIDC** (large; start now in parallel — it is the 20-user review's P0 #1 and
    the longest production pole) · **BE-02 + BE-13** (small hardening pair) ·
    **WS-04 rotation procedures** · **WS-12 contracts + fakes**.
