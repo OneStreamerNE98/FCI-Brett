@@ -13,6 +13,7 @@ const operationsRoutes = [
   "/assistant",
   "/reports",
   "/settings",
+  "/settings?section=inbox-rules",
   "/management/access",
 ] as const;
 
@@ -25,6 +26,11 @@ for (const route of operationsRoutes) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto(route);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      if (route === "/settings?section=inbox-rules") {
+        const rulesTable = page.getByRole("table", { name: "Inbox & file rules" });
+        await expect(rulesTable).toBeVisible();
+        await expect(rulesTable.getByRole("button", { name: /^(Pause|Enable)$/ }).first()).toBeVisible();
+      }
 
       const results = await new AxeBuilder({ page }).analyze();
       const violations = results.violations.filter(

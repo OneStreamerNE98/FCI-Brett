@@ -110,7 +110,7 @@ The owner has approved the application role and sensitive-action policy, includi
 12. Replace source-contract tests with more route, integration, and browser behavior tests.
 13. Validate backup restoration before real client data; retain the minimized audit viewer as a separately privileged production gate.
 
-The owner completed the hosted project-manager correction in private Sites development version 37 on July 18, 2026 and confirmed the corrected identity/activity evidence. The next source work that does not need Brett's input is Phase 3 frontend structure, provider-neutral job and Gmail/Calendar sync contracts with local fakes, and local migration transformation/reconciliation fixtures. Live OIDC, staging execution, migration/apply, production deployment, a second user, and real data remain separately gated.
+The owner completed the hosted project-manager correction in private Sites development version 37 on July 18, 2026 and confirmed the corrected identity/activity evidence. PR #29's first Phase 3 shared UI/filter boundary is now included in private Sites development version 39, and the Settings rules semantic-table slice is implemented in source for review. The remaining work that does not need Brett's input is the separate actionable-list pattern and later Phase 3 structure slices, provider-neutral job and Gmail/Calendar sync contracts with local fakes, and local migration transformation/reconciliation fixtures. Live OIDC, staging execution, migration/apply, production deployment, a second user, and real data remain separately gated.
 
 ### Next: lead-to-closeout operations
 

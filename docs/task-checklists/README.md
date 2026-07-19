@@ -15,14 +15,14 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | July critique remediation and Reports drill-through are deployed through version 38; P0 project-manager integrity is complete; the first Phase 3 shared UI/filter boundary is implemented for review | Continue semantic table/list patterns, feature splitting, broader primitive consolidation, and legacy CSS cleanup. |
+| Frontend multi-user hardening | Codex/developer | July critique remediation, Reports drill-through, and the first Phase 3 shared UI/filter boundary are merged; the latest private Sites development release is version 39; the Settings rules semantic-table slice is implemented for review | Review the Settings rules slice, then continue the separate actionable-list pattern, feature splitting, primitive consolidation, and legacy CSS cleanup. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status checked against `main`, the `codex/operations-ui-boundary` source branch, and private Sites development version 38 on July 18, 2026.
+Status checked against `main` at `1c2f991`, the current `codex/semantic-rules-table` source branch, and private Sites development version 39 on July 18, 2026.
 
 ### Jason / business owner
 
@@ -62,13 +62,14 @@ Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) t
 
 ## Recommended next work
 
-1. Complete the remaining Phase 3 frontend structure work: semantic table/list patterns, feature-level client splitting, broader pill/field/button consolidation, and legacy CSS cleanup.
-2. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
-3. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
+1. Review and merge the current shared semantic-table slice for **Settings → Inbox & file rules**; it preserves all five fields, native keyboard actions, accessibility, and 390 px no-overflow behavior.
+2. Define the separate accessible actionable-list pattern for the whole-row pipeline, Projects, and Clients views, then continue feature splitting, primitive consolidation, and legacy CSS cleanup in bounded slices.
+3. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
+4. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-The private Sites development release is version 38. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
+Private Sites development version 39 is the latest controlled release. The current semantic-table slice remains source-only until separately approved for merge and deployment. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
 
