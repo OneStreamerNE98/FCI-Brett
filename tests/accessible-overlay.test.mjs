@@ -21,11 +21,14 @@ test("wraps focus at both overlay boundaries and recovers focus from outside", (
 });
 
 test("provides one nested-overlay-aware accessible interaction foundation", async () => {
-  const [overlay, app, css] = await Promise.all([
+  const [overlay, app, inboxRules, googleWorkspace, css] = await Promise.all([
     read("app/components/AccessibleOverlay.tsx"),
     read("app/FloorOpsApp.tsx"),
+    read("app/settings/components/InboxRulesPanel.tsx"),
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/globals.css"),
   ]);
+  const overlayConsumers = [app, inboxRules, googleWorkspace].join("\n");
 
   assert.match(overlay, /role="dialog"/);
   assert.match(overlay, /aria-label=\{ariaLabel\}/);
@@ -46,15 +49,15 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /event\.target !== event\.currentTarget/);
   assert.match(overlay, /!closeOnBackdropRef\.current \|\| busyRef\.current/);
 
-  assert.equal(app.match(/<AccessibleOverlay\b/g)?.length, 11);
-  assert.doesNotMatch(app, /<div className="modal-backdrop"/);
-  assert.doesNotMatch(app, /<div className="drawer-backdrop"/);
-  assert.match(app, /variant="drawer"/);
-  assert.match(app, /busy=\{loading \|\| submitting\}/);
-  assert.match(app, /busy=\{saving\}/);
-  assert.equal(app.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 5);
-  assert.equal(app.match(/onClick=\{onClose\} disabled=\{saving\}>Cancel/g)?.length, 6);
-  assert.match(app, /aria-label="Close project" disabled=\{busy\}/);
+  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 11);
+  assert.doesNotMatch(overlayConsumers, /<div className="modal-backdrop"/);
+  assert.doesNotMatch(overlayConsumers, /<div className="drawer-backdrop"/);
+  assert.match(overlayConsumers, /variant="drawer"/);
+  assert.match(overlayConsumers, /busy=\{loading \|\| submitting\}/);
+  assert.match(overlayConsumers, /busy=\{saving\}/);
+  assert.equal(overlayConsumers.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 5);
+  assert.equal(overlayConsumers.match(/onClick=\{onClose\} disabled=\{saving\}>Cancel/g)?.length, 6);
+  assert.match(overlayConsumers, /aria-label="Close project" disabled=\{busy\}/);
   assert.match(css, /\.accessible-overlay-backdrop,\.accessible-overlay-panel\{overscroll-behavior:contain\}/);
 });
 

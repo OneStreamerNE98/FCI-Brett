@@ -4,6 +4,18 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
+const appSurfacePaths = [
+  "app/FloorOpsApp.tsx",
+  "app/settings/components/DataSecurityPanel.tsx",
+  "app/settings/components/DirectorySyncPanel.tsx",
+  "app/settings/components/GoogleWorkspacePanel.tsx",
+  "app/settings/components/InboxRulesPanel.tsx",
+  "app/settings/components/MyAccountPanel.tsx",
+  "app/settings/components/SettingsDataNotice.tsx",
+  "app/settings/components/TestingLaunchPanel.tsx",
+  "app/settings/components/WorkspaceDefaultsPanel.tsx",
+];
+const readAppSurface = async () => (await Promise.all(appSurfacePaths.map(read))).join("\n");
 
 function containingSelector(css, declarationIndex) {
   const ruleStart = css.lastIndexOf("{", declarationIndex);
@@ -17,7 +29,7 @@ function pxValue(value, unit) {
 
 test("ships the Floor Coverings International product instead of starter content", async () => {
   const [page, routePage, layout, app, css, packageJson] = await Promise.all([
-    read("app/page.tsx"), read("app/OperationsRoutePage.tsx"), read("app/layout.tsx"), read("app/FloorOpsApp.tsx"),
+    read("app/page.tsx"), read("app/OperationsRoutePage.tsx"), read("app/layout.tsx"), readAppSurface(),
     read("app/globals.css"), read("package.json"),
   ]);
   assert.match(page, /OperationsRoutePage/);
@@ -68,7 +80,7 @@ test("keeps rendered typography at the audited 12px minimum", async () => {
 });
 
 test("keeps the design-critique interaction contracts in the rendered app", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
+  const app = await readAppSurface();
   const inbox = app.slice(app.indexOf("function InboxView"), app.indexOf("function AssistantView"));
   const assistant = app.slice(app.indexOf("function AssistantView"), app.indexOf("function ReportsView"));
   const reports = app.slice(app.indexOf("function ReportBarRow"), app.indexOf("function SettingsView"));
@@ -126,7 +138,7 @@ test("includes migrations and the Floor Coverings International logo asset", asy
 
 test("adds a searchable, configurable inbox with draft-only Workspace replies", async () => {
   const [app, phonePanel, searchApi, settingsApi, ruleApi, replyApi, gmail, manifest] = await Promise.all([
-    read("app/FloorOpsApp.tsx"), read("app/PhoneInstallPanel.tsx"), read("app/api/v1/search/route.ts"),
+    readAppSurface(), read("app/PhoneInstallPanel.tsx"), read("app/api/v1/search/route.ts"),
     read("app/api/v1/settings/workspace/route.ts"), read("app/api/v1/filing-rules/[ruleId]/route.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts"),
     read("app/lib/google-gmail.ts"), read("public/manifest.webmanifest"),
   ]);
@@ -155,7 +167,7 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
 
 test("keeps user preferences scoped to the authenticated office user without a personal-calendar profile", async () => {
   const [schema, preferencesApi, app] = await Promise.all([
-    read("db/schema.ts"), read("app/api/v1/settings/me/route.ts"), read("app/FloorOpsApp.tsx"),
+    read("db/schema.ts"), read("app/api/v1/settings/me/route.ts"), readAppSurface(),
   ]);
   assert.match(schema, /export const userPreferences = sqliteTable\("user_preferences"/);
   assert.match(schema, /userEmail: text\("user_email"\)\.primaryKey\(\)/);
@@ -173,7 +185,7 @@ test("keeps user preferences scoped to the authenticated office user without a p
 
 test("makes company shared calendars authoritative without a personal-calendar mode", async () => {
   const [app, settingsApi, guide] = await Promise.all([
-    read("app/FloorOpsApp.tsx"), read("app/api/v1/settings/workspace/route.ts"), read("docs/google-workspace-organization.md"),
+    readAppSurface(), read("app/api/v1/settings/workspace/route.ts"), read("docs/google-workspace-organization.md"),
   ]);
   assert.match(app, /Plan to create two shared FCI calendars/);
   assert.match(app, /Keep company work in two shared FCI Workspace calendars/);
@@ -190,7 +202,7 @@ test("makes company shared calendars authoritative without a personal-calendar m
 
 test("models clients, independent projects, and review-first email filing", async () => {
   const [app, schema, clientsApi, projectsApi, rulesApi, workspace] = await Promise.all([
-    read("app/FloorOpsApp.tsx"), read("db/schema.ts"), read("app/api/v1/clients/route.ts"),
+    readAppSurface(), read("db/schema.ts"), read("app/api/v1/clients/route.ts"),
     read("app/api/v1/projects/route.ts"), read("app/api/v1/filing-rules/route.ts"), read("app/lib/google-workspace.ts"),
   ]);
   assert.match(app, /Client Directory/);
@@ -208,7 +220,7 @@ test("models clients, independent projects, and review-first email filing", asyn
 
 test("applies enabled built-in filing rules to inbox hints without automatic Gmail writes", async () => {
   const [app, workspace, rulesApi] = await Promise.all([
-    read("app/FloorOpsApp.tsx"), read("app/lib/google-workspace.ts"), read("app/api/v1/filing-rules/route.ts"),
+    readAppSurface(), read("app/lib/google-workspace.ts"), read("app/api/v1/filing-rules/route.ts"),
   ]);
   assert.match(app, /evaluateInboxFilingRules/);
   assert.match(app, /clients=\{clients\} rules=\{filingRules\}/);
@@ -242,7 +254,7 @@ test("keeps the app authoritative while mirroring clients and projects to Google
 
 test("wires development controls and exposes Workspace-only live configuration plus local simulation", async () => {
   const [app, workspaceApi, envExample, testGuide, oauth, driveWorkspace] = await Promise.all([
-    read("app/FloorOpsApp.tsx"), read("app/api/v1/google-workspace/route.ts"),
+    readAppSurface(), read("app/api/v1/google-workspace/route.ts"),
     read(".env.example"), read("docs/testing-and-google-workspace-setup.md"),
     read("app/lib/google-oauth.ts"), read("app/lib/google-workspace.ts"),
   ]);
@@ -284,7 +296,7 @@ test("wires development controls and exposes Workspace-only live configuration p
 
 test("uses durable live records without hardcoded business demonstrations", async () => {
   const [app, leadsApi, leadApi, dashboardApi, workspaceSchema, auth] = await Promise.all([
-    read("app/FloorOpsApp.tsx"), read("app/api/v1/leads/route.ts"),
+    readAppSurface(), read("app/api/v1/leads/route.ts"),
     read("app/api/v1/leads/[leadId]/route.ts"), read("app/api/v1/dashboard/route.ts"),
     read("db/schema.ts"), read("app/lib/workspace-auth.ts"),
   ]);
@@ -356,7 +368,7 @@ test("provides explicit Gmail and Calendar controls in simulation and Workspace 
     read("app/api/v1/integrations/google/gmail/send-test/route.ts"),
     read("app/lib/google-calendar-client.ts"),
     read("app/api/v1/integrations/google/calendar/test-hold/route.ts"),
-    read("app/FloorOpsApp.tsx"), read("docs/testing-and-google-workspace-setup.md"),
+    readAppSurface(), read("docs/testing-and-google-workspace-setup.md"),
   ]);
   assert.match(oauth, /GOOGLE_WORKSPACE_/);
   assert.match(oauth, /https:\/\/www\.googleapis\.com\/auth\/gmail\.modify/);
@@ -380,7 +392,7 @@ test("provides explicit Gmail and Calendar controls in simulation and Workspace 
 
 test("files Gmail only after an explicit single-project review", async () => {
   const [app, schema, gmail, drive, filingRoute] = await Promise.all([
-    read("app/FloorOpsApp.tsx"), read("db/schema.ts"), read("app/lib/google-gmail.ts"),
+    readAppSurface(), read("db/schema.ts"), read("app/lib/google-gmail.ts"),
     read("app/lib/google-drive.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts"),
   ]);
   assert.match(app, /Review & copy/);
@@ -407,7 +419,7 @@ test("files Gmail only after an explicit single-project review", async () => {
 
 test("labels unfinished features without presenting placeholder controls", async () => {
   const [app, badge] = await Promise.all([
-    read("app/FloorOpsApp.tsx"),
+    readAppSurface(),
     read("app/components/FeatureStateBadge.tsx"),
   ]);
   const navItems = app.match(/const navItems:[\s\S]+?= \[([\s\S]+?)\n\];/)?.[1] ?? "";
@@ -429,7 +441,7 @@ test("labels unfinished features without presenting placeholder controls", async
 });
 
 test("uses authorized project-manager identities and exposes the narrow admin correction", async () => {
-  const app = await read("app/FloorOpsApp.tsx");
+  const app = await readAppSurface();
 
   assert.match(app, /managerId: string \| null/);
   assert.match(app, /project_manager_id === "string"/);
@@ -446,7 +458,7 @@ test("uses authorized project-manager identities and exposes the narrow admin co
 });
 
 test("keeps mobile project status, schedule truth, site, and value visible with readable audited text", async () => {
-  const [app, css] = await Promise.all([read("app/FloorOpsApp.tsx"), read("app/globals.css")]);
+  const [app, css] = await Promise.all([readAppSurface(), read("app/globals.css")]);
 
   assert.match(app, /project-row-status/);
   assert.match(app, /project-row-details/);
@@ -463,7 +475,7 @@ test("keeps mobile project status, schedule truth, site, and value visible with 
 test("captures durable project meetings and bounded Otter evidence", async () => {
   const [schema, meetingsApi, app, assistantApi] = await Promise.all([
     read("db/schema.ts"),
-    read("app/api/v1/projects/[projectId]/meetings/route.ts"), read("app/FloorOpsApp.tsx"),
+    read("app/api/v1/projects/[projectId]/meetings/route.ts"), readAppSurface(),
     read("app/api/v1/assistant/route.ts"),
   ]);
 
