@@ -127,7 +127,7 @@ jobs:
       CI: true
       FCI_E2E: true
       FCI_LOCAL_DEV_USER_EMAIL: e2e-admin@example.test
-      FCI_OFFICE_EMAILS: e2e-admin@example.test
+      FCI_OFFICE_EMAILS: e2e-admin@example.test,e2e-office@example.test
       FCI_ADMIN_EMAILS: e2e-admin@example.test
       GOOGLE_INTEGRATION_MODE: simulation
 

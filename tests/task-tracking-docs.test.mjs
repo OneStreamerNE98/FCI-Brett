@@ -120,7 +120,7 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
     assert.ok(actionablePassages.length > 0, `${path} omits the current actionable-list branch`);
     assert.ok(actionablePassages.some((line) => /source-only|source only/i.test(line) && /(?:complete[^\n]*PR #33|PR #33[^\n]*complete)/i.test(line)), `${path} does not call the actionable-list slice source-only and complete in PR #33`);
     assert.ok(actionablePassages.some((line) => /not deployed|not been deployed|no deployment/i.test(line)), `${path} does not record that the actionable-list slice is undeployed`);
-    assert.ok(actionablePassages.every((line) => !/draft|ready for review|must merge before/i.test(line)), `${path} still describes PR #33 as awaiting review or merge`);
+    assert.ok(actionablePassages.every((line) => !/(?:draft PR #33|PR #33[^.;|\n]*(?:ready for review|must merge before)|(?:ready for review|must merge before)[^.;|\n]*PR #33)/i.test(line)), `${path} still describes PR #33 as awaiting review or merge`);
     assert.ok(actionablePassages.every((line) => !/no pull request|without a pull request|has no pull request/i.test(line)), `${path} still calls the actionable-list slice PR-less`);
   }
 
@@ -135,7 +135,7 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
     assert.ok(settingsPassages.length > 0, `${path} omits the SET-01 branch`);
     assert.ok(settingsPassages.some((line) => /PR #35/i.test(line) && /complete in source|source[- ]complete/i.test(line)), `${path} does not call SET-01 complete in source in PR #35`);
     assert.ok(settingsPassages.some((line) => /not deployed|not been deployed|no deployment|undeployed/i.test(line)), `${path} does not record that SET-01 is undeployed`);
-    assert.ok(settingsPassages.every((line) => !/draft|ready for review|must merge before|waiting to merge|awaiting merge/i.test(line)), `${path} still describes SET-01 as awaiting review or merge`);
+    assert.ok(settingsPassages.every((line) => !/(?:draft PR #35|PR #35[^.;|\n]*(?:ready for review|must merge before|waiting to merge|awaiting merge)|(?:ready for review|must merge before|waiting to merge|awaiting merge)[^.;|\n]*PR #35)/i.test(line)), `${path} still describes SET-01 as awaiting review or merge`);
   }
 
   const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
@@ -145,9 +145,9 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
   const startNow = section(plan, "**Start now, in parallel (no owner input needed):**", "**Chains:**");
   assert.match(startNow, /codex\/actionable-lists/);
   assert.match(startNow, /PR #33[\s\S]*complete/i);
-  assert.match(startNow, /SET-01[\s\S]*(?:complete in source|source-complete)[\s\S]*PR #35[\s\S]*SET-02[\s\S]*next/i);
+  assert.match(startNow, /SET-01[\s\S]*PR #35[\s\S]*SET-02[\s\S]*PR #37[\s\S]*KPI-01[\s\S]*next/i);
   const firstWave = section(plan, "**Wave 1 — next PRs, in this order where they share files:**", "**Wave 2:**");
-  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*(?:complete in source|source-complete)[\s\S]*PR #35[\s\S]*SET-02[\s\S]*next/i);
+  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*PR #35[\s\S]*SET-02[\s\S]*PR #37/i);
 
   const design = read("docs/design-critique-fix-plan.md");
   assert.match(design, /- \[x\] Complete in source in PR #33 from `codex\/actionable-lists`/i);

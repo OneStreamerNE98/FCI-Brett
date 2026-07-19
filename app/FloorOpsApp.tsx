@@ -197,6 +197,7 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
   const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
   const [sheetSyncing, setSheetSyncing] = useState(false);
   const [displayTimezone, setDisplayTimezone] = useState("America/New_York");
+  const [isAdmin, setIsAdmin] = useState(accessLabel === "Admin");
   const mobileNavigationRef = useRef<HTMLElement>(null);
   const mobileNavigationCloseRef = useRef<HTMLButtonElement>(null);
   const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null);
@@ -288,10 +289,11 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
 
   useEffect(() => {
     let active = true;
-    void cachedGetJson<{ preferences?: { displayTimezone?: unknown } }>("/api/v1/settings/me")
+    void cachedGetJson<{ preferences?: { displayTimezone?: unknown }; isAdmin?: unknown }>("/api/v1/settings/me")
       .then((data) => {
         const timezone = data?.preferences?.displayTimezone;
         if (active && typeof timezone === "string") setDisplayTimezone(timezone);
+        if (active && typeof data?.isAdmin === "boolean") setIsAdmin(data.isAdmin);
       })
       .catch(() => undefined);
     return () => { active = false; };
@@ -902,7 +904,7 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
           {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
           {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} />}
-          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
+          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
         </div>
       </main>
       {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
@@ -1388,15 +1390,15 @@ function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Le
   </>;
 }
 
-function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
+function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, isAdmin, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; isAdmin: boolean; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
   return <><PageTitle eyebrow="Control center" title="Settings" text="Keep account preferences, one Google Workspace connection, inbox rules, calendar defaults, and safeguards in one simple place." state="In development" />
     <div className="settings-layout"><aside className="settings-nav panel">{SETTINGS_SECTIONS.map((option) => <button className={section === option ? "active" : ""} aria-current={section === option ? "page" : undefined} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
       {section === "My account" && <MyAccountPanel notify={notify} userName={userName} userEmail={userEmail} onGoogleSetup={onGoogleSetup} onTimezoneChange={onTimezoneChange} />}
-      {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} />}
-      {section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} />}
+      {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} isAdmin={isAdmin} />}
+      {section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
       {section === "Inbox & file rules" && <InboxRulesPanel rules={rules} onAddRule={onAddRule} onUpdateRule={onUpdateRule} onDeleteRule={onDeleteRule} />}
-      {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets", "info"); }} />}
-      {section === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} />}
+      {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets", "info"); }} isAdmin={isAdmin} />}
+      {section === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
       {section === "Data & security" && <DataSecurityPanel />}
       {section === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
     </div></>;

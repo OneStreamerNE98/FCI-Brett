@@ -12,6 +12,8 @@ Use the existing [`OneStreamerNE98/FCI-Brett`](https://github.com/OneStreamerNE9
 4. Have each developer clone the repository and create their own uncommitted `.env.local` from `.env.example`.
 5. Keep `GOOGLE_INTEGRATION_MODE=simulation` in local development. The controlled Sites connector uses ChatGPT Sites runtime environment settings, with sensitive values marked as secrets; the future Google Cloud production environment uses Google Secret Manager.
 
+Rendered Playwright runs set `FCI_E2E=true`, which disables Vite environment-file loading and tells the local Cloudflare Worker runtime not to infer variables from `.env.local`, so that file cannot override the synthetic test identities or simulation settings. This does not disable explicit `.dev.vars` bindings.
+
 Example commands for a new contributor:
 
 ```powershell

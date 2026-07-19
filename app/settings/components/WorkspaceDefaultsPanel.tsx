@@ -2,6 +2,7 @@
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Building2, CalendarDays, Check, Mail, ShieldCheck } from "lucide-react";
+import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 
@@ -36,7 +37,7 @@ const defaultWorkspacePreferences: WorkspacePreferenceValues = {
   officeNotificationEmail: "",
 };
 
-export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: "calendar" | "workflow"; notify: Notify; onGoogleSetup: () => void }) {
+export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }: { mode: "calendar" | "workflow"; notify: Notify; onGoogleSetup: () => void; isAdmin: boolean }) {
   const [settings, setSettings] = useState<WorkspacePreferenceValues>(defaultWorkspacePreferences);
   const [saving, setSaving] = useState(false);
   const [calendarAccount, setCalendarAccount] = useState<string | null>(null);
@@ -74,7 +75,7 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: 
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (loadState !== "ready") return;
+    if (!isAdmin || loadState !== "ready") return;
     setSaving(true);
     try {
       const response = await fetch("/api/v1/settings/workspace", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
@@ -145,7 +146,7 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: 
           <div><strong>Gmail relationship</strong><span>Gmail and Calendar are separate. When a message becomes an appointment, the app will link the thread to the appointment; Gmail-generated travel or reservation events are never imported into the company schedule automatically.</span></div>
         </div>
         <p className="form-help"><CalendarDays size={14} /> Local simulation stores safe sample holds without contacting Google. Live mode uses the configured company calendar IDs and keeps FCI Operations authoritative.</p>
-        <footer><button type="submit" className="primary-button" disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save calendar plan</>}</button></footer>
+        <footer><AdministratorActionButton type="submit" className="primary-button" isAdmin={isAdmin} disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save calendar plan</>}</AdministratorActionButton></footer>
       </form>
     </section>;
   }
@@ -161,7 +162,7 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup }: { mode: 
       </div>
       <label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label>
       <div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div>
-      <footer><button type="submit" className="primary-button" disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</button></footer>
+      <footer><AdministratorActionButton type="submit" className="primary-button" isAdmin={isAdmin} disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</AdministratorActionButton></footer>
     </form>
   </section>;
 }
