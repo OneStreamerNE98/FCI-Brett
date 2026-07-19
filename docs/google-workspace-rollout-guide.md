@@ -277,11 +277,14 @@ cursor value in the evidence.
 
 #### Token-encryption key rotation (current disconnect/reconnect procedure)
 
-The current connector writes `GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION` with the
-stored connection but decrypts only with the one currently configured key. Multi-key
-decrypt/re-encrypt is tracked separately and is not implemented. Changing the key while
-old ciphertext remains would strand the connection, so use this honest interim
-procedure:
+The Sites/D1 connector writes `GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION` with the
+stored connection, but its deliberately thin composition exposes only the one currently
+configured key. It therefore cannot decrypt an older Sites ciphertext after that hosted
+key is replaced. BE-08 implements exact-version multi-key decryption and verified
+re-encryption in the source-only production boundary, but that boundary has no live
+secret delivery, credential-table grants, or provider-route composition. Changing the
+Sites key while old ciphertext remains would still strand the development connection, so
+use this interim Sites procedure:
 
 1. Schedule a short connector maintenance window and stop Google Workspace verification
    or filing actions. Confirm the environment and exact approved connection account.
@@ -307,9 +310,12 @@ then reconnect with the new key. If the `DELETE` itself fails, leave the connect
 blocked, capture only its safe error code/correlation ID, and escalate to a developer;
 never edit the database manually.
 
-Production must replace this interim process with multi-key decryption selected by the
-stored `key_version`, followed by verified re-encryption to the current key, before any
-in-place/no-disconnect key rotation is claimed.
+BE-08's source-only production boundary already selects the exact stored `key_version`,
+re-encrypts with the current writer, verifies the new ciphertext, and persists it behind
+an exact-version fence with audit evidence. It is deliberately uncomposed and unapplied.
+Until Gate C separately approves the production key store, credential-specific grants,
+provider routes, and deployment, this disconnect/reconnect runbook remains the only
+authorized Sites procedure and no in-place/no-disconnect rotation may be claimed.
 
 #### OAuth client-secret rotation (same client ID, no reconnect)
 

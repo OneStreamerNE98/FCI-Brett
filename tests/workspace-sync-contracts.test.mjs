@@ -464,7 +464,10 @@ test("watch/queue and rotation documentation stays linked, gated, and explicit",
   assert.match(foundation, /\.\.\/google-workspace-watch-and-queue-design\.md/);
 
   assert.match(rollout, /Token-encryption key rotation \(current disconnect\/reconnect procedure\)/);
-  assert.match(rollout, /Multi-key[\s\S]*is not implemented/);
+  assert.match(rollout, /Sites\/D1 connector[\s\S]*only the one currently[\s\S]*configured key/);
+  assert.match(rollout, /BE-08[\s\S]*source-only production boundary[\s\S]*exact stored `key_version`[\s\S]*exact-version fence/);
+  assert.match(rollout, /deliberately uncomposed and unapplied[\s\S]*Until Gate C[\s\S]*disconnect\/reconnect runbook/);
+  assert.doesNotMatch(rollout, /Multi-key[\s\S]{0,120}is not implemented/);
   assert.match(rollout, /32 random bytes[\s\S]*encode them as base64url/);
   assert.match(rollout, /OAuth client-secret rotation \(same client ID, no reconnect\)/);
   assert.match(rollout, /`invalid_grant` or revoked refresh-token recovery/);
