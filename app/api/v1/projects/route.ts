@@ -11,6 +11,9 @@ import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "..
 import { projectCreationHttpResult } from "../../../lib/creation-http-result";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
+import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+
+const MAX_PROJECT_BODY_BYTES = 64_000;
 
 function authorizedProjectManagerId(candidate: unknown, authenticatedActorId: string) {
   const normalized = normalizeProjectManagerId(candidate);
@@ -44,15 +47,15 @@ export async function POST(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Project details must be valid JSON." }, { status: 400 });
-  }
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_PROJECT_BODY_BYTES,
+    invalidMessage: "Project details must be valid JSON.",
+    tooLargeMessage: "Project details are too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
 
   const result = await createProject(
-    body,
+    parsed.body,
     creationAuthorizationFor({
       actorId: auth.user.email,
       capabilities: [CREATION_CAPABILITIES.createProject],
@@ -75,15 +78,15 @@ export async function PATCH(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Project manager correction must be valid JSON." }, { status: 400 });
-  }
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_PROJECT_BODY_BYTES,
+    invalidMessage: "Project manager correction must be valid JSON.",
+    tooLargeMessage: "Project manager correction is too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
 
   const result = await assignProjectManager(
-    body,
+    parsed.body,
     { actorId: auth.user.email, canManageProjects: true },
     {
       repository: createD1ProjectRepository(env.DB as unknown as D1Database),

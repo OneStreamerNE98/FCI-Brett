@@ -58,6 +58,9 @@ export type ProductionConfigDependencies = Readonly<{
   readPasswordFile?: (path: string) => string;
 }>;
 
+export const PUBLIC_POSTGRES_SCHEMA_ACKNOWLEDGMENT =
+  "I ACKNOWLEDGE THAT THIS STAGING OR PRODUCTION DATABASE USES THE PUBLIC POSTGRESQL SCHEMA";
+
 const LOWER_POSTGRES_IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/;
 const CLOUD_SQL_COMPONENT = /^[a-z0-9][a-z0-9.-]{0,126}$/;
 const SAFE_TEXT = /^[^\u0000-\u001f\u007f]+$/;
@@ -117,6 +120,28 @@ function boundedSafeText(environment: ProductionEnvironment, name: string, maxim
     throw new Error(`${name} must contain safe text no longer than ${maximumLength} characters`);
   }
   return value;
+}
+
+function resolvePostgresSchema(
+  environment: ProductionEnvironment,
+  deploymentStage: DeploymentStage,
+) {
+  const schema = postgresIdentifier(environment, "FCI_POSTGRES_SCHEMA");
+  if (deploymentStage === "dev") return schema;
+
+  const acknowledgment = environment.FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT;
+  if (schema === "public") {
+    if (acknowledgment !== PUBLIC_POSTGRES_SCHEMA_ACKNOWLEDGMENT) {
+      throw new Error(
+        "FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT must contain the exact documented acknowledgment when staging or production targets the public schema",
+      );
+    }
+  } else if (acknowledgment !== undefined && acknowledgment !== "") {
+    throw new Error(
+      "FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT must be unset unless staging or production targets the public schema",
+    );
+  }
+  return schema;
 }
 
 function cloudSqlInstanceConnectionName(environment: ProductionEnvironment) {
@@ -306,7 +331,7 @@ export function loadProductionConfig(
   const connection = resolveConnection(environment, deploymentStage, accessMode);
   const database = postgresIdentifier(environment, "FCI_POSTGRES_DATABASE");
   const user = boundedSafeText(environment, "FCI_POSTGRES_USER", 255);
-  const schema = postgresIdentifier(environment, "FCI_POSTGRES_SCHEMA");
+  const schema = resolvePostgresSchema(environment, deploymentStage);
   if (accessMode === "rehearsal" && !REHEARSAL_SCHEMA.test(schema)) {
     throw new Error(
       "FCI_POSTGRES_SCHEMA must use fci_rehearsal_ plus 1 to 49 lowercase letters, digits, or underscores in rehearsal mode",
