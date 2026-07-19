@@ -4,6 +4,8 @@ import test from "node:test";
 import { loadProductionConfig } from "../app/platform/google-cloud/production-config.ts";
 
 const TEST_PASSWORD = "test-only-secret-that-must-not-be-logged";
+const TEST_OIDC_CLIENT_SECRET = "test-only-oidc-client-secret";
+const TEST_SESSION_SECRET = Buffer.alloc(32, 0x51).toString("base64url");
 
 function runtimeEnvironment(overrides = {}) {
   return {
@@ -240,5 +242,84 @@ test("loads exactly one password source without echoing secret values or file pa
       assert.doesNotMatch(error.message, /file-secret|test-postgres-password/);
       return true;
     },
+  );
+});
+
+test("keeps employee OIDC absent by default and loads complete environment secrets without enumeration", () => {
+  const absent = loadProductionConfig(runtimeEnvironment());
+  assert.equal(absent.employeeOidc, null);
+
+  const config = loadProductionConfig(runtimeEnvironment({
+    FCI_EMPLOYEE_OIDC_CLIENT_ID: "employee-login.apps.googleusercontent.com",
+    FCI_EMPLOYEE_OIDC_CLIENT_SECRET: TEST_OIDC_CLIENT_SECRET,
+    FCI_EMPLOYEE_OIDC_REDIRECT_URI:
+      "https://ops.example.test/api/v1/session/google/callback",
+    FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN: "cherryhillfci.com",
+    FCI_SESSION_SECRET: TEST_SESSION_SECRET,
+  }));
+  assert.deepEqual(config.employeeOidc, {
+    clientId: "employee-login.apps.googleusercontent.com",
+    clientSecretSource: "environment",
+    sessionSecretSource: "environment",
+    redirectUri: "https://ops.example.test/api/v1/session/google/callback",
+    allowedHostedDomain: "cherryhillfci.com",
+  });
+  assert.equal(config.employeeOidc.clientSecret, TEST_OIDC_CLIENT_SECRET);
+  assert.equal(config.employeeOidc.sessionSecret, TEST_SESSION_SECRET);
+  assert.equal(Object.keys(config.employeeOidc).includes("clientSecret"), false);
+  assert.equal(Object.keys(config.employeeOidc).includes("sessionSecret"), false);
+  assert.doesNotMatch(
+    JSON.stringify(config),
+    new RegExp(`${TEST_OIDC_CLIENT_SECRET}|${TEST_SESSION_SECRET}`),
+  );
+});
+
+test("employee OIDC configuration fails closed on partial, mixed, or unsafe values", () => {
+  const complete = {
+    FCI_EMPLOYEE_OIDC_CLIENT_ID: "employee-login.apps.googleusercontent.com",
+    FCI_EMPLOYEE_OIDC_CLIENT_SECRET: TEST_OIDC_CLIENT_SECRET,
+    FCI_EMPLOYEE_OIDC_REDIRECT_URI:
+      "https://ops.example.test/api/v1/session/google/callback",
+    FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN: "cherryhillfci.com",
+    FCI_SESSION_SECRET: TEST_SESSION_SECRET,
+  };
+  for (const [overrides, pattern] of [
+    [{ FCI_EMPLOYEE_OIDC_CLIENT_ID: "employee-login.apps.googleusercontent.com" }, /FCI_EMPLOYEE_OIDC_REDIRECT_URI/],
+    [{ ...complete, FCI_EMPLOYEE_OIDC_CLIENT_SECRET_FILE: resolve("work", "client-secret") }, /exactly one/],
+    [{ ...complete, FCI_SESSION_SECRET_FILE: resolve("work", "session-secret") }, /exactly one/],
+    [{ ...complete, FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN: "example.com" }, /cherryhillfci.com/],
+    [{ ...complete, FCI_EMPLOYEE_OIDC_REDIRECT_URI: "http://ops.example.test/api/v1/session/google/callback" }, /exact HTTPS/],
+    [{ ...complete, FCI_EMPLOYEE_OIDC_REDIRECT_URI: "https://ops.example.test/wrong" }, /exact HTTPS/],
+    [{ ...complete, FCI_EMPLOYEE_OIDC_CLIENT_SECRET: " test-secret " }, /supported client secret/],
+    [{ ...complete, FCI_EMPLOYEE_OIDC_CLIENT_SECRET: "test-secret\n" }, /supported client secret/],
+    [{ ...complete, FCI_SESSION_SECRET: "not-a-32-byte-secret" }, /canonical 32-byte base64url/],
+  ]) {
+    assert.throws(() => loadProductionConfig(runtimeEnvironment(overrides)), pattern);
+  }
+});
+
+test("loads employee OIDC secrets from absolute files without exposing paths or contents", () => {
+  const clientPath = resolve("work", "employee-oidc-client-secret");
+  const sessionPath = resolve("work", "employee-session-secret");
+  const reads = [];
+  const config = loadProductionConfig(runtimeEnvironment({
+    FCI_EMPLOYEE_OIDC_CLIENT_ID: "employee-login.apps.googleusercontent.com",
+    FCI_EMPLOYEE_OIDC_CLIENT_SECRET_FILE: clientPath,
+    FCI_EMPLOYEE_OIDC_REDIRECT_URI:
+      "https://ops.example.test/api/v1/session/google/callback",
+    FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN: "cherryhillfci.com",
+    FCI_SESSION_SECRET_FILE: sessionPath,
+  }), {
+    readSecretFile(path) {
+      reads.push(path);
+      return path === clientPath ? TEST_OIDC_CLIENT_SECRET : TEST_SESSION_SECRET;
+    },
+  });
+  assert.deepEqual(reads, [clientPath, sessionPath]);
+  assert.equal(config.employeeOidc.clientSecretSource, "file");
+  assert.equal(config.employeeOidc.sessionSecretSource, "file");
+  assert.doesNotMatch(
+    JSON.stringify(config),
+    /employee-oidc-client-secret|employee-session-secret|test-only-oidc/,
   );
 });

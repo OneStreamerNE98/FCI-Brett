@@ -4,6 +4,7 @@ import { isAbsolute } from "node:path";
 export type DeploymentStage = "dev" | "staging" | "production";
 export type PostgresAccessMode = "runtime" | "migration" | "rehearsal";
 export type PostgresPasswordSource = "environment" | "file";
+export type ProductionSecretSource = "environment" | "file";
 
 export type CloudSqlConnectorConnection = Readonly<{
   mode: "cloud-sql-connector";
@@ -44,18 +45,33 @@ export type ProductionPostgresConfig = Readonly<{
   pool: ProductionPostgresPoolConfig;
 }>;
 
+export type ProductionEmployeeOidcConfig = Readonly<{
+  clientId: string;
+  /** Deliberately non-enumerable on the returned object. Never log this value. */
+  clientSecret: string;
+  clientSecretSource: ProductionSecretSource;
+  /** Encrypts the short-lived OIDC transaction cookie; never sent to Google. */
+  sessionSecret: string;
+  sessionSecretSource: ProductionSecretSource;
+  redirectUri: string;
+  allowedHostedDomain: "cherryhillfci.com";
+}>;
+
 export type ProductionConfig = Readonly<{
   appEnvironment: "production";
   deploymentStage: DeploymentStage;
   host: "0.0.0.0";
   port: number;
   postgres: ProductionPostgresConfig;
+  /** Null preserves the pre-login fail-closed router when no OIDC values exist. */
+  employeeOidc: ProductionEmployeeOidcConfig | null;
 }>;
 
 export type ProductionEnvironment = Readonly<Record<string, string | undefined>>;
 
 export type ProductionConfigDependencies = Readonly<{
   readPasswordFile?: (path: string) => string;
+  readSecretFile?: (path: string) => string;
 }>;
 
 const LOWER_POSTGRES_IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/;
@@ -63,6 +79,16 @@ const CLOUD_SQL_COMPONENT = /^[a-z0-9][a-z0-9.-]{0,126}$/;
 const SAFE_TEXT = /^[^\u0000-\u001f\u007f]+$/;
 const REHEARSAL_SCHEMA = /^fci_rehearsal_[a-z0-9_]{1,49}$/;
 const LOOPBACK_HOSTS = ["127.0.0.1", "::1", "localhost"] as const;
+const EMPLOYEE_OIDC_VARIABLES = [
+  "FCI_EMPLOYEE_OIDC_CLIENT_ID",
+  "FCI_EMPLOYEE_OIDC_CLIENT_SECRET",
+  "FCI_EMPLOYEE_OIDC_CLIENT_SECRET_FILE",
+  "FCI_EMPLOYEE_OIDC_REDIRECT_URI",
+  "FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN",
+  "FCI_SESSION_SECRET",
+  "FCI_SESSION_SECRET_FILE",
+] as const;
+const BASE64URL_32_BYTES = /^[A-Za-z0-9_-]{43}$/;
 
 function configuredValue(environment: ProductionEnvironment, name: string) {
   const value = environment[name];
@@ -165,6 +191,136 @@ function resolvePassword(
     throw new Error("FCI_POSTGRES_PASSWORD_FILE did not contain a supported password");
   }
   return { password, passwordSource: "file" };
+}
+
+function resolveSecret(
+  environment: ProductionEnvironment,
+  dependencies: ProductionConfigDependencies,
+  environmentName: string,
+  fileName: string,
+  label: string,
+): { value: string; source: ProductionSecretSource } {
+  const environmentSecret = environment[environmentName];
+  const secretFile = environment[fileName];
+  const hasEnvironmentSecret = environmentSecret !== undefined && environmentSecret !== "";
+  const hasSecretFile = secretFile !== undefined && secretFile !== "";
+  if (hasEnvironmentSecret === hasSecretFile) {
+    throw new Error(`Configure exactly one of ${environmentName} or ${fileName}`);
+  }
+  if (hasEnvironmentSecret) {
+    if (
+      environmentSecret !== environmentSecret.trim()
+      || environmentSecret.length > 4_096
+      || /[\u0000-\u001f\u007f]/.test(environmentSecret)
+    ) {
+      throw new Error(`${environmentName} did not contain a supported ${label}`);
+    }
+    return { value: environmentSecret, source: "environment" };
+  }
+
+  const path = configuredValue(environment, fileName);
+  if (!isAbsolute(path)) throw new Error(`${fileName} must be an absolute path`);
+  let value: string;
+  try {
+    value = (dependencies.readSecretFile ?? ((filePath) => readFileSync(filePath, "utf8")))(path);
+  } catch {
+    throw new Error(`${fileName} could not be read`);
+  }
+  if (
+    !value
+    || value !== value.trim()
+    || value.length > 4_096
+    || /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new Error(`${fileName} did not contain a supported ${label}`);
+  }
+  return { value, source: "file" };
+}
+
+function employeeOidcRedirectUri(environment: ProductionEnvironment) {
+  const value = boundedSafeText(environment, "FCI_EMPLOYEE_OIDC_REDIRECT_URI", 2_048);
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("FCI_EMPLOYEE_OIDC_REDIRECT_URI must be an absolute HTTPS callback URI");
+  }
+  if (
+    parsed.protocol !== "https:"
+    || parsed.username
+    || parsed.password
+    || parsed.search
+    || parsed.hash
+    || parsed.pathname !== "/api/v1/session/google/callback"
+    || parsed.toString() !== value
+  ) {
+    throw new Error(
+      "FCI_EMPLOYEE_OIDC_REDIRECT_URI must be an exact HTTPS /api/v1/session/google/callback URI",
+    );
+  }
+  return value;
+}
+
+function employeeOidcConfig(
+  environment: ProductionEnvironment,
+  dependencies: ProductionConfigDependencies,
+): ProductionEmployeeOidcConfig | null {
+  const configured = EMPLOYEE_OIDC_VARIABLES.filter((name) => {
+    const value = environment[name];
+    return value !== undefined && value !== "";
+  });
+  if (configured.length === 0) return null;
+
+  const clientId = boundedSafeText(environment, "FCI_EMPLOYEE_OIDC_CLIENT_ID", 512);
+  const redirectUri = employeeOidcRedirectUri(environment);
+  const allowedHostedDomain = exactValue(
+    environment,
+    "FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN",
+    ["cherryhillfci.com"] as const,
+  );
+  const clientSecret = resolveSecret(
+    environment,
+    dependencies,
+    "FCI_EMPLOYEE_OIDC_CLIENT_SECRET",
+    "FCI_EMPLOYEE_OIDC_CLIENT_SECRET_FILE",
+    "client secret",
+  );
+  const sessionSecret = resolveSecret(
+    environment,
+    dependencies,
+    "FCI_SESSION_SECRET",
+    "FCI_SESSION_SECRET_FILE",
+    "session secret",
+  );
+  if (
+    sessionSecret.value.length !== 43
+    || !BASE64URL_32_BYTES.test(sessionSecret.value)
+    || Buffer.from(sessionSecret.value, "base64url").length !== 32
+    || Buffer.from(sessionSecret.value, "base64url").toString("base64url") !== sessionSecret.value
+  ) {
+    throw new Error("Employee session secret must be a canonical 32-byte base64url value");
+  }
+
+  const properties = {
+    clientId,
+    clientSecretSource: clientSecret.source,
+    sessionSecretSource: sessionSecret.source,
+    redirectUri,
+    allowedHostedDomain,
+  };
+  Object.defineProperty(properties, "clientSecret", {
+    value: clientSecret.value,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+  Object.defineProperty(properties, "sessionSecret", {
+    value: sessionSecret.value,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+  return Object.freeze(properties) as ProductionEmployeeOidcConfig;
 }
 
 function resolveConnection(
@@ -318,6 +474,7 @@ export function loadProductionConfig(
   const pool = resolvePoolConfig(environment, accessMode);
   // Read the secret only after all non-secret selectors and bounds have passed.
   const { password, passwordSource } = resolvePassword(environment, dependencies);
+  const employeeOidc = employeeOidcConfig(environment, dependencies);
 
   const postgresProperties = {
     accessMode,
@@ -343,5 +500,6 @@ export function loadProductionConfig(
     host: "0.0.0.0" as const,
     port: optionalInteger(environment, "PORT", 8080, 1, 65_535),
     postgres,
+    employeeOidc,
   });
 }

@@ -36,6 +36,30 @@ function validRawCredential(value: string) {
     CREDENTIAL_PATTERN.test(value);
 }
 
+export function createSessionCookie(
+  rawCredential: string,
+  issuedAt: number,
+  absoluteExpiresAt: number,
+) {
+  if (!validRawCredential(rawCredential)) {
+    throw new TypeError("Session cookie credential is invalid");
+  }
+  if (
+    !Number.isSafeInteger(issuedAt)
+    || !Number.isSafeInteger(absoluteExpiresAt)
+    || issuedAt < 0
+    || absoluteExpiresAt <= issuedAt
+    || !Number.isFinite(new Date(absoluteExpiresAt).getTime())
+  ) {
+    throw new TypeError("Session cookie expiry is invalid");
+  }
+  const maxAge = Math.floor((absoluteExpiresAt - issuedAt) / 1_000);
+  if (maxAge < 1) throw new TypeError("Session cookie lifetime is invalid");
+  return `${SESSION_COOKIE_NAME}=${rawCredential}; Path=/; Max-Age=${maxAge}; ` +
+    `Expires=${new Date(absoluteExpiresAt).toUTCString()}; ` +
+    "Secure; HttpOnly; SameSite=Strict";
+}
+
 /**
  * Reads exactly one host-only session cookie and immediately replaces the raw
  * bearer value with its canonical digest. Callers never receive the bearer.

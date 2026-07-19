@@ -6,6 +6,7 @@ import {
   CLEAR_SESSION_COOKIE,
   SESSION_COOKIE_NAME,
   SESSION_CSRF_HEADER,
+  createSessionCookie,
   readCsrfCredential,
   readSessionCredential,
   requestIsSameOrigin,
@@ -36,6 +37,31 @@ test("exports the fixed host-only session transport names and clearing cookie", 
   assert.match(CLEAR_SESSION_COOKIE, /(?:^|;\s*)SameSite=Strict(?:;|$)/i);
   assert.match(CLEAR_SESSION_COOKIE, /(?:^|;\s*)Max-Age=0(?:;|$)/i);
   assert.doesNotMatch(CLEAR_SESSION_COOKIE, /(?:^|;\s*)Domain=/i);
+});
+
+test("creates an eight-hour host-only session cookie without weakening its transport policy", () => {
+  const issuedAt = Date.UTC(2026, 6, 19, 12, 0, 0);
+  const absoluteExpiresAt = issuedAt + 8 * 60 * 60 * 1_000;
+  const cookie = createSessionCookie(SESSION_CREDENTIAL, issuedAt, absoluteExpiresAt);
+
+  assert.match(cookie, new RegExp(`^${SESSION_COOKIE_NAME}=${SESSION_CREDENTIAL};`));
+  assert.match(cookie, /(?:^|;\s*)Path=\/(?:;|$)/i);
+  assert.match(cookie, /(?:^|;\s*)Max-Age=28800(?:;|$)/i);
+  assert.match(cookie, /(?:^|;\s*)Expires=Sun, 19 Jul 2026 20:00:00 GMT(?:;|$)/i);
+  assert.match(cookie, /(?:^|;\s*)HttpOnly(?:;|$)/i);
+  assert.match(cookie, /(?:^|;\s*)Secure(?:;|$)/i);
+  assert.match(cookie, /(?:^|;\s*)SameSite=Strict(?:;|$)/i);
+  assert.doesNotMatch(cookie, /(?:^|;\s*)Domain=/i);
+  assert.doesNotMatch(cookie, /(?:^|;\s*)SameSite=None(?:;|$)/i);
+
+  assert.throws(
+    () => createSessionCookie("short", issuedAt, absoluteExpiresAt),
+    /credential is invalid/,
+  );
+  assert.throws(
+    () => createSessionCookie(SESSION_CREDENTIAL, issuedAt, issuedAt),
+    /expiry is invalid/,
+  );
 });
 
 test("reads exactly one bounded session cookie and exposes only its canonical digest", () => {

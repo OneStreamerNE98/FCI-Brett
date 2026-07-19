@@ -104,12 +104,16 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     ["SELECT", "INSERT"],
   );
   assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "external_identities")?.privileges,
+    ["SELECT", "INSERT"],
+  );
+  assert.deepEqual(
     EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "user_roles")?.privileges,
     ["SELECT", "INSERT"],
   );
   assert.doesNotMatch(
     sql,
-    /GRANT SELECT, INSERT, UPDATE ON TABLE fci_app\.(?:users|invitations|sessions|user_roles|project_memberships)/,
+    /GRANT SELECT, INSERT, UPDATE ON TABLE fci_app\.(?:users|external_identities|invitations|sessions|user_roles|project_memberships)/,
   );
   assert.doesNotMatch(
     sql,
@@ -121,7 +125,28 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
   );
   assert.deepEqual(
     EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(({ table }) => table === "invitations")?.columns,
-    ["token_hash", "status", "revoked_by_user_id", "revoked_at", "expired_at", "updated_at", "version"],
+    [
+      "token_hash",
+      "status",
+      "accepted_user_id",
+      "accepted_at",
+      "revoked_by_user_id",
+      "revoked_at",
+      "expired_at",
+      "updated_at",
+      "version",
+    ],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(({ table }) => table === "external_identities")?.columns,
+    [
+      "email",
+      "hosted_domain",
+      "email_verified",
+      "last_authenticated_at",
+      "updated_at",
+      "version",
+    ],
   );
   assert.equal(
     EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS
