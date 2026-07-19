@@ -115,14 +115,14 @@ The source-only `codex/settings-panel-extraction` SET-01 slice is complete in so
 
 SET-02 has passed source acceptance in draft PR #37 on `codex/settings-admin-gating`. It exposes the authenticated `isAdmin` flag through the existing cached account request; keeps every protected Settings action visible but disabled and explained for Office users; preserves ordinary account, readiness, setup-navigation, and read-only actions; and prevents `.env.local` from overriding rendered-test identities in either Vite or the local Worker runtime. `npm test` passed 330 active tests with 13 expected PostgreSQL-dependent skips, the focused rendered Settings group passed 13/13, the deliberately conflicting-`.env.local` role group passed 2/2, lint passed, and desktop/390 px visual QA passed. The server gates remain unchanged. It is not merged or deployed; private Sites development version 40 remains live.
 
-PR #34, which adds the KPI-01–KPI-04 workstream, is merged. BE-02 + BE-13 are in review with green checks in draft PR #36. BE-04 is in review in draft PR #38 on `codex/workspace-oidc-login`, with local acceptance and all GitHub checks green. WS-04 + WS-12 are in review in draft PR #39 on `codex/workspace-rotation-sync-contracts`, with local acceptance and all GitHub checks green. All remain source-only and none authorizes live identity, provider resources, infrastructure, migration/apply, or deployment.
+PR #34, which adds the KPI-01–KPI-04 workstream, is merged. BE-02 + BE-13 are in review with green checks in PR #36. BE-04 is in review in draft PR #38 on `codex/workspace-oidc-login`, with local acceptance and all GitHub checks green. WS-04 + WS-12 are in review in PR #39 on `codex/workspace-rotation-sync-contracts`, with local acceptance and all GitHub checks green. All remain source-only and none authorizes live identity, provider resources, infrastructure, migration/apply, or deployment.
 
 ## Recommended next worker assignments
 
 The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. The next local sequence does not require Brett's Workspace or Cloud input:
 
 1. Review and merge SET-02 draft PR #37. Once it lands, KPI-01 is the next `FloorOpsApp.tsx` packet and needs no Brett input; do not overlap it with another packet touching that file.
-2. Review BE-02 + BE-13 draft PR #36, BE-04 draft PR #38, and WS-04 + WS-12 draft PR #39. Keep the latter contracts/fakes source-only; do not activate Scheduler, watches, channels, delivery, live identity, or provider resources.
+2. Review BE-02 + BE-13 PR #36, BE-04 draft PR #38, and WS-04 + WS-12 PR #39. Keep the latter contracts/fakes source-only; do not activate Scheduler, watches, channels, delivery, live identity, or provider resources.
 3. After SET-02 lands, SET-03/SET-04 may proceed within the extracted Settings boundary while KPI-01 owns `FloorOpsApp.tsx`. Local migration fixtures also remain independent and must not create or use staging.
 
 Build `codex/admin-field-links` only when field assignments are scheduled. It needs a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.

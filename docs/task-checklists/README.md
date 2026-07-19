@@ -22,7 +22,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 
 ## Immediate owner and administrator handoff
 
-Status reconciled on July 19, 2026 against the PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`. That exact commit is deployed as private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The source-only `codex/actionable-lists` slice is complete in PR #33 and is not deployed. The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed. SET-02 has passed source acceptance in draft PR #37 and is not deployed. PR #34 is merged and defines KPI-01–KPI-04. BE-02 + BE-13 are in review with green checks in draft PR #36; BE-04 is in review in draft PR #38, and WS-04 + WS-12 are in review in draft PR #39. The latter two have green local acceptance and all GitHub checks; all remain source-only.
+Status reconciled on July 19, 2026 against the PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`. That exact commit is deployed as private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The source-only `codex/actionable-lists` slice is complete in PR #33 and is not deployed. The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed. SET-02 has passed source acceptance in draft PR #37 and is not deployed. PR #34 is merged and defines KPI-01–KPI-04. BE-02 + BE-13 are in review with green checks in PR #36; BE-04 is in review in draft PR #38, and WS-04 + WS-12 are in review in PR #39. The latter two have green local acceptance and all GitHub checks; all remain source-only.
 
 ### Jason / business owner
 

@@ -148,7 +148,7 @@ historical release evidence remains truthful, no migration wording implies v1–
 applied, and `npm test` passes.
 
 ### BE-02 · Bounded request bodies on five dev mutation routes (small, no deps)
-**Status:** In review — draft PR #36 on `codex/request-and-schema-hardening`, July 19,
+**Status:** In review — PR #36 on `codex/request-and-schema-hardening`, July 19,
 2026. Full local and GitHub checks pass; not merged or deployed.
 
 **Why:** `app/lib/api-json-body.ts` (`parseBoundedJsonObject`) exists to cap JSON bodies,
@@ -324,7 +324,7 @@ exact acknowledgment). `cutoverReady` stays hardcoded false.
 fixture imports green; `cutoverReady:false`.
 
 ### BE-13 · Fail-closed schema targeting (small, no deps)
-**Status:** In review with BE-02 — draft PR #36 on
+**Status:** In review with BE-02 — PR #36 on
 `codex/request-and-schema-hardening`, July 19, 2026. Full local and GitHub checks pass;
 not merged or deployed.
 
@@ -412,7 +412,7 @@ and checklist 03.
 mismatched or multiple approved accounts; `npm test` passes.
 
 ### WS-04 · AGENT — Rotation + token-failure recovery procedures (medium, no deps)
-**Status:** In review with WS-12 — draft PR #39 on
+**Status:** In review with WS-12 — PR #39 on
 `codex/workspace-rotation-sync-contracts`, July 19, 2026. Local acceptance is green (337
 active tests, 13 environment-gated skips, lint, focused strict TypeScript, and 10/10
 contract tests); all GitHub Node, Terraform, and Chromium checks are green.
@@ -504,7 +504,7 @@ rejected unauthorized login, no FCI/Filed label without an archive row.
 sign-off.
 
 ### WS-12 · AGENT — Gmail watch/queue + Calendar channel contracts (medium, after WS-03; contracts + local fakes, no live resources)
-**Status:** In review with WS-04 — draft PR #39 on
+**Status:** In review with WS-04 — PR #39 on
 `codex/workspace-rotation-sync-contracts`, July 19, 2026. Provider-neutral durable-job,
 failure/replay, encrypted sync-cursor, and Calendar channel-state contracts are covered by
 local fakes and tests. Procedures, contracts, and local fakes only; no live provider
@@ -924,8 +924,8 @@ The source-only `codex/actionable-lists` slice in PR #33 is complete as the curr
 actionable-list packet; it is not deployed. The source-only
 `codex/settings-panel-extraction` SET-01 slice is complete in source and merged in PR #35 and is not deployed.
 SET-02 is in review in draft PR #37; after it lands, KPI-01 takes the next
-`FloorOpsApp.tsx` slot. BE-02 + BE-13 are in review together in draft PR #36. BE-04 is
-in review in draft PR #38, and WS-04 + WS-12 are in review together in draft PR #39.
+`FloorOpsApp.tsx` slot. BE-02 + BE-13 are in review together in PR #36. BE-04 is in
+review in draft PR #38, and WS-04 + WS-12 are in review together in PR #39.
 All remain source-only. BE-05, BE-06,
 BE-08, BE-11 (authoring), and WS-13 remain unclaimed and may proceed in parallel when
 they do not touch that file. BE-01 + WS-03 and TRK-01 completed in PR #32.
@@ -961,9 +961,9 @@ markup, and keep their focused regression suites plus
    `codex/settings-panel-extraction`; it is not deployed. **SET-02 has passed source
    acceptance in draft PR #37 and is in review.**
 4. **BE-04 OIDC** — in review in draft PR #38 on `codex/workspace-oidc-login`; it remains
-   the production long pole. **BE-02 + BE-13** — in review together in draft PR #36 with
+   the production long pole. **BE-02 + BE-13** — in review together in PR #36 with
    green checks. **WS-04 rotation procedures + WS-12 contracts/fakes** — in review in
-   draft PR #39 on `codex/workspace-rotation-sync-contracts` with no live resources.
+   PR #39 on `codex/workspace-rotation-sync-contracts` with no live resources.
 
 **Wave 2:** after SET-02 / PR #37 lands, KPI-01 takes the next `FloorOpsApp.tsx` slot.
 SET-03/SET-04 may then proceed in the extracted Settings boundary without overlapping
