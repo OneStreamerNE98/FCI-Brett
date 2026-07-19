@@ -207,6 +207,12 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown
     ...(allowedDomains.length === 0 ? ["Google Workspace allowed domain"] : []),
     ...(expectedGoogleEmails.length === 0 ? ["approved Google Workspace connection account"] : []),
     ...(gmailEnabled && !intakeMailbox ? ["Google Workspace intake mailbox"] : []),
+    ...(gmailEnabled
+      && intakeMailbox
+      && expectedGoogleEmails.length > 0
+      && (expectedGoogleEmails.length !== 1 || expectedGoogleEmails[0] !== intakeMailbox)
+      ? ["Google Workspace intake mailbox matching the single approved connection account"]
+      : []),
     ...(calendarEnabled && !clientAppointmentsCalendarId ? ["client appointments calendar ID"] : []),
     ...(calendarEnabled && !fieldScheduleCalendarId ? ["field schedule calendar ID"] : []),
     ...(services.unknown.length ? [`valid Google services (unknown: ${services.unknown.join(", ")})`] : []),

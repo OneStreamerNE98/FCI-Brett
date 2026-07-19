@@ -98,6 +98,8 @@ This decision does not:
 
 ## Next worker assignment
 
+**Fulfilled in source on July 15, 2026:** PR #15 merged the zero-resource-by-default Google Cloud infrastructure definitions at `cf92e62`. The definitions remain unapplied; owner inputs, official calculator evidence, profile selection, and any plan or apply are still separately gated. The original accepted assignment is retained below as decision history.
+
 Create `codex/google-cloud-infrastructure-definitions` and add reviewable, unapplied definitions that:
 
 - preserve the existing Sites development environment;

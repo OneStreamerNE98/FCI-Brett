@@ -15,14 +15,14 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | July critique remediation, Reports drill-through, and the first Phase 3 shared UI/filter boundary are merged; the latest private Sites development release is version 39; the Settings rules semantic-table slice is implemented for review | Review the Settings rules slice, then continue the separate actionable-list pattern, feature splitting, primitive consolidation, and legacy CSS cleanup. |
+| Frontend multi-user hardening | Codex/developer | July critique remediation, Reports drill-through, the first Phase 3 shared UI/filter boundary, and PR #30's Settings rules semantic table are merged; the latest private Sites development release remains version 39 | Build the separate actionable-list pattern, then continue feature splitting, primitive consolidation, and legacy CSS cleanup. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status checked against `main` at `1c2f991`, the current `codex/semantic-rules-table` source branch, and private Sites development version 39 on July 18, 2026.
+Status reconciled on July 19, 2026 against `main` at `88b5b01` after PRs #30 and #31. Private Sites development version 39 remains the latest controlled deployment; PR #30 is merged source but has not been deployed.
 
 ### Jason / business owner
 
@@ -60,16 +60,17 @@ Read the accepted [Workspace-first, cost-controlled rollout](../architecture-dec
 
 Use the [Pre-Workspace development plan](../pre-workspace-development-plan.md) to separate work that can be built with simulation now from owner decisions and live-connection tasks that require Workspace resources or credentials.
 
+## Where agent work is tracked
+
+These checklists are owner-facing setup, decision, acceptance, and operations records. Active backend, Workspace, and Settings implementation status lives in the [agent execution plan](../agent-plan-architecture-workspace-and-setup.md); UI remediation status lives in the [design-critique plan](../design-critique-fix-plan.md); and architecture branch history and gates live in the [complete architecture audit roadmap](../complete-product-and-google-cloud-architecture-audit.md#ordered-branch-sized-implementation-roadmap). The root [README](../../README.md#prioritized-next-work) is the entry point. Pull requests and issues may mirror those ledgers for review, but they do not create a separate task list.
+
 ## Recommended next work
 
-1. Review and merge the current shared semantic-table slice for **Settings → Inbox & file rules**; it preserves all five fields, native keyboard actions, accessibility, and 390 px no-overflow behavior.
-2. Define the separate accessible actionable-list pattern for the whole-row pipeline, Projects, and Clients views, then continue feature splitting, primitive consolidation, and legacy CSS cleanup in bounded slices.
-3. Add provider-neutral job/failure/replay and Gmail/Calendar sync-state contracts with local fakes only.
-4. Extend local migration transformation, duplicate-reporting, reconciliation, and rollback fixtures without running staging.
+The agent ledgers above own sequencing. The next UI slice is the accessible actionable-list pattern for the whole-row pipeline, Projects, and Clients views. Provider-neutral job/sync contracts and local migration-fixture work may proceed only within the boundaries recorded in the agent execution plan; no checklist item here authorizes a live provider, staging run, or deployment.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-Private Sites development version 39 is the latest controlled release. The current semantic-table slice remains source-only until separately approved for merge and deployment. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
+Private Sites development version 39 is the latest controlled release. The semantic-table slice merged source-only in PR #30 at `aa8ed8f` and still requires separate deployment approval. None of the remaining steps above authorizes production deployment, live OIDC/session issuance, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
 

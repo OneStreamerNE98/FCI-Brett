@@ -135,6 +135,8 @@ Define separate staging and production project boundaries for their own OAuth cl
 
 Parts 6 through 8 change Google Cloud or Google Admin configuration. Complete them only after the Part 5 inventory has been reviewed and the owner has approved the exact changes.
 
+**One-account invariant for Parts 6–10:** use one exact company account as both the OAuth data-connection account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX`. The Gmail client calls Google as `users/me`, and domain-wide delegation is intentionally forbidden, so the app cannot read a different intake mailbox. Readiness now fails closed when Gmail is enabled and these values do not identify the same single approved account. That safeguard is source-only until this change is merged and separately deployed; the live version 39 does not yet prove it is active.
+
 ## Part 6: configure the Google Auth platform
 
 In the Cloud project, open **Google Auth platform**.
@@ -167,7 +169,7 @@ https://www.googleapis.com/auth/calendar.events
 https://www.googleapis.com/auth/spreadsheets
 ```
 
-These are broad scopes. Keep the app internal, limit the authorized account, and configure the OAuth client as a trusted internal app in Google Admin. Before a broader release, review whether narrower Drive and Gmail scopes can satisfy the workflow.
+These are broad scopes. Keep the app internal, limit authorization to the one account that also owns the intake mailbox, and configure the OAuth client as a trusted internal app in Google Admin. Before a broader release, review whether narrower Drive and Gmail scopes can satisfy the workflow.
 
 ## Part 7: create the server-side OAuth client
 
@@ -218,12 +220,12 @@ Store the result as a secret. Do not place it in `.env.example`, Git, Drive, scr
 
 ## Part 10: configure hosted runtime values
 
-The code expects the following values for the current hosted development connector. Hosted values belong in the hosting environment, not in source control.
+The code expects the following values for the current hosted development connector. Enter them in the ChatGPT Sites project's runtime environment settings, not in source control. Mark the client secret and token-encryption key as secrets there. Google Secret Manager is for the future production environment, not this Sites development connector.
 
 ```dotenv
-FCI_OFFICE_EMAILS=jason.grass@gmail.com
+FCI_OFFICE_EMAILS=<authorized-chatgpt-sign-in-email>
 FCI_OFFICE_DOMAINS=
-FCI_ADMIN_EMAILS=jason.grass@gmail.com
+FCI_ADMIN_EMAILS=<authorized-chatgpt-sign-in-email>
 
 GOOGLE_INTEGRATION_MODE=workspace
 GOOGLE_WORKSPACE_ENABLED_SERVICES=drive,gmail,calendar,sheets
@@ -233,18 +235,18 @@ GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI=https://groundwork-flooring-ops.jaggerisagoo
 GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY=<secret 32-byte base64url value>
 GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION=1
 GOOGLE_WORKSPACE_ALLOWED_DOMAINS=cherryhillfci.com
-GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<approved-connection-account@cherryhillfci.com>
+GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_SHARED_DRIVE_ID=<Shared Drive ID>
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false
 GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<spreadsheet ID>
-GOOGLE_WORKSPACE_INTAKE_MAILBOX=<approved-intake-mailbox@cherryhillfci.com>
+GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar ID>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar ID>
 ```
 
-For the current development environment, `FCI_OFFICE_EMAILS` is the ChatGPT sign-in email. It is deliberately separate from `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, which is the company Google account allowed to connect data.
+For the current development environment, `FCI_OFFICE_EMAILS` is the ChatGPT sign-in email. It is deliberately separate from `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, which is the company Google account allowed to connect data. `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account, and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address.
 
-Mark the client secret and token-encryption key as secrets. Keep folder provisioning `false` until Drive verification passes.
+Keep folder provisioning `false` until Drive verification passes. Saving source files or `.openai/hosting.json` does not configure these values; a saved Sites version must be deployed separately before a hosted environment-setting change takes effect.
 
 ## Part 11: connect and verify Google Workspace
 
@@ -254,7 +256,7 @@ Mark the client secret and token-encryption key as secrets. Keep folder provisio
 4. Run **Check readiness**.
 5. Resolve every missing item before selecting Connect.
 6. Select **Connect Google Workspace**.
-7. Sign in with the exact account listed in `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`.
+7. Sign in with the exact single account listed in `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`; it must also be the address in `GOOGLE_WORKSPACE_INTAKE_MAILBOX`.
 8. Review the consent screen and approve the required scopes.
 9. Return to the application and confirm the connection account is correct.
 10. Verify each service separately:

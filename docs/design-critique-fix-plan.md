@@ -1,6 +1,6 @@
 # UI design critique remediation plan
 
-Last audited and released: July 18, 2026
+Last reconciled: July 19, 2026 · Latest deployed release: private Sites development version 39 on July 18, 2026
 
 Source critique: the July 17, 2026 design critique supplied by the owner. This checked-in ledger is the self-contained project record; it does not depend on the original temporary worktree path.
 
@@ -11,6 +11,8 @@ Completed release: PR #25, merged to `main` as `13241fc` and deployed to the pri
 Completed follow-on: PR #27, merged to `main` as `cf32a9e` and deployed to the private Sites development environment as version 38. It completes the bounded Reports chart-to-list contract and its rendered regression coverage.
 
 Completed structural follow-on: PR #29, merged to `main` as `1c2f991` and deployed to the private Sites development environment as version 39. It completes the first behavior-preserving Phase 3 shared operations UI and report-filter boundary.
+
+Completed source-only follow-on: PR #30, merged to `main` as `aa8ed8f` on July 19, 2026. It completes the first shared responsive semantic-table slice for **Settings → Inbox & file rules**. It has not been deployed; private Sites development version 39 remains live.
 
 ## Purpose
 
@@ -35,7 +37,7 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 | A4 — desktop sidebar wrapping | Complete | Nav labels remain one line with ellipsis and compact feature-state labels where needed. | Preserve at desktop, tablet, and mobile drawer widths. |
 | A5 — eyebrow readability | Complete | Global 12 px eyebrow styling uses the compliant brown token. | Remove losing legacy declarations during Phase 3 CSS cleanup. |
 | A6 — competing primary actions | Complete for current routes | Topbar lead capture is demoted/contextual, mobile hides the extra topbar action, Inbox has one primary load action, Refresh is soft, and the global placeholder is the short “Search.” | Reassess when future route-specific creation actions become real. |
-| A7 — design-system pattern drift | Partial, Phase 3 | PR #29 added the first shared operations primitives. The current semantic-table slice adds one reusable native table/card pattern and migrates Settings rules with rendered keyboard, mobile, and accessibility coverage. | Build the separate actionable-list pattern and migrate remaining pill, empty-state, field, and button systems deliberately; do not claim consolidation from visual overrides alone. |
+| A7 — design-system pattern drift | Partial, Phase 3 | PR #29 added the first shared operations primitives. PR #30 added one reusable native table/card pattern and migrated Settings rules with rendered keyboard, mobile, and accessibility coverage. | Build the separate actionable-list pattern and migrate remaining pill, empty-state, field, and button systems deliberately; do not claim consolidation from visual overrides alone. |
 | A8 — token/cascade/style debt | Partial | Live cascade bugs, font token, warm active nav, responsive Reports, and current readability issues are fixed. | Remove dead sidebar theme rules, aliases, losing declarations, duplicated media queries, high-specificity overrides, and the remaining green-tinted legacy surface palette in the Phase 3 CSS track. |
 
 ## Screen findings ledger
@@ -89,7 +91,7 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 
 ### Phase 3 — structural consolidation
 
-These items remain open. They are split into reviewable tracks so a visual cleanup does not become an unsafe application rewrite.
+Phase 3 remains open. Completed subitems and the remaining work are split into reviewable tracks so a visual cleanup does not become an unsafe application rewrite.
 
 1. **Semantic table and actionable-list track**
    - [x] First slice: create one shared responsive semantic table based on the Access People/Activity pattern and migrate **Settings → Inbox & file rules**.
@@ -109,7 +111,7 @@ These items remain open. They are split into reviewable tracks so a visual clean
    - Normalize the remaining green-tinted legacy surface colors into the approved warm neutral palette.
    - Replace fixed-height overrides with the shared minimum-size scale.
 
-Phase 3 progress on July 18, 2026: PR #29 merged the first behavior-preserving boundary into `main` at `1c2f991`, and the exact merged source was deployed as private Sites development version 39. That slice extracts the shared page title, panel header, metric, avatar, and status components from `FloorOpsApp.tsx` and replaces the duplicated Leads/Projects report-filter banner and destination-focus effects with one shared component and history/session helper. The current `codex/semantic-rules-table` slice implements the first shared semantic table for **Settings → Inbox & file rules** with native headings, labeled mobile cards, and unchanged rule mutations. Actionable-list migrations, feature-level route splitting, broader pill/field/button consolidation, and legacy CSS removal remain open as separate reviewable slices.
+Phase 3 progress through July 19, 2026: PR #29 merged the first behavior-preserving boundary into `main` at `1c2f991`, and the exact merged source was deployed as private Sites development version 39. That slice extracts the shared page title, panel header, metric, avatar, and status components from `FloorOpsApp.tsx` and replaces the duplicated Leads/Projects report-filter banner and destination-focus effects with one shared component and history/session helper. PR #30 then merged the first shared semantic table for **Settings → Inbox & file rules** at `aa8ed8f`, with native headings, labeled mobile cards, and unchanged rule mutations. PR #30 remains source-only and has not changed the live version 39 site. Actionable-list migrations, feature-level route splitting, broader pill/field/button consolidation, and legacy CSS removal remain open as separate reviewable slices.
 
 ### Phase 4 — durable guardrails
 
@@ -158,7 +160,7 @@ Phase 3 progress on July 18, 2026: PR #29 merged the first behavior-preserving b
 - `npm run test:e2e` passed: all 55 Playwright tests passed.
 - Focused browser coverage verifies the native five-column table contract, Space-key Pause/Enable behavior and request body, Enter-key Delete behavior, exact responsive field labels, and no viewport overflow at 1024 px or 390 px.
 - Populated Settings inbox rules pass serious/critical axe checks at 1280×720 and 390×844, including the corrected Needs review contrast. Desktop, 1024 px, and 390 px rendered QA showed the expected table/card layouts with no unresolved console warning or error.
-- This slice changes presentation components, styles, tests, and documentation only. It changes no database schema, API contract, access policy, hosted configuration, migration, Google connection, or deployed Sites version; private version 39 remains live pending separate merge and deployment approval.
+- PR #30 merged this slice source-only at `aa8ed8f`. It changes presentation components, styles, tests, and documentation only; it changes no database schema, API contract, access policy, hosted configuration, migration, Google connection, or deployed Sites version. Private version 39 remains live pending separate deployment approval.
 
 ## Intentionally preserved behavior
 
@@ -172,4 +174,4 @@ Phase 3 progress on July 18, 2026: PR #29 merged the first behavior-preserving b
 
 ## Follow-on release boundary
 
-The owner separately authorized this critique pass for the controlled, single-user Sites development environment, and version 37 was deployed successfully on July 18, 2026. The bounded Reports follow-on then shipped as version 38, and PR #29's first Phase 3 shared UI/filter boundary shipped as version 39. Those releases did not change hosted access, data, migrations, or Google Workspace configuration. The current semantic-table slice remains source-only pending separate merge and deployment approval. Production deployment, production configuration, data migration, multi-user admission, and live Google Workspace changes remain governed by the production-platform, authorization, and rollout acceptance gates in the repository guidance.
+The owner separately authorized this critique pass for the controlled, single-user Sites development environment, and version 37 was deployed successfully on July 18, 2026. The bounded Reports follow-on then shipped as version 38, and PR #29's first Phase 3 shared UI/filter boundary shipped as version 39. Those releases did not change hosted access, data, migrations, or Google Workspace configuration. PR #30's semantic-table slice is merged source-only and awaits separate deployment approval; private version 39 remains live. Production deployment, production configuration, data migration, multi-user admission, and live Google Workspace changes remain governed by the production-platform, authorization, and rollout acceptance gates in the repository guidance.

@@ -10,7 +10,7 @@ Use the existing [`OneStreamerNE98/FCI-Brett`](https://github.com/OneStreamerNE9
 2. Invite the developer with **Write** access, not **Admin** access.
 3. Protect `main` and require a pull request before changes are merged.
 4. Have each developer clone the repository and create their own uncommitted `.env.local` from `.env.example`.
-5. Keep `GOOGLE_INTEGRATION_MODE=simulation` in local development. Production Google Workspace settings belong only in the hosting environment or Google Secret Manager.
+5. Keep `GOOGLE_INTEGRATION_MODE=simulation` in local development. The controlled Sites connector uses ChatGPT Sites runtime environment settings, with sensitive values marked as secrets; the future Google Cloud production environment uses Google Secret Manager.
 
 Example commands for a new contributor:
 

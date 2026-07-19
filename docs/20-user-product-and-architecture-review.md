@@ -132,4 +132,4 @@ The owner-approved application role and sensitive-action policy now permits loca
 | Store real client or employee data | No-go until production platform, restore, audit, and retention controls pass, plus quarantine/scanning when untrusted uploads or Gmail attachments are accepted |
 | Build scheduling or outbound messaging | No-go until platform, permissions, and background-job controls are accepted |
 
-The executable owner and developer work is tracked in the [Task Checklists](task-checklists/README.md).
+Owner setup and acceptance work is tracked in the [Task Checklists](task-checklists/README.md). Active backend, Workspace, and Settings implementation status is tracked in the [agent execution plan](agent-plan-architecture-workspace-and-setup.md), with UI remediation tracked in the [design-critique ledger](design-critique-fix-plan.md).

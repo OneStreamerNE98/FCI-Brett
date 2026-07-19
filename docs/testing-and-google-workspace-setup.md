@@ -46,15 +46,15 @@ Use a Google Workspace Business trial or subscription when real integration test
 Before switching modes:
 
 - Verify a company-controlled domain in Google Workspace.
-- Create the company users and select an administrator connection account.
+- Create the company users and select one administrator connection account that also owns the Gmail intake mailbox.
 - Create a Shared Drive named `FCI Operations`.
 - Create `FCI • Client Appointments` and `FCI • Field Schedule` calendars.
-- Create the Client Directory spreadsheet and choose the intake mailbox.
+- Create the Client Directory spreadsheet and use the connection account as the intake mailbox.
 - Enable the Drive, Gmail, Calendar, and Sheets APIs in the development Google Cloud project.
 - Keep Pub/Sub disabled until the Gmail background-processing worker is implemented.
 - Configure the OAuth consent screen and a Web application OAuth client.
 - Register the exact HTTPS callback URL for the deployed application.
-- Keep client secrets and token-encryption keys in secure runtime settings, never source control.
+- Keep client secrets and token-encryption keys in ChatGPT Sites runtime environment settings marked as secrets, never source control. Future Google Cloud production secrets belong in Secret Manager.
 
 Use these live settings:
 
@@ -74,6 +74,8 @@ GOOGLE_WORKSPACE_INTAKE_MAILBOX=
 GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=
 ```
+
+When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address. Readiness fails closed when the values differ because Gmail operates as the connected account.
 
 Connect Workspace, verify the Shared Drive, then enable Drive provisioning. The application rejects consumer domains that are not listed in `GOOGLE_WORKSPACE_ALLOWED_DOMAINS`.
 

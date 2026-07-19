@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with workflow decisions from the business owner
 
-Status: In progress — the July UI remediation, Reports drill-through, and PR #29's first Phase 3 shared UI/filter boundary are merged; the latest private Sites development release is version 39; structural and multi-user work remains
+Status: In progress — the July UI remediation, Reports drill-through, PR #29's first shared UI/filter boundary, and PR #30's semantic Settings rules table are merged; the latest private Sites development release remains version 39; actionable-list, structural, and multi-user work remains
 
 Depends on: Approved roles/capabilities and production API contracts
 
@@ -61,7 +61,7 @@ These are the eight implementation priorities confirmed against the hosted Sites
   - First boundary complete: PR #29 moved reusable operations primitives and the report-driven Leads/Projects filter/focus pattern outside `FloorOpsApp.tsx` and deployed it in private Sites development version 39; the durable route views remain to be split.
 - [ ] Consolidate duplicate Inbox and Settings Google workflows behind shared components and hooks.
 - [ ] Consolidate tabular and whole-row list presentations behind shared responsive semantic patterns without changing business behavior.
-  - First semantic-table slice implemented for review on `codex/semantic-rules-table`: **Settings → Inbox & file rules** now uses native headings, labeled mobile cards, and unchanged keyboard actions. Keep the whole-row pipeline, Projects, and Clients views for a later actionable-list slice.
+  - First semantic-table slice merged source-only in PR #30 at `aa8ed8f`: **Settings → Inbox & file rules** now uses native headings, labeled mobile cards, and unchanged keyboard actions. It has not been deployed; keep the whole-row pipeline, Projects, and Clients views for the next actionable-list slice.
 
 ## Accessibility and feedback
 
