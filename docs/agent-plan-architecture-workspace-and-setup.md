@@ -221,8 +221,10 @@ contract tests over memory + fake-R2 + gated GCS.
 cleanly when ungated.
 
 ### BE-06 · Leads & project meetings: ports, D1 adapters, PostgreSQL migration v6 (large, no deps)
-**Status:** In progress on `codex/leads-meetings-postgres-v6`, July 19, 2026. Source-only;
-no migration, grant, database, hosted configuration, or deployment has been applied.
+**Status:** In review — draft PR #42 on `codex/leads-meetings-postgres-v6`, July 19,
+2026. `npm test` passes 355 active tests with 13 expected PostgreSQL-gated skips;
+lint and both builds pass. Source-only; no migration, grant, database, hosted
+configuration, or deployment has been applied.
 
 **Why:** `leads` (drizzle 0010) and `project_meetings` (0009) are D1-only with inline SQL
 in their routes; the rehearsal migrates only clients/contacts/projects/activity_events.
@@ -929,7 +931,7 @@ actionable-list packet; it is not deployed. The source-only
 SET-02 is in review in draft PR #37; after it lands, KPI-01 takes the next
 `FloorOpsApp.tsx` slot. BE-02 + BE-13 are in review together in PR #36. BE-04 is in
 review in draft PR #38, and WS-04 + WS-12 are in review together in PR #39.
-All remain source-only. BE-06 is in progress on `codex/leads-meetings-postgres-v6`.
+All remain source-only. BE-06 is in review in draft PR #42 on `codex/leads-meetings-postgres-v6`.
 BE-05, BE-08, BE-11 (authoring), and WS-13 remain unclaimed and may proceed in parallel when
 they do not touch that file. BE-01 + WS-03 and TRK-01 completed in PR #32.
 
