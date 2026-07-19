@@ -10,6 +10,8 @@ The current Sites/Workers/D1/R2 deployment remains a one-user development enviro
 
 The accepted [Workspace-first, cost-controlled rollout](../architecture-decision-workspace-first-cost-controlled-rollout.md) preserves the target architecture while separating day-one production core from feature-gated services.
 
+The source-only [Google Workspace watch, queue, and sync-state design](../google-workspace-watch-and-queue-design.md) now records the future Gmail polling and Calendar HTTPS-channel decisions and supplies provider-neutral local contract fakes. It activates nothing; every unchecked infrastructure, persistence, reliability, and drill gate below remains open.
+
 ## Accepted rollout guardrails
 
 - [x] Reuse existing Google Workspace for company identity and collaboration while keeping Cloud SQL as the operational system of record.

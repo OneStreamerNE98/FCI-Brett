@@ -54,7 +54,9 @@ For a 20-person company, operations must be simple enough that two named people 
 - [ ] Simulate Google API timeout/quota failure and prove work retries once without duplicate files/events.
 - [ ] If Gmail watches or Calendar channels are released, expire each one and prove monitoring and renewal recover it.
 - [ ] Restore the database into staging and reconcile record and audit counts.
-- [ ] Rotate the OAuth client secret and token-encryption key using the written procedure.
+- [ ] Drill token-encryption key rotation using the current [disconnect/reconnect procedure](../google-workspace-rollout-guide.md#token-encryption-key-rotation-current-disconnectreconnect-procedure): disconnect while the old key works, advance the non-secret version, deploy the new secret, reconnect, and verify every enabled service. Record no key or token values.
+- [ ] Drill OAuth client-secret rotation using the [same-client-ID procedure](../google-workspace-rollout-guide.md#oauth-client-secret-rotation-same-client-id-no-reconnect): deploy the new secret, prove the existing connection can refresh, and prove no reconnect/consent is required. Record no secret values.
+- [ ] In an approved test environment, revoke the refresh grant and follow the [`invalid_grant` recovery procedure](../google-workspace-rollout-guide.md#invalid_grant-or-revoked-refresh-token-recovery): prove the safe readiness response reports `workspace.connectionStatus = reauthorization-required`, retries stop, the authorized connection `DELETE` succeeds, the exact account reauthorizes, and independent service checks pass. The current Settings label/delete-control limitation requires authorized API support; keep this drill open if that evidence is unavailable.
 - [ ] If untrusted uploads are released, quarantine a harmless antivirus test file and prove it never reaches Shared Drive.
 
 ## Completion result
