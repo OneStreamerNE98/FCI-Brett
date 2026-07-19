@@ -34,7 +34,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
 - An item is done only when its **Acceptance** line passes in this repo.
 - IDs: `BE-*` backend architecture & data storage · `WS-*` Google Workspace connection ·
   `SET-*` Settings/Setup UI · `TRK-*` task tracking/doc reconciliation · `KPI-*` flooring
-  KPIs & reporting. Dependencies are listed per item.
+  KPIs & reporting · `OIDC-*` BE-04 post-merge security follow-ups (in
+  [`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
+  Dependencies are listed per item.
 
 ## Global guardrails (include in every packet)
 
@@ -177,11 +179,11 @@ this route. Do NOT touch `db/schema.ts` or drizzle history; record
 **Accept:** `npm test` passes; grep `actorFrom` in app/ empty; local migrations unchanged.
 
 ### BE-04 · Workspace OIDC login, invitation redemption, session issuance on the Cloud Run router (large, no deps; VERIFIED)
-**Status:** In review — draft PR #38 on `codex/workspace-oidc-login`, July 19, 2026.
-Local acceptance is green (343 active tests, 13 environment-gated skips, lint, and Cloud
-Run build); all GitHub Node, Terraform, and Chromium checks are green.
-Source-only; production identity, infrastructure, sessions, and user admission remain
-unapplied.
+**Status:** Complete — PR #38, July 19, 2026. Source-only; production identity,
+infrastructure, sessions, and user admission remain unapplied. **Post-merge security review
+found one launch-blocking correctness bug and hardening/test/doc gaps — see
+[`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md) (packets
+OIDC-01..OIDC-04). OIDC-01 must land before any live employee login.**
 
 **Why:** The single largest production gap: the Cloud Run image has no login.
 `app/ports/identity-persistence.ts` (registerExternalIdentity/createSession, lines 67–68)
