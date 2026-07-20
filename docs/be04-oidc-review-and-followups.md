@@ -149,8 +149,11 @@ in the same PR). Confirmed: sequencing and handoff passages still assign already
 PRs; and
 `docs/authorization-simulation.md` still describes login/session issuance as not-yet-existing
 in places even though `employee-request-router.ts` now issues `__Host-fci_session`. The
-guard test `tests/task-tracking-docs.test.mjs` only format-checks BE-01/WS-03/TRK-01, so it
-did not catch this.
+root `README.md` likewise still places employee OIDC/session issuance outside the source
+boundary, and the complete architecture audit still assigns removal or typing of the
+already-removed `/api/v1/records` route. Before this packet,
+`tests/task-tracking-docs.test.mjs` only format-checked BE-01/WS-03/TRK-01, so it did not
+catch this.
 **Do:** (1) Reconcile every merged packet status and the sequencing/handoff mentions in
 the plan, `docs/codex-to-codex-handoff.md`, and the owner-facing checklist summary.
 (2) Reconcile `docs/authorization-simulation.md`: keep the approved-policy content, but
@@ -159,14 +162,20 @@ merged source (note what is now implemented vs still deferred — sliding idle r
 deferred). (3) Extend `tests/task-tracking-docs.test.mjs` so a merged packet whose status
 line still says "In review"/"draft" fails CI — a lightweight rule that would have caught
 this for the explicit known-packet map. Update that map and its tracking-file list whenever
-a packet merges.
-**Files:** `docs/agent-plan-architecture-workspace-and-setup.md`,
+a packet merges. (4) Reconcile the root README's production/launch boundary and mark the
+architecture audit's generic-records action resolved in source without weakening the
+separate upload warning or assistant records-only assertion.
+**Files:** `README.md`, `docs/agent-plan-architecture-workspace-and-setup.md`,
 `docs/authorization-simulation.md`, `docs/codex-to-codex-handoff.md`,
-`docs/task-checklists/README.md`, this follow-up ledger, affected architecture/checklist
-status surfaces, and `tests/task-tracking-docs.test.mjs`.
+`docs/task-checklists/README.md`,
+`docs/complete-product-and-google-cloud-architecture-audit.md`, this follow-up ledger,
+affected architecture/checklist status surfaces, and `tests/task-tracking-docs.test.mjs`.
 **Accept:** no tracking doc assigns an already-merged PR for review;
 `authorization-simulation.md` matches merged source; the explicit offline merged-packet
 map fails on a draft/in-review status for a known merged packet and passes after this fix;
+the root README distinguishes merged OIDC/role/scoping source from live activation; the
+architecture audit records PR #46's route/helper removal while preserving the assistant's
+records-only test assertion;
 `npm test` green. **Effort:** small.
 
 ---

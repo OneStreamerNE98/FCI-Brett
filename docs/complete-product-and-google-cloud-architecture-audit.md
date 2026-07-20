@@ -255,7 +255,7 @@ The source-only BE-08 boundary now implements exact-version AES-GCM decryption, 
 - Add optimistic concurrency using a version/ETag and a clear `409 Conflict` recovery UI.
 - Use keyset pagination for activity, messages, jobs, search, and audit history.
 - Centralize request context, security headers, request limits, authentication/sensitive-route rate limits, cache rules, structured logging, and redaction.
-- Remove or tightly type the generic records endpoint; it must not bypass domain invariants. Unassigned uploads must not remain a production escape hatch.
+- **Resolved in source — PR #46:** the legacy generic `/api/v1/records` endpoint and its unused `actorFrom` helper are removed. The assistant's separate records-only answer-mode assertion remains in `tests/rendered-html.test.mjs`. Unassigned uploads must not remain a production escape hatch.
 - Keep accessibility and representative desktop/mobile browser tests as release gates.
 
 ## Operations, observability, and recovery

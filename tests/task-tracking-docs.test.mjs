@@ -74,8 +74,10 @@ test("task-tracking surfaces point to their authoritative ledgers without duplic
 });
 
 test("known merged packets have complete statuses and cannot regress to review-only wording", () => {
+  const readme = read("README.md");
   const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
   const oidc = read("docs/be04-oidc-review-and-followups.md");
+  const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
   const mergedPlanPackets = new Map([
     ["BE-01", 32],
     ["BE-02", 36],
@@ -109,7 +111,34 @@ test("known merged packets have complete statuses and cannot regress to review-o
 
   assert.match(packetStatus(oidc, "OIDC-01"), /^Complete — PR #48, July 19, 2026\./);
 
+  const productionBoundary = section(readme, "## Production architecture", "## Remaining launch decision");
+  const launchDecision = section(readme, "## Remaining launch decision", "## Prioritized next work");
+  assert.match(
+    productionBoundary,
+    /Workspace OIDC initiation\/callback, durable invitation redemption, secure session issuance,[\s\S]*approved fixed application roles and capability ceilings,[\s\S]*project-scoped authorization are also source-composed/,
+  );
+  assert.match(
+    launchDecision,
+    /Workspace OIDC, durable invitation\/session issuance, the approved application roles, and project-scoped authorization now exist in source/,
+  );
+  assert.match(
+    launchDecision,
+    /complete OIDC-02\/03 hardening and tests,[\s\S]*configure live identity,[\s\S]*apply the PostgreSQL migrations and grants,[\s\S]*deploy/,
+  );
+
+  const frontendAndApi = section(audit, "## Frontend and API architecture", "## Operations, observability, and recovery");
+  assert.match(
+    frontendAndApi,
+    /Resolved in source — PR #46:[\s\S]*`\/api\/v1\/records`[\s\S]*`actorFrom` helper are removed/,
+  );
+  assert.match(
+    frontendAndApi,
+    /assistant's separate records-only answer-mode assertion remains in `tests\/rendered-html\.test\.mjs`/,
+  );
+  assert.doesNotMatch(frontendAndApi, /Remove or tightly type the generic records endpoint/);
+
   const trackingFiles = [
+    "README.md",
     "docs/20-user-product-and-architecture-review.md",
     "docs/agent-plan-architecture-workspace-and-setup.md",
     "docs/architecture-decision-production-platform.md",
