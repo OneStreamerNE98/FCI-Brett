@@ -110,6 +110,7 @@ test("known merged packets have complete statuses and cannot regress to review-o
   }
 
   assert.match(packetStatus(oidc, "OIDC-01"), /^Complete — PR #48, July 19, 2026\./);
+  assert.match(packetStatus(oidc, "OIDC-04"), /^Complete — PR #49, July 19, 2026\./);
 
   const productionBoundary = section(readme, "## Production architecture", "## Remaining launch decision");
   const launchDecision = section(readme, "## Remaining launch decision", "## Prioritized next work");
@@ -158,7 +159,7 @@ test("known merged packets have complete statuses and cannot regress to review-o
     "docs/task-checklists/10-complete-product-and-integration-architecture.md",
     "docs/ui-and-product-readiness-review.md",
   ];
-  const mergedPrs = [...new Set([...mergedPlanPackets.values(), 48])];
+  const mergedPrs = [...new Set([...mergedPlanPackets.values(), 48, 49])];
   const badTerms = String.raw`(?:draft|in review|awaiting (?:review|merge)|not merged|review and merge)`;
 
   for (const path of trackingFiles) {
