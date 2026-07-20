@@ -140,7 +140,7 @@ it); the gated PG integration test proves the invitation race and issues-then-ex
 revokes real sessions; `npm test` and the CI PostgreSQL job are green. **Effort:** medium.
 
 ## OIDC-04 · Reconcile the docs the merge left stale (medium; CONFIRMED) — small
-**Status:** In progress — `codex/reconcile-post-merge-plan`, July 19, 2026.
+**Status:** Complete — PR #49, July 19, 2026.
 **Why:** PR #38 originally merged touching zero docs, and the later merge train widened
 the drift. The canonical BE-04 item now says Complete, but merged `main` still contradicts
 its own
