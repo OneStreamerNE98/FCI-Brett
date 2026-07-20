@@ -52,3 +52,31 @@ test("Workspace prerequisites use a semantic metadata-only table", async () => {
   assert.match(oauth, /label: "Google Workspace intake mailbox matching the single approved connection account"/);
   assert.match(oauth, /envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS"/);
 });
+
+test("administrator connection health maps the bounded payload without inventing provider health", async () => {
+  const [panel, route, oauth] = await Promise.all([
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/api/v1/integrations/google/connection/route.ts"),
+    read("app/lib/google-oauth.ts"),
+  ]);
+
+  assert.match(panel, /if \(!isAdmin\) return;[\s\S]+cachedGetJson<ConnectionHealthPayload>\("\/api\/v1\/integrations\/google\/connection"/);
+  assert.match(panel, /isAdmin && <section className="workspace-connection-health"/);
+  assert.match(panel, /connectionHealth\.connection\.account/);
+  assert.match(panel, /connectionHealth\.runtimeMode/);
+  assert.match(panel, /connectionHealth\.connection\.status/);
+  assert.match(panel, /connectionHealth\.connection\.requiresReauthorization/);
+  assert.match(panel, /connectionHealth\.enabledServices\.includes\(service\.key\)/);
+  assert.match(panel, /connectionHealth\.connection\.grantedServices\?\.\[service\.key\]/);
+  for (const service of ["drive", "gmail", "calendar", "sheets"]) {
+    assert.match(panel, new RegExp(`key: "${service}"`));
+  }
+  assert.match(panel, /Not applicable — simulated/);
+  assert.match(panel, /Recorded permission reflects the saved Google consent only\. It is not a live provider-health or freshness check\./);
+  assert.equal(panel.match(/Disconnect Workspace/g)?.length, 1);
+  assert.match(route, /runtimeMode: config\.environment[\s\S]+connection: await getGoogleConnectionStatus\(config\)[\s\S]+enabledServices: config\.enabledServices/);
+  assert.match(oauth, /grantedServices: null/);
+  assert.match(oauth, /const grantedServices = grantedGoogleServices\(config, scopes\)/);
+  const payloadType = panel.slice(panel.indexOf("type ConnectionHealthPayload"), panel.indexOf("type ConnectionHealthState"));
+  assert.doesNotMatch(payloadType, /lastSuccess|lastChecked|expiresAt|freshness/i);
+});

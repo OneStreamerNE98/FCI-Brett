@@ -48,6 +48,18 @@ test("keeps every existing Settings mutation gate enforced on the server", async
   }
 });
 
+test("guards the Google connection GET before schema or persistence work", async () => {
+  const source = await read("app/api/v1/integrations/google/connection/route.ts");
+  const getStart = source.indexOf("export async function GET");
+  const deleteStart = source.indexOf("export async function DELETE");
+  const getHandler = source.slice(getStart, deleteStart);
+
+  assert.ok(getStart >= 0 && deleteStart > getStart);
+  assert.match(getHandler, /requireOfficeUser\(request, \{ admin: true \}\)/);
+  assert.ok(getHandler.indexOf("requireOfficeUser") < getHandler.indexOf("ensureWorkspaceSchema"));
+  assert.ok(getHandler.indexOf('if ("response" in auth) return auth.response') < getHandler.indexOf("ensureWorkspaceSchema"));
+});
+
 test("isolates rendered role tests from contributor environment files", async () => {
   const [viteConfig, collaborationGuide, continuousIntegration] = await Promise.all([
     read("vite.config.ts"),

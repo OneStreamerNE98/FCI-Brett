@@ -57,12 +57,38 @@ type SheetMirrorStatus = {
   reason: string | null;
 };
 type SetupStepStatus = "Complete" | "Ready" | "Blocked by previous step" | "Blocked by prerequisites" | "Simulated";
+type GoogleServiceKey = "drive" | "gmail" | "calendar" | "sheets";
+type ConnectionHealthPayload = {
+  runtimeMode: "simulation" | "workspace";
+  simulation: boolean;
+  enabledServices: GoogleServiceKey[];
+  connection: {
+    status: string;
+    account: string | null;
+    grantedServices: Record<GoogleServiceKey, boolean> | null;
+    requiresReauthorization: boolean;
+  };
+};
+type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 
 const WORKSPACE_PREREQUISITE_COLUMNS = [
   { key: "requirement", label: "Requirement" },
   { key: "environment", label: "Environment key" },
   { key: "origin", label: "Origin" },
 ] as const;
+
+const CONNECTION_SERVICE_COLUMNS = [
+  { key: "service", label: "Service" },
+  { key: "enabled", label: "FCI configuration" },
+  { key: "granted", label: "Recorded OAuth permission" },
+] as const;
+
+const CONNECTION_SERVICES: readonly { key: GoogleServiceKey; label: string }[] = [
+  { key: "drive", label: "Shared Drive" },
+  { key: "gmail", label: "Gmail" },
+  { key: "calendar", label: "Calendar" },
+  { key: "sheets", label: "Sheets" },
+];
 
 function stepStatus({ simulation, previousComplete = true, prerequisitesReady, complete }: { simulation: boolean; previousComplete?: boolean; prerequisitesReady: boolean; complete: boolean }): SetupStepStatus {
   if (simulation) return "Simulated";
@@ -79,6 +105,14 @@ function mirrorTime(value: number | null | undefined) {
   return value ? new Date(value).toLocaleString() : "Not synced yet";
 }
 
+function connectionStatusLabel(value: string) {
+  return value
+    .split("-")
+    .filter(Boolean)
+    .map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`)
+    .join(" ");
+}
+
 export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: Notify; projects: Project[]; isAdmin: boolean }) {
   const [checking, setChecking] = useState(false);
   const [working, setWorking] = useState(false);
@@ -88,6 +122,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [workspace, setWorkspace] = useState<WorkspaceReadiness | null>(null);
   const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
   const [sheetsStatusError, setSheetsStatusError] = useState<string | null>(null);
+  const [connectionHealth, setConnectionHealth] = useState<ConnectionHealthPayload | null>(null);
+  const [connectionHealthState, setConnectionHealthState] = useState<ConnectionHealthState>("idle");
+  const [connectionHealthError, setConnectionHealthError] = useState<string | null>(null);
   const [driveVerified, setDriveVerified] = useState(false);
   const [gmailMessages, setGmailMessages] = useState<WorkspaceMessage[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<Array<{ id: string; title: string; start: string; end: string; url?: string }>>([]);
@@ -138,11 +175,37 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
   }, [notify]);
 
+  const loadConnectionHealth = useCallback(async (force = false) => {
+    if (!isAdmin) return;
+    setConnectionHealthState("loading");
+    setConnectionHealthError(null);
+    try {
+      const data = await cachedGetJson<ConnectionHealthPayload>("/api/v1/integrations/google/connection", { force });
+      setConnectionHealth(data);
+      setConnectionHealthState("ready");
+    } catch {
+      setConnectionHealthError("Connection details could not be loaded. Retry before changing the saved connection.");
+      setConnectionHealthState("error");
+    }
+  }, [isAdmin]);
+
+  const refreshWorkspaceSetup = useCallback(async (force = false) => {
+    await Promise.all([
+      checkSetup(force),
+      isAdmin ? loadConnectionHealth(force) : Promise.resolve(),
+    ]);
+  }, [checkSetup, isAdmin, loadConnectionHealth]);
+
   useEffect(() => {
     if (readinessChecked.current) return;
     readinessChecked.current = true;
     void checkSetup();
   }, [checkSetup]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void Promise.resolve().then(() => loadConnectionHealth());
+  }, [isAdmin, loadConnectionHealth]);
 
   useEffect(() => {
     const current = new URL(window.location.href);
@@ -152,9 +215,10 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     current.searchParams.delete("google");
     window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
     invalidateCachedGet("/api/v1/google-workspace");
+    invalidateCachedGet("/api/v1/integrations/google/connection");
     invalidateCachedGet("/api/v1/integrations/google/sheets/status");
-    void Promise.resolve().then(() => checkSetup(true));
-  }, [checkSetup]);
+    void Promise.resolve().then(() => refreshWorkspaceSetup(true));
+  }, [refreshWorkspaceSetup]);
 
   async function connectGoogleDrive() {
     setWorking(true);
@@ -199,8 +263,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setCalendarEvents([]);
       notify("The active Google connection was removed from FCI Operations.", "success");
       invalidateCachedGet("/api/v1/google-workspace");
+      invalidateCachedGet("/api/v1/integrations/google/connection");
       invalidateCachedGet("/api/v1/integrations/google/sheets/status");
-      await checkSetup(true);
+      await refreshWorkspaceSetup(true);
     } catch (error) {
       notify(error instanceof Error ? error.message : "The Google connection could not be removed.", "error");
     } finally {
@@ -382,8 +447,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setCalendarChecked(false);
       notify(`Workspace simulation reset with ${data.messages} sample messages and ${data.events} calendar events.`, "success");
       invalidateCachedGet("/api/v1/google-workspace");
+      invalidateCachedGet("/api/v1/integrations/google/connection");
       invalidateCachedGet("/api/v1/integrations/google/sheets/status");
-      await checkSetup(true);
+      await refreshWorkspaceSetup(true);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Workspace simulation could not be reset.", "error");
     } finally {
@@ -408,7 +474,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const sheetsStepStatus = stepStatus({ simulation, previousComplete: calendarStepStatus === "Complete", prerequisitesReady: sheetsReady, complete: sheetsSynced });
   const selectedServices = workspace?.enabledServices?.join(", ") ?? "drive";
   const storageName = workspace?.storageName ?? "FCI Operations";
-  const hasStoredConnection = Boolean(workspace?.connectionStatus && workspace.connectionStatus !== "not-connected");
+  const healthHasStoredConnection = Boolean(connectionHealth && connectionHealth.connection.status !== "not-connected");
   const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
   const calendarActionsEnabled = simulation || (gmailStepStatus === "Complete" && calendarReady);
   const sheetsActionsEnabled = simulation || (calendarStepStatus === "Complete" && sheetsReady);
@@ -429,7 +495,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   return <section className="panel workspace-settings">
     <div className="settings-heading">
       <div><p className="eyebrow">Company integration</p><h2>Google Workspace</h2><p>Complete these five steps in order. Every status comes from the current Workspace readiness or service response.</p></div>
-      <button className="primary-button" onClick={() => void checkSetup(true)} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
+      <button className="primary-button" onClick={() => void refreshWorkspaceSetup(true)} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
     </div>
     <div className={`workspace-mode-card ${simulation ? "simulation" : "live"}`}>
       {simulation ? <Zap size={18} /> : <Building2 size={18} />}
@@ -454,9 +520,35 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         <div className="workspace-step-body">
           <div className={`workspace-connection ${connected ? "ready" : ""}`}><div className="integration-logo google"><Mail size={20} /></div><div><strong>{simulation ? "Simulated connection ready" : connected ? "Google Workspace connected" : reconnectRequired ? "Google permission update required" : configured ? "Ready for authorization" : "Hosted setup required"}</strong><span>{simulation ? "Gmail, Calendar, Shared Drive, and Sheets use local sample state." : connected ? `${workspace?.connectionAccount ?? "Approved Workspace account"} is connected with ${selectedServices}.` : reconnectRequired ? "Reconnect and approve every selected service." : configured ? `The connection will request ${selectedServices}.` : `${missing.length} prerequisite${missing.length === 1 ? "" : "s"} still need attention.`}</span></div><span>{simulation ? "Simulated" : connected ? "Connected" : "Not connected"}</span></div>
           {simulation && <p className="workspace-warning"><ShieldCheck size={15} /><span><strong>Safe local testing:</strong> OAuth is disabled, no refresh token exists, and all service results stay in this development environment.</span></p>}
+          {isAdmin && <section className="workspace-connection-health" aria-labelledby="workspace-connection-health-heading">
+            <header><div><p className="eyebrow">Administrator details</p><h4 id="workspace-connection-health-heading">Connection health</h4></div>{connectionHealth && <Status text={connectionHealth.simulation ? "Simulated" : connectionStatusLabel(connectionHealth.connection.status)} />}</header>
+            {connectionHealthState === "loading" && !connectionHealth && <p className="workspace-connection-health-message" role="status">Loading the saved connection details…</p>}
+            {connectionHealthError && <div className="workspace-connection-health-error" role="alert"><span>{connectionHealthError}</span><button className="soft-button" type="button" onClick={() => void loadConnectionHealth(true)}>Retry details</button></div>}
+            {connectionHealth && <>
+              <dl className="workspace-connection-health-summary">
+                <div><dt>Account</dt><dd>{connectionHealth.connection.account ?? "No stored account"}</dd></div>
+                <div><dt>Mode</dt><dd>{connectionHealth.runtimeMode === "simulation" ? "Simulation" : "Workspace"}</dd></div>
+                <div><dt>Status</dt><dd>{connectionHealth.simulation ? "Simulated" : connectionStatusLabel(connectionHealth.connection.status)}</dd></div>
+              </dl>
+              {connectionHealth.connection.requiresReauthorization && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Reauthorization required:</strong> Disconnect this saved connection, then reconnect the exact approved account and approve every enabled service.</span></p>}
+              <OperationsDataTable className="workspace-connection-service-table" columns={CONNECTION_SERVICE_COLUMNS} labelledBy="workspace-connection-health-heading">
+                {CONNECTION_SERVICES.map((service) => {
+                  const enabled = connectionHealth.enabledServices.includes(service.key);
+                  const granted = connectionHealth.connection.grantedServices?.[service.key];
+                  const grantLabel = connectionHealth.simulation ? "Not applicable — simulated" : granted ? "Granted" : "Not granted";
+                  return <tr key={service.key}>
+                    <OperationsDataTableCell label="Service"><strong>{service.label}</strong></OperationsDataTableCell>
+                    <OperationsDataTableCell label="FCI configuration"><span className={`workspace-service-state ${enabled ? "ready" : "inactive"}`}>{enabled ? "Enabled" : "Not enabled"}</span></OperationsDataTableCell>
+                    <OperationsDataTableCell label="Recorded OAuth permission"><span className={`workspace-service-state ${granted ? "ready" : "inactive"}`}>{grantLabel}</span></OperationsDataTableCell>
+                  </tr>;
+                })}
+              </OperationsDataTable>
+              <p className="workspace-connection-health-note">Recorded permission reflects the saved Google consent only. It is not a live provider-health or freshness check.</p>
+              {!connectionHealth.simulation && healthHasStoredConnection && <div className="workspace-actions"><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void disconnectGoogleDrive()} disabled={working}>{working ? "Disconnecting…" : "Disconnect Workspace"}</AdministratorActionButton></div>}
+            </>}
+          </section>}
           <div className="workspace-actions">{simulation ? <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void resetSimulation()} disabled={working}>{working ? "Resetting…" : "Reset simulation data"}</AdministratorActionButton> : <>
             {!connected && <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void connectGoogleDrive()} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</AdministratorActionButton>}
-            {hasStoredConnection && <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void disconnectGoogleDrive()} disabled={working}>Disconnect Workspace</AdministratorActionButton>}
           </>}</div>
         </div>
       </li>

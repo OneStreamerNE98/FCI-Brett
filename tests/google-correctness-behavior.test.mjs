@@ -189,7 +189,70 @@ test("the Sites simulation status does not require production encryption configu
     status: "connected",
     account: "Local Workspace simulation",
     services: { drive: true, gmail: true, calendar: true, sheets: true },
+    grantedServices: null,
     requiresReauthorization: false,
+  });
+});
+
+test("connection status separates configured services from persisted OAuth grants", async () => {
+  const encryptionKey = Buffer.alloc(32, 10).toString("base64url");
+  const config = oauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey, {
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail",
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "operations@cherryhillfci.com",
+    GOOGLE_WORKSPACE_BROAD_SCOPE_ACKNOWLEDGED: "true",
+  }));
+  const connection = {
+    id: "connection-grant-matrix",
+    google_email: "operations@cherryhillfci.com",
+    refresh_token_ciphertext: "encrypted-token-not-returned",
+    key_version: config.tokenEncryptionKeyVersion,
+    scopes_json: JSON.stringify([config.serviceScopes.drive, config.serviceScopes.calendar]),
+    status: "connected",
+  };
+  globalThis.__FCI_TEST_CLOUDFLARE_ENV__.DB = connectionDatabase(connection);
+
+  const result = await oauthModule.getGoogleConnectionStatus(config);
+
+  assert.deepEqual(result.grantedServices, {
+    drive: true,
+    gmail: false,
+    calendar: true,
+    sheets: false,
+  });
+  assert.deepEqual(Object.keys(result.grantedServices).sort(), ["calendar", "drive", "gmail", "sheets"]);
+  assert.deepEqual(result.services, {
+    drive: true,
+    gmail: false,
+    calendar: false,
+    sheets: false,
+  });
+  assert.equal(result.status, "reauthorization-required");
+  assert.equal(result.requiresReauthorization, true);
+});
+
+test("a stored invalid-grant status remains explicitly reauthorization-required", async () => {
+  const encryptionKey = Buffer.alloc(32, 11).toString("base64url");
+  const config = oauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey));
+  const connection = {
+    id: "connection-invalid-grant",
+    google_email: "operations@cherryhillfci.com",
+    refresh_token_ciphertext: "encrypted-token-not-returned",
+    key_version: config.tokenEncryptionKeyVersion,
+    scopes_json: JSON.stringify([config.serviceScopes.drive]),
+    status: "reauthorization-required",
+  };
+  globalThis.__FCI_TEST_CLOUDFLARE_ENV__.DB = connectionDatabase(connection);
+
+  const result = await oauthModule.getGoogleConnectionStatus(config);
+
+  assert.equal(result.connected, false);
+  assert.equal(result.status, "reauthorization-required");
+  assert.equal(result.requiresReauthorization, true);
+  assert.deepEqual(result.grantedServices, {
+    drive: true,
+    gmail: false,
+    calendar: false,
+    sheets: false,
   });
 });
 
