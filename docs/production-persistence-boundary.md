@@ -6,12 +6,12 @@ Date: July 15, 2026
 
 ## Outcome
 
-The repository now defines the production-owned persistence and storage seams that must exist before authorization behavior or Google Workspace employee login is implemented. This is a source-only foundation:
+The repository defines the production-owned persistence and storage seams now consumed by source-only authorization and Google Workspace employee login. This remains a source-only foundation:
 
 - PostgreSQL migration `3`, `production_persistence_boundary`, adds generic identity, security-audit, integration, and file metadata. Unapplied migration `4`, `admin_access_persistence`, adds the fixed three-role catalog and bounded assignment/invitation state. Unapplied migration `5`, `admin_audit_activity`, adds the security-barrier minimized Activity projection and separately granted reader boundary. Unapplied migration `6`, `lead_project_meetings`, adds the source-only lead/project-meeting record boundary and extends activity, idempotency, and outbox targeting without applying any database change.
 - Aggregate-oriented PostgreSQL repositories keep protected mutations and their audit evidence in one bounded transaction.
 - A provider-neutral object-storage port plus memory, R2, and source-only GCS adapters define conditional write, exact-generation metadata, and chunked reads without exposing provider URLs or overwrite/list/delete operations. The existing development upload route is composed through R2; GCS remains deliberately uncomposed.
-- Production source composition creates singleton identity, fixed administration, minimized audit-reader, integration, and file repositories around the existing bounded pool. The five Administrator commands, bounded People projection/page, and minimized Activity reader exist in source; invitation fulfillment, login/session issuance, migration/grant apply, and provider actions remain absent.
+- Production source composition creates singleton identity, fixed administration, minimized audit-reader, integration, and file repositories around the existing bounded pool. The five Administrator commands, bounded People projection/page, minimized Activity reader, durable invitation redemption, and Workspace OIDC/session issuance exist in source; migration/grant apply, live configuration/admission, and provider actions remain absent.
 - Runtime readiness verifies an exact relation/privilege matrix as well as the immutable migration history.
 
 No database, role, grant, Google Cloud resource, hosted configuration, Workspace connector, or production route was changed or applied.
@@ -106,8 +106,8 @@ The SQL policy and readiness checks remain source-only. Applying the role policy
 
 - any custom role, per-user capability override, or runtime role/capability mutation;
 - atomic secure-session rotation; non-null predecessor rotation is rejected until implemented;
-- durable invitation fulfillment and production employee-session/CSRF composition for the People & Access and Activity routes;
-- Google Workspace employee OIDC or a second user;
+- live configuration/application of durable invitation fulfillment and production employee-session/CSRF composition for the People & Access and Activity routes;
+- live Google Workspace employee OIDC admission or a second user;
 - live company-connector OAuth, credential brokering, watches, notification channels, or provider calls;
 - Cloud Storage provisioning or GCS adapter composition;
 - malware scanning, release decisions, retention holds, purge, download/share authorization, and untrusted uploads;
@@ -116,6 +116,6 @@ The SQL policy and readiness checks remain source-only. Applying the role policy
 
 ## Acceptance and next gate
 
-This source boundary was accepted without Brett's open Google Cloud/Workspace inputs because it did not apply or configure production infrastructure. The follow-on [authorization and employee-route work](authorization-simulation.md) now adds explicit access contexts, the approved granular Administrator/Office/Project Manager ceilings, secure session/CSRF behavior, project-scoped queries, fixed-operation provider gates, denial evidence, a narrow dashboard/search/project/client/logout Cloud Run source boundary, the five fixed Administrator commands, the bounded People projection/page, and the minimized Activity reader. The private Sites development presentation adapter is deployed, but durable invitation fulfillment/session issuance, production employee-session/CSRF composition, provider adapters, the broader application surface, PostgreSQL migration/grant apply, and production deployment remain open.
+This source boundary was accepted without Brett's open Google Cloud/Workspace inputs because it did not apply or configure production infrastructure. The follow-on [authorization and employee-route work](authorization-simulation.md) now adds explicit access contexts, the approved granular Administrator/Office/Project Manager ceilings, secure session/CSRF behavior, project-scoped queries, fixed-operation provider gates, denial evidence, a narrow dashboard/search/project/client/logout/login Cloud Run source boundary, the five fixed Administrator commands, the bounded People projection/page, minimized Activity reader, and durable Workspace OIDC invitation/session issuance. The private Sites development presentation adapter is deployed, but live configuration/admission, production employee-session/CSRF UI composition, provider adapters, the broader application surface, PostgreSQL migration/grant apply, and production deployment remain open.
 
 Live Workspace OIDC, staging migration/restore, a second employee, and real client data remain blocked by their separate platform, owner-approval, recovery, authorization, and acceptance gates.

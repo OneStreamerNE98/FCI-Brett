@@ -1,12 +1,12 @@
 # Authorization simulation and source-only employee routes
 
-Status: Approved policy and all three Administration and Access source branches merged. The private Sites development deployment includes the People/Activity presentation adapter; production migrations/grants, Cloud Run session/CSRF composition, live identity, and providers remain unapplied or undeployed.
+Status: Approved policy, Administration and Access source branches, and Workspace OIDC/invitation/session-issuance source are merged. The private Sites development deployment includes only the People/Activity presentation adapter; production migrations/grants, live Cloud Run identity/configuration, provider composition, and deployment remain unapplied or undeployed.
 
 Decision dates: July 15–16, 2026
 
 ## Purpose and safety boundary
 
-This production-oriented source work turns the owner's first-rollout access decisions into a deny-by-default application policy, secure-session transport and resolution checks, project-scoped PostgreSQL query contracts, fixed-operation provider gates, append-only security-audit evidence, and a narrow Cloud Run employee request boundary. It is not live employee login, and none of that production route/session composition is deployed. The separately merged People/Activity presentation adapter is the only Administration and Access behavior added to the private Sites/Workers/D1/R2 development application.
+This production-oriented source work turns the owner's first-rollout access decisions into a deny-by-default application policy, secure-session transport and resolution checks, project-scoped PostgreSQL query contracts, fixed-operation provider gates, append-only security-audit evidence, and a narrow Cloud Run employee request boundary. Workspace OIDC initiation/callback, signed-token verification, invitation redemption, and session-cookie issuance now exist in source, but they are not configured, applied, deployed, or live. The separately merged People/Activity presentation adapter is the only Administration and Access behavior added to the private Sites/Workers/D1/R2 development application.
 
 No Google credential, OAuth client, Cloud project, hostname, billing setting, database migration, live user, or real client record is required or changed. The existing hosted development environment, test connector, and one-user/test-data boundary remain unchanged.
 
@@ -44,10 +44,11 @@ The source policy intersects the ceiling with persisted same-role grants. It rej
 ### Admission, sessions, and transport
 
 - A pure admission helper requires caller-supplied, already-verified email and hosted-domain values to equal `cherryhillfci.com`, an explicit invitation flag, and one supported role. It does not perform durable invitation lookup or Google signature/issuer/audience/nonce/`sub` verification.
+- The Cloud Run employee-login boundary separately performs Google authorization-code flow with state, nonce, and PKCE; verifies the signed ID token's signature, RS256 algorithm, issuer, audience, expiry, email verification, exact `hd=cherryhillfci.com`, and immutable `sub`; then transactionally redeems an eligible invitation or resolves an existing identity before issuing the session.
 - Session and CSRF credentials are accepted only in bounded transport locations, immediately reduced to canonical SHA-256 digests, and never exposed to authorization callbacks or audit metadata. Browser mutations require an exact same-origin check plus a CSRF hash matching the live session.
 - Session resolution rejects missing, revoked, future-issued, inconsistent, invalidated, authorization-version-stale, absolute-expired, or idle-expired sessions and disabled or outside-domain users. Equality at an expiry boundary is expired.
-- The seven-day invitation, 30-minute idle, and eight-hour absolute values are source policy defaults. No login/session-issuance endpoint or sliding idle compare-and-swap touch exists yet; the resolver enforces the persisted deadlines it receives.
-- Source now includes a same-origin, CSRF-checked logout route that atomically revokes a resolved hashed session and clears the browser cookie only after confirmed revocation or when the credential is already unusable. Active-session CSRF, audit, database, or revocation failures retain the cookie so the user can retry while the server session remains controlled. Unknown or already-revoked credentials receive the same idempotent external result. There is still no source route that issues the cookie.
+- The seven-day invitation, 30-minute idle, and eight-hour absolute values are source policy defaults. The callback now issues `__Host-fci_session` after successful verified admission. Session rotation and sliding idle compare-and-swap touch remain deferred; the resolver enforces the persisted deadlines it receives.
+- Source includes a same-origin, CSRF-checked logout route that atomically revokes a resolved hashed session and clears the browser cookie only after confirmed revocation or when the credential is already unusable. Active-session CSRF, audit, database, or revocation failures retain the cookie so the user can retry while the server session remains controlled. Unknown or already-revoked credentials receive the same idempotent external result.
 
 ### Capabilities and project scope
 
@@ -61,6 +62,7 @@ The source policy intersects the ceiling with persisted same-role grants. It rej
 The production Cloud Run entry point now composes the authorization service and employee request router in source:
 
 - Functional PostgreSQL-backed source routes: dashboard, search, project list, exact-project view, client list, and logout.
+- Conditionally composed employee-login routes: Google OIDC initiation and callback, durable invitation/identity resolution, security-audit evidence, and secure session-cookie issuance. Missing OIDC configuration keeps the routes unavailable.
 - File list/upload/share, Gmail filing, and Calendar creation routes pass through session, capability, CSRF, and exact-project gates, but return `503 feature_unavailable` because no production file or Google provider action adapters are composed.
 - File upload/share, Gmail, and Calendar callbacks cannot run after a denial. No route trusts the Sites `oai-authenticated-user-email` header or includes a fake production identity.
 - Health/readiness behavior, drain handling, and migration-command separation remain intact.
@@ -79,8 +81,8 @@ These are source contracts only. They have not been applied to a database, deplo
 
 ## Explicitly deferred
 
-- Durable invitation fulfillment; Google Workspace OIDC; production session issuance, rotation, and sliding idle renewal; and live login. Invitation role and Project Manager project bindings plus the fixed role/capability seeds now exist only in unapplied source migration version 4.
-- Production composition of Management → People & Access with employee session issuance and a CSRF bootstrap. The page and API contracts exist, but there is still no live invitation fulfillment/delivery, migration/apply, or production runtime deployment.
+- Applying/configuring the merged durable invitation fulfillment, Google Workspace OIDC, and production session-issuance source; session rotation and sliding idle renewal; invitation delivery; and live login. Invitation role and Project Manager project bindings plus the fixed role/capability seeds remain only in unapplied source migrations.
+- Production composition of Management → People & Access with the employee session and a CSRF bootstrap. The page, API, OIDC, invitation-redemption, and session-issuance contracts exist, but there is still no live configuration, migration/apply, or production runtime deployment.
 - Durable hashed Field Lead link creation, delivery, lookup, revocation, and browser behavior. The snapshot evaluator is not sufficient for a route.
 - Production file/object-storage and Google Gmail/Calendar/Drive action adapters, direct Google access decisions, and provider configuration.
 - Lead/client/contact and project-operation mutation route composition beyond the approved capability ceiling.

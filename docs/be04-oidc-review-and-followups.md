@@ -1,7 +1,8 @@
 # BE-04 Workspace OIDC — post-merge security review and follow-up packets
 
-Date: July 19, 2026 · Reviews merged PR #38 ("Add Workspace OIDC employee login") at
-`main` @ `9316771` · Also records the resolved PR #41 KPI-01 test collision.
+Date: July 19, 2026 · Reviews merged PR #38 ("Add Workspace OIDC employee login") and
+PR #48 (OIDC-01 callback compatibility) on current `main` @ `4ce7bd4` · Also records the
+resolved PR #41 KPI-01 test collision.
 
 This is a Codex-ready follow-up ledger. Each packet is one agent work packet with the same
 shape as `docs/agent-plan-architecture-workspace-and-setup.md` (why / files / steps /
@@ -24,11 +25,11 @@ single-use under `FOR UPDATE` with audit in the same transaction; absent config 
 login routes `404`-identical; and grep confirms **zero** `oai-authenticated-user-email`
 reads in `app/platform`. These properties must be preserved by every packet below.
 
-**But there is one launch-blocking correctness bug and a set of hardening + test-coverage +
-doc gaps.** None is an exploitable hole in the merged code (every finding is fail-closed or
-availability/test-only), which is why merge was acceptable — but OIDC-01 must land before
-any live employee login is attempted, and the test backfill matters because BE-04 is the
-production security boundary.
+**PR #48 resolved the launch-blocking callback correctness bug.** The remaining findings
+are hardening, test-coverage, and documentation gaps. None is an exploitable hole in the
+merged code (every finding is fail-closed or availability/test-only), but OIDC-02 and
+OIDC-03 still matter because BE-04 is the production security boundary. Live login also
+remains blocked by configuration, migration/apply, deployment, and owner approval.
 
 Severity legend: **launch-blocker** (feature cannot work in production) · high · medium ·
 low. "Confirmed" = re-verified against the code for this document; "Reviewer-reported" =
@@ -38,8 +39,8 @@ fixing).
 
 ---
 
-## OIDC-01 · Accept Google's real callback parameters (launch-blocker; CONFIRMED) — DO FIRST
-**Status:** In review — draft PR #48, `codex/oidc-login-followups`, July 19, 2026.
+## OIDC-01 · Accept Google's real callback parameters (launch-blocker; CONFIRMED)
+**Status:** Complete — PR #48, July 19, 2026.
 **Why:** `employeeLoginCallbackQuery` (`app/platform/google-cloud/employee-request-router.ts`,
 ~lines 458-469) rejects the callback if **any** query key is not exactly `code` or `state`:
 `if (keys.some((key) => key !== "code" && key !== "state")) throw new
@@ -101,7 +102,7 @@ an unrelated malformed cookie is also present; the attempt-reuse decision is imp
 explicitly documented with a test or comment; `npm test` green. **Effort:** small.
 
 ## OIDC-03 · Test-coverage backfill for the new login path (medium; reviewer-reported) — medium
-**Status:** Open.
+**Status:** Open — partially satisfied by PR #48.
 **Why:** The implementation conforms to policy, but the **new** suites do not exercise the
 behaviors BE-04's own acceptance line claims, so a future regression would pass CI. Confirmed
 by grep: `tests/cloud-run-employee-login.test.mjs` and `tests/employee-oidc.test.mjs`
@@ -112,62 +113,75 @@ not touch). Reviewer-reported additional gaps, all specific and worth confirming
   nonce, so removing the nonce/exp/aud/iss/`email_verified`/alg checks would not fail any
   test (`employee-oidc.test.mjs` only covers wrong `hd`, wrong signing key, state mismatch,
   attempt expiry).
-- The router's **login-failure path** has no assertions: the denial-audit append, the
-  `403 login_not_authorized` vs `503 login_unavailable` mapping, attempt-cookie clearing,
-  and cross-origin `/session/google/start` denial are unasserted; the harness even has a
-  dead `completionError` option.
-- The persistence **denial matrix** is 4-of-8: `user_unavailable` (disabled user),
-  `invitation_email_mismatch`, `identity_conflict`, `invitation_required`,
-  `role_not_approved`, and the `23505` conflict path are implemented but untested, and there
-  is **no gated real-PostgreSQL integration test** for the new `authenticateEmployeeSession`
-  transaction (unlike the other repositories), so the `FOR UPDATE` single-use race guard
-  never runs against real PG.
-**Do:** Add tests (unit + the existing gated-PG integration pattern) covering: a realistic
-multi-param callback (shared with OIDC-01), verifier negatives (past `exp`, wrong `aud`,
-wrong `iss`, `email_verified:false`, `alg:HS256`/`none`, **nonce mismatch** — fix the stub so
-the nonce is not auto-injected, making the check falsifiable), the router failure mapping +
-denial-audit append + cross-origin start denial (use the dead `completionError` option or
-remove it), the four missing persistence denials, and a gated real-PG integration test that
-issues a session via the new path and then rejects it on idle expiry, absolute expiry, and
-logout. Do not change production code except the minimal stub fix that makes the nonce check
-testable.
+- PR #48 now covers a realistic multi-parameter callback, provider cancellation mapped to
+  a clean `403`, denial audit, attempt-cookie clearing, and duplicate `code`/`state`.
+  Remaining router coverage is retryable completion failure → `503 login_unavailable`
+  with audit + cookie clearing, and cross-origin `/session/google/start` denial.
+- The persistence **named-denial matrix is 2-of-7**, plus a distinct `23505` conflict path. Tests cover `invitation_invalid` and
+  `invitation_expired`; the five untested named reasons are `invitation_required`,
+  `invitation_email_mismatch`, `identity_conflict`, `user_unavailable`, and
+  `role_not_approved`, plus the distinct `23505` conflict outcome. There is **no gated
+  real-PostgreSQL integration test** for the new `authenticateEmployeeSession`
+  transaction, so the `FOR UPDATE` single-use race guard never runs against real PG.
+**Do:** Add tests (unit + the existing gated-PG integration pattern) covering verifier
+negatives (past `exp`, wrong `aud`, wrong string `iss`, `email_verified:false`,
+`alg:HS256`/`none`, and **nonce mismatch**; `options.claims` can already override the
+default nonce, while the signed-token helper needs configurable headers for alg cases),
+the remaining router failure mapping + audit/cookie clearing + cross-origin start denial,
+the five missing named persistence denials plus the `23505` conflict outcome, and a gated
+real-PG integration test for concurrent single-use invitation redemption. Use separately
+issued sessions to verify idle expiry, absolute expiry, and logout. Do not change
+production code except a minimal test seam if the algorithm cases require it.
 **Files:** `tests/employee-oidc.test.mjs`, `tests/cloud-run-employee-login.test.mjs`,
 `tests/postgres-employee-login-persistence.test.mjs`, plus a new gated
 `tests/*.integration.test.mjs` following the existing integration-test gating.
-**Accept:** each named negative case fails if its guard is removed (mutation-sanity: try it);
-the gated PG integration test issues-then-expires/revokes a real session; `npm test` and the
-CI PostgreSQL job green. **Effort:** medium.
+**Accept:** each named negative case fails if its guard is removed (mutation-sanity: try
+it); the gated PG integration test proves the invitation race and issues-then-expires or
+revokes real sessions; `npm test` and the CI PostgreSQL job are green. **Effort:** medium.
 
 ## OIDC-04 · Reconcile the docs the merge left stale (medium; CONFIRMED) — small
-**Status:** Open.
-**Why:** PR #38 merged touching zero docs, so merged `main` now contradicts its own
+**Status:** In progress — `codex/reconcile-post-merge-plan`, July 19, 2026.
+**Why:** PR #38 originally merged touching zero docs, and the later merge train widened
+the drift. The canonical BE-04 item now says Complete, but merged `main` still contradicts
+its own
 tracking rules (`AGENTS.md` and the plan doc require behavior changes to update their docs
-in the same PR). Confirmed: the BE-04 status line in
-`docs/agent-plan-architecture-workspace-and-setup.md` (~line 180 and the sequencing
-mentions) still reads **"In review — draft PR #38"** though it is merged; and
+in the same PR). Confirmed: sequencing and handoff passages still assign already-merged
+PRs; and
 `docs/authorization-simulation.md` still describes login/session issuance as not-yet-existing
 in places even though `employee-request-router.ts` now issues `__Host-fci_session`. The
-guard test `tests/task-tracking-docs.test.mjs` only format-checks BE-01/WS-03/TRK-01, so it
-did not catch this.
-**Do:** (1) Set the BE-04 status line to `Complete — PR #38, July 19, 2026` and fix the
-sequencing/handoff mentions in the plan doc and `docs/codex-to-codex-handoff.md`.
+root `README.md` likewise still places employee OIDC/session issuance outside the source
+boundary, and the complete architecture audit still assigns removal or typing of the
+already-removed `/api/v1/records` route. Before this packet,
+`tests/task-tracking-docs.test.mjs` only format-checked BE-01/WS-03/TRK-01, so it did not
+catch this.
+**Do:** (1) Reconcile every merged packet status and the sequencing/handoff mentions in
+the plan, `docs/codex-to-codex-handoff.md`, and the owner-facing checklist summary.
 (2) Reconcile `docs/authorization-simulation.md`: keep the approved-policy content, but
 correct any statement that a login/session-issuance route does not exist to reflect the
 merged source (note what is now implemented vs still deferred — sliding idle renewal remains
 deferred). (3) Extend `tests/task-tracking-docs.test.mjs` so a merged packet whose status
 line still says "In review"/"draft" fails CI — a lightweight rule that would have caught
-this and will catch the next one.
-**Files:** `docs/agent-plan-architecture-workspace-and-setup.md`,
+this for the explicit known-packet map. Update that map and its tracking-file list whenever
+a packet merges. (4) Reconcile the root README's production/launch boundary and mark the
+architecture audit's generic-records action resolved in source without weakening the
+separate upload warning or assistant records-only assertion.
+**Files:** `README.md`, `docs/agent-plan-architecture-workspace-and-setup.md`,
 `docs/authorization-simulation.md`, `docs/codex-to-codex-handoff.md`,
-`tests/task-tracking-docs.test.mjs`.
-**Accept:** no doc says BE-04/PR #38 is in review/draft; `authorization-simulation.md`
-matches merged source; the guard test fails on a "draft/in-review" status line for a merged
-packet, and passes on `main` after this fix; `npm test` green. **Effort:** small.
+`docs/task-checklists/README.md`,
+`docs/complete-product-and-google-cloud-architecture-audit.md`, this follow-up ledger,
+affected architecture/checklist status surfaces, and `tests/task-tracking-docs.test.mjs`.
+**Accept:** no tracking doc assigns an already-merged PR for review;
+`authorization-simulation.md` matches merged source; the explicit offline merged-packet
+map fails on a draft/in-review status for a known merged packet and passes after this fix;
+the root README distinguishes merged OIDC/role/scoping source from live activation; the
+architecture audit records PR #46's route/helper removal while preserving the assistant's
+records-only test assertion;
+`npm test` green. **Effort:** small.
 
 ---
 
 ## KPI-01-FIX · Stop the KPI stat tiles from breaking the Reports metric test (RESOLVED) — PR #41
-**Status:** Resolved on `codex/tier1-flooring-kpis`, July 19, 2026. Both complete GitHub
+**Status:** Resolved in PR #41, July 19, 2026. Both complete GitHub
 Chromium runs, both Node/build runs, and both Terraform checks pass.
 **Cause:** The pre-existing Reports test used a page-wide `.metric-card` locator, so its
 "Active projects" lookup also matched the new KPI card that intentionally shares the
@@ -182,12 +196,12 @@ and all 22 KPI-focused Playwright cases pass together; the pinned formulas in
 
 ## Recommended order for Codex
 
-KPI-01-FIX is resolved on PR #41. The remaining order is:
+KPI-01-FIX and OIDC-01 are resolved in PRs #41 and #48. The remaining order is:
 
-1. **OIDC-01** — the launch-blocker; small and self-contained; do before any live-login work.
-2. **OIDC-04** — cheap doc/guard reconciliation; removes the merged-main contradiction.
-3. **OIDC-02** then **OIDC-03** — hardening, then the test backfill (OIDC-03 shares a test
-   fixture with OIDC-01, so sequence OIDC-01 → OIDC-03).
+1. **OIDC-04** — reconcile the merge train and add the merged-status guard.
+2. **OIDC-02** — small verifier/cookie hardening with the documented attempt-reuse bound.
+3. **OIDC-03** — focused negative and PostgreSQL test backfill after OIDC-02, because the
+   two packets share employee-OIDC fixtures.
 
 OIDC-01..04 touch only Cloud Run platform + tests + docs (no FloorOpsApp), so they run in
 parallel with the FloorOpsApp queue and with the other open backend packets. None requires
