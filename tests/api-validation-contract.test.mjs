@@ -48,6 +48,7 @@ test("project creation validates string and numeric JSON fields before use", asy
   assert.match(route, /project_manager: projectManagerId,[\s\S]*project_manager_id: projectManagerId/);
   assert.match(route, /p\.flooring_category, p\.square_feet, p\.contract_value/);
   assert.match(route, /contract_value: auth\.user\.isAdmin \? record\.contract_value : null/);
+  assert.match(route, /NextResponse\.json\(\{ projects \}, \{ headers: \{ "Cache-Control": "no-store" \} \}\)/);
   assert.match(route, /!auth\.user\.isAdmin && parsed\.body\.contractValue/);
   assert.match(route, /export async function PATCH/);
   assert.match(route, /requireSameOrigin\(request\)/);

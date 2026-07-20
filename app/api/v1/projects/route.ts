@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       contract_value: auth.user.isAdmin ? record.contract_value : null,
     };
   });
-  return NextResponse.json({ projects });
+  return NextResponse.json({ projects }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {

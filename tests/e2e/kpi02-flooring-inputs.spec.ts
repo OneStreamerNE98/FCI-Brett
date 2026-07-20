@@ -68,6 +68,7 @@ test("project API validates and round-trips nullable booking inputs without leak
   expect(created.id).toBeTruthy();
 
   const adminList = await page.request.get("/api/v1/projects");
+  expect(adminList.headers()["cache-control"]).toBe("no-store");
   const adminPayload = await adminList.json() as { projects?: Array<Record<string, unknown>> };
   expect(adminPayload.projects?.find((project) => project.id === created.id)).toEqual(expect.objectContaining({
     name: projectName,
@@ -78,6 +79,7 @@ test("project API validates and round-trips nullable booking inputs without leak
 
   const officeList = await page.request.get("/api/v1/projects", { headers: officeHeaders });
   expect(officeList.ok()).toBe(true);
+  expect(officeList.headers()["cache-control"]).toBe("no-store");
   const officePayload = await officeList.json() as { projects?: Array<Record<string, unknown>> };
   expect(officePayload.projects?.find((project) => project.id === created.id)).toEqual(expect.objectContaining({
     flooring_category: "tile-stone",
