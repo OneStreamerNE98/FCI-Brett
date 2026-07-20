@@ -967,6 +967,40 @@ appears on the next provisioning; filing to `05_Correspondence / Email Archive` 
 resolves (existing Gmail file-route tests green); simulation e2e provisioning walk.
 **Effort:** medium (touches live provisioning — sequenced last deliberately).
 
+### SET-22 · Create Google files in project folders from the app (medium, after SET-17; UI half after KPI-02/#52 merges)
+**Why:** Owner request: from the projects dashboard, create a Google Doc, Sheet, or
+Slides file (the Word/Excel/PowerPoint equivalents) inside the project's Drive folder —
+blank or from a blueprint template — so the provisioned folder structure and template
+library become useful in daily work, not just at setup time.
+**Do:** (1) `POST /api/v1/projects/[projectId]/drive/files` — same-origin; office-user
+gated (routine project work, deliberately NOT admin-only like provisioning); bounded
+body `{kind: "doc"|"sheet"|"slides", name, templateKey?, folderKey?}` with validated
+name and closed kind set. Requires the project's provisioned folder mapping
+(`drive_folder_mappings`) — otherwise 409 with "provision the project folder first"
+guidance. Blank create via Drive `files.create` with the Google-native mimeType
+(document/spreadsheet/presentation) and parent = the project folder (or the blueprint
+project-subfolder named by `folderKey`); template create via Drive `files.copy` of the
+registered template file (SET-17 registry) into the target folder with the new name —
+both plain `auth/drive` operations, no new scopes. Response: file id, name, and
+open-in-Google URL. Writes an `activity_events` row and a
+`google_integration_events` `drive.file_created` event; project files are content, not
+setup resources — no `workspace_resources` rows. (2) Extend the blueprint template
+`kind` enum with `"slides"` (sanitizer + editor dropdown) so Slides templates can be
+defined too. (3) UI: "New document" action on the project drawer/dashboard — type
+picker, template picker fed from the blueprint GET, name field, success link.
+`app/FloorOpsApp.tsx` is the single-file queue: the UI half waits for KPI-02/#52 to
+release the slot; the route + tests are buildable before that. Simulation parity
+(fixture file IDs and links, same events).
+**Accept:** route tests — office non-admin allowed, cross-origin 403, unprovisioned
+project 409 with guidance, blank create for all three kinds, template copy request
+shape pinned (`files.copy` parent + name), invalid kind/name/template 400s, simulation
+branch, audit rows; blueprint sanitizer accepts `"slides"`; the never-delete suite's
+scope extends over this module (zero deletion calls); simulation e2e: provision →
+create blank Sheet + create from template → links rendered; existing provisioning and
+filing tests untouched.
+**Effort:** medium. **Depends:** SET-15 (effective config for the blank-only path),
+SET-17 (templates), KPI-02/#52 merged for the `FloorOpsApp.tsx` slot.
+
 ---
 
 # Workstream D — Flooring KPIs & reporting (KPI)
