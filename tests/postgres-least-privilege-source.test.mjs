@@ -82,6 +82,14 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "audit_events")?.privileges,
     ["INSERT"],
   );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "leads")?.privileges,
+    ["SELECT", "INSERT", "UPDATE"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "project_meetings")?.privileges,
+    ["SELECT", "INSERT"],
+  );
   for (const deniedTable of [
     "production_schema_migrations",
     "integration_credentials",

@@ -297,6 +297,13 @@ test("composes singleton persistence repositories and request-scoped creation fa
   assert.notEqual(composition.repositories.clients(firstRequest), composition.repositories.clients(secondRequest));
   assert.notEqual(composition.repositories.projects(firstRequest), composition.repositories.projects(secondRequest));
   assert.equal(typeof composition.repositories.projects().assignManager, "function");
+  assert.notEqual(composition.repositories.leads(firstRequest), composition.repositories.leads(secondRequest));
+  assert.equal(typeof composition.repositories.leads().findById, "function");
+  assert.notEqual(
+    composition.repositories.projectMeetings(firstRequest),
+    composition.repositories.projectMeetings(secondRequest),
+  );
+  assert.equal(typeof composition.repositories.projectMeetings().listForProject, "function");
   assert.equal(composition.postgres, handle.pool);
   await composition.close();
   assert.deepEqual(events, ["pool.end", "connector.close"]);
@@ -321,6 +328,8 @@ test("creates and closes a runtime composition through injected pool dependencie
   assert.equal(config.postgres.accessMode, "runtime");
   assert.equal(typeof composition.repositories.clients, "function");
   assert.equal(typeof composition.repositories.projects, "function");
+  assert.equal(typeof composition.repositories.leads, "function");
+  assert.equal(typeof composition.repositories.projectMeetings, "function");
   assert.equal(typeof composition.repositories.outbox.claimAvailable, "function");
   assert.equal(typeof composition.repositories.securityAudit.append, "function");
   assert.equal(typeof composition.repositories.adminAccess.createInvitation, "function");

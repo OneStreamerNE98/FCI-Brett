@@ -35,6 +35,7 @@ type ClaimedOutboxRow = Record<string, unknown> & {
   event_type: unknown;
   client_id: unknown;
   project_id: unknown;
+  lead_id: unknown;
   actor_id: unknown;
   correlation_id: unknown;
   payload: unknown;
@@ -51,6 +52,7 @@ type TransitionRow = Record<string, unknown> & {
   event_type?: unknown;
   client_id?: unknown;
   project_id?: unknown;
+  lead_id?: unknown;
   actor_id?: unknown;
   correlation_id?: unknown;
   attempt_count?: unknown;
@@ -116,10 +118,29 @@ function nullableUuid(value: unknown, label: string) {
 }
 
 function outboxEventType(value: unknown): OutboxEventType {
-  if (value !== "client.created" && value !== "project.created") {
+  if (
+    value !== "client.created"
+    && value !== "project.created"
+    && value !== "lead.created"
+    && value !== "project.meeting.created"
+  ) {
     throw new Error("PostgreSQL outbox event type is not supported");
   }
   return value;
+}
+
+function validOutboxTarget(
+  eventType: OutboxEventType,
+  clientId: string | null,
+  projectId: string | null,
+  leadId: string | null,
+) {
+  return (eventType === "client.created" && Boolean(clientId) && !projectId && !leadId)
+    || (
+      (eventType === "project.created" || eventType === "project.meeting.created")
+      && Boolean(projectId) && !clientId && !leadId
+    )
+    || (eventType === "lead.created" && Boolean(leadId) && !clientId && !projectId);
 }
 
 export function deadLetterActivityId(eventId: string) {
@@ -140,10 +161,8 @@ function claimedOutboxEvent(row: ClaimedOutboxRow): ClaimedOutboxEvent {
   const eventType = outboxEventType(row.event_type);
   const clientId = nullableUuid(row.client_id, "PostgreSQL outbox client ID");
   const projectId = nullableUuid(row.project_id, "PostgreSQL outbox project ID");
-  if (
-    (eventType === "client.created" && (!clientId || projectId))
-    || (eventType === "project.created" && (!projectId || clientId))
-  ) {
+  const leadId = nullableUuid(row.lead_id, "PostgreSQL outbox lead ID");
+  if (!validOutboxTarget(eventType, clientId, projectId, leadId)) {
     throw new Error("PostgreSQL outbox event has an invalid record target");
   }
 
@@ -153,6 +172,7 @@ function claimedOutboxEvent(row: ClaimedOutboxRow): ClaimedOutboxEvent {
     eventType,
     clientId,
     projectId,
+    leadId,
     actorId: requiredText(row.actor_id, "PostgreSQL outbox actor ID"),
     correlationId: requiredText(row.correlation_id, "PostgreSQL outbox correlation ID"),
     payload: parsePostgresJsonObject(row.payload, "PostgreSQL outbox payload"),
@@ -191,10 +211,8 @@ async function appendDeadLetterActivity(
   const eventType = outboxEventType(row.event_type);
   const clientId = nullableUuid(row.client_id, "PostgreSQL dead-lettered outbox client ID");
   const projectId = nullableUuid(row.project_id, "PostgreSQL dead-lettered outbox project ID");
-  if (
-    (eventType === "client.created" && (!clientId || projectId))
-    || (eventType === "project.created" && (!projectId || clientId))
-  ) {
+  const leadId = nullableUuid(row.lead_id, "PostgreSQL dead-lettered outbox lead ID");
+  if (!validOutboxTarget(eventType, clientId, projectId, leadId)) {
     throw new Error("PostgreSQL dead-lettered outbox event has an invalid record target");
   }
   const eventKey = requiredText(row.event_key, "PostgreSQL dead-lettered outbox event key");
@@ -210,16 +228,17 @@ async function appendDeadLetterActivity(
 
   const inserted = await client.query(
     `INSERT INTO activity_events (
-       id, client_id, project_id, action, actor_id, correlation_id,
+       id, client_id, project_id, lead_id, action, actor_id, correlation_id,
        result, reason, detail, occurred_at
      ) VALUES (
-       $1, $2, $3, 'Outbox event dead-lettered', $4, $5,
-       'failed', $6, $7::jsonb, $8
+       $1, $2, $3, $4, 'Outbox event dead-lettered', $5, $6,
+       'failed', $7, $8::jsonb, $9
      )`,
     [
       activityId,
       clientId,
       projectId,
+      leadId,
       actorId,
       correlationId,
       errorCode,
@@ -286,13 +305,13 @@ export function createPostgresOutboxRepository(
              FROM candidates
              WHERE event.id = candidates.id
              RETURNING event.id, event.event_key, event.event_type,
-                       event.client_id, event.project_id, event.actor_id,
+                       event.client_id, event.project_id, event.lead_id, event.actor_id,
                        event.correlation_id, event.payload, event.available_at,
                        event.attempt_count, event.lease_expires_at,
                        event.created_at, event.version::text AS version,
                        candidates.queue_available_at, candidates.queue_created_at
            )
-           SELECT id, event_key, event_type, client_id, project_id, actor_id,
+           SELECT id, event_key, event_type, client_id, project_id, lead_id, actor_id,
                   correlation_id, payload, available_at, attempt_count,
                   lease_expires_at, created_at, version
            FROM claimed
@@ -393,7 +412,7 @@ export function createPostgresOutboxRepository(
            WHERE event.id = $1 AND event.status = 'processing'
              AND event.version = $2::bigint
            RETURNING event.id, event.event_key, event.event_type,
-                     event.client_id, event.project_id, event.actor_id,
+                     event.client_id, event.project_id, event.lead_id, event.actor_id,
                      event.correlation_id, event.attempt_count, event.status,
                      event.version::text AS version, event.available_at,
                      event.dead_lettered_at`,
@@ -481,13 +500,13 @@ export function createPostgresOutboxRepository(
              FROM candidates
              WHERE event.id = candidates.id
              RETURNING event.id, event.event_key, event.event_type,
-                       event.client_id, event.project_id, event.actor_id,
+                       event.client_id, event.project_id, event.lead_id, event.actor_id,
                        event.correlation_id, event.attempt_count, event.status,
                        event.version::text AS version, event.available_at,
                        event.dead_lettered_at,
                        candidates.expired_at
            )
-           SELECT id, event_key, event_type, client_id, project_id, actor_id,
+           SELECT id, event_key, event_type, client_id, project_id, lead_id, actor_id,
                   correlation_id, attempt_count, status, version, available_at,
                   dead_lettered_at
            FROM recovered

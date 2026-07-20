@@ -22,19 +22,19 @@ export async function GET(request: NextRequest) {
   const google = getGoogleRuntimeConfig();
   const workspace = google.drive;
   const connection = await getGoogleConnectionStatus(google);
-  const requirements = [
-    ...google.missing.map((label) => [label, undefined] as const),
-    ["FCI administrator allowlist", (env as unknown as Record<string, string | undefined>).FCI_ADMIN_EMAILS],
+  const adminAllowlist = (env as unknown as Record<string, string | undefined>).FCI_ADMIN_EMAILS;
+  const missingDetails = [
+    ...google.missingDetails,
+    ...(!adminAllowlist ? [{ label: "FCI administrator allowlist", envVar: "FCI_ADMIN_EMAILS", secret: false }] : []),
   ];
-  const missing = [
-    ...requirements.filter(([, value]) => !value).map(([label]) => label),
-  ];
+  const missing = missingDetails.map((detail) => detail.label);
   const credentialsPresent = google.oauthReady && Boolean((env as unknown as Record<string, string | undefined>).FCI_ADMIN_EMAILS);
   return NextResponse.json({
     configured: credentialsPresent,
     credentialsPresent,
     connected: connection.connected,
     missing,
+    missingDetails,
     workspace: {
       mode: workspace.mode,
       runtimeMode: google.environment,
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       broadScopeAcknowledged: google.broadScopeAcknowledged,
     },
     blueprint: DRIVE_BLUEPRINT,
-    requiredEnvironment: requirements.map(([label]) => label),
+    requiredEnvironment: missingDetails.map((detail) => detail.label),
     nextStep: google.simulation ? "Local Workspace simulation is ready. No Google account is connected and no data is sent to Google." : connection.requiresReauthorization ? "Reconnect the approved Workspace account and approve every selected service." : connection.connected ? "Google Workspace services are connected." : credentialsPresent ? "An FCI administrator can now connect Google Workspace." : "Add the missing Workspace configuration values before authorizing Google.",
   });
 }

@@ -41,15 +41,17 @@ test("Office identity sees every protected Settings action disabled and explaine
   await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
   for (const action of [
     "Reset simulation data",
+    "Verify Shared Drive",
     /FCI labels$/,
     "View inbox",
     "Add sample email",
     "View upcoming events",
     "Create test hold",
+    "Sync now",
   ]) {
     await expect(page.getByRole("button", { name: action })).toBeDisabled();
   }
-  await expect(page.locator(".administrator-action-note")).toHaveCount(6);
+  await expect(page.locator(".administrator-action-note")).toHaveCount(8);
 
   await page.locator(".settings-nav").getByRole("button", { name: "Client Directory", exact: true }).click();
   await expect(page.getByRole("button", { name: "Sync now" })).toBeDisabled();

@@ -117,6 +117,10 @@ SET-02 has passed source acceptance in draft PR #37 on `codex/settings-admin-gat
 
 PR #34, which adds the KPI-01–KPI-04 workstream, is merged. BE-02 + BE-13 are in review with green checks in PR #36. BE-04 is in review in draft PR #38 on `codex/workspace-oidc-login`, with local acceptance and all GitHub checks green. WS-04 + WS-12 are in review in PR #39 on `codex/workspace-rotation-sync-contracts`, with local acceptance and all GitHub checks green. All remain source-only and none authorizes live identity, provider resources, infrastructure, migration/apply, or deployment.
 
+BE-06 is in review in draft PR #42 on `codex/leads-meetings-postgres-v6`. It preserves the current D1 lead/project-meeting routes behind ports, appends checksummed source-only PostgreSQL migration v6, adds transactional PostgreSQL adapters plus expanded idempotency/outbox/readiness/grants, and leaves BE-09 production route composition and BE-12 rehearsal expansion open. Local `npm test` passes 355 active tests with 13 expected PostgreSQL-gated skips; lint and both builds pass. No migration, grant, database, hosted configuration, or deployment was applied.
+
+BE-03 is in review in draft PR #46 on `codex/retire-legacy-records`. It deletes the unused generic `/api/v1/records` route and its unreferenced `actorFrom` helper while preserving the assistant's unrelated records-only answer mode and its test assertion. No D1 or Drizzle history changed, no stored data was removed, and BE-12 must classify the retained legacy table as `records: excluded (legacy, no migration)`.
+
 ## Recommended next worker assignments
 
 The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. The next local sequence does not require Brett's Workspace or Cloud input:
@@ -124,6 +128,7 @@ The owner completed the flagged hosted project-manager correction on July 18, 20
 1. Review and merge SET-02 draft PR #37. Once it lands, KPI-01 is the next `FloorOpsApp.tsx` packet and needs no Brett input; do not overlap it with another packet touching that file.
 2. Review BE-02 + BE-13 PR #36, BE-04 draft PR #38, and WS-04 + WS-12 PR #39. Keep the latter contracts/fakes source-only; do not activate Scheduler, watches, channels, delivery, live identity, or provider resources.
 3. After SET-02 lands, SET-03/SET-04 may proceed within the extracted Settings boundary while KPI-01 owns `FloorOpsApp.tsx`. Local migration fixtures also remain independent and must not create or use staging.
+4. Review BE-06 draft PR #42. Its GitHub PostgreSQL 16 checks must pass before merge; migration v6 and grants remain source-only, and BE-09/BE-12 stay separate follow-on packets.
 
 Build `codex/admin-field-links` only when field assignments are scheduled. It needs a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.
 

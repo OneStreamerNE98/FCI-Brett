@@ -13,12 +13,15 @@ const operationsRoutes = [
   "/assistant",
   "/reports",
   "/settings",
+  "/settings?section=google-workspace",
   "/settings?section=inbox-rules",
   "/management/access",
 ] as const;
 
 for (const route of operationsRoutes) {
   test(`${route} has no serious or critical accessibility violations at desktop and 390px`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+
     if (route === "/") {
       await page.route("**/api/v1/leads", async (requestRoute) => {
         if (requestRoute.request().method() === "GET") {
@@ -54,6 +57,7 @@ for (const route of operationsRoutes) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       await page.goto(route);
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await page.waitForLoadState("networkidle");
       const actionableListName = route === "/"
         ? "Lead pipeline records"
         : route === "/clients"

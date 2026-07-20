@@ -10,9 +10,3 @@
 export async function ensureWorkspaceSchema() {
   // Schema readiness is a deployment/startup responsibility, not a request concern.
 }
-
-export function actorFrom(headers: Headers) {
-  const actor = headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
-  if (!actor) throw new Error("Authenticated office user is required");
-  return actor;
-}

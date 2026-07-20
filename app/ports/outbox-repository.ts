@@ -1,4 +1,9 @@
-export const OUTBOX_EVENT_TYPES = ["client.created", "project.created"] as const;
+export const OUTBOX_EVENT_TYPES = [
+  "client.created",
+  "project.created",
+  "lead.created",
+  "project.meeting.created",
+] as const;
 
 export type OutboxEventType = typeof OUTBOX_EVENT_TYPES[number];
 
@@ -10,6 +15,7 @@ export type ClaimedOutboxEvent = {
   eventType: OutboxEventType;
   clientId: string | null;
   projectId: string | null;
+  leadId: string | null;
   actorId: string;
   correlationId: string;
   payload: OutboxPayload;
