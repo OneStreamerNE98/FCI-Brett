@@ -117,5 +117,5 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
   assert.match(designLedger, /LeadStatusPanel.*intentionally remain a static list/);
   assert.match(executionLedger, /KPI-01[\s\S]+Complete — PR #41, July 19, 2026/);
   assert.match(executionLedger, /FloorOpsApp single-file queue[\s\S]+now KPI-02 → KPI-03/);
-  assert.match(executionLedger, /KPI-02[\s\S]+In progress — `codex\/kpi02-flooring-inputs`, July 19, 2026/);
+  assert.match(executionLedger, /KPI-02[\s\S]+In review — open draft PR #52 from `codex\/kpi02-flooring-inputs`, July 20, 2026\. Source-only and undeployed\./);
 });
