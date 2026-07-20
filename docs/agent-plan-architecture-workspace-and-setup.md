@@ -590,6 +590,21 @@ state is re-derivable at cutover (drive_folder_mappings/gmail_file_archives via
 appProperties) vs discardable (oauth attempts, sync state).
 **Accept:** both docs updated; checklist 07 links them.
 
+### WS-14 · OWNER — Calendar-management scope review and consent re-grant (small, after WS-02; gates SET-20)
+**Why:** Dashboard calendar creation needs `https://www.googleapis.com/auth/calendar`
+(`calendars.insert`/`calendarList.list`), which the current consent does not hold
+(`calendar.events` only). Adding it is a consent-surface expansion the owner must
+approve under checklist-02 scope-review discipline; the app never widens consent
+silently. See [dashboard workspace setup design](dashboard-workspace-setup-design.md).
+**Do (owner, guided):** Review the scope-addition rationale (calendar creation and
+listing from the setup dashboard); confirm the connector OAuth client's consent screen
+lists the calendar scope (the two OAuth clients are never merged); set
+`GOOGLE_WORKSPACE_CALENDAR_MANAGEMENT=true` in hosted configuration; disconnect and
+reconnect Workspace from Settings, approving the new consent; confirm the SET-10 health
+card shows the scope granted.
+**Accept:** connection status shows `auth/calendar` granted; the audit trail records one
+reauthorization pair; no other scope changed; checklist-02 row checked with a date.
+
 ---
 
 # Workstream C — Settings/Setup UI alignment (SET)
@@ -664,12 +679,14 @@ response body.
 ### SET-05 · Saved calendar IDs become runtime-authoritative with visible source (medium, after SET-01)
 **Why:** The Calendar panel saves IDs that runtime ignores (env vars win) — accepted
 direction in three docs; **coordinate with BE-07** (which ports the storage later).
-**Do:** New `app/lib/workspace-effective-config.ts`: `resolveEffectiveCalendarIds` —
-saved-value precedence, env fallback. Consume in calendar events + test-hold routes.
+**Do:** Consume SET-13's `app/lib/workspace-effective-config.ts` resolver (do not
+create the file) in the calendar events + test-hold routes.
 Extend GET /api/v1/google-workspace with per-calendar configured+source. Panel shows "In
 use (saved setting)" / "In use (environment value — saving here will override it)" /
 "Not configured". Update rollout guide Part 10 + checklist 03 (env = bootstrap, settings =
-authoritative).
+authoritative). Add `POST /api/v1/integrations/google/calendar/verify` (events.list
+probe with the current `calendar.events` scope; adopt-by-ID into the SET-13 registry).
+After SET-13.
 **Accept:** route tests for all three states; panel strings correct; docs updated.
 
 ### SET-06 · Truthful labels for persisted-but-inert settings and review-first rules (small, after SET-01)
@@ -739,6 +756,8 @@ unconfigured state dead-ends at a panel with no sheet-ID field (it's env-only).
 into a shared callable); on unconfigured, name the env var and link to SET-04's
 prerequisites table instead of the dead-end button; Sync now stays admin-gated; show
 lastSyncedAt/lastError exactly as returned — no derived freshness claims.
+Once SET-16 lands, the unconfigured state points to the Workspace-setup spreadsheets
+action instead of naming the env var (env stays documented as fallback).
 **Accept:** refresh works without reload; failures show the notice and never block CRM
 data; unconfigured state names `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID`.
 
@@ -751,6 +770,202 @@ indicators, NO buttons; identical render regardless of backend state (there is n
 card cross-links the simulation reset. Code comment: replace, don't augment, when real
 endpoints exist. No docs-path links in UI copy.
 **Accept:** cards render invariantly; existing safeguards text + install panel unchanged.
+
+### SET-13 · Workspace resource registry + effective-config layer + resources card (large, after SET-03+04 and after SET-10 lands) — FIRST in the dashboard-setup feature
+**Why:** Owner-approved direction ([design doc](dashboard-workspace-setup-design.md)):
+dashboard-created resource IDs persist app-side and become runtime-authoritative with
+env fallback and a visible source badge. Today `authorize` gates on `oauthReady`, which
+requires resource-ID env vars — so nothing can be created from the dashboard because
+you cannot connect first. Generalizes SET-05's accepted resolver pattern to all four
+resource IDs.
+**Do:** (1) Append-only D1 migration (next unused number) creating `workspace_resources`
+per the design doc §1, plus adapter `app/adapters/d1/workspace-resources.ts`
+(list/upsert on the unique connection+type+key index). (2) New pure
+`app/lib/workspace-effective-config.ts`: `resolveEffectiveWorkspaceResources` (app > env
+> none, source-tagged) and `applyEffectiveWorkspaceConfig` (filters — never rewrites —
+the four resource-ID `missingDetails` entries when app-satisfied; recomputes
+`missing`/`oauthReady`; adds `connectReady` = nothing missing outside the resource-ID
+set). `getGoogleRuntimeConfig` stays byte-for-byte untouched. (3) Async
+`getEffectiveGoogleRuntimeConfig()` composition in `app/lib/google-oauth-sites.ts`.
+(4) The authorize route gates on `connectReady` (deliberate change; replace its pinned
+tests mutation-sensitively: new allow + retained OAuth-client/secret denials). (5) New
+admin `GET /api/v1/integrations/google/setup/resources` (registry+env+blueprint status,
+no Google calls). (6) "Workspace setup → Resources" card skeleton in
+`GoogleWorkspacePanel.tsx` (status rows, state chips, source badges; action buttons
+arrive with later packets). (7) Simulation reset deletes simulation registry rows.
+**Accept:** resolver unit matrix (all source×presence combinations, `connectReady`
+split, filter-not-rewrite); a pin test proving base `getGoogleRuntimeConfig` output
+unchanged on a fixture env; authorize connects with resource IDs absent but still 409s
+on missing client ID/secret; resources GET 403 for non-admins and contains no secret
+values; migration guard updated; simulation e2e reset round-trip. All existing
+`missingDetails`/readiness pins pass unmodified except the authorize-gate cases.
+**Effort:** large. **Coordinates:** SET-05 (consumer), SET-09 (card order), BE-07/BE-08
+(storage port later).
+
+### SET-14 · Workspace blueprint: model, seed, persistence, structured editor (large, after SET-13)
+**Why:** Owner requirement: the folder tree, spreadsheets, templates, and setup
+attributes must be owner-definable in the dashboard, not hardcoded; `DRIVE_BLUEPRINT`
+becomes the seed of a versioned, persisted blueprint the setup engine consumes.
+**Do:** Append-only D1 migration creating `workspace_blueprints` (one current row per
+connection, `version`, `blueprint_json`); `app/lib/workspace-blueprint.ts` with the
+types, `seedWorkspaceBlueprint()` built from the `DRIVE_BLUEPRINT` literals, and
+`sanitizeWorkspaceBlueprint()` enforcing the system/owner rule set, slug-key format,
+depth ≤ 2, count bounds (≤50 folders, ≤20 templates, ≤10 spreadsheets), naming-token
+validation ({code} {name} {number} {year}), and `targetFolderKey` referential integrity
+— system-node mutation returns 400 naming the exact path (system set per the design
+doc: `99_Unsorted Intake`, the `05_Correspondence` subtree, the client-directory
+spreadsheet entry, `FCI/*` labels, calendar keys). `GET`/`PUT
+/api/v1/integrations/google/setup/blueprint` (expectedVersion optimistic concurrency,
+409 on conflict, `setup.blueprint_updated` event with change summary). Blueprint editor
+card: structured folder tree (add/rename/remove owner nodes; lock badges with reason
+tooltips on system nodes), Templates/Spreadsheets list forms with target-folder
+dropdowns, Business-attributes form (display name, naming patterns with token legend,
+calendar defaults), "Planned" rows for later catalog items, explicit Save. Migrate
+`resolveDriveWorkspace` storage name + Gmail labels prepare to read the (identical)
+seed values. Simulation reset deletes the simulation blueprint row.
+**Accept:** sanitizer matrix (system-path 400s, bounds, tokens, references); seed ≡
+legacy `DRIVE_BLUEPRINT` pin; PUT version-conflict 409; bounded-body rejection; editor
+e2e (rename owner folder + add template + locked `05_Correspondence` attempt → Save →
+GET reflects version+1); office user sees no editor; reset restores seed.
+**Effort:** large.
+
+### SET-15 · Shared Drive adopt/verify + blueprint-driven root folder tree + rename (medium, after SET-14)
+**Why:** Owner starter set: Shared Drive adopt/verify plus the standard folder tree —
+now blueprint-driven, so next year's folder is a dashboard edit, not a code change.
+Shared Drive creation stays manual in checklist 01 (adoption covers the real path).
+**Do:** `GoogleDriveClient.getSharedDrive`/`findSharedDriveByName` (`drives.get`/
+`drives.list`, existing `auth/drive` scope; surface `restrictions` for the
+external-sharing verification chip). `POST /api/v1/integrations/google/drive/shared-drive/adopt`
+(ID verify-adopt with `env-adopted` origin for env-sourced values; name search from
+`blueprint.drive.sharedDriveName`; zero matches → 404 with checklist guidance; multiple
+→ 409 with candidates for explicit re-POST). `POST .../drive/folders/ensure-roots`
+iterating blueprint roots (children included) with `getOrCreateFolder` identity
+`fciRootKey=<node.key>` + `reuseByName` (adopts and stamps same-name manual folders);
+setup lease `<connectionKey>:setup:drive-roots`. `POST .../drive/folders/rename`
+(owner-managed keys only, 400 for system keys; updates the Drive name and the blueprint
+node atomically; `setup.folder_renamed` event). Migrate `drive/verify` and the project
+provisioning route to effective config. Wire Resources-card rows and buttons.
+Simulation parity throughout.
+**Accept:** mocked route tests for adopt-by-ID/by-name/zero/multi branches, rename
+system-key 400, lease-conflict 409, non-admin and cross-origin 403s; ensure-roots is
+idempotent (second run all `found`) and blueprint-driven (a fixture-blueprint folder
+gets created); adopting flips `drive/verify` to the app-sourced ID with env unset;
+simulation e2e adopt → ensure → rename journey; audit events asserted in D1.
+**Effort:** medium.
+
+### SET-16 · Spreadsheets: system client-directory + owner-defined extras (medium, after SET-15)
+**Why:** `google-sheets.ts` maintains tabs/rows but cannot create workbooks — today the
+owner hand-creates the directory sheet and records an env var; and the blueprint now
+lets the owner define additional spreadsheets.
+**Do:** `POST /api/v1/integrations/google/sheets/ensure` iterating
+`blueprint.spreadsheets`: find by `appProperties {fciResourceKind:<key>}` within the
+Shared Drive → else Drive `files.create` with the spreadsheet mimeType under the target
+folder (Drive scope; no new scopes). For the system `client-directory` entry only, run
+`prepareGoogleDirectorySpreadsheet` (new thin export over `ensureSheetTabs` +
+`ensureHeaders`, no row sync). Registry rows; `setup.spreadsheets_ensured` (+
+created/adopted detail) events. Migrate `sheets/status` + `sheets/sync` to effective
+config with the source surfaced in the status payload
+(`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` becomes fallback). Resources-card rows;
+Step-5 unconfigured copy points here.
+**Accept:** create and adopt branches (mocked); created file carries the identity
+`appProperties`; ensure is idempotent; an owner-defined extra spreadsheet in a fixture
+blueprint is created without tab preparation; the mirror runs against the app-managed
+ID and env fallback is labeled; simulation e2e; existing sheet-sync tests untouched.
+**Effort:** medium.
+
+### SET-17 · Templates: blueprint-driven ensure with seed content (medium, after SET-15; parallel with SET-16)
+**Why:** Owner starter set: Doc/Sheet templates in a Templates folder, created via Drive
+upload-conversion — no new scopes, no Docs API — with the template list owner-definable.
+**Do:** `app/lib/workspace-templates.ts`: five seed template bodies (HTML for
+`estimate-proposal`, `installation-work-order`, `change-order`,
+`pre-install-checklist`; CSV for `project-budget`) rendered with
+`business.displayName` and the closed token legend; a minimal titled-shell generator
+for owner-added templates (definition lives in the blueprint, content is authored in
+Google afterward). Extend `GoogleDriveClient` multipart upload so metadata `mimeType`
+(Google-native target) may differ from the media content type (Drive upload-conversion
+under the held `auth/drive` scope), preserving `findOrUploadManagedFile` idempotency.
+`POST /api/v1/integrations/google/drive/templates/ensure` — ensures the Templates
+folder (identity `fciFolderKind='templates'`), then iterates `blueprint.templates` with
+`fciTemplateKey` identities; setup lease; registry rows; `setup.templates_ensured`
+event; Resources-card rows with Open links. Simulation parity.
+**Accept:** conversion request shape pinned (metadata target type + media source type);
+per-template idempotency (second run finds, no re-upload); an owner-added blueprint
+template gets a shell file; the five-slug seed set is pinned so additions are
+deliberate; template content contains no secrets or env values; simulation e2e.
+**Effort:** medium.
+
+### SET-18 · Reconcile & drift maintenance (medium, after SET-15+16+17)
+**Why:** Owner requirement: blueprint edits after resources exist must drive a drift
+view — defined-but-missing offers create; removed-from-blueprint is shown unmanaged and
+is **never deleted**.
+**Do:** `POST /api/v1/integrations/google/setup/reconcile` — Google reads only (root
+children + Templates children via identity `appProperties`, registered
+sheets/calendars); computes key-matched drift with states `missing` (action: create via
+the relevant ensure route), `renamed` (actions: rename-in-Drive via
+`/drive/folders/rename`, or adopt-name-into-blueprint via blueprint PUT; system keys
+offer rename-in-Drive only), and `unmanaged` (identity-stamped items whose key left the
+blueprint, or unstamped items inside a managed root — informational, optional re-add,
+no destructive action). `setup.reconcile_run` event with drift counts. Reconcile card
+with the drift table, per-row actions, and an in-sync empty state. Simulation drift
+fixtures.
+**Accept:** drift matrix against mocked Drive listings; **a mutation-sensitive suite
+records every outbound Google call across all setup modules and asserts zero deletion
+endpoints/methods**; renamed system key offers rename-drive only; e2e: blueprint-add →
+missing → create → in-sync, and blueprint-remove → unmanaged with the resource still
+present.
+**Effort:** medium.
+
+### SET-19 · Domain & tenant guided checklist card (small, after SET-13; parallel with SET-14)
+**Why:** Owner decision: Admin-console/DNS/OAuth/API-enablement/secrets/Groups stay
+manual; the dashboard should guide them with instructions, external deep links, and
+safe verification instead of dead-ends.
+**Do:** Guided checklist card in `GoogleWorkspacePanel.tsx` (shown before connection,
+collapsible after): rows for domain verification, operations account, API enablement,
+OAuth client + redirect URI, hosted secrets, role-aligned Google Groups — each one
+instruction sentence, an external console deep link (`admin.google.com`,
+`console.cloud.google.com/apis/credentials`), and a verification chip computed only
+from existing payloads (SET-04 `missingDetails` presence, connection GET,
+`connectReady`, and the SET-15 Shared Drive `restrictions` chip once available). No new
+endpoints; no repo-doc links in UI copy; presence/absence only, never values.
+**Accept:** rendered tests across unconfigured/partial/connectReady mocked states;
+grep-verified zero new routes and no env values in markup; non-admin variant renders
+informational copy only.
+**Effort:** small.
+
+### SET-20 · Calendar create-or-adopt behind the granted-scope gate (medium, after SET-05 + WS-14)
+**Why:** `calendars.insert`/`calendarList.list` require `auth/calendar`, which the
+consent does not hold; creation sits behind the owner's WS-14 scope review, while
+verify/adopt-by-ID lands earlier via amended SET-05.
+**Do:** `GOOGLE_WORKSPACE_CALENDAR_MANAGEMENT=true` opt-in elevates the requested
+calendar scope at the next Connect (absence valid; only an invalid value joins
+`missingDetails`); superset mapping in `assertGrantedGoogleServiceScopes` so a granted
+`auth/calendar` satisfies the `calendar.events` requirement (without it reconnect
+breaks). `POST /api/v1/integrations/google/calendar/ensure`: hard 409 naming the
+required scope unless the stored connection's granted scopes include `auth/calendar`;
+find-by-summary from the blueprint calendar names → adopt, else `calendars.insert`;
+registry + `setup.calendar_created` events; created IDs become runtime-authoritative
+through the resolver. Resources-card calendar rows un-gate from the connection GET's
+granted scopes. Simulation grants everything.
+**Accept:** scope-gate 409 names the exact scope; without the flag the requested scopes
+are byte-identical to today (pin); superset mapping keeps reconnect tests green;
+create/adopt branches mocked; simulation e2e.
+**Effort:** medium.
+
+### SET-21 · Project/client provisioning consumes the blueprint (medium, after SET-15) — LAST in the dashboard-setup feature
+**Why:** Per-project/client provisioning must consume the blueprint's folder sets and
+naming patterns, or "add a project subfolder" still needs a code change.
+**Do:** `buildProjectFolderPlan` + `provisionProjectFolders` consumers read
+`blueprint.drive.clientFolders`/`projectFolders` and `naming.*` patterns (token
+substitution; the sanitizer guarantees the system `05_Correspondence` subtree
+survives); child-folder identities move to blueprint keys (existing stamps remain
+valid — additive properties, no re-stamping); reduce `DRIVE_BLUEPRINT` to the seed
+literal inside `workspace-blueprint.ts`; keep `resolveManagedProjectFolderPath`
+compatible.
+**Accept:** provisioning against the seed blueprint is behavior-identical (pin: same
+folder names/paths as today for a fixture project); a blueprint-added project subfolder
+appears on the next provisioning; filing to `05_Correspondence / Email Archive` still
+resolves (existing Gmail file-route tests green); simulation e2e provisioning walk.
+**Effort:** medium (touches live provisioning — sequenced last deliberately).
 
 ---
 
