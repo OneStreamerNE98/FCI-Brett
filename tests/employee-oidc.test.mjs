@@ -20,6 +20,7 @@ const {
   EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME,
   EMPLOYEE_OIDC_ATTEMPT_LIFETIME_MS,
   createEmployeeOidcClient,
+  readEmployeeOidcAttemptCookie,
 } = await vite.ssrLoadModule("/app/platform/google-cloud/employee-oidc.ts");
 
 after(async () => {
@@ -213,6 +214,57 @@ test("employee OIDC rejects a signed token whose hosted-domain claim is not exac
     assert.equal(error.retryable, false);
     return true;
   });
+});
+
+test("employee OIDC rejects non-string issuer claims before allowlist matching", async () => {
+  for (const issuer of [["https://accounts.google.com"], 7, null]) {
+    const setup = initiatedClient({ claims: { iss: issuer } });
+    await assert.rejects(completes(setup), (error) => {
+      assert.equal(error.name, "EmployeeOidcFailure");
+      assert.equal(error.reason, "token_invalid");
+      return true;
+    });
+  }
+});
+
+test("employee OIDC ignores malformed unrelated cookies while keeping the attempt cookie strict", async () => {
+  const setup = initiatedClient();
+  const attempt = attemptCookieValue(setup.initiation.attemptCookie);
+  const request = {
+    headers: {
+      cookie:
+        `analytics; bar=; =nameless; ; ${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}=${attempt}; theme=dark`,
+    },
+  };
+
+  const parsedAttempt = readEmployeeOidcAttemptCookie(request);
+  assert.equal(parsedAttempt, attempt);
+  const completion = await completes(setup, { attemptCookie: parsedAttempt });
+  assert.equal(completion.identity.subject, SUBJECT);
+
+  assert.equal(
+    readEmployeeOidcAttemptCookie({
+      headers: { cookie: "analytics; bar=; =nameless; ; theme=dark" },
+    }),
+    null,
+  );
+  for (const cookie of [
+    EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME,
+    `${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}=`,
+    `${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}=${attempt}; `
+      + `${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}=${attempt}`,
+    `${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}=${attempt}; `
+      + EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME,
+    `${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}=${attempt}; `
+      + `${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}=`,
+    `${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}; `
+      + `${EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME}=${attempt}`,
+  ]) {
+    assert.throws(
+      () => readEmployeeOidcAttemptCookie({ headers: { cookie } }),
+      (error) => error.name === "EmployeeOidcFailure" && error.reason === "attempt_invalid",
+    );
+  }
 });
 
 test("employee OIDC rejects a token whose signature does not match Google's fixed JWKS", async () => {
