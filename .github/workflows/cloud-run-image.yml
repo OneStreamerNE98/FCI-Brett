@@ -1,0 +1,102 @@
+name: Cloud Run image build
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Protected GitHub environment and Artifact Registry target
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      publish:
+        description: Publish the commit image after the protected-environment approval
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-run-image-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build source image without publishing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build Cloud Run image
+        run: docker build --file Dockerfile.cloud-run --tag "fci-cloud-run-source:${GITHUB_SHA}" .
+
+  publish:
+    name: Publish immutable commit image
+    if: github.event_name == 'workflow_dispatch' && inputs.publish == true && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: fci-cloud-run-image-${{ inputs.target_environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Select the environment repository
+        id: image
+        shell: bash
+        run: |
+          if [[ "${{ inputs.target_environment }}" == "production" ]]; then
+            stage_code="prd"
+          else
+            stage_code="stg"
+          fi
+          repository="fci-ops-${stage_code}-app"
+          image_uri="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${repository}/fci:${GITHUB_SHA}"
+          echo "registry=${GCP_REGION}-docker.pkg.dev" >> "$GITHUB_OUTPUT"
+          echo "image_uri=${image_uri}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the reviewed commit
+        run: docker build --file Dockerfile.cloud-run --tag "${{ steps.image.outputs.image_uri }}" .
+
+      - name: Authenticate keylessly as the image publisher
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_IMAGE_PUBLISHER_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_lifetime: 300s
+          create_credentials_file: false
+          export_environment_variables: false
+
+      - name: Sign in to Artifact Registry
+        shell: bash
+        run: |
+          printf '%s' '${{ steps.auth.outputs.access_token }}' |
+            docker login -u oauth2accesstoken --password-stdin "https://${{ steps.image.outputs.registry }}"
+
+      - name: Publish the reviewed commit
+        shell: bash
+        run: |
+          docker push "${{ steps.image.outputs.image_uri }}"
+          digest="$(docker inspect --format='{{index .RepoDigests 0}}' '${{ steps.image.outputs.image_uri }}')"
+          echo "Published immutable candidate: ${digest}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Confirm release boundary
+        run: |
+          echo "This workflow published an image only." >> "$GITHUB_STEP_SUMMARY"
+          echo "It did not apply Terraform, deploy Cloud Run, or execute a Job." >> "$GITHUB_STEP_SUMMARY"

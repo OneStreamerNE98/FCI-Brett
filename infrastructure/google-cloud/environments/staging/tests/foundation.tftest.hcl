@@ -69,6 +69,16 @@ run "default_switch_creates_nothing" {
     condition     = output.planning.enabled_service_count == 0 && output.planning.optional_service_count == 0
     error_message = "A disabled staging root must declare no Google APIs or resources."
   }
+
+  assert {
+    condition = (
+      output.planning.deployment_identity == false &&
+      output.planning.cloud_run_planned == false &&
+      output.planning.migration_job_planned == false &&
+      output.planning.rehearsal_job_planned == false
+    )
+    error_message = "Every deployment identity, service, and Job definition must remain absent by default."
+  }
 }
 
 run "standalone_profile_is_zonal_and_bounded" {
@@ -154,6 +164,12 @@ run "immutable_service_plan_uses_separate_gate" {
   command = plan
 
   variables {
+    deployment_config = {
+      enable_identity                       = true
+      workload_identity_principal           = "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/fci-github/attribute.repository_id/1298731126"
+      verified_provider_attribute_condition = "assertion.repository_id == '1298731126' && assertion.ref == 'refs/heads/main' && assertion.environment == 'fci-cloud-run-image-staging'"
+    }
+
     cloud_run_config = {
       deploy_service           = true
       image                    = "us-central1-docker.pkg.dev/fci-staging-test/fci-ops-stg-app/fci@sha256:0000000000000000000000000000000000000000000000000000000000000000"
@@ -175,5 +191,56 @@ run "immutable_service_plan_uses_separate_gate" {
   assert {
     condition     = output.planning.cloud_run_planned == true
     error_message = "A separately approved immutable image should enter the Cloud Run plan."
+  }
+}
+
+run "staging_jobs_use_independent_definition_gates" {
+  command = plan
+
+  variables {
+    deployment_config = {
+      enable_identity                       = true
+      workload_identity_principal           = "principalSet://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/fci-github/attribute.repository_id/1298731126"
+      verified_provider_attribute_condition = "assertion.repository_id == '1298731126' && assertion.ref == 'refs/heads/main' && assertion.environment == 'fci-cloud-run-image-staging'"
+    }
+
+    cloud_run_config = {
+      deploy_service           = false
+      image                    = "us-central1-docker.pkg.dev/fci-staging-test/fci-ops-stg-app/fci@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      runtime_database_user    = ""
+      postgres_secret_version  = ""
+      cpu                      = "1"
+      memory                   = "512Mi"
+      request_concurrency      = 40
+      min_instances            = 0
+      max_instances            = 2
+      runtime_pool_max         = 5
+      overlapping_revisions    = 2
+      migration_connections    = 1
+      rehearsal_connections    = 1
+      admin_monitoring_reserve = 10
+    }
+
+    cloud_run_jobs = {
+      deploy_migration_job              = true
+      deploy_rehearsal_job              = true
+      migration_database_user           = "fci_migration_login"
+      migration_role                    = "fci_migration"
+      migration_postgres_secret_version = "2"
+      rehearsal_database_user           = "fci_rehearsal_login"
+      rehearsal_postgres_secret_version = "3"
+      rehearsal_schema                  = "fci_rehearsal_owner_202607"
+      rehearsal_snapshot_bucket         = "fci-staging-test-snapshots"
+      rehearsal_snapshot_object         = "approved/core-rehearsal.json"
+    }
+  }
+
+  assert {
+    condition = (
+      output.planning.deployment_identity &&
+      output.planning.migration_job_planned &&
+      output.planning.rehearsal_job_planned
+    )
+    error_message = "Approved staging inputs should add the keyless publisher and both Job definitions without executing them."
   }
 }

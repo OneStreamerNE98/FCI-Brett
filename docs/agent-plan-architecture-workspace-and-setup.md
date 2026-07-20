@@ -314,10 +314,10 @@ Retry-After + security-audit event; configurable via production-config, fail-clo
 defaults. Dev: light fixed-window per office user on the four cost routes. Document.
 **Accept:** threshold tests (429 + audit event); under-threshold byte-identical.
 
-### BE-11 · Deployment mechanism source definitions (medium; authoring unblocked, apply owner-gated)
-**Why:** The migration runbook declares an implementation blocker: no Cloud Run Job,
-deployment identity, image-build pipeline, or release mechanism exists in source, yet the
-roadmap assumes staging rehearsal can execute.
+### BE-11 · Deployment mechanism source definitions (medium; source acceptance complete in draft PR #47, unmerged and unapplied; apply owner-gated)
+**Why:** The migration runbook previously declared an implementation blocker: no Cloud
+Run Job, deployment identity, image-build pipeline, or release mechanism existed in
+source, yet the roadmap assumes staging rehearsal can execute.
 **Do:** Extend `infrastructure/google-cloud/` with Artifact Registry, deployment service
 account, Cloud Run service (deploy_service default false, zero min instances, max two),
 and Jobs for `run-migrations.mjs` (migration mode, pool 1) and `run-core-rehearsal.mjs`
@@ -327,6 +327,14 @@ pushes on manual dispatch with approval. Rewrite the runbook blocker section. **
 terraform apply.**
 **Accept:** `terraform fmt -check` + `validate` green; default plan still zero resources;
 `docker build -f Dockerfile.cloud-run .` succeeds; CI green with no push executed.
+
+**Status (2026-07-19):** Draft PR #47 contains the default-off source definitions,
+keyless protected-environment image workflow, gate/default-zero tests, and truthful
+runbook update. Local Terraform 1.15.8 formatting, validation, and 29 mocked plans pass;
+392 Node tests report 377 passing, 15 explicitly gated skips, and zero failures. PR CI
+also passes the unauthenticated Docker build, Terraform validation, Node suite, and
+Chromium suite; the image-publish job correctly skips. Nothing has been applied,
+published, deployed, executed, or configured.
 
 ### BE-12 · Rehearsal inventory expansion (medium, after BE-06; VERIFIED with corrections)
 **Why:** The cutover requirement to classify EVERY source category as

@@ -70,6 +70,16 @@ run "default_switch_creates_nothing" {
     condition     = output.planning.database_profile == null && output.planning.enabled_service_count == 0
     error_message = "The default production plan must select no database profile and declare no resources."
   }
+
+  assert {
+    condition = (
+      output.planning.deployment_identity == false &&
+      output.planning.cloud_run_planned == false &&
+      output.planning.migration_job_planned == false &&
+      output.planning.rehearsal_job_planned == false
+    )
+    error_message = "Every deployment identity, service, and Job definition must remain absent by default."
+  }
 }
 
 run "standalone_profile_is_zonal_and_bounded" {

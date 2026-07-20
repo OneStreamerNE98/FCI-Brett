@@ -9,6 +9,8 @@ module "foundation" {
   cloud_sql_profile          = var.cloud_sql_profile
   cloud_sql_config           = var.cloud_sql_config
   cloud_run_config           = var.cloud_run_config
+  deployment_config          = var.deployment_config
+  cloud_run_jobs             = var.cloud_run_jobs
   budget_amount_usd          = var.budget_amount_usd
   optional_features          = var.optional_features
   optional_feature_approvals = var.optional_feature_approvals

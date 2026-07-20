@@ -8,11 +8,16 @@ statements, and checksums are immutable. Prefer a reviewed forward-fix for a
 compatible defect; a restore-based rollback requires stopped writes,
 reconciliation, and explicit owner approval.
 
-Implementation blocker: the current infrastructure source defines migration
-and rehearsal identities but no Cloud Run Job, deployment identity, image-build
-pipeline, or production release mechanism. Every execution step that refers to
-a migration job or deployment remains blocked until those source definitions,
-least-privilege review, and separate owner approval exist.
+Implementation status: the repository now defines default-off migration and
+staging rehearsal Cloud Run Jobs, a keyless repository-scoped image-publisher
+identity, and a pull-request build/manual-approved image-publish workflow. The
+workflow publishes an immutable image candidate only; it cannot apply
+Terraform, deploy a service, or execute a Job. These definitions are source-only
+and unapplied. Every execution step remains blocked until the owner separately
+approves the protected GitHub environment and Workload Identity pool, exact
+image digest and Terraform plan, database principals and pinned secret versions,
+test-only rehearsal snapshot, least-privilege review, executor/verifier, cost
+window, and cleanup procedure.
 
 ## 1. Staging migration rehearsal
 

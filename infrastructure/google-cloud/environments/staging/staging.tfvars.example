@@ -53,3 +53,27 @@ cloud_run_config = {
   rehearsal_connections    = 1
   admin_monitoring_reserve = 10
 }
+
+# This identity may push an image only to this environment's repository. It has
+# no Cloud Run deploy or Job execution authority. The principal must name the
+# immutable FCI-Brett repository ID in an approved Workload Identity pool.
+deployment_config = {
+  enable_identity                       = false
+  workload_identity_principal           = ""
+  verified_provider_attribute_condition = ""
+}
+
+# These switches add Job definitions only; they never execute either Job.
+# The rehearsal inputs must point to an approved, existing test-data bucket.
+cloud_run_jobs = {
+  deploy_migration_job              = false
+  deploy_rehearsal_job              = false
+  migration_database_user           = ""
+  migration_role                    = ""
+  migration_postgres_secret_version = ""
+  rehearsal_database_user           = ""
+  rehearsal_postgres_secret_version = ""
+  rehearsal_schema                  = ""
+  rehearsal_snapshot_bucket         = ""
+  rehearsal_snapshot_object         = ""
+}
