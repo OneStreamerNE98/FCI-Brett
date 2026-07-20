@@ -18,6 +18,7 @@
     "app/application/authorization-*.ts",
     "app/platform/google-cloud/**/*.ts",
     "app/platform/postgres/**/*.ts",
+    "app/adapters/gcs/**/*.ts",
     "app/adapters/postgres/**/*.ts",
     "app/ports/**/*.ts",
     "app/domain/client-name-key.ts"

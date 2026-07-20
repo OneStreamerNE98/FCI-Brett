@@ -34,7 +34,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
 - An item is done only when its **Acceptance** line passes in this repo.
 - IDs: `BE-*` backend architecture & data storage · `WS-*` Google Workspace connection ·
   `SET-*` Settings/Setup UI · `TRK-*` task tracking/doc reconciliation · `KPI-*` flooring
-  KPIs & reporting. Dependencies are listed per item.
+  KPIs & reporting · `OIDC-*` BE-04 post-merge security follow-ups (in
+  [`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
+  Dependencies are listed per item.
 
 ## Global guardrails (include in every packet)
 
@@ -177,11 +179,11 @@ this route. Do NOT touch `db/schema.ts` or drizzle history; record
 **Accept:** `npm test` passes; grep `actorFrom` in app/ empty; local migrations unchanged.
 
 ### BE-04 · Workspace OIDC login, invitation redemption, session issuance on the Cloud Run router (large, no deps; VERIFIED)
-**Status:** In review — draft PR #38 on `codex/workspace-oidc-login`, July 19, 2026.
-Local acceptance is green (343 active tests, 13 environment-gated skips, lint, and Cloud
-Run build); all GitHub Node, Terraform, and Chromium checks are green.
-Source-only; production identity, infrastructure, sessions, and user admission remain
-unapplied.
+**Status:** Complete — PR #38, July 19, 2026. Source-only; production identity,
+infrastructure, sessions, and user admission remain unapplied. **Post-merge security review
+found one launch-blocking correctness bug and hardening/test/doc gaps — see
+[`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md) (packets
+OIDC-01..OIDC-04). OIDC-01 must land before any live employee login.**
 
 **Why:** The single largest production gap: the Cloud Run image has no login.
 `app/ports/identity-persistence.ts` (registerExternalIdentity/createSession, lines 67–68)
@@ -208,6 +210,9 @@ wrong hd, bad signature, expired/second redemption, idle+absolute expiry, logout
 confirms no ChatGPT header reads in `app/platform/`.
 
 ### BE-05 · Object storage behind the port: R2 + GCS adapters, wire uploads route (medium, no deps)
+**Status:** In review — draft PR #40 on `codex/object-storage-adapters`, July 19, 2026.
+Source-only; no GCS adapter composition, bucket provisioning, hosted configuration, or deployment.
+
 **Why:** `app/ports/object-storage.ts` (create-only putIfAbsent/head/openRead,
 sha256+generation) has only the in-memory adapter; the one real call site
 (`app/api/v1/uploads/route.ts`) bypasses the port with `env.FILES.put`; Cloud Run file
@@ -564,11 +569,10 @@ mark item 94's Settings scope fulfilled; don't touch item 103.
 **Accept:** `npm test` passes; per-section rendered HTML byte-identical (diff before/
 after); FloorOpsApp defines no panel bodies.
 
-### SET-02 · Expose `isAdmin`; render admin-only controls honestly (small, after SET-01; source acceptance complete in draft PR #37, not deployed)
-**Status:** In review — draft PR #37 on `codex/settings-admin-gating`, July 19, 2026.
-`npm test`, lint, rendered admin/Office coverage, conflicting-`.env.local` reproduction,
-and desktop/390 px visual QA pass. No server gate, schema, hosted configuration, or
-deployment changed.
+### SET-02 · Expose `isAdmin`; render admin-only controls honestly (small, after SET-01; merged in PR #37, not deployed)
+**Status:** Complete — PR #37, July 19, 2026. `npm test`, lint, rendered admin/Office
+coverage, conflicting-`.env.local` reproduction, and desktop/390 px visual QA passed. No
+server gate, schema, hosted configuration, or deployment changed.
 
 **Why:** Nine mutating routes are admin-gated server-side, but the UI renders
 Save/Sync/Reset/Connect identically for non-admin office users, who discover the
@@ -723,6 +727,8 @@ single-user development copy shows everything today; wire the gate through SET-0
 dependencies — see the exclusions in KPI-01's definitions doc.
 
 ### KPI-01 · Tier-1 KPI report from existing data + definitions doc (medium, after the FloorOpsApp queue clears — no schema change)
+**Status:** In review — draft PR #41 on `codex/tier1-flooring-kpis`, July 19, 2026. SET-02 is merged in PR #37, so the implementation gates every dollar-value KPI directly with its authenticated `isAdmin` flag. Full builds, 350/350 runnable Node tests, lint, and 2/2 focused desktop/mobile Playwright checks pass; no deployment, schema, migration, or hosted configuration changed.
+
 **Why:** Six universal KPIs are computable today from fields that already exist on leads
 {status active/converted/lost, stage, source, estimatedValue, createdAt, updatedAt} and
 projects {status lifecycle, estimatedValue, createdAt, updatedAt}, but the Reports screen

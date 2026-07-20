@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { validateFilingRulePatch } from "../../../../domain/filing-rule";
+import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
+
+const MAX_RULE_BODY_BYTES = 8_000;
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ ruleId: string }> }) {
   const originError = requireSameOrigin(request);
@@ -12,9 +15,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ r
   await ensureWorkspaceSchema();
   const { ruleId } = await context.params;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(ruleId)) return NextResponse.json({ error: "Invalid rule identifier." }, { status: 400 });
-  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Send a valid rule update." }, { status: 400 });
-  const validation = validateFilingRulePatch(body);
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_RULE_BODY_BYTES,
+    invalidMessage: "Send a valid rule update.",
+    tooLargeMessage: "Rule update is too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const validation = validateFilingRulePatch(parsed.body);
   if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 });
 
   const sets: string[] = [];

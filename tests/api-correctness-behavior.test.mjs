@@ -181,3 +181,21 @@ test("affected POST routes are wired to the shared bounded parser", async () => 
     assert.match(source, /if \(!parsed\.ok\) return NextResponse\.json/);
   }
 });
+
+test("remaining client, project, filing-rule, and settings writes use their bounded parser caps", async () => {
+  const routes = [
+    ["app/api/v1/clients/route.ts", /MAX_CLIENT_BODY_BYTES = 64_000/],
+    ["app/api/v1/projects/route.ts", /MAX_PROJECT_BODY_BYTES = 64_000/],
+    ["app/api/v1/filing-rules/[ruleId]/route.ts", /MAX_RULE_BODY_BYTES = 8_000/],
+    ["app/api/v1/settings/me/route.ts", /MAX_ACCOUNT_PREFERENCES_BODY_BYTES = 8_000/],
+    ["app/api/v1/settings/workspace/route.ts", /MAX_WORKSPACE_SETTINGS_BODY_BYTES = 8_000/],
+  ];
+
+  for (const [path, cap] of routes) {
+    const source = await read(path);
+    assert.match(source, cap, path);
+    assert.match(source, /parseBoundedJsonObject\(request,/, path);
+    assert.match(source, /if \(!parsed\.ok\) return NextResponse\.json/, path);
+    assert.doesNotMatch(source, /request\.json\(\)/, path);
+  }
+});

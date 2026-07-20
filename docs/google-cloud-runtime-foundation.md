@@ -1,6 +1,6 @@
 # Google Cloud runtime foundation
 
-Reviewed: July 16, 2026
+Reviewed: July 19, 2026
 
 Status: Implemented and tested in source only. Not provisioned, connected, migrated, or deployed.
 
@@ -14,7 +14,7 @@ This slice creates the reviewable Cloud Run and Cloud SQL runtime foundation wit
 - File list/upload/share, Gmail filing, and Calendar creation pass through authorization, exact-project checks, and mutation CSRF checks but return `503 feature_unavailable` because production provider action adapters are absent.
 - Unknown paths and methods fail closed. No route trusts `oai-authenticated-user-email` or supplies a fake production identity.
 
-This is still not the employee web application. The current page and broader API tree imports `cloudflare:workers`, uses D1/R2 bindings, and depends on the Sites identity boundary. The source image has no OIDC or session-issuance route, no seeded employee, no production file/Google provider adapters, and no rendered interface. It must not be deployed as though it were a usable employee rollout. The production checklist item “Containerize the Next.js application” remains open until the remaining routes, interface, object storage, identity, and provider boundaries are ported and accepted.
+This is still not the employee web application. The current page and broader API tree imports `cloudflare:workers`, uses D1/R2 bindings, and depends on the Sites identity boundary. The source image has no seeded employee, no composed production file/Google provider actions, and no rendered interface. Workspace OIDC/session issuance and an uncomposed GCS storage adapter now exist in source, but that does not activate file routes or admit an employee. It must not be deployed as though it were a usable employee rollout. The production checklist item “Containerize the Next.js application” remains open until the remaining routes, interface, object-storage composition, identity, and provider boundaries are ported and accepted.
 
 The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-first-cost-controlled-rollout.md) controls how this source foundation may later be provisioned. Development remains on Sites, staging is created on demand, standalone and regional-HA Cloud SQL profiles must be priced before selection, and optional service modules remain disabled. Nothing in this document authorizes a continuously running development or staging database.
 
@@ -47,12 +47,15 @@ The Google Cloud entry points deliberately do not use the development environmen
 | `FCI_POSTGRES_DATABASE` | Lowercase database identifier. |
 | `FCI_POSTGRES_USER` | Environment-specific runtime, migration, or rehearsal login/IAM database principal. |
 | `FCI_POSTGRES_PASSWORD` or `FCI_POSTGRES_PASSWORD_FILE` | Configure exactly one. Prefer a dedicated Secret Manager mount such as `/secrets/postgres/password`. |
-| `FCI_POSTGRES_SCHEMA` | Lowercase target schema. Production should use a dedicated application schema; rehearsal schemas must begin `fci_rehearsal_`. |
+| `FCI_POSTGRES_SCHEMA` | Required lowercase target schema in every stage and access mode. Staging and production must use a dedicated application schema unless the reviewed exception below is acknowledged; rehearsal schemas must begin `fci_rehearsal_`. |
+| `FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT` | Leave unset for a dedicated schema. If staging or production deliberately targets literal `public`, set exactly `I ACKNOWLEDGE THAT THIS STAGING OR PRODUCTION DATABASE USES THE PUBLIC POSTGRESQL SCHEMA`; any missing, approximate, or stale acknowledgment fails before secret access or a database connection. Dev-stage schema behavior is unchanged. |
 | `FCI_POSTGRES_MIGRATION_ROLE` | Required only for migration mode; use the reviewed schema-owner role name. |
 | `FCI_POSTGRES_POOL_MAX` | Runtime defaults to `5` and is capped at `10`; migration and rehearsal must be `1`. |
 | `PORT` | Defaults to `8080`; Cloud Run supplies this for the ingress container. |
 
 Optional bounded timeout/lifetime values are documented in `.env.example`. They are non-secret configuration; passwords and other credentials still belong only in Secret Manager or another approved encrypted runtime setting.
+
+The low-level migration runner retains its `public` default for isolated library callers and existing development tests. Google Cloud service, migration, and rehearsal entry points all pass through `loadProductionConfig`, which requires an explicit `FCI_POSTGRES_SCHEMA`; staging and production therefore cannot silently inherit that low-level default. Literal `public` is an exceptional, acknowledged target rather than the production default.
 
 The Cloud SQL Node.js connector uses Application Default Credentials and private IP. Do not set `GOOGLE_APPLICATION_CREDENTIALS` to a committed or mounted service-account key in Cloud Run. Assign the service identity only the IAM permissions required to connect to its intended Cloud SQL instance and secrets.
 
@@ -139,7 +142,7 @@ This is evidence that the bounded core path can be rehearsed. It is not evidence
 2. Costed, unapplied infrastructure definitions are reviewed for private networking, separate standalone and regional-HA Cloud SQL profiles, service identities, Secret Manager, backups/PITR, zero-minimum/bounded-maximum Cloud Run scaling, monitoring, the `$50/month` pre-production alert, and an on-demand staging lifecycle. Optional service modules must default to disabled.
 3. The administrator creates environment-specific login/IAM principals, applies the reviewed capability-role policy, and verifies grants with denial tests.
 4. A staging migration and bounded rehearsal run with only test data; restore, reconciliation, rollback/forward-fix, and revision-overlap connection evidence are recorded.
-5. The source-only [production persistence boundary](production-persistence-boundary.md), approved role matrix, narrow employee routes, and fixed administration commands are accepted. The People & Access read projection/page, durable invitation fulfillment, OIDC verification, session issuance/renewal, provider adapters, and the audit reader then proceed in their gated order.
+5. The source-only [production persistence boundary](production-persistence-boundary.md), approved role matrix, narrow employee routes, and fixed administration commands are accepted. The People & Access read projection/page, durable invitation fulfillment, OIDC verification, session issuance/renewal, remaining provider adapters and approved composition, and the audit reader then proceed in their gated order.
 6. The full application and interface run in the container; supported provider routes stop returning `feature_unavailable`; route/browser/security tests pass; and the owner separately approves deployment.
 
 No source route work in this branch applies a migration or infrastructure plan, provisions Cloud SQL/Cloud Run, deploys a revision, admits a second user, or moves real client/employee data.

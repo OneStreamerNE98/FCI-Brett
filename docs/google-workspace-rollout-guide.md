@@ -267,6 +267,99 @@ Settings → Google Workspace reports missing prerequisites in a semantic table 
 8. After Shared Drive verification, set `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=true` in the hosted environment and deploy the environment update; it is not an in-app toggle.
 9. Create one test project folder and confirm it is inside the correct Shared Drive.
 
+### Connector credential, encryption-key, and revocation recovery runbook
+
+Use these procedures only with a named Administrator and secret custodian. Record the
+date, environment, connection account, non-secret key/client version, operator, and test
+result. Never put a client secret, encryption key, refresh token, OAuth response, or
+cursor value in the evidence.
+
+#### Token-encryption key rotation (current disconnect/reconnect procedure)
+
+The current connector writes `GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION` with the
+stored connection but decrypts only with the one currently configured key. Multi-key
+decrypt/re-encrypt is tracked separately and is not implemented. Changing the key while
+old ciphertext remains would strand the connection, so use this honest interim
+procedure:
+
+1. Schedule a short connector maintenance window and stop Google Workspace verification
+   or filing actions. Confirm the environment and exact approved connection account.
+2. While the old key is still configured, use **Settings → Google Workspace →
+   Disconnect**. This invokes the connection `DELETE` flow so the stored connection is
+   cleared and Google revocation is attempted. Confirm the app reports disconnected.
+3. Generate 32 random bytes on a trusted computer and encode them as base64url. Increase
+   `GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION`; never reuse an old version label for
+   different key material.
+4. Replace the hosted secret and version together, save a new Sites version, and deploy
+   that exact configuration update. Do not retain the old key in source, a document,
+   email, Drive, or a ticket.
+5. Re-authorize the exact approved company account and re-run the independent Drive,
+   Gmail, Calendar, and Sheets checks. Confirm review-first Gmail behavior still holds.
+6. Record only the old/new version labels and the disconnect, reconnect, and service-test
+   results. The refresh token itself is never copied or migrated.
+
+If the key was changed before disconnect and token decryption now fails, use
+**Disconnect** anyway. The current `DELETE` flow still removes the unusable local
+connection when Google revocation cannot be confirmed. Revoke the app grant directly in
+the connection account's Google security controls, confirm the app is disconnected, and
+then reconnect with the new key. If the `DELETE` itself fails, leave the connector
+blocked, capture only its safe error code/correlation ID, and escalate to a developer;
+never edit the database manually.
+
+Production must replace this interim process with multi-key decryption selected by the
+stored `key_version`, followed by verified re-encryption to the current key, before any
+in-place/no-disconnect key rotation is claimed.
+
+#### OAuth client-secret rotation (same client ID, no reconnect)
+
+1. Confirm the exact environment and OAuth web-client ID. Do not create a replacement
+   client ID or change redirect URIs as part of a secret-only rotation.
+2. In the matching Google Cloud project, create/reset the client secret under the
+   controlled secret-rotation procedure. Copy it directly into the hosted secret setting;
+   do not place it in Git, a document, email, chat, or Drive.
+3. Update `GOOGLE_WORKSPACE_CLIENT_SECRET`, save a new Sites version, and deploy the
+   configuration change. If Google permits an overlap, retain the prior secret only in
+   approved secret storage until verification succeeds, then retire it there.
+4. Run readiness and force an authenticated Google operation for each enabled service.
+   The client ID and existing refresh token are unchanged, so user reconnection or new
+   consent is not required for a secret-only rotation.
+5. Record the client ID, rotation/deployment time, operators, and pass/fail results—never
+   either secret value.
+
+If refresh fails after the change, first verify that the hosted secret belongs to the
+same client ID and environment. Roll back through approved secret version history when
+available; do not respond by exposing the value or creating an untracked OAuth client.
+
+#### `invalid_grant` or revoked refresh-token recovery
+
+1. Run **Check readiness** and capture the safe `workspace.connectionStatus` field from
+   `GET /api/v1/google-workspace`; it must equal `reauthorization-required`. A definitive
+   `invalid_grant` is not transient: stop automatic retries and do not log the provider
+   response or token. In the current build, the Settings summary derives its reconnect
+   wording from a separate boolean and may show only a generic setup/connect state, so a
+   visible label alone is not acceptable drill evidence.
+2. Confirm the intended connection account is still active, company-controlled, and the
+   exact configured intake mailbox. Resolve an account suspension or ownership issue
+   before reconnecting.
+3. Invoke the authorized same-origin
+   `DELETE /api/v1/integrations/google/connection` connection flow. The normal
+   **Disconnect** button uses this route when the connector is healthy, but the current
+   panel may hide that button after `invalid_grant`; until that UI limitation is fixed,
+   an authorized developer must perform this step with controlled support tooling. This
+   clears the unusable local connection and attempts revocation; it is safe if Google has
+   already revoked the token. If the exact API status and deletion evidence cannot be
+   captured, mark the drill blocked rather than claiming recovery.
+4. Select **Connect Google Workspace**, authorize that exact account again, and approve
+   every currently enabled service scope.
+5. Re-run Drive, Gmail, Calendar, and Sheets independently, then repeat one bounded
+   review-first test. Do not automatically replay failed filing/sync work; inspect it and
+   use the separately audited replay control only after that control is implemented.
+6. Record the failure code, status transition, disconnect/reconnect times, account, and
+   verification result without recording tokens or message contents.
+
+If Disconnect fails, leave the connector blocked, capture only the safe error code and
+correlation ID, and escalate to a developer. Do not delete D1/Cloud SQL rows manually.
+
 ## Part 12: test the complete current development environment
 
 Use a client and projects named `FCI TEST — DO NOT USE`.

@@ -10,6 +10,9 @@ import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-aut
 import { clientCreationHttpResult } from "../../../lib/creation-http-result";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
+import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+
+const MAX_CLIENT_BODY_BYTES = 64_000;
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -28,15 +31,15 @@ export async function POST(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Client details must be valid JSON." }, { status: 400 });
-  }
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_CLIENT_BODY_BYTES,
+    invalidMessage: "Client details must be valid JSON.",
+    tooLargeMessage: "Client details are too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
 
   const result = await createClient(
-    body,
+    parsed.body,
     creationAuthorizationFor({
       actorId: auth.user.email,
       capabilities: [CREATION_CAPABILITIES.createClient],

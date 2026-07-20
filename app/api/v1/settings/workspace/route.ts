@@ -2,8 +2,10 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
+import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 
 const WORKSPACE_SETTINGS_ID = "workspace";
+const MAX_WORKSPACE_SETTINGS_BODY_BYTES = 8_000;
 
 export type WorkspacePreferences = {
   timezone: string;
@@ -100,11 +102,13 @@ export async function PATCH(request: NextRequest) {
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
 
-  const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    return NextResponse.json({ error: "Send a valid settings object." }, { status: 400 });
-  }
-  const settings = normalizeSettings(body);
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_WORKSPACE_SETTINGS_BODY_BYTES,
+    invalidMessage: "Send a valid settings object.",
+    tooLargeMessage: "Settings update is too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const settings = normalizeSettings(parsed.body);
   const now = Date.now();
   await env.DB.prepare("INSERT INTO workspace_settings (id, shared_drive_id, client_directory_sheet_id, intake_mailbox, settings_json, updated_by, updated_at) VALUES (?, NULL, NULL, NULL, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at")
     .bind(WORKSPACE_SETTINGS_ID, JSON.stringify(settings), auth.user.email, now)

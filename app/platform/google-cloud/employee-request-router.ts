@@ -456,8 +456,10 @@ function employeeLoginStartBody(body: JsonObject) {
 }
 
 function employeeLoginCallbackQuery(url: URL) {
-  const keys = [...url.searchParams.keys()];
-  if (keys.some((key) => key !== "code" && key !== "state")) {
+  // OAuth authorization responses are extensible. Google currently adds
+  // values such as scope, authuser, hd, and prompt, and clients must ignore
+  // response parameters they do not use. A provider denial remains explicit.
+  if (url.searchParams.has("error")) {
     throw new EmployeeOidcFailure("authorization_denied");
   }
   const codes = url.searchParams.getAll("code");

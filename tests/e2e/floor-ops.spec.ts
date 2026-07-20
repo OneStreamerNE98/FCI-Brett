@@ -371,7 +371,7 @@ test("reports explain active project coverage and expose semantic lifecycle dril
   await expect(page.getByRole("heading", { level: 1, name: "Reports" })).toBeVisible();
 
   await expect(page.getByText("Current", { exact: true })).toHaveCount(0);
-  const activeProjects = page.locator(".metric-card").filter({ hasText: "Active projects" });
+  const activeProjects = page.locator(".metrics-grid > .metric-card").filter({ hasText: "Active projects" });
   await expect(activeProjects).toHaveCount(1);
   await expect(activeProjects).toContainText(/\d+ of \d+ project records active/);
   await expect(page.getByRole("link", { name: /View Mobilizing projects/ })).toHaveAttribute("href", "/projects?status=mobilizing");
