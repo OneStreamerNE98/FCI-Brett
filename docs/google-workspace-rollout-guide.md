@@ -427,7 +427,7 @@ Do not publish the current build in the Workspace launcher yet if you expect Goo
 
 ## Part 14: complete and activate Google Workspace user login
 
-This is development and controlled rollout work, not an Admin-console toggle. PRs #38/#48 implement the source-only OIDC callback, signed-token verification, durable invitation redemption, and session issuance. OIDC-02/03, the production client/configuration, migrations, complete employee interface composition, deployment, and live acceptance remain open.
+This is development and controlled rollout work, not an Admin-console toggle. PRs #38/#48 implement the source-only OIDC callback, signed-token verification, durable invitation redemption, and session issuance. OIDC-02/#54 and stacked OIDC-03/#55 are in unmerged draft review; the production client/configuration, migrations, complete employee interface composition, deployment, and live acceptance remain open.
 
 1. Create a separate OAuth/OIDC web client for application sign-in. Keeping login and the broad data connector separate makes scopes and revocation easier to understand.
 2. Add Google Identity Services to the sign-in page.

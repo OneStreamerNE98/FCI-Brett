@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with policy approval from the business owner
 
-Status: Approved policy, Administration and Access branches, and Workspace OIDC/invitation/session-issuance source are merged; the People/Activity presentation adapter is deployed only to private Sites development. OIDC hardening/test backfill, live configuration, production session/UI composition, providers, PostgreSQL migration/grants, and production deployment remain open
+Status: Approved policy, Administration and Access branches, and Workspace OIDC/invitation/session-issuance source are merged; the People/Activity presentation adapter is deployed only to private Sites development. OIDC-02/#54 and stacked OIDC-03/#55 are in draft review and unmerged; live configuration, production session/UI composition, providers, PostgreSQL migration/grants, and production deployment remain open
 
 Local simulation depends on: Recorded first-rollout sensitive-action decisions and the production persistence boundary
 
@@ -47,7 +47,7 @@ These decisions authorize local policy and route work only. They do not set the 
 - [x] Compose PostgreSQL-backed dashboard, search, project list/exact-project, client list, and logout source routes.
 - [x] Compose file list/upload/share, Gmail-file, and Calendar-create routes through authorization; without production action adapters they deliberately return `503 feature_unavailable` after authorization succeeds.
 - [x] Preserve health/readiness, drain behavior, migration-command separation, and denial of the Sites identity header in the Cloud Run module graph.
-- [x] Add source-only durable invitation fulfillment, Workspace OIDC verification, and secure session issuance. PR #38 implemented the path; PR #48 corrected real-callback compatibility. OIDC-02/03 and every live apply/configuration gate remain open.
+- [x] Add source-only durable invitation fulfillment, Workspace OIDC verification, and secure session issuance. PR #38 implemented the path; PR #48 corrected real-callback compatibility. OIDC-02 is in draft PR #54, and OIDC-03 is in draft PR #55 stacked on #54; neither is merged, and every live apply/configuration gate remains open.
 - [ ] Add production file and Google provider adapters only after their persistence, configuration, classification, and direct-access gates are accepted.
 - [ ] Add route-level/browser evidence for the complete supported interface. Source composition is not deployment evidence.
 
@@ -60,7 +60,7 @@ These decisions authorize local policy and route work only. They do not set the 
 - [x] Fulfill durable invitations against exact email/status/role and bind verified Google issuer/`sub` before creating a session in source; migrations and live rows remain unapplied.
 - [ ] Compose production provider adapters for the authorization-gated Gmail, Calendar, and file routes; export and financial-report routes remain open. The minimized audit-view route exists only in source behind a separately privileged reader.
 - [ ] Complete the employee-session lifecycle. Secure, HttpOnly, SameSite issuance plus expiry/logout/revocation exist in source; rotation and sliding idle renewal remain open, and nothing is live.
-- [ ] Replace trust in `oai-authenticated-user-email` for the Cloud Run deployment.
+- [ ] Deploy the source-tested Cloud Run identity boundary that rejects `oai-authenticated-user-email`; no production deployment exists yet.
 - [ ] Enforce authorization inside data queries for clients, projects, leads, dashboard, search, meetings, uploads, Gmail filing, and assistant evidence.
 - [x] Display the current server-derived access label (`Admin` or `Office`) instead of labeling every allowlisted user Administrator.
 - [ ] Pass the durable OIDC role, capabilities, and project scope to the interface after production users and sessions exist.
@@ -74,7 +74,7 @@ These decisions authorize local policy and route work only. They do not set the 
 - [x] Approved Office user
 - [x] Project Manager assigned to a project
 - [x] Project Manager membership expired or authorization version changed while signed in
-- [x] Pure admission-policy fixtures for an uninvited `cherryhillfci.com` user, an outside-domain account, and a personal Gmail account; durable invitation/OIDC binding is implemented in source, with the OIDC-03 negative/real-PostgreSQL backfill still open
+- [x] Pure admission-policy fixtures for an uninvited `cherryhillfci.com` user, an outside-domain account, and a personal Gmail account; durable invitation/OIDC binding is implemented in source, with the OIDC-03 negative/real-PostgreSQL backfill in unmerged draft PR #55
 - [x] Disabled user
 - [x] Expired or revoked session
 - [x] Field link exact-project, expiry, revocation, and no-global-surface denials
