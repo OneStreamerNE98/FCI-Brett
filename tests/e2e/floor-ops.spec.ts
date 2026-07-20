@@ -76,10 +76,11 @@ test("has a clear page identity, meaningful live render, and healthy browser con
   await expect(page).toHaveURL("http://localhost:4173/");
   const fullLogo = page.getByRole("img", { name: "Floor Coverings International" });
   await expect(fullLogo).toBeVisible();
-  await expect(fullLogo).toHaveAttribute("src", "/fci-logo-enhanced-master.png");
+  await expect(fullLogo).toHaveAttribute("src", "/fci-logo-enhanced-master.svg");
   expect(await fullLogo.evaluate((image: HTMLImageElement) => ({ width: image.naturalWidth, height: image.naturalHeight }))).toEqual({ width: 1254, height: 1254 });
-  await expect(page.locator('link[rel="shortcut icon"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
-  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
+  await expect(page.locator('link[rel="shortcut icon"][type="image/svg+xml"]')).toHaveAttribute("href", /\/fci-app-icon-master\.svg$/);
+  await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute("href", /\/fci-app-icon-master\.svg$/);
+  await expect(page.locator('link[rel="icon"][type="image/png"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
   await expect(page.getByRole("main")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -104,7 +105,7 @@ test("desktop sidebar collapse control stays fully clickable and expands again",
   await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(78);
   await expect(fullLogo).toBeHidden();
   await expect(compactLogo).toBeVisible();
-  await expect(compactLogo).toHaveAttribute("src", "/fci-app-icon-master.png");
+  await expect(compactLogo).toHaveAttribute("src", "/fci-app-icon-master.svg");
   expect(await compactLogo.evaluate((image: HTMLImageElement) => ({ width: image.naturalWidth, height: image.naturalHeight }))).toEqual({ width: 1254, height: 1254 });
 
   const box = await expand.boundingBox();

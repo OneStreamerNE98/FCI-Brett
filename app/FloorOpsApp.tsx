@@ -837,10 +837,10 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
         <div className="sidebar-brand-row">
           <div className="brand">
             {/* eslint-disable-next-line @next/next/no-img-element -- The supplied local brand mark does not need optimizer handling. */}
-            <img className="brand-full" src="/fci-logo-enhanced-master.png" alt="Floor Coverings International" width={1254} height={1254} />
+            <img className="brand-full" src="/fci-logo-enhanced-master.svg" alt="Floor Coverings International" width={1254} height={1254} />
             <span className="brand-compact" aria-hidden="true">
               {/* eslint-disable-next-line @next/next/no-img-element -- The supplied local app mark does not need optimizer handling. */}
-              <img src="/fci-app-icon-master.png" alt="" width={1254} height={1254} />
+              <img src="/fci-app-icon-master.svg" alt="" width={1254} height={1254} />
             </span>
           </div>
           <button className="sidebar-collapse" onClick={toggleSidebar} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>{sidebarCollapsed ? <ChevronsRight size={17} /> : <ChevronsLeft size={17} />}</button>

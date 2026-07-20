@@ -20,8 +20,11 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(origin), title, description,
     manifest: "/manifest.webmanifest",
     icons: {
-      icon: [{ url: "/fci-app-icon-master.png", type: "image/png", sizes: "1254x1254" }],
-      shortcut: "/fci-app-icon-master.png",
+      icon: [
+        { url: "/fci-app-icon-master.svg", type: "image/svg+xml", sizes: "any" },
+        { url: "/fci-app-icon-master.png", type: "image/png", sizes: "1254x1254" },
+      ],
+      shortcut: [{ url: "/fci-app-icon-master.svg", type: "image/svg+xml", sizes: "any" }],
       apple: [{ url: "/fci-app-icon-master.png", type: "image/png", sizes: "1254x1254" }],
     },
     applicationName: development ? "FCI Operations Dev" : "FCI Operations",
