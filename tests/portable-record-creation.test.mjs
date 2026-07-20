@@ -67,6 +67,11 @@ test("portable domain validation preserves the client and project API messages",
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "x".repeat(181) }), { ok: false, message: "project name is too long" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", status: "unknown" }), { ok: false, message: "project status is invalid" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", estimatedValue: -1 }), { ok: false, message: "estimated value must be a non-negative whole number" });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", flooringCategory: "vinyl" }), { ok: false, message: "flooring category is invalid" });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", squareFeet: 0 }), { ok: false, message: "square feet must be a positive whole number" });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", squareFeet: 12.5 }), { ok: false, message: "square feet must be a positive whole number" });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", contractValue: -1 }), { ok: false, message: "contract value must be a non-negative whole number" });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", contractValue: "100" }), { ok: false, message: "Project details must be valid JSON." });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManager: "Morgan" }), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManagerId: "manager@example.test", projectManager: "other@example.test" }), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });
   assert.deepEqual(normalizeProjectManagerId("  Manager@CherryHillFCI.com  "), { ok: true, value: "manager@cherryhillfci.com" });
@@ -94,6 +99,9 @@ test("portable domain validation preserves the client and project API messages",
       site: null,
       projectManagerId: null,
       estimatedValue: null,
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
     },
   });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManager: "  MANAGER@Example.Test " }), {
@@ -105,6 +113,23 @@ test("portable domain validation preserves the client and project API messages",
       site: null,
       projectManagerId: "manager@example.test",
       estimatedValue: null,
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
+    },
+  });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "KPI fields", flooringCategory: " LUXURY-VINYL ", squareFeet: 2_500, contractValue: 0 }), {
+    ok: true,
+    value: {
+      clientId: "client-1",
+      name: "KPI fields",
+      status: "planning",
+      site: null,
+      projectManagerId: null,
+      estimatedValue: null,
+      flooringCategory: "luxury-vinyl",
+      squareFeet: 2_500,
+      contractValue: 0,
     },
   });
 });
@@ -220,6 +245,9 @@ test("project creation sends one atomic project and activity intent before mirro
       site: "  Cherry Hill, NJ  ",
       projectManagerId: "  Manager@CherryHillFCI.com  ",
       estimatedValue: 125000,
+      flooringCategory: "tile-stone",
+      squareFeet: 5_000,
+      contractValue: 130000,
     },
     authorized(CREATION_CAPABILITIES.createProject, "development-user@cherryhillfci.com"),
     {
@@ -254,6 +282,9 @@ test("project creation sends one atomic project and activity intent before mirro
       site: "Cherry Hill, NJ",
       projectManagerId: "manager@cherryhillfci.com",
       estimatedValue: 125000,
+      flooringCategory: "tile-stone",
+      squareFeet: 5000,
+      contractValue: 130000,
       createdBy: "development-user@cherryhillfci.com",
       createdAt: Date.UTC(2026, 6, 13, 12),
       updatedAt: Date.UTC(2026, 6, 13, 12),

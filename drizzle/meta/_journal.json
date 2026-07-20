@@ -85,6 +85,13 @@
       "when": 1783923986786,
       "tag": "0011_lazy_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1784516091886,
+      "tag": "0012_green_magneto",
+      "breakpoints": true
     }
   ]
 }

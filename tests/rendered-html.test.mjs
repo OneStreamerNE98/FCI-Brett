@@ -462,7 +462,7 @@ test("uses authorized project-manager identities and exposes the narrow admin co
   assert.doesNotMatch(app, /name="manager"/);
   assert.match(app, /method: "PATCH"/);
   assert.match(app, /JSON\.stringify\(\{ projectId: project\.id, projectManagerId \}\)/);
-  assert.match(app, /canAssignManager=\{accessLabel === "Admin"\}/);
+  assert.match(app, /<ProjectDrawer[\s\S]+?isAdmin=\{isAdmin\}/);
   assert.match(app, /Assign to me/);
   assert.match(app, /No authorized manager is assigned/);
 });

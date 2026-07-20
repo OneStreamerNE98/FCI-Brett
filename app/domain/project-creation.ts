@@ -1,8 +1,10 @@
 export const PROJECT_STATUSES = ["planning", "mobilizing", "installation", "closeout", "completed", "cancelled", "archived"] as const;
+export const FLOORING_CATEGORIES = ["hardwood", "carpet", "luxury-vinyl", "tile-stone", "laminate", "specialty", "mixed"] as const;
 
 export const PROJECT_MANAGER_IDENTITY_ERROR = "project manager must be an authorized office email";
 
 export type ProjectStatus = typeof PROJECT_STATUSES[number];
+export type FlooringCategory = typeof FLOORING_CATEGORIES[number];
 
 export type NormalizedProjectCreation = {
   clientId: string;
@@ -11,6 +13,9 @@ export type NormalizedProjectCreation = {
   site: string | null;
   projectManagerId: string | null;
   estimatedValue: number | null;
+  flooringCategory: FlooringCategory | null;
+  squareFeet: number | null;
+  contractValue: number | null;
 };
 
 export type ProjectManagerIdValidation =
@@ -91,7 +96,10 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
   for (const field of ["clientId", "name", "status", "site", "projectManager", "projectManagerId"] as const) {
     if (record[field] !== undefined && typeof record[field] !== "string") return invalidJsonDetails();
   }
-  if (record.estimatedValue !== undefined && typeof record.estimatedValue !== "number") return invalidJsonDetails();
+  if (record.flooringCategory !== undefined && record.flooringCategory !== null && typeof record.flooringCategory !== "string") return invalidJsonDetails();
+  for (const field of ["estimatedValue", "squareFeet", "contractValue"] as const) {
+    if (record[field] !== undefined && record[field] !== null && typeof record[field] !== "number") return invalidJsonDetails();
+  }
 
   const clientId = record.clientId as string | undefined;
   const name = (record.name as string | undefined)?.trim();
@@ -104,6 +112,22 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
   const estimatedValue = record.estimatedValue as number | undefined;
   if (estimatedValue !== undefined && (!Number.isSafeInteger(estimatedValue) || estimatedValue < 0)) {
     return { ok: false, message: "estimated value must be a non-negative whole number" };
+  }
+
+  const flooringCategoryValue = (record.flooringCategory as string | undefined)?.trim().toLowerCase() || null;
+  const flooringCategory = flooringCategoryValue as FlooringCategory | null;
+  if (flooringCategory !== null && !FLOORING_CATEGORIES.includes(flooringCategory)) {
+    return { ok: false, message: "flooring category is invalid" };
+  }
+
+  const squareFeet = record.squareFeet as number | null | undefined;
+  if (squareFeet !== undefined && squareFeet !== null && (!Number.isSafeInteger(squareFeet) || squareFeet <= 0)) {
+    return { ok: false, message: "square feet must be a positive whole number" };
+  }
+
+  const contractValue = record.contractValue as number | null | undefined;
+  if (contractValue !== undefined && contractValue !== null && (!Number.isSafeInteger(contractValue) || contractValue < 0)) {
+    return { ok: false, message: "contract value must be a non-negative whole number" };
   }
 
   const managerCandidates = [record.projectManagerId, record.projectManager]
@@ -123,6 +147,9 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
       site: (record.site as string | undefined)?.trim() || null,
       projectManagerId: managerIds[0] ?? null,
       estimatedValue: estimatedValue ?? null,
+      flooringCategory,
+      squareFeet: squareFeet ?? null,
+      contractValue: contractValue ?? null,
     },
   };
 }
