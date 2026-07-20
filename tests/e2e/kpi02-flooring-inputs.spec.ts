@@ -33,8 +33,8 @@ test("project API validates and round-trips nullable booking inputs without leak
   const clientResponse = await page.request.get("/api/v1/clients");
   expect(clientResponse.ok()).toBe(true);
   const clientPayload = await clientResponse.json() as { clients?: Array<{ id: string }> };
-  const clientId = clientPayload.clients?.[0]?.id;
-  expect(clientId).toBeTruthy();
+  const clientId = clientPayload.clients?.find((client) => client.id === "e2e-client-001")?.id;
+  expect(clientId).toBe("e2e-client-001");
 
   for (const [field, value, message] of [
     ["flooringCategory", "vinyl", "flooring category is invalid"],
@@ -71,6 +71,7 @@ test("project API validates and round-trips nullable booking inputs without leak
   expect(adminList.headers()["cache-control"]).toBe("no-store");
   const adminPayload = await adminList.json() as { projects?: Array<Record<string, unknown>> };
   expect(adminPayload.projects?.find((project) => project.id === created.id)).toEqual(expect.objectContaining({
+    client_id: "e2e-client-001",
     name: projectName,
     flooring_category: "tile-stone",
     square_feet: 3_000,
@@ -82,6 +83,7 @@ test("project API validates and round-trips nullable booking inputs without leak
   expect(officeList.headers()["cache-control"]).toBe("no-store");
   const officePayload = await officeList.json() as { projects?: Array<Record<string, unknown>> };
   expect(officePayload.projects?.find((project) => project.id === created.id)).toEqual(expect.objectContaining({
+    client_id: "e2e-client-001",
     flooring_category: "tile-stone",
     square_feet: 3_000,
     contract_value: null,
@@ -105,6 +107,8 @@ test("admin can capture booking inputs in the project modal and review them in t
 
   await page.getByRole("button", { name: "New project" }).click();
   const modal = page.getByRole("dialog", { name: "Create a project" });
+  await modal.getByLabel("Client").selectOption("e2e-client-001");
+  await expect(modal.getByLabel("Client")).toHaveValue("e2e-client-001");
   await expect(modal.getByLabel(/Flooring category/)).toHaveValue("");
   await expect(modal.getByLabel(/Square feet/)).toHaveAttribute("min", "1");
   await expect(modal.getByLabel(/Contract value/)).toBeEnabled();

@@ -1,5 +1,13 @@
 -- These reserved records make rendered tests deterministic without importing
 -- or deleting any real workspace data from a developer's local D1 database.
+DELETE FROM activity_events
+WHERE record_id IN (
+  SELECT id
+  FROM projects
+  WHERE client_id = 'e2e-client-001'
+    OR id = 'e2e-project-001'
+    OR project_number = 'CF-2026-E2E00001'
+);
 DELETE FROM contacts WHERE id = 'e2e-contact-001';
 DELETE FROM projects
 WHERE client_id = 'e2e-client-001'

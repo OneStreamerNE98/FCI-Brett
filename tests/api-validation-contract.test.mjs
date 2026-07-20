@@ -85,3 +85,14 @@ test("KPI-02 D1 migration is immutable additive-only and has no backfill or cons
   assert.doesNotMatch(migration, /NOT NULL|UNIQUE|UPDATE|INSERT|DELETE/i);
   assert.match(journal, /"idx": 12[\s\S]*"tag": "0012_green_magneto"/);
 });
+
+test("KPI-02 e2e cleanup removes reserved project activity before reserved projects", async () => {
+  const seed = await read("tests/e2e/fixtures/seed.sql");
+  const activityDelete = seed.indexOf("DELETE FROM activity_events");
+  const projectDelete = seed.indexOf("DELETE FROM projects");
+
+  assert.ok(activityDelete >= 0 && activityDelete < projectDelete);
+  assert.match(seed, /DELETE FROM activity_events[\s\S]*record_id IN \([\s\S]*FROM projects[\s\S]*client_id = 'e2e-client-001'[\s\S]*\);/);
+  assert.match(seed, /DELETE FROM projects[\s\S]*client_id = 'e2e-client-001'/);
+  assert.doesNotMatch(seed, /DELETE FROM (?:activity_events|projects)\s*;/);
+});
