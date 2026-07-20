@@ -193,6 +193,13 @@ registry/blueprint write → audit event → `Cache-Control: no-store`.
   granted `auth/calendar` satisfies the `calendar.events` requirement.
 - Gmail labels: no new backend — `POST /gmail/labels/prepare` stays the action; labels
   render locked in the blueprint and the resources card links to stepper Step 3.
+- Project documents (SET-22, the daily-work payoff): `POST
+  /api/v1/projects/[projectId]/drive/files` creates a Google Doc/Sheet/Slides file —
+  blank (`files.create` with the Google-native mimeType) or from a blueprint template
+  (`files.copy`) — inside the project's provisioned folder. Office-user gated (routine
+  work, not admin), requires the folder mapping, returns the open-in-Google link.
+  Project files are content, not setup resources: they get activity + integration
+  events but no registry rows. The blueprint template `kind` enum gains `"slides"`.
 
 ## 3. Dashboard UX — define → create → verify → maintain
 
@@ -270,4 +277,4 @@ no Docs API scope; no Shared-Drive creation; **no deletion of Google content eve
 background jobs; no permissions editor; no freeform-JSON editing; no blueprint-history
 UI. The WS owner track (WS-01/02/05–08), the one-account boundary, and the two-OAuth-
 client separation are unchanged. Packet sequencing, acceptance criteria, and the test
-strategy live in the agent execution plan (SET-13…SET-21, WS-14).
+strategy live in the agent execution plan (SET-13…SET-22, WS-14).
