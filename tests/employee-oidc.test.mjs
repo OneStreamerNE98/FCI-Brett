@@ -65,8 +65,17 @@ function attemptCookieValue(setCookie) {
   return match[1];
 }
 
-function signedIdToken(claims, privateKey = keyPair.privateKey) {
-  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT", kid: KEY_ID }))
+function signedIdToken(
+  claims,
+  privateKey = keyPair.privateKey,
+  headerOverrides = {},
+) {
+  const header = Buffer.from(JSON.stringify({
+    alg: "RS256",
+    typ: "JWT",
+    kid: KEY_ID,
+    ...headerOverrides,
+  }))
     .toString("base64url");
   const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
   const signingInput = `${header}.${payload}`;
@@ -99,7 +108,7 @@ function provider(options = {}) {
         access_token: "unused-test-token",
         token_type: "Bearer",
         expires_in: 3_600,
-        id_token: signedIdToken(claims, options.signingKey),
+        id_token: signedIdToken(claims, options.signingKey, options.header),
       }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -223,6 +232,46 @@ test("employee OIDC rejects non-string issuer claims before allowlist matching",
       assert.equal(error.name, "EmployeeOidcFailure");
       assert.equal(error.reason, "token_invalid");
       return true;
+    });
+  }
+});
+
+test("employee OIDC rejects invalid signed identity claims", async (t) => {
+  const cases = [
+    ["expired token", { exp: Math.floor((NOW - 1_000) / 1_000) }],
+    ["wrong audience", { aud: "another-client.apps.googleusercontent.com" }],
+    ["wrong string issuer", { iss: "https://accounts.example.test" }],
+    ["unverified email", { email_verified: false }],
+    ["nonce mismatch", { nonce: Buffer.alloc(32, 0x7f).toString("base64url") }],
+  ];
+
+  for (const [label, claims] of cases) {
+    await t.test(label, async () => {
+      const setup = initiatedClient({ claims });
+      await assert.rejects(completes(setup), (error) => {
+        assert.equal(error.name, "EmployeeOidcFailure");
+        assert.equal(error.reason, "token_invalid");
+        assert.equal(error.retryable, false);
+        return true;
+      });
+    });
+  }
+});
+
+test("employee OIDC rejects non-RS256 algorithm labels before consulting JWKS", async (t) => {
+  for (const algorithm of ["HS256", "none"]) {
+    await t.test(algorithm, async () => {
+      // Keep a valid RSA signature so this specifically falsifies the header
+      // algorithm guard rather than failing earlier on an empty signature.
+      const setup = initiatedClient({ header: { alg: algorithm } });
+      await assert.rejects(completes(setup), (error) => {
+        assert.equal(error.name, "EmployeeOidcFailure");
+        assert.equal(error.reason, "token_invalid");
+        assert.equal(error.retryable, false);
+        return true;
+      });
+      assert.equal(setup.google.calls.length, 1);
+      assert.equal(setup.google.calls[0].url, "https://oauth2.googleapis.com/token");
     });
   }
 });

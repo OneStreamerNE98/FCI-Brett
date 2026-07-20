@@ -102,7 +102,7 @@ an unrelated malformed cookie is also present; the attempt-reuse decision is imp
 explicitly documented with a test or comment; `npm test` green. **Effort:** small.
 
 ## OIDC-03 · Test-coverage backfill for the new login path (medium; reviewer-reported) — medium
-**Status:** In review — draft PR #55, July 20, 2026; built on merged PR #54 and pending retarget or rebase to `main` with fresh checks. Not merged or deployed.
+**Status:** In review — draft PR #55, July 20, 2026; rebased onto current `main` after PR #54 and its PR #60 reconciliation. Not merged or deployed.
 **Why:** The implementation conforms to policy, but the **new** suites do not exercise the
 behaviors BE-04's own acceptance line claims, so a future regression would pass CI. Confirmed
 by grep: `tests/cloud-run-employee-login.test.mjs` and `tests/employee-oidc.test.mjs`

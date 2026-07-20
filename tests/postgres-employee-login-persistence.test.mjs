@@ -160,6 +160,32 @@ function invitationRow(overrides = {}) {
   };
 }
 
+function existingIdentityRow(overrides = {}) {
+  return {
+    identity_id: IDENTITY_ID,
+    user_id: USER_ID,
+    email: EMAIL,
+    status: "active",
+    authorization_version: "1",
+    sessions_valid_after: new Date(NOW - 60_000),
+    ...overrides,
+  };
+}
+
+function assertLoginFailureAudit(fake, reason) {
+  const queries = workQueries(fake);
+  const audit = queries.find(({ sql }) => sql.startsWith("INSERT INTO audit_events"));
+  assert.ok(audit, `missing ${reason} login audit`);
+  assert.deepEqual(audit.values.slice(6, 11), [
+    "identity.login_failed",
+    "login_attempt",
+    "correlation-employee-login",
+    "denied",
+    reason,
+  ]);
+  assert.equal(queries.some(({ sql }) => sql.startsWith("INSERT INTO sessions")), false);
+}
+
 test("first employee login consumes one exact seven-day invitation and creates scoped access plus session atomically", async () => {
   const fake = fakeDatabase(async (sql) => {
     if (sql.startsWith("SELECT external_identity.id::text")) return result([], 0);
@@ -395,4 +421,137 @@ test("expired or already-consumed invitations cannot create a user or a second s
     ]);
     assert.equal(fake.queries.at(-1).sql, "COMMIT");
   });
+});
+
+test("employee login persistence records every remaining named admission denial", async (t) => {
+  const cases = [
+    {
+      name: "requires an invitation for an unbound identity",
+      reason: "invitation_required",
+      intent: authenticationIntent({ invitationTokenHash: null }),
+      query(sql) {
+        if (sql.startsWith("SELECT external_identity.id::text")) return result([], 0);
+        if (sql.startsWith("SELECT invitation.id::text")) return result([], 0);
+        if (sql.startsWith("INSERT INTO audit_events")) return result([], 1);
+        assert.fail(`unexpected work query: ${sql}`);
+      },
+    },
+    {
+      name: "rejects an invitation issued for another email",
+      reason: "invitation_email_mismatch",
+      intent: authenticationIntent(),
+      query(sql) {
+        if (sql.startsWith("SELECT external_identity.id::text")) return result([], 0);
+        if (sql.startsWith("SELECT invitation.id::text")) {
+          return result([invitationRow({
+            invitation_email_key: "other@cherryhillfci.com",
+          })], 1);
+        }
+        if (sql.startsWith("INSERT INTO audit_events")) return result([], 1);
+        assert.fail(`unexpected work query: ${sql}`);
+      },
+    },
+    {
+      name: "rejects an invitation when the normalized user email already exists",
+      reason: "identity_conflict",
+      intent: authenticationIntent(),
+      query(sql) {
+        if (sql.startsWith("SELECT external_identity.id::text")) return result([], 0);
+        if (sql.startsWith("SELECT invitation.id::text")) return result([invitationRow()], 1);
+        if (sql.startsWith("SELECT project_id::text")) {
+          return result([{ project_id: PROJECT_ID }], 1);
+        }
+        if (sql.startsWith("SELECT id::text AS id FROM users")) {
+          return result([{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }], 1);
+        }
+        if (sql.startsWith("INSERT INTO audit_events")) return result([], 1);
+        assert.fail(`unexpected work query: ${sql}`);
+      },
+    },
+    {
+      name: "rejects a disabled bound user",
+      reason: "user_unavailable",
+      intent: authenticationIntent({ invitationTokenHash: null }),
+      query(sql) {
+        if (sql.startsWith("SELECT external_identity.id::text")) {
+          return result([existingIdentityRow({ status: "disabled" })], 1);
+        }
+        if (sql.startsWith("INSERT INTO audit_events")) return result([], 1);
+        assert.fail(`unexpected work query: ${sql}`);
+      },
+    },
+    {
+      name: "rejects a bound user without exactly one approved role",
+      reason: "role_not_approved",
+      intent: authenticationIntent({ invitationTokenHash: null }),
+      query(sql) {
+        if (sql.startsWith("SELECT external_identity.id::text")) {
+          return result([existingIdentityRow()], 1);
+        }
+        if (sql.startsWith("SELECT assigned_role.role_key")) {
+          return result([{ role_key: "unsupported_role" }], 1);
+        }
+        if (sql.startsWith("INSERT INTO audit_events")) return result([], 1);
+        assert.fail(`unexpected work query: ${sql}`);
+      },
+    },
+    {
+      name: "rejects an invitation whose intended role is inactive",
+      reason: "role_not_approved",
+      intent: authenticationIntent(),
+      query(sql) {
+        if (sql.startsWith("SELECT external_identity.id::text")) return result([], 0);
+        if (sql.startsWith("SELECT invitation.id::text")) {
+          return result([invitationRow({ role_status: "disabled" })], 1);
+        }
+        if (sql.startsWith("INSERT INTO audit_events")) return result([], 1);
+        assert.fail(`unexpected work query: ${sql}`);
+      },
+    },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      const fake = fakeDatabase(scenario.query);
+      const repository = createPostgresIdentityPersistenceRepository(fake.pool, {
+        schema: "fci_test",
+      });
+
+      assert.deepEqual(await repository.authenticateEmployeeSession(scenario.intent), {
+        outcome: "denied",
+        reason: scenario.reason,
+      });
+      assertLoginFailureAudit(fake, scenario.reason);
+      assert.equal(fake.queries.at(-1).sql, "COMMIT");
+    });
+  }
+});
+
+test("employee login maps a named PostgreSQL unique violation to a separately audited conflict", async () => {
+  const uniqueViolation = Object.assign(new Error("FCI TEST duplicate user email"), {
+    code: "23505",
+    constraint: "users_email_key_key",
+  });
+  const fake = fakeDatabase(async (sql) => {
+    if (sql.startsWith("SELECT external_identity.id::text")) return result([], 0);
+    if (sql.startsWith("SELECT invitation.id::text")) return result([invitationRow()], 1);
+    if (sql.startsWith("SELECT project_id::text")) {
+      return result([{ project_id: PROJECT_ID }], 1);
+    }
+    if (sql.startsWith("SELECT id::text AS id FROM users")) return result([], 0);
+    if (sql.startsWith("INSERT INTO users")) throw uniqueViolation;
+    if (sql.startsWith("INSERT INTO audit_events")) return result([], 1);
+    assert.fail(`unexpected work query: ${sql}`);
+  });
+  const repository = createPostgresIdentityPersistenceRepository(fake.pool, {
+    schema: "fci_test",
+  });
+
+  assert.deepEqual(await repository.authenticateEmployeeSession(authenticationIntent()), {
+    outcome: "conflict",
+  });
+  assert.equal(fake.connectCount, 2);
+  assert.ok(fake.queries.some(({ sql }) => sql === "ROLLBACK"));
+  assert.equal(fake.queries.at(-1).sql, "COMMIT");
+  assertLoginFailureAudit(fake, "conflict");
 });
