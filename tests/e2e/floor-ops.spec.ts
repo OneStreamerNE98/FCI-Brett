@@ -74,7 +74,13 @@ test("has a clear page identity, meaningful live render, and healthy browser con
   expect(response?.ok()).toBe(true);
   await expect(page).toHaveTitle("FCI Operations | Development");
   await expect(page).toHaveURL("http://localhost:4173/");
-  await expect(page.getByRole("img", { name: "Floor Coverings International" })).toBeVisible();
+  const fullLogo = page.getByRole("img", { name: "Floor Coverings International" });
+  await expect(fullLogo).toBeVisible();
+  await expect(fullLogo).toHaveAttribute("src", "/fci-logo-enhanced-master.png");
+  expect(await fullLogo.evaluate((image: HTMLImageElement) => ({ width: image.naturalWidth, height: image.naturalHeight }))).toEqual({ width: 1254, height: 1254 });
+  await expect(page.locator('link[rel="shortcut icon"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
   await expect(page.getByRole("main")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await waitForLiveRecords(page);
@@ -91,9 +97,15 @@ test("desktop sidebar collapse control stays fully clickable and expands again",
 
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   const sidebar = page.locator("#application-navigation");
+  const fullLogo = sidebar.locator(".brand-full");
+  const compactLogo = sidebar.locator(".brand-compact img");
   const expand = page.getByRole("button", { name: "Expand navigation" });
   await expect(expand).toBeVisible();
   await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(78);
+  await expect(fullLogo).toBeHidden();
+  await expect(compactLogo).toBeVisible();
+  await expect(compactLogo).toHaveAttribute("src", "/fci-app-icon-master.png");
+  expect(await compactLogo.evaluate((image: HTMLImageElement) => ({ width: image.naturalWidth, height: image.naturalHeight }))).toEqual({ width: 1254, height: 1254 });
 
   const box = await expand.boundingBox();
   if (!box) throw new Error("Expand navigation control has no rendered bounds");
@@ -108,13 +120,17 @@ test("desktop sidebar collapse control stays fully clickable and expands again",
   await page.mouse.click(rightEdge.x, rightEdge.y);
   await expect(page.getByRole("button", { name: "Collapse navigation" })).toBeVisible();
   await expect(page.locator(".app-shell")).not.toHaveClass(/sidebar-is-collapsed/);
+  await expect(fullLogo).toBeVisible();
+  await expect(compactLogo).toBeHidden();
   expectHealthyBrowser(issues);
 });
 
 test("mobile navigation traps focus and restores the menu trigger on every close path", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/");
   await waitForLiveRecords(page);
+  await page.getByRole("button", { name: "Collapse navigation" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
 
   const trigger = page.getByRole("button", { name: "Open navigation" });
   const navigation = page.locator("#application-navigation");
@@ -122,9 +138,19 @@ test("mobile navigation traps focus and restores the menu trigger on every close
 
   await trigger.click();
   const close = page.getByRole("button", { name: "Close navigation" });
+  const fullLogo = navigation.locator(".brand-full");
+  const compactLogo = navigation.locator(".brand-compact img");
   await expect(close).toBeFocused();
   await expect(navigation).toHaveAttribute("role", "dialog");
+  await expect.poll(async () => (await navigation.boundingBox())?.width).toBe(246);
   await expect(main).toHaveAttribute("inert", "");
+  await expect(fullLogo).toBeVisible();
+  await expect(compactLogo).toBeHidden();
+  const [navigationBox, logoBox, closeBox] = await Promise.all([navigation.boundingBox(), fullLogo.boundingBox(), close.boundingBox()]);
+  if (!navigationBox || !logoBox || !closeBox) throw new Error("Mobile navigation logo or close control has no rendered bounds");
+  expect(logoBox.x).toBeGreaterThanOrEqual(navigationBox.x);
+  expect(logoBox.x + logoBox.width).toBeLessThanOrEqual(navigationBox.x + navigationBox.width);
+  expect(logoBox.x + logoBox.width).toBeLessThanOrEqual(closeBox.x);
   await expectNoSeriousAxeViolations(page, "#application-navigation");
 
   await page.keyboard.press("Shift+Tab");
