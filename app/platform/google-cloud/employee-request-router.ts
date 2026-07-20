@@ -67,8 +67,20 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const VERSION_PATTERN = /^[1-9][0-9]{0,18}$/;
 const GENERATED_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
 const MAX_AUDIT_CURSOR_LENGTH = 256;
-const CREATION_IDEMPOTENCY_LIFETIME_MS = 24 * 60 * 60 * 1_000;
+// This timestamp is retention metadata for a future cleanup policy. The
+// current unique key remains claimed regardless of this timestamp and is
+// never made reusable by the creation repositories.
+const CREATION_IDEMPOTENCY_RETENTION_METADATA_MS = 24 * 60 * 60 * 1_000;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/;
+const PRODUCTION_PROJECT_CREATION_FIELDS = new Set([
+  "clientId",
+  "estimatedValue",
+  "name",
+  "projectManager",
+  "projectManagerId",
+  "site",
+  "status",
+]);
 const AUDIT_CURSOR_PATTERN = /^v2\.([A-Za-z0-9_-]+)$/;
 const AUDIT_CURSOR_KEY_PATTERN = /^[0-9a-f]{64}$/;
 const AUDIT_RESULTS = new Set<AdminAuditResult>(["succeeded", "failed", "denied"]);
@@ -486,6 +498,13 @@ async function jsonBody(request: IncomingMessage): Promise<JsonObject> {
   return Object.freeze({ ...(parsed as Record<string, unknown>) });
 }
 
+function productionProjectCreationBody(body: JsonObject) {
+  if (Object.keys(body).some((key) => !PRODUCTION_PROJECT_CREATION_FIELDS.has(key))) {
+    throw new HttpFailure(400, "unsupported_project_fields");
+  }
+  return body;
+}
+
 function idempotencyKey(request: IncomingMessage) {
   let count = 0;
   for (let index = 0; index < request.rawHeaders.length; index += 2) {
@@ -517,7 +536,7 @@ function creationRequest(
     idempotencyRequestId: requestId,
     idempotencyKey: idempotencyKey(request),
     correlationId,
-    expiresAt: createdAt + CREATION_IDEMPOTENCY_LIFETIME_MS,
+    expiresAt: createdAt + CREATION_IDEMPOTENCY_RETENTION_METADATA_MS,
     outboxEventId,
   });
 }
@@ -1254,6 +1273,7 @@ export function createEmployeeRequestRouter(
         const result = await dependencies.authorization.performProjectCreate(
           requestTrace,
           async (context) => {
+            const body = productionProjectCreationBody(await jsonBody(request));
             const createdAt = now();
             const requestMetadata = creationRequest(
               request,
@@ -1263,7 +1283,7 @@ export function createEmployeeRequestRouter(
               newId(),
             );
             return projectCreationHttpResult(await createProject(
-              await jsonBody(request),
+              body,
               creationAuthorizationFor({
                 actorId: context.email,
                 capabilities: [...context.capabilities],

@@ -62,7 +62,7 @@ The source policy intersects the ceiling with persisted same-role grants. It rej
 
 The production Cloud Run entry point now composes the authorization service and employee request router in source:
 
-- Functional PostgreSQL-backed source routes: dashboard, search, project list, exact-project view, client list/create, project create, lead list/create, project-meeting list/create, and logout. Production mutations require live same-origin CSRF and one bounded idempotency key; successful production responses use `{data}`.
+- Functional PostgreSQL-backed source routes: dashboard, search, project list, exact-project view, client list/create, project create, lead list/create, project-meeting list/create, and logout. Authenticated production mutations require live same-origin CSRF; the four core-record creation POSTs additionally require one bounded idempotency key and return `{data}`.
 - Conditionally composed employee-login routes: Google OIDC initiation and callback, durable invitation/identity resolution, security-audit evidence, and secure session-cookie issuance. Missing OIDC configuration keeps the routes unavailable.
 - File list/upload/share, Gmail filing, and Calendar creation routes pass through session, capability, CSRF, and exact-project gates, but return `503 feature_unavailable` because no production file or Google provider action adapters are composed.
 - File upload/share, Gmail, and Calendar callbacks cannot run after a denial. No route trusts the Sites `oai-authenticated-user-email` header or includes a fake production identity.

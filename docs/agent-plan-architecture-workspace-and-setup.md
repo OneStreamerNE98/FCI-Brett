@@ -324,9 +324,10 @@ detection in the two admin clients). Provider routes still 503.
 reads, provider 503 assertion; contract section exists.
 
 The branch adds the four production creation paths and scoped lead/meeting reads through
-portable application use cases. Production POSTs require the host-only employee session,
-same-origin CSRF, and one bounded `Idempotency-Key`; successful production responses use
-the `{data}` envelope. The Sites/D1 routes retain their existing development response
+portable application use cases. Authenticated mutations require the host-only employee
+session and same-origin CSRF; the four core-record creation POSTs additionally require one
+bounded `Idempotency-Key` and return the `{data}` envelope. The Sites/D1 routes retain
+their existing development response
 shapes. The two admin clients now fail locally with `secure_session_not_ready` when the
 secure employee-session bootstrap is absent, so the development surface does not request
 unsupported `/api/v1/admin/access` or `/api/v1/admin/audit` endpoints. No D1

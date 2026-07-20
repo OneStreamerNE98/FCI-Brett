@@ -851,6 +851,34 @@ test("core writes deny missing capabilities before body parsing or repository wo
   }
 });
 
+test("production project creation rejects KPI-only fields before repository work", async () => {
+  const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+  try {
+    for (const [field, value] of [
+      ["flooringCategory", "hardwood"],
+      ["squareFeet", 1_200],
+      ["contractValue", 25_000],
+    ]) {
+      const response = await running.request("/api/v1/projects", {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        headers: { "Idempotency-Key": `be09-unsupported-${field}` },
+        json: {
+          clientId: CLIENT_FIXTURES[0].id,
+          name: "FCI TEST — DO NOT USE Unsupported KPI Project",
+          [field]: value,
+        },
+      });
+      assert.equal(response.status, 400, field);
+      assert.deepEqual(await json(response), { error: "unsupported_project_fields" }, field);
+    }
+    assert.equal(running.coreRecordCalls.length, 0);
+  } finally {
+    await running.close();
+  }
+});
+
 test("lead and meeting reads remain scope filtered for Project Managers", async () => {
   const running = await startHarness({ role: AUTHORIZATION_ROLES.projectManager });
   try {

@@ -25,7 +25,7 @@ The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-f
 - Fail-closed production configuration with explicit application environment, deployment stage, database access mode, private Cloud SQL connection, schema, and bounded pool settings.
 - Secret Manager-friendly password-file support. The password is non-enumerable in the in-memory configuration object and is never included in operational events.
 - One bounded `pg.Pool` per service instance, with copied query parameters, statement/lock/idle-transaction timeouts, connection lifetime limits, redacted idle-client error evidence, and ordered pool-then-connector shutdown.
-- Runtime composition for the completed PostgreSQL adapters. Client and project repositories are created per request so actor/idempotency metadata is not retained between requests; the outbox repository can be process-scoped.
+- Runtime composition for the completed PostgreSQL adapters. Client, project, lead, and project-meeting creation repositories are created per request so actor/idempotency metadata is not retained between requests; the outbox repository can be process-scoped.
 - Source-only employee request composition for dashboard, bounded search, project list/exact-project, client list/create, project create, lead list/create, project-meeting list/create, and idempotent logout. It reads one bounded host-only session cookie, hashes raw session/CSRF credentials immediately, requires exact same-origin plus live CSRF matching for mutations, clears unusable or confirmed-logout cookies while retaining retryable cookies after failed revocation, and applies generic `401`/`403`/`404` responses.
 - Authorization-gated file, Gmail, and Calendar route contracts that cannot call work after denial and deliberately report provider unavailability while their production adapters are absent.
 - Cloud-Run-compilable Drive, Gmail, Calendar, Sheets, and OAuth cores with injected fetch, clock, secret-store, and persistence seams. The source-only production OAuth workflow uses exact-version multi-key decryption and the version-3 integration port, but is deliberately absent from production route composition.
@@ -39,12 +39,14 @@ The production Cloud Run boundary and controlled Sites development boundary deli
 share portable application use cases without pretending they have the same transport
 contract:
 
-- Production employee requests use the host-only hashed session. Every POST requires an
-  exact same-origin request, a live session-bound CSRF credential, and one
-  `Idempotency-Key` matching `[A-Za-z0-9][A-Za-z0-9._:-]{0,254}`.
-  Creation keys are isolated by actor and operation and retained for the PostgreSQL
-  creation window; same-key/same-input replays return the first accepted `201` result,
-  while reuse for different normalized details returns `409`.
+- Production employee requests use the host-only hashed session. Authenticated mutations
+  require an exact same-origin request and a live session-bound CSRF credential. The four
+  core-record creation POSTs additionally require one `Idempotency-Key` matching
+  `[A-Za-z0-9][A-Za-z0-9._:-]{0,254}`. Creation keys are isolated by actor and operation;
+  same-key/same-input replays return the first accepted `201` result, while reuse for
+  different normalized details returns `409`. Their 24-hour `expiresAt` value is retention
+  metadata for a future cleanup policy only. No cleanup or reuse behavior exists, so the
+  timestamp does not make a key reusable.
 - Successful production API responses use `{ "data": ... }`. The newly composed routes
   are `POST /api/v1/clients`, `POST /api/v1/projects`, `GET|POST /api/v1/leads`, and
   `GET|POST /api/v1/projects/:projectId/meetings`. Project Manager reads remain limited
