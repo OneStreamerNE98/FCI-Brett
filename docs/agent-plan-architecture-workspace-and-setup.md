@@ -310,10 +310,10 @@ v2); provider routes still 503 in router tests.
 ### BE-09 · Port application writes to the production boundary; reconcile the dual API contract (medium, after BE-04+BE-06; VERIFIED)
 **Status:** In review — draft PR #51 from `codex/be09-production-writes`, July 20, 2026. Source-only and not merged, applied, configured, or deployed.
 
-**Why:** Cloud Run has no write path for core records — `production-composition.ts`
-exposes per-request creation repository factories (lines 113–124, verified) that no route
-uses. The same paths exist on both surfaces with different auth/shapes, and the management
-UI calls `/api/v1/admin/*` paths that 404 on the current worker.
+**Why (at packet start):** Cloud Run had no write path for core records —
+`production-composition.ts` exposed per-request creation repository factories that no
+route used. The same paths existed on both surfaces with different auth/shapes, and the
+management UI called `/api/v1/admin/*` paths that 404 on the current worker.
 **Do:** Add POST /clients + /projects (+ leads/meetings GET/POST) to the employee router
 via the shared use-cases with capability checks, {data} envelope, idempotency. Record the
 per-route contract decision in `docs/google-cloud-runtime-foundation.md` (production =
