@@ -1,8 +1,8 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
 Date: July 19, 2026 · Status reconciled: July 20, 2026 · Source baseline: `main` @
-`f589ee6` (PRs #49/#50 completed and guarded the OIDC-04 documentation reconciliation;
-PRs #51–#57 remain open drafts). Deployment baseline: `adc79b8`, private Sites development version 40,
+`d567639` (PRs #49/#50 completed and guarded the OIDC-04 documentation reconciliation;
+PR #54 completed OIDC-02; PRs #51–#53 and #55–#57 remain open drafts). Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -910,9 +910,10 @@ format). Effort: small.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** current source is `main` at `f589ee6` after PRs #49/#50 completed
-OIDC-04's documentation reconciliation and status guard. PRs #51–#57 are open drafts;
-#55 is intentionally stacked on #54. None of those seven drafts is merged or deployed.
+**GitHub baseline:** source is reconciled against `main` at `d567639` after PRs #49/#50 completed
+OIDC-04's documentation reconciliation and status guard and PR #54 completed OIDC-02 in
+source. PRs #51–#53 and #55–#57 remain open drafts; #55 was built on #54 and must be
+retargeted or rebased to `main` with its checks rerun. None of these source changes is deployed.
 The exact deployed baseline
 remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
 version 40, which includes PR #30's semantic Settings rules table. The listed source
@@ -986,9 +987,9 @@ contracts and `npm test` pass.
 ## Sequencing at a glance
 
 **Start now, in parallel (no owner input needed):**
-OIDC-04 is complete in PR #49, with its closure guarded by PR #50. Review OIDC-02 in
-draft PR #54 before the intentionally stacked OIDC-03 draft PR #55; after #54 merges,
-retarget or rebase #55 to `main` and rerun its checks. BE-09 (#51), KPI-02 (#52), BE-12
+OIDC-04 is complete in PR #49, with its closure guarded by PR #50. OIDC-02 is complete
+in PR #54. Retarget or rebase OIDC-03 draft PR #55 to `main` and rerun its checks before
+review or merge. BE-09 (#51), KPI-02 (#52), BE-12
 (#53), SET-10 (#56), and the logo refresh (#57) are also in draft review and must not be
 reassigned. The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
 SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
@@ -1030,8 +1031,8 @@ Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
    (#48) are complete in source. Latest combined-main Node/build/lint, Terraform, and
    Chromium checks are green; nothing was applied, configured, published, or deployed.
 
-**Wave 2 — current:** review #54, then its stacked #55, in order. Parallel draft review
-also includes BE-09/#51, KPI-02/#52, BE-12/#53, SET-10/#56, and the logo refresh/#57.
+**Wave 2 — current:** retarget or rebase #55 to `main`, rerun its checks, and then review it.
+Parallel draft review also includes BE-09/#51, KPI-02/#52, BE-12/#53, SET-10/#56, and the logo refresh/#57.
 BE-10/BE-14 wait for #51; KPI-03 waits for #52. The unclaimed parallel-safe tracks are
 BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
 broad primitive/CSS consolidation tracks.

@@ -2,7 +2,7 @@
 
 Owner: Codex/developer, with policy approval from the business owner
 
-Status: Approved policy, Administration and Access branches, and Workspace OIDC/invitation/session-issuance source are merged; the People/Activity presentation adapter is deployed only to private Sites development. OIDC-02/#54 and stacked OIDC-03/#55 are in draft review and unmerged; live configuration, production session/UI composition, providers, PostgreSQL migration/grants, and production deployment remain open
+Status: Approved policy, Administration and Access branches, Workspace OIDC/invitation/session-issuance source, and OIDC-02/#54 hardening are merged; the People/Activity presentation adapter is deployed only to private Sites development. OIDC-03/#55 remains in draft review and unmerged; live configuration, production session/UI composition, providers, PostgreSQL migration/grants, and production deployment remain open
 
 Local simulation depends on: Recorded first-rollout sensitive-action decisions and the production persistence boundary
 
@@ -47,7 +47,7 @@ These decisions authorize local policy and route work only. They do not set the 
 - [x] Compose PostgreSQL-backed dashboard, search, project list/exact-project, client list, and logout source routes.
 - [x] Compose file list/upload/share, Gmail-file, and Calendar-create routes through authorization; without production action adapters they deliberately return `503 feature_unavailable` after authorization succeeds.
 - [x] Preserve health/readiness, drain behavior, migration-command separation, and denial of the Sites identity header in the Cloud Run module graph.
-- [x] Add source-only durable invitation fulfillment, Workspace OIDC verification, and secure session issuance. PR #38 implemented the path; PR #48 corrected real-callback compatibility. OIDC-02 is in draft PR #54, and OIDC-03 is in draft PR #55 stacked on #54; neither is merged, and every live apply/configuration gate remains open.
+- [x] Add source-only durable invitation fulfillment, Workspace OIDC verification, and secure session issuance. PR #38 implemented the path; PR #48 corrected real-callback compatibility; and OIDC-02 is complete in source in PR #54. OIDC-03 remains in unmerged draft PR #55, and every live apply/configuration gate remains open.
 - [ ] Add production file and Google provider adapters only after their persistence, configuration, classification, and direct-access gates are accepted.
 - [ ] Add route-level/browser evidence for the complete supported interface. Source composition is not deployment evidence.
 
