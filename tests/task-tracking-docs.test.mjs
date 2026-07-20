@@ -213,7 +213,7 @@ test("the checklist dashboard records the merged baseline and current review que
   }
 
   assert.match(packetStatus(oidc, "OIDC-02"), /^Complete — PR #54, July 20, 2026\./);
-  assert.match(packetStatus(oidc, "OIDC-03"), /^In review — draft PR #55\b[\s\S]*built on merged PR #54[\s\S]*pending retarget or rebase[\s\S]*Not merged/);
+  assert.match(packetStatus(oidc, "OIDC-03"), /^In review — draft PR #55\b[\s\S]*rebased onto current `main` after PR #54[\s\S]*PR #60 reconciliation[\s\S]*Not merged/);
   assert.match(staffLogin, /OIDC-02\/#54 hardening are merged[\s\S]*OIDC-03\/#55 remains in draft review and unmerged/);
   assert.match(foundation, /BE-09\/#51 and BE-12\/#53 are in draft review/);
   assert.match(frontend, /KPI-02\/#52, SET-10\/#56, and the logo refresh\/#57 are in draft review and unmerged/);
