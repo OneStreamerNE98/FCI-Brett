@@ -26,6 +26,7 @@ const USER_ID = "33333333-3333-4333-8333-333333333333";
 const RESOURCE_ID = "44444444-4444-4444-8444-444444444444";
 const PROJECT_ID = "55555555-5555-4555-8555-555555555555";
 const AUDIT_ID = "66666666-6666-4666-8666-666666666666";
+const CREDENTIAL_ID = "77777777-7777-4777-8777-777777777777";
 const CREATED_AT = Date.UTC(2026, 6, 15, 12, 0, 0);
 const RECORDED_AT = new Date(CREATED_AT + 25);
 const STATE_HASH = `sha256:${"a".repeat(64)}`;
@@ -110,6 +111,51 @@ function consumeOauthAttemptIntent(overrides = {}) {
       action: "integration.oauth_attempt_consumed",
       targetType: "integration_oauth_attempt",
       targetId: OAUTH_ATTEMPT_ID,
+    }),
+    ...overrides,
+  };
+}
+
+function completeOauthConnectionIntent(overrides = {}) {
+  return {
+    connectionId: CONNECTION_ID,
+    expectedConnectionVersion: "1",
+    issuer: "https://accounts.google.com",
+    externalSubject: "google-subject-123",
+    externalEmail: "operations@cherryhillfci.com",
+    hostedDomain: "cherryhillfci.com",
+    credentialId: CREDENTIAL_ID,
+    refreshTokenCiphertext: Uint8Array.from({ length: 48 }, (_, index) => index + 1),
+    keyVersion: "2",
+    grantedScopes: [
+      "openid",
+      "https://www.googleapis.com/auth/drive.metadata.readonly",
+    ],
+    completedByUserId: USER_ID,
+    completedByActorKey: `user:${USER_ID}`,
+    completedAt: CREATED_AT + 6 * 60_000,
+    audit: auditEvent({
+      action: "integration.oauth_connection_completed",
+      targetType: "integration_connection",
+      targetId: CONNECTION_ID,
+    }),
+    ...overrides,
+  };
+}
+
+function rotateCredentialIntent(overrides = {}) {
+  return {
+    connectionId: CONNECTION_ID,
+    credentialId: CREDENTIAL_ID,
+    credentialKind: "refresh_token",
+    expectedVersion: "3",
+    ciphertext: Uint8Array.from({ length: 48 }, (_, index) => 255 - index),
+    keyVersion: "2",
+    rotatedAt: CREATED_AT + 7 * 60_000,
+    audit: auditEvent({
+      action: "integration.credential_rotated",
+      targetType: "integration_connection",
+      targetId: CONNECTION_ID,
     }),
     ...overrides,
   };
@@ -326,6 +372,13 @@ test("repository-owned validation rejects malformed intents before connecting", 
       /positive signed 64-bit integer/,
     ],
     [
+      "OAuth completion email",
+      (subject) => subject.completeOauthConnection(completeOauthConnectionIntent({
+        externalEmail: "Operations@CherryHillFCI.com",
+      })),
+      /email must be normalized/,
+    ],
+    [
       "resource URL",
       (subject) => subject.registerResource(resourceIntent({
         externalUrl: "http://drive.google.com/drive/folders/unsafe",
@@ -458,6 +511,136 @@ test("a stale OAuth consume still appends audit evidence before committing", asy
   ]);
 });
 
+test("OAuth completion atomically binds identity, refresh ciphertext, scopes, and audit evidence", async () => {
+  const intent = completeOauthConnectionIntent();
+  const fake = transactionPool((sql) => {
+    if (sql.startsWith("SELECT id::text AS id")) {
+      return result([{ id: CONNECTION_ID }], 1);
+    }
+    if (sql.startsWith("INSERT INTO integration_credentials (")) return result([], 1);
+    if (sql.startsWith("DELETE FROM integration_connection_scopes")) return result([], 2);
+    if (sql.startsWith("INSERT INTO integration_connection_scopes")) return result([], 1);
+    if (sql.startsWith("UPDATE integration_connections")) {
+      return result([{ version: "2" }], 1);
+    }
+    if (sql.startsWith("INSERT INTO audit_events (")) return auditInsertResult();
+    throw new Error(`unexpected OAuth completion query: ${sql}`);
+  });
+
+  assert.deepEqual(await repository(fake).completeOauthConnection(intent), {
+    outcome: "accepted",
+    version: "2",
+  });
+  const credential = fake.queries.find(({ sql }) => sql.startsWith("INSERT INTO integration_credentials ("));
+  assert.deepEqual(credential.values.slice(0, 2), [CREDENTIAL_ID, CONNECTION_ID]);
+  assert.equal(Buffer.isBuffer(credential.values[2]), true);
+  assert.deepEqual(new Uint8Array(credential.values[2]), intent.refreshTokenCiphertext);
+  assert.equal(credential.values[3], "2");
+  assert.equal(credential.values[4].getTime(), intent.completedAt);
+
+  const scopeWrites = fake.queries.filter(({ sql }) => sql.startsWith("INSERT INTO integration_connection_scopes"));
+  assert.deepEqual(scopeWrites.map(({ values }) => values[1]), intent.grantedScopes);
+  assert.ok(scopeWrites.every(({ values }) => values[2].getTime() === intent.completedAt));
+
+  const connectionUpdate = fake.queries.find(({ sql }) => sql.startsWith("UPDATE integration_connections"));
+  assert.deepEqual(connectionUpdate.values.slice(0, 6), [
+    CONNECTION_ID,
+    "1",
+    "https://accounts.google.com",
+    "google-subject-123",
+    "operations@cherryhillfci.com",
+    "cherryhillfci.com",
+  ]);
+  assert.equal(connectionUpdate.values[6].getTime(), intent.completedAt);
+  assert.deepEqual(connectionUpdate.values.slice(7), [USER_ID, `user:${USER_ID}`]);
+  assert.equal(fake.queries.at(-1).sql, "COMMIT");
+  assert.deepEqual(fake.releases, [undefined]);
+});
+
+test("a stale OAuth connection completion writes denial evidence without storing credentials", async () => {
+  const fake = transactionPool((sql) => {
+    if (sql.startsWith("SELECT id::text AS id")) return result([], 0);
+    if (sql.startsWith("INSERT INTO audit_events (")) return auditInsertResult();
+    throw new Error(`unexpected stale completion query: ${sql}`);
+  });
+  assert.deepEqual(
+    await repository(fake).completeOauthConnection(completeOauthConnectionIntent()),
+    { outcome: "stale" },
+  );
+  assert.equal(fake.queries.some(({ sql }) => /integration_credentials/.test(sql)), false);
+  const audit = fake.queries.find(({ sql }) => sql.startsWith("INSERT INTO audit_events ("));
+  assert.deepEqual(audit.values.slice(6, 11), [
+    "integration.oauth_connection_completed",
+    "integration_connection",
+    CONNECTION_ID,
+    "denied",
+    "stale_connection",
+  ]);
+});
+
+test("active credential reads and exact-version rotation preserve encrypted bytes", async () => {
+  const ciphertext = Buffer.from(completeOauthConnectionIntent().refreshTokenCiphertext);
+  const readFake = transactionPool((sql) => {
+    if (sql.startsWith("SELECT id::text AS id, connection_id::text AS connection_id")) {
+      return result([{
+        id: CREDENTIAL_ID,
+        connection_id: CONNECTION_ID,
+        credential_kind: "refresh_token",
+        ciphertext,
+        key_version: "1",
+        version: "3",
+      }], 1);
+    }
+    throw new Error(`unexpected active credential query: ${sql}`);
+  });
+  assert.deepEqual(
+    await repository(readFake).getActiveCredential(CONNECTION_ID, "refresh_token"),
+    {
+      id: CREDENTIAL_ID,
+      connectionId: CONNECTION_ID,
+      credentialKind: "refresh_token",
+      ciphertext: new Uint8Array(ciphertext),
+      keyVersion: "1",
+      version: "3",
+    },
+  );
+
+  const rotation = rotateCredentialIntent();
+  const rotateFake = transactionPool((sql) => {
+    if (sql.startsWith("UPDATE integration_credentials")) return result([{ version: "4" }], 1);
+    if (sql.startsWith("INSERT INTO audit_events (")) return auditInsertResult();
+    throw new Error(`unexpected credential rotation query: ${sql}`);
+  });
+  assert.deepEqual(await repository(rotateFake).rotateCredential(rotation), {
+    outcome: "accepted",
+    version: "4",
+  });
+  const update = rotateFake.queries.find(({ sql }) => sql.startsWith("UPDATE integration_credentials"));
+  assert.deepEqual(update.values.slice(0, 4), [CREDENTIAL_ID, CONNECTION_ID, "refresh_token", "3"]);
+  assert.deepEqual(new Uint8Array(update.values[4]), rotation.ciphertext);
+  assert.equal(update.values[5], "2");
+  assert.equal(update.values[6].getTime(), CREATED_AT + 7 * 60_000);
+});
+
+test("a stale exact-version credential rotation records denial without changing ciphertext", async () => {
+  const fake = transactionPool((sql) => {
+    if (sql.startsWith("UPDATE integration_credentials")) return result([], 0);
+    if (sql.startsWith("INSERT INTO audit_events (")) return auditInsertResult();
+    throw new Error(`unexpected stale rotation query: ${sql}`);
+  });
+  assert.deepEqual(await repository(fake).rotateCredential(rotateCredentialIntent()), {
+    outcome: "stale",
+  });
+  const audit = fake.queries.find(({ sql }) => sql.startsWith("INSERT INTO audit_events ("));
+  assert.deepEqual(audit.values.slice(6, 11), [
+    "integration.credential_rotated",
+    "integration_connection",
+    CONNECTION_ID,
+    "denied",
+    "stale_credential",
+  ]);
+});
+
 test("an audit insert failure rolls back every integration mutation path", async () => {
   const auditFailure = new Error("simulated audit insert failure");
   const cases = [
@@ -477,6 +660,16 @@ test("an audit insert failure rolls back every integration mutation path", async
       invoke: (subject) => subject.consumeOauthAttempt(consumeOauthAttemptIntent()),
     },
     {
+      label: "OAuth completion",
+      mutationPrefix: "SELECT id::text AS id",
+      invoke: (subject) => subject.completeOauthConnection(completeOauthConnectionIntent()),
+    },
+    {
+      label: "credential rotation",
+      mutationPrefix: "UPDATE integration_credentials",
+      invoke: (subject) => subject.rotateCredential(rotateCredentialIntent()),
+    },
+    {
       label: "resource",
       mutationPrefix: "INSERT INTO integration_resources (",
       invoke: (subject) => subject.registerResource(resourceIntent()),
@@ -485,6 +678,13 @@ test("an audit insert failure rolls back every integration mutation path", async
 
   for (const scenario of cases) {
     const fake = transactionPool((sql) => {
+      if (scenario.label === "OAuth completion") {
+        if (sql.startsWith("SELECT id::text AS id")) return result([{ id: CONNECTION_ID }], 1);
+        if (sql.startsWith("INSERT INTO integration_credentials (")) return result([], 1);
+        if (sql.startsWith("DELETE FROM integration_connection_scopes")) return result([], 0);
+        if (sql.startsWith("INSERT INTO integration_connection_scopes")) return result([], 1);
+        if (sql.startsWith("UPDATE integration_connections")) return result([{ version: "2" }], 1);
+      }
       if (sql.startsWith(scenario.mutationPrefix)) {
         if (scenario.label === "OAuth consumption") {
           return result([{

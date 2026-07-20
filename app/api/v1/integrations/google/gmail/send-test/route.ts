@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateWorkspaceMessageInput, validateWorkspaceRecipient } from "../../../../../../lib/google-gmail";
-import { writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth";
+import { writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { getWorkspaceGmailClient, gmailErrorResponse, readBoundedJson } from "../_route-helpers";
 

@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { GoogleIntegrationError } from "./google-integration-error";
 import { resolveDriveWorkspace } from "./google-workspace";
 
@@ -14,7 +13,99 @@ const GOOGLE_GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 const GOOGLE_CALENDAR_EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 const GOOGLE_SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
-type EnvironmentValues = Record<string, string | undefined>;
+export type EnvironmentValues = Readonly<Record<string, string | undefined>>;
+
+export type GoogleFetch = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export type GoogleEncryptionKey = Readonly<{
+  version: string;
+  keyMaterial: string;
+}>;
+
+/** Resolves exact key versions without ever guessing or falling back to the current writer. */
+export interface GoogleSecretStore {
+  current(): Promise<GoogleEncryptionKey>;
+  get(version: string): Promise<string | null>;
+}
+
+export type StoredGoogleOauthAttempt = Readonly<{
+  id: string;
+  connectionKey: string;
+  pkceVerifierCiphertext: string;
+  browserNonceHash: string;
+  initiatedBy: string;
+  expiresAt: number;
+  consumedAt: number | null;
+}>;
+
+export type StoredGoogleConnection = Readonly<{
+  id: string;
+  googleEmail: string;
+  refreshTokenCiphertext: string;
+  keyVersion: string;
+  scopesJson?: string;
+  status: string;
+}>;
+
+/** Development persistence seam. The Sites composition supplies the only D1 adapter. */
+export interface GoogleOauthPersistence {
+  createOauthAttempt(input: Readonly<{
+    id: string;
+    connectionKey: string;
+    stateHash: string;
+    pkceVerifierCiphertext: string;
+    browserNonceHash: string;
+    initiatedBy: string;
+    scopesJson: string;
+    expiresAt: number;
+    createdAt: number;
+  }>): Promise<void>;
+  findOauthAttemptByStateHash(stateHash: string): Promise<StoredGoogleOauthAttempt | null>;
+  consumeOauthAttempt(id: string, consumedAt: number): Promise<boolean>;
+  findConnection(connectionKey: string): Promise<StoredGoogleConnection | null>;
+  deleteConnection(connectionKey: string): Promise<void>;
+  saveConnection(input: Readonly<{
+    id: string;
+    connectionKey: string;
+    googleSubject: string;
+    googleEmail: string;
+    scopesJson: string;
+    refreshTokenCiphertext: string;
+    keyVersion: string;
+    actor: string;
+    now: number;
+  }>): Promise<void>;
+  markConnectionAccountRejected(id: string, now: number): Promise<void>;
+  markConnectionRefreshSucceeded(id: string, now: number): Promise<void>;
+  markConnectionRefreshFailed(input: Readonly<{
+    id: string;
+    errorCode: string;
+    requiresReauthorization: boolean;
+    now: number;
+  }>): Promise<void>;
+  writeIntegrationEvent(input: Readonly<{
+    id: string;
+    connectionKey: string;
+    eventType: string;
+    actor: string;
+    entityType: string | null;
+    entityId: string | null;
+    detail: string | null;
+    createdAt: number;
+  }>): Promise<void>;
+}
+
+export type GoogleOauthDependencies = Readonly<{
+  persistence: GoogleOauthPersistence;
+  secrets: GoogleSecretStore;
+  fetch: GoogleFetch;
+  now: () => number;
+  randomUUID: () => string;
+  randomBytes?: (byteLength: number) => Uint8Array;
+}>;
 
 export type GoogleWorkspaceMode = "simulation" | "workspace";
 export type GoogleService = "drive" | "gmail" | "calendar" | "sheets";
@@ -119,9 +210,11 @@ function base64Url(bytes: Uint8Array) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function randomValue(byteLength = 32) {
-  const bytes = new Uint8Array(byteLength);
-  crypto.getRandomValues(bytes);
+function randomValue(byteLength = 32, randomBytes?: (byteLength: number) => Uint8Array) {
+  const bytes = randomBytes ? randomBytes(byteLength) : crypto.getRandomValues(new Uint8Array(byteLength));
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength !== byteLength) {
+    throw new GoogleIntegrationError("invalid_random_source", "Google authorization could not start safely.", 503);
+  }
   return base64Url(bytes);
 }
 
@@ -142,6 +235,63 @@ function isValidEncryptionKey(value: string | undefined) {
   } catch {
     return false;
   }
+}
+
+function encryptionKeyVersion(value: unknown) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value)) {
+    throw new GoogleIntegrationError(
+      "invalid_encryption_key_version",
+      "Google token encryption key version is invalid.",
+      503,
+    );
+  }
+  return value;
+}
+
+/**
+ * Creates an immutable keyring for production composition and tests. The current
+ * version is always the writer; reads resolve the stored version exactly.
+ */
+export function createGoogleSecretStore(input: Readonly<{
+  currentVersion: string;
+  keys: Readonly<Record<string, string>>;
+}>): GoogleSecretStore {
+  const currentVersion = encryptionKeyVersion(input.currentVersion);
+  const source = input.keys;
+  if (source === null || typeof source !== "object" || Array.isArray(source)) {
+    throw new GoogleIntegrationError("invalid_encryption_key", "Google token encryption keys are invalid.", 503);
+  }
+  const keys = new Map<string, string>();
+  for (const [versionValue, keyMaterial] of Object.entries(source)) {
+    const version = encryptionKeyVersion(versionValue);
+    if (!isValidEncryptionKey(keyMaterial)) {
+      throw new GoogleIntegrationError("invalid_encryption_key", "Google token encryption must use 32-byte base64url keys.", 503);
+    }
+    keys.set(version, keyMaterial);
+  }
+  if (!keys.has(currentVersion)) {
+    throw new GoogleIntegrationError("invalid_encryption_key", "The current Google encryption key version is unavailable.", 503);
+  }
+  return Object.freeze({
+    async current() {
+      return Object.freeze({ version: currentVersion, keyMaterial: keys.get(currentVersion)! });
+    },
+    async get(version: string) {
+      return keys.get(encryptionKeyVersion(version)) ?? null;
+    },
+  });
+}
+
+/** Current-key-only store used by the controlled Sites/D1 connector. */
+export function createCurrentGoogleSecretStore(config: Pick<GoogleRuntimeConfig, "tokenEncryptionKey" | "tokenEncryptionKeyVersion">) {
+  const version = encryptionKeyVersion(config.tokenEncryptionKeyVersion);
+  if (!isValidEncryptionKey(config.tokenEncryptionKey)) {
+    throw new GoogleIntegrationError("invalid_encryption_key", "Google token encryption must be a 32-byte base64url key.", 503);
+  }
+  return createGoogleSecretStore({
+    currentVersion: version,
+    keys: { [version]: config.tokenEncryptionKey! },
+  });
 }
 
 async function encryptionKey(value: string | undefined) {
@@ -182,7 +332,37 @@ export async function decryptGoogleSecret(ciphertext: string, keyMaterial: strin
   }
 }
 
-export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown as EnvironmentValues) {
+export async function encryptGoogleSecretWithStore(
+  plaintext: string,
+  secrets: GoogleSecretStore,
+  context: string,
+) {
+  const current = await secrets.current();
+  return Object.freeze({
+    ciphertext: await encryptGoogleSecret(plaintext, current.keyMaterial, context),
+    keyVersion: encryptionKeyVersion(current.version),
+  });
+}
+
+export async function decryptGoogleSecretWithStore(
+  ciphertext: string,
+  storedKeyVersion: string,
+  secrets: GoogleSecretStore,
+  context: string,
+) {
+  const version = encryptionKeyVersion(storedKeyVersion);
+  const keyMaterial = await secrets.get(version);
+  if (!keyMaterial) {
+    throw new GoogleIntegrationError(
+      "encryption_key_version_unavailable",
+      "Stored Google authorization uses an unavailable encryption-key version.",
+      503,
+    );
+  }
+  return decryptGoogleSecret(ciphertext, keyMaterial, context);
+}
+
+export function getGoogleRuntimeConfig(input: EnvironmentValues = {}) {
   const requested = input.GOOGLE_INTEGRATION_MODE?.trim().toLowerCase() ?? (input.NODE_ENV === "production" ? "workspace" : "simulation");
   const modeIsValid = requested === "simulation" || requested === "workspace";
   const environment: GoogleWorkspaceMode = requested === "workspace" ? "workspace" : "simulation";
@@ -193,6 +373,8 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown
   const clientSecret = workspaceValue(input, "CLIENT_SECRET");
   const redirectUri = workspaceValue(input, "OAUTH_REDIRECT_URI");
   const tokenEncryptionKey = workspaceValue(input, "TOKEN_ENCRYPTION_KEY");
+  const tokenEncryptionKeyVersion = workspaceValue(input, "TOKEN_ENCRYPTION_KEY_VERSION") ?? "1";
+  const tokenEncryptionKeyVersionIsValid = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(tokenEncryptionKeyVersion);
   const expectedGoogleEmails = list(workspaceValue(input, "AUTHORIZED_ACCOUNTS"));
   const allowedDomains = list(workspaceValue(input, "ALLOWED_DOMAINS")).map((domain) => domain.replace(/^@/, ""));
   const clientDirectorySheet = optionalGoogleResourceId(workspaceValue(input, "CLIENT_DIRECTORY_SHEET_ID"));
@@ -211,6 +393,7 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown
     ...(!clientSecret ? [{ label: "Google OAuth client secret", envVar: "GOOGLE_WORKSPACE_CLIENT_SECRET", secret: true }] : []),
     ...(!redirectUri ? [{ label: "OAuth redirect URI", envVar: "GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI", secret: false }] : []),
     ...(!isValidEncryptionKey(tokenEncryptionKey) ? [{ label: "32-byte Google token encryption key", envVar: "GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY", secret: true }] : []),
+    ...(!tokenEncryptionKeyVersionIsValid ? [{ label: "valid Google token encryption key version", envVar: "GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION", secret: false }] : []),
     ...(allowedDomains.length === 0 ? [{ label: "Google Workspace allowed domain", envVar: "GOOGLE_WORKSPACE_ALLOWED_DOMAINS", secret: false }] : []),
     ...(expectedGoogleEmails.length === 0 ? [{ label: "approved Google Workspace connection account", envVar: "GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", secret: false }] : []),
     ...(gmailEnabled && !intakeMailbox ? [{ label: "Google Workspace intake mailbox", envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX", secret: false }] : []),
@@ -239,7 +422,7 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown
     clientSecret,
     redirectUri,
     tokenEncryptionKey,
-    tokenEncryptionKeyVersion: workspaceValue(input, "TOKEN_ENCRYPTION_KEY_VERSION") ?? "1",
+    tokenEncryptionKeyVersion,
     expectedGoogleEmails,
     allowedDomains,
     drive,
@@ -296,76 +479,88 @@ export function buildGoogleAuthorizationUrl(config: GoogleRuntimeConfig, state: 
   return `${GOOGLE_AUTH_URL}?${parameters.toString()}`;
 }
 
-export async function createGoogleOauthAttempt(config: GoogleRuntimeConfig, initiatedBy: string, browserNonce: string) {
-  const id = crypto.randomUUID();
-  const state = randomValue();
-  const verifier = randomValue(48);
+export async function createGoogleOauthAttempt(
+  config: GoogleRuntimeConfig,
+  initiatedBy: string,
+  browserNonce: string,
+  dependencies: GoogleOauthDependencies,
+) {
+  const id = dependencies.randomUUID();
+  const state = randomValue(32, dependencies.randomBytes);
+  const verifier = randomValue(48, dependencies.randomBytes);
   const challenge = base64Url(await sha256Bytes(verifier));
-  const now = Date.now();
-  await env.DB.prepare("INSERT INTO google_oauth_attempts (id, connection_key, state_hash, pkce_verifier_ciphertext, browser_nonce_hash, initiated_by, scopes_json, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(
-      id,
-      config.connectionKey,
-      await sha256(state),
-      await encryptGoogleSecret(verifier, config.tokenEncryptionKey, `google-oauth-attempt:${id}`),
-      await sha256(browserNonce),
-      initiatedBy,
-      JSON.stringify(config.scopes),
-      now + 10 * 60 * 1000,
-      now,
-    )
-    .run();
+  const now = dependencies.now();
+  const encrypted = await encryptGoogleSecretWithStore(
+    verifier,
+    dependencies.secrets,
+    `google-oauth-attempt:${id}`,
+  );
+  await dependencies.persistence.createOauthAttempt({
+    id,
+    connectionKey: config.connectionKey,
+    stateHash: await sha256(state),
+    pkceVerifierCiphertext: encrypted.ciphertext,
+    browserNonceHash: await sha256(browserNonce),
+    initiatedBy,
+    scopesJson: JSON.stringify(config.scopes),
+    expiresAt: now + 10 * 60 * 1000,
+    createdAt: now,
+  });
   return { state, codeChallenge: challenge };
 }
 
-type OAuthAttemptRow = {
-  id: string;
-  connection_key: string;
-  pkce_verifier_ciphertext: string;
-  browser_nonce_hash: string;
-  initiated_by: string;
-  expires_at: number;
-  consumed_at: number | null;
-};
-
-export async function consumeGoogleOauthAttempt(config: GoogleRuntimeConfig, state: string, browserNonce: string, requesterEmail: string) {
+export async function consumeGoogleOauthAttempt(
+  config: GoogleRuntimeConfig,
+  state: string,
+  browserNonce: string,
+  requesterEmail: string,
+  dependencies: GoogleOauthDependencies,
+) {
   const stateHash = await sha256(state);
-  const attempt = await env.DB.prepare("SELECT id, connection_key, pkce_verifier_ciphertext, browser_nonce_hash, initiated_by, expires_at, consumed_at FROM google_oauth_attempts WHERE state_hash = ?")
-    .bind(stateHash)
-    .first<OAuthAttemptRow>();
-  if (!attempt || attempt.connection_key !== config.connectionKey || attempt.consumed_at || attempt.expires_at < Date.now()) {
+  const attempt = await dependencies.persistence.findOauthAttemptByStateHash(stateHash);
+  const now = dependencies.now();
+  if (!attempt || attempt.connectionKey !== config.connectionKey || attempt.consumedAt || attempt.expiresAt < now) {
     throw new GoogleIntegrationError("invalid_oauth_state", "Google authorization expired or could not be verified. Start again.", 400);
   }
-  if (attempt.initiated_by !== requesterEmail || attempt.browser_nonce_hash !== await sha256(browserNonce)) {
+  if (attempt.initiatedBy !== requesterEmail || attempt.browserNonceHash !== await sha256(browserNonce)) {
     throw new GoogleIntegrationError("oauth_request_mismatch", "Google authorization must be completed by the administrator who started it.", 403);
   }
-  const consumed = await env.DB.prepare("UPDATE google_oauth_attempts SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL AND expires_at >= ?")
-    .bind(Date.now(), attempt.id, Date.now())
-    .run();
-  if (consumed.meta.changes !== 1) {
+  if (!await dependencies.persistence.consumeOauthAttempt(attempt.id, now)) {
     throw new GoogleIntegrationError("oauth_state_reused", "Google authorization has already been used. Start again.", 400);
   }
-  return decryptGoogleSecret(attempt.pkce_verifier_ciphertext, config.tokenEncryptionKey, `google-oauth-attempt:${attempt.id}`);
+  const current = await dependencies.secrets.current();
+  return decryptGoogleSecret(
+    attempt.pkceVerifierCiphertext,
+    current.keyMaterial,
+    `google-oauth-attempt:${attempt.id}`,
+  );
 }
 
 type GoogleTokenRequestPurpose = "authorization-code" | "refresh-token";
 
 class GoogleTokenRequestError extends GoogleIntegrationError {
+  readonly requiresReauthorization: boolean;
+
   constructor(
     code: string,
     message: string,
     status: number,
-    public readonly requiresReauthorization = false,
+    requiresReauthorization = false,
   ) {
     super(code, message, status);
     this.name = "GoogleTokenRequestError";
+    this.requiresReauthorization = requiresReauthorization;
   }
 }
 
-async function tokenRequest(body: URLSearchParams, purpose: GoogleTokenRequestPurpose) {
+async function tokenRequest(
+  body: URLSearchParams,
+  purpose: GoogleTokenRequestPurpose,
+  fetcher: GoogleFetch,
+) {
   let response: Response;
   try {
-    response = await fetch(GOOGLE_TOKEN_URL, {
+    response = await fetcher(GOOGLE_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
@@ -400,7 +595,12 @@ function tokenSet(data: Record<string, unknown>): GoogleTokenSet {
   };
 }
 
-export async function exchangeGoogleAuthorizationCode(config: GoogleRuntimeConfig, code: string, verifier: string) {
+export async function exchangeGoogleAuthorizationCode(
+  config: GoogleRuntimeConfig,
+  code: string,
+  verifier: string,
+  fetcher: GoogleFetch,
+) {
   if (!config.clientId || !config.clientSecret || !config.redirectUri) {
     throw new GoogleIntegrationError("configuration_required", "Google Drive setup is incomplete.", 503);
   }
@@ -412,11 +612,11 @@ export async function exchangeGoogleAuthorizationCode(config: GoogleRuntimeConfi
     grant_type: "authorization_code",
     code_verifier: verifier,
   });
-  return tokenSet(await tokenRequest(body, "authorization-code"));
+  return tokenSet(await tokenRequest(body, "authorization-code", fetcher));
 }
 
-export async function fetchGoogleUserProfile(accessToken: string) {
-  const response = await fetch(GOOGLE_USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
+export async function fetchGoogleUserProfile(accessToken: string, fetcher: GoogleFetch) {
+  const response = await fetcher(GOOGLE_USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
   const data = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok || !data || typeof data.sub !== "string" || typeof data.email !== "string") {
     throw new GoogleIntegrationError("google_identity_unavailable", "Google account identity could not be verified.", 409);
@@ -441,14 +641,6 @@ function googleAccountIsAllowed(config: GoogleRuntimeConfig, value: string) {
   return config.expectedGoogleEmails.length > 0 && config.expectedGoogleEmails.includes(email);
 }
 
-type ConnectionRow = {
-  id: string;
-  google_email: string;
-  refresh_token_ciphertext: string;
-  scopes_json?: string;
-  status: string;
-};
-
 function storedScopes(value: string | undefined) {
   try {
     const parsed = JSON.parse(value ?? "[]");
@@ -462,7 +654,10 @@ function serviceIsGranted(config: GoogleRuntimeConfig, scopes: string[], service
   return scopes.includes(config.serviceScopes[service]);
 }
 
-export async function getGoogleConnectionStatus(config: GoogleRuntimeConfig) {
+export async function getGoogleConnectionStatus(
+  config: GoogleRuntimeConfig,
+  dependencies: Pick<GoogleOauthDependencies, "persistence">,
+) {
   if (config.simulation) {
     return {
       connected: true,
@@ -472,11 +667,9 @@ export async function getGoogleConnectionStatus(config: GoogleRuntimeConfig) {
       requiresReauthorization: false,
     };
   }
-  const connection = await env.DB.prepare("SELECT id, google_email, scopes_json, status FROM google_connections WHERE connection_key = ?")
-    .bind(config.connectionKey)
-    .first<{ id: string; google_email: string; scopes_json: string; status: string }>();
-  const email = connection?.google_email ?? null;
-  const scopes = storedScopes(connection?.scopes_json);
+  const connection = await dependencies.persistence.findConnection(config.connectionKey);
+  const email = connection?.googleEmail ?? null;
+  const scopes = storedScopes(connection?.scopesJson);
   const accountAllowed = Boolean(email && googleAccountIsAllowed(config, email));
   const hasUsableConnection = connection?.status === "connected" && accountAllowed;
   const services = {
@@ -496,16 +689,22 @@ export async function getGoogleConnectionStatus(config: GoogleRuntimeConfig) {
   };
 }
 
-export async function disconnectGoogleConnection(config: GoogleRuntimeConfig) {
+export async function disconnectGoogleConnection(
+  config: GoogleRuntimeConfig,
+  dependencies: GoogleOauthDependencies,
+) {
   if (config.simulation) return { revocationRequested: false };
-  const connection = await env.DB.prepare("SELECT id, google_email, refresh_token_ciphertext, status FROM google_connections WHERE connection_key = ?")
-    .bind(config.connectionKey)
-    .first<ConnectionRow>();
+  const connection = await dependencies.persistence.findConnection(config.connectionKey);
   let revocationRequested = false;
-  if (connection?.refresh_token_ciphertext) {
+  if (connection?.refreshTokenCiphertext) {
     try {
-      const refreshToken = await decryptGoogleSecret(connection.refresh_token_ciphertext, config.tokenEncryptionKey, `google-connection:${config.connectionKey}:refresh`);
-      const response = await fetch(GOOGLE_REVOCATION_URL, {
+      const refreshToken = await decryptGoogleSecretWithStore(
+        connection.refreshTokenCiphertext,
+        connection.keyVersion,
+        dependencies.secrets,
+        `google-connection:${config.connectionKey}:refresh`,
+      );
+      const response = await dependencies.fetch(GOOGLE_REVOCATION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token: refreshToken }),
@@ -516,75 +715,154 @@ export async function disconnectGoogleConnection(config: GoogleRuntimeConfig) {
       revocationRequested = false;
     }
   }
-  await env.DB.prepare("DELETE FROM google_connections WHERE connection_key = ?").bind(config.connectionKey).run();
+  await dependencies.persistence.deleteConnection(config.connectionKey);
   return { revocationRequested };
 }
 
-export async function saveGoogleConnection(config: GoogleRuntimeConfig, tokens: GoogleTokenSet, profile: GoogleUserProfile, actor: string) {
-  const now = Date.now();
-  const existing = await env.DB.prepare("SELECT id, google_email, refresh_token_ciphertext, status FROM google_connections WHERE connection_key = ?")
-    .bind(config.connectionKey)
-    .first<ConnectionRow>();
-  const refreshTokenCiphertext = tokens.refreshToken
-    ? await encryptGoogleSecret(tokens.refreshToken, config.tokenEncryptionKey, `google-connection:${config.connectionKey}:refresh`)
-    : existing?.refresh_token_ciphertext;
+export async function saveGoogleConnection(
+  config: GoogleRuntimeConfig,
+  tokens: GoogleTokenSet,
+  profile: GoogleUserProfile,
+  actor: string,
+  dependencies: GoogleOauthDependencies,
+) {
+  const now = dependencies.now();
+  const existing = await dependencies.persistence.findConnection(config.connectionKey);
+  const encrypted = tokens.refreshToken
+    ? await encryptGoogleSecretWithStore(
+      tokens.refreshToken,
+      dependencies.secrets,
+      `google-connection:${config.connectionKey}:refresh`,
+    )
+    : null;
+  const refreshTokenCiphertext = encrypted?.ciphertext ?? existing?.refreshTokenCiphertext;
+  const keyVersion = encrypted?.keyVersion ?? existing?.keyVersion;
   if (!refreshTokenCiphertext) {
     throw new GoogleIntegrationError("refresh_token_missing", "Google did not issue a reusable authorization. Remove this app from your Google Account and connect again.", 409);
   }
-  await env.DB.prepare("INSERT INTO google_connections (id, connection_key, google_subject, google_email, scopes_json, refresh_token_ciphertext, key_version, status, last_error_code, last_success_at, created_by, created_at, updated_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'connected', NULL, ?, ?, ?, ?, NULL) ON CONFLICT(connection_key) DO UPDATE SET google_subject = excluded.google_subject, google_email = excluded.google_email, scopes_json = excluded.scopes_json, refresh_token_ciphertext = excluded.refresh_token_ciphertext, key_version = excluded.key_version, status = 'connected', last_error_code = NULL, last_success_at = excluded.last_success_at, created_by = excluded.created_by, updated_at = excluded.updated_at, revoked_at = NULL")
-    .bind(existing?.id ?? crypto.randomUUID(), config.connectionKey, profile.subject, profile.email, JSON.stringify(tokens.scope), refreshTokenCiphertext, config.tokenEncryptionKeyVersion, now, actor, existing ? now : now, now)
-    .run();
+  await dependencies.persistence.saveConnection({
+    id: existing?.id ?? dependencies.randomUUID(),
+    connectionKey: config.connectionKey,
+    googleSubject: profile.subject,
+    googleEmail: profile.email,
+    scopesJson: JSON.stringify(tokens.scope),
+    refreshTokenCiphertext,
+    keyVersion: keyVersion!,
+    actor,
+    now,
+  });
 }
 
-export async function getGoogleAccessToken(config: GoogleRuntimeConfig, requiredService?: GoogleService) {
+export async function getGoogleAccessToken(
+  config: GoogleRuntimeConfig,
+  requiredService: GoogleService | undefined,
+  dependencies: GoogleOauthDependencies,
+) {
   if (config.simulation) {
     throw new GoogleIntegrationError("simulation_has_no_google_token", "Local Workspace simulation never creates or uses Google access tokens.", 409);
   }
-  const connection = await env.DB.prepare("SELECT id, google_email, refresh_token_ciphertext, scopes_json, status FROM google_connections WHERE connection_key = ?")
-    .bind(config.connectionKey)
-    .first<ConnectionRow>();
+  const connection = await dependencies.persistence.findConnection(config.connectionKey);
   if (!connection || connection.status !== "connected") {
     throw new GoogleIntegrationError("google_not_connected", "Connect the approved Google Workspace account before using this service.", 409);
   }
-  if (!googleAccountIsAllowed(config, connection.google_email)) {
-    await env.DB.prepare("UPDATE google_connections SET status = 'reauthorization-required', last_error_code = 'account_no_longer_allowed', updated_at = ? WHERE id = ?")
-      .bind(Date.now(), connection.id)
-      .run();
+  if (!googleAccountIsAllowed(config, connection.googleEmail)) {
+    await dependencies.persistence.markConnectionAccountRejected(connection.id, dependencies.now());
     throw new GoogleIntegrationError("unauthorized_google_account", "The stored Google account is no longer approved for this Workspace configuration. Reconnect the approved mailbox.", 409);
   }
-  if (requiredService && !serviceIsGranted(config, storedScopes(connection.scopes_json), requiredService)) {
+  if (requiredService && !serviceIsGranted(config, storedScopes(connection.scopesJson), requiredService)) {
     throw new GoogleIntegrationError("google_scope_reauthorization_required", `Reconnect Google and approve the ${requiredService} permission before continuing.`, 409);
   }
-  const refreshToken = await decryptGoogleSecret(connection.refresh_token_ciphertext, config.tokenEncryptionKey, `google-connection:${config.connectionKey}:refresh`);
+  const refreshToken = await decryptGoogleSecretWithStore(
+    connection.refreshTokenCiphertext,
+    connection.keyVersion,
+    dependencies.secrets,
+    `google-connection:${config.connectionKey}:refresh`,
+  );
   try {
     const data = await tokenRequest(new URLSearchParams({
       client_id: config.clientId ?? "",
       client_secret: config.clientSecret ?? "",
       refresh_token: refreshToken,
       grant_type: "refresh_token",
-    }), "refresh-token");
-    await env.DB.prepare("UPDATE google_connections SET last_success_at = ?, last_error_code = NULL, updated_at = ? WHERE id = ?")
-      .bind(Date.now(), Date.now(), connection.id)
-      .run();
+    }), "refresh-token", dependencies.fetch);
+    await dependencies.persistence.markConnectionRefreshSucceeded(connection.id, dependencies.now());
     return String(data.access_token);
   } catch (error) {
     const errorCode = error instanceof GoogleIntegrationError ? error.code : "refresh_failed";
     if (error instanceof GoogleTokenRequestError && error.requiresReauthorization) {
-      await env.DB.prepare("UPDATE google_connections SET status = 'reauthorization-required', last_error_code = ?, updated_at = ? WHERE id = ?")
-        .bind(errorCode, Date.now(), connection.id)
-        .run();
+      await dependencies.persistence.markConnectionRefreshFailed({
+        id: connection.id,
+        errorCode,
+        requiresReauthorization: true,
+        now: dependencies.now(),
+      });
     } else {
-      await env.DB.prepare("UPDATE google_connections SET last_error_code = ?, updated_at = ? WHERE id = ?")
-        .bind(errorCode, Date.now(), connection.id)
-        .run();
+      await dependencies.persistence.markConnectionRefreshFailed({
+        id: connection.id,
+        errorCode,
+        requiresReauthorization: false,
+        now: dependencies.now(),
+      });
     }
     if (error instanceof GoogleIntegrationError) throw error;
     throw new GoogleIntegrationError("refresh_failed", "Google authorization is temporarily unavailable. Try again.", 503);
   }
 }
 
-export async function writeGoogleIntegrationEvent(config: GoogleRuntimeConfig, eventType: string, actor: string, entityType?: string, entityId?: string, detail?: string) {
-  await env.DB.prepare("INSERT INTO google_integration_events (id, connection_key, event_type, actor, entity_type, entity_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(crypto.randomUUID(), config.connectionKey, eventType, actor, entityType ?? null, entityId ?? null, detail ?? null, Date.now())
-    .run();
+export async function writeGoogleIntegrationEvent(
+  config: GoogleRuntimeConfig,
+  eventType: string,
+  actor: string,
+  entityType: string | undefined,
+  entityId: string | undefined,
+  detail: string | undefined,
+  dependencies: Pick<GoogleOauthDependencies, "persistence" | "randomUUID" | "now">,
+) {
+  await dependencies.persistence.writeIntegrationEvent({
+    id: dependencies.randomUUID(),
+    connectionKey: config.connectionKey,
+    eventType,
+    actor,
+    entityType: entityType ?? null,
+    entityId: entityId ?? null,
+    detail: detail ?? null,
+    createdAt: dependencies.now(),
+  });
+}
+
+/** Binds all provider and persistence dependencies for one request/runtime composition. */
+export function createGoogleOauthOperations(
+  config: GoogleRuntimeConfig,
+  dependencies: GoogleOauthDependencies,
+) {
+  return Object.freeze({
+    createOauthAttempt: (initiatedBy: string, browserNonce: string) =>
+      createGoogleOauthAttempt(config, initiatedBy, browserNonce, dependencies),
+    consumeOauthAttempt: (state: string, browserNonce: string, requesterEmail: string) =>
+      consumeGoogleOauthAttempt(config, state, browserNonce, requesterEmail, dependencies),
+    exchangeAuthorizationCode: (code: string, verifier: string) =>
+      exchangeGoogleAuthorizationCode(config, code, verifier, dependencies.fetch),
+    fetchUserProfile: (accessToken: string) => fetchGoogleUserProfile(accessToken, dependencies.fetch),
+    connectionStatus: () => getGoogleConnectionStatus(config, dependencies),
+    disconnect: () => disconnectGoogleConnection(config, dependencies),
+    saveConnection: (tokens: GoogleTokenSet, profile: GoogleUserProfile, actor: string) =>
+      saveGoogleConnection(config, tokens, profile, actor, dependencies),
+    accessToken: (requiredService?: GoogleService) =>
+      getGoogleAccessToken(config, requiredService, dependencies),
+    writeEvent: (
+      eventType: string,
+      actor: string,
+      entityType?: string,
+      entityId?: string,
+      detail?: string,
+    ) => writeGoogleIntegrationEvent(
+      config,
+      eventType,
+      actor,
+      entityType,
+      entityId,
+      detail,
+      dependencies,
+    ),
+  });
 }

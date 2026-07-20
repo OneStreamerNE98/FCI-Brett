@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { summarizeFciLabels } from "../../../../../../../lib/google-gmail";
-import { writeGoogleIntegrationEvent } from "../../../../../../../lib/google-oauth";
+import { writeGoogleIntegrationEvent } from "../../../../../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../lib/workspace-auth";
 import { getWorkspaceGmailClient, gmailErrorResponse } from "../../_route-helpers";
 

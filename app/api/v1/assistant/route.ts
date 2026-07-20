@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../_workspace-data";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { responseOutputText } from "./response-output";
 

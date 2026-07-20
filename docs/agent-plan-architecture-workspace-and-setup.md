@@ -264,6 +264,11 @@ labels; BE-07 preserves those semantics when porting. Check off the checklist-07
 env fallback); settings e2e unchanged.
 
 ### BE-08 · Decouple Google clients from cloudflare:workers; key-version decryption; populate v3 integration tables (large, no deps)
+**Status:** In review — draft PR #45 on `codex/google-client-decoupling`, July 19, 2026.
+Local acceptance is green (395 tests, 380 passed and 15 environment-gated skips, plus
+lint); provider routes, production secrets/grants, infrastructure, and deployment remain
+uncomposed and unapplied.
+
 **Why:** The real Google clients import `cloudflare:workers` and cannot compile into the
 Cloud Run image; the v3 `integration_*` tables have no code path populating them from a
 real OAuth flow; `google_connections.key_version` is written but `decryptGoogleSecret`

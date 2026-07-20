@@ -22,7 +22,7 @@ const vite = await createServer({
 });
 
 const [oauthModule, calendarModule] = await Promise.all([
-  vite.ssrLoadModule("/app/lib/google-oauth.ts"),
+  vite.ssrLoadModule("/app/lib/google-oauth-sites.ts"),
   vite.ssrLoadModule("/app/lib/google-calendar-client.ts"),
 ]);
 
@@ -85,6 +85,7 @@ async function accessTokenFixture() {
     id: "connection-1",
     google_email: "operations@cherryhillfci.com",
     refresh_token_ciphertext: refreshTokenCiphertext,
+    key_version: config.tokenEncryptionKeyVersion,
     scopes_json: JSON.stringify([config.serviceScopes.drive]),
     status: "connected",
   };
@@ -178,6 +179,18 @@ test("Workspace readiness describes missing hosted values without returning thei
   assert.deepEqual(missing.missing, missing.missingDetails.map((detail) => detail.label));
   assert.equal(JSON.stringify(missing.missingDetails).includes(configuredSecret), false);
   assert.ok(missing.missingDetails.every((detail) => Object.keys(detail).sort().join(",") === "envVar,label,secret"));
+});
+
+test("the Sites simulation status does not require production encryption configuration", async () => {
+  const config = oauthModule.getGoogleRuntimeConfig({ NODE_ENV: "development" });
+  assert.equal(config.simulation, true);
+  assert.deepEqual(await oauthModule.getGoogleConnectionStatus(config), {
+    connected: true,
+    status: "connected",
+    account: "Local Workspace simulation",
+    services: { drive: true, gmail: true, calendar: true, sheets: true },
+    requiresReauthorization: false,
+  });
 });
 
 test("transient refresh failures keep the Google connection usable", async () => {

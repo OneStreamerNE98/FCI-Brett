@@ -1,9 +1,8 @@
 import {
   GoogleIntegrationError,
   assertGoogleService,
-  getGoogleAccessToken,
+  type GoogleFetch,
   type GoogleRuntimeConfig,
-  writeGoogleIntegrationEvent,
 } from "./google-oauth";
 
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
@@ -33,6 +32,28 @@ export type CalendarEventSummary = {
   end: string;
   url?: string;
 };
+
+export type GoogleCalendarClientDependencies = Readonly<{
+  fetch: GoogleFetch;
+  now: () => Date;
+}>;
+
+export type GoogleCalendarOperationsDependencies = GoogleCalendarClientDependencies & Readonly<{
+  getAccessToken(config: GoogleRuntimeConfig, service: "calendar"): Promise<string>;
+  writeIntegrationEvent(
+    config: GoogleRuntimeConfig,
+    eventType: string,
+    actor: string,
+    entityType: string,
+    entityId: string,
+    detail: string,
+  ): Promise<void>;
+}>;
+
+const DEFAULT_CLIENT_DEPENDENCIES: GoogleCalendarClientDependencies = Object.freeze({
+  fetch: (input, init) => globalThis.fetch(input, init),
+  now: () => new Date(),
+});
 
 function calendarTime(value: CalendarDateTime | undefined) {
   if (typeof value?.dateTime === "string") return value.dateTime;
@@ -68,7 +89,11 @@ function requireWorkspaceCalendarId(config: GoogleRuntimeConfig) {
 }
 
 export class GoogleCalendarClient {
-  constructor(private readonly accessToken: string, private readonly config: GoogleRuntimeConfig) {}
+  constructor(
+    private readonly accessToken: string,
+    private readonly config: GoogleRuntimeConfig,
+    private readonly dependencies: GoogleCalendarClientDependencies = DEFAULT_CLIENT_DEPENDENCIES,
+  ) {}
 
   private workspaceCalendarId() {
     return requireWorkspaceCalendarId(this.config);
@@ -78,7 +103,7 @@ export class GoogleCalendarClient {
     this.workspaceCalendarId();
     let response: Response;
     try {
-      response = await fetch(`${CALENDAR_API}/${path}`, {
+      response = await this.dependencies.fetch(`${CALENDAR_API}/${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -110,7 +135,7 @@ export class GoogleCalendarClient {
     return data as T;
   }
 
-  async listUpcomingEvents(now = new Date()) {
+  async listUpcomingEvents(now = this.dependencies.now()) {
     const timeMin = now.toISOString();
     const timeMax = new Date(now.getTime() + UPCOMING_WINDOW_MS).toISOString();
     const query = new URLSearchParams({
@@ -155,11 +180,19 @@ export class GoogleCalendarClient {
   }
 }
 
-export async function listWorkspaceCalendarEvents(config: GoogleRuntimeConfig, actor: string) {
+export async function listWorkspaceCalendarEvents(
+  config: GoogleRuntimeConfig,
+  actor: string,
+  dependencies: GoogleCalendarOperationsDependencies,
+) {
   const calendarId = requireWorkspaceCalendarId(config);
-  const calendar = new GoogleCalendarClient(await getGoogleAccessToken(config, "calendar"), config);
+  const calendar = new GoogleCalendarClient(
+    await dependencies.getAccessToken(config, "calendar"),
+    config,
+    dependencies,
+  );
   const result = await calendar.listUpcomingEvents();
-  await writeGoogleIntegrationEvent(
+  await dependencies.writeIntegrationEvent(
     config,
     "calendar.workspace_events_listed",
     actor,
@@ -170,11 +203,20 @@ export async function listWorkspaceCalendarEvents(config: GoogleRuntimeConfig, a
   return result;
 }
 
-export async function createWorkspaceCalendarHold(config: GoogleRuntimeConfig, actor: string, start: Date) {
+export async function createWorkspaceCalendarHold(
+  config: GoogleRuntimeConfig,
+  actor: string,
+  start: Date,
+  dependencies: GoogleCalendarOperationsDependencies,
+) {
   requireWorkspaceCalendarId(config);
-  const calendar = new GoogleCalendarClient(await getGoogleAccessToken(config, "calendar"), config);
+  const calendar = new GoogleCalendarClient(
+    await dependencies.getAccessToken(config, "calendar"),
+    config,
+    dependencies,
+  );
   const event = await calendar.createTestHold(start);
-  await writeGoogleIntegrationEvent(
+  await dependencies.writeIntegrationEvent(
     config,
     "calendar.workspace_hold_created",
     actor,

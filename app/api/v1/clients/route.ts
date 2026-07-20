@@ -8,8 +8,8 @@ import { creationAuthorizationFor, CREATION_CAPABILITIES } from "../../../applic
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { clientCreationHttpResult } from "../../../lib/creation-http-result";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
-import { trySyncGoogleDirectory } from "../../../lib/google-sheets";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
 const MAX_CLIENT_BODY_BYTES = 64_000;

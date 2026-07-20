@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { requireOfficeUser } from "../../../lib/workspace-auth";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
 type CountRow = { total: number | string | null };

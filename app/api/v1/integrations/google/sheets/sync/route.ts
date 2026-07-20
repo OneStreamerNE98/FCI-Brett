@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
-import { GoogleIntegrationError, getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth";
-import { getGoogleSheetMirrorStatus, syncGoogleDirectory } from "../../../../../../lib/google-sheets";
+import { GoogleIntegrationError, getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
+import { getGoogleSheetMirrorStatus, syncGoogleDirectory } from "../../../../../../lib/google-sheets-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 
 /** Reconciles the generated Google Sheet from durable FCI Operations records. */

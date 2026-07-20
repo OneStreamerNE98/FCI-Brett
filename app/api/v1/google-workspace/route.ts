@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "cloudflare:workers";
 import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-workspace";
-import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../lib/google-oauth";
+import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { requireOfficeUser } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";

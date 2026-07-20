@@ -1,12 +1,11 @@
-import { env } from "cloudflare:workers";
 import {
   GoogleIntegrationError,
-  getGoogleAccessToken,
+  type GoogleFetch,
   type GoogleRuntimeConfig,
-  writeGoogleIntegrationEvent,
 } from "./google-oauth";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
+const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
 const CLIENT_DIRECTORY_TAB = "Client Directory";
 const PROJECT_REGISTER_TAB = "Project Register";
 const CLIENT_HEADERS = [
@@ -22,7 +21,7 @@ type SheetProperties = { sheetId: number; title: string; gridProperties?: { rowC
 type SpreadsheetMetadata = { sheets?: Array<{ properties?: SheetProperties }> };
 type ValuesResponse = { values?: string[][] };
 
-type ClientMirrorRow = {
+export type ClientMirrorRow = {
   id: string;
   code: string;
   name: string;
@@ -36,7 +35,7 @@ type ClientMirrorRow = {
   updatedAt: number;
 };
 
-type ProjectMirrorRow = {
+export type ProjectMirrorRow = {
   id: string;
   number: string;
   name: string;
@@ -52,7 +51,7 @@ type ProjectMirrorRow = {
   updatedAt: number;
 };
 
-type MirrorStateRow = {
+export type MirrorStateRow = {
   entity_type: "clients" | "projects";
   status: string;
   last_synced_at: number | null;
@@ -79,6 +78,37 @@ export type GoogleSheetSyncResult = {
   spreadsheetUrl: string | null;
   completedAt: number;
 };
+
+export interface GoogleSheetsPersistence {
+  loadClientRows(connectionKey: string): Promise<ClientMirrorRow[]>;
+  loadProjectRows(connectionKey: string): Promise<ProjectMirrorRow[]>;
+  updateSyncState(input: Readonly<{
+    connectionKey: string;
+    entityType: "clients" | "projects";
+    status: string;
+    syncedAt: number | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+    attemptedAt: number;
+    actor: string;
+  }>): Promise<void>;
+  getSyncStates(connectionKey: string): Promise<MirrorStateRow[]>;
+}
+
+export type GoogleSheetsOperationsDependencies = Readonly<{
+  persistence: GoogleSheetsPersistence;
+  fetch: GoogleFetch;
+  now: () => number;
+  getAccessToken(config: GoogleRuntimeConfig, service: "sheets"): Promise<string>;
+  writeIntegrationEvent(
+    config: GoogleRuntimeConfig,
+    eventType: string,
+    actor: string,
+    entityType: string,
+    entityId: string,
+    detail: string,
+  ): Promise<void>;
+}>;
 
 function sheetUrl(spreadsheetId: string) {
   return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`;
@@ -107,12 +137,16 @@ function errorDetails(error: unknown) {
 }
 
 export class GoogleSheetsClient {
-  constructor(private readonly accessToken: string, private readonly spreadsheetId: string) {}
+  constructor(
+    private readonly accessToken: string,
+    private readonly spreadsheetId: string,
+    private readonly fetcher: GoogleFetch = DEFAULT_GOOGLE_FETCH,
+  ) {}
 
   private async request<T>(path: string, init: RequestInit = {}) {
     let response: Response;
     try {
-      response = await fetch(`${SHEETS_API}/${encodeURIComponent(this.spreadsheetId)}${path}`, {
+      response = await this.fetcher(`${SHEETS_API}/${encodeURIComponent(this.spreadsheetId)}${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -219,20 +253,6 @@ async function ensureHeaders(client: GoogleSheetsClient, clientSheet: SheetPrope
   ]);
 }
 
-async function loadClientRows(connectionKey: string) {
-  const result = await env.DB.prepare("SELECT c.id, c.client_code AS code, c.name, c.status, c.industry, c.updated_at AS updatedAt, m.drive_url AS driveUrl, COUNT(p.id) AS projectCount, (SELECT name FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primaryContact, (SELECT email FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS email, (SELECT phone FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS phone FROM clients c LEFT JOIN projects p ON p.client_id = c.id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'client' AND m.entity_id = c.id AND m.folder_key = 'client-root' GROUP BY c.id ORDER BY c.name ASC")
-    .bind(connectionKey)
-    .all<ClientMirrorRow>();
-  return result.results ?? [];
-}
-
-async function loadProjectRows(connectionKey: string) {
-  const result = await env.DB.prepare("SELECT p.id, p.project_number AS number, p.name, p.client_id AS clientId, p.status, p.site, p.project_manager AS projectManager, p.estimated_value AS estimatedValue, p.created_at AS createdAt, p.updated_at AS updatedAt, c.client_code AS clientCode, c.name AS clientName, m.drive_url AS driveUrl FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root' ORDER BY p.created_at ASC")
-    .bind(connectionKey)
-    .all<ProjectMirrorRow>();
-  return result.results ?? [];
-}
-
 function clientCells(row: ClientMirrorRow) {
   return [
     cell(row.code), cell(row.name), statusLabel(row.status), cell(row.primaryContact), cell(row.email), cell(row.phone),
@@ -293,11 +313,22 @@ async function syncProjectRegister(client: GoogleSheetsClient, rows: ProjectMirr
   return { total: rows.length };
 }
 
-async function updateSyncState(config: GoogleRuntimeConfig, entityType: "clients" | "projects", state: { status: string; syncedAt?: number | null; error?: { code: string; message: string } | null; actor: string }) {
-  const now = Date.now();
-  await env.DB.prepare("INSERT INTO google_sheet_sync_state (connection_key, entity_type, status, last_synced_at, last_error_code, last_error_message, last_attempt_at, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(connection_key, entity_type) DO UPDATE SET status = excluded.status, last_synced_at = excluded.last_synced_at, last_error_code = excluded.last_error_code, last_error_message = excluded.last_error_message, last_attempt_at = excluded.last_attempt_at, updated_by = excluded.updated_by, updated_at = excluded.updated_at")
-    .bind(config.connectionKey, entityType, state.status, state.syncedAt ?? null, state.error?.code ?? null, state.error?.message ?? null, now, state.actor, now)
-    .run();
+async function updateSyncState(
+  config: GoogleRuntimeConfig,
+  entityType: "clients" | "projects",
+  state: { status: string; syncedAt?: number | null; error?: { code: string; message: string } | null; actor: string },
+  dependencies: GoogleSheetsOperationsDependencies,
+) {
+  await dependencies.persistence.updateSyncState({
+    connectionKey: config.connectionKey,
+    entityType,
+    status: state.status,
+    syncedAt: state.syncedAt ?? null,
+    errorCode: state.error?.code ?? null,
+    errorMessage: state.error?.message ?? null,
+    attemptedAt: dependencies.now(),
+    actor: state.actor,
+  });
 }
 
 function configuredMirrorError(config: GoogleRuntimeConfig) {
@@ -308,54 +339,68 @@ function configuredMirrorError(config: GoogleRuntimeConfig) {
   return null;
 }
 
-export async function syncGoogleDirectory(config: GoogleRuntimeConfig, actor: string): Promise<GoogleSheetSyncResult> {
+export async function syncGoogleDirectory(
+  config: GoogleRuntimeConfig,
+  actor: string,
+  dependencies: GoogleSheetsOperationsDependencies,
+): Promise<GoogleSheetSyncResult> {
   const configurationError = configuredMirrorError(config);
   if (configurationError) throw configurationError;
   const spreadsheetId = config.simulation ? "workspace-simulation-sheet" : config.clientDirectorySheetId!;
   await Promise.all([
-    updateSyncState(config, "clients", { status: "syncing", actor }),
-    updateSyncState(config, "projects", { status: "syncing", actor }),
+    updateSyncState(config, "clients", { status: "syncing", actor }, dependencies),
+    updateSyncState(config, "projects", { status: "syncing", actor }, dependencies),
   ]);
   try {
     if (config.simulation) {
-      const [clients, projects] = await Promise.all([loadClientRows(config.connectionKey), loadProjectRows(config.connectionKey)]);
-      const completedAt = Date.now();
-      await Promise.all([
-        updateSyncState(config, "clients", { status: "synced", syncedAt: completedAt, actor }),
-        updateSyncState(config, "projects", { status: "synced", syncedAt: completedAt, actor }),
+      const [clients, projects] = await Promise.all([
+        dependencies.persistence.loadClientRows(config.connectionKey),
+        dependencies.persistence.loadProjectRows(config.connectionKey),
       ]);
-      await writeGoogleIntegrationEvent(config, "sheets.simulation_directory_synced", actor, "workspace-simulation", spreadsheetId, JSON.stringify({ clients: clients.length, projects: projects.length }));
+      const completedAt = dependencies.now();
+      await Promise.all([
+        updateSyncState(config, "clients", { status: "synced", syncedAt: completedAt, actor }, dependencies),
+        updateSyncState(config, "projects", { status: "synced", syncedAt: completedAt, actor }, dependencies),
+      ]);
+      await dependencies.writeIntegrationEvent(config, "sheets.simulation_directory_synced", actor, "workspace-simulation", spreadsheetId, JSON.stringify({ clients: clients.length, projects: projects.length }));
       return { clients: { inserted: 0, updated: clients.length, total: clients.length }, projects: { total: projects.length }, spreadsheetUrl: null, completedAt };
     }
-    const accessToken = await getGoogleAccessToken(config, "sheets");
-    const client = new GoogleSheetsClient(accessToken, spreadsheetId);
+    const accessToken = await dependencies.getAccessToken(config, "sheets");
+    const client = new GoogleSheetsClient(accessToken, spreadsheetId, dependencies.fetch);
     const { clientSheet, projectSheet } = await ensureSheetTabs(client);
     await ensureHeaders(client, clientSheet, projectSheet);
-    const [clients, projects] = await Promise.all([loadClientRows(config.connectionKey), loadProjectRows(config.connectionKey)]);
+    const [clients, projects] = await Promise.all([
+      dependencies.persistence.loadClientRows(config.connectionKey),
+      dependencies.persistence.loadProjectRows(config.connectionKey),
+    ]);
     const clientResult = await syncClientDirectory(client, clients);
     const projectResult = await syncProjectRegister(client, projects);
-    const completedAt = Date.now();
+    const completedAt = dependencies.now();
     await Promise.all([
-      updateSyncState(config, "clients", { status: "synced", syncedAt: completedAt, actor }),
-      updateSyncState(config, "projects", { status: "synced", syncedAt: completedAt, actor }),
+      updateSyncState(config, "clients", { status: "synced", syncedAt: completedAt, actor }, dependencies),
+      updateSyncState(config, "projects", { status: "synced", syncedAt: completedAt, actor }, dependencies),
     ]);
-    await writeGoogleIntegrationEvent(config, "sheets.directory.synced", actor, "google-sheet", spreadsheetId, JSON.stringify({ clients: clientResult.total, projects: projectResult.total }));
+    await dependencies.writeIntegrationEvent(config, "sheets.directory.synced", actor, "google-sheet", spreadsheetId, JSON.stringify({ clients: clientResult.total, projects: projectResult.total }));
     return { clients: clientResult, projects: projectResult, spreadsheetUrl: sheetUrl(spreadsheetId), completedAt };
   } catch (error) {
     const detail = errorDetails(error);
     await Promise.all([
-      updateSyncState(config, "clients", { status: "failed", error: detail, actor }),
-      updateSyncState(config, "projects", { status: "failed", error: detail, actor }),
+      updateSyncState(config, "clients", { status: "failed", error: detail, actor }, dependencies),
+      updateSyncState(config, "projects", { status: "failed", error: detail, actor }, dependencies),
     ]);
-    await writeGoogleIntegrationEvent(config, "sheets.directory.failed", actor, "google-sheet", spreadsheetId, detail.code);
+    await dependencies.writeIntegrationEvent(config, "sheets.directory.failed", actor, "google-sheet", spreadsheetId, detail.code);
     throw error;
   }
 }
 
-export async function trySyncGoogleDirectory(config: GoogleRuntimeConfig, actor: string) {
+export async function trySyncGoogleDirectory(
+  config: GoogleRuntimeConfig,
+  actor: string,
+  dependencies: GoogleSheetsOperationsDependencies,
+) {
   if (configuredMirrorError(config)) return { status: "not-configured" as const, message: "The Google Sheet mirror is not configured yet." };
   try {
-    const result = await syncGoogleDirectory(config, actor);
+    const result = await syncGoogleDirectory(config, actor, dependencies);
     return { status: "synced" as const, message: config.simulation ? "Saved and synced to the local Workspace simulation." : "Saved and synced to Google Sheets.", result };
   } catch (error) {
     const detail = errorDetails(error);
@@ -363,11 +408,13 @@ export async function trySyncGoogleDirectory(config: GoogleRuntimeConfig, actor:
   }
 }
 
-export async function getGoogleSheetMirrorStatus(config: GoogleRuntimeConfig, connection: { services: { sheets: boolean } }): Promise<GoogleSheetMirrorStatus> {
-  const states = await env.DB.prepare("SELECT entity_type, status, last_synced_at, last_error_code, last_error_message, last_attempt_at FROM google_sheet_sync_state WHERE connection_key = ?")
-    .bind(config.connectionKey)
-    .all<MirrorStateRow>();
-  const byType = new Map((states.results ?? []).map((state) => [state.entity_type, state]));
+export async function getGoogleSheetMirrorStatus(
+  config: GoogleRuntimeConfig,
+  connection: { services: { sheets: boolean } },
+  dependencies: Pick<GoogleSheetsOperationsDependencies, "persistence">,
+): Promise<GoogleSheetMirrorStatus> {
+  const states = await dependencies.persistence.getSyncStates(config.connectionKey);
+  const byType = new Map(states.map((state) => [state.entity_type, state]));
   const clients = byType.get("clients");
   const projects = byType.get("projects");
   const configured = config.simulation || Boolean(config.clientDirectorySheetId) && !config.clientDirectorySheetIdInvalid;
