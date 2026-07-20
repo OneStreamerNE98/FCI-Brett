@@ -22,9 +22,10 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 
 ## Immediate owner and administrator handoff
 
-Status reconciled on July 20, 2026 against merged source baseline `main` at `cfe1a5d5f6a9da1e2e7e89556e710ef93b2ddf07` and the separate PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`.
+Status reconciled on July 20, 2026 against merged source baseline `main` at `5701211f2ff4a8073d805e44a69778317555baf3` and the separate PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`.
 The deployed commit remains private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The `codex/actionable-lists` slice is complete in source in PR #33 and is not deployed. The `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed; the later source-only packets through PR #48 are likewise merged and undeployed.
 PR #49 completed OIDC-04's documentation reconciliation, PR #50 guarded that completed status, PR #60 reconciled OIDC-02 tracking, PR #61 updated the Fable review instructions, and PR #62 reconciled OIDC-03 tracking.
+PRs #63/#64 added the dashboard-driven Workspace setup workstream, and PR #65 codified the multi-agent coordination protocol.
 OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged. PRs #54/#55 are source-only and undeployed.
 Draft PRs #51–#53 and #56–#57 remain unmerged and undeployed.
 No merge or draft authorizes live identity/provider configuration, infrastructure or migration apply, image publication, job execution, or deployment.

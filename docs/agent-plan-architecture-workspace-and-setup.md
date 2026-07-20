@@ -1,8 +1,11 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
 Date: July 19, 2026 · Status reconciled: July 20, 2026 · Source baseline: `main` @
-`cfe1a5d` (PRs #54/#55 completed OIDC-02/OIDC-03; PRs #60/#62 reconciled their
-merged status; PR #61 expanded the Fable follow-up instructions; PRs #51–#53 and #56–#57 remain open drafts). Deployment baseline: `adc79b8`, private Sites development version 40,
+`5701211` after PRs #63/#64 added the dashboard-driven Workspace setup workstream and
+PR #65 codified the multi-agent coordination protocol. PRs #54/#55 completed
+OIDC-02/OIDC-03; PRs #60/#62 reconciled their merged status; and PR #61 expanded the
+Fable follow-up instructions.
+PRs #51–#53 and #56–#57 remain open drafts. Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -1160,9 +1163,12 @@ format). Effort: small.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** source is reconciled against `main` at `cfe1a5d` after PRs #54/#55
-completed OIDC-02/OIDC-03 in source, PRs #60/#62 reconciled their merged status, and
-PR #61 expanded the Fable follow-up instructions. PRs #51–#53 and #56–#57 remain open drafts. None of these source changes is deployed.
+**GitHub baseline:** source is reconciled against `main` at `5701211` after PRs #63/#64
+added the dashboard-driven Workspace setup workstream and PR #65 codified the
+multi-agent coordination protocol. PRs #54/#55 completed OIDC-02/OIDC-03 in source,
+PRs #60/#62 reconciled their merged status, and PR #61 expanded the Fable follow-up
+instructions.
+PRs #51–#53 and #56–#57 remain open drafts. None of these source changes is deployed.
 The exact deployed baseline
 remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
 version 40, which includes PR #30's semantic Settings rules table. The listed source

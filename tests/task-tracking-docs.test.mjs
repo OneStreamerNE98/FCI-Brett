@@ -260,14 +260,14 @@ test("the checklist dashboard records the merged baseline and current review que
   const oidc = read("docs/be04-oidc-review-and-followups.md");
   const handoff = read("docs/codex-to-codex-handoff.md");
 
-  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `cfe1a5d5f6a9da1e2e7e89556e710ef93b2ddf07`/);
+  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `5701211f2ff4a8073d805e44a69778317555baf3`/);
   assert.match(checklists, /PR #49 completed OIDC-04[\s\S]*PR #50 guarded that completed status/);
   assert.match(
     checklists,
     /OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged\.\s+PRs #54\/#55 are source-only and undeployed\.\s+Draft PRs #51–#53 and #56–#57 remain unmerged and undeployed\./,
   );
   assert.doesNotMatch(checklists, /drafts #51–#57|drafts #51–#53 and #55–#57/i);
-  assert.match(handoff, /source status is reconciled against merged `main` baseline `cfe1a5d`/);
+  assert.match(handoff, /source status is reconciled against merged `main` baseline `5701211`/);
 
   const reviewQueue = section(checklists, "## Current GitHub review snapshot", "## Checklists by topic");
   for (const pr of [51, 52, 53, 54, 55, 56, 57]) {
