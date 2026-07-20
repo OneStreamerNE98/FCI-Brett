@@ -2,7 +2,9 @@
 
 Owner: Codex/developer, with workflow decisions from the business owner
 
-Status: In progress — PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's semantic Settings rules table at `aa8ed8f`; source-only PRs #33/#35/#37/#41/#44 are merged and undeployed; KPI-02/#52, SET-10/#56, and the logo refresh/#57 are in draft review and unmerged; later structural and multi-user work remains
+Status: In progress — later structural and multi-user work remains.
+PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's semantic Settings rules table at `aa8ed8f`; source-only PRs #33/#35/#37/#41/#44 are merged and undeployed.
+KPI-02/#52, SET-10/#56, and the logo refresh/#57 remain open and unmerged.
 
 Depends on: Approved roles/capabilities and production API contracts
 
@@ -62,7 +64,8 @@ These are the eight implementation priorities confirmed against the hosted Sites
 - [ ] Consolidate duplicate Inbox and Settings Google workflows behind shared components and hooks.
 - [ ] Consolidate tabular and whole-row list presentations behind shared responsive semantic patterns without changing business behavior.
   - First semantic-table slice merged in PR #30 at `aa8ed8f`: **Settings → Inbox & file rules** uses native headings, labeled mobile cards, and unchanged keyboard actions. PR #32 then merged at `adc79b8`, and that exact commit deployed as private Sites development version 40, so the semantic table is included in the controlled release.
-  - The source-only `codex/actionable-lists` branch is complete in PR #33 for the whole-row Overview pipeline, Projects, and Clients views. It uses one native list/list-item/button contract with explicit list semantics, concise action names linked to complete descriptions, Enter/Space activation, Escape dismissal, and exact trigger focus restoration while preserving responsive decision metadata, empty states, filters, and drawer behavior. The isolated Playwright groups pass 58/58, all 13 routes pass serious/critical axe checks at desktop and 390 px, lint passes, and visual QA passes. It is not deployed. Settings extraction/admin gating are complete in PRs #35/#37, Tier-1 KPIs in #41, and guided Workspace setup in #44. Those slices are also not deployed; keep this broader checklist item open for later structural work. KPI-02 is active in source-only draft PR #52, is unmerged and undeployed, and currently occupies the sole `FloorOpsApp.tsx` queue slot.
+  - The source-only `codex/actionable-lists` branch is complete in PR #33 for the whole-row Overview pipeline, Projects, and Clients views. It uses one native list/list-item/button contract with explicit list semantics, concise action names linked to complete descriptions, Enter/Space activation, Escape dismissal, and exact trigger focus restoration while preserving responsive decision metadata, empty states, filters, and drawer behavior. The isolated Playwright groups pass 58/58, all 13 routes pass serious/critical axe checks at desktop and 390 px, lint passes, and visual QA passes. It is not deployed. Settings extraction/admin gating are complete in PRs #35/#37, Tier-1 KPIs in #41, and guided Workspace setup in #44. Those slices are also not deployed; keep this broader checklist item open for later structural work.
+    KPI-02 is active in source-only draft PR #52, is unmerged and undeployed, and currently occupies the sole `FloorOpsApp.tsx` queue slot.
 
 ## Accessibility and feedback
 

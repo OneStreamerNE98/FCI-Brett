@@ -2,8 +2,9 @@
 
 Date: July 19, 2026 · Status reconciled: July 20, 2026 · Reviews merged PR #38
 ("Add Workspace OIDC employee login") and PR #48 (OIDC-01 callback compatibility) on
-merged `main` baseline `71f6745` · Also records the resolved PR #41 KPI-01 test collision,
-the completed OIDC-04 documentation reconciliation in PRs #49/#50, and OIDC-02/OIDC-03 completion in PRs #54/#55.
+merged `main` baseline `cfe1a5d` · Also records the resolved PR #41 KPI-01 test collision,
+the completed OIDC-04 documentation reconciliation in PRs #49/#50, OIDC-02/OIDC-03
+completion in PRs #54/#55, and their status reconciliation in PRs #60/#62.
 
 This is a Codex-ready follow-up ledger. Each packet is one agent work packet with the same
 shape as `docs/agent-plan-architecture-workspace-and-setup.md` (why / files / steps /
