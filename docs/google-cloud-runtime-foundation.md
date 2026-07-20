@@ -155,6 +155,7 @@ The format-version-2 rehearsal snapshot is a strict, test-only exchange format r
 
 - inventories all 21 D1 schema tables plus R2 objects with a reason and one disposition (`migrated`, `transformed`, `excluded`, or `blocking`); a schema-derived test fails if a new D1 table is not classified, while the production runtime does not import the D1 schema;
 - carries only clients, contacts, leads, projects, project meetings, and explicitly classified activity events as bounded row payloads; every inventory-only category must report zero even when its eventual disposition is excluded or transformed;
+- requires every project to include `flooringCategory`, `squareFeet`, and `contractValue` as explicit null placeholders, keeps those keys in prepared rows and SHA-256 evidence, and refuses non-null values before database access until KPI-04 adds the reviewed PostgreSQL migration and importer mapping;
 - requires client/project names, lead company/contact/project/site fields, and project-meeting titles to equal `FCI TEST — DO NOT USE` or begin with that exact marker plus a space;
 - rejects snapshot files larger than 16 MiB and rejects more than 5,000 bounded core rows before row mapping;
 - accepts only production-compatible UUIDs, codes, statuses, timestamps, relationships, and explicit activity results/correlation IDs;
@@ -166,7 +167,7 @@ The format-version-2 rehearsal snapshot is a strict, test-only exchange format r
 - reads the destination back and compares per-table counts, content SHA-256 evidence, and identifier SHA-256 evidence before commit; and
 - always reports `cutoverReady: false`.
 
-The current rehearsal does **not** migrate generic records, Gmail archives, Drive mappings, OAuth attempts/tokens, Google connections, settings, user preferences, R2 objects, or unclassified legacy activity. Its Google-connection disposition documents separately approved production reauthorization; it does not authorize discarding a nonzero source count or copying credential ciphertext. OAuth and token material must never be exported into a snapshot; production Google authorization will be established again through the approved production connector.
+The current rehearsal does **not** migrate non-null flooring KPI values, generic records, Gmail archives, Drive mappings, OAuth attempts/tokens, Google connections, settings, user preferences, R2 objects, or unclassified legacy activity. Its Google-connection disposition documents separately approved production reauthorization; it does not authorize discarding a nonzero source count or copying credential ciphertext. OAuth and token material must never be exported into a snapshot; production Google authorization will be established again through the approved production connector.
 
 This is evidence that the bounded core path can be rehearsed. It is not evidence that the complete development application can be cut over.
 

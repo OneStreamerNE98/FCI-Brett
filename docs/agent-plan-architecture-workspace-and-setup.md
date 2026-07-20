@@ -386,7 +386,11 @@ migrated into the now-defined v6 tables). Every inventory-only category remains 
 and fails before database access; a disposition never authorizes silent data loss.
 Derive the table list from `db/schema.ts` so new tables can't escape classification.
 Extend the snapshot format (major version bump) to
-carry leads/meetings into v6 tables with hash verification; keep every existing guard
+carry leads/meetings into v6 tables with hash verification. Format v2 must also require
+the project keys `flooringCategory`, `squareFeet`, and `contractValue`, preserve those
+keys as null in prepared rows and hash evidence, and refuse any non-null value before a
+database connection; KPI-04 owns the PostgreSQL columns and activation of those values.
+Keep every existing guard
 (FCI TEST name rule, 16 MiB/5,000-row caps, `^fci_rehearsal_` schema, refuse production,
 exact acknowledgment). `cutoverReady` stays hardcoded false.
 **Accept:** inventory covers all 21 tables (unit test fails on unclassified); extended
@@ -1163,12 +1167,14 @@ BE-06/BE-07 claim — coordinate version numbers via the registry, never renumbe
 the same nullable columns with CHECK constraints (category allowlist, square_feet > 0,
 contract_value ≥ 0, completed ≥ started); extend `infrastructure/postgres/
 least-privilege.sql` grants and readiness expectations; extend the postgres project
-repository row mapping; add the columns to the BE-12 rehearsal snapshot format and
-inventory classification so migrated projects carry their KPI data.
+repository row mapping; activate the three already-required nullable BE-12 format-v2
+project keys so non-null values are validated, imported, read back, and included in hash
+reconciliation. Keep the existing `projects: transformed` inventory classification.
 **Files:** `app/platform/postgres/production-schema-migrations.ts` (append only),
 `infrastructure/postgres/least-privilege.sql`,
 `app/platform/google-cloud/database-readiness.ts`,
-`app/adapters/postgres/project-repository.ts`, rehearsal modules per BE-12, `tests/`.
+`app/adapters/postgres/project-repository.ts`, rehearsal modules per BE-12 (activate the
+already-required nullable format-v2 placeholders and import their values), `tests/`.
 **Accept:** existing checksums unchanged, new version registered; gated PG16 integration
 tests apply and round-trip the columns; rehearsal imports KPI fields with hash
 verification; `npm test` passes.

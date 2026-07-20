@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { Table, getTableName, is } from "drizzle-orm";
+import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+import * as d1Schema from "../db/schema.ts";
+
 import {
   CORE_REHEARSAL_ACKNOWLEDGMENT,
   CORE_REHEARSAL_IMPORTER_ROLE,
@@ -21,7 +26,6 @@ import {
 
 const fixtureUrl = new URL("fixtures/production-core-rehearsal.json", import.meta.url);
 const fixture = JSON.parse(await readFile(fixtureUrl, "utf8"));
-const d1SchemaUrl = new URL("../db/schema.ts", import.meta.url);
 const rehearsalSourceUrl = new URL(
   "../app/platform/migration/core-record-rehearsal.ts",
   import.meta.url,
@@ -46,12 +50,27 @@ function expectRefusal(action, code) {
   });
 }
 
+function discoverD1TableNames(schemaExports) {
+  return Object.values(schemaExports)
+    .filter((value) => is(value, Table))
+    .map((table) => getTableName(table))
+    .sort();
+}
+
 test("bounded core rehearsal validates marked test data and emits row-free deterministic evidence", () => {
   const plan = createCoreRecordRehearsalPlan(fixture, options);
   assert.equal(plan.rows.clients[0].id, fixture.clients[0].id);
   assert.equal(plan.rows.contacts[0].id, fixture.contacts[0].id);
   assert.equal(plan.rows.leads[0].id, fixture.leads[0].id);
   assert.equal(plan.rows.projects[0].id, fixture.projects[0].id);
+  assert.deepEqual(
+    {
+      flooringCategory: plan.rows.projects[0].flooringCategory,
+      squareFeet: plan.rows.projects[0].squareFeet,
+      contractValue: plan.rows.projects[0].contractValue,
+    },
+    { flooringCategory: null, squareFeet: null, contractValue: null },
+  );
   assert.equal(plan.rows.projectMeetings[0].id, fixture.projectMeetings[0].id);
   assert.deepEqual(plan.rows.activityEvents.map((row) => row.id), fixture.activityEvents.map((row) => row.id));
 
@@ -62,6 +81,11 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
   assert.deepEqual(
     Object.fromEntries(Object.entries(plan.sourceEvidence).map(([table, evidence]) => [table, evidence.count])),
     { clients: 1, contacts: 1, leads: 1, projects: 1, projectMeetings: 1, activityEvents: 3 },
+  );
+  assert.equal(
+    plan.sourceEvidence.projects.contentSha256,
+    "sha256:71728be9177caf503dfd5d1bc8dd67126da642431019aa1cbbc72d0f0ca78fd4",
+    "the format-v2 project evidence includes the three required null KPI-04 placeholders",
   );
 
   const serializedEvidence = JSON.stringify(plan.sourceEvidence);
@@ -74,14 +98,11 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
 });
 
 test("bounded core rehearsal inventory exactly classifies every D1 table plus R2 without a runtime D1 import", async () => {
-  const d1SchemaSource = await readFile(d1SchemaUrl, "utf8");
-  const schemaTables = [...d1SchemaSource.matchAll(
-    /export const [A-Za-z0-9_]+\s*=\s*sqliteTable\("([a-z0-9_]+)"/g,
-  )].map((match) => match[1]);
+  const schemaTables = discoverD1TableNames(d1Schema);
   assert.equal(schemaTables.length, 21);
   assert.deepEqual(
-    CORE_REHEARSAL_SOURCE_INVENTORY.map((entry) => entry.sourceCategory),
-    [...schemaTables, "r2_objects"],
+    CORE_REHEARSAL_SOURCE_INVENTORY.map((entry) => entry.sourceCategory).sort(),
+    [...schemaTables, "r2_objects"].sort(),
   );
   assert.deepEqual(
     Object.fromEntries(
@@ -148,6 +169,25 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
       workspace_simulation_state: 0,
       r2_objects: 0,
     },
+  );
+});
+
+test("D1 inventory discovery uses table metadata and cannot lose a table to declaration formatting", () => {
+  const unusuallyFormattedTable = sqliteTable(
+    "formatting_safe_inventory_table",
+    {
+      id: text(
+        "id",
+      ),
+    },
+  );
+
+  assert.deepEqual(
+    discoverD1TableNames({
+      ignoredExport: "not a table",
+      unusuallyFormattedTable,
+    }),
+    ["formatting_safe_inventory_table"],
   );
 });
 
@@ -236,6 +276,24 @@ test("bounded core rehearsal requires explicit activity classification and valid
   orphan.projects[0].clientId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   expectRefusal(() => createCoreRecordRehearsalPlan(orphan, options), "orphan_source_record");
 
+  const orphanProjectMeeting = clone(fixture);
+  orphanProjectMeeting.projectMeetings[0].projectId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  expectRefusal(
+    () => createCoreRecordRehearsalPlan(orphanProjectMeeting, options),
+    "orphan_source_record",
+  );
+
+  const orphanLeadActivity = clone(fixture);
+  const leadActivity = orphanLeadActivity.activityEvents.find(
+    (activity) => activity.recordType === "lead",
+  );
+  assert.ok(leadActivity);
+  leadActivity.recordId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  expectRefusal(
+    () => createCoreRecordRehearsalPlan(orphanLeadActivity, options),
+    "orphan_source_record",
+  );
+
   const duplicatePrimary = clone(fixture);
   duplicatePrimary.contacts.push({
     ...clone(duplicatePrimary.contacts[0]),
@@ -266,6 +324,46 @@ test("inventory-only source counts fail closed before opening a database connect
     },
   );
   assert.equal(connected, false);
+});
+
+test("v2 project KPI placeholders are exact-shape and fail closed until KPI-04", async () => {
+  for (const field of ["flooringCategory", "squareFeet", "contractValue"]) {
+    const missing = clone(fixture);
+    delete missing.projects[0][field];
+    expectRefusal(
+      () => createCoreRecordRehearsalPlan(missing, options),
+      "unsupported_snapshot_field",
+    );
+  }
+
+  for (const [field, value] of [
+    ["flooringCategory", "carpet"],
+    ["squareFeet", 1200],
+    ["contractValue", 50000],
+  ]) {
+    const snapshot = clone(fixture);
+    snapshot.projects[0][field] = value;
+    let connected = false;
+    await assert.rejects(
+      runCoreRecordRehearsal(
+        {
+          connect: async () => {
+            connected = true;
+            throw new Error("must not connect");
+          },
+        },
+        snapshot,
+        options,
+      ),
+      (error) => {
+        assert.ok(error instanceof CoreRecordRehearsalError);
+        assert.equal(error.code, "kpi04_fields_deferred");
+        assert.match(error.message, /deferred to KPI-04/);
+        return true;
+      },
+    );
+    assert.equal(connected, false);
+  }
 });
 
 function destinationRows(source = fixture) {
@@ -311,6 +409,8 @@ function destinationRows(source = fixture) {
     })),
     projectMeetings: source.projectMeetings.map((row) => ({
       ...row,
+      attendees: [...row.attendees],
+      actionItems: [...row.actionItems],
       meetingAt: new Date(row.meetingAt),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
@@ -455,6 +555,32 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
 test("bounded core rehearsal rolls back rather than accepting target tampering", async () => {
   const tampered = destinationRows();
   tampered.projects[0].name = `${tampered.projects[0].name} changed`;
+  const client = new FakeRehearsalClient({ targetRows: tampered });
+  await assert.rejects(runCoreRecordRehearsal(fakePool(client), fixture, options), (error) => {
+    assert.ok(error instanceof CoreRecordRehearsalError);
+    assert.equal(error.code, "reconciliation_mismatch");
+    return true;
+  });
+  assert.ok(client.queries.some((query) => query.sql === "ROLLBACK"));
+  assert.ok(!client.queries.some((query) => query.sql === "COMMIT"));
+});
+
+test("bounded core rehearsal rejects lead target tampering", async () => {
+  const tampered = destinationRows();
+  tampered.leads[0].nextAction = `${tampered.leads[0].nextAction} changed`;
+  const client = new FakeRehearsalClient({ targetRows: tampered });
+  await assert.rejects(runCoreRecordRehearsal(fakePool(client), fixture, options), (error) => {
+    assert.ok(error instanceof CoreRecordRehearsalError);
+    assert.equal(error.code, "reconciliation_mismatch");
+    return true;
+  });
+  assert.ok(client.queries.some((query) => query.sql === "ROLLBACK"));
+  assert.ok(!client.queries.some((query) => query.sql === "COMMIT"));
+});
+
+test("bounded core rehearsal rejects project-meeting JSONB target tampering", async () => {
+  const tampered = destinationRows();
+  tampered.projectMeetings[0].attendees.push("Unexpected attendee");
   const client = new FakeRehearsalClient({ targetRows: tampered });
   await assert.rejects(runCoreRecordRehearsal(fakePool(client), fixture, options), (error) => {
     assert.ok(error instanceof CoreRecordRehearsalError);

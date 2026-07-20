@@ -201,6 +201,9 @@ type PreparedProject = {
   site: string | null;
   projectManager: string | null;
   estimatedValue: number | null;
+  flooringCategory: null;
+  squareFeet: null;
+  contractValue: null;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -458,6 +461,9 @@ const PROJECT_KEYS = [
   "site",
   "projectManager",
   "estimatedValue",
+  "flooringCategory",
+  "squareFeet",
+  "contractValue",
   "driveFolderId",
   "driveUrl",
   "createdBy",
@@ -1034,6 +1040,16 @@ function prepareSnapshot(value: unknown): {
     if (row.driveFolderId !== null || row.driveUrl !== null) {
       fail("unsupported_legacy_drive_data", `projects[${index}] contains deferred legacy Drive fields`);
     }
+    if (
+      row.flooringCategory !== null ||
+      row.squareFeet !== null ||
+      row.contractValue !== null
+    ) {
+      fail(
+        "kpi04_fields_deferred",
+        `projects[${index}] flooringCategory, squareFeet, and contractValue are deferred to KPI-04 and must be null in snapshot format 2`,
+      );
+    }
     const createdAt = canonicalTimestamp(row.createdAt, `projects[${index}].createdAt`);
     const updatedAt = canonicalTimestamp(row.updatedAt, `projects[${index}].updatedAt`);
     if (updatedAt < createdAt) fail("invalid_timestamp_order", `projects[${index}] timestamps are out of order`);
@@ -1046,6 +1062,9 @@ function prepareSnapshot(value: unknown): {
       site: nullableText(row.site, `projects[${index}].site`),
       projectManager: nullableText(row.projectManager, `projects[${index}].projectManager`),
       estimatedValue: nullableEstimatedValue(row.estimatedValue, `projects[${index}].estimatedValue`),
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
       createdBy: requiredText(row.createdBy, `projects[${index}].createdBy`),
       updatedBy: requiredText(row.updatedBy, `projects[${index}].updatedBy`),
       createdAt,
@@ -1652,6 +1671,9 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
       driveFolderId: null,
       driveUrl: null,
       estimatedValue: databaseEstimatedValue(row.estimatedValue, "destination project estimatedValue"),
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
       createdAt: databaseTimestamp(row.createdAt, "destination project createdAt"),
       updatedAt: databaseTimestamp(row.updatedAt, "destination project updatedAt"),
     })),

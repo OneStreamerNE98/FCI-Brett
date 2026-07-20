@@ -51,8 +51,11 @@ The current format-version-2 bounded core rehearsal always reports
 `cutoverReady: false`. Its report inventories all 21 D1 tables plus R2 with a
 reasoned disposition. Only clients, contacts, leads, projects, project meetings,
 and classified activity carry bounded rows and receive end-to-end hash
-reconciliation; every inventory-only category must remain zero or the command
-fails before database access. Passing it is useful source evidence but is not a
+reconciliation. Project rows must include explicit null `flooringCategory`,
+`squareFeet`, and `contractValue` placeholders in the hashed format-v2 shape;
+non-null KPI values remain deferred to KPI-04 and fail before database access.
+Every inventory-only category must likewise remain zero or the command fails
+before database access. Passing it is useful source evidence but is not a
 complete migration or cutover rehearsal.
 
 ## 2. Production go/no-go gate
