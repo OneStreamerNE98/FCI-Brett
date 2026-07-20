@@ -56,6 +56,7 @@ The remaining checkboxes describe the approved setup path, but they are not auth
   `https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback`
 
 - [ ] Configure the requested scopes: `openid`, `email`, Drive, `gmail.modify`, `calendar.events`, and Sheets.
+- [ ] WS-14 (when dashboard calendar creation is wanted): review and approve adding the `https://www.googleapis.com/auth/calendar` scope to this connector client, set `GOOGLE_WORKSPACE_CALENDAR_MANAGEMENT=true` in hosted configuration, and reconnect Workspace approving the new consent. Date: ______
 - [ ] Store the client ID in the hosted configuration.
 - [ ] Store the client secret only in encrypted hosted secret storage.
 - [ ] Create the production data-connector client only after the production hostname is approved; give it only the exact production HTTPS callback and never add the Sites development callback.

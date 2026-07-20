@@ -58,6 +58,14 @@ Create these resources before turning on live folder provisioning:
 | Mailbox | `operations@cherryhillfci.com` (proposed) | Company Gmail intake and app connection |
 | Google Cloud projects | `FCI Operations Development` now, plus defined staging and production boundaries later | Isolated Google APIs, OAuth clients, secrets, and data; later project creation remains owner-controlled, and staging billable resources are created on demand rather than left running |
 
+> **Dashboard-driven setup (planned SET-13…SET-21):** once the dashboard-setup
+> workstream lands, Settings → Google Workspace can adopt the Shared Drive and create
+> the folder tree, the directory spreadsheet, extra spreadsheets, and starter templates
+> from an owner-editable blueprint — see the
+> [dashboard workspace setup design](dashboard-workspace-setup-design.md). The manual
+> path below remains valid, and remains required for Shared Drive creation and every
+> Admin-console/DNS/OAuth/secret step.
+
 ## Part 1: set up the Google Workspace organization
 
 1. Sign in to [Google Admin](https://admin.google.com/) with a super administrator account.

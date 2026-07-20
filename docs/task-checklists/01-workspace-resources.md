@@ -21,15 +21,22 @@ Use the `cherryhillfci.com` Workspace tenant and proposed operations connection 
 - [ ] Create a Shared Drive named `FCI Operations`.
 - [ ] Give the operations account Manager access.
 - [ ] Review external-sharing restrictions.
-- [ ] Record the Shared Drive ID in the hosted configuration inventory; do not create the application folder tree manually.
+- [ ] Record the Shared Drive ID in the hosted configuration inventory; do not create the application folder tree manually. (Shared Drive creation stays manual; once dashboard setup lands, adopt it from Settings afterwards and the folder tree becomes a dashboard action.)
 
 ## Directory spreadsheet
+
+Once dashboard setup lands (SET-16), the application can create this spreadsheet from
+Settings; the manual path below remains valid.
 
 - [ ] Inside the Shared Drive, create a Google Sheet named `FCI Operations Directory`.
 - [ ] Leave the workbook empty so the application can maintain its tabs.
 - [ ] Record the spreadsheet ID.
 
 ## Company calendars
+
+Once dashboard setup lands and the WS-14 calendar-scope review is approved (SET-20),
+the application can create these calendars from Settings; the manual path below
+remains valid.
 
 - [ ] Create `FCI • Client Appointments` in desktop Google Calendar.
 - [ ] Create `FCI • Field Schedule`.
