@@ -9,6 +9,34 @@ function read(path) {
   return readFileSync(`${root}${path}`, "utf8");
 }
 
+const badTerms = String.raw`(?:draft|in review|in progress|awaiting (?:review|merge)|not merged|review and merge)`;
+
+function assertMergedStatusHasNoReviewTerms(packetId, status) {
+  assert.doesNotMatch(
+    status,
+    new RegExp(badTerms, "i"),
+    `${packetId} regressed to a review-only status`,
+  );
+}
+
+function assertNoStaleMergedPrReferences(path, markdown, mergedPrs) {
+  const badTermPattern = new RegExp(badTerms, "i");
+  const lines = markdown.split(/\r?\n/);
+
+  for (const [lineIndex, line] of lines.entries()) {
+    if (!badTermPattern.test(line)) continue;
+
+    for (const pr of mergedPrs) {
+      const mergedReference = new RegExp(`(?:\\bPR\\s*)?#${pr}\\b`, "i");
+      assert.doesNotMatch(
+        line,
+        mergedReference,
+        `${path}:${lineIndex + 1} still assigns merged PR #${pr} for review`,
+      );
+    }
+  }
+}
+
 function section(markdown, heading, nextHeading) {
   const start = markdown.indexOf(heading);
   assert.notEqual(start, -1, `Missing section: ${heading}`);
@@ -24,10 +52,54 @@ function packetSection(markdown, packetId) {
 }
 
 function packetStatus(markdown, packetId) {
-  const status = packetSection(markdown, packetId).match(/^\*\*Status:\*\* (.+)$/m)?.[1];
+  const lines = packetSection(markdown, packetId).split(/\r?\n/);
+  const statusLineIndex = lines.findIndex((line) => line.startsWith("**Status:** "));
+  assert.notEqual(statusLineIndex, -1, `Missing ${packetId} status`);
+  const statusLines = [lines[statusLineIndex].slice("**Status:** ".length).trim()];
+  for (let index = statusLineIndex + 1; index < lines.length; index += 1) {
+    const continuation = lines[index].trim();
+    if (!continuation || /^\*\*[^*]+:\*\*/.test(continuation)) break;
+    statusLines.push(continuation);
+  }
+  const status = statusLines.join(" ").replace(/\s+/g, " ");
   assert.ok(status, `Missing ${packetId} status`);
   return status;
 }
+
+test("tracking guard captures wrapped statuses and rejects line-local stale merged references", () => {
+  const wrappedStatus = [
+    "## FIXTURE-01 · Wrapped status",
+    "**Status:** Complete — PR #54, July 20, 2026.",
+    "Awaiting merge.",
+    "",
+    "**Why:** mutation fixture",
+  ].join("\n");
+  const capturedStatus = packetStatus(wrappedStatus, "FIXTURE-01");
+  assert.equal(capturedStatus, "Complete — PR #54, July 20, 2026. Awaiting merge.");
+  assert.throws(
+    () => assertMergedStatusHasNoReviewTerms("FIXTURE-01", capturedStatus),
+    /FIXTURE-01 regressed to a review-only status/,
+  );
+
+  for (const staleLine of [
+    "OIDC-02/#54 is in progress.",
+    "In review. Bare #54 still needs approval.",
+    "Review and merge PR #54 after checks.",
+  ]) {
+    assert.throws(
+      () => assertNoStaleMergedPrReferences("fixture.md", staleLine, [54]),
+      /fixture\.md:1 still assigns merged PR #54 for review/,
+    );
+  }
+
+  assert.doesNotThrow(() =>
+    assertNoStaleMergedPrReferences(
+      "fixture.md",
+      "PR #54 is complete and undeployed.\nDraft PR #51 remains open.\n#540 is in progress.",
+      [54],
+    ),
+  );
+});
 
 test("task-tracking surfaces point to their authoritative ledgers without duplicate lists", () => {
   const readme = read("README.md");
@@ -106,13 +178,24 @@ test("known merged packets have complete statuses and cannot regress to review-o
       new RegExp(`^Complete — PR #${pr}, July \\d{1,2}, 2026\\.`),
       `${packet} does not record merged PR #${pr}`,
     );
-    assert.doesNotMatch(status, /draft|in review|in progress|not merged/i, `${packet} regressed to an unmerged status`);
+    assertMergedStatusHasNoReviewTerms(packet, status);
   }
 
-  assert.match(packetStatus(oidc, "OIDC-01"), /^Complete — PR #48, July \d{1,2}, 2026\./);
-  assert.match(packetStatus(oidc, "OIDC-02"), /^Complete — PR #54, July 20, 2026\./);
-  assert.match(packetStatus(oidc, "OIDC-03"), /^Complete — PR #55, July 20, 2026\./);
-  assert.match(packetStatus(oidc, "OIDC-04"), /^Complete — PR #49, July \d{1,2}, 2026\./);
+  const mergedOidcPackets = new Map([
+    ["OIDC-01", { pr: 48, date: "July \\d{1,2}, 2026" }],
+    ["OIDC-02", { pr: 54, date: "July 20, 2026" }],
+    ["OIDC-03", { pr: 55, date: "July 20, 2026" }],
+    ["OIDC-04", { pr: 49, date: "July \\d{1,2}, 2026" }],
+  ]);
+  for (const [packet, { pr, date }] of mergedOidcPackets) {
+    const status = packetStatus(oidc, packet);
+    assert.match(status, new RegExp(`^Complete — PR #${pr}, ${date}\\.`));
+    assertMergedStatusHasNoReviewTerms(packet, status);
+  }
+  assert.match(
+    packetStatus(plan, "TRK-02"),
+    /^In progress — `codex\/tracking-guard-hardening`, July 20, 2026\. Source-only and not merged or deployed\.$/,
+  );
 
   const productionBoundary = section(readme, "## Production architecture", "## Remaining launch decision");
   const launchDecision = section(readme, "## Remaining launch decision", "## Prioritized next work");
@@ -162,17 +245,8 @@ test("known merged packets have complete statuses and cannot regress to review-o
     "docs/ui-and-product-readiness-review.md",
   ];
   const mergedPrs = [...new Set([...mergedPlanPackets.values(), 48, 49, 54, 55])];
-  const badTerms = String.raw`(?:draft|in review|awaiting (?:review|merge)|not merged|review and merge)`;
-
   for (const path of trackingFiles) {
-    const normalized = read(path).replace(/\s+/g, " ");
-    for (const pr of mergedPrs) {
-      const staleReference = new RegExp(
-        `(?:${badTerms}(?:(?!PRs? #\\d+)[^.;]){0,120}PR #${pr}\\b|PR #${pr}\\b(?:(?!PRs? #\\d+)[^.;]){0,120}${badTerms})`,
-        "i",
-      );
-      assert.doesNotMatch(normalized, staleReference, `${path} still assigns merged PR #${pr} for review`);
-    }
+    assertNoStaleMergedPrReferences(path, read(path), mergedPrs);
   }
 });
 
@@ -186,14 +260,14 @@ test("the checklist dashboard records the merged baseline and current review que
   const oidc = read("docs/be04-oidc-review-and-followups.md");
   const handoff = read("docs/codex-to-codex-handoff.md");
 
-  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `71f674508ab97c4d5b27a2ca641c1553ba0e1e6c`/);
+  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `5701211f2ff4a8073d805e44a69778317555baf3`/);
   assert.match(checklists, /PR #49 completed OIDC-04[\s\S]*PR #50 guarded that completed status/);
   assert.match(
     checklists,
-    /OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged\. PRs #54\/#55 are source-only and undeployed\. Draft PRs #51–#53 and #56–#57 remain unmerged and undeployed\./,
+    /OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged\.\s+PRs #54\/#55 are source-only and undeployed\.\s+Draft PRs #51–#53 and #56–#57 remain unmerged and undeployed\./,
   );
   assert.doesNotMatch(checklists, /drafts #51–#57|drafts #51–#53 and #55–#57/i);
-  assert.match(handoff, /source status is reconciled against merged `main` baseline `71f6745`/);
+  assert.match(handoff, /source status is reconciled against merged `main` baseline `5701211`/);
 
   const reviewQueue = section(checklists, "## Current GitHub review snapshot", "## Checklists by topic");
   for (const pr of [51, 52, 53, 54, 55, 56, 57]) {
@@ -220,7 +294,7 @@ test("the checklist dashboard records the merged baseline and current review que
   assert.match(packetStatus(oidc, "OIDC-03"), /^Complete — PR #55, July 20, 2026\./);
   assert.match(staffLogin, /OIDC-02\/#54[\s\S]*OIDC-03\/#55[\s\S]*merged[\s\S]*source-only and undeployed/i);
   assert.match(foundation, /BE-09\/#51 and BE-12\/#53 are in draft review/);
-  assert.match(frontend, /KPI-02\/#52, SET-10\/#56, and the logo refresh\/#57 are in draft review and unmerged/);
+  assert.match(frontend, /KPI-02\/#52, SET-10\/#56, and the logo refresh\/#57 remain open and unmerged/);
   assert.match(architecture, /PRs #54\/#55[\s\S]*merged source-only and undeployed[\s\S]*draft PRs #51–#53 and #56–#57 remain unmerged/i);
 
   const checklistNextWork = section(checklists, "## Recommended next work", "## Safety boundary");
