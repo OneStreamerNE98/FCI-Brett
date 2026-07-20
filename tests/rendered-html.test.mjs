@@ -40,7 +40,7 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(app, /fci-app-icon-master\.svg/);
   assert.match(layout, /fci-app-icon-master\.svg/);
   assert.match(layout, /fci-app-icon-master\.png/);
-  assert.match(layout, /shortcut: \[\{ url: "\/fci-app-icon-master\.svg"/);
+  assert.match(layout, /shortcut: "\/fci-app-icon-master\.svg"/);
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
   assert.match(app, /Gmail project inbox/);

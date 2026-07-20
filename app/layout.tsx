@@ -24,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
         { url: "/fci-app-icon-master.svg", type: "image/svg+xml", sizes: "any" },
         { url: "/fci-app-icon-master.png", type: "image/png", sizes: "1254x1254" },
       ],
-      shortcut: [{ url: "/fci-app-icon-master.svg", type: "image/svg+xml", sizes: "any" }],
+      shortcut: "/fci-app-icon-master.svg",
       apple: [{ url: "/fci-app-icon-master.png", type: "image/png", sizes: "1254x1254" }],
     },
     applicationName: development ? "FCI Operations Dev" : "FCI Operations",

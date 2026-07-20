@@ -78,7 +78,7 @@ test("has a clear page identity, meaningful live render, and healthy browser con
   await expect(fullLogo).toBeVisible();
   await expect(fullLogo).toHaveAttribute("src", "/fci-logo-enhanced-master.svg");
   expect(await fullLogo.evaluate((image: HTMLImageElement) => ({ width: image.naturalWidth, height: image.naturalHeight }))).toEqual({ width: 1254, height: 1254 });
-  await expect(page.locator('link[rel="shortcut icon"][type="image/svg+xml"]')).toHaveAttribute("href", /\/fci-app-icon-master\.svg$/);
+  await expect(page.locator('link[rel="shortcut icon"]')).toHaveAttribute("href", /\/fci-app-icon-master\.svg$/);
   await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute("href", /\/fci-app-icon-master\.svg$/);
   await expect(page.locator('link[rel="icon"][type="image/png"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", /\/fci-app-icon-master\.png$/);
