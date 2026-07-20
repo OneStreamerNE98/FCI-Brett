@@ -1,6 +1,6 @@
 # FCI Operations repository guidance
 
-These instructions apply to the entire repository and are intended to give every Codex instance and human contributor the same operating context.
+These instructions apply to the entire repository and are intended to give every AI agent (Codex, Claude) and human contributor the same operating context.
 
 ## Read first
 
@@ -30,11 +30,36 @@ Before changing code, read:
 ## Required workflow
 
 1. Start from an up-to-date, clean `main` branch.
-2. Create a `codex/<short-feature-name>` branch.
+2. Create an agent-prefixed branch: `codex/<short-feature-name>` for Codex, `claude/<short-feature-name>` for Claude.
 3. Keep changes scoped and preserve unrelated user work.
 4. Run the relevant tests during development and run `npm test` before handoff.
 5. Open a pull request with a concise summary, verification evidence, and data/security impact note.
 6. Do not deploy, change hosted configuration, migrate data, or merge to production without owner approval.
+
+## Multi-agent coordination
+
+Multiple AI agents work this repository from separate clones. Each agent is its own
+"machine"; GitHub is the source of truth. The rules that keep them from colliding:
+
+- **Pull first, every session.** Fetch and start from current `main` before any work,
+  and pull again after the owner merges anything. Never build on a stale clone — a
+  stale-based PR conflicts with everything.
+- **One branch per agent per task, always agent-prefixed** (`codex/*`, `claude/*`).
+  Never commit directly to `main`. The PR history doubles as the attribution log of
+  which agent did what — keep the prefixes honest.
+- **Pull requests are the only merge point.** The owner (Jason) reviews and merges;
+  agents never merge their own or another agent's PR unless the owner explicitly
+  delegates it for a named PR.
+- **Never two agents in the same files at the same time.** Work is divided by packet:
+  the status lines in the [agent execution plan](docs/agent-plan-architecture-workspace-and-setup.md)
+  are the claim mechanism. A packet that is `In progress` or `In review` is owned —
+  do not take it, and do not edit the files its branch touches. The
+  `app/FloorOpsApp.tsx` single-file queue rule is the canonical example.
+- **If your work unexpectedly needs a file another agent's open PR touches**, stop and
+  flag it to the owner instead of racing the other agent to a conflict.
+- **After any sibling PR merges**, re-check your open branch's mergeability against
+  `main` and resolve documentation-ledger conflicts by keeping main's newer status
+  wording while preserving your branch's content additions.
 
 ## Useful commands
 
