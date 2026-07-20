@@ -109,17 +109,17 @@ PR #31 merged the [agent execution plan](agent-plan-architecture-workspace-and-s
 
 PR #32 merged the documentation-truth and one-account Gmail-boundary packet into `main` as `adc79b855041db04cc3ca2a3eb232bc72408d33b` on July 19, 2026. The exact commit was deployed to the private Sites development environment as version 40. This deployment changes no production platform, migration, live Google connection, second-user access, or real-data boundary.
 
-The July source-only merge train is complete on `main` at `4ce7bd4`. The source-only `codex/actionable-lists` slice is complete in PR #33 and is not deployed; the `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed. PR #37 added honest authenticated Administrator gating and isolated rendered tests from `.env.local`; PR #41 added the Tier-1 flooring KPI panel and pinned definitions; and PR #44 added the five-step Workspace setup flow plus the hosted-prerequisites table. These changes are not deployed; private Sites development version 40 remains at `adc79b8`.
+The current source baseline is `main` at `f589ee6`. PR #49 completed OIDC-04's merge-train documentation reconciliation, and PR #50 guarded that completed status against regression. The source-only `codex/actionable-lists` slice is complete in PR #33 and is not deployed; the `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed. PR #37 added honest authenticated Administrator gating and isolated rendered tests from `.env.local`; PR #41 added the Tier-1 flooring KPI panel and pinned definitions; and PR #44 added the five-step Workspace setup flow plus the hosted-prerequisites table. These changes are not deployed; private Sites development version 40 remains at `adc79b8`.
 
 Backend and Workspace source packets are also merged: BE-02+BE-13 in PR #36, BE-04 Workspace OIDC/invitation/session issuance in #38, WS-04+WS-12 rotation and sync contracts in #39, BE-05 object-storage adapters in #40, BE-06 lead/meeting PostgreSQL v6 in #42, BE-08 Google-client decoupling and exact-version key handling in #45, BE-03 legacy records-route retirement in #46, and BE-11 default-off deployment definitions in #47. PR #48 then resolved OIDC-01's real Google callback compatibility issue. The latest combined-main Node/build/lint, Terraform, PostgreSQL, and Chromium checks are green. All remain source-only: no migration, grant, provider, hosted configuration, infrastructure, image publication, job, or deployment was applied or executed.
 
 ## Recommended next worker assignments
 
-The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. The next local sequence does not require Brett's Workspace or Cloud input:
+The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. OIDC-04 is complete in PRs #49/#50. The current local review sequence does not require Brett's Workspace or Cloud input:
 
-1. Complete OIDC-04's merge-train documentation/guard reconciliation.
-2. Implement OIDC-02 verifier/cookie hardening, then OIDC-03's focused negative and real-PostgreSQL test backfill; serialize them because they share employee-OIDC fixtures.
-3. In parallel, assign BE-09, BE-12, the coordinated BE-07+SET-05 calendar-authority packet, KPI-02 as the sole `FloorOpsApp.tsx` owner, SET-10, SET-11, SET-09+WS-10, and WS-13. BE-10/BE-14 follow BE-09.
+1. Review OIDC-02 in draft PR #54, then the intentionally stacked OIDC-03 draft PR #55. After #54 merges, retarget or rebase #55 to `main` and rerun its checks.
+2. Review the independent source-only drafts: BE-09/#51, KPI-02/#52, BE-12/#53, SET-10/#56, and the logo refresh/#57. None is merged or deployed; #52 owns the sole `FloorOpsApp.tsx` slot.
+3. The unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. BE-10/BE-14 wait for #51, and KPI-03 waits for #52.
 
 Build `codex/admin-field-links` only when field assignments are scheduled. It needs a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.
 

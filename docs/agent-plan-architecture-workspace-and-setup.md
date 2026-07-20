@@ -1,7 +1,8 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
-Date: July 19, 2026 · Source baseline: `main` @ `4ce7bd4` (PRs #36–#48 in the
-July merge train are merged; #43 is the BE-04 review/ledger packet). Deployment baseline: `adc79b8`, private Sites development version 40,
+Date: July 19, 2026 · Status reconciled: July 20, 2026 · Source baseline: `main` @
+`f589ee6` (PRs #49/#50 completed and guarded the OIDC-04 documentation reconciliation;
+PRs #51–#57 remain open drafts). Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -55,9 +56,10 @@ below, which also covers the state of GitHub itself (issues/PRs).
    v7+. **All six migrations are unapplied everywhere — no Cloud SQL instance exists.**
    (Do not read "migrations 4–5 remain unapplied" in the audit doc as implying 1–3 are
    applied; BE-01 fixes that phrasing.)
-4. **The D1 drizzle sequence (0000–0011) is applied by Sites at deploy and is also
-   append-only.** Never drop or alter existing D1 tables; the dev environment is the only
-   live environment.
+4. **The deployed D1 drizzle sequence (0000–0011) is append-only.** Draft PR #52 adds
+   source-only migration 0012, but it is not part of `main` and has not been applied to
+   Sites. Never drop or alter existing D1 tables; the dev environment is the only live
+   environment.
 5. **Single-user / test-data boundary holds.** Only `FCI TEST — DO NOT USE` records in any
    live Workspace step; no second user and no real client data until the development
    acceptance run (WS-11) passes.
@@ -74,8 +76,8 @@ below, which also covers the state of GitHub itself (issues/PRs).
    `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
    The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed.
    SET-02 is complete in PR #37, KPI-01 is complete in PR #41, and SET-03/SET-04 are
-   complete in PR #44. None is deployed; KPI-02 takes the next `FloorOpsApp.tsx` queue
-   slot. Do not
+   complete in PR #44. None is deployed. KPI-02 is in review in draft PR #52 and occupies
+   the sole `FloorOpsApp.tsx` queue slot. Do not
    re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
    entries in that ledger.
 
@@ -301,6 +303,8 @@ cloud-run bundle graph empty; key-rotation test (v1 ciphertext decrypts after ro
 v2); provider routes still 503 in router tests.
 
 ### BE-09 · Port application writes to the production boundary; reconcile the dual API contract (medium, after BE-04+BE-06; VERIFIED)
+**Status:** In review — draft PR #51 from `codex/be09-production-writes`, July 20, 2026. Source-only and not merged, applied, configured, or deployed.
+
 **Why:** Cloud Run has no write path for core records — `production-composition.ts`
 exposes per-request creation repository factories (lines 113–124, verified) that no route
 uses. The same paths exist on both surfaces with different auth/shapes, and the management
@@ -350,6 +354,8 @@ Chromium suite; the image-publish job correctly skips. Nothing has been applied,
 published, deployed, executed, or configured.
 
 ### BE-12 · Rehearsal inventory expansion (medium, after BE-06; VERIFIED with corrections)
+**Status:** In review — draft PR #53 from `codex/be12-rehearsal-inventory`, July 20, 2026. Source-only and not merged, applied, configured, or deployed.
+
 **Why:** The cutover requirement to classify EVERY source category as
 migrated/transformed/excluded/blocking comes from
 `docs/runbooks/google-cloud/migration-cutover-and-recovery.md`, "1. Staging migration
@@ -713,6 +719,8 @@ WS-10.**
 mutations.
 
 ### SET-10 · Connection-health detail card (small, after SET-01+02+03)
+**Status:** In review — draft PR #56 from `codex/set10-connection-health`, July 20, 2026. Source-only and not merged or deployed.
+
 **Why:** Connection health is boolean-only in the UI; the richer admin GET
 /integrations/google/connection is used only for DELETE. Admins troubleshooting
 reauthorization need account, granted-vs-enabled services, and mode in one place.
@@ -818,6 +826,8 @@ and the Playwright suites pass; the ledger status line updates in the same PR.
 medium.
 
 ### KPI-02 · Tier-2 minimal inputs: flooring category, square feet, contract value (medium, after KPI-01)
+**Status:** In review — draft PR #52 from `codex/kpi02-flooring-inputs`, July 20, 2026. Source-only and not merged or deployed.
+
 **Why:** Three additive fields unlock the flooring-specific KPIs no generic CRM field can:
 what we sell (product mix), how big jobs are (sq ft), and what they actually sold for
 (vs. the estimate). All are known at booking time in this business model (the design
@@ -900,11 +910,13 @@ format). Effort: small.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** current source is `main` at `4ce7bd4` after the July 19 merge train:
-PRs #36–#48 are merged, with #43 recording the BE-04 review/ledger and no remaining review item in that merge train. The exact deployed baseline
+**GitHub baseline:** current source is `main` at `f589ee6` after PRs #49/#50 completed
+OIDC-04's documentation reconciliation and status guard. PRs #51–#57 are open drafts;
+#55 is intentionally stacked on #54. None of those seven drafts is merged or deployed.
+The exact deployed baseline
 remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
 version 40, which includes PR #30's semantic Settings rules table. The listed source
-packets from PR #33 through PR #48 are undeployed. Delivery PRs mirror items in these ledgers and do
+packets from PR #33 through PR #50 are undeployed. Delivery PRs mirror items in these ledgers and do
 not become a separate task source of truth.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
@@ -974,18 +986,19 @@ contracts and `npm test` pass.
 ## Sequencing at a glance
 
 **Start now, in parallel (no owner input needed):**
-OIDC-04 is the immediate truth-reconciliation packet on
-`codex/reconcile-post-merge-plan`; it corrects the merge-train ledger and adds an offline
-guard for known merged packets. After it lands, serialize OIDC-02 then OIDC-03 because
-they share employee-login fixtures. In parallel, BE-09, BE-12, the coordinated
-BE-07+SET-05 packet, KPI-02, SET-10, SET-11, SET-09+WS-10, and WS-13 are dependency-ready.
-All are source-only packets; none authorizes external configuration, apply, deployment,
-live login, another user, or real data.
+OIDC-04 is complete in PR #49, with its closure guarded by PR #50. Review OIDC-02 in
+draft PR #54 before the intentionally stacked OIDC-03 draft PR #55; after #54 merges,
+retarget or rebase #55 to `main` and rerun its checks. BE-09 (#51), KPI-02 (#52), BE-12
+(#53), SET-10 (#56), and the logo refresh (#57) are also in draft review and must not be
+reassigned. The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
+SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
+apply, deployment, live login, another user, or real data.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
-SET-03→SET-10 · SET-04→SET-11 · OIDC-01→OIDC-02→OIDC-03. OIDC-04 is the current
-documentation/guard reconciliation and does not change the runtime dependency chain.
+SET-03→SET-10 · SET-04→SET-11 · OIDC-01→OIDC-02→OIDC-03. OIDC-04 was the
+documentation/guard reconciliation; it is complete in PRs #49/#50 and does not change
+the runtime dependency chain.
 
 **Owner track (sequential):** WS-01 → WS-02 → WS-05 → WS-06 → WS-07 → WS-08 → WS-09(live
 half) → WS-11. Agents should never be blocked idle on this track — every agent item above
@@ -993,7 +1006,8 @@ is schedulable independently.
 
 **Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Do not run two packets that touch it
 concurrently. PR #33 (actionable lists), PR #35 (SET-01), PR #37 (SET-02), and PR #41
-(KPI-01) are merged source-only. KPI-02 owns the next slot; it must preserve the extracted
+(KPI-01) are merged source-only. KPI-02 occupies the slot in draft PR #52; no second
+`FloorOpsApp.tsx` packet should start until #52 is resolved. It must preserve the extracted
 Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
 `InboxRulesPanel`'s semantic `<table>` markup, with the focused regression suites and
 `tests/e2e/accessibility-routes.spec.ts` green.
@@ -1016,10 +1030,11 @@ Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
    (#48) are complete in source. Latest combined-main Node/build/lint, Terraform, and
    Chromium checks are green; nothing was applied, configured, published, or deployed.
 
-**Wave 2 — current:** finish OIDC-04, then OIDC-02 and OIDC-03 in order. Parallel-safe
-tracks are BE-09→BE-10/BE-14; BE-12; BE-07+SET-05; KPI-02 as the sole
-`FloorOpsApp.tsx` owner; SET-10; SET-11; SET-09+WS-10; WS-13; and design-ledger Phase 4
-guardrails before the broad primitive/CSS consolidation tracks.
+**Wave 2 — current:** review #54, then its stacked #55, in order. Parallel draft review
+also includes BE-09/#51, KPI-02/#52, BE-12/#53, SET-10/#56, and the logo refresh/#57.
+BE-10/BE-14 wait for #51; KPI-03 waits for #52. The unclaimed parallel-safe tracks are
+BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
+broad primitive/CSS consolidation tracks.
 
 **Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
 inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only
@@ -1029,7 +1044,8 @@ those inputs; Jason's other open decisions live in checklists 00/06/10.
 
 **FloorOpsApp single-file queue (one packet at a time):** PR #33 (actionable lists) →
 SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 are complete in source. The queue is
-now KPI-02 → KPI-03, interleaving other SET items only in extracted modules that do not
+now KPI-02 → KPI-03, with KPI-02 occupied by draft PR #52 and KPI-03 waiting for its
+review and merge. Interleave other SET items only in extracted modules that do not
 touch `FloorOpsApp.tsx`. Workstream D's KPI packets are
 otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
 version numbers with BE-06).
