@@ -16,6 +16,9 @@ const vite = await createViteServer({
 const { createEmployeeRequestRouter } = await vite.ssrLoadModule(
   "/app/platform/google-cloud/employee-request-router.ts",
 );
+const { EmployeeOidcFailure } = await vite.ssrLoadModule(
+  "/app/platform/google-cloud/employee-oidc.ts",
+);
 
 after(async () => {
   await vite.close();
@@ -289,6 +292,77 @@ test("Cloud Run records provider cancellation and rejects ambiguous callback cre
     } finally {
       await ambiguous.close();
     }
+  }
+});
+
+test("Cloud Run maps OIDC completion failures, audits them, and clears the attempt", async (t) => {
+  const cases = [
+    ["nonretryable", new EmployeeOidcFailure("outside_domain"), 403, "login_not_authorized"],
+    [
+      "retryable",
+      new EmployeeOidcFailure("provider_unavailable", true),
+      503,
+      "login_unavailable",
+    ],
+  ];
+
+  for (const [label, completionError, status, responseError] of cases) {
+    await t.test(label, async () => {
+      const running = await startHarness({ completionError });
+      try {
+        const response = await running.request(
+          "/api/v1/session/google/callback?code=FCI_TEST_CODE&state=FCI_TEST_STATE",
+          {
+            headers: {
+              Cookie: `__Host-fci_oidc_attempt=${ATTEMPT_COOKIE_VALUE}`,
+            },
+          },
+        );
+        assert.equal(response.status, status);
+        assert.equal(response.headers.get("cache-control"), "no-store");
+        assert.deepEqual(await response.json(), { error: responseError });
+        assert.equal(running.completions.length, 1);
+        assert.equal(running.identityCalls.length, 0);
+        assert.equal(running.audits.length, 1);
+        assert.equal(running.audits[0].action, "identity.login_failed");
+        assert.equal(running.audits[0].result, "denied");
+        assert.equal(running.audits[0].reasonCode, completionError.reason);
+        assert.equal(running.audits[0].source, "employee_login");
+
+        const cookies = setCookies(response);
+        assert.equal(cookies.length, 1);
+        assert.match(cookies[0], /^__Host-fci_oidc_attempt=;/);
+        assert.match(cookies[0], /Max-Age=0/);
+        assert.doesNotMatch(cookies[0], /__Host-fci_session=/);
+      } finally {
+        await running.close();
+      }
+    });
+  }
+});
+
+test("Cloud Run denies cross-origin employee login start before OIDC initiation", async () => {
+  const running = await startHarness();
+  try {
+    const response = await running.request("/api/v1/session/google/start", {
+      method: "POST",
+      headers: { Origin: "https://attacker.example.test" },
+      json: { invitationCredential: INVITATION_CREDENTIAL },
+    });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), { error: "request_not_authorized" });
+    assert.equal(running.initiations.length, 0);
+    assert.equal(running.completions.length, 0);
+    assert.equal(running.identityCalls.length, 0);
+    assert.equal(running.audits.length, 1);
+    assert.equal(running.audits[0].action, "authorization.transport_denied");
+    assert.equal(running.audits[0].result, "denied");
+    assert.equal(running.audits[0].reasonCode, "origin_mismatch");
+    assert.equal(running.audits[0].source, "employee_route_transport");
+    assert.equal(setCookies(response).length, 0);
+  } finally {
+    await running.close();
   }
 });
 
