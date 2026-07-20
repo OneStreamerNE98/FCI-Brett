@@ -23,18 +23,20 @@ recommended correction. If a PR has no actionable finding, state that explicitly
 
 Seven draft pull requests are open. Six target `main`; PR #55 is deliberately stacked on
 PR #54. The review heads below include the documentation reconciliations pushed to PRs
-#51, #52, #53, and #56 on July 20. Their GitHub checks were rerunning when this snapshot
-was finalized, so the PR pages—not an earlier green run—are authoritative. PR #57
-includes SVG implementation commit
-`deb69a1779da98c2deab5cc0b8fca2cc8aec7e52`; its full local build and 419-test suite
-passed before this handoff documentation was added.
+#51, #52, #53, and #56 on July 20; all current checks on those four heads are green.
+PRs #54 and #55 also remain green, with #55 still stacked on #54. PR #57 includes SVG
+implementation commit `deb69a1779da98c2deab5cc0b8fca2cc8aec7e52` and corrective
+metadata commit `4bdb07d`. At prior head `3af9869`, both Chromium workflows passed
+74/75 tests but exposed a real Vinext shortcut-URL defect; the exact failure and fix are
+recorded in the PR #57 section below. The PR page is authoritative for the checks rerun
+after this documentation is pushed.
 
 None of PRs #51–#57 is merged or deployed. None applies PostgreSQL or D1 migrations to a
 hosted database, changes hosted secrets or environment values, provisions Google Cloud,
 connects Workspace, publishes an image, runs a Cloud Run Job, admits a second user, or
 uses real client data.
 
-| PR | Packet | Review head | Base | Size | Main outcome |
+| PR | Packet | Pinned code/doc head | Base | Size | Main outcome |
 | --- | --- | --- | --- | --- | --- |
 | [#51](https://github.com/OneStreamerNE98/FCI-Brett/pull/51) | BE-09 | `ba2a386` | `main` | 35 files, +1,357/−149 | Production core-record read/write routes with authorization, CSRF, idempotency, and a closed project payload |
 | [#52](https://github.com/OneStreamerNE98/FCI-Brett/pull/52) | KPI-02 | `d61987a` | `main` | 31 files, +2,512/−115 | Flooring booking inputs, additive D1 migration 0012, and Tier-2 KPI reporting |
@@ -42,7 +44,7 @@ uses real client data.
 | [#54](https://github.com/OneStreamerNE98/FCI-Brett/pull/54) | OIDC-02 | `53ac53c` | `main` | 4 files, +71/−5 | OIDC issuer and attempt-cookie hardening |
 | [#55](https://github.com/OneStreamerNE98/FCI-Brett/pull/55) | OIDC-03 | `c5e62a2` | `codex/oidc02-verifier-cookie-hardening` | 5 files, +656/−4 | Mutation-sensitive login negatives and real-PostgreSQL concurrency/session tests |
 | [#56](https://github.com/OneStreamerNE98/FCI-Brett/pull/56) | SET-10 | `fe28af0` | `main` | 11 files, +422/−23 | Administrator-only Workspace connection-health card |
-| [#57](https://github.com/OneStreamerNE98/FCI-Brett/pull/57) | Brand assets | `deb69a1` implementation commit | `main` | Current branch | Vector app-shell and icon assets with PNG compatibility fallbacks |
+| [#57](https://github.com/OneStreamerNE98/FCI-Brett/pull/57) | Brand assets | `4bdb07d` code head; this handoff follows | `main` | 12 files, +740/−19 before this documentation follow-up | Vector app-shell and icon assets with PNG compatibility fallbacks |
 
 ## Dependency and merge-order constraints
 
@@ -417,12 +419,22 @@ mobile close control remains clear of the wordmark.
 - `app/FloorOpsApp.tsx`, `app/layout.tsx`, and `public/manifest.webmanifest`
 - `tests/rendered-html.test.mjs` and `tests/e2e/floor-ops.spec.ts`
 - Implementation commit: `deb69a1779da98c2deab5cc0b8fca2cc8aec7e52`.
+- Shortcut metadata correction: `4bdb07d`.
 - Local lint passed.
 - Focused rendered contracts: 21/21 passed.
 - Full local `npm test`: both builds passed; 419 total, 404 passed, 15 expected
   environment-gated skips, 0 failed.
-- The prior PNG head's GitHub Node, Chromium, Terraform, and image-build checks passed.
-  Confirm the current PR head's checks on GitHub after the SVG/documentation push.
+- At prior head `3af9869`, both GitHub Chromium workflows passed 74/75 tests. The sole
+  failure was `tests/e2e/floor-ops.spec.ts:81`: Vinext serialized the object-form
+  `icons.shortcut` descriptor as `href=".../[object Object]"`. The regular typed SVG and
+  PNG icons and PNG Apple icon were already correct.
+- Commit `4bdb07d` uses Vinext's supported string form for `icons.shortcut` and keeps the
+  E2E assertion on its exact SVG href. Local in-app inspection rendered
+  `/fci-app-icon-master.svg` correctly for the shortcut and regular SVG icon, retained
+  the PNG fallback and Apple icon, and reported no browser warnings/errors. The focused
+  Playwright journey reached and passed all icon assertions; its final console-health
+  assertion was blocked only by the documented Windows Vinext `file:///.../.vinext/fonts`
+  issue. GitHub Chromium is the authoritative cross-platform rerun.
 
 ### Impact and review questions
 
@@ -442,13 +454,13 @@ after each implementation is accepted:
 
 | PR | Documentation item to reconcile |
 | --- | --- |
-| #51 | Commit `ba2a386` corrects future-BE-09 wording and removes BE-09 from assignable queues while keeping it **In review**. After merge, mark BE-09 complete and add #51 to the merged-packet guard. |
+| #51 | Commit `ba2a386` corrects future-BE-09 wording and removes BE-09 from assignable queues while keeping it **In review**. The GitHub PR description was aligned to that wording on July 20. After merge, mark BE-09 complete and add #51 to the merged-packet guard. |
 | #52 | Commit `d61987a` documents additive D1 migration 0012 and its hosted-apply gate, removes KPI-02 from assignable queues, and labels it draft/source-only/undeployed. After merge, mark KPI-02 complete and register #52 in the guard. |
 | #53 | Commit `54ddc64` records the disposable GitHub CI PostgreSQL 16 rehearsal while preserving the no-hosted-apply boundary, expands the runtime summary, and removes BE-12 from assignable queues. After merge, mark BE-12 complete and register #53 in the guard. |
 | #54 | Current OIDC-02 status correctly says draft review. After merge, change it to complete and register #54 in the merged guard. |
 | #55 | Current OIDC-03 status and stacked dependency are truthful. After #54 merges, retarget/rebase, update the dependency wording, rerun checks, and only then change the post-merge status/guard. |
 | #56 | Commit `fe28af0` changes SET-10's branch-ledger wording to `In review — draft PR #56, July 20, 2026.` Do not call it complete until merge; register it afterward. |
-| #57 | This document and the GitHub PR description replace the stale PNG-only asset note. No canonical packet status changes are required for this independent brand packet. |
+| #57 | This document and the GitHub PR description replace the stale PNG-only asset note and record the `3af9869` Chromium failure plus `4bdb07d` shortcut fix. No canonical packet status changes are required for this independent brand packet. |
 
 These are documentation accuracy tasks, not permission to mark an open packet complete.
 Canonical ledgers must change to `Complete` only after the corresponding PR merges and
