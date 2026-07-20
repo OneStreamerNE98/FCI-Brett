@@ -256,8 +256,9 @@ cleanly when ungated.
 lint and both builds pass. Source-only; no migration, grant, database, hosted
 configuration, or deployment has been applied.
 
-**Why:** `leads` (drizzle 0010) and `project_meetings` (0009) are D1-only with inline SQL
-in their routes; the rehearsal migrates only clients/contacts/projects/activity_events.
+**Why:** At BE-06 packet start, `leads` (drizzle 0010) and `project_meetings` (0009) were
+D1-only with inline SQL and the rehearsal migrated only clients, contacts, projects, and
+activity events. Draft PR #53 now expands the rehearsal to the v6 lead and meeting tables.
 The client/project port pattern (`app/ports/client-repository.ts` + d1 + postgres adapters
 + `creation-idempotency.ts`) is the template.
 **Do:** Define lead/meeting ports; extract route SQL verbatim into d1 adapters (byte-
@@ -371,13 +372,18 @@ Chromium suite; the image-publish job correctly skips. Nothing has been applied,
 published, deployed, executed, or configured.
 
 ### BE-12 · Rehearsal inventory expansion (medium, after BE-06; VERIFIED with corrections)
-**Status:** In review — draft PR #53 from `codex/be12-rehearsal-inventory`, July 20, 2026. Source-only and not merged, applied, configured, or deployed.
+**Status:** In review — draft PR #53 from `codex/be12-rehearsal-inventory`, July 20,
+2026. Source-only and not merged; the bounded integration ran only against a disposable GitHub CI
+PostgreSQL 16 schema. No approved hosted development/staging rehearsal, production
+migration or grant apply, live-data operation, hosted configuration, or deployment has
+been executed.
 
-**Why:** The cutover requirement to classify EVERY source category as
+**Why (at packet start):** The cutover requirement to classify EVERY source category as
 migrated/transformed/excluded/blocking comes from
 `docs/runbooks/google-cloud/migration-cutover-and-recovery.md`, "1. Staging migration
-rehearsal" (lines 25–27) — **not** the platform ADR. `db/schema.ts` exports 21 tables;
-the rehearsal covers 4, is silent on the other 17 plus R2 objects.
+rehearsal" (lines 25–27) — **not** the platform ADR. At that point, `db/schema.ts`
+exported 21 tables while the rehearsal covered 4 and was silent on the other 17 plus R2
+objects.
 **Do:** Add an inventory section to the rehearsal report enumerating every schema-exported
 table + R2, each classified with a reason (records: excluded legacy per BE-03;
 workspace_simulation_state: excluded dev-only; google_connections: transformed only by a

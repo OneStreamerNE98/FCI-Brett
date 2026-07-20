@@ -31,7 +31,9 @@ The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-f
 - Cloud-Run-compilable Drive, Gmail, Calendar, Sheets, and OAuth cores with injected fetch, clock, secret-store, and persistence seams. The source-only production OAuth workflow uses exact-version multi-key decryption and the version-3 integration port, but is deliberately absent from production route composition.
 - A separate migration command using a one-connection pool, the immutable checksum runner, a session advisory lock, and an explicit validated migration-owner `SET ROLE`. Normal requests never import or call the migration runner.
 - Source-only capability roles and exact grants. The runtime role receives no schema creation, delete, truncate, reference, trigger, sequence, function, or broad future-table privilege.
-- A bounded test-data rehearsal for production-compatible clients, contacts, projects, and explicitly classified client/project activity events.
+- A bounded test-data rehearsal for production-compatible clients, contacts, leads,
+  projects, project meetings, and explicitly classified client/project/lead activity
+  events.
 
 ## Employee API contract
 
@@ -143,7 +145,7 @@ Keep Cloud Run minimum instances at zero and optional Cloud Tasks, Scheduler, Pu
 - a `NOLOGIN` runtime capability role; and
 - a development/staging-only rehearsal importer scoped to one isolated rehearsal schema.
 
-Use [`infrastructure/postgres/rehearsal-importer-template.sql`](../infrastructure/postgres/rehearsal-importer-template.sql) only as a reviewed per-schema grant template after the isolated rehearsal schema has been migrated. It rejects non-rehearsal schema names and validates the exact nine-table migration/control boundary needed by the six imported tables; it has not been applied anywhere.
+Use [`infrastructure/postgres/rehearsal-importer-template.sql`](../infrastructure/postgres/rehearsal-importer-template.sql) only as a reviewed per-schema grant template after the isolated rehearsal schema has been migrated. It rejects non-rehearsal schema names and validates the exact nine-table migration/control boundary needed by the six imported tables. It has not been applied to a hosted or shared database; GitHub CI exercises equivalent exact grants in its disposable rehearsal schema without executing this template file.
 
 The environment-specific migration login must have permission to set the owner role, and the migration command verifies `CURRENT_USER` after `SET ROLE`. Inherited membership alone would leave new objects owned by the login and would not apply the owner role’s default privileges.
 
