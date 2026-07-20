@@ -22,10 +22,11 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 
 ## Immediate owner and administrator handoff
 
-Status reconciled on July 20, 2026 against merged source baseline `main` at `5701211f2ff4a8073d805e44a69778317555baf3` and the separate PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`.
+Status reconciled on July 20, 2026 against merged source baseline `main` at `b067699b7a9100aaf8adb0ea8c43816fe8dac03f` and the separate PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`.
 The deployed commit remains private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The `codex/actionable-lists` slice is complete in source in PR #33 and is not deployed. The `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed; the later source-only packets through PR #48 are likewise merged and undeployed.
 PR #49 completed OIDC-04's documentation reconciliation, PR #50 guarded that completed status, PR #60 reconciled OIDC-02 tracking, PR #61 updated the Fable review instructions, and PR #62 reconciled OIDC-03 tracking.
 PRs #63/#64 added the dashboard-driven Workspace setup workstream, and PR #65 codified the multi-agent coordination protocol.
+PR #66 completed TRK-02 tracking-guard hardening.
 OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged. PRs #54/#55 are source-only and undeployed.
 Draft PRs #51–#53 and #56–#57 remain unmerged and undeployed.
 No merge or draft authorizes live identity/provider configuration, infrastructure or migration apply, image publication, job execution, or deployment.
@@ -56,6 +57,7 @@ This dated snapshot describes review work only; it does not change any owner che
 | [#55](https://github.com/OneStreamerNE98/FCI-Brett/pull/55) | OIDC-03 login security test backfill | Merged into `main`; source-only and undeployed. |
 | [#56](https://github.com/OneStreamerNE98/FCI-Brett/pull/56) | SET-10 Workspace connection health | Open draft against `main`; does not complete the broader operations-health checklist. |
 | [#57](https://github.com/OneStreamerNE98/FCI-Brett/pull/57) | Application logo asset refresh | Open draft against `main`; static UI assets and review documentation only. |
+| [#66](https://github.com/OneStreamerNE98/FCI-Brett/pull/66) | TRK-02 tracking-guard hardening | Merged into `main`; source-only and undeployed. |
 
 ## Checklists by topic
 
@@ -87,11 +89,12 @@ These checklists are owner-facing setup, decision, acceptance, and operations re
 ## Recommended next work
 
 The agent ledgers above own sequencing. OIDC-04 is complete in PRs #49/#50, and PRs #54/#55 completed the source OIDC preconditions.
-TRK-02 is in progress on `codex/tracking-guard-hardening`. After it lands, continue the reviewed merge order #51 → #53 → #52 → #56 → #57. The still-unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. BE-10/BE-14 wait for #51, while KPI-03 waits for #52. No checklist item here authorizes a live provider, staging run, migration/apply, production UI composition, owner acceptance, or deployment.
+TRK-02 is complete in PR #66.
+Continue the reviewed merge order #51 → #53 → #52 → #56 → #57. The still-unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. BE-10/BE-14 wait for #51, while KPI-03 waits for #52. No checklist item here authorizes a live provider, staging run, migration/apply, production UI composition, owner acceptance, or deployment.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. Later source through PR #48, documentation reconciliation through PR #50, and OIDC-02/OIDC-03 in PRs #54/#55 are merged but undeployed.
+Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. Later source through PR #48, documentation reconciliation through PR #50, OIDC-02/OIDC-03 in PRs #54/#55, and TRK-02 in PR #66 are merged but undeployed.
 Drafts #51–#53 and #56–#57 remain unmerged and undeployed. None of the remaining steps above authorizes production deployment, live OIDC/session admission, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
