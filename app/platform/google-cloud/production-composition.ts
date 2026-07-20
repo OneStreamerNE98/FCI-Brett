@@ -20,12 +20,18 @@ import {
   createPostgresIntegrationMetadataRepository,
 } from "../../adapters/postgres/integration-metadata-repository";
 import {
+  createPostgresLeadRepository,
+} from "../../adapters/postgres/lead-repository";
+import {
   createPostgresOutboxRepository,
 } from "../../adapters/postgres/outbox-repository";
 import type { PostgresPool } from "../../adapters/postgres/postgres-database";
 import {
   createPostgresProjectRepository,
 } from "../../adapters/postgres/project-repository";
+import {
+  createPostgresProjectMeetingRepository,
+} from "../../adapters/postgres/project-meeting-repository";
 import {
   createPostgresSecurityAuditRepository,
 } from "../../adapters/postgres/security-audit-repository";
@@ -37,8 +43,10 @@ import type { ClientRepository } from "../../ports/client-repository";
 import type { FileMetadataRepository } from "../../ports/file-metadata";
 import type { IdentityPersistenceRepository } from "../../ports/identity-persistence";
 import type { IntegrationMetadataRepository } from "../../ports/integration-metadata";
+import type { LeadRepository } from "../../ports/lead-repository";
 import type { OutboxRepository } from "../../ports/outbox-repository";
 import type { ProjectRepository } from "../../ports/project-repository";
+import type { ProjectMeetingRepository } from "../../ports/project-meeting-repository";
 import type { SecurityAuditRepository } from "../../ports/security-audit";
 import {
   createProductionPostgresPool,
@@ -58,6 +66,8 @@ export type ProductionRepositoryFactories = Readonly<{
   files: FileMetadataRepository;
   clients(request: PostgresCreationRequestMetadata): ClientRepository;
   projects(request?: PostgresCreationRequestMetadata): ProjectRepository;
+  leads(request?: PostgresCreationRequestMetadata): LeadRepository;
+  projectMeetings(request?: PostgresCreationRequestMetadata): ProjectMeetingRepository;
 }>;
 
 export type ProductionComposition = Readonly<{
@@ -118,6 +128,18 @@ export function composeProductionRepositories(
     },
     projects(request) {
       return createPostgresProjectRepository(postgres, {
+        schema: config.postgres.schema,
+        ...(request ? { request: { ...request } } : {}),
+      });
+    },
+    leads(request) {
+      return createPostgresLeadRepository(postgres, {
+        schema: config.postgres.schema,
+        ...(request ? { request: { ...request } } : {}),
+      });
+    },
+    projectMeetings(request) {
+      return createPostgresProjectMeetingRepository(postgres, {
         schema: config.postgres.schema,
         ...(request ? { request: { ...request } } : {}),
       });

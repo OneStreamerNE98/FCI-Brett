@@ -63,6 +63,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "admin_audit_activity",
       checksum: "sha256:aa5e56dc3d1c22d3a6bc5be32f48cfde9ea133cdd853ce6fa024073ebeee05d9",
     }),
+    Object.freeze({
+      version: 6,
+      name: "lead_project_meetings",
+      checksum: "sha256:ff32915b98da08104a94eb4946aca84d0e1c1b144cc8b90d5bc2c7b435e34f99",
+    }),
   ]);
 
 /**
@@ -115,6 +120,8 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("clients", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("contacts", ["SELECT", "INSERT"]),
     runtimeTableAccess("projects", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("leads", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("project_meetings", ["SELECT", "INSERT"]),
     runtimeTableAccess("activity_events", ["INSERT"]),
     runtimeTableAccess("idempotency_requests", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("outbox_events", ["SELECT", "INSERT", "UPDATE"]),

@@ -5,6 +5,8 @@ import { isPostgresUuid, parsePostgresJsonObject } from "./postgres-values";
 export const POSTGRES_CREATION_OPERATIONS = {
   client: "clients.create",
   project: "projects.create",
+  lead: "leads.create",
+  projectMeeting: "project_meetings.create",
 } as const;
 
 export type PostgresCreationOperation = typeof POSTGRES_CREATION_OPERATIONS[keyof typeof POSTGRES_CREATION_OPERATIONS];

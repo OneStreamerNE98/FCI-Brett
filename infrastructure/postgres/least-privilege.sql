@@ -115,6 +115,8 @@ GRANT USAGE ON SCHEMA fci_app TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.clients TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.contacts TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.projects TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.leads TO fci_runtime;
+GRANT SELECT, INSERT ON TABLE fci_app.project_meetings TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.activity_events TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.idempotency_requests TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.outbox_events TO fci_runtime;

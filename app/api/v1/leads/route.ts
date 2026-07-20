@@ -1,16 +1,24 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import type { D1Database } from "../../../adapters/d1/d1-database";
+import { createD1LeadRepository } from "../../../adapters/d1/lead-repository";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
-import { MAX_LEAD_BODY_BYTES, type LeadRow, leadResponse, validateLeadValues } from "../../../domain/lead";
+import {
+  leadNumberFor,
+  MAX_LEAD_BODY_BYTES,
+  leadResponse,
+  validateLeadValues,
+} from "../../../domain/lead";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const result = await env.DB.prepare("SELECT * FROM leads ORDER BY updated_at DESC, created_at DESC LIMIT 500").all<LeadRow>();
-  return NextResponse.json({ leads: result.results.map(leadResponse) }, { headers: { "Cache-Control": "no-store" } });
+  const repository = createD1LeadRepository(env.DB as unknown as D1Database);
+  const leads = await repository.list();
+  return NextResponse.json({ leads: leads.map(leadResponse) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {
@@ -30,14 +38,41 @@ export async function POST(request: NextRequest) {
 
   await ensureWorkspaceSchema();
   const id = crypto.randomUUID();
-  const leadNumber = `L-${new Date().getUTCFullYear()}-${id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+  const leadNumber = leadNumberFor(id, new Date().getUTCFullYear());
   const now = Date.now();
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO leads (id, lead_number, company, contact_name, contact_email, contact_phone, project_name, source, stage, site, estimated_value, next_action, next_action_at, owner_email, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(id, leadNumber, values.company, values.contactName, values.contactEmail, values.contactPhone, values.projectName, values.source, values.stage, values.site, values.estimatedValue, values.nextAction, values.nextActionAt, values.ownerEmail, values.status, auth.user.email, now, now),
-    env.DB.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), id, "Lead created", auth.user.email, `${leadNumber} · ${values.company} · ${values.projectName}`, now),
-  ]);
-  const created = await env.DB.prepare("SELECT * FROM leads WHERE id = ?").bind(id).first<LeadRow>();
-  return NextResponse.json({ lead: leadResponse(created!) }, { status: 201 });
+  const repository = createD1LeadRepository(env.DB as unknown as D1Database);
+  const result = await repository.create({
+    lead: {
+      id,
+      lead_number: leadNumber,
+      company: values.company,
+      contact_name: values.contactName,
+      contact_email: values.contactEmail,
+      contact_phone: values.contactPhone,
+      project_name: values.projectName,
+      source: values.source,
+      stage: values.stage,
+      site: values.site,
+      estimated_value: values.estimatedValue,
+      next_action: values.nextAction,
+      next_action_at: values.nextActionAt,
+      owner_email: values.ownerEmail,
+      status: values.status,
+      created_by: auth.user.email,
+      created_at: now,
+      updated_at: now,
+    },
+    activity: {
+      id: crypto.randomUUID(),
+      recordId: id,
+      action: "Lead created",
+      actor: auth.user.email,
+      detail: `${leadNumber} · ${values.company} · ${values.projectName}`,
+      createdAt: now,
+    },
+  });
+  if (result.outcome !== "created") {
+    throw new Error(`D1 lead creation returned unexpected outcome ${result.outcome}`);
+  }
+  return NextResponse.json({ lead: leadResponse(result.value) }, { status: 201 });
 }

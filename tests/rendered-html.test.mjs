@@ -295,9 +295,10 @@ test("wires development controls and exposes Workspace-only live configuration p
 });
 
 test("uses durable live records without hardcoded business demonstrations", async () => {
-  const [app, leadsApi, leadApi, dashboardApi, workspaceSchema, auth] = await Promise.all([
+  const [app, leadsApi, leadApi, leadAdapter, dashboardApi, workspaceSchema, auth] = await Promise.all([
     readAppSurface(), read("app/api/v1/leads/route.ts"),
-    read("app/api/v1/leads/[leadId]/route.ts"), read("app/api/v1/dashboard/route.ts"),
+    read("app/api/v1/leads/[leadId]/route.ts"), read("app/adapters/d1/lead-repository.ts"),
+    read("app/api/v1/dashboard/route.ts"),
     read("db/schema.ts"), read("app/lib/workspace-auth.ts"),
   ]);
 
@@ -314,7 +315,8 @@ test("uses durable live records without hardcoded business demonstrations", asyn
   assert.match(workspaceSchema, /export const leads = sqliteTable\("leads"/);
   assert.match(leadsApi, /export async function GET/);
   assert.match(leadsApi, /export async function POST/);
-  assert.match(leadsApi, /INSERT INTO activity_events/);
+  assert.match(leadsApi, /createD1LeadRepository/);
+  assert.match(leadAdapter, /INSERT INTO activity_events/);
   assert.match(leadApi, /export async function PATCH/);
   assert.match(leadApi, /Lead stage changed/);
   assert.match(dashboardApi, /estimated_pipeline_value/);
@@ -474,9 +476,12 @@ test("keeps mobile project status, schedule truth, site, and value visible with 
 });
 
 test("captures durable project meetings and bounded Otter evidence", async () => {
-  const [schema, meetingsApi, app, assistantApi] = await Promise.all([
+  const [schema, meetingsApi, meetingDomain, meetingAdapter, app, assistantApi] = await Promise.all([
     read("db/schema.ts"),
-    read("app/api/v1/projects/[projectId]/meetings/route.ts"), readAppSurface(),
+    read("app/api/v1/projects/[projectId]/meetings/route.ts"),
+    read("app/domain/project-meeting.ts"),
+    read("app/adapters/d1/project-meeting-repository.ts"),
+    readAppSurface(),
     read("app/api/v1/assistant/route.ts"),
   ]);
 
@@ -489,13 +494,14 @@ test("captures durable project meetings and bounded Otter evidence", async () =>
   assert.match(meetingsApi, /export async function POST/);
   assert.match(meetingsApi, /requireOfficeUser\(request\)/);
   assert.match(meetingsApi, /requireSameOrigin\(request\)/);
-  assert.match(meetingsApi, /Meeting title is required and must be 160 characters or fewer/);
-  assert.match(meetingsApi, /optionalText\(body\.transcript, 100_000\)/);
-  assert.match(meetingsApi, /parsed\.protocol !== "https:"/);
-  assert.match(meetingsApi, /hostname === "otter\.ai" \|\| hostname\.endsWith\("\.otter\.ai"\)/);
-  assert.match(meetingsApi, /Add an Otter link, notes, summary, transcript, decision, or action item/);
-  assert.match(meetingsApi, /INSERT INTO project_meetings/);
-  assert.match(meetingsApi, /INSERT INTO activity_events/);
+  assert.match(meetingsApi, /normalizeProjectMeeting\(body\)/);
+  assert.match(meetingDomain, /Meeting title is required and must be 160 characters or fewer/);
+  assert.match(meetingDomain, /optionalProjectMeetingText\(body\.transcript, 100_000\)/);
+  assert.match(meetingDomain, /parsed\.protocol !== "https:"/);
+  assert.match(meetingDomain, /hostname === "otter\.ai" \|\| hostname\.endsWith\("\.otter\.ai"\)/);
+  assert.match(meetingDomain, /Add an Otter link, notes, summary, transcript, decision, or action item/);
+  assert.match(meetingAdapter, /INSERT INTO project_meetings/);
+  assert.match(meetingAdapter, /INSERT INTO activity_events/);
   assert.match(meetingsApi, /Meeting notes captured/);
 
   assert.match(app, /<ProjectMeetings project=\{project\} notify=\{notify\} \/>/);

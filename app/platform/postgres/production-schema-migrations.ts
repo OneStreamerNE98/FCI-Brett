@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { ADMIN_AUDIT_ACTIVITY_STATEMENTS } from "./admin-audit-activity-schema.ts";
 import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-schema.ts";
+import { LEAD_PROJECT_MEETING_STATEMENTS } from "./lead-project-meeting-schema.ts";
 import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
 
 export interface ProductionSchemaMigration {
@@ -417,6 +418,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "admin_audit_activity",
     checksum: "sha256:aa5e56dc3d1c22d3a6bc5be32f48cfde9ea133cdd853ce6fa024073ebeee05d9",
     statements: ADMIN_AUDIT_ACTIVITY_STATEMENTS,
+  },
+  {
+    version: 6,
+    name: "lead_project_meetings",
+    checksum: "sha256:ff32915b98da08104a94eb4946aca84d0e1c1b144cc8b90d5bc2c7b435e34f99",
+    statements: LEAD_PROJECT_MEETING_STATEMENTS,
   },
 ];
 
