@@ -583,6 +583,8 @@ not hidden). Server gates untouched.
 **Accept:** rendered tests for both identities; grep confirms server gates unchanged.
 
 ### SET-03 · Guided Workspace setup stepper with per-step live status (large, after SET-01+02)
+**Status:** In progress — `codex/workspace-setup-guidance`, July 19, 2026.
+
 **Why:** Setup is one dense panel with no sequencing, while the rollout guide prescribes a
 strict lifecycle; after OAuth callback the panel says "Run the readiness check to refresh
 this panel" instead of refreshing.
@@ -598,6 +600,8 @@ step 5 that provisioning enablement is a hosted env value, not an in-app toggle.
 mocked readiness variants drive status changes; callback triggers auto-refresh.
 
 ### SET-04 · Structured environment-prerequisites surface (medium, after SET-01)
+**Status:** In progress — `codex/workspace-setup-guidance`, July 19, 2026.
+
 **Why:** Missing config appears as bare labels ("Still needed: …") with no hint these are
 hosted env/secret values — while the Calendar panel shows same-named editable fields, a
 direct contradiction.
