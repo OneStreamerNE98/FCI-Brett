@@ -111,6 +111,7 @@ test("known merged packets have complete statuses and cannot regress to review-o
 
   assert.match(packetStatus(oidc, "OIDC-01"), /^Complete — PR #48, July \d{1,2}, 2026\./);
   assert.match(packetStatus(oidc, "OIDC-02"), /^Complete — PR #54, July 20, 2026\./);
+  assert.match(packetStatus(oidc, "OIDC-03"), /^Complete — PR #55, July 20, 2026\./);
   assert.match(packetStatus(oidc, "OIDC-04"), /^Complete — PR #49, July \d{1,2}, 2026\./);
 
   const productionBoundary = section(readme, "## Production architecture", "## Remaining launch decision");
@@ -121,11 +122,11 @@ test("known merged packets have complete statuses and cannot regress to review-o
   );
   assert.match(
     launchDecision,
-    /Workspace OIDC, durable invitation\/session issuance, the approved application roles, and project-scoped authorization now exist in source/,
+    /Workspace OIDC, durable invitation\/session issuance,[\s\S]*project-scoped authorization,[\s\S]*negative\/real-PostgreSQL login test matrix now exist in source through PR #55/,
   );
   assert.match(
     launchDecision,
-    /OIDC-02 hardening is complete in PR #54[\s\S]*complete and merge OIDC-03\/#55[\s\S]*configure live identity,[\s\S]*apply the PostgreSQL migrations and grants,[\s\S]*deploy/,
+    /configure live identity with explicit owner approval,[\s\S]*apply the PostgreSQL migrations and grants,[\s\S]*compose the production session\/UI boundary,[\s\S]*deploy/,
   );
 
   const frontendAndApi = section(audit, "## Frontend and API architecture", "## Operations, observability, and recovery");
@@ -160,7 +161,7 @@ test("known merged packets have complete statuses and cannot regress to review-o
     "docs/task-checklists/10-complete-product-and-integration-architecture.md",
     "docs/ui-and-product-readiness-review.md",
   ];
-  const mergedPrs = [...new Set([...mergedPlanPackets.values(), 48, 49, 54])];
+  const mergedPrs = [...new Set([...mergedPlanPackets.values(), 48, 49, 54, 55])];
   const badTerms = String.raw`(?:draft|in review|awaiting (?:review|merge)|not merged|review and merge)`;
 
   for (const path of trackingFiles) {
@@ -185,18 +186,21 @@ test("the checklist dashboard records the merged baseline and current review que
   const oidc = read("docs/be04-oidc-review-and-followups.md");
   const handoff = read("docs/codex-to-codex-handoff.md");
 
-  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `d5676398a5fc73713cb7b6cb910fd4f3536acab0`/);
+  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `71f674508ab97c4d5b27a2ca641c1553ba0e1e6c`/);
   assert.match(checklists, /PR #49 completed OIDC-04[\s\S]*PR #50 guarded that completed status/);
-  assert.match(checklists, /OIDC-02 in PR #54 are merged but undeployed; drafts #51–#53 and #55–#57 remain unmerged and undeployed/);
-  assert.doesNotMatch(checklists, /drafts #51–#57 remain unmerged/i);
-  assert.match(handoff, /source status is reconciled against merged `main` baseline `d567639`/);
+  assert.match(
+    checklists,
+    /OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged\. PRs #54\/#55 are source-only and undeployed\. Draft PRs #51–#53 and #56–#57 remain unmerged and undeployed\./,
+  );
+  assert.doesNotMatch(checklists, /drafts #51–#57|drafts #51–#53 and #55–#57/i);
+  assert.match(handoff, /source status is reconciled against merged `main` baseline `71f6745`/);
 
   const reviewQueue = section(checklists, "## Current GitHub review snapshot", "## Checklists by topic");
   for (const pr of [51, 52, 53, 54, 55, 56, 57]) {
     assert.match(reviewQueue, new RegExp(`pull/${pr}\\)`), `Review snapshot omits PR #${pr}`);
   }
   assert.match(reviewQueue, /pull\/54\)[^\n]*Merged into `main`[^\n]*source-only and undeployed/);
-  assert.match(reviewQueue, /pull\/55\)[^\n]*Open draft originally stacked on #54[^\n]*retarget or rebase to `main`/);
+  assert.match(reviewQueue, /pull\/55\)[^\n]*Merged into `main`[^\n]*source-only and undeployed/);
   assert.match(reviewQueue, /does not change any owner checkbox or mark remaining unmerged source complete/);
 
   const expectedPlanDrafts = new Map([
@@ -213,11 +217,11 @@ test("the checklist dashboard records the merged baseline and current review que
   }
 
   assert.match(packetStatus(oidc, "OIDC-02"), /^Complete — PR #54, July 20, 2026\./);
-  assert.match(packetStatus(oidc, "OIDC-03"), /^In review — draft PR #55\b[\s\S]*rebased onto current `main` after PR #54[\s\S]*PR #60 reconciliation[\s\S]*Not merged/);
-  assert.match(staffLogin, /OIDC-02\/#54 hardening are merged[\s\S]*OIDC-03\/#55 remains in draft review and unmerged/);
+  assert.match(packetStatus(oidc, "OIDC-03"), /^Complete — PR #55, July 20, 2026\./);
+  assert.match(staffLogin, /OIDC-02\/#54[\s\S]*OIDC-03\/#55[\s\S]*merged[\s\S]*source-only and undeployed/i);
   assert.match(foundation, /BE-09\/#51 and BE-12\/#53 are in draft review/);
   assert.match(frontend, /KPI-02\/#52, SET-10\/#56, and the logo refresh\/#57 are in draft review and unmerged/);
-  assert.match(architecture, /PR #54 is merged source-only and undeployed[\s\S]*draft PRs #51–#53 and #55–#57 remain unmerged/i);
+  assert.match(architecture, /PRs #54\/#55[\s\S]*merged source-only and undeployed[\s\S]*draft PRs #51–#53 and #56–#57 remain unmerged/i);
 
   const checklistNextWork = section(checklists, "## Recommended next work", "## Safety boundary");
   assert.match(checklistNextWork, /OIDC-04 is complete in PRs #49\/#50/);
@@ -306,8 +310,8 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
   const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
   const startNow = section(plan, "**Start now, in parallel (no owner input needed):**", "**Chains:**");
   assert.match(startNow, /OIDC-04 is complete in PR #49[\s\S]*PR #50/);
-  assert.match(startNow, /OIDC-02 is complete[\s\S]*PR #54/);
-  for (const [packet, pr] of [["OIDC-03", 55], ["BE-09", 51], ["KPI-02", 52], ["BE-12", 53], ["SET-10", 56]]) {
+  assert.match(startNow, /OIDC-02 and OIDC-03[\s\S]*complete in source in PRs #54\/#55/);
+  for (const [packet, pr] of [["BE-09", 51], ["KPI-02", 52], ["BE-12", 53], ["SET-10", 56]]) {
     assert.match(startNow, new RegExp(`${packet}[\\s\\S]*#${pr}`), `${packet}/#${pr} is missing from the current review queue`);
   }
   assert.match(startNow, /logo refresh \(#57\)/);
