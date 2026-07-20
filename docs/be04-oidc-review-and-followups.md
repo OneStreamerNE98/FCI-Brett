@@ -1,7 +1,7 @@
 # BE-04 Workspace OIDC — post-merge security review and follow-up packets
 
 Date: July 19, 2026 · Reviews merged PR #38 ("Add Workspace OIDC employee login") at
-`main` @ `9316771` · Also carries the fix packet for the failing draft PR #41 (KPI-01).
+`main` @ `9316771` · Also records the resolved PR #41 KPI-01 test collision.
 
 This is a Codex-ready follow-up ledger. Each packet is one agent work packet with the same
 shape as `docs/agent-plan-architecture-workspace-and-setup.md` (why / files / steps /
@@ -166,40 +166,27 @@ packet, and passes on `main` after this fix; `npm test` green. **Effort:** small
 
 ---
 
-## KPI-01-FIX · Stop the KPI stat tiles from breaking the Reports metric test (CONFIRMED) — on draft PR #41
-**Status:** Open — the fix lands on the existing `codex/tier1-flooring-kpis` branch (draft
-PR #41), not a new branch.
-**Why:** Draft PR #41's Chromium job is **red**. `BusinessKpisPanel` renders each KPI tile
-as `<article className="metric-card business-kpi-card">`, so KPI cards are also
-`.metric-card`. The pre-existing `tests/e2e/floor-ops.spec.ts` (~lines 375-376) does
-`page.locator('.metric-card').filter({ hasText: 'Active p…' })` and expects exactly one — but
-a KPI tile whose label also starts "Active p…" now matches too, producing a strict-mode
-violation ("unexpected value 'Active projects—Loading current totals'"). This is a genuine
-regression: the new panel collided with an existing test's selector. (My KPI-01 packet said
-"reuse the shared panel/stat conventions" — that was slightly too loose; reusing the bare
-`.metric-card` class is what caused the collision.)
-**Do:** Give the KPI tiles a **distinct** root class instead of reusing `.metric-card` (e.g.
-`business-kpi-card` only, with its own minimal styling, or scope the KPI panel so the
-existing `.metric-card` selector on the Reports metric row stays unique). Prefer the option
-that keeps the visual result identical while making the KPI tiles non-matching for the
-existing selector. Re-run `tests/e2e/floor-ops.spec.ts` and the new
-`tests/e2e/flooring-kpis.spec.ts` together to prove both pass. Keep the pinned formulas from
-`docs/flooring-kpis.md` and the `isAdmin` gate on dollar KPIs unchanged.
-**Files:** `app/features/reports/BusinessKpisPanel.tsx`, `app/globals.css`,
-`tests/e2e/flooring-kpis.spec.ts` (only if a selector there also needs the new class).
-**Accept:** the full Chromium regression suite passes (both `floor-ops.spec.ts` and
-`flooring-kpis.spec.ts`); no visual change to the KPI panel; `npm test` green. **Effort:**
-small.
+## KPI-01-FIX · Stop the KPI stat tiles from breaking the Reports metric test (RESOLVED) — PR #41
+**Status:** Resolved on `codex/tier1-flooring-kpis`, July 19, 2026. Both complete GitHub
+Chromium runs, both Node/build runs, and both Terraform checks pass.
+**Cause:** The pre-existing Reports test used a page-wide `.metric-card` locator, so its
+"Active projects" lookup also matched the new KPI card that intentionally shares the
+application's metric-card visual convention.
+**Resolution:** Keep the valid shared styling and scope the old regression locator to the
+existing summary row with `.metrics-grid > .metric-card`. The focused legacy Reports test
+and all 22 KPI-focused Playwright cases pass together; the pinned formulas in
+`docs/flooring-kpis.md` and the direct `isAdmin` gate on dollar KPIs are unchanged.
+**Files:** `tests/e2e/floor-ops.spec.ts`. No visual or production behavior changed.
 
 ---
 
 ## Recommended order for Codex
 
-1. **KPI-01-FIX** — unblocks the red draft PR #41 (it is otherwise the next FloorOpsApp
-   packet in the queue).
-2. **OIDC-01** — the launch-blocker; small and self-contained; do before any live-login work.
-3. **OIDC-04** — cheap doc/guard reconciliation; removes the merged-main contradiction.
-4. **OIDC-02** then **OIDC-03** — hardening, then the test backfill (OIDC-03 shares a test
+KPI-01-FIX is resolved on PR #41. The remaining order is:
+
+1. **OIDC-01** — the launch-blocker; small and self-contained; do before any live-login work.
+2. **OIDC-04** — cheap doc/guard reconciliation; removes the merged-main contradiction.
+3. **OIDC-02** then **OIDC-03** — hardening, then the test backfill (OIDC-03 shares a test
    fixture with OIDC-01, so sequence OIDC-01 → OIDC-03).
 
 OIDC-01..04 touch only Cloud Run platform + tests + docs (no FloorOpsApp), so they run in
