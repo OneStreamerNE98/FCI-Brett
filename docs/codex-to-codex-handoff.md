@@ -119,6 +119,8 @@ PR #34, which adds the KPI-01–KPI-04 workstream, is merged. BE-02 + BE-13 are 
 
 BE-06 is in review in draft PR #42 on `codex/leads-meetings-postgres-v6`. It preserves the current D1 lead/project-meeting routes behind ports, appends checksummed source-only PostgreSQL migration v6, adds transactional PostgreSQL adapters plus expanded idempotency/outbox/readiness/grants, and leaves BE-09 production route composition and BE-12 rehearsal expansion open. Local `npm test` passes 355 active tests with 13 expected PostgreSQL-gated skips; lint and both builds pass. No migration, grant, database, hosted configuration, or deployment was applied.
 
+BE-03 is in review in draft PR #46 on `codex/retire-legacy-records`. It deletes the unused generic `/api/v1/records` route and its unreferenced `actorFrom` helper while preserving the assistant's unrelated records-only answer mode and its test assertion. No D1 or Drizzle history changed, no stored data was removed, and BE-12 must classify the retained legacy table as `records: excluded (legacy, no migration)`.
+
 ## Recommended next worker assignments
 
 The owner completed the flagged hosted project-manager correction on July 18, 2026 by using the audited **Assign to me** action and confirming the corrected identity/activity evidence. The next local sequence does not require Brett's Workspace or Cloud input:

@@ -104,17 +104,15 @@ test("keeps the design-critique interaction contracts in the rendered app", asyn
   assert.doesNotMatch(reports, /trend=/);
 });
 
-test("declares durable records, uploads, and guarded integration endpoints", async () => {
-  const [hosting, schema, recordsApi, uploadsApi, assistantApi] = await Promise.all([
-    read(".openai/hosting.json"), read("db/schema.ts"), read("app/api/v1/records/route.ts"),
+test("declares durable uploads and guarded integration endpoints", async () => {
+  const [hosting, schema, uploadsApi, assistantApi] = await Promise.all([
+    read(".openai/hosting.json"), read("db/schema.ts"),
     read("app/api/v1/uploads/route.ts"), read("app/api/v1/assistant/route.ts"),
   ]);
   assert.match(hosting, /"d1": "DB"/);
   assert.match(hosting, /"r2": "FILES"/);
   assert.match(schema, /activityEvents/);
   assert.match(schema, /webhookReceipts/);
-  assert.match(recordsApi, /activity_events/);
-  assert.match(recordsApi, /type and payload are required/);
   assert.match(uploadsApi, /20 \* 1024 \* 1024/);
   assert.match(uploadsApi, /file type is not allowed/);
   assert.match(assistantApi, /read-only commercial flooring project assistant/);
@@ -125,6 +123,15 @@ test("declares durable records, uploads, and guarded integration endpoints", asy
   assert.match(assistantApi, /SELECT COUNT\(\*\) AS total FROM contacts/);
   assert.match(assistantApi, /AbortController/);
   assert.match(assistantApi, /Question request is too large/);
+});
+
+test("retires the legacy generic records endpoint and its unused actor helper", async () => {
+  const workspaceData = await read("app/api/v1/_workspace-data.ts");
+  await assert.rejects(
+    access(new URL("app/api/v1/records/route.ts", root)),
+    (error) => error?.code === "ENOENT",
+  );
+  assert.doesNotMatch(workspaceData, /\bactorFrom\b/);
 });
 
 test("includes migrations and the Floor Coverings International logo asset", async () => {
