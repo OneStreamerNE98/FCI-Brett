@@ -68,7 +68,7 @@ user-cancel `error` param yields a recorded denial; duplicate `code`/`state` sti
 `npm test` green. **Effort:** small.
 
 ## OIDC-02 · Verifier and attempt-cookie hardening bundle (low/medium; mixed) — small
-**Status:** In progress — `codex/oidc02-verifier-cookie-hardening`.
+**Status:** In review — draft PR #54, July 20, 2026.
 **Why:** Three independent robustness gaps, safe to fix together:
 - **Issuer strict typing (low; CONFIRMED).** `employee-oidc.ts` ~line 371 uses
   `GOOGLE_ISSUERS.has(String(claims.iss))`; `String(["accounts.google.com"])` passes, so a
