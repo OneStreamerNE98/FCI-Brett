@@ -2,7 +2,8 @@
 
 Review date: July 20, 2026 · Reviewer: Claude Fable (multi-agent, adversarially
 verified) · Input: [PR #51–#57 review handoff](pr-51-57-claude-fable-review-handoff.md) ·
-Baseline: `main` after PR #58 (`c955d91`).
+Baseline: `main` after PR #58 (`c955d91`) · Follow-ups section revised July 20, 2026
+after a completeness audit of the review record.
 
 > **Snapshot scope:** review record and follow-up instructions, not a status ledger.
 > Canonical status lives in the [agent execution plan](agent-plan-architecture-workspace-and-setup.md)
@@ -76,18 +77,80 @@ onto current `main` with main's ledger wording preserved.
    both when parity lands. Also centralizes the category allowlist for PostgreSQL
    (CHECK constraint) — the reports/domain sides are equality-pinned by test; a true
    single-source refactor can land with KPI-04.
-3. **Post-merge ledger flips (per the handoff's reconciliation table):** after each PR
-   merges with green checks on the merged baseline, set its packet status to
-   `Complete — PR #NN, <date>.` and register the PR number in the merged-packet guard in
-   `tests/task-tracking-docs.test.mjs` (BE-09→#51, KPI-02→#52, BE-12→#53, OIDC-02→#54,
-   OIDC-03→#55, SET-10→#56; #57 has no canonical packet). Reminder: the guard's
-   Complete-status regex currently pins the literal date "July 19, 2026" — generalize it
-   (e.g. `(July \d{1,2}, 2026)`) in the same change so later merge dates can register.
+3. **Post-merge flip checklist — run the WHOLE list for each merged PR** (per the
+   handoff's reconciliation table; packet map: BE-09→#51, KPI-02→#52, BE-12→#53,
+   OIDC-02→#54, OIDC-03→#55, SET-10→#56; #57 has no canonical packet). Registering the
+   PR in the guard alone will turn CI red — each flip must, in one commit:
+   - (a) Set the packet status to `Complete — PR #NN, <date>.` in its canonical ledger,
+     and reword every tracking-doc passage that still calls the PR a draft/in-review —
+     including the "Open draft against `main`" checklist rows, the plan's start-now /
+     Wave-2 queue text, and (for #54/#55) the OIDC ledger's
+     "stacked on draft PR #54" wording.
+   - (b) Update `tests/task-tracking-docs.test.mjs` in the same commit: add the packet
+     to `mergedPlanPackets` (or, for #57 which has no packet entry, append 57 to the
+     literal merged-PR list beside 48/49); remove the packet from `expectedPlanDrafts`;
+     delete or update the explicit OIDC-02/OIDC-03 draft status pins (~lines 211–212)
+     when #54/#55 flip; and update the pinned checklist prose, `reviewQueue`, and
+     `startNow` snapshot assertions in the dashboard test so they describe the
+     post-merge state.
+   - (c) First flip only: generalize the guard's hardcoded Complete-status date regex
+     "July 19, 2026" (e.g. `(July \d{1,2}, 2026)`) so later merge dates can register.
+   - (d) KPI-02/#52 only: the branch's own ledger-pin regexes in
+     `tests/flooring-kpis.test.mjs` (~lines 126–128) pin the "In review — draft PR #52"
+     wording and the "now KPI-02 → KPI-03" queue text — update them in the same flip
+     commit.
+   - (e) After #54 merges: when #55 retargets to `main`, update #55's dependency wording
+     (PR body and the OIDC-03 status line's "intentionally stacked on draft PR #54")
+     before rerunning checks and merging.
+   - (f) Do NOT touch the two dated snapshot docs: this file and
+     `docs/pr-51-57-claude-fable-review-handoff.md` are intentionally absent from the
+     guard's `trackingFiles` list. Do not add them to the guard and do not "reconcile"
+     their historical draft-era wording — they record a point in time.
+4. **TRK-02 · tracking-guard hardening (new small packet — add it to the agent plan
+   ledger when claiming):** three verified blind spots in
+   `tests/task-tracking-docs.test.mjs`:
+   - The cross-file stale-reference scan's `badTerms` alternation omits `in progress`,
+     so a tracking doc calling a merged PR "in progress" passes the scan (the
+     per-packet status check catches it only for mapped packets). Add it.
+   - `packetStatus()` captures only the first physical line of a `**Status:**` entry, so
+     a wrapped status hides required phrases (loud false failure) and forbidden phrases
+     (silent false pass). Capture the full status paragraph, or assert status entries
+     are single-line.
+   - The proximity scan collapses whitespace (its 120-char window crosses
+     table/heading boundaries), stops at `.`/`;` (misses adjacent-sentence staleness),
+     and matches only the literal `PR #NN` form — bare `#54` / `OIDC-02/#54` references,
+     the dominant form in the checklists, escape it. Rework it to operate per line or
+     per sentence and to also match bare `#NN`, or document these blind spots beside
+     `badTerms`.
+5. **Brand-asset note (optional, owner-approved only):** the full-logo SVG in #57 has
+   fixed 1254×1254 dimensions, no `viewBox`, and an opaque off-white background; the
+   review accepted it byte-for-byte. A transparent or `viewBox`-corrected source would
+   be a future approved asset replacement — never an unreviewed mutation.
+
+## Owner-judgment questions left open (for Jason; Codex should not decide these)
+
+The handoff asked four questions that are business/product judgment, not defects. The
+review accepted current behavior as reasonable; each is routed for explicit confirmation:
+
+1. **#52 — booking event and units:** is project creation the correct durable booking
+   event, and are whole dollars the right storage unit? (Confirm during KPI-03, before
+   more reporting builds on them.)
+2. **#52 — category taxonomy:** do the seven flooring categories cover the business
+   without creating a false taxonomy? (Confirm during KPI-04, before the PostgreSQL
+   CHECK constraint freezes them.)
+3. **#53 — rehearsal format v1:** may format v1 be retired outright, or does a
+   compatibility requirement exist? (Decide in the KPI-04/BE-12 follow-on; v2 is
+   authoritative in #53.)
+4. **#56 — stale details on refresh error:** should the connection-health card keep
+   showing last-known details with a refresh error, or clear them? (Current behavior
+   keeps them visible; revisit as a SET-10 usability follow-up if desired.)
 
 ## Recommended merge sequence
 
 All branches are green-CI drafts on current `main` after the review fixes. Merge with a
-merge commit, marking each ready first; re-verify sibling mergeability after each:
+merge commit, marking each ready first; re-verify sibling mergeability after each, and
+after a shared-file sibling lands (#52/#57 share `app/FloorOpsApp.tsx`; #52/#56 share
+`app/globals.css`) rerun the survivor's focused browser tests, not just the merge check:
 
 1. **#54** (OIDC-02 — security hardening, smallest)
 2. **#55** (OIDC-03 — after retargeting/rebasing onto main post-#54; completes the
