@@ -17,6 +17,18 @@ function section(markdown, heading, nextHeading) {
   return markdown.slice(start, end);
 }
 
+function packetSection(markdown, packetId) {
+  const itemSection = markdown.split(/^#{2,3} /m).find((part) => part.startsWith(`${packetId} ·`));
+  assert.ok(itemSection, `Missing ${packetId} plan entry`);
+  return itemSection;
+}
+
+function packetStatus(markdown, packetId) {
+  const status = packetSection(markdown, packetId).match(/^\*\*Status:\*\* (.+)$/m)?.[1];
+  assert.ok(status, `Missing ${packetId} status`);
+  return status;
+}
+
 test("task-tracking surfaces point to their authoritative ledgers without duplicate lists", () => {
   const readme = read("README.md");
   const checklists = read("docs/task-checklists/README.md");
@@ -50,10 +62,7 @@ test("task-tracking surfaces point to their authoritative ledgers without duplic
   assert.match(plan, /This document \| Active agent work/);
 
   const packetStatuses = ["BE-01", "WS-03", "TRK-01"].map((item) => {
-    const itemSection = plan.split(/^### /m).find((part) => part.startsWith(`${item} ·`));
-    assert.ok(itemSection, `Missing ${item} plan entry`);
-    const status = itemSection.match(/^\*\*Status:\*\* (.+)$/m)?.[1];
-    assert.ok(status, `Missing ${item} status`);
+    const status = packetStatus(plan, item);
     assert.match(
       status,
       /^(?:In progress — `codex\/doc-truth-reconciliation`, July 19, 2026\.|Complete — PR #\d+, July 19, 2026\.)$/,
@@ -62,6 +71,77 @@ test("task-tracking surfaces point to their authoritative ledgers without duplic
     return status;
   });
   assert.equal(new Set(packetStatuses).size, 1, "The packet items must share one status");
+});
+
+test("known merged packets have complete statuses and cannot regress to review-only wording", () => {
+  const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
+  const oidc = read("docs/be04-oidc-review-and-followups.md");
+  const mergedPlanPackets = new Map([
+    ["BE-01", 32],
+    ["BE-02", 36],
+    ["BE-03", 46],
+    ["BE-04", 38],
+    ["BE-05", 40],
+    ["BE-06", 42],
+    ["BE-08", 45],
+    ["BE-11", 47],
+    ["BE-13", 36],
+    ["WS-03", 32],
+    ["WS-04", 39],
+    ["WS-12", 39],
+    ["SET-01", 35],
+    ["SET-02", 37],
+    ["SET-03", 44],
+    ["SET-04", 44],
+    ["KPI-01", 41],
+    ["TRK-01", 32],
+  ]);
+
+  for (const [packet, pr] of mergedPlanPackets) {
+    const status = packetStatus(plan, packet);
+    assert.match(
+      status,
+      new RegExp(`^Complete — PR #${pr}, July 19, 2026\\.`),
+      `${packet} does not record merged PR #${pr}`,
+    );
+    assert.doesNotMatch(status, /draft|in review|in progress|not merged/i, `${packet} regressed to an unmerged status`);
+  }
+
+  assert.match(packetStatus(oidc, "OIDC-01"), /^Complete — PR #48, July 19, 2026\./);
+
+  const trackingFiles = [
+    "docs/20-user-product-and-architecture-review.md",
+    "docs/agent-plan-architecture-workspace-and-setup.md",
+    "docs/architecture-decision-production-platform.md",
+    "docs/authorization-simulation.md",
+    "docs/be04-oidc-review-and-followups.md",
+    "docs/codex-to-codex-handoff.md",
+    "docs/complete-product-and-google-cloud-architecture-audit.md",
+    "docs/design-critique-fix-plan.md",
+    "docs/google-cloud-runtime-foundation.md",
+    "docs/google-workspace-rollout-guide.md",
+    "docs/pre-workspace-development-plan.md",
+    "docs/production-persistence-boundary.md",
+    "docs/task-checklists/04-staff-login-and-permissions.md",
+    "docs/task-checklists/07-production-foundation-and-migration.md",
+    "docs/task-checklists/README.md",
+    "docs/task-checklists/09-frontend-and-multi-user-hardening.md",
+    "docs/task-checklists/10-complete-product-and-integration-architecture.md",
+    "docs/ui-and-product-readiness-review.md",
+  ];
+  const mergedPrs = [...new Set([...mergedPlanPackets.values(), 48])];
+  const badTerms = String.raw`(?:draft|in review|awaiting (?:review|merge)|not merged|review and merge)`;
+
+  for (const path of trackingFiles) {
+    const normalized = read(path).replace(/\s+/g, " ");
+    for (const pr of mergedPrs) {
+      const staleReference = new RegExp(
+        `(?:${badTerms}.{0,120}PR #${pr}\\b|PR #${pr}\\b.{0,120}${badTerms})`,
+        "i",
+      );
+      assert.doesNotMatch(normalized, staleReference, `${path} still assigns merged PR #${pr} for review`);
+    }
+  }
 });
 
 test("every open architecture-roadmap row has an explicit tracking owner", () => {
@@ -143,11 +223,9 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
 
   const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
   const startNow = section(plan, "**Start now, in parallel (no owner input needed):**", "**Chains:**");
-  assert.match(startNow, /codex\/actionable-lists/);
-  assert.match(startNow, /PR #33[\s\S]*complete/i);
-  assert.match(startNow, /SET-01[\s\S]*PR #35[\s\S]*SET-02[\s\S]*PR #37[\s\S]*KPI-01[\s\S]*next/i);
-  const firstWave = section(plan, "**Wave 1 — next PRs, in this order where they share files:**", "**Wave 2:**");
-  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*PR #35[\s\S]*SET-02[\s\S]*PR #37/i);
+  assert.match(startNow, /OIDC-04[\s\S]*OIDC-02[\s\S]*OIDC-03[\s\S]*BE-09[\s\S]*BE-12[\s\S]*KPI-02/i);
+  const firstWave = section(plan, "**Wave 1 — next PRs, in this order where they share files:**", "**Wave 2 — current:**");
+  assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*PR #35[\s\S]*SET-02[\s\S]*PR #37[\s\S]*KPI-01[\s\S]*PR #41/i);
 
   const design = read("docs/design-critique-fix-plan.md");
   assert.match(design, /- \[x\] Complete in source in PR #33 from `codex\/actionable-lists`/i);

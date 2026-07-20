@@ -1,7 +1,8 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
-Date: July 19, 2026 · Baseline: `main` @ `adc79b8` (PR #32 merged; that exact commit is
-deployed as private Sites development version 40 and includes PR #30)
+Date: July 19, 2026 · Source baseline: `main` @ `4ce7bd4` (PRs #36–#48 in the
+July merge train are merged; #43 is the BE-04 review/ledger packet). Deployment baseline: `adc79b8`, private Sites development version 40,
+which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
 
@@ -71,9 +72,10 @@ below, which also covers the state of GitHub itself (issues/PRs).
 8. Visual/design remediation through PR #30 is included in private Sites development
    version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
    `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
-   The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source and merged in PR #35 and
-   is not deployed. SET-02 has passed source acceptance in draft PR #37 and is not
-   deployed; KPI-01 takes the next `FloorOpsApp.tsx` queue slot after PR #37 lands. Do not
+   The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed.
+   SET-02 is complete in PR #37, KPI-01 is complete in PR #41, and SET-03/SET-04 are
+   complete in PR #44. None is deployed; KPI-02 takes the next `FloorOpsApp.tsx` queue
+   slot. Do not
    re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
    entries in that ledger.
 
@@ -97,7 +99,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
   identity/audit/integration/file tables, idempotency + outbox repositories, least-
   privilege SQL, zero-resource Terraform (`infrastructure/google-cloud/`), bounded
   D1→PostgreSQL rehearsal that always reports `cutoverReady:false`. Provider routes 503 by
-  design; there is **no login route** on the Cloud Run router yet.
+  design. Workspace OIDC initiation/callback, invitation redemption, and session issuance
+  now exist in source through PRs #38/#48; configuration, migration/apply, deployment, and
+  live employee admission remain gated.
 - **Pending owner inputs (block the gated items):** region/billing, production hostname/
   DNS, RPO/RTO, Cloud SQL standalone-vs-HA profile, alert recipients, deployment approver,
   rollback owner, `operations@cherryhillfci.com` custodian — all recorded in
@@ -150,8 +154,9 @@ historical release evidence remains truthful, no migration wording implies v1–
 applied, and `npm test` passes.
 
 ### BE-02 · Bounded request bodies on five dev mutation routes (small, no deps)
-**Status:** In review — PR #36 on `codex/request-and-schema-hardening`, July 19,
-2026. Full local and GitHub checks pass; not merged or deployed.
+**Status:** Complete — PR #36, July 19, 2026. Source-only and not deployed.
+
+Full local and GitHub checks passed.
 
 **Why:** `app/lib/api-json-body.ts` (`parseBoundedJsonObject`) exists to cap JSON bodies,
 yet raw `await request.json()` remains in POST /clients, POST+PATCH /projects, PATCH
@@ -167,8 +172,9 @@ WS-03 — one owner.) Add oversized-body tests.
 contract before persistence; grep for raw `request.json()` in those routes returns nothing.
 
 ### BE-03 · Retire the legacy /api/v1/records surface (small, after BE-02)
-**Status:** In review — draft PR #46 on `codex/retire-legacy-records`, July 19,
-2026. The unused route is deleted rather than retained as a 410 stub, `actorFrom`
+**Status:** Complete — PR #46, July 19, 2026. Source-only and not deployed.
+
+The unused route is deleted rather than retained as a 410 stub, `actorFrom`
 is removed, and the assistant's separate records-only answer mode remains covered.
 The immutable D1 history is unchanged; BE-12 must classify the table as
 `records: excluded (legacy, no migration)`.
@@ -188,11 +194,13 @@ this route. Do NOT touch `db/schema.ts` or drizzle history; record
 ### BE-04 · Workspace OIDC login, invitation redemption, session issuance on the Cloud Run router (large, no deps; VERIFIED)
 **Status:** Complete — PR #38, July 19, 2026. Source-only; production identity,
 infrastructure, sessions, and user admission remain unapplied. **Post-merge security review
-found one launch-blocking correctness bug and hardening/test/doc gaps — see
+found a launch-blocking callback issue that PR #48 resolved, plus remaining hardening,
+test, and documentation gaps — see
 [`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md) (packets
-OIDC-01..OIDC-04). OIDC-01 must land before any live employee login.**
+OIDC-02..OIDC-04).**
 
-**Why:** The single largest production gap: the Cloud Run image has no login.
+**Why (at packet start):** The single largest production gap was that the Cloud Run image
+had no login.
 `app/ports/identity-persistence.ts` (registerExternalIdentity/createSession, lines 67–68)
 and its postgres adapter exist; `POST /api/v1/admin/invitations` mints credentials;
 `secure-session-transport.ts` implements hashed `__Host-fci_session` + CSRF — but nothing
@@ -217,8 +225,9 @@ wrong hd, bad signature, expired/second redemption, idle+absolute expiry, logout
 confirms no ChatGPT header reads in `app/platform/`.
 
 ### BE-05 · Object storage behind the port: R2 + GCS adapters, wire uploads route (medium, no deps)
-**Status:** In review — draft PR #40 on `codex/object-storage-adapters`, July 19, 2026.
-Source-only; no GCS adapter composition, bucket provisioning, hosted configuration, or deployment.
+**Status:** Complete — PR #40, July 19, 2026. Source-only and not deployed.
+
+No GCS adapter composition, bucket provisioning, or hosted configuration was performed.
 
 **Why:** `app/ports/object-storage.ts` (create-only putIfAbsent/head/openRead,
 sha256+generation) has only the in-memory adapter; the one real call site
@@ -233,8 +242,9 @@ contract tests over memory + fake-R2 + gated GCS.
 cleanly when ungated.
 
 ### BE-06 · Leads & project meetings: ports, D1 adapters, PostgreSQL migration v6 (large, no deps)
-**Status:** In review — draft PR #42 on `codex/leads-meetings-postgres-v6`, July 19,
-2026. `npm test` passes 355 active tests with 13 expected PostgreSQL-gated skips;
+**Status:** Complete — PR #42, July 19, 2026. Source-only and unapplied.
+
+`npm test` passed 355 active tests with 13 expected PostgreSQL-gated skips;
 lint and both builds pass. Source-only; no migration, grant, database, hosted
 configuration, or deployment has been applied.
 
@@ -264,7 +274,8 @@ labels; BE-07 preserves those semantics when porting. Check off the checklist-07
 env fallback); settings e2e unchanged.
 
 ### BE-08 · Decouple Google clients from cloudflare:workers; key-version decryption; populate v3 integration tables (large, no deps)
-**Status:** In review — draft PR #45 on `codex/google-client-decoupling`, July 19, 2026.
+**Status:** Complete — PR #45, July 19, 2026. Source-only and uncomposed.
+
 Local acceptance is green (395 tests, 380 passed and 15 environment-gated skips, plus
 lint); provider routes, production secrets/grants, infrastructure, and deployment remain
 uncomposed and unapplied.
@@ -303,7 +314,7 @@ detection in the two admin clients). Provider routes still 503.
 **Accept:** router tests: authorized create + idempotent replay, denial, scope-filtered
 reads, provider 503 assertion; contract section exists.
 
-### BE-10 · Rate limiting on both surfaces (medium, after BE-04; VERIFIED)
+### BE-10 · Rate limiting on both surfaces (medium, after BE-04+BE-09; VERIFIED)
 **Why:** No rate limiting exists anywhere (verified). Cost-bearing dev routes: assistant
 (OpenAI), uploads (R2), sheets/sync + project drive provisioning (Google quota). The
 acceptance checklist requires limits before go-live.
@@ -314,7 +325,9 @@ Retry-After + security-audit event; configurable via production-config, fail-clo
 defaults. Dev: light fixed-window per office user on the four cost routes. Document.
 **Accept:** threshold tests (429 + audit event); under-threshold byte-identical.
 
-### BE-11 · Deployment mechanism source definitions (medium; source acceptance complete in draft PR #47, unmerged and unapplied; apply owner-gated)
+### BE-11 · Deployment mechanism source definitions (medium; source complete, apply owner-gated)
+**Status:** Complete — PR #47, July 19, 2026. Source-only, unpublished, unapplied, and undeployed.
+
 **Why:** The migration runbook previously declared an implementation blocker: no Cloud
 Run Job, deployment identity, image-build pipeline, or release mechanism existed in
 source, yet the roadmap assumes staging rehearsal can execute.
@@ -328,8 +341,8 @@ terraform apply.**
 **Accept:** `terraform fmt -check` + `validate` green; default plan still zero resources;
 `docker build -f Dockerfile.cloud-run .` succeeds; CI green with no push executed.
 
-**Status (2026-07-19):** Draft PR #47 contains the default-off source definitions,
-keyless protected-environment image workflow, gate/default-zero tests, and truthful
+PR #47 contains the default-off source definitions, keyless protected-environment image
+workflow, gate/default-zero tests, and truthful
 runbook update. Local Terraform 1.15.8 formatting, validation, and 29 mocked plans pass;
 392 Node tests report 377 passing, 15 explicitly gated skips, and zero failures. PR CI
 also passes the unauthenticated Docker build, Terraform validation, Node suite, and
@@ -354,9 +367,9 @@ exact acknowledgment). `cutoverReady` stays hardcoded false.
 fixture imports green; `cutoverReady:false`.
 
 ### BE-13 · Fail-closed schema targeting (small, no deps)
-**Status:** In review with BE-02 — PR #36 on
-`codex/request-and-schema-hardening`, July 19, 2026. Full local and GitHub checks pass;
-not merged or deployed.
+**Status:** Complete — PR #36, July 19, 2026. Source-only and not deployed.
+
+Full local and GitHub checks passed.
 
 **Why:** The migration runner defaults to `public` while production requires a dedicated
 schema — omitting `FCI_POSTGRES_SCHEMA` would silently migrate/serve from public.
@@ -442,8 +455,9 @@ and checklist 03.
 mismatched or multiple approved accounts; `npm test` passes.
 
 ### WS-04 · AGENT — Rotation + token-failure recovery procedures (medium, no deps)
-**Status:** In review with WS-12 — PR #39 on
-`codex/workspace-rotation-sync-contracts`, July 19, 2026. Local acceptance is green (337
+**Status:** Complete — PR #39, July 19, 2026. Source-only and not deployed.
+
+Local acceptance is green (337
 active tests, 13 environment-gated skips, lint, focused strict TypeScript, and 10/10
 contract tests); all GitHub Node, Terraform, and Chromium checks are green.
 Procedures, contracts, and local fakes only; no live provider resource is authorized.
@@ -534,8 +548,9 @@ rejected unauthorized login, no FCI/Filed label without an archive row.
 sign-off.
 
 ### WS-12 · AGENT — Gmail watch/queue + Calendar channel contracts (medium, after WS-03; contracts + local fakes, no live resources)
-**Status:** In review with WS-04 — PR #39 on
-`codex/workspace-rotation-sync-contracts`, July 19, 2026. Provider-neutral durable-job,
+**Status:** Complete — PR #39, July 19, 2026. Source-only and not deployed.
+
+Provider-neutral durable-job,
 failure/replay, encrypted sync-cursor, and Calendar channel-state contracts are covered by
 local fakes and tests. Procedures, contracts, and local fakes only; no live provider
 resource is authorized.
@@ -578,11 +593,13 @@ setup, (b) background-data status and maintenance, (c) recurring admin tasks. IA
 wiring only — no visual redesign. All buildable and testable in simulation mode. Verified
 anchors at the `aa8ed8f` baseline: `SettingsView` at `app/FloorOpsApp.tsx:1354`,
 `GoogleWorkspacePanel` at `:1639`, `SETTINGS_SECTIONS` at `app/lib/operations-routes.ts:27`;
-At that baseline, `GET /api/v1/settings/me` returned no `isAdmin`; draft PR #37 adds the
+At that baseline, `GET /api/v1/settings/me` returned no `isAdmin`; PR #37 added the
 authenticated flag without weakening any server gate. No integration audit route exists.
 (Anchors drift — locate by symbol name.)
 
 ### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
+**Status:** Complete — PR #35, July 19, 2026. Source-only and not deployed.
+
 **Why:** Every Settings panel is inline in the ~2,100-line `FloorOpsApp.tsx`; every other
 SET item edits those regions; the design ledger (items 94/103) already calls for the
 split. Parallel packets collide without it.
@@ -608,7 +625,7 @@ not hidden). Server gates untouched.
 **Accept:** rendered tests for both identities; grep confirms server gates unchanged.
 
 ### SET-03 · Guided Workspace setup stepper with per-step live status (large, after SET-01+02)
-**Status:** In progress — `codex/workspace-setup-guidance`, July 19, 2026.
+**Status:** Complete — PR #44, July 19, 2026. Source-only and not deployed.
 
 **Why:** Setup is one dense panel with no sequencing, while the rollout guide prescribes a
 strict lifecycle; after OAuth callback the panel says "Run the readiness check to refresh
@@ -625,7 +642,7 @@ step 5 that provisioning enablement is a hosted env value, not an in-app toggle.
 mocked readiness variants drive status changes; callback triggers auto-refresh.
 
 ### SET-04 · Structured environment-prerequisites surface (medium, after SET-01)
-**Status:** In progress — `codex/workspace-setup-guidance`, July 19, 2026.
+**Status:** Complete — PR #44, July 19, 2026. Source-only and not deployed.
 
 **Why:** Missing config appears as bare labels ("Still needed: …") with no hint these are
 hosted env/secret values — while the Calendar panel shows same-named editable fields, a
@@ -744,15 +761,20 @@ install cycle time, and callback rate.
 Rules for this workstream: (1) **simple over complete** — only KPIs every flooring
 installer recognizes instantly; (2) every formula is pinned in one definitions doc so all
 agents and reports compute identical numbers; (3) **dollar-value KPIs are
-Administrator-only at rollout** per `docs/administration-and-access-plan.md` (the
-single-user development copy shows everything today; wire the gate through SET-02's
-`isAdmin` when available); (4) schema changes are additive-only and follow
+Administrator-only at rollout** per `docs/administration-and-access-plan.md` (PR #41
+wires the gate directly through SET-02's authenticated `isAdmin`); (4) schema changes are
+additive-only and follow
 `docs/development-d1-schema-migrations.md` (D1) and the append-only checksummed registry
 (PostgreSQL); (5) no cost/margin capture, no external review data, no scheduling
 dependencies — see the exclusions in KPI-01's definitions doc.
 
 ### KPI-01 · Tier-1 KPI report from existing data + definitions doc (medium, after the FloorOpsApp queue clears — no schema change)
-**Status:** In review — draft PR #41 on `codex/tier1-flooring-kpis`, July 19, 2026. SET-02 is merged in PR #37, so the implementation gates every dollar-value KPI directly with its authenticated `isAdmin` flag. Full builds, 350/350 runnable Node tests, lint, and 2/2 focused desktop/mobile Playwright checks pass; no deployment, schema, migration, or hosted configuration changed.
+**Status:** Complete — PR #41, July 19, 2026. Source-only and not deployed.
+
+SET-02 is merged in PR #37, so the implementation gates every dollar-value KPI directly
+with its authenticated `isAdmin` flag. Full builds, 350/350 runnable Node tests, lint,
+and 2/2 focused desktop/mobile Playwright checks passed; no schema, migration, or hosted
+configuration changed.
 
 **Why:** Six universal KPIs are computable today from fields that already exist on leads
 {status active/converted/lost, stage, source, estimatedValue, createdAt, updatedAt} and
@@ -778,8 +800,8 @@ later Google Business Profile integration for this Google-first company), crew u
 (scheduling unbuilt). (2) Add a "Business KPIs" panel to the Reports view computing these
 client-side from the already-loaded lead/project arrays (the same pattern as the existing
 stage-value computation), with a month selector for the two per-month KPIs, the shared
-panel/stat conventions, and each dollar KPI marked with the admin-only note (gate via
-`isAdmin` from SET-02 once PR #37 lands). Extract the formulas into a pure helper module
+panel/stat conventions, and each dollar KPI marked with the admin-only note (gated via
+`isAdmin` from SET-02). Extract the formulas into a pure helper module
 (e.g.
 `app/features/reports/flooring-kpis.ts`) so unit tests pin the math to the definitions
 doc. (3) Keep drill-through consistency: where a KPI has a natural destination (win rate →
@@ -792,8 +814,8 @@ denominator and empty-period cases; rendered coverage per repo convention).
 decided leads renders an em-dash, not NaN — honest-empty-state rule); Reports renders the
 panel with seeded data at desktop and 390px with axe serious/critical clean; `npm test`
 and the Playwright suites pass; the ledger status line updates in the same PR.
-**Deps:** FloorOpsApp queue after SET-02 / PR #37 merges; PR #34, which defines this KPI
-workstream, is merged. One FloorOpsApp packet at a time. Effort: medium.
+**Deps:** Satisfied by merged PRs #34 and #37. One FloorOpsApp packet at a time. Effort:
+medium.
 
 ### KPI-02 · Tier-2 minimal inputs: flooring category, square feet, contract value (medium, after KPI-01)
 **Why:** Three additive fields unlock the flooring-specific KPIs no generic CRM field can:
@@ -878,20 +900,17 @@ format). Effort: small.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** PR #32 merged to `main` as
-`adc79b855041db04cc3ca2a3eb232bc72408d33b` on July 19, 2026, and that exact commit is
-deployed as private Sites development version 40. The deployment includes PR #30's
-semantic Settings rules table. Delivery PRs may be in flight later; they mirror items in
-these ledgers and do not become a separate task source of truth. The source-only
-`codex/actionable-lists` branch is complete in PR #33; it is not deployed. The source-only
-`codex/settings-panel-extraction` SET-01 slice is complete in source and merged in PR #35 and is not deployed.
-SET-02 has passed source acceptance in draft PR #37 and is not deployed. PR #34 is merged;
-KPI-01 is queued for the next `FloorOpsApp.tsx` slot after PR #37 lands.
+**GitHub baseline:** current source is `main` at `4ce7bd4` after the July 19 merge train:
+PRs #36–#48 are merged, with #43 recording the BE-04 review/ledger and no remaining review item in that merge train. The exact deployed baseline
+remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
+version 40, which includes PR #30's semantic Settings rules table. The listed source
+packets from PR #33 through PR #48 are undeployed. Delivery PRs mirror items in these ledgers and do
+not become a separate task source of truth.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
 
-1. All items are **Open** as of July 18, 2026. When an agent starts an item, it appends a
+1. Items without a status line remain **Open**. When an agent starts an item, it appends a
    dated status line to that item in this file in its own PR
    (`Status: In progress — <branch>`), and on merge updates it to
    `Status: Complete — PR #NN, <date>`. Owner-blocked items use
@@ -955,31 +974,28 @@ contracts and `npm test` pass.
 ## Sequencing at a glance
 
 **Start now, in parallel (no owner input needed):**
-The source-only `codex/actionable-lists` slice in PR #33 is complete as the current
-actionable-list packet; it is not deployed. The source-only
-`codex/settings-panel-extraction` SET-01 slice is complete in source and merged in PR #35 and is not deployed.
-SET-02 is in review in draft PR #37; after it lands, KPI-01 takes the next
-`FloorOpsApp.tsx` slot. BE-02 + BE-13 are in review together in PR #36. BE-04 is in
-review in draft PR #38, and WS-04 + WS-12 are in review together in PR #39.
-All remain source-only. BE-06 is in review in draft PR #42 on `codex/leads-meetings-postgres-v6`.
-BE-05, BE-08, BE-11 (authoring), and WS-13 remain unclaimed and may proceed in parallel when
-they do not touch that file. BE-01 + WS-03 and TRK-01 completed in PR #32.
+OIDC-04 is the immediate truth-reconciliation packet on
+`codex/reconcile-post-merge-plan`; it corrects the merge-train ledger and adds an offline
+guard for known merged packets. After it lands, serialize OIDC-02 then OIDC-03 because
+they share employee-login fixtures. In parallel, BE-09, BE-12, the coordinated
+BE-07+SET-05 packet, KPI-02, SET-10, SET-11, SET-09+WS-10, and WS-13 are dependency-ready.
+All are source-only packets; none authorizes external configuration, apply, deployment,
+live login, another user, or real data.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
-SET-03→SET-10 · SET-04→SET-11.
+SET-03→SET-10 · SET-04→SET-11 · OIDC-01→OIDC-02→OIDC-03. OIDC-04 is the current
+documentation/guard reconciliation and does not change the runtime dependency chain.
 
 **Owner track (sequential):** WS-01 → WS-02 → WS-05 → WS-06 → WS-07 → WS-08 → WS-09(live
 half) → WS-11. Agents should never be blocked idle on this track — every agent item above
 is schedulable independently.
 
 **Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Do not run two packets that touch it
-concurrently. The source-only `codex/actionable-lists` branch is complete in PR #33.
-The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source and merged in PR #35.
-SET-02 preserves that boundary in draft PR #37 and has passed its source acceptance.
-KPI-01 is next in this queue after PR #37 merges; it must preserve the extracted Settings
-boundary, shared actionable-list pattern, and `InboxRulesPanel`'s semantic `<table>`
-markup, and keep their focused regression suites plus
+concurrently. PR #33 (actionable lists), PR #35 (SET-01), PR #37 (SET-02), and PR #41
+(KPI-01) are merged source-only. KPI-02 owns the next slot; it must preserve the extracted
+Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
+`InboxRulesPanel`'s semantic `<table>` markup, with the focused regression suites and
 `tests/e2e/accessibility-routes.spec.ts` green.
 
 ### Recommended first waves (reconciled July 19, 2026)
@@ -993,34 +1009,34 @@ markup, and keep their focused regression suites plus
    semantics), following the PR #30 review pattern. It is not deployed. *Touches
    `FloorOpsApp.tsx` — do not overlap it with SET-01.*
 3. **SET-01 Settings panel extraction** — complete in source and merged in PR #35 from
-   `codex/settings-panel-extraction`; it is not deployed. **SET-02 has passed source
-   acceptance in draft PR #37 and is in review.**
-4. **BE-04 OIDC** — in review in draft PR #38 on `codex/workspace-oidc-login`; it remains
-   the production long pole. **BE-02 + BE-13** — in review together in PR #36 with
-   green checks. **WS-04 rotation procedures + WS-12 contracts/fakes** — in review in
-   PR #39 on `codex/workspace-rotation-sync-contracts` with no live resources.
+   `codex/settings-panel-extraction`; SET-02 is complete in PR #37, KPI-01 in PR #41, and
+   SET-03/SET-04 in PR #44. All are source-only and undeployed.
+4. **Backend/Workspace merge train** — BE-02+BE-13 (#36), BE-04 (#38), WS-04+WS-12
+   (#39), BE-05 (#40), BE-06 (#42), BE-08 (#45), BE-03 (#46), BE-11 (#47), and OIDC-01
+   (#48) are complete in source. Latest combined-main Node/build/lint, Terraform, and
+   Chromium checks are green; nothing was applied, configured, published, or deployed.
 
-**Wave 2:** after SET-02 / PR #37 lands, KPI-01 takes the next `FloorOpsApp.tsx` slot.
-SET-03/SET-04 may then proceed in the extracted Settings boundary without overlapping
-that file (get the guided setup stepper and environment-prerequisites table in place
-**before** the owner performs WS-05/WS-06, so the connection steps are self-verifying in
-the UI) · BE-05 · BE-06 → BE-12 · design ledger Phase 4 guardrails (state-coverage axe,
-hardened screenshot harness) before the big primitive/CSS consolidation tracks.
+**Wave 2 — current:** finish OIDC-04, then OIDC-02 and OIDC-03 in order. Parallel-safe
+tracks are BE-09→BE-10/BE-14; BE-12; BE-07+SET-05; KPI-02 as the sole
+`FloorOpsApp.tsx` owner; SET-10; SET-11; SET-09+WS-10; WS-13; and design-ledger Phase 4
+guardrails before the broad primitive/CSS consolidation tracks.
 
 **Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
 inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only
-things gating the live connection; every agent item above proceeds without them. Jason's
-open decisions live in checklists 00/06/10.
+things gating the live data connection. Jason must review that inventory before any API,
+IAM, billing, OAuth, or Admin-console change. The agent packets above proceed without
+those inputs; Jason's other open decisions live in checklists 00/06/10.
 
 **FloorOpsApp single-file queue (one packet at a time):** PR #33 (actionable lists) →
-SET-01 (Settings extraction) → SET-02 (draft PR #37) → KPI-01 (Tier-1 KPI panel) →
-KPI-02 → KPI-03, interleaving other SET items in extracted modules as they become
-independent after SET-02. Workstream D's KPI packets are
+SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 are complete in source. The queue is
+now KPI-02 → KPI-03, interleaving other SET items only in extracted modules that do not
+touch `FloorOpsApp.tsx`. Workstream D's KPI packets are
 otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
 version numbers with BE-06).
 
-**Cross-item coordination (implement once):** multi-key token decryption (WS-04 ↔ BE-08);
-calendar-ID single authority (SET-05 ↔ BE-07); integration events reader (SET-09 ↔ WS-10);
+**Cross-item coordination (implement once):** multi-key token decryption is complete in
+BE-08 / PR #45 under WS-04's documented boundary; calendar-ID single authority remains
+SET-05 ↔ BE-07; integration events reader remains SET-09 ↔ WS-10;
 `GOOGLE_WORKSPACE_PUBSUB_TOPIC` removal (WS-03, referenced by BE-02); version-37 doc fixes
 (BE-01, referenced by WS-03; preserve accurate historical release evidence).
 

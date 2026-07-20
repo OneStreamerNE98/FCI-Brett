@@ -9,7 +9,7 @@ FCI Operations currently has two different identities:
 1. **Application login:** identifies who may open the web application. The hosted development environment currently uses Sign in with ChatGPT and then checks `FCI_OFFICE_EMAILS` or `FCI_OFFICE_DOMAINS`.
 2. **Google data connection:** authorizes one administrator-approved Google Workspace account to use Gmail, Calendar, Shared Drive, and Sheets for the company.
 
-Connecting Google Workspace does **not** automatically change the app login to Google. A true “sign in with my company Google account” rollout requires a Google OpenID Connect login implementation in the application.
+Connecting Google Workspace does **not** automatically change the app login to Google. Workspace OpenID Connect login, invitation redemption, and session issuance now exist only in the source-only Cloud Run boundary; a true “sign in with my company Google account” rollout still requires the production client/configuration, migrations, full interface composition, deployment, and acceptance gates.
 
 ## Recommended rollout in two stages
 
@@ -22,7 +22,7 @@ Connecting Google Workspace does **not** automatically change the app login to G
 
 ### Stage 2: company login and employee rollout
 
-- Replace or supplement ChatGPT sign-in with Google Identity Services/OpenID Connect.
+- Configure and deploy the source-only Google Identity Services/OpenID Connect boundary after its remaining hardening/tests and production gates pass.
 - Validate the signed Google ID token on the server, including its signature, issuer, audience, expiry, and Workspace `hd` domain claim.
 - Add application users, roles, and project permissions.
 - Publish the application privately through Google Workspace Marketplace or deploy it as a managed Chrome web app.
@@ -425,9 +425,9 @@ Google states that a Marketplace web app uses the Universal navigation URL to op
 
 Do not publish the current build in the Workspace launcher yet if you expect Google-based app login: it would still direct the user through ChatGPT sign-in.
 
-## Part 14: implement Google Workspace user login
+## Part 14: complete and activate Google Workspace user login
 
-This is development work, not an Admin-console toggle.
+This is development and controlled rollout work, not an Admin-console toggle. PRs #38/#48 implement the source-only OIDC callback, signed-token verification, durable invitation redemption, and session issuance. OIDC-02/03, the production client/configuration, migrations, complete employee interface composition, deployment, and live acceptance remain open.
 
 1. Create a separate OAuth/OIDC web client for application sign-in. Keeping login and the broad data connector separate makes scopes and revocation easier to understand.
 2. Add Google Identity Services to the sign-in page.
@@ -504,4 +504,4 @@ Do not store real client data until every required item is complete.
 
 ### The app opens but employees cannot use Google login
 
-- That is expected in the current development environment. Google data OAuth and app-user login are separate. Complete Part 14 before relying on Workspace identity for application access.
+- That is expected in the current development environment. Google data OAuth and app-user login are separate. Complete the remaining Part 14 activation gates before relying on Workspace identity for application access.

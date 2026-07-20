@@ -32,7 +32,7 @@ The source-only [Google Workspace watch, queue, and sync-state design](../google
 
 ## Minimum topology
 
-- [ ] Containerize the Next.js application for one regional Cloud Run service.
+- [ ] Containerize the complete Next.js employee application for one regional Cloud Run service. The source-only Cloud Run image, narrow employee API/OIDC boundary, and default-off service/job definitions are merged, but the full interface and remaining routes/providers are not yet composed.
 - [ ] Keep authenticated task and webhook handlers in the modular monolith initially; do not create microservices without an operational reason.
 - [ ] Define separate standalone/zonal and regional-HA Cloud SQL production profiles with private connectivity, pooling, connection caps, backups, PITR, and alerting; provide official cost estimates and keep both unapplied until the owner selects one. The [source-only Terraform definitions](../../infrastructure/google-cloud/README.md) and [dated rate-based illustration](../../infrastructure/google-cloud/cost/README.md) now exist and are unapplied; the approved region, backup location, calculator export, all-service estimate, and profile selection remain open.
 - [x] Define an isolated staging database that is created only for approved migration, restore, release, or rollback exercises and safely scaled down or removed afterward. The staging root defaults off, development is inert, and the [staging lifecycle runbook](../runbooks/google-cloud/staging-lifecycle.md) requires separate approval and teardown evidence. No staging or development database was created.
@@ -73,11 +73,11 @@ The source-only [Google Workspace watch, queue, and sync-state design](../google
 - [ ] Persist Gmail watch/history and Calendar channel/sync-token state, renew it safely, and reconcile periodically because notifications are change hints rather than an authoritative event stream.
 - [ ] Refresh OAuth tokens through a cache/single-flight path and distinguish transient Google failure from required reauthorization.
 - [ ] Remove the dual source of truth for saved versus environment Calendar and Workspace resource IDs.
-- [ ] Store multiple token-encryption key versions during rotation and test decrypt/re-encrypt behavior.
+- [x] Implement and test source-only exact-version multi-key decrypt/re-encrypt behavior (BE-08 / PR #45). Live secret delivery, credential grants, provider composition, and a production rotation drill remain gated.
 
 ## Infrastructure and delivery controls
 
-- [ ] Define costed infrastructure as code or an equivalently reviewable, repeatable procedure with Sites development preserved, staging on demand, zero-minimum/bounded-maximum Cloud Run, separate database profiles, and optional modules disabled by default. The [Google Cloud source definitions](../../infrastructure/google-cloud/README.md), mocked plan tests, lifecycle locks, and dated Cloud SQL comparison are complete and unapplied; approved all-service calculator evidence and final cost review remain before this item can close.
+- [ ] Define costed infrastructure as code or an equivalently reviewable, repeatable procedure with Sites development preserved, staging on demand, zero-minimum/bounded-maximum Cloud Run, separate database profiles, and optional modules disabled by default. The [Google Cloud source definitions](../../infrastructure/google-cloud/README.md), mocked plan tests, lifecycle locks, dated Cloud SQL comparison, and PR #47's default-off image/service/migration/rehearsal release definitions are complete and unapplied; approved all-service calculator evidence and final cost review remain before this item can close.
 - [ ] Use least-privilege service accounts and keep production deployment access separate from routine development.
 - [ ] Complete production observability. Source-only process liveness and exact database readiness exist; structured logs, trace/correlation IDs, queue-depth alerts, database alerts, connector health, and budget alerts remain.
 - [ ] Add security headers, request-size limits, authentication rate limits, and sensitive-route rate limits.
