@@ -99,6 +99,16 @@ test("claim inserts atomically before reading a completed concurrent request", a
   assert.match(queries[0].sql, /INSERT INTO idempotency_requests/);
   assert.match(queries[0].sql, /ON CONFLICT \(actor_id, operation, idempotency_key\) DO NOTHING/);
   assert.match(queries[1].sql, /FOR UPDATE/);
+  assert.deepEqual(queries[0].values.slice(1, 4), [
+    "actor@example.test",
+    POSTGRES_CREATION_OPERATIONS.client,
+    REQUEST.idempotencyKey,
+  ]);
+  assert.deepEqual(queries[1].values, [
+    "actor@example.test",
+    POSTGRES_CREATION_OPERATIONS.client,
+    REQUEST.idempotencyKey,
+  ]);
   assert.doesNotMatch(queries[0].sql, /SELECT[\s\S]*idempotency_requests/i);
 });
 

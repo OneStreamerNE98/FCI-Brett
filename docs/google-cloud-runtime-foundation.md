@@ -10,7 +10,7 @@ This slice creates the reviewable Cloud Run and Cloud SQL runtime foundation wit
 
 - `GET` or `HEAD /healthz` reports process liveness.
 - `GET` or `HEAD /readyz` reports ready only when the configured PostgreSQL schema is reachable, the current role has schema `USAGE` but not `CREATE`, and every migration version, name, and checksum exactly matches source.
-- Dashboard, search, project list/exact-project, client list, and logout paths are composed through hashed-session authorization and PostgreSQL scopes.
+- Dashboard, search, project list/exact-project, client list/create, project create, lead list/create, project-meeting list/create, and logout paths are composed through hashed-session authorization, capability gates, PostgreSQL scopes, and the shared record use cases.
 - File list/upload/share, Gmail filing, and Calendar creation pass through authorization, exact-project checks, and mutation CSRF checks but return `503 feature_unavailable` because production provider action adapters are absent.
 - Unknown paths and methods fail closed. No route trusts `oai-authenticated-user-email` or supplies a fake production identity.
 
@@ -26,12 +26,41 @@ The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-f
 - Secret Manager-friendly password-file support. The password is non-enumerable in the in-memory configuration object and is never included in operational events.
 - One bounded `pg.Pool` per service instance, with copied query parameters, statement/lock/idle-transaction timeouts, connection lifetime limits, redacted idle-client error evidence, and ordered pool-then-connector shutdown.
 - Runtime composition for the completed PostgreSQL adapters. Client and project repositories are created per request so actor/idempotency metadata is not retained between requests; the outbox repository can be process-scoped.
-- Source-only employee request composition for dashboard, bounded search, project list/exact-project, client list, and idempotent logout. It reads one bounded host-only session cookie, hashes raw session/CSRF credentials immediately, requires exact same-origin plus live CSRF matching for mutations, clears unusable or confirmed-logout cookies while retaining retryable cookies after failed revocation, and applies generic `401`/`403`/`404` responses.
+- Source-only employee request composition for dashboard, bounded search, project list/exact-project, client list/create, project create, lead list/create, project-meeting list/create, and idempotent logout. It reads one bounded host-only session cookie, hashes raw session/CSRF credentials immediately, requires exact same-origin plus live CSRF matching for mutations, clears unusable or confirmed-logout cookies while retaining retryable cookies after failed revocation, and applies generic `401`/`403`/`404` responses.
 - Authorization-gated file, Gmail, and Calendar route contracts that cannot call work after denial and deliberately report provider unavailability while their production adapters are absent.
 - Cloud-Run-compilable Drive, Gmail, Calendar, Sheets, and OAuth cores with injected fetch, clock, secret-store, and persistence seams. The source-only production OAuth workflow uses exact-version multi-key decryption and the version-3 integration port, but is deliberately absent from production route composition.
 - A separate migration command using a one-connection pool, the immutable checksum runner, a session advisory lock, and an explicit validated migration-owner `SET ROLE`. Normal requests never import or call the migration runner.
 - Source-only capability roles and exact grants. The runtime role receives no schema creation, delete, truncate, reference, trigger, sequence, function, or broad future-table privilege.
 - A bounded test-data rehearsal for production-compatible clients, contacts, projects, and explicitly classified client/project activity events.
+
+## Employee API contract
+
+The production Cloud Run boundary and controlled Sites development boundary deliberately
+share portable application use cases without pretending they have the same transport
+contract:
+
+- Production employee requests use the host-only hashed session. Every POST requires an
+  exact same-origin request, a live session-bound CSRF credential, and one
+  `Idempotency-Key` matching `[A-Za-z0-9][A-Za-z0-9._:-]{0,254}`.
+  Creation keys are isolated by actor and operation and retained for the PostgreSQL
+  creation window; same-key/same-input replays return the first accepted `201` result,
+  while reuse for different normalized details returns `409`.
+- Successful production API responses use `{ "data": ... }`. The newly composed routes
+  are `POST /api/v1/clients`, `POST /api/v1/projects`, `GET|POST /api/v1/leads`, and
+  `GET|POST /api/v1/projects/:projectId/meetings`. Project Manager reads remain limited
+  to assigned projects; because a lead has no approved project-membership mapping,
+  Project Manager lead lists are empty rather than company-wide.
+- The current Sites/Workers/D1 routes remain development-only. They retain ChatGPT-hosted
+  identity, the office allowlist, same-origin mutation checks, and their existing
+  top-level resource response shapes such as `{ "clients": ... }`, `{ "lead": ... }`,
+  and `{ "meeting": ... }`; they do not claim the production session, CSRF, envelope, or
+  PostgreSQL idempotency contract.
+- The Sites presentation adapter has no secure employee-session bootstrap and no D1
+  `/api/v1/admin/access` or `/api/v1/admin/audit` implementation. Both admin clients now
+  feature-detect that boundary and return `secure_session_not_ready` before `fetch`,
+  preventing development 404s without adding a second administration data plane.
+- File, Gmail, and Calendar provider routes are unchanged: authorization runs first and
+  absent production providers still return `503 feature_unavailable`.
 
 ## Runtime configuration contract
 

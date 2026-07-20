@@ -1,5 +1,14 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createClient } from "../../application/create-client";
+import { createProject } from "../../application/create-project";
+import { creationAuthorizationFor } from "../../application/creation-authorization";
+import { createLead, listLeads } from "../../application/lead-operations";
+import {
+  createProjectMeeting,
+  listProjectMeetings,
+} from "../../application/project-meeting-operations";
+import type { PostgresCreationRequestMetadata } from "../../adapters/postgres/creation-idempotency";
 import {
   ADMIN_ACCESS_ROLE_KEYS,
   type AdminAccessPersistenceRepository,
@@ -15,6 +24,10 @@ import {
   type AdminAuditResult,
 } from "../../ports/admin-audit-reader";
 import type { AuthorizationRepository } from "../../ports/authorization";
+import type { ClientRepository } from "../../ports/client-repository";
+import type { LeadRepository } from "../../ports/lead-repository";
+import type { ProjectMeetingRepository } from "../../ports/project-meeting-repository";
+import type { ProjectRepository } from "../../ports/project-repository";
 import type { IdentityPersistenceRepository } from "../../ports/identity-persistence";
 import type {
   SecurityAuditEvent,
@@ -27,6 +40,10 @@ import {
   type EmployeeAccessContext,
 } from "../../application/authorization-policy";
 import type { createAuthorizationService } from "../../application/authorization-service";
+import {
+  clientCreationHttpResult,
+  projectCreationHttpResult,
+} from "../../lib/creation-http-result";
 import {
   CLEAR_SESSION_COOKIE,
   createSessionCookie,
@@ -50,6 +67,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const VERSION_PATTERN = /^[1-9][0-9]{0,18}$/;
 const GENERATED_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43,128}$/;
 const MAX_AUDIT_CURSOR_LENGTH = 256;
+const CREATION_IDEMPOTENCY_LIFETIME_MS = 24 * 60 * 60 * 1_000;
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/;
 const AUDIT_CURSOR_PATTERN = /^v2\.([A-Za-z0-9_-]+)$/;
 const AUDIT_CURSOR_KEY_PATTERN = /^[0-9a-f]{64}$/;
 const AUDIT_RESULTS = new Set<AdminAuditResult>(["succeeded", "failed", "denied"]);
@@ -75,12 +94,20 @@ export type EmployeeRouteTestActions = Readonly<{
   createCalendarEvent?: (input: EmployeeRouteActionInput) => Promise<unknown>;
 }>;
 
+export type EmployeeCoreRecordRepositories = Readonly<{
+  clients(request: PostgresCreationRequestMetadata): ClientRepository;
+  projects(request?: PostgresCreationRequestMetadata): ProjectRepository;
+  leads(request?: PostgresCreationRequestMetadata): LeadRepository;
+  projectMeetings(request?: PostgresCreationRequestMetadata): ProjectMeetingRepository;
+}>;
+
 export type EmployeeRequestRouterDependencies = Readonly<{
   authorization: AuthorizationService;
   repository: AuthorizationRepository;
   adminAudit: AdminAuditReader;
   adminAccess: AdminAccessPersistenceRepository;
   audit: SecurityAuditRepository;
+  coreRecords: EmployeeCoreRecordRepositories;
   /** Both are absent until the fail-closed employee OIDC config is complete. */
   oidc?: EmployeeOidcClient;
   identity?: Pick<IdentityPersistenceRepository, "authenticateEmployeeSession">;
@@ -103,8 +130,14 @@ type RouteMatch = Readonly<{
     | "dashboard"
     | "search"
     | "projects"
+    | "project_create"
     | "project"
     | "clients"
+    | "client_create"
+    | "leads"
+    | "lead_create"
+    | "project_meetings"
+    | "project_meeting_create"
     | "files"
     | "files_upload"
     | "files_share"
@@ -180,6 +213,9 @@ function route(path: string): RouteMatch | null {
   }
   if (path === "/api/v1/clients") {
     return { kind: "clients", method: "GET", projectId: null, fileId: null };
+  }
+  if (path === "/api/v1/leads") {
+    return { kind: "leads", method: "GET", projectId: null, fileId: null };
   }
   if (path === "/api/v1/session/logout") {
     return { kind: "logout", method: "POST", projectId: null, fileId: null };
@@ -261,6 +297,14 @@ function route(path: string): RouteMatch | null {
       : null;
   }
 
+  const meetings = path.match(/^\/api\/v1\/projects\/([^/]+)\/meetings$/);
+  if (meetings) {
+    const projectId = uuid(meetings[1] ?? "");
+    return projectId
+      ? { kind: "project_meetings", method: "GET", projectId, fileId: null }
+      : null;
+  }
+
   const share = path.match(
     /^\/api\/v1\/projects\/([^/]+)\/files\/([^/]+)\/share$/,
   );
@@ -295,6 +339,18 @@ function route(path: string): RouteMatch | null {
 function matchRoute(path: string, method: string | undefined): RouteMatch | null {
   const matched = route(path);
   if (!matched) return null;
+  if (matched.kind === "projects" && method === "POST") {
+    return { ...matched, kind: "project_create", method: "POST" };
+  }
+  if (matched.kind === "clients" && method === "POST") {
+    return { ...matched, kind: "client_create", method: "POST" };
+  }
+  if (matched.kind === "leads" && method === "POST") {
+    return { ...matched, kind: "lead_create", method: "POST" };
+  }
+  if (matched.kind === "project_meetings" && method === "POST") {
+    return { ...matched, kind: "project_meeting_create", method: "POST" };
+  }
   if (matched.kind === "files" && method === "POST") {
     return { ...matched, kind: "files_upload", method: "POST" };
   }
@@ -429,6 +485,51 @@ async function jsonBody(request: IncomingMessage): Promise<JsonObject> {
   }
   return Object.freeze({ ...(parsed as Record<string, unknown>) });
 }
+
+function idempotencyKey(request: IncomingMessage) {
+  let count = 0;
+  for (let index = 0; index < request.rawHeaders.length; index += 2) {
+    if (request.rawHeaders[index]?.toLowerCase() === "idempotency-key") count += 1;
+  }
+  const value = request.headers["idempotency-key"];
+  if (count === 0 || value === undefined) {
+    throw new HttpFailure(400, "idempotency_key_required");
+  }
+  if (
+    count !== 1
+    || Array.isArray(value)
+    || value !== value.trim()
+    || !IDEMPOTENCY_KEY_PATTERN.test(value)
+  ) {
+    throw new HttpFailure(400, "invalid_idempotency_key");
+  }
+  return value;
+}
+
+function creationRequest(
+  request: IncomingMessage,
+  requestId: string,
+  correlationId: string,
+  createdAt: number,
+  outboxEventId: string,
+): PostgresCreationRequestMetadata {
+  return Object.freeze({
+    idempotencyRequestId: requestId,
+    idempotencyKey: idempotencyKey(request),
+    correlationId,
+    expiresAt: createdAt + CREATION_IDEMPOTENCY_LIFETIME_MS,
+    outboxEventId,
+  });
+}
+
+const queuedDirectoryMirror = Object.freeze({
+  async requestSync() {
+    return {
+      status: "queued" as const,
+      message: "Saved in FCI Operations; directory synchronization is queued for background processing.",
+    };
+  },
+});
 
 function exactAdminBody(body: JsonObject, keys: readonly string[]) {
   const actual = Object.keys(body).sort();
@@ -891,9 +992,21 @@ export function createEmployeeRequestRouter(
       }
       clearOidcAttemptOnFailure = matched.kind === "employee_login_callback";
       if (request.method !== matched.method) {
+        const supportsReadAndCreate = [
+          "projects",
+          "project_create",
+          "clients",
+          "client_create",
+          "leads",
+          "lead_create",
+          "project_meetings",
+          "project_meeting_create",
+          "files",
+          "files_upload",
+        ].includes(matched.kind);
         response.setHeader(
           "Allow",
-          matched.kind === "files" ? "GET, POST" : matched.method,
+          supportsReadAndCreate ? "GET, POST" : matched.method,
         );
         throw new HttpFailure(405, "method_not_allowed");
       }
@@ -1137,6 +1250,49 @@ export function createEmployeeRequestRouter(
         return;
       }
 
+      if (matched.kind === "project_create") {
+        const result = await dependencies.authorization.performProjectCreate(
+          requestTrace,
+          async (context) => {
+            const createdAt = now();
+            const requestMetadata = creationRequest(
+              request,
+              requestId,
+              correlationId,
+              createdAt,
+              newId(),
+            );
+            return projectCreationHttpResult(await createProject(
+              await jsonBody(request),
+              creationAuthorizationFor({
+                actorId: context.email,
+                capabilities: [...context.capabilities],
+              }),
+              {
+                repository: dependencies.coreRecords.projects(requestMetadata),
+                directoryMirror: queuedDirectoryMirror,
+                // The first production write packet permits a creator to own
+                // the new project. Assigning another employee remains behind
+                // the separately authorized assignment workflow.
+                resolveProjectManagerId: (candidateId) => candidateId === context.email
+                  ? context.email
+                  : null,
+                newId,
+                now: () => createdAt,
+              },
+            ));
+          },
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        jsonResponse(
+          request,
+          response,
+          result.value.status,
+          result.value.status === 201 ? { data: result.value.body } : result.value.body,
+        );
+        return;
+      }
+
       if (matched.kind === "project" && matched.projectId) {
         const result = await dependencies.authorization.performProjectView(
           { ...requestTrace, projectId: matched.projectId },
@@ -1163,6 +1319,170 @@ export function createEmployeeRequestRouter(
         );
         if (!result.allowed) throw denialFailure(result.reason);
         jsonResponse(request, response, 200, { data: result.value });
+        return;
+      }
+
+      if (matched.kind === "client_create") {
+        const result = await dependencies.authorization.performClientCreate(
+          requestTrace,
+          async (context) => {
+            const createdAt = now();
+            const requestMetadata = creationRequest(
+              request,
+              requestId,
+              correlationId,
+              createdAt,
+              newId(),
+            );
+            return clientCreationHttpResult(await createClient(
+              await jsonBody(request),
+              creationAuthorizationFor({
+                actorId: context.email,
+                capabilities: [...context.capabilities],
+              }),
+              {
+                repository: dependencies.coreRecords.clients(requestMetadata),
+                directoryMirror: queuedDirectoryMirror,
+                newId,
+                now: () => createdAt,
+              },
+            ));
+          },
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        jsonResponse(
+          request,
+          response,
+          result.value.status,
+          result.value.status === 201 ? { data: result.value.body } : result.value.body,
+        );
+        return;
+      }
+
+      if (matched.kind === "leads") {
+        const result = await dependencies.authorization.performLeadsList(
+          requestTrace,
+          (context) => listLeads(
+            creationAuthorizationFor({
+              actorId: context.email,
+              capabilities: [...context.capabilities],
+            }),
+            context.recordScope.kind === "company"
+              ? dependencies.coreRecords.leads()
+              : { list: async () => [] },
+          ),
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        if (!result.value.ok) throw new HttpFailure(403, "request_not_authorized");
+        jsonResponse(request, response, 200, { data: result.value.value });
+        return;
+      }
+
+      if (matched.kind === "lead_create") {
+        const result = await dependencies.authorization.performLeadCreate(
+          requestTrace,
+          async (context) => {
+            const createdAt = now();
+            return createLead(
+              await jsonBody(request),
+              creationAuthorizationFor({
+                actorId: context.email,
+                capabilities: [...context.capabilities],
+              }),
+              {
+                repository: dependencies.coreRecords.leads(creationRequest(
+                  request,
+                  requestId,
+                  correlationId,
+                  createdAt,
+                  newId(),
+                )),
+                newId,
+                now: () => createdAt,
+              },
+            );
+          },
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        if (!result.value.ok) {
+          const status = result.value.kind === "forbidden"
+            ? 403
+            : result.value.kind === "invalid"
+              ? 400
+              : result.value.kind === "identifier-collision"
+                ? 503
+                : 409;
+          jsonResponse(request, response, status, { error: result.value.message });
+          return;
+        }
+        jsonResponse(request, response, 201, { data: result.value.value });
+        return;
+      }
+
+      if (matched.kind === "project_meetings" && matched.projectId) {
+        const result = await dependencies.authorization.performProjectMeetingsList(
+          { ...requestTrace, projectId: matched.projectId },
+          (context) => listProjectMeetings(
+            matched.projectId!,
+            creationAuthorizationFor({
+              actorId: context.email,
+              capabilities: [...context.capabilities],
+            }),
+            dependencies.coreRecords.projectMeetings(),
+          ),
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        if (!result.value.ok) {
+          throw new HttpFailure(
+            result.value.kind === "project-not-found" ? 404 : 403,
+            result.value.kind === "project-not-found" ? "not_found" : "request_not_authorized",
+          );
+        }
+        jsonResponse(request, response, 200, { data: result.value.value });
+        return;
+      }
+
+      if (matched.kind === "project_meeting_create" && matched.projectId) {
+        const result = await dependencies.authorization.performProjectMeetingCreate(
+          { ...requestTrace, projectId: matched.projectId },
+          async (context) => {
+            const createdAt = now();
+            return createProjectMeeting(
+              matched.projectId!,
+              await jsonBody(request),
+              creationAuthorizationFor({
+                actorId: context.email,
+                capabilities: [...context.capabilities],
+              }),
+              {
+                repository: dependencies.coreRecords.projectMeetings(creationRequest(
+                  request,
+                  requestId,
+                  correlationId,
+                  createdAt,
+                  newId(),
+                )),
+                newId,
+                now: () => createdAt,
+              },
+            );
+          },
+        );
+        if (!result.allowed) throw denialFailure(result.reason);
+        if (!result.value.ok) {
+          const status = result.value.kind === "forbidden"
+            ? 403
+            : result.value.kind === "project-not-found"
+              ? 404
+              : result.value.kind === "invalid"
+                ? 400
+                : result.value.kind === "identifier-collision"
+                  ? 503
+                  : 409;
+          jsonResponse(request, response, status, { error: result.value.message });
+          return;
+        }
+        jsonResponse(request, response, 201, { data: result.value.value });
         return;
       }
 

@@ -483,9 +483,10 @@ test("keeps mobile project status, schedule truth, site, and value visible with 
 });
 
 test("captures durable project meetings and bounded Otter evidence", async () => {
-  const [schema, meetingsApi, meetingDomain, meetingAdapter, app, assistantApi] = await Promise.all([
+  const [schema, meetingsApi, meetingOperations, meetingDomain, meetingAdapter, app, assistantApi] = await Promise.all([
     read("db/schema.ts"),
     read("app/api/v1/projects/[projectId]/meetings/route.ts"),
+    read("app/application/project-meeting-operations.ts"),
     read("app/domain/project-meeting.ts"),
     read("app/adapters/d1/project-meeting-repository.ts"),
     readAppSurface(),
@@ -501,7 +502,8 @@ test("captures durable project meetings and bounded Otter evidence", async () =>
   assert.match(meetingsApi, /export async function POST/);
   assert.match(meetingsApi, /requireOfficeUser\(request\)/);
   assert.match(meetingsApi, /requireSameOrigin\(request\)/);
-  assert.match(meetingsApi, /normalizeProjectMeeting\(body\)/);
+  assert.match(meetingsApi, /createProjectMeeting\(/);
+  assert.match(meetingOperations, /normalizeProjectMeeting\(input as Record<string, unknown>\)/);
   assert.match(meetingDomain, /Meeting title is required and must be 160 characters or fewer/);
   assert.match(meetingDomain, /optionalProjectMeetingText\(body\.transcript, 100_000\)/);
   assert.match(meetingDomain, /parsed\.protocol !== "https:"/);
@@ -509,7 +511,7 @@ test("captures durable project meetings and bounded Otter evidence", async () =>
   assert.match(meetingDomain, /Add an Otter link, notes, summary, transcript, decision, or action item/);
   assert.match(meetingAdapter, /INSERT INTO project_meetings/);
   assert.match(meetingAdapter, /INSERT INTO activity_events/);
-  assert.match(meetingsApi, /Meeting notes captured/);
+  assert.match(meetingOperations, /Meeting notes captured/);
 
   assert.match(app, /<ProjectMeetings project=\{project\} notify=\{notify\} \/>/);
   assert.match(app, /Recommended Otter workflow/);

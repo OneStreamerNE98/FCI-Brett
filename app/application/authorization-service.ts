@@ -468,6 +468,56 @@ export function createAuthorizationService(
         work,
       );
     },
+    performClientCreate<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.clientCreate,
+        noProjectRequest(request),
+        work,
+      );
+    },
+    performLeadsList<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.leadsList,
+        noProjectRequest(request),
+        work,
+      );
+    },
+    performLeadCreate<T>(
+      request: AuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.leadCreate,
+        noProjectRequest(request),
+        work,
+      );
+    },
+    performProjectMeetingsList<T>(
+      request: ProjectAuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.projectMeetingsList,
+        request,
+        work,
+      );
+    },
+    performProjectMeetingCreate<T>(
+      request: ProjectAuthorizationTraceRequest,
+      work: (context: EmployeeAccessContext) => Promise<T>,
+    ) {
+      return performEmployeeOperation(
+        AUTHORIZATION_OPERATIONS.projectMeetingCreate,
+        request,
+        work,
+      );
+    },
     performFinancialsView<T>(
       request: OptionalProjectAuthorizationTraceRequest,
       work: (context: EmployeeAccessContext) => Promise<T>,

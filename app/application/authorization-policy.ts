@@ -106,6 +106,11 @@ export const AUTHORIZATION_OPERATIONS = Object.freeze({
   projectsList: "projects.list",
   projectView: "projects.view",
   clientsList: "clients.list",
+  clientCreate: "clients.create",
+  leadsList: "leads.list",
+  leadCreate: "leads.create",
+  projectMeetingsList: "project_meetings.list",
+  projectMeetingCreate: "project_meetings.create",
   financialsView: "financials.view",
   projectCreate: "projects.create",
   projectAssign: "projects.assign",
@@ -167,6 +172,31 @@ const OPERATION_POLICIES: Readonly<Record<AuthorizationOperation, OperationPolic
       capability: AUTHORIZATION_CAPABILITIES.recordsRead,
       sensitive: false,
       projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.clientCreate]: {
+      capability: AUTHORIZATION_CAPABILITIES.clientsCreate,
+      sensitive: true,
+      projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.leadsList]: {
+      capability: AUTHORIZATION_CAPABILITIES.recordsRead,
+      sensitive: false,
+      projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.leadCreate]: {
+      capability: AUTHORIZATION_CAPABILITIES.leadsCreate,
+      sensitive: true,
+      projectTarget: "none",
+    },
+    [AUTHORIZATION_OPERATIONS.projectMeetingsList]: {
+      capability: AUTHORIZATION_CAPABILITIES.recordsRead,
+      sensitive: false,
+      projectTarget: "required",
+    },
+    [AUTHORIZATION_OPERATIONS.projectMeetingCreate]: {
+      capability: AUTHORIZATION_CAPABILITIES.meetingsUpdate,
+      sensitive: true,
+      projectTarget: "required",
     },
     [AUTHORIZATION_OPERATIONS.financialsView]: {
       capability: AUTHORIZATION_CAPABILITIES.financialRead,

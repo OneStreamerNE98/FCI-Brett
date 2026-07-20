@@ -112,6 +112,11 @@ The **Activity** tab is implemented in source before a second-user or real-data 
 3. `codex/admin-audit-viewer` — merged in PR #21: a separately privileged, minimized `GET /api/v1/admin/audit` reader plus an independently loaded Activity tab with fixed filters, 25-row keyset pagination, Administrator-only route and presentation denials, and responsive/accessibility browser coverage. Source least privilege permits reads only through a security-barrier minimized projection; raw audit fields and export data remain unavailable. The private Sites development presentation adapter is deployed, but production migration 5, the reader grant, Cloud Run employee-session/CSRF composition, and live audit data remain unapplied or undeployed.
 4. `codex/admin-field-links`: when the field-assignment model is scheduled, add the distinct hashed exact-project Field Link lifecycle, read route, and Field Links tab.
 
+Until the production employee-session bootstrap is composed, both admin clients return
+`secure_session_not_ready` before issuing unsupported Sites API requests. This prevents
+development `/api/v1/admin/access` and `/api/v1/admin/audit` 404s without adding a D1
+administration store or compatibility handler.
+
 All three Administration and Access source branches are merged. Audit writes are part of the core branch, while the minimized reader remains separately privileged. Field Links do not block the People or Activity views because no field-assignment workflow exists yet.
 
 ## Not included

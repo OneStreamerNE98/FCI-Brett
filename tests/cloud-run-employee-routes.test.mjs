@@ -148,6 +148,46 @@ const CLIENT_FIXTURES = Object.freeze([
   }),
 ]);
 
+const LEAD_FIXTURES = Object.freeze([Object.freeze({
+  id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  lead_number: "L-2026-CCCCCCCC",
+  company: "FCI TEST — DO NOT USE Lead Company",
+  contact_name: "FCI TEST — DO NOT USE Lead Contact",
+  contact_email: "lead@example.test",
+  contact_phone: null,
+  project_name: "FCI TEST — DO NOT USE Lead Project",
+  source: "Referral",
+  stage: "New",
+  site: "FCI TEST — DO NOT USE Lead Site",
+  estimated_value: 25_000,
+  next_action: "Call the test contact",
+  next_action_at: null,
+  owner_email: ROLE_IDENTITIES.administrator.email,
+  status: "active",
+  created_by: ROLE_IDENTITIES.administrator.email,
+  created_at: NOW - 2_000,
+  updated_at: NOW - 1_000,
+})]);
+
+const MEETING_FIXTURES = Object.freeze([Object.freeze({
+  id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  project_id: PROJECT_A,
+  title: "FCI TEST — DO NOT USE Project Meeting",
+  meeting_at: NOW - 5_000,
+  meeting_type: "internal",
+  source_provider: "manual",
+  source_url: null,
+  attendees_json: "[]",
+  notes: "FCI TEST — DO NOT USE notes",
+  transcript: null,
+  summary: null,
+  decisions: null,
+  action_items_json: "[]",
+  created_by: ROLE_IDENTITIES.administrator.email,
+  created_at: NOW - 4_000,
+  updated_at: NOW - 4_000,
+})]);
+
 const ACCESS_OVERVIEW_FIXTURE = Object.freeze({
   summary: Object.freeze({
     activePeopleCount: 2,
@@ -239,6 +279,13 @@ async function startHarness(options = {}) {
   const revocations = [];
   const adminAccessCalls = [];
   const adminAuditCalls = [];
+  const coreRecordCalls = [];
+  const acceptedCreations = options.acceptedCreations ?? {
+    clients: new Map(),
+    projects: new Map(),
+    leads: new Map(),
+    meetings: new Map(),
+  };
   const repositoryCalls = {
     sessionHashes: [],
     csrf: [],
@@ -411,6 +458,124 @@ async function startHarness(options = {}) {
       };
     },
   };
+  const accepted = (kind, request, actorId, fingerprintInput, value) => {
+    const scopedKey = `${actorId}\u0000${request.idempotencyKey}`;
+    const fingerprint = JSON.stringify(fingerprintInput);
+    const existing = acceptedCreations[kind].get(scopedKey);
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) return { outcome: "idempotency-conflict" };
+      return { outcome: "accepted", value: existing.value, replayed: true };
+    }
+    acceptedCreations[kind].set(scopedKey, { fingerprint, value });
+    return { outcome: "accepted", value, replayed: false };
+  };
+  const coreRecords = options.coreRecords ?? {
+    clients(request) {
+      coreRecordCalls.push({ factory: "clients", request });
+      return {
+        async create(intent) {
+          coreRecordCalls.push({ method: "clients.create", intent });
+          return accepted("clients", request, intent.client.createdBy, {
+            name: intent.client.name,
+            status: intent.client.status,
+            industry: intent.client.industry,
+            primaryContact: intent.primaryContact && {
+              name: intent.primaryContact.name,
+              email: intent.primaryContact.email,
+              phone: intent.primaryContact.phone,
+            },
+          }, {
+            id: intent.client.id,
+            clientCode: intent.client.clientCode,
+            name: intent.client.name,
+            createdAt: intent.client.createdAt,
+            version: "1",
+          });
+        },
+      };
+    },
+    projects(request) {
+      coreRecordCalls.push({ factory: "projects", request });
+      return {
+        async create(intent) {
+          coreRecordCalls.push({ method: "projects.create", intent });
+          return accepted("projects", request, intent.project.createdBy, {
+            clientId: intent.project.clientId,
+            name: intent.project.name,
+            status: intent.project.status,
+            site: intent.project.site,
+            projectManagerId: intent.project.projectManagerId,
+            estimatedValue: intent.project.estimatedValue,
+          }, {
+            id: intent.project.id,
+            projectNumber: intent.project.projectNumber,
+            projectManagerId: intent.project.projectManagerId,
+            createdAt: intent.project.createdAt,
+            estimatedValue: intent.project.estimatedValue,
+            version: "1",
+          });
+        },
+        async assignManager() { throw new Error("unexpected assignment"); },
+      };
+    },
+    leads(request) {
+      coreRecordCalls.push({ factory: "leads", request });
+      return {
+        async list() {
+          coreRecordCalls.push({ method: "leads.list" });
+          return LEAD_FIXTURES;
+        },
+        async findById() { return null; },
+        async create(intent) {
+          coreRecordCalls.push({ method: "leads.create", intent });
+          const businessLead = { ...intent.lead };
+          for (const key of ["id", "lead_number", "created_at", "updated_at", "created_by"]) {
+            delete businessLead[key];
+          }
+          return accepted(
+            "leads",
+            request,
+            intent.lead.created_by,
+            businessLead,
+            { row: intent.lead, version: "1" },
+          );
+        },
+        async update() { throw new Error("unexpected lead update"); },
+      };
+    },
+    projectMeetings(request) {
+      coreRecordCalls.push({ factory: "projectMeetings", request });
+      return {
+        async projectExists(projectId) {
+          coreRecordCalls.push({ method: "meetings.projectExists", projectId });
+          return PROJECT_FIXTURES.some(({ id }) => id === projectId);
+        },
+        async findProjectForCreation(projectId) {
+          coreRecordCalls.push({ method: "meetings.findProject", projectId });
+          const project = PROJECT_FIXTURES.find(({ id }) => id === projectId);
+          return project ? { id: project.id, projectNumber: project.projectNumber } : null;
+        },
+        async listForProject(projectId) {
+          coreRecordCalls.push({ method: "meetings.list", projectId });
+          return MEETING_FIXTURES.filter(({ project_id }) => project_id === projectId);
+        },
+        async create(intent) {
+          coreRecordCalls.push({ method: "meetings.create", intent });
+          const businessMeeting = { ...intent.meeting };
+          for (const key of ["id", "created_at", "updated_at", "created_by"]) {
+            delete businessMeeting[key];
+          }
+          return accepted(
+            "meetings",
+            request,
+            intent.meeting.created_by,
+            businessMeeting,
+            { row: intent.meeting, version: "1" },
+          );
+        },
+      };
+    },
+  };
   const actionCalls = [];
   const actions = options.actions === true ? recordedActions(actionCalls) : options.actions;
   const router = createEmployeeRequestRouter({
@@ -419,6 +584,7 @@ async function startHarness(options = {}) {
     adminAudit,
     adminAccess,
     audit,
+    coreRecords,
     testActions: actions,
     testMode: true,
     now: () => NOW,
@@ -474,10 +640,12 @@ async function startHarness(options = {}) {
 
   return {
     actionCalls,
+    acceptedCreations,
     adminAccessCalls,
     adminAuditCalls,
     audits,
     close,
+    coreRecordCalls,
     origin,
     repositoryCalls,
     request,
@@ -509,6 +677,7 @@ test("functional read routes use the named authorization gateways and PM-scoped 
       ["/api/v1/projects", "projects", 1],
       [`/api/v1/projects/${PROJECT_A}`, "project", PROJECT_A],
       ["/api/v1/clients", "clients", 1],
+      ["/api/v1/leads", "leads", 0],
     ];
     for (const [path, label, expectation] of cases) {
       const response = await running.request(path);
@@ -526,6 +695,218 @@ test("functional read routes use the named authorization gateways and PM-scoped 
     assert.equal(running.repositoryCalls.clientLists[0].limit, 100);
     assert.ok(running.repositoryCalls.sessionHashes.every((hash) => hash === SESSION_HASH));
     assert.equal(JSON.stringify(running.repositoryCalls).includes(SESSION_CREDENTIAL), false);
+  } finally {
+    await running.close();
+  }
+});
+
+test("core create routes preserve replay, conflict, principal, operation, and envelope contracts", async () => {
+  const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+  const headers = { "Idempotency-Key": "be09-create-1" };
+  try {
+    const clientInput = {
+      name: "FCI TEST — DO NOT USE Created Client",
+      status: "active",
+      primaryContact: {
+        name: "FCI TEST — DO NOT USE Contact",
+        email: "created-client@example.test",
+      },
+    };
+    const client = await running.request("/api/v1/clients", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers,
+      json: clientInput,
+    });
+    assert.equal(client.status, 201);
+    const clientBody = await json(client);
+    assert.equal(clientBody.data.name, clientInput.name);
+    assert.equal(clientBody.data.version, "1");
+
+    const replay = await running.request("/api/v1/clients", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers,
+      json: clientInput,
+    });
+    assert.equal(replay.status, 201);
+    assert.deepEqual((await json(replay)).data, clientBody.data);
+
+    const conflict = await running.request("/api/v1/clients", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers,
+      json: { ...clientInput, name: "FCI TEST — DO NOT USE Different Client" },
+    });
+    assert.equal(conflict.status, 409);
+    assert.deepEqual(await json(conflict), {
+      error: "This request key was already used for different client details.",
+    });
+    assert.equal(running.acceptedCreations.clients.size, 1);
+
+    const project = await running.request("/api/v1/projects", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers,
+      json: {
+        clientId: CLIENT_FIXTURES[0].id,
+        name: "FCI TEST — DO NOT USE Created Project",
+        status: "planning",
+      },
+    });
+    assert.equal(project.status, 201);
+    assert.equal((await json(project)).data.projectManagerId, ROLE_IDENTITIES.administrator.email);
+    assert.equal(running.acceptedCreations.projects.size, 1);
+
+    const lead = await running.request("/api/v1/leads", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers: { "Idempotency-Key": "be09-lead-1" },
+      json: {
+        company: "FCI TEST — DO NOT USE Lead Company",
+        contactName: "FCI TEST — DO NOT USE Lead Contact",
+        projectName: "FCI TEST — DO NOT USE Lead Project",
+        source: "Referral",
+        stage: "New",
+        site: "FCI TEST — DO NOT USE Lead Site",
+        estimatedValue: 25_000,
+        nextAction: "Call the test contact",
+      },
+    });
+    assert.equal(lead.status, 201);
+    assert.equal((await json(lead)).data.ownerEmail, ROLE_IDENTITIES.administrator.email);
+
+    const meeting = await running.request(`/api/v1/projects/${PROJECT_A}/meetings`, {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers: { "Idempotency-Key": "be09-meeting-1" },
+      json: {
+        title: "FCI TEST — DO NOT USE Created Meeting",
+        meetingAt: new Date(NOW).toISOString(),
+        meetingType: "internal",
+        notes: "FCI TEST — DO NOT USE meeting notes",
+      },
+    });
+    assert.equal(meeting.status, 201);
+    assert.equal((await json(meeting)).data.projectId, PROJECT_A);
+
+    const keys = running.coreRecordCalls
+      .filter(({ request }) => request)
+      .map(({ request }) => request.idempotencyKey);
+    assert.deepEqual(keys, [
+      "be09-create-1",
+      "be09-create-1",
+      "be09-create-1",
+      "be09-create-1",
+      "be09-lead-1",
+      "be09-meeting-1",
+    ]);
+
+    const office = await startHarness({
+      role: AUTHORIZATION_ROLES.officeOperations,
+      acceptedCreations: running.acceptedCreations,
+    });
+    try {
+      const isolatedPrincipal = await office.request("/api/v1/clients", {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        headers,
+        json: clientInput,
+      });
+      assert.equal(isolatedPrincipal.status, 201);
+      assert.equal((await json(isolatedPrincipal)).data.name, clientInput.name);
+      assert.equal(running.acceptedCreations.clients.size, 2);
+    } finally {
+      await office.close();
+    }
+  } finally {
+    await running.close();
+  }
+});
+
+test("core writes deny missing capabilities before body parsing or repository work", async () => {
+  const running = await startHarness({ role: AUTHORIZATION_ROLES.projectManager });
+  try {
+    const denied = await running.request("/api/v1/clients", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers: { "Idempotency-Key": "be09-denied" },
+      json: { name: "FCI TEST — DO NOT USE Denied Client" },
+    });
+    assert.equal(denied.status, 403);
+    assert.deepEqual(await json(denied), { error: "forbidden" });
+    assert.equal(running.coreRecordCalls.length, 0);
+    assert.ok(running.audits.some(({ action, result }) =>
+      action === "authorization.access_denied" && result === "denied"));
+  } finally {
+    await running.close();
+  }
+});
+
+test("lead and meeting reads remain scope filtered for Project Managers", async () => {
+  const running = await startHarness({ role: AUTHORIZATION_ROLES.projectManager });
+  try {
+    const leads = await running.request("/api/v1/leads");
+    assert.equal(leads.status, 200);
+    assert.deepEqual(await json(leads), { data: [] });
+    assert.equal(running.coreRecordCalls.some(({ method }) => method === "leads.list"), false);
+
+    const assigned = await running.request(`/api/v1/projects/${PROJECT_A}/meetings`);
+    assert.equal(assigned.status, 200);
+    assert.equal((await json(assigned)).data.length, 1);
+
+    const outsideScope = await running.request(`/api/v1/projects/${PROJECT_B}/meetings`);
+    assert.equal(outsideScope.status, 404);
+    assert.deepEqual(await json(outsideScope), { error: "not_found" });
+    assert.equal(
+      running.coreRecordCalls.filter(({ method }) => method === "meetings.list").length,
+      1,
+    );
+  } finally {
+    await running.close();
+  }
+});
+
+test("core creates deny missing CSRF and reject missing or malformed idempotency keys", async () => {
+  const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+  try {
+    const input = { name: "FCI TEST — DO NOT USE Missing Key" };
+    const csrfDenied = await running.request("/api/v1/clients", {
+      method: "POST",
+      sameOrigin: true,
+      headers: { "Idempotency-Key": "be09-no-csrf" },
+      json: input,
+    });
+    assert.equal(csrfDenied.status, 403);
+    assert.deepEqual(await json(csrfDenied), { error: "request_not_authorized" });
+
+    const missing = await running.request("/api/v1/clients", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      json: input,
+    });
+    assert.equal(missing.status, 400);
+    assert.deepEqual(await json(missing), { error: "idempotency_key_required" });
+
+    const malformed = await running.request("/api/v1/clients", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers: { "Idempotency-Key": "contains spaces" },
+      json: input,
+    });
+    assert.equal(malformed.status, 400);
+    assert.deepEqual(await json(malformed), { error: "invalid_idempotency_key" });
+    assert.equal(running.coreRecordCalls.length, 0);
   } finally {
     await running.close();
   }

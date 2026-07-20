@@ -392,6 +392,34 @@ test("client idempotency replay returns the original accepted value without reco
   client.assertComplete();
 });
 
+test("client idempotency conflict rejects a changed body without record or evidence writes", async () => {
+  const changedIntent = clientIntent();
+  changedIntent.client.name = "FCI TEST — DO NOT USE Changed Idempotency Body";
+  const client = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/INSERT INTO idempotency_requests/, result([], 0)),
+    step(/SELECT request_fingerprint[\s\S]*FOR UPDATE/, result([{
+      request_fingerprint: calculatePostgresClientCreationFingerprint(clientIntent()),
+      status: "completed",
+      response_status: 201,
+      response_body: {},
+      version: "2",
+    }], 1)),
+    step(/^COMMIT$/),
+  ]);
+  const repository = createPostgresClientRepository(new ScriptedPostgresPool(client), {
+    schema: "repository_test",
+    request: clientRequest(),
+  });
+
+  assert.deepEqual(await repository.create(changedIntent), { outcome: "idempotency-conflict" });
+  for (const forbidden of ["insert client", "insert contact", "insert activity", "insert outbox", "complete idempotency"]) {
+    assert.equal(queryKinds(client).includes(forbidden), false, `${forbidden} must not run on conflict`);
+  }
+  assert.equal(client.queries.at(-1).sql, "COMMIT");
+  client.assertComplete();
+});
+
 test("a duplicate client name commits a replayable deterministic failure", async () => {
   const client = new ScriptedPostgresClient([
     ...transactionSetupSteps(),

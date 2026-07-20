@@ -19,6 +19,12 @@ export class AdminAccessClientError extends Error {
   }
 }
 
+function requireAdminApi(secureSessionReady: boolean) {
+  if (!secureSessionReady) {
+    throw new AdminAccessClientError(0, "secure_session_not_ready");
+  }
+}
+
 async function responseEnvelope(response: Response) {
   let value: unknown;
   try {
@@ -72,7 +78,10 @@ async function postAdminMutation(
   return dataObject(await responseEnvelope(response));
 }
 
-export async function readAdminAccessOverview(): Promise<AdminAccessOverview> {
+export async function readAdminAccessOverview(
+  secureSessionReady: boolean,
+): Promise<AdminAccessOverview> {
+  requireAdminApi(secureSessionReady);
   const response = await fetch(ADMIN_ACCESS_PATH, {
     method: "GET",
     cache: "no-store",
