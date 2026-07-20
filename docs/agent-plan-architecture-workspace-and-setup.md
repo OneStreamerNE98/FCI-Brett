@@ -380,9 +380,12 @@ rehearsal" (lines 25–27) — **not** the platform ADR. `db/schema.ts` exports 
 the rehearsal covers 4, is silent on the other 17 plus R2 objects.
 **Do:** Add an inventory section to the rehearsal report enumerating every schema-exported
 table + R2, each classified with a reason (records: excluded legacy per BE-03;
-workspace_simulation_state: excluded dev-only; google_connections: blocking until BE-08;
-leads/meetings: migrated once v6 applies). Derive the table list from `db/schema.ts` so
-new tables can't escape classification. Extend the snapshot format (major version bump) to
+workspace_simulation_state: excluded dev-only; google_connections: transformed only by a
+separately approved production reauthorization, never credential copying; leads/meetings:
+migrated into the now-defined v6 tables). Every inventory-only category remains zero-only
+and fails before database access; a disposition never authorizes silent data loss.
+Derive the table list from `db/schema.ts` so new tables can't escape classification.
+Extend the snapshot format (major version bump) to
 carry leads/meetings into v6 tables with hash verification; keep every existing guard
 (FCI TEST name rule, 16 MiB/5,000-row caps, `^fci_rehearsal_` schema, refuse production,
 exact acknowledgment). `cutoverReady` stays hardcoded false.

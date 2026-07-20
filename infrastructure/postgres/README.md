@@ -34,9 +34,11 @@ psql <approved non-production connection> `
   --file=infrastructure/postgres/rehearsal-importer-template.sql
 ```
 
-The template validates the prefix, schema owner, and required migrated tables
-before granting anything. It revokes runtime and `PUBLIC` access and gives the
-importer only bounded core read/insert access plus read-only migration-history
+The template validates the prefix, schema owner, and exact nine required
+migrated/control tables before granting anything. It revokes runtime and
+`PUBLIC` access and gives the
+importer only bounded read/insert access to clients, contacts, leads, projects,
+project meetings, and activity events plus read-only migration-history
 and delivery-control checks. The rehearsal command then requires every source
 migration version, name, and checksum to match exactly before inserting.
 Provision importer membership only in development or staging, remove it after

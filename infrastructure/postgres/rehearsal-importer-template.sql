@@ -45,7 +45,7 @@ SELECT EXISTS (
   \quit 3
 \endif
 
-SELECT count(*) = 7 AS fci_rehearsal_schema_has_required_tables
+SELECT count(*) = 9 AS fci_rehearsal_schema_has_required_tables
 FROM pg_catalog.pg_class AS relation
 JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
 WHERE namespace.nspname = :'fci_rehearsal_schema'
@@ -54,7 +54,9 @@ WHERE namespace.nspname = :'fci_rehearsal_schema'
     'production_schema_migrations',
     'clients',
     'contacts',
+    'leads',
     'projects',
+    'project_meetings',
     'activity_events',
     'idempotency_requests',
     'outbox_events'
@@ -85,7 +87,9 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA :"fci_rehearsal_schema" FROM fci_rehearsal
 GRANT USAGE ON SCHEMA :"fci_rehearsal_schema" TO fci_rehearsal_importer;
 GRANT SELECT, INSERT ON TABLE :"fci_rehearsal_schema".clients TO fci_rehearsal_importer;
 GRANT SELECT, INSERT ON TABLE :"fci_rehearsal_schema".contacts TO fci_rehearsal_importer;
+GRANT SELECT, INSERT ON TABLE :"fci_rehearsal_schema".leads TO fci_rehearsal_importer;
 GRANT SELECT, INSERT ON TABLE :"fci_rehearsal_schema".projects TO fci_rehearsal_importer;
+GRANT SELECT, INSERT ON TABLE :"fci_rehearsal_schema".project_meetings TO fci_rehearsal_importer;
 GRANT SELECT, INSERT ON TABLE :"fci_rehearsal_schema".activity_events TO fci_rehearsal_importer;
 GRANT SELECT ON TABLE :"fci_rehearsal_schema".production_schema_migrations TO fci_rehearsal_importer;
 GRANT SELECT ON TABLE :"fci_rehearsal_schema".idempotency_requests TO fci_rehearsal_importer;

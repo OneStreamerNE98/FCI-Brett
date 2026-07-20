@@ -47,9 +47,13 @@ window, and cleanup procedure.
 - [ ] Exercise the approved forward-fix or restore-based rollback path and repeat
   reconciliation after recovery.
 
-The current bounded core rehearsal always reports `cutoverReady: false` and
-excludes many application categories. Passing it is useful source evidence but
-is not a complete migration or cutover rehearsal.
+The current format-version-2 bounded core rehearsal always reports
+`cutoverReady: false`. Its report inventories all 21 D1 tables plus R2 with a
+reasoned disposition. Only clients, contacts, leads, projects, project meetings,
+and classified activity carry bounded rows and receive end-to-end hash
+reconciliation; every inventory-only category must remain zero or the command
+fails before database access. Passing it is useful source evidence but is not a
+complete migration or cutover rehearsal.
 
 ## 2. Production go/no-go gate
 

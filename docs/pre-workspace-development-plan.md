@@ -144,7 +144,7 @@ The source-only production-runtime worker completed the next bounded foundation 
 - Validated private Cloud SQL connector composition provides one bounded runtime pool per instance and single-connection migration/rehearsal pools.
 - Migrations run only through a separate command/job with immutable history checks and explicit schema-owner role activation.
 - Source-only least-privilege role definitions keep the runtime from creating schema objects or mutating migration history.
-- A strict test-data-only core rehearsal preserves identifiers and verifies counts plus content/identifier hashes inside an isolated non-production schema.
+- A strict test-data-only core rehearsal preserves identifiers and verifies counts plus content/identifier hashes inside an isolated non-production schema. BE-12's source-only format v2 classifies every D1 table plus R2 and adds bounded lead/project-meeting imports; it has not run against a database and still reports `cutoverReady: false`.
 - No Cloud resources, credentials, database roles, migrations, rehearsal data, Workspace connections, hosted configuration, or deployments were created or changed.
 
 See [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) for the exact boundary and acceptance gates.

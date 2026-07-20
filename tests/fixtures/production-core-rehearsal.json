@@ -1,12 +1,10 @@
 {
-  "formatVersion": 1,
+  "formatVersion": 2,
   "dataClassification": "test",
   "sourceSystem": "d1-development-test-export",
   "deferredSourceCounts": {
     "records": 0,
     "webhook_receipts": 0,
-    "leads": 0,
-    "project_meetings": 0,
     "filing_rules": 0,
     "workspace_settings": 0,
     "user_preferences": 0,
@@ -54,6 +52,30 @@
       "version": "1"
     }
   ],
+  "leads": [
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "leadNumber": "L-2026-66666666",
+      "company": "FCI TEST — DO NOT USE Company",
+      "contactName": "FCI TEST — DO NOT USE Contact",
+      "contactEmail": "lead@example.test",
+      "contactPhone": "555-0166",
+      "projectName": "FCI TEST — DO NOT USE Lead Project",
+      "source": "Test referral",
+      "stage": "Qualified",
+      "site": "FCI TEST — DO NOT USE Lead Site",
+      "estimatedValue": 64000,
+      "nextAction": "Review the test-only opportunity",
+      "nextActionAt": "2026-07-14T12:00:00.000Z",
+      "ownerEmail": "rehearsal@example.test",
+      "status": "active",
+      "createdBy": "rehearsal@example.test",
+      "updatedBy": "rehearsal@example.test",
+      "createdAt": "2026-07-13T12:02:00.000Z",
+      "updatedAt": "2026-07-13T12:02:00.000Z",
+      "version": "1"
+    }
+  ],
   "projects": [
     {
       "id": "33333333-3333-4333-8333-333333333333",
@@ -70,6 +92,29 @@
       "updatedBy": "rehearsal@example.test",
       "createdAt": "2026-07-13T12:05:00.000Z",
       "updatedAt": "2026-07-13T12:05:00.000Z",
+      "version": "1"
+    }
+  ],
+  "projectMeetings": [
+    {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "projectId": "33333333-3333-4333-8333-333333333333",
+      "title": "FCI TEST — DO NOT USE Internal review",
+      "meetingAt": "2026-07-13T12:10:00.000Z",
+      "meetingType": "internal",
+      "sourceProvider": "manual",
+      "sourceUrl": null,
+      "attendees": [
+        "FCI TEST — DO NOT USE Contact"
+      ],
+      "notes": "FCI TEST — DO NOT USE meeting evidence",
+      "transcript": null,
+      "summary": null,
+      "decisions": null,
+      "actionItems": [],
+      "createdBy": "rehearsal@example.test",
+      "createdAt": "2026-07-13T12:10:00.000Z",
+      "updatedAt": "2026-07-13T12:10:00.000Z",
       "version": "1"
     }
   ],
@@ -101,6 +146,20 @@
         "message": "FCI TEST — DO NOT USE project creation evidence"
       },
       "occurredAt": "2026-07-13T12:05:00.000Z"
+    },
+    {
+      "id": "88888888-8888-4888-8888-888888888888",
+      "recordType": "lead",
+      "recordId": "66666666-6666-4666-8666-666666666666",
+      "action": "Lead created",
+      "actorId": "rehearsal@example.test",
+      "correlationId": "rehearsal:lead:66666666",
+      "result": "succeeded",
+      "reason": null,
+      "detail": {
+        "message": "FCI TEST — DO NOT USE lead creation evidence"
+      },
+      "occurredAt": "2026-07-13T12:02:00.000Z"
     }
   ]
 }
