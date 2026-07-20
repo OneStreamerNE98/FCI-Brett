@@ -1,8 +1,9 @@
 # BE-04 Workspace OIDC — post-merge security review and follow-up packets
 
-Date: July 19, 2026 · Reviews merged PR #38 ("Add Workspace OIDC employee login") and
-PR #48 (OIDC-01 callback compatibility) on current `main` @ `4ce7bd4` · Also records the
-resolved PR #41 KPI-01 test collision.
+Date: July 19, 2026 · Status reconciled: July 20, 2026 · Reviews merged PR #38
+("Add Workspace OIDC employee login") and PR #48 (OIDC-01 callback compatibility) on
+current `main` @ `f589ee6` · Also records the resolved PR #41 KPI-01 test collision and
+the completed OIDC-04 documentation reconciliation in PRs #49/#50.
 
 This is a Codex-ready follow-up ledger. Each packet is one agent work packet with the same
 shape as `docs/agent-plan-architecture-workspace-and-setup.md` (why / files / steps /
@@ -68,7 +69,7 @@ user-cancel `error` param yields a recorded denial; duplicate `code`/`state` sti
 `npm test` green. **Effort:** small.
 
 ## OIDC-02 · Verifier and attempt-cookie hardening bundle (low/medium; mixed) — small
-**Status:** In review — draft PR #54, July 20, 2026.
+**Status:** In review — draft PR #54, July 20, 2026. Not merged or deployed.
 **Why:** Three independent robustness gaps, safe to fix together:
 - **Issuer strict typing (low; CONFIRMED).** `employee-oidc.ts` ~line 371 uses
   `GOOGLE_ISSUERS.has(String(claims.iss))`; `String(["accounts.google.com"])` passes, so a
@@ -102,7 +103,7 @@ an unrelated malformed cookie is also present; the attempt-reuse decision is imp
 explicitly documented with a test or comment; `npm test` green. **Effort:** small.
 
 ## OIDC-03 · Test-coverage backfill for the new login path (medium; reviewer-reported) — medium
-**Status:** Open — partially satisfied by PR #48.
+**Status:** In review — draft PR #55, July 20, 2026; intentionally stacked on draft PR #54. Not merged or deployed.
 **Why:** The implementation conforms to policy, but the **new** suites do not exercise the
 behaviors BE-04's own acceptance line claims, so a future regression would pass CI. Confirmed
 by grep: `tests/cloud-run-employee-login.test.mjs` and `tests/employee-oidc.test.mjs`
@@ -196,12 +197,14 @@ and all 22 KPI-focused Playwright cases pass together; the pinned formulas in
 
 ## Recommended order for Codex
 
-KPI-01-FIX and OIDC-01 are resolved in PRs #41 and #48. The remaining order is:
+KPI-01-FIX and OIDC-01 are resolved in PRs #41 and #48. OIDC-04 is complete in PR #49,
+with its completed status guarded by PR #50. The remaining review order is:
 
-1. **OIDC-04** — reconcile the merge train and add the merged-status guard.
-2. **OIDC-02** — small verifier/cookie hardening with the documented attempt-reuse bound.
-3. **OIDC-03** — focused negative and PostgreSQL test backfill after OIDC-02, because the
-   two packets share employee-OIDC fixtures.
+1. **OIDC-02 / draft PR #54** — review the verifier/cookie hardening and documented
+   attempt-reuse bound.
+2. **OIDC-03 / draft PR #55** — review the focused negative and PostgreSQL test backfill.
+   It is stacked on #54; after #54 merges, retarget or rebase #55 to `main` and rerun its
+   checks before merge.
 
 OIDC-01..04 touch only Cloud Run platform + tests + docs (no FloorOpsApp), so they run in
 parallel with the FloorOpsApp queue and with the other open backend packets. None requires

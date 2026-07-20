@@ -166,12 +166,60 @@ test("known merged packets have complete statuses and cannot regress to review-o
     const normalized = read(path).replace(/\s+/g, " ");
     for (const pr of mergedPrs) {
       const staleReference = new RegExp(
-        `(?:${badTerms}.{0,120}PR #${pr}\\b|PR #${pr}\\b.{0,120}${badTerms})`,
+        `(?:${badTerms}(?:(?!PRs? #\\d+)[^.;]){0,120}PR #${pr}\\b|PR #${pr}\\b(?:(?!PRs? #\\d+)[^.;]){0,120}${badTerms})`,
         "i",
       );
       assert.doesNotMatch(normalized, staleReference, `${path} still assigns merged PR #${pr} for review`);
     }
   }
+});
+
+test("the checklist dashboard records the current main baseline and draft review queue without promoting drafts", () => {
+  const checklists = read("docs/task-checklists/README.md");
+  const staffLogin = read("docs/task-checklists/04-staff-login-and-permissions.md");
+  const foundation = read("docs/task-checklists/07-production-foundation-and-migration.md");
+  const frontend = read("docs/task-checklists/09-frontend-and-multi-user-hardening.md");
+  const architecture = read("docs/task-checklists/10-complete-product-and-integration-architecture.md");
+  const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
+  const oidc = read("docs/be04-oidc-review-and-followups.md");
+  const handoff = read("docs/codex-to-codex-handoff.md");
+
+  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `f589ee61db58d93827563982e880adc23a829183`/);
+  assert.match(checklists, /PR #49 completed OIDC-04[\s\S]*PR #50 guarded that completed status/);
+  assert.match(handoff, /current source baseline is `main` at `f589ee6`/);
+
+  const reviewQueue = section(checklists, "## Current GitHub draft review snapshot", "## Checklists by topic");
+  for (const pr of [51, 52, 53, 54, 55, 56, 57]) {
+    assert.match(reviewQueue, new RegExp(`pull/${pr}\\)`), `Draft review snapshot omits PR #${pr}`);
+  }
+  assert.match(reviewQueue, /#55[\s\S]*stacked on #54/);
+  assert.match(reviewQueue, /does not change any owner checkbox or mark unmerged source complete/);
+
+  const expectedPlanDrafts = new Map([
+    ["BE-09", 51],
+    ["KPI-02", 52],
+    ["BE-12", 53],
+    ["SET-10", 56],
+  ]);
+  for (const [packet, pr] of expectedPlanDrafts) {
+    const status = packetStatus(plan, packet);
+    assert.match(status, new RegExp(`^In review — draft PR #${pr}\\b`), `${packet} does not record draft PR #${pr}`);
+    assert.match(status, /not merged/, `${packet} does not preserve the unmerged boundary`);
+    assert.doesNotMatch(status, /^Complete/, `${packet} was promoted before merge`);
+  }
+
+  assert.match(packetStatus(oidc, "OIDC-02"), /^In review — draft PR #54\b[\s\S]*Not merged/);
+  assert.match(packetStatus(oidc, "OIDC-03"), /^In review — draft PR #55\b[\s\S]*stacked on draft PR #54[\s\S]*Not merged/);
+  assert.match(staffLogin, /OIDC-02\/#54 and stacked OIDC-03\/#55 are in draft review and unmerged/);
+  assert.match(foundation, /BE-09\/#51 and BE-12\/#53 are in draft review/);
+  assert.match(frontend, /KPI-02\/#52, SET-10\/#56, and the logo refresh\/#57 are in draft review and unmerged/);
+  assert.match(architecture, /Draft PRs #51–#57 are unmerged/);
+
+  const checklistNextWork = section(checklists, "## Recommended next work", "## Safety boundary");
+  assert.match(checklistNextWork, /OIDC-04 is complete in PRs #49\/#50/);
+  assert.match(checklistNextWork, /BE-07\+SET-05, SET-11, SET-09\+WS-10, and WS-13/);
+  assert.match(checklistNextWork, /BE-10\/BE-14 wait for #51[\s\S]*KPI-03 waits for #52/);
+  assert.doesNotMatch(checklistNextWork, /OIDC-04's merge-train documentation\/guard reconciliation is first/);
 });
 
 test("every open architecture-roadmap row has an explicit tracking owner", () => {
@@ -253,7 +301,12 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
 
   const plan = read("docs/agent-plan-architecture-workspace-and-setup.md");
   const startNow = section(plan, "**Start now, in parallel (no owner input needed):**", "**Chains:**");
-  assert.match(startNow, /OIDC-04[\s\S]*OIDC-02[\s\S]*OIDC-03[\s\S]*BE-09[\s\S]*BE-12[\s\S]*KPI-02/i);
+  assert.match(startNow, /OIDC-04 is complete in PR #49[\s\S]*PR #50/);
+  for (const [packet, pr] of [["OIDC-02", 54], ["OIDC-03", 55], ["BE-09", 51], ["KPI-02", 52], ["BE-12", 53], ["SET-10", 56]]) {
+    assert.match(startNow, new RegExp(`${packet}[\\s\\S]*#${pr}`), `${packet}/#${pr} is missing from the current review queue`);
+  }
+  assert.match(startNow, /logo refresh \(#57\)/);
+  assert.doesNotMatch(startNow, /OIDC-04 is the immediate truth-reconciliation packet/);
   const firstWave = section(plan, "**Wave 1 — next PRs, in this order where they share files:**", "**Wave 2 — current:**");
   assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*PR #35[\s\S]*SET-02[\s\S]*PR #37[\s\S]*KPI-01[\s\S]*PR #41/i);
 

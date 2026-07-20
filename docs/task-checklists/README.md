@@ -11,18 +11,18 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | Workspace resources | Workspace administrator | Verification pending; no completed inventory is recorded | Verify the domain, operations account, enabled services, Shared Drive support, directory Sheet, mailbox, and two calendars. |
 | Google Cloud and OAuth | Workspace/Cloud administrator | Company-account project candidate reported; Cloud verification pending | Inventory Brett's candidate and bring the non-secret findings back for approval before any API, IAM, billing, OAuth, or Admin-console change. |
 | Hosted development connection | Owner + Codex/developer | Not connected; Workspace resource and OAuth verification remain pending | After approval, add hosted configuration, connect one approved account, and verify each service. |
-| Staff Google login and roles | Codex/developer | Approved policy, People & Access, Activity, and Workspace OIDC/invitation/session-issuance source are merged; only the People/Activity presentation adapter is deployed to private Sites development | Complete OIDC-02/03 hardening and tests; keep migration/apply, live configuration, production deployment, and additional users gated. |
+| Staff Google login and roles | Codex/developer | Approved policy, People & Access, Activity, and Workspace OIDC/invitation/session-issuance source are merged; only the People/Activity presentation adapter is deployed to private Sites development | Review OIDC-02 in draft PR #54, then the stacked OIDC-03 draft PR #55; keep migration/apply, live configuration, production deployment, and additional users gated. |
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
-| Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review the employee-route source, finish approved calculator evidence, and obtain remaining owner inputs before any staging apply. |
+| Production foundation and migration | Developer + Cloud administrator | In progress, source only | Review BE-09 draft PR #51 and BE-12 draft PR #53; finish approved calculator evidence and owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40; source-only PRs #33/#35/#37/#41/#44 complete the actionable lists, Settings extraction/admin gating, Tier-1 KPIs, and guided Workspace setup, and are not deployed | KPI-02 takes the next `FloorOpsApp.tsx` slot; SET-10/11 and SET-09+WS-10 may proceed in extracted modules. |
+| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40; later merged UI source remains undeployed | Review KPI-02 draft PR #52, which occupies the sole `FloorOpsApp.tsx` slot, plus SET-10/#56 and logo refresh/#57; none is merged or deployed. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status reconciled on July 19, 2026 against source `main` at `4ce7bd4` and the separate PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`. The deployed commit remains private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The source-only `codex/actionable-lists` slice is complete in PR #33 and is not deployed; the `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed. The listed merge-train packets through #48 are also merged and undeployed. This includes SET-02 (#37), BE-04 (#38), WS-04+WS-12 (#39), BE-05 (#40), KPI-01 (#41), BE-06 (#42), SET-03+SET-04 (#44), BE-08 (#45), BE-03 (#46), BE-11 (#47), and OIDC-01 (#48). No merge authorizes live identity/provider configuration, infrastructure or migration apply, image publication, job execution, or deployment.
+Status reconciled on July 20, 2026 against source `main` at `f589ee61db58d93827563982e880adc23a829183` and the separate PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`. The deployed commit remains private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The `codex/actionable-lists` slice is complete in source in PR #33 and is not deployed. The `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed; the later source-only packets through PR #48 are likewise merged and undeployed. PR #49 completed OIDC-04's documentation reconciliation, and PR #50 guarded that completed status. PRs #51–#57 are open drafts; none is merged or deployed. No merge or draft authorizes live identity/provider configuration, infrastructure or migration apply, image publication, job execution, or deployment.
 
 ### Jason / business owner
 
@@ -36,6 +36,20 @@ Completed July 18, 2026: Jason used the audited **Assign to me** action on the f
 1. Complete only the read-only inventory of the reported company Cloud project candidate and return the approved non-secret facts listed in [Google Cloud and OAuth](02-google-cloud-and-oauth.md#what-to-report-back-to-codex).
 2. Stop before changing APIs, IAM, billing, OAuth, or Google Admin settings until Jason approves the exact changes.
 3. Verify the company Workspace domain, operations connection account, enabled services, Shared Drive support, directory Sheet, and calendars using [Workspace resources](01-workspace-resources.md). Do not send secrets or admit another app user.
+
+## Current GitHub draft review snapshot
+
+This dated snapshot describes review work only; it does not change any owner checkbox or mark unmerged source complete.
+
+| PR | Packet | Review state and dependency |
+| --- | --- | --- |
+| [#51](https://github.com/OneStreamerNE98/FCI-Brett/pull/51) | BE-09 production core-record routes | Open draft against `main`; BE-10/BE-14 wait for its merge. |
+| [#52](https://github.com/OneStreamerNE98/FCI-Brett/pull/52) | KPI-02 flooring booking inputs and reports | Open draft against `main`; occupies the sole `FloorOpsApp.tsx` slot, and KPI-03 waits. |
+| [#53](https://github.com/OneStreamerNE98/FCI-Brett/pull/53) | BE-12 rehearsal inventory | Open draft against `main`; no hosted staging rehearsal, migration apply, or live-data operation is implied. |
+| [#54](https://github.com/OneStreamerNE98/FCI-Brett/pull/54) | OIDC-02 verifier/cookie hardening | Open draft against `main`; review before #55. |
+| [#55](https://github.com/OneStreamerNE98/FCI-Brett/pull/55) | OIDC-03 login security test backfill | Open draft intentionally stacked on #54; after #54 merges, retarget or rebase to `main` and rerun checks. |
+| [#56](https://github.com/OneStreamerNE98/FCI-Brett/pull/56) | SET-10 Workspace connection health | Open draft against `main`; does not complete the broader operations-health checklist. |
+| [#57](https://github.com/OneStreamerNE98/FCI-Brett/pull/57) | Application logo asset refresh | Open draft against `main`; static UI assets and review documentation only. |
 
 ## Checklists by topic
 
@@ -66,11 +80,11 @@ These checklists are owner-facing setup, decision, acceptance, and operations re
 
 ## Recommended next work
 
-The agent ledgers above own sequencing. OIDC-04's merge-train documentation/guard reconciliation is first, followed by OIDC-02 then OIDC-03. Parallel source-only work may assign BE-09, BE-12, coordinated BE-07+SET-05, KPI-02 as the sole `FloorOpsApp.tsx` owner, SET-10, SET-11, SET-09+WS-10, and WS-13. No checklist item here authorizes a live provider, staging run, migration/apply, or deployment.
+The agent ledgers above own sequencing. OIDC-04 is complete in PRs #49/#50. Review #54 before its stacked #55; #51, #52, #53, #56, and #57 may be reviewed independently. The still-unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. BE-10/BE-14 wait for #51, while KPI-03 waits for #52. No checklist item here authorizes a live provider, staging run, migration/apply, or deployment.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. The later PRs through #48 are merged only in source and are not deployed. None of the remaining steps above authorizes production deployment, live OIDC/session admission, staging execution, a migration or infrastructure apply, a second user, or real data.
+Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. Later source through PR #48 and documentation reconciliation through PR #50 are merged but undeployed; drafts #51–#57 remain unmerged and undeployed. None of the remaining steps above authorizes production deployment, live OIDC/session admission, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
 
