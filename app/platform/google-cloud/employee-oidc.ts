@@ -368,7 +368,9 @@ function verifiedClaims(
   expectedNonce: string,
   verifiedAt: number,
 ): VerifiedEmployeeOidcIdentity {
-  if (!GOOGLE_ISSUERS.has(String(claims.iss))) return invalid("token_invalid");
+  if (typeof claims.iss !== "string" || !GOOGLE_ISSUERS.has(claims.iss)) {
+    return invalid("token_invalid");
+  }
   if (!jwtAudienceMatches(claims.aud, claims.azp, config.clientId)) {
     return invalid("token_invalid");
   }
@@ -436,12 +438,19 @@ export function readEmployeeOidcAttemptCookie(request: IncomingMessage) {
   const values: string[] = [];
   for (const item of header.split(";")) {
     const cookie = item.trim();
+    if (cookie.length === 0) continue;
     const separator = cookie.indexOf("=");
-    if (separator < 1) return invalid("attempt_invalid");
+    if (separator < 0) {
+      if (cookie === EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME) {
+        return invalid("attempt_invalid");
+      }
+      continue;
+    }
     const name = cookie.slice(0, separator).trim();
+    if (name !== EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME) continue;
     const value = cookie.slice(separator + 1).trim();
-    if (!name || !value) return invalid("attempt_invalid");
-    if (name === EMPLOYEE_OIDC_ATTEMPT_COOKIE_NAME) values.push(value);
+    if (!value) return invalid("attempt_invalid");
+    values.push(value);
   }
   if (values.length === 0) return null;
   if (values.length !== 1) return invalid("attempt_invalid");
@@ -611,6 +620,10 @@ export function createEmployeeOidcClient(
       ) {
         return invalid("code_invalid");
       }
+      // The encrypted attempt is stateless rather than server-consumed. Google makes each
+      // authorization code one-use and the router clears this cookie on every callback;
+      // any fresh-code reuse of a retained attempt remains bounded by the fixed expiry.
+      // See docs/authorization-simulation.md for the accepted source-only boundary.
       const attempt = decryptAttempt(input.attemptCookie, encryptionKey);
       if (attempt.expiresAt <= completedAt) return invalid("attempt_expired");
       if (!secureEqual(attempt.state, state)) return invalid("state_invalid");
