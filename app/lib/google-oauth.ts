@@ -19,6 +19,12 @@ type EnvironmentValues = Record<string, string | undefined>;
 export type GoogleWorkspaceMode = "simulation" | "workspace";
 export type GoogleService = "drive" | "gmail" | "calendar" | "sheets";
 
+export type GoogleMissingConfiguration = {
+  label: string;
+  envVar: string;
+  secret: boolean;
+};
+
 const SERVICE_SCOPES: Record<GoogleService, string> = {
   drive: GOOGLE_DRIVE_SCOPE,
   gmail: GOOGLE_GMAIL_MODIFY_SCOPE,
@@ -48,6 +54,7 @@ export type GoogleRuntimeConfig = {
   serviceScopes: Record<GoogleService, string>;
   scopes: string[];
   missing: string[];
+  missingDetails: GoogleMissingConfiguration[];
   oauthReady: boolean;
   provisioningEnabled: boolean;
   gmailEnabled: boolean;
@@ -197,27 +204,32 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown
   const calendarEnabled = services.enabled.includes("calendar");
   const sheetsEnabled = services.enabled.includes("sheets");
   const broadScopeAcknowledged = true;
-  const liveMissing = [
-    ...(!modeIsValid ? ["Google integration mode (simulation or workspace)"] : []),
-    ...(!drive.rootFolderId ? [drive.storageRequirementLabel] : []),
-    ...(!clientId ? ["Google OAuth client ID"] : []),
-    ...(!clientSecret ? ["Google OAuth client secret"] : []),
-    ...(!redirectUri ? ["OAuth redirect URI"] : []),
-    ...(!isValidEncryptionKey(tokenEncryptionKey) ? ["32-byte Google token encryption key"] : []),
-    ...(allowedDomains.length === 0 ? ["Google Workspace allowed domain"] : []),
-    ...(expectedGoogleEmails.length === 0 ? ["approved Google Workspace connection account"] : []),
-    ...(gmailEnabled && !intakeMailbox ? ["Google Workspace intake mailbox"] : []),
+  const liveMissingDetails: GoogleMissingConfiguration[] = [
+    ...(!modeIsValid ? [{ label: "Google integration mode (simulation or workspace)", envVar: "GOOGLE_INTEGRATION_MODE", secret: false }] : []),
+    ...(!drive.rootFolderId ? [{ label: drive.storageRequirementLabel, envVar: "GOOGLE_WORKSPACE_SHARED_DRIVE_ID", secret: false }] : []),
+    ...(!clientId ? [{ label: "Google OAuth client ID", envVar: "GOOGLE_WORKSPACE_CLIENT_ID", secret: false }] : []),
+    ...(!clientSecret ? [{ label: "Google OAuth client secret", envVar: "GOOGLE_WORKSPACE_CLIENT_SECRET", secret: true }] : []),
+    ...(!redirectUri ? [{ label: "OAuth redirect URI", envVar: "GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI", secret: false }] : []),
+    ...(!isValidEncryptionKey(tokenEncryptionKey) ? [{ label: "32-byte Google token encryption key", envVar: "GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY", secret: true }] : []),
+    ...(allowedDomains.length === 0 ? [{ label: "Google Workspace allowed domain", envVar: "GOOGLE_WORKSPACE_ALLOWED_DOMAINS", secret: false }] : []),
+    ...(expectedGoogleEmails.length === 0 ? [{ label: "approved Google Workspace connection account", envVar: "GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", secret: false }] : []),
+    ...(gmailEnabled && !intakeMailbox ? [{ label: "Google Workspace intake mailbox", envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX", secret: false }] : []),
     ...(gmailEnabled
       && intakeMailbox
       && expectedGoogleEmails.length > 0
       && (expectedGoogleEmails.length !== 1 || expectedGoogleEmails[0] !== intakeMailbox)
-      ? ["Google Workspace intake mailbox matching the single approved connection account"]
+      ? [{
+          label: "Google Workspace intake mailbox matching the single approved connection account",
+          envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS",
+          secret: false,
+        }]
       : []),
-    ...(calendarEnabled && !clientAppointmentsCalendarId ? ["client appointments calendar ID"] : []),
-    ...(calendarEnabled && !fieldScheduleCalendarId ? ["field schedule calendar ID"] : []),
-    ...(services.unknown.length ? [`valid Google services (unknown: ${services.unknown.join(", ")})`] : []),
+    ...(calendarEnabled && !clientAppointmentsCalendarId ? [{ label: "client appointments calendar ID", envVar: "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID", secret: false }] : []),
+    ...(calendarEnabled && !fieldScheduleCalendarId ? [{ label: "field schedule calendar ID", envVar: "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID", secret: false }] : []),
+    ...(services.unknown.length ? [{ label: `valid Google services (unknown: ${services.unknown.join(", ")})`, envVar: "GOOGLE_WORKSPACE_ENABLED_SERVICES", secret: false }] : []),
   ];
-  const missing = simulation ? [] : liveMissing;
+  const missingDetails = simulation ? [] : liveMissingDetails;
+  const missing = missingDetails.map((detail) => detail.label);
   return {
     environment,
     simulation,
@@ -240,6 +252,7 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = env as unknown
     serviceScopes: SERVICE_SCOPES,
     scopes: ["openid", "email", ...services.enabled.map((service) => SERVICE_SCOPES[service])],
     missing,
+    missingDetails,
     oauthReady: simulation || missing.length === 0,
     provisioningEnabled: simulation || workspaceBoolean(input, "DRIVE_PROVISIONING_ENABLED"),
     gmailEnabled,

@@ -128,6 +128,56 @@ test("Gmail readiness requires the intake mailbox to be the single approved conn
   }));
   assert.equal(multipleApprovedAccounts.oauthReady, false);
   assert.ok(multipleApprovedAccounts.missing.includes("Google Workspace intake mailbox matching the single approved connection account"));
+  assert.deepEqual(
+    multipleApprovedAccounts.missingDetails.find((detail) => detail.label === "Google Workspace intake mailbox matching the single approved connection account"),
+    {
+      label: "Google Workspace intake mailbox matching the single approved connection account",
+      envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS",
+      secret: false,
+    },
+  );
+});
+
+test("Workspace readiness describes missing hosted values without returning their values", () => {
+  const configuredSecret = "configured-secret-must-not-appear";
+  const missing = oauthModule.getGoogleRuntimeConfig({
+    NODE_ENV: "production",
+    GOOGLE_INTEGRATION_MODE: "workspace",
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail,calendar",
+    GOOGLE_WORKSPACE_CLIENT_SECRET: configuredSecret,
+    GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "operations@cherryhillfci.com",
+    GOOGLE_WORKSPACE_INTAKE_MAILBOX: "intake@cherryhillfci.com",
+  });
+
+  const byLabel = new Map(missing.missingDetails.map((detail) => [detail.label, detail]));
+  assert.deepEqual(byLabel.get("Google OAuth client ID"), {
+    label: "Google OAuth client ID",
+    envVar: "GOOGLE_WORKSPACE_CLIENT_ID",
+    secret: false,
+  });
+  assert.deepEqual(byLabel.get("32-byte Google token encryption key"), {
+    label: "32-byte Google token encryption key",
+    envVar: "GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY",
+    secret: true,
+  });
+  assert.deepEqual(byLabel.get("client appointments calendar ID"), {
+    label: "client appointments calendar ID",
+    envVar: "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID",
+    secret: false,
+  });
+  assert.deepEqual(byLabel.get("field schedule calendar ID"), {
+    label: "field schedule calendar ID",
+    envVar: "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID",
+    secret: false,
+  });
+  assert.deepEqual(byLabel.get("Google Workspace intake mailbox matching the single approved connection account"), {
+    label: "Google Workspace intake mailbox matching the single approved connection account",
+    envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS",
+    secret: false,
+  });
+  assert.deepEqual(missing.missing, missing.missingDetails.map((detail) => detail.label));
+  assert.equal(JSON.stringify(missing.missingDetails).includes(configuredSecret), false);
+  assert.ok(missing.missingDetails.every((detail) => Object.keys(detail).sort().join(",") === "envVar,label,secret"));
 });
 
 test("transient refresh failures keep the Google connection usable", async () => {

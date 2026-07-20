@@ -17,6 +17,8 @@ import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateB
 import { Avatar, Metric, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
 import { OperationsActionableList, OperationsActionableListItem } from "./components/operations/OperationsActionableList";
 import { ActiveRouteFilter } from "./features/reports/ActiveRouteFilter";
+import { BusinessKpisPanel } from "./features/reports/BusinessKpisPanel";
+import { FINANCIAL_RESTRICTION_LABEL } from "./features/reports/flooring-kpis";
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
 import { cachedGetJson } from "./lib/client-get-cache";
 import {
@@ -49,9 +51,9 @@ import { MyAccountPanel } from "./settings/components/MyAccountPanel";
 import { TestingLaunchPanel } from "./settings/components/TestingLaunchPanel";
 import { WorkspaceDefaultsPanel } from "./settings/components/WorkspaceDefaultsPanel";
 
-type Lead = { id: string; number: string; company: string; contact: string; project: string; value: string; estimatedValue: number; stage: string; source: string; next: string; site: string; status: string; initials: string; color: string };
+type Lead = { id: string; number: string; company: string; contact: string; project: string; value: string; estimatedValue: number; stage: string; source: string; next: string; site: string; status: string; initials: string; color: string; createdAt?: number | null; updatedAt?: number | null };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; driveFolderId?: string; driveUrl?: string };
-type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; site: string; managerId: string | null; lead: string; date: string; accent: string; driveFolderId?: string; driveUrl?: string };
+type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; site: string; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; driveFolderId?: string; driveUrl?: string };
 type DashboardSummary = {
   generatedAt: number;
   metrics: { activeLeads: number; estimatedPipelineValue: number; activeProjects: number; clientCount: number; meetingCount: number; filedEmailCount: number };
@@ -131,6 +133,11 @@ function displayStatus(value: unknown, fallback: string) {
 
 function money(value: number) {
   return currencyFormatter.format(value);
+}
+
+function optionalRecordNumber(value: unknown) {
+  const number = value === null || value === undefined || value === "" ? Number.NaN : Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function isActiveProject(project: Project) {
@@ -253,14 +260,15 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
       const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
       setLeads(leadRows.map((lead) => {
         const estimatedValue = Number(lead.estimatedValue ?? 0);
-        return { id: String(lead.id), number: String(lead.leadNumber ?? "Lead"), company: String(lead.company), contact: String(lead.contactName), project: String(lead.projectName), value: money(estimatedValue), estimatedValue, stage: String(lead.stage), source: String(lead.source), next: String(lead.nextAction), site: String(lead.site), status: String(lead.status), initials: recordInitials(String(lead.company)), color: "sage" };
+        return { id: String(lead.id), number: String(lead.leadNumber ?? "Lead"), company: String(lead.company), contact: String(lead.contactName), project: String(lead.projectName), value: money(estimatedValue), estimatedValue, stage: String(lead.stage), source: String(lead.source), next: String(lead.nextAction), site: String(lead.site), status: String(lead.status), initials: recordInitials(String(lead.company)), color: "sage", createdAt: optionalRecordNumber(lead.createdAt), updatedAt: optionalRecordNumber(lead.updatedAt) };
       }));
       setClients(clientRows.map((client) => ({ id: String(client.id), code: String(client.client_code), name: String(client.name), contact: String(client.primary_contact_name ?? "Primary contact pending"), email: String(client.primary_contact_email ?? ""), industry: String(client.industry ?? "Commercial"), status: displayStatus(client.status, "Active"), initials: recordInitials(String(client.name)), color: "sage", googleStatus: client.drive_folder_id ? "Ready" as const : "Setup pending" as const, driveFolderId: client.drive_folder_id ? String(client.drive_folder_id) : undefined, driveUrl: client.drive_url ? String(client.drive_url) : undefined })));
       setProjectItems(projectRows.map((project) => {
         const managerId = typeof project.project_manager_id === "string" && project.project_manager_id.trim()
           ? project.project_manager_id.trim().toLowerCase()
           : null;
-        return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: project.estimated_value !== null && project.estimated_value !== undefined ? money(Number(project.estimated_value)) : "TBD", site: String(project.site ?? "Site pending"), managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
+        const estimatedValue = optionalRecordNumber(project.estimated_value);
+        return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, site: String(project.site ?? "Site pending"), managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
       }));
       setDashboard(dashboardData as unknown as DashboardSummary);
       setLiveDataState("ready");
@@ -455,7 +463,7 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
 
   async function addProject(project: Project) {
     try {
-      const estimatedValue = project.value === "TBD" ? undefined : Number(project.value.replace(/[^0-9]/g, ""));
+      const estimatedValue = project.estimatedValue ?? undefined;
       const response = await fetch("/api/v1/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: project.clientId, name: project.name, status: project.status.toLowerCase(), site: project.site, projectManagerId: project.managerId, estimatedValue }) });
       const errorData = await response.clone().json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(errorData.error ?? "Project could not be saved.");
@@ -903,7 +911,7 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
           {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
           {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
-          {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} />}
+          {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} />}
           {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
         </div>
       </main>
@@ -1341,7 +1349,7 @@ function ReportBarRow({ label, measure, width, href, accessibleName, focusId, de
   return <li>{href && accessibleName && focusId && destinationFocusKey ? <Link id={focusId} className="bar-chart-row actionable" href={href} aria-label={accessibleName} onClick={() => rememberReportReturnFocus(focusId, destinationFocusKey)}>{content}</Link> : <div className="bar-chart-row">{content}</div>}</li>;
 }
 
-function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Lead[]; projects: Project[]; clients: Client[]; dashboard: DashboardSummary | null; state: LiveDataState }) {
+function ReportsView({ leads, projects, clients, dashboard, state, isAdmin }: { leads: Lead[]; projects: Project[]; clients: Client[]; dashboard: DashboardSummary | null; state: LiveDataState; isAdmin: boolean }) {
   const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
   const standardStageValues = LEAD_STAGE_FILTERS.filter((filter) => filter !== "other").map((filter) => {
     const stage = LEAD_STAGE_LABELS[filter];
@@ -1351,7 +1359,7 @@ function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Le
   const otherStageLeads = activeLeads.filter((lead) => !leadStages.some((stage) => stage.toLowerCase() === lead.stage.toLowerCase()));
   const otherStageValue = otherStageLeads.reduce((total, lead) => total + lead.estimatedValue, 0);
   const stageValues = otherStageLeads.length > 0 ? [...standardStageValues, { stage: LEAD_STAGE_LABELS.other, filter: "other" as const, count: otherStageLeads.length, value: otherStageValue }] : standardStageValues;
-  const maximumStageValue = Math.max(1, ...stageValues.map((item) => item.value));
+  const maximumStageMeasure = Math.max(1, ...stageValues.map((item) => isAdmin ? item.value : item.count));
   const projectStatuses = [...(dashboard?.projectsByStatus ?? [])].sort((left, right) => {
     const leftIndex = projectLifecycleOrder.indexOf(left.status.toLowerCase());
     const rightIndex = projectLifecycleOrder.indexOf(right.status.toLowerCase());
@@ -1381,12 +1389,13 @@ function ReportsView({ leads, projects, clients, dashboard, state }: { leads: Le
 
   return <>
     <PageTitle eyebrow="Business performance" title="Reports" text="Current totals from saved leads, clients, projects, and meeting notes." state="Working" />
-    <section className="metrics-grid"><Metric label="Pipeline value" value={state === "ready" ? money(metrics?.estimatedPipelineValue ?? 0) : "—"} note={state === "ready" ? `${metrics?.activeLeads ?? activeLeads.length} active leads` : "Loading current totals"} icon={Zap} color="orange" /><Metric label="Active projects" value={state === "ready" ? String(activeProjectCount) : "—"} note={state === "ready" ? `${activeProjectCount} of ${projects.length} project records active` : "Loading current totals"} icon={BriefcaseBusiness} color="green" /><Metric label="Clients" value={state === "ready" ? String(metrics?.clientCount ?? clients.length) : "—"} note={state === "ready" ? "Client accounts" : "Loading current totals"} icon={Users} color="blue" /><Metric label="Project meetings" value={state === "ready" ? String(metrics?.meetingCount ?? 0) : "—"} note={state === "ready" ? "Meeting notes saved" : "Loading current totals"} icon={MessageSquareText} color="violet" /></section>
+    <section className="metrics-grid"><Metric label="Pipeline value" value={state !== "ready" ? "—" : isAdmin ? money(metrics?.estimatedPipelineValue ?? 0) : FINANCIAL_RESTRICTION_LABEL} note={state !== "ready" ? "Loading current totals" : isAdmin ? `${metrics?.activeLeads ?? activeLeads.length} active leads` : "Financial totals are restricted"} icon={Zap} color="orange" /><Metric label="Active projects" value={state === "ready" ? String(activeProjectCount) : "—"} note={state === "ready" ? `${activeProjectCount} of ${projects.length} project records active` : "Loading current totals"} icon={BriefcaseBusiness} color="green" /><Metric label="Clients" value={state === "ready" ? String(metrics?.clientCount ?? clients.length) : "—"} note={state === "ready" ? "Client accounts" : "Loading current totals"} icon={Users} color="blue" /><Metric label="Project meetings" value={state === "ready" ? String(metrics?.meetingCount ?? 0) : "—"} note={state === "ready" ? "Meeting notes saved" : "Loading current totals"} icon={MessageSquareText} color="violet" /></section>
+    <BusinessKpisPanel leads={leads} projects={projects} isAdmin={isAdmin} state={state} />
     <div className="reports-grid">
-      <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle="Estimated value" />{activeLeads.length > 0 ? <ul className="bar-chart" aria-label="Pipeline stages">{stageValues.map((item) => { const href = item.count > 0 ? operationsHref("Leads", { leadStage: item.filter }) : undefined; const focusId = href ? `report-lead-${item.filter}` : undefined; return <ReportBarRow key={item.stage} label={item.stage} measure={money(item.value)} width={Math.round((item.value / maximumStageValue) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `lead:${item.filter}` : undefined} accessibleName={href ? `View ${item.stage} leads — ${item.count} active ${item.count === 1 ? "lead" : "leads"}, ${money(item.value)} estimated value` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No active leads are available for this report.</div> : null}</section>
+      <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle={isAdmin ? "Estimated value" : "Lead count · financial values restricted"} />{activeLeads.length > 0 ? <ul className="bar-chart" aria-label="Pipeline stages">{stageValues.map((item) => { const href = item.count > 0 ? operationsHref("Leads", { leadStage: item.filter }) : undefined; const focusId = href ? `report-lead-${item.filter}` : undefined; const measure = isAdmin ? money(item.value) : String(item.count); return <ReportBarRow key={item.stage} label={item.stage} measure={measure} width={Math.round(((isAdmin ? item.value : item.count) / maximumStageMeasure) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `lead:${item.filter}` : undefined} accessibleName={href ? `View ${item.stage} leads — ${item.count} active ${item.count === 1 ? "lead" : "leads"}${isAdmin ? `, ${money(item.value)} estimated value` : ""}` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No active leads are available for this report.</div> : null}</section>
       <section className="panel report-chart"><PanelHeader title="Projects by status" subtitle={`${projects.length} records`} />{projectStatuses.length > 0 ? <ul className="bar-chart" aria-label="Project lifecycle statuses">{projectStatuses.map((item) => { const lifecycle = projectLifecycleFilter(item.status); const href = lifecycle && item.count > 0 ? operationsHref("Projects", { projectLifecycle: lifecycle }) : undefined; const label = displayStatus(item.status, "Unknown"); const focusId = href ? `report-project-${lifecycle}` : undefined; return <ReportBarRow key={item.status} label={label} measure={String(item.count)} width={Math.round((item.count / maximumProjectCount) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `project:${lifecycle}` : undefined} accessibleName={href ? `View ${label} projects — ${item.count} ${item.count === 1 ? "project" : "projects"}` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No project status data is available yet.</div> : null}</section>
     </div>
-    <section className="client-directory-banner"><div className="directory-badge"><Activity size={20} /></div><div><strong>More reports will appear as additional workflows go live</strong><span>Crew utilization, sales-cycle timing, margin, revenue, and closeout timing require scheduling and commercial records that are not available yet.</span></div></section>
+    <section className="client-directory-banner"><div className="directory-badge"><Activity size={20} /></div><div><strong>More reports will appear as additional workflows go live</strong><span>Margin, product mix, installation-cycle timing, customer reviews, and crew utilization require source records that are not available yet.</span></div></section>
   </>;
 }
 
@@ -1424,7 +1433,7 @@ function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client
 
 function NewProjectModal({ clients, initialClientId, managerId, managerLabel, onClose, onSave }: { clients: Client[]; initialClientId: string | null; managerId: string; managerLabel: string; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: form.get("value") ? money(Number(form.get("value"))) : "TBD", site: String(form.get("site")), managerId, lead: projectManagerLabel(managerId, managerId, managerLabel), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); const estimatedValue = form.get("value") ? Number(form.get("value")) : null; try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, site: String(form.get("site")), managerId, lead: projectManagerLabel(managerId, managerId, managerLabel), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
   const selectedClientId = initialClientId && clients.some((client) => client.id === initialClientId) ? initialClientId : clients[0]?.id ?? "";
   return <AccessibleOverlay ariaLabel="Create a project" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client<select data-overlay-initial-focus name="clientId" required defaultValue={selectedClientId} disabled={clients.length === 0}>{clients.length === 0 && <option value="">Create a client first</option>}{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="Project name" /></label><div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><div className="assigned-manager-field" aria-label={`Project manager: ${managerLabel}, signed-in account`}><span>Project manager</span><strong>{managerLabel}</strong><small>{managerId} · signed-in account</small></div></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value<input name="value" type="number" min="0" placeholder="Estimated amount" /></label></div><p className="form-help"><ShieldCheck size={14} /> The project is assigned to your authorized signed-in account. An administrator can correct an unassigned legacy project from its project drawer.</p><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || clients.length === 0}>{saving ? "Creating…" : clients.length === 0 ? "Add a client first" : "Create project"}</button></footer></form></AccessibleOverlay>;
 }

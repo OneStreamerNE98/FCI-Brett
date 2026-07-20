@@ -206,6 +206,24 @@ test("adds only the minimized security-barrier Activity projection in migration 
   assert.doesNotMatch(sql, /CREATE TABLE|INSERT INTO audit_events|DROP\s/);
 });
 
+test("adds leads and project meetings only in immutable migration six", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 6);
+  assert.ok(migration);
+  assert.equal(migration.name, "lead_project_meetings");
+  const sql = migration.statements.join("\n");
+  assert.match(sql, /CREATE TABLE leads/);
+  assert.match(sql, /leads_lead_number_check CHECK \(lead_number ~ '\^L-/);
+  assert.match(sql, /leads_estimated_value_check CHECK/);
+  assert.match(sql, /CREATE TABLE project_meetings/);
+  assert.match(sql, /project_meetings_evidence_check CHECK/);
+  assert.match(sql, /activity_events_lead_id_fkey/);
+  assert.match(sql, /outbox_events_lead_id_fkey/);
+  assert.match(sql, /'leads\.create'/);
+  assert.match(sql, /'project_meetings\.create'/);
+  assert.match(sql, /'lead\.created'/);
+  assert.match(sql, /'project\.meeting\.created'/);
+});
+
 test("rejects gaps, duplicate names, transaction control, and concurrent indexes", () => {
   const first = PRODUCTION_SCHEMA_MIGRATIONS[0];
 
@@ -258,7 +276,7 @@ test("uses one dedicated connection, locks before history, and commits each vers
 
   const result = await runProductionSchemaMigrations(pool);
 
-  assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4, 5], currentVersion: 5 });
+  assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4, 5, 6], currentVersion: 6 });
   assert.equal(pool.connectCount, 1);
   assert.equal(client.released, true);
   assert.deepEqual(client.history, PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({
@@ -289,10 +307,10 @@ test("uses one dedicated connection, locks before history, and commits each vers
   );
   assert.equal(client.searchPath, '"$user", public');
 
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 5);
-  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 5);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 5);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 5);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 6);
+  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 6);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 6);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 6);
 
   for (const migration of PRODUCTION_SCHEMA_MIGRATIONS) {
     const marker = client.queries.findIndex(
@@ -437,8 +455,8 @@ test("applies only the missing suffix of a known history prefix", async () => {
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result.appliedVersions, [2, 3, 4, 5]);
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 4);
+  assert.deepEqual(result.appliedVersions, [2, 3, 4, 5, 6]);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 5);
 });
 
 test("re-reads applied history after the lock and makes a completed rerun a no-op", async () => {
@@ -451,7 +469,7 @@ test("re-reads applied history after the lock and makes a completed rerun a no-o
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result, { appliedVersions: [], currentVersion: 5 });
+  assert.deepEqual(result, { appliedVersions: [], currentVersion: 6 });
   assert.equal(client.queries.some(({ sql }) => sql === "BEGIN"), false);
   assert.equal(client.released, true);
 });
@@ -463,7 +481,7 @@ test("fails closed on changed, unknown, or non-prefix migration history", async 
     [{ version: 2, name: PRODUCTION_SCHEMA_MIGRATIONS[1].name, checksum: PRODUCTION_SCHEMA_MIGRATIONS[1].checksum }],
     [
       ...PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({ version, name, checksum })),
-      { version: 6, name: "future", checksum: "sha256:" + "1".repeat(64) },
+      { version: 7, name: "future", checksum: "sha256:" + "1".repeat(64) },
     ],
   ];
 
@@ -568,11 +586,17 @@ test("defines the bounded production persistence schema with named constraints a
       "storage_objects",
       "file_links",
       "invitation_project_assignments",
+      "leads",
+      "project_meetings",
     ],
   );
   assert.doesNotMatch(versionedSql, /\bIF NOT EXISTS\b/i);
   assert.equal((allSql.match(/\bIF NOT EXISTS\b/gi) ?? []).length, 1);
-  assert.doesNotMatch(versionedSql, /\b(?:DROP|TRUNCATE)\b|CREATE INDEX CONCURRENTLY/i);
+  assert.doesNotMatch(
+    versionedSql,
+    /\b(?:DROP\s+(?:TABLE|COLUMN|SCHEMA|TYPE|VIEW|FUNCTION|INDEX|TRIGGER)|TRUNCATE)\b|CREATE INDEX CONCURRENTLY/i,
+  );
+  assert.equal((versionedSql.match(/DROP CONSTRAINT/g) ?? []).length, 5);
 
   assert.match(versionedSql, /normalized_name_key text NOT NULL/);
   assert.match(versionedSql, /UNIQUE \(normalized_name_key\)/);
@@ -587,6 +611,9 @@ test("defines the bounded production persistence schema with named constraints a
   assert.match(versionedSql, /activity_events_correlation_id_check/);
   assert.match(versionedSql, /activity_events_result_check/);
   assert.match(versionedSql, /activity_events_append_only_trigger/);
+  assert.match(versionedSql, /leads_lead_number_check/);
+  assert.match(versionedSql, /project_meetings_evidence_check/);
+  assert.match(versionedSql, /project_meetings_project_id_meeting_at_idx/);
   assert.match(versionedSql, /external_identities_issuer_subject_key UNIQUE \(issuer, subject\)/);
   assert.match(versionedSql, /invitations_token_hash_check/);
   assert.match(versionedSql, /invitations_role_id_fkey FOREIGN KEY \(role_id\)/);
@@ -619,6 +646,9 @@ test("defines the bounded production persistence schema with named constraints a
     ["activity_events_project_id_fkey", "activity_events_project_id_idx"],
     ["outbox_events_client_id_fkey", "outbox_events_client_id_idx"],
     ["outbox_events_project_id_fkey", "outbox_events_project_id_idx"],
+    ["activity_events_lead_id_fkey", "activity_events_lead_id_idx"],
+    ["outbox_events_lead_id_fkey", "outbox_events_lead_id_idx"],
+    ["project_meetings_project_id_fkey", "project_meetings_project_id_meeting_at_idx"],
     [
       "invitation_project_assignments_project_id_fkey",
       "invitation_project_assignments_project_id_idx",

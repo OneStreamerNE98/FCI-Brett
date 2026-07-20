@@ -1,6 +1,26 @@
 export const MAX_LEAD_BODY_BYTES = 32_000;
 
-const LEAD_STATUSES = new Set(["active", "converted", "lost", "archived"]);
+export const LEAD_STATUSES = ["active", "converted", "lost", "archived"] as const;
+
+export type LeadStatus = typeof LEAD_STATUSES[number];
+
+const LEAD_STATUS_SET = new Set<string>(LEAD_STATUSES);
+
+export type ValidatedLeadValues = {
+  company: string;
+  contactName: string;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  projectName: string;
+  source: string;
+  stage: string;
+  site: string;
+  estimatedValue: number;
+  nextAction: string;
+  nextActionAt: number | null;
+  ownerEmail: string;
+  status: LeadStatus;
+};
 
 export type LeadRow = {
   id: string;
@@ -22,6 +42,11 @@ export type LeadRow = {
   created_at: number;
   updated_at: number;
 };
+
+/** Preserve the development identifier format while keeping generation testable. */
+export function leadNumberFor(id: string, utcYear: number) {
+  return `L-${utcYear}-${id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+}
 
 function cleanText(value: unknown, maximum: number, required = true) {
   if (typeof value !== "string") return required ? undefined : null;
@@ -75,7 +100,7 @@ export function leadResponse(row: LeadRow) {
   };
 }
 
-export function validateLeadValues(body: Record<string, unknown>) {
+export function validateLeadValues(body: Record<string, unknown>): ValidatedLeadValues | null {
   const company = cleanText(body.company, 180);
   const contactName = cleanText(body.contactName, 160);
   const contactEmail = cleanEmail(body.contactEmail);
@@ -89,8 +114,22 @@ export function validateLeadValues(body: Record<string, unknown>) {
   const nextActionAt = cleanTimestamp(body.nextActionAt);
   const ownerEmail = cleanEmail(body.ownerEmail, true);
   const status = cleanText(body.status ?? "active", 20);
-  if (!company || !contactName || contactEmail === undefined || contactPhone === undefined || !projectName || !source || !stage || !site || estimatedValue === undefined || !nextAction || nextActionAt === undefined || !ownerEmail || !status || !LEAD_STATUSES.has(status)) {
+  if (!company || !contactName || contactEmail === undefined || contactPhone === undefined || !projectName || !source || !stage || !site || estimatedValue === undefined || !nextAction || nextActionAt === undefined || !ownerEmail || !status || !LEAD_STATUS_SET.has(status)) {
     return null;
   }
-  return { company, contactName, contactEmail, contactPhone, projectName, source, stage, site, estimatedValue, nextAction, nextActionAt, ownerEmail, status };
+  return {
+    company,
+    contactName,
+    contactEmail,
+    contactPhone,
+    projectName,
+    source,
+    stage,
+    site,
+    estimatedValue,
+    nextAction,
+    nextActionAt,
+    ownerEmail,
+    status: status as LeadStatus,
+  };
 }
