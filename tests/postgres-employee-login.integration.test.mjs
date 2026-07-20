@@ -332,19 +332,33 @@ test(
         version: "2",
       });
 
-      const lifecycleAudit = await pool.query(
+      const denialAudit = await pool.query(
         `SELECT reason_code
          FROM ${schema}.audit_events
          WHERE reason_code = ANY($1::text[])`,
-        [["invitation_invalid", "invalid_session", "idle_expired", "absolute_expired", "logout"]],
+        [["invitation_invalid", "invalid_session", "idle_expired", "absolute_expired"]],
       );
-      assert.deepEqual(lifecycleAudit.rows.map(({ reason_code }) => reason_code).sort(), [
+      assert.deepEqual(denialAudit.rows.map(({ reason_code }) => reason_code).sort(), [
         "absolute_expired",
         "idle_expired",
         "invalid_session",
         "invitation_invalid",
-        "logout",
       ]);
+
+      const logoutAudit = await pool.query(
+        `SELECT action, target_type, target_id, result, reason_code, metadata
+         FROM ${schema}.audit_events
+         WHERE action = 'identity.session_revoked' AND target_id = $1`,
+        [logoutIntent.session.id],
+      );
+      assert.deepEqual(logoutAudit.rows, [{
+        action: "identity.session_revoked",
+        target_type: "session",
+        target_id: logoutIntent.session.id,
+        result: "succeeded",
+        reason_code: null,
+        metadata: { trigger: "user_logout" },
+      }]);
     } finally {
       try {
         if (schemaCreated) await pool.query(`DROP SCHEMA ${schema} CASCADE`);
