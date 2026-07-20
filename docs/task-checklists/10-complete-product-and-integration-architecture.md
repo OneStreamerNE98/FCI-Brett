@@ -2,7 +2,7 @@
 
 Owner: Business owner with developer, operations lead, Google administrator, and accounting/field representatives
 
-Status: Audit complete; the production persistence, authorization/OIDC, deployment-definition, Tier-1 reporting, and guided-setup source boundaries are merged but unapplied/undeployed. PR #54 is merged source-only and undeployed; draft PRs #51–#53 and #55–#57 remain unmerged; broader product decisions and implementation remain open
+Status: Audit complete; the production persistence, authorization/OIDC, deployment-definition, Tier-1 reporting, and guided-setup source boundaries are merged but unapplied/undeployed. PRs #54/#55 are merged source-only and undeployed. Draft PRs #51–#53 and #56–#57 remain unmerged; broader product decisions and implementation remain open
 
 Depends on: [Setup inputs](00-setup-inputs.md) and the [complete architecture audit](../complete-product-and-google-cloud-architecture-audit.md)
 
@@ -26,7 +26,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 - [x] Approve project membership and cross-project visibility rules. Office is company-wide for approved nonfinancial operations; Project Managers are restricted to explicitly assigned projects with minimum read-only related client/contact context.
 - [x] Restrict pricing/revenue/margin, project creation/assignment changes, Gmail filing, Calendar creation, file sharing, exports, and security-audit viewing to Administrators for the first rollout.
 - [ ] Decide discounts/change orders, message sending, mailbox/calendar reads, file view/download, job retry, routine non-Admin writes, and recovery authority; deny them in simulation until approved.
-- [x] Require an explicit application invitation for every employee; durable invitation binding and Internal Workspace OIDC verification/session issuance are implemented in source, while live configuration, apply, deployment, and admission remain gated.
+- [x] Require an explicit application invitation for every employee; durable invitation binding and Internal Workspace OIDC verification/session issuance are implemented in source. PRs #54/#55 completed the remaining source OIDC hardening and security-test preconditions. Live configuration, migration/grant apply, production UI composition, deployment, admission, and owner acceptance remain gated.
 
 ## CRM, estimating, and project workflow
 

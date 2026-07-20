@@ -22,7 +22,7 @@ Connecting Google Workspace does **not** automatically change the app login to G
 
 ### Stage 2: company login and employee rollout
 
-- Configure and deploy the source-only Google Identity Services/OpenID Connect boundary after its remaining hardening/tests and production gates pass.
+- The source-only Google Identity Services/OpenID Connect verifier/attempt-cookie hardening and negative-case/real-PostgreSQL login matrix are complete in PRs #54/#55. Configure and deploy live employee login only after the remaining production, session-renewal, rendered-interface, migration/grant, and owner gates pass.
 - Validate the signed Google ID token on the server, including its signature, issuer, audience, expiry, and Workspace `hd` domain claim.
 - Add application users, roles, and project permissions.
 - Publish the application privately through Google Workspace Marketplace or deploy it as a managed Chrome web app.
@@ -427,7 +427,7 @@ Do not publish the current build in the Workspace launcher yet if you expect Goo
 
 ## Part 14: complete and activate Google Workspace user login
 
-This is development and controlled rollout work, not an Admin-console toggle. PRs #38/#48 implement the source-only OIDC callback, signed-token verification, durable invitation redemption, and session issuance. OIDC-02 is complete in source in PR #54; OIDC-03/#55 remains an unmerged draft. The production client/configuration, migrations, complete employee interface composition, deployment, and live acceptance remain open.
+This is development and controlled rollout work, not an Admin-console toggle. PRs #38/#48 implement the source-only OIDC callback, signed-token verification, durable invitation redemption, and session issuance. OIDC-02 is complete in source in PR #54, and OIDC-03 is complete in source in PR #55; together they complete verifier/attempt-cookie hardening and the negative-case/real-PostgreSQL login matrix. Session renewal, the production client/configuration, migrations/grants, complete employee interface composition and rendered acceptance, deployment, owner approval, and live acceptance remain open.
 
 1. Create a separate OAuth/OIDC web client for application sign-in. Keeping login and the broad data connector separate makes scopes and revocation easier to understand.
 2. Add Google Identity Services to the sign-in page.
