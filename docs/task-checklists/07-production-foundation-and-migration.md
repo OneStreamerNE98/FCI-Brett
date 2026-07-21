@@ -2,7 +2,9 @@
 
 Owner: Codex/developer and Google Cloud administrator
 
-Status: In progress — BE-12/#53 remains in draft review and is not merged, applied, configured, or deployed.
+Status: Production foundation work remains open.
+BE-12/#53 is complete in source, merged, and undeployed; no hosted rehearsal, migration,
+grant, hosted configuration, or infrastructure was applied.
 BE-09/#51 is complete in source, merged, and undeployed; no migration, grant, hosted configuration, or infrastructure was applied.
 
 Source-definition prerequisite: Approved company domain and the accepted rollout guardrails below. Region, billing, hostname, alert recipients, recovery targets, database profile, and the [20-user operating model](06-20-user-operating-model-and-access.md) may remain explicit variables while definitions are prepared, but they are mandatory blockers to applying resources, staging rehearsal, or production rollout.
@@ -10,7 +12,7 @@ Source-definition prerequisite: Approved company domain and the accepted rollout
 The current Sites/Workers/D1/R2 deployment remains a one-user development environment using test data. Production should use the smallest Google Cloud topology that safely supports about 20 staff.
 
 Merged PR #51 provides the production core-record route slice in source without completing any checkbox below.
-Draft PR #53 proposes the expanded test-only rehearsal inventory. Its review status does not complete any checkbox below. In particular, #53's disposable PostgreSQL CI evidence is not an approved hosted staging rehearsal, production migration/grant apply, or live-data operation.
+Merged PR #53 provides the expanded test-only rehearsal inventory without completing any checkbox below. In particular, #53's disposable PostgreSQL CI evidence is not an approved hosted staging rehearsal, production migration/grant apply, or live-data operation.
 
 The accepted [Workspace-first, cost-controlled rollout](../architecture-decision-workspace-first-cost-controlled-rollout.md) preserves the target architecture while separating day-one production core from feature-gated services.
 
