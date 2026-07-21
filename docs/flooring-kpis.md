@@ -1,6 +1,6 @@
 # Flooring KPI definitions
 
-Status: Tier-1 and KPI-02 implemented on `main` through PR #52 · KPI-03 in review in draft PR #75 and not merged · Source-only and undeployed · Migration 0012 not applied to Sites; migrations 0013 and 0014 are also unapplied · Pinned July 21, 2026
+Status: Tier-1 and KPI-02 implemented on `main` through PR #52 · KPI-03 implemented on `main` through PR #75 · Source-only and undeployed · Migration 0012 not applied to Sites; migrations 0013 and 0014 are also unapplied · Pinned July 21, 2026
 
 This document is the single source of truth for the flooring KPIs shown in **Reports → Business KPIs**. Code, tests, and future reporting work must use these definitions rather than inventing a second formula. KPI-02 adds three booking-time project inputs—flooring category, square feet, and contract value. KPI-03 adds only installation start/completion dates and a post-installation callback result with an optional note; it does not imply that cost, crew scheduling, recognized revenue, or external review data exists.
 
@@ -52,7 +52,7 @@ This document is the single source of truth for the flooring KPIs shown in **Rep
 ## Planned refinement sequence
 
 - **KPI-02 (implemented in merged PR #52; source-only and undeployed)** adds nullable flooring category, square feet, and contract value; the formulas above pin their capture rules and the contract-to-estimate fallback. The merge did not apply D1 migration 0012 to the hosted development site; that requires a separately approved deployment.
-- **KPI-03 (in review in draft PR #75; source-only, undeployed, and not merged)** adds installation dates and callback capture through audited Administrator drawer actions. It replaces the jobs-completed timing fallback where a valid installation completion exists and adds install-cycle and callback-rate reporting. Migration 0014 is generated in this branch but has not been applied to Sites. These installation timestamps are the forward-compatible seed for Scheduling; future Scheduling work must consume, not duplicate, them.
+- **KPI-03 (implemented in merged PR #75; source-only and undeployed)** adds installation dates and callback capture through audited Administrator drawer actions. It replaces the jobs-completed timing fallback where a valid installation completion exists and adds install-cycle and callback-rate reporting. Migration 0014 is merged in source but has not been applied to Sites. These installation timestamps are the forward-compatible seed for Scheduling; future Scheduling work must consume, not duplicate, them.
 - **KPI-04** adds PostgreSQL parity and rehearsal coverage for the additive KPI fields after migration-version coordination.
 
 Any refinement must update this document and the pure helper tests in the same pull request.

@@ -188,6 +188,7 @@ test("known merged packets have complete statuses and cannot regress to review-o
     ["SET-13", 76],
     ["KPI-01", 41],
     ["KPI-02", 52],
+    ["KPI-03", 75],
     ["TRK-01", 32],
     ["TRK-02", 66],
   ]);
@@ -318,6 +319,9 @@ test("the checklist dashboard records the merged baseline and current review que
   const kpi02Status = packetStatus(plan, "KPI-02");
   assert.match(kpi02Status, /^Complete — PR #52, July 20, 2026\. Source-only and undeployed; migration 0012 has not been applied to Sites\.$/);
   assertMergedStatusHasNoReviewTerms("KPI-02", kpi02Status);
+  const kpi03Status = packetStatus(plan, "KPI-03");
+  assert.equal(kpi03Status, "Complete — PR #75, July 21, 2026. Source-only and undeployed; migration 0014 has not been applied to Sites.");
+  assertMergedStatusHasNoReviewTerms("KPI-03", kpi03Status);
   const set10Status = packetStatus(plan, "SET-10");
   assert.match(set10Status, /^Complete — PR #56, July 20, 2026\. Source-only and undeployed\.$/);
   assertMergedStatusHasNoReviewTerms("SET-10", set10Status);
