@@ -1,8 +1,9 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
 Date: July 19, 2026 · Status reconciled: July 20, 2026 · Source baseline: `main` @
-`5701211` after PRs #63/#64 added the dashboard-driven Workspace setup workstream and
-PR #65 codified the multi-agent coordination protocol. PRs #54/#55 completed
+`b067699` after PR #66 completed TRK-02 tracking-guard hardening. PRs #63/#64 added the
+dashboard-driven Workspace setup workstream, and PR #65 codified the multi-agent
+coordination protocol. PRs #54/#55 completed
 OIDC-02/OIDC-03; PRs #60/#62 reconciled their merged status; and PR #61 expanded the
 Fable follow-up instructions.
 PRs #51–#53 and #56–#57 remain open drafts. Deployment baseline: `adc79b8`, private Sites development version 40,
@@ -1163,16 +1164,17 @@ format). Effort: small.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** source is reconciled against `main` at `5701211` after PRs #63/#64
-added the dashboard-driven Workspace setup workstream and PR #65 codified the
-multi-agent coordination protocol. PRs #54/#55 completed OIDC-02/OIDC-03 in source,
+**GitHub baseline:** source is reconciled against `main` at `b067699` after PR #66
+completed TRK-02 tracking-guard hardening. PRs #63/#64 added the dashboard-driven
+Workspace setup workstream, and PR #65 codified the multi-agent coordination protocol.
+PRs #54/#55 completed OIDC-02/OIDC-03 in source,
 PRs #60/#62 reconciled their merged status, and PR #61 expanded the Fable follow-up
 instructions.
 PRs #51–#53 and #56–#57 remain open drafts. None of these source changes is deployed.
 The exact deployed baseline
 remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
 version 40, which includes PR #30's semantic Settings rules table. The listed source
-packets from PR #33 through PR #62 are undeployed. Delivery PRs mirror items in these ledgers and do
+packets that are merged, including PR #66, are undeployed. Delivery PRs mirror items in these ledgers and do
 not become a separate task source of truth.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
@@ -1238,7 +1240,7 @@ BE/WS/SET or design-ledger reference, or an explicit "Unassigned" tag; automated
 contracts and `npm test` pass.
 
 ### TRK-02 · Harden merged-packet tracking against wrapped and bare-reference drift (small)
-**Status:** In progress — `codex/tracking-guard-hardening`, July 20, 2026. Source-only and not merged or deployed.
+**Status:** Complete — PR #66, July 20, 2026. Source-only and not deployed.
 
 **Why:** The merged-packet guard can miss `in progress`, wrapped status text, and common
 bare references such as `OIDC-02/#54`. Its whitespace-collapsed proximity window can also
@@ -1261,8 +1263,8 @@ not fail; lint and `npm test` pass; no historical review snapshot changes.
 **Start now, in parallel (no owner input needed):**
 OIDC-04 is complete in PR #49, with its closure guarded by PR #50. OIDC-02 and OIDC-03
 are complete in source in PRs #54/#55.
-TRK-02 is in progress on
-`codex/tracking-guard-hardening` and lands before the remaining reviewed merge train:
+TRK-02 is complete in PR #66.
+The remaining reviewed merge train starts with
 BE-09 (#51), BE-12 (#53), KPI-02 (#52), SET-10 (#56), and the logo refresh (#57).
 Those drafts must not be reassigned. The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
 SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
@@ -1304,7 +1306,7 @@ Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
    (#48) are complete in source. Latest combined-main Node/build/lint, Terraform, and
    Chromium checks are green; nothing was applied, configured, published, or deployed.
 
-**Wave 2 — current:** complete TRK-02, then merge the remaining reviewed drafts in order
+**Wave 2 — current:** merge the remaining reviewed drafts in order
 #51 → #53 → #52 → #56 → #57, running the complete post-merge flip after each. After shared
 UI siblings merge, rerun the survivor's focused browser tests.
 BE-10/BE-14 wait for #51; KPI-03 waits for #52. The unclaimed parallel-safe tracks are
