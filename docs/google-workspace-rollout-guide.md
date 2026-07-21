@@ -58,10 +58,11 @@ Create these resources before turning on live folder provisioning:
 | Mailbox | `operations@cherryhillfci.com` (proposed) | Company Gmail intake and app connection |
 | Google Cloud projects | `FCI Operations Development` now, plus defined staging and production boundaries later | Isolated Google APIs, OAuth clients, secrets, and data; later project creation remains owner-controlled, and staging billable resources are created on demand rather than left running |
 
-> **Dashboard-driven setup (planned SET-13…SET-21):** once the dashboard-setup
-> workstream lands, Settings → Google Workspace can adopt the Shared Drive and create
-> the folder tree, the directory spreadsheet, extra spreadsheets, and starter templates
-> from an owner-editable blueprint — see the
+> **Dashboard-driven setup (SET-13 onward):** Settings → Google Workspace can now
+> adopt the manually created Shared Drive, verify its read-only sharing restrictions,
+> create or reuse the blueprint-defined root folder tree, and rename owner-managed root
+> folders. Later packets add the directory spreadsheet, calendars, extra spreadsheets,
+> and starter templates — see the
 > [dashboard workspace setup design](dashboard-workspace-setup-design.md). The manual
 > path below remains valid, and remains required for Shared Drive creation and every
 > Admin-console/DNS/OAuth/secret step.
@@ -91,6 +92,20 @@ Google explains that Shared Drive content is owned by the organization rather th
 Google’s current access table and creation steps are in [Create a Shared Drive](https://support.google.com/a/users/answer/9310249).
 
 Do not create the full project folder tree manually. The application creates project folders after the drive is connected, verified, and provisioning is enabled.
+
+After connecting the approved account, use **Settings → Google Workspace → Resources**
+to find and adopt this Shared Drive. If more than one exact-name drive exists, select its
+ID explicitly. An environment-provided `GOOGLE_WORKSPACE_SHARED_DRIVE_ID` remains a
+first-boot fallback, but adoption saves the verified ID in the app-managed registry and
+that value becomes authoritative. Review the external-sharing restriction chip before
+continuing.
+
+Select **Ensure root folders** only after adoption. The operation follows the current
+Workspace blueprint, reuses and stamps one unambiguous same-name manual folder with its
+stable blueprint key, creates what is missing, and is safe to repeat. It never deletes
+Drive content. Owner-managed root names can then be changed from the Resources table;
+system-managed filing folders remain locked because their names are part of the filing
+contract.
 
 ## Part 3: create the Client Directory spreadsheet
 
@@ -286,7 +301,9 @@ Settings → Google Workspace reports missing prerequisites in a semantic table 
 4. Resolve every row in **Hosted Workspace configuration** before selecting Connect. Configure each named value in the hosting environment, not in the application.
 5. Complete the five ordered setup steps shown in the application:
     1. **Connect Google Workspace** — select Connect, sign in with the exact single account listed in `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, confirm it is also `GOOGLE_WORKSPACE_INTAKE_MAILBOX`, and approve the required scopes. After the callback, the page removes the callback parameter and refreshes readiness automatically.
-    2. **Verify the Shared Drive** — run the direct Drive verification before continuing.
+    2. **Verify the Shared Drive** — in Resources, adopt the manually created Shared Drive,
+       review its sharing-restriction result, ensure the blueprint root folders, and run
+       the direct Drive verification before continuing.
     3. **Prepare Gmail** — prepare the three FCI labels, then verify message listing and the explicit review-first tools.
     4. **Verify Calendar** — list events and create a private test hold.
     5. **Sync the Sheets mirror** — refresh status and sync the Client Directory and Project Register.
@@ -527,6 +544,10 @@ Do not store real client data until every required item is complete.
 
 - Confirm the ID is a Shared Drive ID, not a folder ID from My Drive.
 - Confirm the connection account is a Shared Drive Manager.
+- If name search finds multiple exact matches, choose the intended Shared Drive ID in
+  Resources and adopt that candidate explicitly.
+- If root-folder setup is blocked, adopt the Shared Drive into the app-managed registry
+  first; an unadopted environment fallback cannot create roots from the Resources card.
 - Keep provisioning disabled until verification passes.
 
 ### The app opens but employees cannot use Google login

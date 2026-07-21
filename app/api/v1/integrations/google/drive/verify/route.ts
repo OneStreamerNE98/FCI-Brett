@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../../lib/google-drive";
 import { mapGoogleIntegrationError } from "../../../../../../lib/google-integration-error";
-import { getGoogleAccessToken, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
+import { getEffectiveGoogleRuntimeSetup, getGoogleAccessToken, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 
@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
-  if (!config.oauthReady) return noStore({ error: "Google Drive setup is incomplete.", missing: config.missing }, { status: 409 });
+  const { config } = await getEffectiveGoogleRuntimeSetup();
+  if (!config.connectReady || !config.drive.rootFolderId) return noStore({ error: "Adopt the Shared Drive before verifying it.", missing: config.missing }, { status: 409 });
   try {
     if (config.simulation) {
       await writeGoogleIntegrationEvent(config, "drive.simulation_verified", auth.user.email, "workspace", config.connectionKey, "mode=simulation");

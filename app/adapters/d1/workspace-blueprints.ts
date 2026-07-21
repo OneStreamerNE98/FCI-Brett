@@ -103,6 +103,10 @@ export async function saveWorkspaceBlueprint(
   }
   const nextVersion = input.expectedVersion + 1;
   const blueprintJson = JSON.stringify(input.blueprint);
+  // Read fallible identity metadata before the transactional commit. Once the
+  // batch succeeds, callers must be able to treat the blueprint as committed
+  // without a second D1 read that could fail and trigger unsafe compensation.
+  const previous = await getWorkspaceBlueprint(database, input.connectionKey);
   const saveStatement = database.prepare(
     "INSERT INTO workspace_blueprints (id, connection_key, version, blueprint_json, created_by, created_at, updated_by, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE ? = 0 OR EXISTS (SELECT 1 FROM workspace_blueprints WHERE connection_key = ? AND version = ?) ON CONFLICT(connection_key) DO UPDATE SET version = excluded.version, blueprint_json = excluded.blueprint_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at WHERE workspace_blueprints.version = ?",
   ).bind(
@@ -148,11 +152,15 @@ export async function saveWorkspaceBlueprint(
     throw new TypeError("Workspace blueprint save did not create its audit event.");
   }
 
-  const record = await getWorkspaceBlueprint(database, input.connectionKey);
-  if (!record || record.version !== nextVersion) {
-    const currentVersion = record?.version ?? 0;
-    if (currentVersion !== nextVersion) return Object.freeze({ saved: false, currentVersion });
-    throw new TypeError("Workspace blueprint save did not return its persisted row.");
-  }
+  const record = Object.freeze({
+    id: previous?.id ?? input.id,
+    connectionKey: input.connectionKey,
+    version: nextVersion,
+    blueprint: input.blueprint,
+    createdBy: previous?.createdBy ?? input.actor,
+    createdAt: previous?.createdAt ?? input.now,
+    updatedBy: input.actor,
+    updatedAt: input.now,
+  });
   return Object.freeze({ saved: true, record });
 }

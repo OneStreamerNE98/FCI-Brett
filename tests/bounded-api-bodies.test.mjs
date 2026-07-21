@@ -41,6 +41,9 @@ const [
   workspaceSettingsRoute,
   googleChatConfigRoute,
   workspaceBlueprintRoute,
+  sharedDriveAdoptRoute,
+  driveFolderRenameRoute,
+  driveFolderEnsureRoute,
 ] =
   await Promise.all([
     vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
@@ -50,6 +53,9 @@ const [
     vite.ssrLoadModule("/app/api/v1/settings/workspace/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/chat/config/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/setup/blueprint/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/integrations/google/drive/shared-drive/adopt/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/rename/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/ensure-roots/route.ts"),
   ]);
 
 after(async () => {
@@ -128,6 +134,24 @@ const cases = [
     maximumBytes: 64 * 1024,
     error: "The Workspace blueprint request is too large.",
     invoke: (request) => workspaceBlueprintRoute.PUT(request),
+  },
+  {
+    name: "Shared Drive adoption",
+    maximumBytes: 8_000,
+    error: "The Shared Drive adoption request is too large.",
+    invoke: (request) => sharedDriveAdoptRoute.POST(request),
+  },
+  {
+    name: "Drive root-folder rename",
+    maximumBytes: 8_000,
+    error: "The Drive folder rename request is too large.",
+    invoke: (request) => driveFolderRenameRoute.POST(request),
+  },
+  {
+    name: "Drive root-folder ensure",
+    maximumBytes: 1_000,
+    error: "The Drive root-folder ensure request is too large.",
+    invoke: (request) => driveFolderEnsureRoute.POST(request),
   },
 ];
 

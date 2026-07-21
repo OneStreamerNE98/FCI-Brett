@@ -67,6 +67,14 @@ export type WorkspaceBlueprintFolderOption = Readonly<{
   management: WorkspaceBlueprintManagement;
 }>;
 
+export type WorkspaceBlueprintRootFolder = Readonly<{
+  key: string;
+  name: string;
+  path: string;
+  parentKey: string | null;
+  management: WorkspaceBlueprintManagement;
+}>;
+
 /**
  * The development provisioning contract that predates the persisted blueprint.
  * Keep this export byte-compatible until SET-21 moves its remaining consumers.
@@ -549,6 +557,61 @@ export function flattenWorkspaceBlueprintFolders(blueprint: WorkspaceBlueprint):
   append(blueprint.drive.clientFolders, "Each client");
   append(blueprint.drive.projectFolders, "Each project");
   return output;
+}
+
+/** Flattens only the Shared Drive root tree in parent-before-child order. */
+export function flattenWorkspaceRootFolders(blueprint: WorkspaceBlueprint): WorkspaceBlueprintRootFolder[] {
+  const output: WorkspaceBlueprintRootFolder[] = [];
+  const append = (folders: readonly WorkspaceBlueprintFolder[], parent: WorkspaceBlueprintRootFolder | null) => {
+    for (const folder of folders) {
+      const path = parent ? `${parent.path} / ${folder.name}` : folder.name;
+      const flattened = Object.freeze({
+        key: folder.key,
+        name: folder.name,
+        path,
+        parentKey: parent?.key ?? null,
+        management: folder.management,
+      });
+      output.push(flattened);
+      append(folder.children, flattened);
+    }
+  };
+  append(blueprint.drive.roots, null);
+  return output;
+}
+
+/**
+ * Produces a fully re-sanitized blueprint with one owner-managed Shared Drive
+ * root node renamed. System nodes and non-root-tree keys fail with an exact path.
+ */
+export function renameWorkspaceRootFolder(
+  blueprint: WorkspaceBlueprint,
+  folderKey: string,
+  name: string,
+): WorkspaceBlueprint {
+  const normalizedKey = key(folderKey, "blueprint.drive.roots.key");
+  type MutableFolder = {
+    key: string;
+    name: string;
+    management: WorkspaceBlueprintManagement;
+    children: MutableFolder[];
+  };
+  const draft = structuredClone(blueprint) as unknown as { drive: { roots: MutableFolder[] } };
+  let matched: MutableFolder | null = null;
+  const visit = (folders: MutableFolder[]) => {
+    for (const folder of folders) {
+      if (folder.key === normalizedKey) matched = folder;
+      visit(folder.children);
+    }
+  };
+  visit(draft.drive.roots);
+  if (!matched) invalid(`blueprint.drive.roots[${normalizedKey}]`, "does not identify a Shared Drive root folder.");
+  const folder = matched as MutableFolder;
+  if (folder.management !== "owner") {
+    invalid(`blueprint.drive.roots[${normalizedKey}].name`, "is system-managed and cannot be changed.");
+  }
+  folder.name = folderName(name, `blueprint.drive.roots[${normalizedKey}].name`);
+  return sanitizeWorkspaceBlueprint(draft);
 }
 
 function keyedSummary<T extends { key: string }>(before: readonly T[], after: readonly T[]) {

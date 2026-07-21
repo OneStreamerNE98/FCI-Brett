@@ -20,9 +20,46 @@ type DriveFile = {
   size?: string;
 };
 
+type SharedDriveRecord = {
+  id: string;
+  name: string;
+  restrictions?: {
+    adminManagedRestrictions?: boolean;
+    copyRequiresWriterPermission?: boolean;
+    domainUsersOnly?: boolean;
+    driveMembersOnly?: boolean;
+    sharingFoldersRequiresOrganizerPermission?: boolean;
+  };
+};
+
 type FolderIdentity = { key: string; value: string };
 
 export type DriveFolder = Pick<DriveFile, "id" | "name" | "parents" | "webViewLink">;
+
+export type DriveSharedDriveRestrictions = Readonly<{
+  adminManagedRestrictions: boolean | null;
+  copyRequiresWriterPermission: boolean | null;
+  domainUsersOnly: boolean | null;
+  driveMembersOnly: boolean | null;
+  sharingFoldersRequiresOrganizerPermission: boolean | null;
+}>;
+
+export type DriveSharedDrive = Readonly<{
+  id: string;
+  name: string;
+  url: string;
+  restrictions: DriveSharedDriveRestrictions;
+}>;
+
+export type DriveFolderEnsureResult = Readonly<{
+  outcome: "found" | "created" | "adopted";
+  folder: Readonly<{
+    id: string;
+    name: string;
+    url: string;
+    parents: readonly string[];
+  }>;
+}>;
 
 export type DriveManagedFile = {
   id: string;
@@ -57,6 +94,23 @@ function driveQueryString(value: string) {
 
 function folderUrl(file: DriveFile) {
   return file.webViewLink ?? `https://drive.google.com/drive/folders/${file.id}`;
+}
+
+function sharedDrive(record: SharedDriveRecord): DriveSharedDrive {
+  const restrictions = record.restrictions ?? {};
+  const flag = (value: boolean | undefined) => typeof value === "boolean" ? value : null;
+  return Object.freeze({
+    id: record.id,
+    name: record.name,
+    url: `https://drive.google.com/drive/folders/${encodeURIComponent(record.id)}`,
+    restrictions: Object.freeze({
+      adminManagedRestrictions: flag(restrictions.adminManagedRestrictions),
+      copyRequiresWriterPermission: flag(restrictions.copyRequiresWriterPermission),
+      domainUsersOnly: flag(restrictions.domainUsersOnly),
+      driveMembersOnly: flag(restrictions.driveMembersOnly),
+      sharingFoldersRequiresOrganizerPermission: flag(restrictions.sharingFoldersRequiresOrganizerPermission),
+    }),
+  });
 }
 
 function fileUrl(file: DriveFile) {
@@ -248,6 +302,43 @@ export class GoogleDriveClient {
     return this.request<DriveFile>(`files/${encodeURIComponent(fileId)}?${parameters.toString()}`);
   }
 
+  /** Reads one Shared Drive and its safe, read-only sharing restriction flags. */
+  async getSharedDrive(driveId: string): Promise<DriveSharedDrive> {
+    const normalized = ensureNonEmptyString(driveId, "The Shared Drive ID", 200);
+    const parameters = new URLSearchParams({
+      fields: "id,name,restrictions(adminManagedRestrictions,copyRequiresWriterPermission,domainUsersOnly,driveMembersOnly,sharingFoldersRequiresOrganizerPermission)",
+    });
+    const result = await this.request<SharedDriveRecord>(`drives/${encodeURIComponent(normalized)}?${parameters.toString()}`);
+    if (result.id !== normalized || !result.name) {
+      throw new GoogleIntegrationError("invalid_shared_drive", "Google returned an invalid Shared Drive record.", 503);
+    }
+    return sharedDrive(result);
+  }
+
+  /** Returns every exact-name Shared Drive match so callers can reject ambiguity. */
+  async findSharedDriveByName(name: string): Promise<DriveSharedDrive[]> {
+    const normalized = ensureNonEmptyString(name, "The Shared Drive name", 120);
+    const matches: DriveSharedDrive[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      const parameters = new URLSearchParams({
+        q: `name = '${driveQueryString(normalized)}'`,
+        pageSize: "100",
+        fields: "nextPageToken,drives(id,name,restrictions(adminManagedRestrictions,copyRequiresWriterPermission,domainUsersOnly,driveMembersOnly,sharingFoldersRequiresOrganizerPermission))",
+      });
+      if (pageToken) parameters.set("pageToken", pageToken);
+      const result = await this.request<{ drives?: SharedDriveRecord[]; nextPageToken?: string }>(`drives?${parameters.toString()}`);
+      matches.push(...(result.drives ?? [])
+        .filter((record) => record.id && record.name === normalized)
+        .map(sharedDrive));
+      // The caller only distinguishes zero, one, and ambiguous. Stop once the
+      // ambiguity is proven instead of enumerating unnecessary Drive metadata.
+      if (matches.length > 1 || !result.nextPageToken) return matches;
+      pageToken = result.nextPageToken;
+    }
+    throw new GoogleIntegrationError("drive_list_incomplete", "Google Drive returned too many Shared Drive pages to verify safely.", 503);
+  }
+
   async verifyRootFolder() {
     const root = await this.getFolder(this.rootId());
     if (root.mimeType !== FOLDER_MIME_TYPE || root.trashed) {
@@ -283,6 +374,17 @@ export class GoogleDriveClient {
     return response.files ?? [];
   }
 
+  private async childFoldersByIdentity(parentId: string, identity: FolderIdentity) {
+    const q = `'${driveQueryString(parentId)}' in parents and trashed = false and mimeType = '${FOLDER_MIME_TYPE}' and appProperties has { key='${driveQueryString(identity.key)}' and value='${driveQueryString(identity.value)}' }`;
+    const parameters = this.addListOptions(new URLSearchParams({
+      q,
+      fields: "files(id,name,mimeType,parents,trashed,webViewLink,appProperties)",
+      pageSize: "10",
+    }));
+    const response = await this.request<{ files?: DriveFile[] }>(`files?${parameters.toString()}`);
+    return response.files ?? [];
+  }
+
   private async createFolder(parentId: string, name: string, appProperties: Record<string, string> = {}) {
     await this.assertContained(parentId);
     const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
@@ -292,6 +394,19 @@ export class GoogleDriveClient {
     });
     await this.assertContained(folder.id);
     return folder;
+  }
+
+  private async stampFolder(file: DriveFile, properties: Record<string, string>) {
+    const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
+    const updated = await this.request<DriveFile>(`files/${encodeURIComponent(file.id)}?${parameters.toString()}`, {
+      method: "PATCH",
+      body: JSON.stringify({ appProperties: { ...(file.appProperties ?? {}), ...properties } }),
+    });
+    if (updated.mimeType !== FOLDER_MIME_TYPE || updated.trashed) {
+      throw new GoogleIntegrationError("invalid_drive_folder", "Google returned an invalid folder after applying its setup identity.", 503);
+    }
+    await this.assertContained(updated.id);
+    return updated;
   }
 
   private async getOrCreateFolder(parentId: string, name: string, options: { identity?: FolderIdentity; properties?: Record<string, string>; reuseByName?: boolean } = {}) {
@@ -309,6 +424,99 @@ export class GoogleDriveClient {
       }
     }
     return this.createFolder(parentId, name, options.properties);
+  }
+
+  /**
+   * Ensures one blueprint folder beneath an exact managed parent. A same-name
+   * manual folder is adopted only when unambiguous, then stamped with the stable
+   * blueprint key so later setup runs are rename-safe and idempotent.
+   */
+  async ensureBlueprintFolder(input: {
+    parentId: string;
+    key: string;
+    name: string;
+    reuseByName?: boolean;
+  }): Promise<DriveFolderEnsureResult> {
+    const key = ensureNonEmptyString(input.key, "The blueprint folder key", 64);
+    const name = ensureNonEmptyString(input.name, "The blueprint folder name", 120);
+    if (name.includes("/") || name.includes("\\")) {
+      throw new GoogleIntegrationError("invalid_drive_folder_name", "A blueprint folder name cannot contain a path separator.", 400);
+    }
+    const identity = { key: "fciRootKey", value: key } satisfies FolderIdentity;
+    const properties = { fciRootKey: key };
+    await this.assertContained(input.parentId);
+    const managed = await this.childFoldersByIdentity(input.parentId, identity);
+    if (managed.length > 1) {
+      throw new GoogleIntegrationError("duplicate_drive_folder", `More than one managed Google Drive folder matched ${name}.`, 409);
+    }
+    if (managed.length === 1) {
+      const folder = managed[0];
+      return Object.freeze({
+        outcome: "found",
+        folder: Object.freeze({ id: folder.id, name: folder.name, url: folderUrl(folder), parents: Object.freeze([...(folder.parents ?? [])]) }),
+      });
+    }
+
+    if (input.reuseByName !== false) {
+      const named = await this.childFolders(input.parentId, name);
+      if (named.length > 1) {
+        throw new GoogleIntegrationError("ambiguous_drive_folder", `More than one Google Drive folder is named ${name}.`, 409);
+      }
+      if (named.length === 1) {
+        const existingKey = named[0].appProperties?.fciRootKey?.trim();
+        if (existingKey && existingKey !== key) {
+          throw new GoogleIntegrationError(
+            "drive_folder_identity_conflict",
+            `The Google Drive folder named ${name} is already managed by another blueprint key. Resolve the duplicate name before retrying.`,
+            409,
+          );
+        }
+        if (existingKey === key) {
+          const folder = named[0];
+          return Object.freeze({
+            outcome: "found",
+            folder: Object.freeze({ id: folder.id, name: folder.name, url: folderUrl(folder), parents: Object.freeze([...(folder.parents ?? [])]) }),
+          });
+        }
+        const folder = await this.stampFolder(named[0], properties);
+        return Object.freeze({
+          outcome: "adopted",
+          folder: Object.freeze({ id: folder.id, name: folder.name, url: folderUrl(folder), parents: Object.freeze([...(folder.parents ?? [])]) }),
+        });
+      }
+    }
+
+    const folder = await this.createFolder(input.parentId, name, properties);
+    return Object.freeze({
+      outcome: "created",
+      folder: Object.freeze({ id: folder.id, name: folder.name, url: folderUrl(folder), parents: Object.freeze([...(folder.parents ?? [])]) }),
+    });
+  }
+
+  /** Renames one contained active folder and returns both names for compensation/audit. */
+  async renameFolder(folderId: string, name: string) {
+    const normalized = ensureNonEmptyString(name, "The blueprint folder name", 120);
+    if (normalized.includes("/") || normalized.includes("\\")) {
+      throw new GoogleIntegrationError("invalid_drive_folder_name", "A blueprint folder name cannot contain a path separator.", 400);
+    }
+    await this.assertContained(folderId);
+    const current = await this.getFolder(folderId);
+    if (current.mimeType !== FOLDER_MIME_TYPE || current.trashed) {
+      throw new GoogleIntegrationError("invalid_drive_folder", "Only an active managed folder can be renamed.", 409);
+    }
+    const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
+    const renamed = await this.request<DriveFile>(`files/${encodeURIComponent(folderId)}?${parameters.toString()}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: normalized }),
+    });
+    if (renamed.id !== folderId || renamed.name !== normalized || renamed.mimeType !== FOLDER_MIME_TYPE || renamed.trashed) {
+      throw new GoogleIntegrationError("drive_rename_invalid_response", "Google Drive did not confirm the requested folder name.", 503);
+    }
+    await this.assertContained(renamed.id);
+    return Object.freeze({
+      previousName: current.name,
+      folder: Object.freeze({ id: renamed.id, name: renamed.name, url: folderUrl(renamed), parents: Object.freeze([...(renamed.parents ?? [])]) }),
+    });
   }
 
   /**
