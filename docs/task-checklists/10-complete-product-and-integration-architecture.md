@@ -6,7 +6,7 @@ Status: Audit complete; the production persistence, authorization/OIDC, deployme
 PRs #54/#55 are merged source-only and undeployed.
 BE-09/#51 is merged source-only and undeployed.
 BE-12/#53 is merged source-only and undeployed.
-Draft PR #52 and PRs #56–#57 remain unmerged; broader product decisions and implementation remain open.
+KPI-02/#52 is merged source-only and undeployed; migration 0012 is unapplied to Sites. PRs #56–#57 remain unmerged; broader product decisions and implementation remain open.
 
 Depends on: [Setup inputs](00-setup-inputs.md) and the [complete architecture audit](../complete-product-and-google-cloud-architecture-audit.md)
 
@@ -97,7 +97,7 @@ This is a decision and acceptance checklist. Do not enter credentials, tokens, p
 - [ ] Add optimistic concurrency, edit/archive, atomic conversion, project dates, tasks/follow-ups, notes, and conflict UI.
 - [ ] Split the frontend into durable routes and feature modules with typed errors, query freshness, partial-failure, accessibility, and responsive tests.
   - Durable primary routes, bounded project/Settings/Inbox plus exact Reports lifecycle and Lead-stage query state, direct-entry/refresh/history coverage, route-level denial/404 tests, the July readability/accessibility gap pass, the first shared operations UI/filter boundary, and PR #30's Settings rules semantic table at `aa8ed8f` are included in private Sites development version 40; PR #32 merged at `adc79b8`, and that exact commit was deployed. The source-only `codex/actionable-lists` slice is complete in PR #33 and is not deployed; the `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed. PRs #37/#41/#44 add Settings admin gating, Tier-1 KPIs, and guided Workspace setup; none is deployed.
-    KPI-02 is active in unmerged, undeployed draft PR #52 and occupies the sole `FloorOpsApp.tsx` queue slot. Feature modules, freshness, partial-failure, conflict, CSS consolidation, and the remaining interactive-state visual harness remain.
+    KPI-02 is complete in merged, undeployed PR #52, migration 0012 is unapplied to Sites, and KPI-03 now owns the sole `FloorOpsApp.tsx` queue slot. Feature modules, freshness, partial-failure, conflict, CSS consolidation, and the remaining interactive-state visual harness remain.
 - [ ] Complete test-data transformation, duplicate reporting, backup/restore, cutover, and rollback tooling. The bounded core rehearsal already preserves test identifiers and verifies per-table counts plus content/identifier hashes. PR #53 adds the broader test-only inventory/import rehearsal in merged source, but it is undeployed and is not the required hosted staging/cutover rehearsal.
 - [ ] Write ADRs and contract/state-transition tests for approved estimate, procurement, schedule/field, communications, closeout, and warranty behavior.
 

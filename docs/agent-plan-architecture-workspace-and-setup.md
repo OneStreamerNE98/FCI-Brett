@@ -1,14 +1,15 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
 Date: July 19, 2026 · Status reconciled: July 20, 2026 · Source baseline: `main` @
-`218266d` after PR #53 completed the BE-12 rehearsal inventory packet. PR #51 previously
-completed the BE-09 production core-record route packet. PRs #63/#64 added the
+`c2f8b26` after PR #52 completed the KPI-02 flooring booking inputs and reporting packet.
+PR #53 previously completed the BE-12 rehearsal inventory packet, and PR #51 completed
+the BE-09 production core-record route packet. PRs #63/#64 added the
 dashboard-driven Workspace setup workstream, and PR #65 codified the multi-agent
 coordination protocol. PRs #54/#55 completed
 OIDC-02/OIDC-03; PRs #60/#62 reconciled their merged status; and PR #61 expanded the
 Fable follow-up instructions.
 PR #66 completed TRK-02 tracking-guard hardening.
-PR #52 and PRs #56–#57 remain open drafts. Deployment baseline: `adc79b8`, private Sites development version 40,
+PRs #56–#57 remain open drafts. Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -62,9 +63,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
    v7+. **All six migrations are unapplied everywhere — no Cloud SQL instance exists.**
    (Do not read "migrations 4–5 remain unapplied" in the audit doc as implying 1–3 are
    applied; BE-01 fixes that phrasing.)
-4. **The deployed D1 drizzle sequence (0000–0011) is append-only.** Draft PR #52 adds
-   source-only migration 0012, but it is not part of `main` and has not been applied to
-   Sites. Never drop or alter existing D1 tables; the dev environment is the only live
+4. **The deployed D1 drizzle sequence (0000–0011) is append-only.** PR #52 added
+   source-only migration 0012 to `main`, but it has not been applied to Sites. Never
+   drop or alter existing D1 tables; the dev environment is the only live
    environment.
 5. **Single-user / test-data boundary holds.** Only `FCI TEST — DO NOT USE` records in any
    live Workspace step; no second user and no real client data until the development
@@ -83,8 +84,8 @@ below, which also covers the state of GitHub itself (issues/PRs).
    The source-only `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed.
    SET-02 is complete in PR #37, KPI-01 is complete in PR #41, and SET-03/SET-04 are
    complete in PR #44. None is deployed.
-   KPI-02 is in review in draft PR #52 and occupies
-   the sole `FloorOpsApp.tsx` queue slot. Do not
+   KPI-02 is complete in source in PR #52, remains undeployed, and has released the sole
+   `FloorOpsApp.tsx` queue slot to KPI-03. Do not
    re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
    entries in that ledger.
 
@@ -999,7 +1000,7 @@ appears on the next provisioning; filing to `05_Correspondence / Email Archive` 
 resolves (existing Gmail file-route tests green); simulation e2e provisioning walk.
 **Effort:** medium (touches live provisioning — sequenced last deliberately).
 
-### SET-22 · Create Google files in project folders from the app (medium, after SET-17; UI half after KPI-02/#52 merges)
+### SET-22 · Create Google files in project folders from the app (medium, after SET-17; KPI-02/#52 UI dependency satisfied)
 **Why:** Owner request: from the projects dashboard, create a Google Doc, Sheet, or
 Slides file (the Word/Excel/PowerPoint equivalents) inside the project's Drive folder —
 blank or from a blueprint template — so the provisioned folder structure and template
@@ -1020,8 +1021,9 @@ setup resources — no `workspace_resources` rows. (2) Extend the blueprint temp
 `kind` enum with `"slides"` (sanitizer + editor dropdown) so Slides templates can be
 defined too. (3) UI: "New document" action on the project drawer/dashboard — type
 picker, template picker fed from the blueprint GET, name field, success link.
-`app/FloorOpsApp.tsx` is the single-file queue: the UI half waits for KPI-02/#52 to
-release the slot; the route + tests are buildable before that. Simulation parity
+`app/FloorOpsApp.tsx` is the single-file queue: KPI-02/#52 has released the slot, so the
+UI half now waits only for this packet's other dependencies and queue coordination; the
+route + tests are buildable before that. Simulation parity
 (fixture file IDs and links, same events).
 **Accept:** route tests — office non-admin allowed, cross-origin 403, unprovisioned
 project 409 with guidance, blank create for all three kinds, template copy request
@@ -1080,8 +1082,8 @@ in period (financial); **Sales cycle days** = mean(conversion time − createdAt
 converted leads (non-financial); **Backlog** = count and Σ estimatedValue of projects in
 planning/mobilizing/installation/closeout (count non-financial, value financial);
 **Jobs completed per month** = projects whose status became completed in the month
-(non-financial). Document honestly that until KPI-02 lands, status-change time is
-approximated by `updatedAt` (and improved by `activity_events` where loaded), and project
+(non-financial). Document honestly that status-change time is approximated by `updatedAt`
+(and improved by `activity_events` where loaded), and project
 cycle time is deliberately EXCLUDED until real installation dates exist — no fake
 precision. Record deliberate exclusions with reasons: gross margin (no cost capture),
 material-vs-labor split (no invoice data), NPS/Google reviews (external data; candidate
@@ -1107,7 +1109,7 @@ and the Playwright suites pass; the ledger status line updates in the same PR.
 medium.
 
 ### KPI-02 · Tier-2 minimal inputs: flooring category, square feet, contract value (medium, after KPI-01)
-**Status:** In review — draft PR #52 from `codex/kpi02-flooring-inputs`, July 20, 2026. Source-only and not merged or deployed.
+**Status:** Complete — PR #52, July 20, 2026. Source-only and undeployed; migration 0012 has not been applied to Sites.
 
 **Why:** Three additive fields unlock the flooring-specific KPIs no generic CRM field can:
 what we sell (product mix), how big jobs are (sq ft), and what they actually sold for
@@ -1193,15 +1195,17 @@ format). Effort: small.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** source is reconciled against `main` at `218266d` after PR #53
-completed the BE-12 rehearsal inventory packet. PR #51 previously completed the BE-09
-production core-record route packet. PRs #63/#64 added the dashboard-driven
+**GitHub baseline:** source is reconciled against `main` at `c2f8b26` after PR #52
+completed the KPI-02 flooring booking inputs and reporting packet. PR #53 previously
+completed the BE-12 rehearsal inventory packet, and PR #51 completed the BE-09 production
+core-record route packet. PRs #63/#64 added the dashboard-driven
 Workspace setup workstream, and PR #65 codified the multi-agent coordination protocol.
 PRs #54/#55 completed OIDC-02/OIDC-03 in source,
 PRs #60/#62 reconciled their merged status, and PR #61 expanded the Fable follow-up
 instructions.
 PR #66 completed TRK-02 tracking-guard hardening.
-PR #52 and PRs #56–#57 remain open drafts. None of these source changes is deployed.
+PR #52 is merged source-only and undeployed; migration 0012 is unapplied to Sites. PRs
+#56–#57 remain open drafts. None of these later source changes is deployed.
 The exact deployed baseline
 remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
 version 40, which includes PR #30's semantic Settings rules table. The listed source
@@ -1297,8 +1301,8 @@ are complete in source in PRs #54/#55.
 TRK-02 is complete in PR #66.
 BE-09 is complete in source in PR #51 and remains undeployed.
 BE-12 is complete in source in PR #53 and remains undeployed.
-The remaining reviewed merge train starts with
-KPI-02 (#52), SET-10 (#56), and the logo refresh (#57).
+KPI-02 is complete in source in PR #52 and remains undeployed. The remaining reviewed
+merge train is SET-10 (#56), then the logo refresh (#57); KPI-03 is now assignable.
 Those drafts must not be reassigned. The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
 SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
 apply, deployment, live login, another user, or real data.
@@ -1314,9 +1318,9 @@ half) → WS-11. Agents should never be blocked idle on this track — every age
 is schedulable independently.
 
 **Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Do not run two packets that touch it
-concurrently. PR #33 (actionable lists), PR #35 (SET-01), PR #37 (SET-02), and PR #41
-(KPI-01) are merged source-only. KPI-02 occupies the slot in draft PR #52; no second
-`FloorOpsApp.tsx` packet should start until #52 is resolved. It must preserve the extracted
+concurrently. PR #33 (actionable lists), PR #35 (SET-01), PR #37 (SET-02), PR #41
+(KPI-01), and PR #52 (KPI-02) are merged source-only. KPI-03 now owns the next
+`FloorOpsApp.tsx` queue slot. It must preserve the extracted
 Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
 `InboxRulesPanel`'s semantic `<table>` markup, with the focused regression suites and
 `tests/e2e/accessibility-routes.spec.ts` green.
@@ -1339,12 +1343,12 @@ Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
    (#48) are complete in source. Latest combined-main Node/build/lint, Terraform, and
    Chromium checks are green; nothing was applied, configured, published, or deployed.
 
-**Wave 2 — current:** PRs #51 and #53 are merged and the BE-09 and BE-12 completions are
-recorded.
-Continue the remaining reviewed drafts in order
-#52 → #56 → #57, running the complete post-merge flip after each. After shared
+**Wave 2 — current:** PRs #51, #52, and #53 are merged and the BE-09, KPI-02, and BE-12
+completions are recorded. Continue the remaining reviewed drafts in order
+#56 → #57, running the complete post-merge flip after each. After shared
 UI siblings merge, rerun the survivor's focused browser tests.
-BE-10/BE-14 are now assignable because PR #51 merged; KPI-03 waits for #52. The unclaimed parallel-safe tracks are
+BE-10/BE-14 are assignable because PR #51 merged, and KPI-03 is assignable because PR #52
+merged. The unclaimed parallel-safe tracks are
 BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
 broad primitive/CSS consolidation tracks.
 
@@ -1355,9 +1359,8 @@ IAM, billing, OAuth, or Admin-console change. The agent packets above proceed wi
 those inputs; Jason's other open decisions live in checklists 00/06/10.
 
 **FloorOpsApp single-file queue (one packet at a time):** PR #33 (actionable lists) →
-SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 are complete in source. The queue is
-now KPI-02 → KPI-03, with KPI-02 occupied by draft PR #52 and KPI-03 waiting for its
-review and merge. Interleave other SET items only in extracted modules that do not
+SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 → KPI-02 / PR #52 are complete in
+source. The queue is now KPI-03. Interleave other SET items only in extracted modules that do not
 touch `FloorOpsApp.tsx`. Workstream D's KPI packets are
 otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
 version numbers with BE-06).

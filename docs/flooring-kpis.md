@@ -1,6 +1,6 @@
 # Flooring KPI definitions
 
-Status: Tier-1 implemented in source on `main`; KPI-02 is implemented for review in open draft PR #52 · Source-only and undeployed · Pinned July 20, 2026
+Status: Tier-1 and KPI-02 implemented on `main` through PR #52 · Source-only and undeployed · Migration 0012 not applied to Sites · Pinned July 20, 2026
 
 This document is the single source of truth for the flooring KPIs shown in **Reports → Business KPIs**. Code, tests, and future reporting work must use these definitions rather than inventing a second formula. KPI-02 adds only three booking-time project inputs—flooring category, square feet, and contract value—and does not imply that missing installation, cost, scheduling, or review data exists.
 
@@ -47,7 +47,7 @@ This document is the single source of truth for the flooring KPIs shown in **Rep
 
 ## Planned refinement sequence
 
-- **KPI-02 (implemented for review in open draft PR #52; source-only and undeployed)** adds nullable flooring category, square feet, and contract value; the formulas above pin their capture rules and the contract-to-estimate fallback. Review or merge does not apply its D1 migration to the hosted development site; that requires a separately approved deployment.
+- **KPI-02 (implemented in merged PR #52; source-only and undeployed)** adds nullable flooring category, square feet, and contract value; the formulas above pin their capture rules and the contract-to-estimate fallback. The merge did not apply D1 migration 0012 to the hosted development site; that requires a separately approved deployment.
 - **KPI-03** adds installation dates and callback capture, replacing the completion-time fallback where those dates exist.
 - **KPI-04** adds PostgreSQL parity and rehearsal coverage for the additive KPI fields after migration-version coordination.
 

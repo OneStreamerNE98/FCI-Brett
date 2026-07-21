@@ -17,7 +17,7 @@ Completed follow-on: PR #30, merged to `main` as `aa8ed8f` on July 19, 2026. It 
 Completed deployment baseline: PR #32 merged to `main` as `adc79b855041db04cc3ca2a3eb232bc72408d33b` on July 19, 2026, and that exact commit was deployed to the private Sites development environment as version 40. Version 40 includes PR #30's responsive semantic rules table.
 
 Current source-only follow-ons: `codex/actionable-lists` is complete in PR #33 for the Overview pipeline, Clients, and Projects; Settings extraction/admin gating are complete in PRs #35/#37; the Tier-1 KPI panel is complete in PR #41; and the guided Workspace setup/prerequisites surface is complete in PR #44. None is deployed.
-KPI-02 is active in unmerged, undeployed draft PR #52 and occupies the sole `FloorOpsApp.tsx` slot, while later extracted Settings packets remain separately bounded.
+KPI-02 is complete in merged PR #52, remains undeployed, and has released the sole `FloorOpsApp.tsx` slot to KPI-03, while later extracted Settings packets remain separately bounded.
 
 ## Purpose
 
