@@ -4,7 +4,8 @@ Owner: Business owner with developer, operations lead, Google administrator, and
 
 Status: Audit complete; the production persistence, authorization/OIDC, deployment-definition, Tier-1 reporting, and guided-setup source boundaries are merged but unapplied/undeployed.
 PRs #54/#55 are merged source-only and undeployed.
-Draft PRs #51–#53 and #56–#57 remain unmerged; broader product decisions and implementation remain open.
+BE-09/#51 is merged source-only and undeployed.
+Draft PRs #52–#53 and #56–#57 remain unmerged; broader product decisions and implementation remain open.
 
 Depends on: [Setup inputs](00-setup-inputs.md) and the [complete architecture audit](../complete-product-and-google-cloud-architecture-audit.md)
 
