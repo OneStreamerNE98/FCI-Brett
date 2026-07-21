@@ -54,6 +54,13 @@ type WorkspaceResourcesPayload = {
       sharingFoldersRequiresOrganizerPermission: boolean | null;
     };
     state: "Found" | "Created" | "Adopted" | "Not configured" | "Simulated";
+    restrictions?: {
+      adminManagedRestrictions: boolean | null;
+      copyRequiresWriterPermission: boolean | null;
+      domainUsersOnly: boolean | null;
+      driveMembersOnly: boolean | null;
+      sharingFoldersRequiresOrganizerPermission: boolean | null;
+    };
   }>;
   connectReady: boolean;
   simulation: boolean;
@@ -213,6 +220,157 @@ test.beforeEach(async ({ page }) => {
 function step(page: Page, heading: string) {
   return page.locator(".workspace-setup-step").filter({ has: page.getByRole("heading", { level: 3, name: heading, exact: true }) });
 }
+
+function tenantChecklistRow(page: Page, title: string) {
+  return page.locator(".workspace-prerequisites li").filter({ has: page.getByText(title, { exact: true }) });
+}
+
+test("domain checklist renders only payload-bounded unconfigured, partial, and connect-ready claims", async ({ page }) => {
+  let currentReadiness = readiness({
+    storageConfigured: false,
+    connectionStatus: "not-connected",
+    connectionAccount: null,
+    driveConnected: false,
+    gmailConnected: false,
+    calendarConnected: false,
+    sheetsConnected: false,
+  });
+  currentReadiness.credentialsPresent = false;
+  currentReadiness.missingDetails = [
+    { label: "Allowed Workspace domains", envVar: "GOOGLE_WORKSPACE_ALLOWED_DOMAINS", secret: false },
+    { label: "Authorized Workspace accounts", envVar: "GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", secret: false },
+    { label: "Gmail intake mailbox", envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX", secret: false },
+    { label: "OAuth client ID", envVar: "GOOGLE_WORKSPACE_CLIENT_ID", secret: false },
+    { label: "OAuth redirect URI", envVar: "GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI", secret: false },
+    { label: "OAuth client secret", envVar: "GOOGLE_WORKSPACE_CLIENT_SECRET", secret: true },
+    { label: "Token encryption key", envVar: "GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY", secret: true },
+  ];
+  currentReadiness.missing = currentReadiness.missingDetails.map((detail) => detail.label);
+  let currentResources = workspaceResources({
+    connectReady: false,
+    identity: { connectionAccount: null, intakeMailboxMatches: null, allowedDomains: [], mode: "workspace" },
+  });
+  let resourcesShouldFail = false;
+  let currentHealth: ConnectionHealthPayload = {
+    ...connectedHealth(),
+    connection: {
+      ...connectedHealth().connection,
+      connected: false,
+      status: "not-connected",
+      account: null,
+      grantedServices: null,
+    },
+  };
+
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
+    if (resourcesShouldFail) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Resources temporarily unavailable" }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentResources) });
+  });
+  await page.route("**/api/v1/integrations/google/connection", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentHealth) });
+  });
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentReadiness) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  const card = page.locator(".workspace-prerequisites");
+  await expect(card.getByRole("heading", { level: 3, name: "Domain & tenant checklist", exact: true })).toBeVisible();
+  await expect(card.getByRole("listitem")).toHaveCount(6);
+  await expect(tenantChecklistRow(page, "Company domain")).toContainText("Setup required");
+  await expect(tenantChecklistRow(page, "Operations account")).toContainText("Setup required");
+  await expect(tenantChecklistRow(page, "Workspace APIs")).toContainText("Manual check");
+  await expect(tenantChecklistRow(page, "OAuth web client")).toContainText("Setup required");
+  await expect(tenantChecklistRow(page, "Hosted secrets")).toContainText("Setup required");
+  await expect(tenantChecklistRow(page, "Role-aligned Google Groups")).toContainText("Manual check");
+  await expect(card.getByRole("link")).toHaveCount(6);
+  await expect(card.getByRole("table", { name: "Hosted Workspace configuration" })).toBeVisible();
+  await expect(card.getByRole("heading", { level: 4, name: "Copy-exact setup helpers" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 4, name: "Copy-exact setup helpers" })).toHaveCount(1);
+  await expect(card.locator('input[type="checkbox"]')).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Collapse" })).toHaveCount(0);
+
+  currentReadiness = readiness({ connectionStatus: "not-connected", connectionAccount: null });
+  currentReadiness.missingDetails = [
+    { label: "OAuth redirect URI", envVar: "GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI", secret: false },
+    { label: "Token encryption key", envVar: "GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY", secret: true },
+  ];
+  currentReadiness.missing = currentReadiness.missingDetails.map((detail) => detail.label);
+  currentResources = workspaceResources({
+    connectReady: false,
+    identity: { connectionAccount: null, intakeMailboxMatches: null, allowedDomains: ["cherryhillfci.com"], mode: "workspace" },
+  });
+  await page.getByRole("button", { name: "Check readiness" }).click();
+  await expect(tenantChecklistRow(page, "Company domain")).toContainText("Configuration present");
+  await expect(tenantChecklistRow(page, "Operations account")).toContainText("Configuration present");
+  await expect(tenantChecklistRow(page, "OAuth web client")).toContainText("Partially configured");
+  await expect(tenantChecklistRow(page, "Hosted secrets")).toContainText("Partially configured");
+
+  const appManagedResources = workspaceResources().resources.map((resource) => ({
+    ...resource,
+    externalId: resource.externalId ?? `${resource.key}-id`,
+    source: "app" as const,
+    state: resource.state === "Not configured" ? "Adopted" as const : resource.state,
+    ...(resource.key === "primary" ? {
+      restrictions: {
+        adminManagedRestrictions: true,
+        copyRequiresWriterPermission: true,
+        domainUsersOnly: true,
+        driveMembersOnly: true,
+        sharingFoldersRequiresOrganizerPermission: true,
+      },
+    } : {}),
+  }));
+  currentReadiness = readiness({ connectionStatus: "not-connected", connectionAccount: null });
+  currentReadiness.missingDetails = [
+    { label: "Shared Drive ID", envVar: "GOOGLE_WORKSPACE_SHARED_DRIVE_ID", secret: false },
+    { label: "Client directory spreadsheet", envVar: "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID", secret: false },
+    { label: "Client appointments calendar", envVar: "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID", secret: false },
+    { label: "Field schedule calendar", envVar: "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID", secret: false },
+  ];
+  currentReadiness.missing = currentReadiness.missingDetails.map((detail) => detail.label);
+  currentResources = workspaceResources({
+    resources: appManagedResources,
+    connectReady: true,
+    identity: {
+      connectionAccount: "operations@cherryhillfci.com",
+      intakeMailboxMatches: true,
+      allowedDomains: ["cherryhillfci.com"],
+      mode: "workspace",
+    },
+  });
+  await page.getByRole("button", { name: "Check readiness" }).click();
+  await expect(tenantChecklistRow(page, "Operations account")).toContainText("Ready to connect");
+  await expect(tenantChecklistRow(page, "OAuth web client")).toContainText("Ready to connect");
+  await expect(tenantChecklistRow(page, "Hosted secrets")).toContainText("Secrets present");
+  await expect(card.getByText("All required hosted values are present.", { exact: true })).toBeVisible();
+  await expect(card.getByText("Restricted", { exact: true })).toBeVisible();
+
+  resourcesShouldFail = true;
+  await page.getByRole("button", { name: "Check readiness" }).click();
+  await expect(card.getByText("Not verified", { exact: true })).toBeVisible();
+  await expect(card.getByText("Restricted", { exact: true })).toHaveCount(0);
+  resourcesShouldFail = false;
+
+  currentReadiness = readiness();
+  currentResources = workspaceResources({ resources: appManagedResources });
+  currentHealth = connectedHealth();
+  await page.getByRole("button", { name: "Check readiness" }).click();
+  await expect(tenantChecklistRow(page, "Operations account")).toContainText("Account matched");
+  await expect(tenantChecklistRow(page, "OAuth web client")).toContainText("Connected");
+  await expect(card.getByRole("button", { name: "Collapse" })).toBeVisible();
+  await card.getByRole("button", { name: "Collapse" }).click();
+  await expect(card.getByRole("listitem")).toHaveCount(0);
+  await card.getByRole("button", { name: "Expand" }).click();
+  await expect(card.getByRole("listitem")).toHaveCount(6);
+});
 
 test("live Workspace setup advances only from endpoint-confirmed steps", async ({ page }) => {
   let currentReadiness = readiness({
@@ -402,11 +560,12 @@ test("administrator connection health exhaustively maps account, mode, status, e
   await expect(resourcesCard.getByRole("button", { name: "Verify and adopt" })).toBeVisible();
   await expect(resourcesCard.getByRole("button", { name: "Adopt first" })).toBeDisabled();
 
-  await resourcesCard.getByRole("button", { name: "Copy URI" }).click();
+  const tenantChecklist = page.locator(".workspace-prerequisites");
+  await tenantChecklist.getByRole("button", { name: "Copy URI" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback");
-  await resourcesCard.getByRole("button", { name: "Copy missing-key template" }).click();
+  await tenantChecklist.getByRole("button", { name: "Copy missing-key template" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<field-schedule-calendar ID>");
-  await resourcesCard.getByRole("button", { name: "Copy command" }).click();
+  await tenantChecklist.getByRole("button", { name: "Copy command" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("openssl rand -base64 32");
 });
 
@@ -586,10 +745,10 @@ test("copy helpers do not claim configuration is complete when readiness is unav
 
   await page.goto("/settings?section=google-workspace");
 
-  const resourcesCard = page.locator(".workspace-resources-card");
-  await expect(resourcesCard.getByText("Missing-key status is unavailable. Retry the readiness and Resources checks before copying configuration.", { exact: true })).toBeVisible();
-  await expect(resourcesCard.getByText("No hosted configuration keys are currently missing.", { exact: true })).toHaveCount(0);
-  await expect(resourcesCard.getByRole("button", { name: "Copy missing-key template" })).toHaveCount(0);
+  const tenantChecklist = page.locator(".workspace-prerequisites");
+  await expect(tenantChecklist.getByText("Missing-key status is unavailable. Retry the readiness and Resources checks before copying configuration.", { exact: true })).toBeVisible();
+  await expect(tenantChecklist.getByText("No hosted configuration keys are currently missing.", { exact: true })).toHaveCount(0);
+  await expect(tenantChecklist.getByRole("button", { name: "Copy missing-key template" })).toHaveCount(0);
 });
 
 test("simulation labels every OAuth permission not applicable instead of claiming a grant", async ({ page }) => {

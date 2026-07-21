@@ -894,7 +894,7 @@ values; migration guard updated; simulation e2e reset round-trip. All existing
 (storage port later).
 
 ### SET-14 · Workspace blueprint: model, seed, persistence, structured editor (large, after SET-13)
-**Status:** In review — draft PR #81, July 21, 2026. Source-only and undeployed;
+**Status:** Complete — PR #81, July 21, 2026. Source-only and undeployed;
 migration 0015 has not been applied to Sites.
 
 **Why:** Owner requirement: the folder tree, spreadsheets, templates, and setup
@@ -1031,6 +1031,8 @@ present.
 **Effort:** medium.
 
 ### SET-19 · Domain & tenant guided checklist card (small, after SET-13; parallel with SET-14)
+**Status:** In review — draft PR #83, July 21, 2026. Source-only and undeployed.
+
 **Why:** Owner decision: Admin-console/DNS/OAuth/API-enablement/secrets/Groups stay
 manual; the dashboard should guide them with instructions, external deep links, and
 safe verification instead of dead-ends.
