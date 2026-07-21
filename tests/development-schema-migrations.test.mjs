@@ -17,6 +17,7 @@ const productionMigrationModules = new Set([
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
 const integrityIndexMigration = "0011_lazy_big_bertha.sql";
+const workspaceResourceMigrationPrefix = "0013_";
 
 const requiredDevelopmentIndexes = [
   "clients_code_unique_idx",
@@ -104,6 +105,47 @@ test("keeps development data integrity and lookup indexes in the versioned Drizz
   assert.doesNotMatch(integrityIndexSql, /\b(?:ALTER|DROP|DELETE|TRUNCATE)\b/i);
   for (const indexName of requiredDevelopmentIndexes) {
     assert.match(integrityIndexSql, new RegExp("INDEX IF NOT EXISTS `" + indexName + "`"));
+  }
+});
+
+test("keeps the SET-13 Workspace registry in one additive migration with its unique identity", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(workspaceResourceMigrationPrefix));
+  assert.ok(migration, "migration 0013 must exist");
+  assert.equal(files.filter((file) => file.startsWith(workspaceResourceMigrationPrefix)).length, 1);
+
+  const migrationSql = await readFile(join(drizzleRoot, migration), "utf8");
+  const schemaSource = await readFile(join(root, "db", "schema.ts"), "utf8");
+  const effectiveConfigSource = await readFile(join(root, "app", "lib", "workspace-effective-config.ts"), "utf8");
+  assert.match(migrationSql, /CREATE TABLE `workspace_resources`/);
+  for (const column of [
+    ["id", "text PRIMARY KEY NOT NULL"],
+    ["connection_key", "text NOT NULL"],
+    ["resource_type", "text NOT NULL"],
+    ["resource_key", "text NOT NULL"],
+    ["external_id", "text NOT NULL"],
+    ["parent_external_id", "text"],
+    ["external_url", "text"],
+    ["origin", "text NOT NULL"],
+    ["metadata_json", "text NOT NULL"],
+    ["created_by", "text NOT NULL"],
+    ["created_at", "integer NOT NULL"],
+    ["updated_at", "integer NOT NULL"],
+  ]) {
+    assert.match(migrationSql, new RegExp("`" + column[0] + "` " + column[1] + "(?:,|\\s)"));
+  }
+  assert.match(
+    migrationSql,
+    /CREATE UNIQUE INDEX `workspace_resources_connection_type_key_unique` ON `workspace_resources` \(`connection_key`,`resource_type`,`resource_key`\)/,
+  );
+  assert.doesNotMatch(migrationSql, /\b(?:ALTER|DROP|DELETE|TRUNCATE)\b/i);
+  assert.match(schemaSource, /export const workspaceResources = sqliteTable\("workspace_resources"/);
+  assert.match(schemaSource, /uniqueIndex\("workspace_resources_connection_type_key_unique"\)/);
+  for (const resourceType of ["drive.shared-drive", "drive.folder", "drive.file", "sheets.spreadsheet", "calendar.calendar"]) {
+    assert.match(effectiveConfigSource, new RegExp(`"${resourceType.replace(".", "\\.")}"`));
+  }
+  for (const origin of ["created", "adopted", "env-adopted"]) {
+    assert.match(effectiveConfigSource, new RegExp(`"${origin}"`));
   }
 });
 

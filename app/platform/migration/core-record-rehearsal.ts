@@ -99,6 +99,11 @@ export const CORE_REHEARSAL_SOURCE_INVENTORY = [
     reason: "Production connections require separately approved reauthorization; no credential ciphertext is carried.",
   },
   {
+    sourceCategory: "workspace_resources",
+    disposition: "transformed",
+    reason: "App-managed resource IDs require approved production reauthorization and reconciliation into integration_resources; no raw development rows are carried.",
+  },
+  {
     sourceCategory: "drive_folder_mappings",
     disposition: "blocking",
     reason: "Drive mappings require production connector identity and ownership reconciliation.",
@@ -141,6 +146,7 @@ export const DEFERRED_SOURCE_CATEGORIES = [
   "gmail_file_archive_artifacts",
   "google_oauth_attempts",
   "google_connections",
+  "workspace_resources",
   "drive_folder_mappings",
   "google_drive_operations",
   "google_sheet_sync_state",

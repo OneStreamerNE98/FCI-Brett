@@ -13,6 +13,7 @@
     "gmail_file_archive_artifacts": 0,
     "google_oauth_attempts": 0,
     "google_connections": 0,
+    "workspace_resources": 0,
     "drive_folder_mappings": 0,
     "google_drive_operations": 0,
     "google_sheet_sync_state": 0,

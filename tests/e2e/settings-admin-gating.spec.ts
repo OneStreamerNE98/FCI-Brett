@@ -24,9 +24,11 @@ test("Administrator identity keeps protected Settings actions available", async 
 
 test("Office identity sees every protected Settings action disabled and explained", async ({ page }) => {
   let connectionDetailGets = 0;
+  let resourceGets = 0;
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/connection") connectionDetailGets += 1;
+    if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/setup/resources") resourceGets += 1;
   });
   await page.setExtraHTTPHeaders({
     "oai-authenticated-user-email": "e2e-office@example.test",
@@ -48,6 +50,7 @@ test("Office identity sees every protected Settings action disabled and explaine
   await page.getByRole("button", { name: "Check readiness" }).click();
   await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
   expect(connectionDetailGets).toBe(0);
+  expect(resourceGets).toBe(0);
   for (const action of [
     "Reset simulation data",
     "Verify Shared Drive",

@@ -1,7 +1,13 @@
 import { env } from "cloudflare:workers";
 
 import { createD1GoogleOauthPersistence } from "../adapters/d1/google-oauth-persistence";
+import { listWorkspaceResources } from "../adapters/d1/workspace-resources";
 import * as oauth from "./google-oauth";
+import {
+  applyEffectiveWorkspaceConfig,
+  resolveEffectiveWorkspaceResources,
+  type EffectiveGoogleRuntimeConfig,
+} from "./workspace-effective-config";
 
 export * from "./google-oauth";
 
@@ -11,6 +17,15 @@ function providerFetch(input: RequestInfo | URL, init?: RequestInit) {
 
 export function getGoogleRuntimeConfig(input?: oauth.EnvironmentValues) {
   return oauth.getGoogleRuntimeConfig(input ?? env as unknown as oauth.EnvironmentValues);
+}
+
+export async function getEffectiveGoogleRuntimeConfig(): Promise<EffectiveGoogleRuntimeConfig> {
+  const config = getGoogleRuntimeConfig();
+  const savedRows = await listWorkspaceResources(env.DB, config.connectionKey);
+  return applyEffectiveWorkspaceConfig(
+    config,
+    resolveEffectiveWorkspaceResources(config, savedRows),
+  );
 }
 
 function currentKeyOnlySecrets(config: oauth.GoogleRuntimeConfig): oauth.GoogleSecretStore {

@@ -48,16 +48,23 @@ test("keeps every existing Settings mutation gate enforced on the server", async
   }
 });
 
-test("guards the Google connection GET before schema or persistence work", async () => {
-  const source = await read("app/api/v1/integrations/google/connection/route.ts");
-  const getStart = source.indexOf("export async function GET");
-  const deleteStart = source.indexOf("export async function DELETE");
-  const getHandler = source.slice(getStart, deleteStart);
+test("guards Administrator integration GETs before schema or persistence work", async () => {
+  const [connectionSource, resourcesSource] = await Promise.all([
+    read("app/api/v1/integrations/google/connection/route.ts"),
+    read("app/api/v1/integrations/google/setup/resources/route.ts"),
+  ]);
+  const deleteStart = connectionSource.indexOf("export async function DELETE");
+  const handlers = [
+    connectionSource.slice(connectionSource.indexOf("export async function GET"), deleteStart),
+    resourcesSource.slice(resourcesSource.indexOf("export async function GET")),
+  ];
 
-  assert.ok(getStart >= 0 && deleteStart > getStart);
-  assert.match(getHandler, /requireOfficeUser\(request, \{ admin: true \}\)/);
-  assert.ok(getHandler.indexOf("requireOfficeUser") < getHandler.indexOf("ensureWorkspaceSchema"));
-  assert.ok(getHandler.indexOf('if ("response" in auth) return auth.response') < getHandler.indexOf("ensureWorkspaceSchema"));
+  assert.ok(deleteStart > connectionSource.indexOf("export async function GET"));
+  for (const getHandler of handlers) {
+    assert.match(getHandler, /requireOfficeUser\(request, \{ admin: true \}\)/);
+    assert.ok(getHandler.indexOf("requireOfficeUser") < getHandler.indexOf("ensureWorkspaceSchema"));
+    assert.ok(getHandler.indexOf('if ("response" in auth) return auth.response') < getHandler.indexOf("ensureWorkspaceSchema"));
+  }
 });
 
 test("isolates rendered role tests from contributor environment files", async () => {

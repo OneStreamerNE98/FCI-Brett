@@ -164,8 +164,8 @@ test("includes migrations and preserves the supplied Floor Coverings Internation
   assert.deepEqual(pngDimensions(fullLogo), { width: 1254, height: 1254 });
   assert.equal(createHash("sha256").update(appIcon).digest("hex"), "f39b41e506baee0df8515c216b680e684ce71e7bbf8f7e3256c44abddb4e27e5");
   assert.equal(createHash("sha256").update(fullLogo).digest("hex"), "051752f82c9763ca1a23460ba3b00a0e531d691b44e31aa5f7711fe6cdd4eb05");
-  assert.equal(createHash("sha256").update(appIconSvg).digest("hex"), "b510970816cefa2ca1d43b424de7de5f687910c902e95d369693d72315593050");
-  assert.equal(createHash("sha256").update(fullLogoSvg).digest("hex"), "81946ae0e8d4a5a53b639f95708ef288615c9b1082adb5b9800602b39b971506");
+  assert.equal(createHash("sha256").update(appIconSvg.replaceAll("\r\n", "\n")).digest("hex"), "b510970816cefa2ca1d43b424de7de5f687910c902e95d369693d72315593050");
+  assert.equal(createHash("sha256").update(fullLogoSvg.replaceAll("\r\n", "\n")).digest("hex"), "81946ae0e8d4a5a53b639f95708ef288615c9b1082adb5b9800602b39b971506");
   for (const svg of [appIconSvg, fullLogoSvg]) {
     assert.match(svg, /<svg\b/i);
     assert.match(svg, /\bwidth="1254"/i);

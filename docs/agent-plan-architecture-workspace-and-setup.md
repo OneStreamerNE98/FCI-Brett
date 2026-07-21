@@ -406,7 +406,7 @@ database connection; KPI-04 owns the PostgreSQL columns and activation of those 
 Keep every existing guard
 (FCI TEST name rule, 16 MiB/5,000-row caps, `^fci_rehearsal_` schema, refuse production,
 exact acknowledgment). `cutoverReady` stays hardcoded false.
-**Accept:** inventory covers all 21 tables (unit test fails on unclassified); extended
+**Accept:** inventory covers all 22 current tables (unit test fails on unclassified); extended
 fixture imports green; `cutoverReady:false`.
 
 ### BE-13 · Fail-closed schema targeting (small, no deps)
@@ -846,6 +846,8 @@ card's sentence may say so.
 **Accept:** cards render invariantly; existing safeguards text + install panel unchanged.
 
 ### SET-13 · Workspace resource registry + effective-config layer + resources card (large, after completed SET-03+04+10) — FIRST in the dashboard-setup feature
+**Status:** In progress — `codex/set13-workspace-resources`, July 21, 2026.
+
 **Why:** Owner-approved direction ([design doc](dashboard-workspace-setup-design.md)):
 dashboard-created resource IDs persist app-side and become runtime-authoritative with
 env fallback and a visible source badge. Today `authorize` gates on `oauthReady`, which
@@ -1320,7 +1322,8 @@ installer tracks — and this franchise's post-installation follow-up walkthroug
 callback question a natural existing step. But project editing does not exist yet
 (tracked step-7 roadmap work). The repo already has the right interim pattern: the
 audited, admin-only "Assign to me" drawer action.
-**Do:** (1) Additive migration (0013): `installation_started_at` (ms),
+**Do:** (1) Additive next-unused migration (coordinate with the merged schema history
+before work starts; SET-13 consumes 0013): `installation_started_at` (ms),
 `installation_completed_at` (ms), `had_callback` (integer boolean default 0),
 `callback_note` (text, bounded) on `projects`. (2) Following the manager-assignment
 pattern exactly (admin-only, same-origin, reason-free single-purpose action, activity
