@@ -43,6 +43,11 @@ remains valid.
 - [ ] Give the operations account permission to make changes and manage sharing.
 - [ ] Share each calendar only with the approved people or Google Group.
 - [ ] Record both Calendar IDs.
+- [ ] Optional (WS-16): create an `FCI Holidays` calendar for closure days and record its ID (see [Google-native quick wins](11-google-quick-wins.md)).
+
+## Operations mailbox alias
+
+- [ ] Verify an `ops@` **Send mail as** alias on the connection account in Gmail settings so app-sent mail can use the company identity (see [Google-native quick wins](11-google-quick-wins.md)).
 
 ## Completion result
 
