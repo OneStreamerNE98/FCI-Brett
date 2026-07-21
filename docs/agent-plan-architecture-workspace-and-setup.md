@@ -1,12 +1,13 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
 Date: July 19, 2026 · Status reconciled: July 20, 2026 · Source baseline: `main` @
-`b067699` after PR #66 completed TRK-02 tracking-guard hardening. PRs #63/#64 added the
+`f387ad4` after PR #51 completed the BE-09 production core-record route packet. PRs #63/#64 added the
 dashboard-driven Workspace setup workstream, and PR #65 codified the multi-agent
 coordination protocol. PRs #54/#55 completed
 OIDC-02/OIDC-03; PRs #60/#62 reconciled their merged status; and PR #61 expanded the
 Fable follow-up instructions.
-PRs #51–#53 and #56–#57 remain open drafts. Deployment baseline: `adc79b8`, private Sites development version 40,
+PR #66 completed TRK-02 tracking-guard hardening.
+PRs #52–#53 and #56–#57 remain open drafts. Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -308,7 +309,7 @@ cloud-run bundle graph empty; key-rotation test (v1 ciphertext decrypts after ro
 v2); provider routes still 503 in router tests.
 
 ### BE-09 · Port application writes to the production boundary; reconcile the dual API contract (medium, after BE-04+BE-06; VERIFIED)
-**Status:** In review — draft PR #51 from `codex/be09-production-writes`, July 20, 2026. Source-only and not merged, applied, configured, or deployed.
+**Status:** Complete — PR #51, July 20, 2026. Source-only and not applied, configured, or deployed.
 
 **Why (at packet start):** Cloud Run had no write path for core records —
 `production-composition.ts` exposed per-request creation repository factories that no
@@ -323,7 +324,7 @@ detection in the two admin clients). Provider routes still 503.
 **Accept:** router tests: authorized create + idempotent replay, denial, scope-filtered
 reads, provider 503 assertion; contract section exists.
 
-The branch adds the four production creation paths and scoped lead/meeting reads through
+Merged PR #51 adds the four production creation paths and scoped lead/meeting reads through
 portable application use cases. Authenticated mutations require the host-only employee
 session and same-origin CSRF; the four core-record creation POSTs additionally require one
 bounded `Idempotency-Key` and return the `{data}` envelope. The Sites/D1 routes retain
@@ -1175,17 +1176,18 @@ format). Effort: small.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** source is reconciled against `main` at `b067699` after PR #66
-completed TRK-02 tracking-guard hardening. PRs #63/#64 added the dashboard-driven
+**GitHub baseline:** source is reconciled against `main` at `f387ad4` after PR #51
+completed the BE-09 production core-record route packet. PRs #63/#64 added the dashboard-driven
 Workspace setup workstream, and PR #65 codified the multi-agent coordination protocol.
 PRs #54/#55 completed OIDC-02/OIDC-03 in source,
 PRs #60/#62 reconciled their merged status, and PR #61 expanded the Fable follow-up
 instructions.
-PRs #51–#53 and #56–#57 remain open drafts. None of these source changes is deployed.
+PR #66 completed TRK-02 tracking-guard hardening.
+PRs #52–#53 and #56–#57 remain open drafts. None of these source changes is deployed.
 The exact deployed baseline
 remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
 version 40, which includes PR #30's semantic Settings rules table. The listed source
-packets that are merged, including PR #66, are undeployed. Delivery PRs mirror items in these ledgers and do
+packets that are merged, including PRs #51 and #66, are undeployed. Delivery PRs mirror items in these ledgers and do
 not become a separate task source of truth.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
@@ -1275,8 +1277,9 @@ not fail; lint and `npm test` pass; no historical review snapshot changes.
 OIDC-04 is complete in PR #49, with its closure guarded by PR #50. OIDC-02 and OIDC-03
 are complete in source in PRs #54/#55.
 TRK-02 is complete in PR #66.
+BE-09 is complete in source in PR #51 and remains undeployed.
 The remaining reviewed merge train starts with
-BE-09 (#51), BE-12 (#53), KPI-02 (#52), SET-10 (#56), and the logo refresh (#57).
+BE-12 (#53), KPI-02 (#52), SET-10 (#56), and the logo refresh (#57).
 Those drafts must not be reassigned. The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
 SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
 apply, deployment, live login, another user, or real data.
@@ -1317,10 +1320,11 @@ Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
    (#48) are complete in source. Latest combined-main Node/build/lint, Terraform, and
    Chromium checks are green; nothing was applied, configured, published, or deployed.
 
-**Wave 2 — current:** merge the remaining reviewed drafts in order
-#51 → #53 → #52 → #56 → #57, running the complete post-merge flip after each. After shared
+**Wave 2 — current:** PR #51 is merged and the BE-09 completion is recorded.
+Continue the remaining reviewed drafts in order
+#53 → #52 → #56 → #57, running the complete post-merge flip after each. After shared
 UI siblings merge, rerun the survivor's focused browser tests.
-BE-10/BE-14 wait for #51; KPI-03 waits for #52. The unclaimed parallel-safe tracks are
+BE-10/BE-14 are now assignable because PR #51 merged; KPI-03 waits for #52. The unclaimed parallel-safe tracks are
 BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
 broad primitive/CSS consolidation tracks.
 
