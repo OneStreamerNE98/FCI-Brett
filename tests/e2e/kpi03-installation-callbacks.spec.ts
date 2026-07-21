@@ -136,7 +136,9 @@ test("admin records installation dates and a follow-up result through accessible
   await installationTrigger.click();
   installationModal = page.getByRole("dialog", { name: `Record installation dates for ${project.projectNumber}` });
   const installationSubmit = installationModal.getByRole("button", { name: "Record installation dates" });
+  await expect(installationModal.getByLabel("Installation started")).toBeFocused();
   await installationSubmit.focus();
+  await expect(installationSubmit).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(installationModal.getByRole("button", { name: "Close" })).toBeFocused();
   await installationModal.getByLabel("Installation started").fill("2026-07-10");
