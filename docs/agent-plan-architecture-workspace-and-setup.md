@@ -957,6 +957,13 @@ config with the source surfaced in the status payload
 (`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` becomes fallback). Resources-card rows;
 Step-5 unconfigured copy points here. Amendment: rewrite the Step-5 provisioning
 env-var on-screen note in the same spirit once the sheet ID is app-managed.
+Amendment (July 21): blueprint `spreadsheets[]` entries gain a
+`role: "system-mirror" | "import" | "reference"` field (sanitizer + editor dropdown;
+the system client-directory entry is `system-mirror` and locked). The ensure action
+creates/adopts sheets of every role; `import` sheets get their clearly-marked entity
+tabs prepared (consumed by SET-25); `reference` sheets are registered for SET-27's
+reader. Owner-named future example needing nothing today: a project details/ledger
+reference table.
 **Accept:** create and adopt branches (mocked); created file carries the identity
 `appProperties`; ensure is idempotent; an owner-defined extra spreadsheet in a fixture
 blueprint is created without tab preparation; the mirror runs against the app-managed
@@ -1134,13 +1141,17 @@ policy (30-minute idle / 8-hour absolute), each with one sentence on why it is f
 endpoints beyond one presence read; no secret or env values in markup; non-admin
 variant informational only. **Effort:** small. **Cost:** $0.
 
-### SET-25 · First-run client import (medium, after SET-16)
-**Why:** Day-one onboarding gap: nothing loads the company's existing client list when
-real use begins — without this, launch starts with manual re-entry.
-**Do:** Admin-gated, review-first, one-time import: owner pastes existing clients into
-a clearly-marked import tab of the directory sheet (or uploads a CSV); the app reads
-via existing Sheets plumbing, presents a preview with duplicate detection (email/phone/
-address match against existing records), and the admin confirms per-row or in bulk.
+### SET-25 · First-run data import: clients AND projects (medium-large, after SET-16) — OWNER PRIORITY (July 21)
+**Why:** Day-one onboarding gap: nothing loads the company's existing client and
+project lists when real use begins — without this, launch starts with manual re-entry.
+**Do:** Admin-gated, review-first import for BOTH entities, spreadsheet-first (the way
+the owner already works): blueprint "import"-role spreadsheets (see the SET-16 role
+amendment) provide clearly-marked Clients and Projects import tabs (CSV upload as the
+alternative); the app reads via existing Sheets plumbing, presents a preview with
+duplicate detection (clients: email/phone/address; projects: name+client+site), and
+the admin confirms per-row or in bulk. Projects import AFTER clients and match their
+client by code/name/email with an unmatched-review state — never silently creating
+clients from project rows.
 Imported records get a provenance marker in `activity_events`. Bounded batch size;
 re-runnable safely (idempotent on the duplicate check); the import surface hides once
 records exist unless explicitly reopened. Respects the test-data boundary: importing
@@ -1160,6 +1171,41 @@ viewer. Simulation searches the simulated registry/fixtures.
 **Accept:** route tests (scoping to the project folder asserted in the request shape,
 bounded inputs, non-project files never returned in mocks); e2e simulated search →
 viewer open; no new scopes. **Effort:** small-medium. **Cost:** $0.
+
+### SET-27 · Reference-spreadsheet framework (medium, after SET-16)
+**Why:** Owner requirement: a way to set up additional spreadsheets as reference
+tables the app can read later (owner-named example: a project details/ledger table) —
+the mechanism now, consumers when features need them.
+**Do:** For blueprint spreadsheets with `role: "reference"` (created/adopted by
+SET-16's ensure): a bounded generic reader — first row = headers, values typed as
+strings, row/column caps, full-tab reads via existing Sheets plumbing — exposed as an
+internal port plus one admin `GET /api/v1/integrations/google/sheets/reference/<key>`
+endpoint (bounded, `no-store`); a Settings list card showing registered reference
+sheets with Open links and an honest "No app feature reads this yet — available to
+future packets" badge per unconsumed sheet. No write path to reference sheets ever
+(they are owner-maintained). Simulation fixtures per registered key.
+**Accept:** reader bounds and header typing tested; unknown key 404; zero write calls
+to reference sheets (call-recording suite extended); the card renders the registry
+truthfully; simulation e2e registers and reads a fixture reference sheet.
+**Effort:** medium. **Cost:** $0.
+
+### SET-28 · End-user settings foundation: "My settings" (medium, after SET-13; full value after live login)
+**Why:** Owner requirement: the setup surface must serve two audiences — initial/admin
+organization setup, and each end user's own settings — so employee rollout does not
+funnel everyone through admin screens.
+**Do:** Split the Settings IA into "Workspace & company setup" (the existing
+admin/office surface; slugs unchanged per SET-07) and a new per-user "My settings"
+section: profile display (name as shown, from the session identity), per-user
+notification preferences (consumed by GI-02's notifier when both land — until then
+rendered with the honest "Planned" badge pattern), and per-user defaults (e.g.,
+landing view) only where a consumer exists. Per-user rows persist keyed by the
+employee identity (works for the single dev user now; scales with live login).
+Server-side: users write only their own rows; admin gates untouched (UI gating is
+honesty, not security).
+**Accept:** own-rows-only enforced in route tests; unconsumed preferences carry
+Planned badges (render-invariance test); non-admin users see My settings but no admin
+cards; simulation e2e edits and persists a preference; SET-07 slug pins unchanged.
+**Effort:** medium. **Cost:** $0.
 
 ---
 
@@ -1358,23 +1404,29 @@ isolation); settings-card rendered tests; no webhook URL ever in a response or t
 repo (grep + test); simulation logs instead of posting. **Effort:** medium.
 **Cost:** $0 (Chat included in Workspace; webhooks unpriced).
 
-### GI-03 · Job-site map + navigation link on the project page (small, after WS-15; FloorOpsApp queue)
+### GI-03 · Job-site map + navigation link on the client and project screens (small-medium, after WS-15; FloorOpsApp queue) — OWNER PRIORITY (July 21)
 **Why:** See the site (satellite view for driveway/staging assessment) on every
-project page, and one-tap navigation for crews.
+client and project screen, and one-tap navigation for crews.
 **Do:** Maps Embed API iframe (browser key from WS-15; free with unlimited usage) plus
-a plain Google Maps directions URL (no key). Renders when the project has a stored
+a plain Google Maps directions URL (no key) on BOTH the client screen and the project
+screen/drawer. The directions link uses the `https://www.google.com/maps/dir/?api=1`
+URL form, which on phones opens the platform's default/Google Maps app for turn-by-turn
+— this is the "send directions to the phone's maps app" behavior, no share
+infrastructure needed. Renders when the record has a stored
 geocode or address; CSP `frame-src` allowance for the Google Maps embed origin;
 graceful no-address state. Simulation renders a placeholder map card.
 **Accept:** rendered tests for address/no-address/simulation states; CSP pinned; the
 navigation URL shape pinned; no server proxying of map tiles. **Effort:** small.
 **Cost:** $0 (Embed API free unlimited; URLs free).
 
-### GI-04 · Address validation + autocomplete at lead entry (medium, after WS-15; FloorOpsApp queue)
-**Why:** Typo-proof, USPS-standardized job-site addresses with lat/lng captured at
-lead creation — one prevented wrong-address truck roll pays for years of usage.
-**Do:** Server route calling Address Validation API (server key; `enableUspsCass`
-optional) on lead create/edit; store the standardized address + geocode + a validation
-verdict on the record (used later by GI-03). Front-end Places Autocomplete (New) with
+### GI-04 · Address validation + autocomplete on lead, client, and project address entry (medium, after WS-15; FloorOpsApp queue) — OWNER PRIORITY (July 21)
+**Why:** Typo-proof, USPS-standardized addresses with lat/lng captured wherever an
+address enters the system — one prevented wrong-address truck roll pays for years of
+usage.
+**Do:** One shared server route calling the Address Validation API (server key;
+`enableUspsCass` optional) used by lead create/edit, client create/edit, and project
+site entry; store the standardized address + geocode + a validation verdict on the
+client and project records (consumed by GI-03's maps). Front-end Places Autocomplete (New) with
 session tokens terminated by the validation call (that termination makes the
 autocomplete session free — pin the session-token flow in tests). Review-first: the
 user confirms the standardized suggestion; never silently overwrite what was typed.
@@ -1382,7 +1434,7 @@ Bounded input; validation failures fall back to accepting the typed address with
 flag. Simulation returns fixture validations.
 **Accept:** route tests (verdict branches, fallback, bounded input, no key in
 responses); session-token flow pinned; the confirm-don't-overwrite behavior asserted;
-simulation e2e on the lead form. **Effort:** medium. **Cost:** ~$0 at current volume
+simulation e2e on the lead, client, and project forms. **Effort:** medium. **Cost:** ~$0 at current volume
 (5,000 free validations/month; WS-15 budget alert enforces the ceiling).
 
 ### GI-05 · Per-project Drive activity feed (medium, after SET-15)
@@ -1606,8 +1658,12 @@ SET-15 → {SET-16, SET-17, SET-05} → SET-18 → SET-21, with SET-23…SET-26 
 their listed dependencies. Workstream E runs in parallel where dependencies allow:
 GI-02 immediately; GI-01/GI-05 after their SET dependencies; GI-03/GI-04 after the
 WS-15 owner step; GI-06 after WS-16's edition confirmation; GI-07 after live employee
-login. The `FloorOpsApp.tsx` single-file queue order is KPI-03 → SET-22 UI → GI-03 →
-GI-04 → SET-26 UI.
+login. **Owner priority (July 21): maps and validation on the client and project
+screens (GI-03/GI-04) and first-run data import (SET-25) jump the queue.** The
+`FloorOpsApp.tsx` single-file queue order is now KPI-03 → GI-03 → GI-04 → SET-22 UI →
+SET-26 UI, and the setup track prioritizes SET-14 → SET-15 → SET-16 → SET-25, with
+SET-27 and SET-28 following their listed dependencies. WS-15 (Maps billing/keys) is
+the owner step that unblocks GI-03/GI-04 — do it early.
 BE-10/BE-14 are assignable because PR #51 merged, and KPI-03 is assignable because PR #52
 merged. SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. The
 unclaimed parallel-safe tracks are
