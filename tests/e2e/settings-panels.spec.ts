@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const settingsSections = [
-  { path: "/settings", navigation: "My account", heading: "My account" },
+  { path: "/settings", navigation: "My settings", heading: "My settings" },
   { path: "/settings?section=google-workspace", navigation: "Google Workspace", heading: "Google Workspace" },
   { path: "/settings?section=calendar", navigation: "Calendar & appointments", heading: "Calendar & appointments" },
   { path: "/settings?section=inbox-rules", navigation: "Inbox & file rules", heading: "Inbox & file rules" },

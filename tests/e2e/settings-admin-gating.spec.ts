@@ -15,7 +15,16 @@ async function mockIdentityForExternalServer(page: Page, isAdmin: boolean) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        preferences: { displayTimezone: "America/New_York", replySignature: "" },
+        preferences: {
+          displayTimezone: "America/New_York",
+          replySignature: "",
+          notificationPreferences: {
+            "lead.created": false,
+            "gmail.filing_review_needed": false,
+            "calendar.schedule_changed": false,
+            "project.warranty_follow_up_due": false,
+          },
+        },
         updatedAt: null,
         isAdmin,
       }),
@@ -55,6 +64,8 @@ test("Administrator identity keeps protected Settings actions available", async 
 
   const identity = await readIdentity(page);
   expect(identity).toEqual({ status: 200, body: expect.objectContaining({ isAdmin: true }) });
+  await expect(page.locator(".settings-nav").getByText("Workspace & company setup", { exact: true })).toBeVisible();
+  await expect(page.locator(".settings-nav").getByRole("button")).toHaveCount(8);
   await expect(page.getByRole("button", { name: "Save calendar plan" })).toBeEnabled();
   await expect(page.locator(".administrator-action-note")).toHaveCount(0);
 
@@ -64,16 +75,20 @@ test("Administrator identity keeps protected Settings actions available", async 
   await expect(page.locator(".administrator-action-note")).toHaveCount(0);
 });
 
-test("Office identity sees every protected Settings action disabled and explained", async ({ page }) => {
+test("Office identity sees My settings only and never renders company or Administrator cards", async ({ page }) => {
   await mockIdentityForExternalServer(page, false);
   let connectionDetailGets = 0;
   let resourceGets = 0;
   let blueprintGets = 0;
+  let workspaceSettingsGets = 0;
+  let workspaceReadinessGets = 0;
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/connection") connectionDetailGets += 1;
     if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/setup/resources") resourceGets += 1;
     if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/setup/blueprint") blueprintGets += 1;
+    if (request.method() === "GET" && url.pathname === "/api/v1/settings/workspace") workspaceSettingsGets += 1;
+    if (request.method() === "GET" && url.pathname === "/api/v1/google-workspace") workspaceReadinessGets += 1;
   });
   await page.setExtraHTTPHeaders({
     "oai-authenticated-user-email": "e2e-office@example.test",
@@ -81,55 +96,30 @@ test("Office identity sees every protected Settings action disabled and explaine
     "oai-authenticated-user-full-name-encoding": "percent-encoded-utf-8",
   });
   await page.goto("/settings?section=calendar");
-  await expect(page.getByRole("heading", { level: 2, name: "Calendar & appointments" })).toBeVisible();
+  await expect(page).toHaveURL(/\/settings$/u);
+  await expect(page.getByRole("heading", { level: 2, name: "My settings" })).toBeVisible();
 
   const identity = await readIdentity(page);
   expect(identity).toEqual({ status: 200, body: expect.objectContaining({ isAdmin: false }) });
-  await expect(page.getByRole("button", { name: "Save calendar plan" })).toBeDisabled();
-  await expect(page.locator(".administrator-action-note")).toContainText(["Administrator action"]);
-  await expect(page.getByRole("button", { name: "Google connection" })).toBeEnabled();
-
-  await page.locator(".settings-nav").getByRole("button", { name: "Google Workspace", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
-  await expect(page.locator(".workspace-connection-health")).toHaveCount(0);
-  await expect(page.locator(".workspace-blueprint-card")).toHaveCount(0);
-  const tenantChecklist = page.locator(".workspace-prerequisites");
-  await expect(tenantChecklist.getByRole("heading", { level: 3, name: "Domain & tenant checklist", exact: true })).toBeVisible();
-  await expect(tenantChecklist.getByRole("listitem")).toHaveCount(6);
-  await expect(tenantChecklist.getByText("Administrator setup", { exact: true })).toHaveCount(6);
-  await expect(tenantChecklist.getByRole("link")).toHaveCount(0);
-  await expect(tenantChecklist.getByRole("heading", { level: 4, name: "Copy-exact setup helpers" })).toHaveCount(0);
-  await expect(tenantChecklist.getByRole("table", { name: "Hosted Workspace configuration" })).toHaveCount(0);
-  await expect(tenantChecklist.locator('input[type="checkbox"]')).toHaveCount(0);
-  await page.getByRole("button", { name: "Check readiness" }).click();
-  await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
+  const navigation = page.locator(".settings-nav");
+  await expect(navigation.getByRole("button")).toHaveCount(1);
+  await expect(navigation.getByRole("button", { name: "My settings", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(navigation.getByText("Workspace & company setup", { exact: true })).toHaveCount(0);
+  await expect(page.locator('[data-settings-audience="personal"]')).toBeVisible();
+  await expect(page.locator('[data-session-profile="true"]')).toContainText("E2E Office");
+  await expect(page.locator('[data-session-profile="true"]')).toContainText("e2e-office@example.test");
+  await expect(page.locator('[data-preference-consumer="planned"]')).toHaveCount(4);
+  await expect(page.locator('[data-preference-consumer="planned"] .feature-state-planned')).toHaveCount(4);
+  await expect(page.getByRole("button", { name: "Save my settings" })).toBeEnabled();
+  for (const heading of ["Google Workspace", "Calendar & appointments", "Workflow & notifications", "Data & security", "Test & launch checklist"]) {
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toHaveCount(0);
+  }
+  await expect(page.locator(".workspace-prerequisites, .workspace-connection-health, .workspace-blueprint-card, .administrator-action-note")).toHaveCount(0);
+  await page.getByRole("button", { name: /account actions/i }).click();
+  await expect(page.locator("#account-actions-popover").getByRole("button", { name: "Google connection" })).toHaveCount(0);
   expect(connectionDetailGets).toBe(0);
   expect(resourceGets).toBe(0);
   expect(blueprintGets).toBe(0);
-  for (const action of [
-    "Reset simulation data",
-    "Verify Shared Drive",
-    /FCI labels$/,
-    "View inbox",
-    "Add sample email",
-    "View upcoming events",
-    "Create test hold",
-    "Sync now",
-  ]) {
-    await expect(page.getByRole("button", { name: action })).toBeDisabled();
-  }
-  await expect(page.locator(".administrator-action-note")).toHaveCount(8);
-
-  await page.locator(".settings-nav").getByRole("button", { name: "Client Directory", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Sync now" })).toBeDisabled();
-  await expect(page.locator(".administrator-action-note")).toHaveCount(1);
-
-  await page.locator(".settings-nav").getByRole("button", { name: "Workflow & notifications", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save defaults" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Save Chat routing" })).toBeDisabled();
-  await expect(page.locator(".administrator-action-note")).toHaveCount(2);
-
-  await page.locator(".settings-nav").getByRole("button", { name: "My account", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Save my preferences" })).toBeEnabled();
-  await expect(page.locator(".administrator-action-note")).toHaveCount(0);
+  expect(workspaceSettingsGets).toBe(0);
+  expect(workspaceReadinessGets).toBe(0);
 });

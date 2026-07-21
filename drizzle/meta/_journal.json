@@ -113,6 +113,13 @@
       "when": 1784633922066,
       "tag": "0015_stale_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1784660247661,
+      "tag": "0016_melted_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

@@ -72,7 +72,7 @@ test("keeps the bounded initial-load and rendering optimizations in place", asyn
     read("app/FloorOpsApp.tsx"),
     read("app/globals.css"),
     read("app/settings/components/DataSecurityPanel.tsx"),
-    read("app/settings/components/MyAccountPanel.tsx"),
+    read("app/settings/components/MySettingsPanel.tsx"),
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
   ]);
   const settingsSources = `${myAccount}\n${googleWorkspace}`;

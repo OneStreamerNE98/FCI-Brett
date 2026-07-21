@@ -12,7 +12,8 @@ const appSurfacePaths = [
   "app/settings/components/DirectorySyncPanel.tsx",
   "app/settings/components/GoogleWorkspacePanel.tsx",
   "app/settings/components/InboxRulesPanel.tsx",
-  "app/settings/components/MyAccountPanel.tsx",
+  "app/settings/components/MySettingsPanel.tsx",
+  "app/settings/components/SettingsAudienceNavigation.tsx",
   "app/settings/components/SettingsDataNotice.tsx",
   "app/settings/components/TestingLaunchPanel.tsx",
   "app/settings/components/WorkspaceDefaultsPanel.tsx",
@@ -222,7 +223,7 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
   assert.match(app, /Search this Gmail mailbox/);
   assert.match(app, /Save a reply draft/);
   assert.match(app, /Calendar & appointments/);
-  assert.match(app, /My account/);
+  assert.match(app, /My settings/);
   assert.match(app, /WorkspaceDefaultsPanel/);
   assert.match(app, /Local Workspace simulation/);
   assert.match(app, /Reset simulation data/);
@@ -242,22 +243,35 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
   assert.match(phonePanel, /Add to Home Screen/);
 });
 
-test("keeps user preferences scoped to the authenticated office user without a personal-calendar profile", async () => {
-  const [schema, preferencesApi, app] = await Promise.all([
+test("keeps My settings scoped to the authenticated office user and honest about planned consumers", async () => {
+  const [schema, preferencesApi, app, mySettings, notificationCatalog] = await Promise.all([
     read("db/schema.ts"), read("app/api/v1/settings/me/route.ts"), readAppSurface(),
+    read("app/settings/components/MySettingsPanel.tsx"), read("app/lib/user-settings.ts"),
   ]);
   assert.match(schema, /export const userPreferences = sqliteTable\("user_preferences"/);
   assert.match(schema, /userEmail: text\("user_email"\)\.primaryKey\(\)/);
+  assert.match(schema, /notificationPreferencesJson: text\("notification_preferences_json"\)/);
   assert.match(preferencesApi, /requireOfficeUser\(request\)/);
   assert.match(preferencesApi, /requireSameOrigin\(request\)/);
   assert.match(preferencesApi, /WHERE user_email = \?/);
   assert.match(preferencesApi, /auth\.user\.email/);
+  assert.match(preferencesApi, /notification_preferences_json/);
+  assert.match(preferencesApi, /normalizeUserNotificationPreferences/);
   assert.match(preferencesApi, /displayTimezone/);
   assert.match(preferencesApi, /replySignature/);
+  assert.doesNotMatch(preferencesApi, /display_name|displayName/);
   assert.doesNotMatch(preferencesApi, /personalCalendarDisplay/);
   assert.doesNotMatch(app, /personalCalendarDisplay/);
   assert.match(preferencesApi, /length > 2_000/);
   assert.match(preferencesApi, /Intl\.DateTimeFormat/);
+  assert.match(mySettings, /data-session-profile="true"/);
+  assert.match(mySettings, /data-preference-consumer="planned"/);
+  assert.match(mySettings, /FeatureStateBadge state="Planned"/);
+  assert.match(mySettings, /organization-level space routing only/);
+  assert.match(notificationCatalog, /"lead\.created"/);
+  assert.match(notificationCatalog, /"gmail\.filing_review_needed"/);
+  assert.match(notificationCatalog, /"calendar\.schedule_changed"/);
+  assert.match(notificationCatalog, /"project\.warranty_follow_up_due"/);
 });
 
 test("makes company shared calendars authoritative without a personal-calendar mode", async () => {

@@ -46,6 +46,24 @@ test("only bounded non-default page state is included in durable URLs", () => {
   assert.equal(operationsHref("Inbox", { inboxBucket: "needs-review" }), "/inbox?bucket=needs-review");
 });
 
+test("keeps every SET-07 Settings slug pinned while My settings remains the canonical default", () => {
+  const settingsRoutes = [
+    ["My account", "/settings"],
+    ["Google Workspace", "/settings?section=google-workspace"],
+    ["Calendar & appointments", "/settings?section=calendar"],
+    ["Inbox & file rules", "/settings?section=inbox-rules"],
+    ["Client Directory", "/settings?section=client-directory"],
+    ["Workflow & notifications", "/settings?section=workflow-notifications"],
+    ["Data & security", "/settings?section=data-security"],
+    ["Testing & launch", "/settings?section=testing-launch"],
+  ];
+
+  for (const [settingsSection, href] of settingsRoutes) {
+    assert.equal(operationsHref("Settings", { settingsSection }), href);
+  }
+  assert.equal(settingsSectionFromSearch("section=account"), "My account");
+});
+
 test("route-state readers fail safely on invalid or duplicate values", () => {
   assert.equal(settingsSectionFromSearch("section=calendar"), "Calendar & appointments");
   assert.equal(settingsSectionFromSearch("section=unknown"), "My account");

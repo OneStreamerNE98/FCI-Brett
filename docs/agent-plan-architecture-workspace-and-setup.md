@@ -1205,6 +1205,8 @@ truthfully; simulation e2e registers and reads a fixture reference sheet.
 **Effort:** medium. **Cost:** $0.
 
 ### SET-28 · End-user settings foundation: "My settings" (medium, after SET-13; full value after live login)
+**Status:** In progress — `codex/set28-my-settings-foundation`, July 21, 2026.
+
 **Why:** Owner requirement: the setup surface must serve two audiences — initial/admin
 organization setup, and each end user's own settings — so employee rollout does not
 funnel everyone through admin screens.
