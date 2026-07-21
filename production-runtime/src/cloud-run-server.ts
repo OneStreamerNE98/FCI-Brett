@@ -72,6 +72,7 @@ export async function startCloudRunFoundation(
     adminAudit: composition.repositories.adminAudit,
     adminAccess: composition.repositories.adminAccess,
     audit: composition.repositories.securityAudit,
+    coreRecords: composition.repositories,
     ...(config.employeeOidc
       ? {
           oidc: createEmployeeOidcClient(config.employeeOidc),

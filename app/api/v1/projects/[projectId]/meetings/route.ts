@@ -3,9 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import type { D1Database } from "../../../../../adapters/d1/d1-database";
 import { createD1ProjectMeetingRepository } from "../../../../../adapters/d1/project-meeting-repository";
 import {
-  normalizeProjectMeeting,
-  projectMeetingResponse,
-} from "../../../../../domain/project-meeting";
+  createProjectMeeting,
+  listProjectMeetings,
+} from "../../../../../application/project-meeting-operations";
+import { creationAuthorizationFor } from "../../../../../application/creation-authorization";
+import { AUTHORIZATION_CAPABILITIES } from "../../../../../application/authorization-capabilities";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 
@@ -18,11 +20,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(projectId)) return NextResponse.json({ error: "Invalid project." }, { status: 400 });
   await ensureWorkspaceSchema();
   const repository = createD1ProjectMeetingRepository(env.DB as unknown as D1Database);
-  if (!await repository.projectExists(projectId)) {
-    return NextResponse.json({ error: "Project not found." }, { status: 404 });
+  const result = await listProjectMeetings(
+    projectId,
+    creationAuthorizationFor({
+      actorId: auth.user.email,
+      capabilities: [AUTHORIZATION_CAPABILITIES.recordsRead],
+    }),
+    repository,
+  );
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.message },
+      { status: result.kind === "project-not-found" ? 404 : 403 },
+    );
   }
-  const meetings = await repository.listForProject(projectId);
-  return NextResponse.json({ meetings: meetings.map(projectMeetingResponse) }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json({ meetings: result.value }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -39,48 +51,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
   if (new TextEncoder().encode(rawBody).byteLength > 180_000) return NextResponse.json({ error: "Meeting notes are too large." }, { status: 413 });
   const body = (() => { try { return JSON.parse(rawBody) as Record<string, unknown>; } catch { return null; } })();
   if (!body) return NextResponse.json({ error: "Meeting details must be valid JSON." }, { status: 400 });
-  const validation = normalizeProjectMeeting(body);
-  if (!validation.ok) {
-    return NextResponse.json({ error: validation.message }, { status: 400 });
-  }
-  const values = validation.value;
-
   await ensureWorkspaceSchema();
-  const repository = createD1ProjectMeetingRepository(env.DB as unknown as D1Database);
-  const project = await repository.findProjectForCreation(projectId);
-  if (!project) return NextResponse.json({ error: "Project not found." }, { status: 404 });
-  const id = crypto.randomUUID();
-  const now = Date.now();
-  const result = await repository.create({
-    meeting: {
-      id,
-      project_id: projectId,
-      title: values.title,
-      meeting_at: values.meetingAt,
-      meeting_type: values.meetingType,
-      source_provider: values.sourceProvider,
-      source_url: values.sourceUrl,
-      attendees_json: JSON.stringify(values.attendees),
-      notes: values.notes,
-      transcript: values.transcript,
-      summary: values.summary,
-      decisions: values.decisions,
-      action_items_json: JSON.stringify(values.actionItems),
-      created_by: auth.user.email,
-      created_at: now,
-      updated_at: now,
+  const result = await createProjectMeeting(
+    projectId,
+    body,
+    creationAuthorizationFor({
+      actorId: auth.user.email,
+      capabilities: [AUTHORIZATION_CAPABILITIES.meetingsUpdate],
+    }),
+    {
+      repository: createD1ProjectMeetingRepository(env.DB as unknown as D1Database),
+      newId: () => crypto.randomUUID(),
+      now: () => Date.now(),
     },
-    activity: {
-      id: crypto.randomUUID(),
-      recordId: projectId,
-      action: "Meeting notes captured",
-      actor: auth.user.email,
-      detail: `${values.title} · ${values.sourceProvider === "otter" ? "Otter" : values.sourceProvider === "link" ? "Linked source" : "Manual notes"}`,
-      createdAt: now,
-    },
-  });
-  if (result.outcome !== "created") {
-    throw new Error(`D1 meeting creation returned unexpected outcome ${result.outcome}`);
+  );
+  if (!result.ok) {
+    const status = result.kind === "forbidden"
+      ? 403
+      : result.kind === "project-not-found"
+        ? 404
+        : result.kind === "invalid"
+          ? 400
+          : 409;
+    return NextResponse.json({ error: result.message }, { status });
   }
-  return NextResponse.json({ meeting: projectMeetingResponse(result.value) }, { status: 201 });
+  return NextResponse.json({ meeting: result.value }, { status: 201 });
 }

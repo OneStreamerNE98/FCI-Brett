@@ -169,7 +169,7 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
     setLoadError("");
     setDevelopmentBoundary(false);
     try {
-      const next = await readAdminAccessOverview();
+      const next = await readAdminAccessOverview(mutationsReady);
       setOverview(next);
       setSessionEnded(false);
       return true;
@@ -190,7 +190,7 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, []);
+  }, [mutationsReady]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -431,6 +431,7 @@ export function AdminAccessPage({ csrfToken }: { csrfToken: string | null }) {
       >
         <AdminActivityPanel
           active={activeSection === "activity"}
+          secureSessionReady={mutationsReady}
           onSessionEnded={endSession}
         />
       </section>

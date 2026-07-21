@@ -79,9 +79,11 @@ function filtersAreDefault(filters: ActivityFilters) {
 
 export function AdminActivityPanel({
   active,
+  secureSessionReady,
   onSessionEnded,
 }: {
   active: boolean;
+  secureSessionReady: boolean;
   onSessionEnded: () => void;
 }) {
   const [draftFilters, setDraftFilters] = useState<ActivityFilters>(DEFAULT_FILTERS);
@@ -119,7 +121,10 @@ export function AdminActivityPanel({
       setLoadMoreError("");
     }
     try {
-      const next = await readAdminAuditActivity({ ...request, cursor });
+      const next = await readAdminAuditActivity(
+        { ...request, cursor },
+        secureSessionReady,
+      );
       if (requestSequence.current !== sequence) return;
       setActivityPage((current) => append && current
         ? Object.freeze({
@@ -149,7 +154,7 @@ export function AdminActivityPanel({
         else setLoading(false);
       }
     }
-  }, [onSessionEnded]);
+  }, [onSessionEnded, secureSessionReady]);
 
   useEffect(() => {
     if (!active || hasStarted) return;

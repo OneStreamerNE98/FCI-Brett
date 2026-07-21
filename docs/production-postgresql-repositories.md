@@ -1,12 +1,12 @@
 # Production PostgreSQL repositories
 
-Reviewed: July 19, 2026
+Reviewed: July 20, 2026
 
-Status: Implemented and tested in source. Composed into the fail-closed Google Cloud runtime foundation, but not wired to employee-facing routes, provisioned, migrated, or deployed.
+Status: Implemented and tested in source. The repositories and employee-facing core-record routes are composed on open draft PR #51, but are not merged, provisioned, migrated, configured, or deployed.
 
 ## Boundary
 
-This boundary connects the provider-neutral client, project, lead, and project-meeting contracts to the completed source-only PostgreSQL schema. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) creates bounded pool-backed repository factories, but intentionally exposes no employee-facing production lead or meeting route yet. The current Sites/D1 development routes retain their existing behavior through D1 adapters; hosted configuration, test data, and the Workspace connection remain unchanged.
+This boundary connects the provider-neutral client, project, lead, and project-meeting contracts to the completed source-only PostgreSQL schema. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) creates bounded pool-backed repository factories, and open draft PR #51 composes production client/project creation plus scoped lead and project-meeting reads and creation through the employee router. The current Sites/D1 development routes retain their existing behavior through D1 adapters; hosted configuration, test data, and the Workspace connection remain unchanged.
 
 No PostgreSQL URL, Cloud SQL instance, Cloud Run service, credential, live worker, production data, or external provider call is part of this implementation.
 
@@ -74,9 +74,11 @@ Never point `TEST_POSTGRES_URL` at development, staging, production, or any shar
 
 ## Work intentionally deferred
 
-- Employee-facing request/authentication wiring for the source-composed PostgreSQL lead/meeting adapters and the remaining application modules (owned by BE-09).
+- Employee-facing routes beyond the source-composed client/project/lead/project-meeting boundary, including the broader production interface and provider-backed file, Gmail, and Calendar operations.
 - Provisioned Cloud Run, Cloud SQL, roles/grants, secrets, private networking, backups, and monitoring. Source now validates bounded pools and requires the application runtime role to have no `CREATE` privilege, but no environment has applied that policy.
-- Users, invitations, secure sessions, roles, capabilities, and project memberships. That identity slice must distinguish the system worker performing a dead-letter transition from the employee who originated the event while retaining both pieces of audit evidence.
+- Live employee seeding/admission, OIDC configuration, production session/UI composition,
+  and applied identity grants. The source-only user, invitation, secure-session, role,
+  capability, and project-membership boundary already exists; none is live or applied.
 - A live Cloud Tasks worker and provider-specific delivery/idempotency logic.
 - Complete development-data migration, staging reconciliation/restore rehearsal, cutover, and rollback approval. The source-only bounded core fixture rehearsal is not full cutover evidence.
 

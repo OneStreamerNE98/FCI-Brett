@@ -54,6 +54,12 @@ export class AdminAuditClientError extends Error {
   }
 }
 
+function requireAdminApi(secureSessionReady: boolean) {
+  if (!secureSessionReady) {
+    throw new AdminAuditClientError(0, "secure_session_not_ready");
+  }
+}
+
 function invalidResponse(status = 200): never {
   throw new AdminAuditClientError(status, "invalid_server_response");
 }
@@ -169,7 +175,9 @@ function readUrl(input: AdminAuditReadInput) {
 
 export async function readAdminAuditActivity(
   input: AdminAuditReadInput,
+  secureSessionReady: boolean,
 ): Promise<AdminAuditPage> {
+  requireAdminApi(secureSessionReady);
   const response = await fetch(readUrl(input), {
     method: "GET",
     cache: "no-store",

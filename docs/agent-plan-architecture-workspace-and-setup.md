@@ -310,10 +310,10 @@ v2); provider routes still 503 in router tests.
 ### BE-09 · Port application writes to the production boundary; reconcile the dual API contract (medium, after BE-04+BE-06; VERIFIED)
 **Status:** In review — draft PR #51 from `codex/be09-production-writes`, July 20, 2026. Source-only and not merged, applied, configured, or deployed.
 
-**Why:** Cloud Run has no write path for core records — `production-composition.ts`
-exposes per-request creation repository factories (lines 113–124, verified) that no route
-uses. The same paths exist on both surfaces with different auth/shapes, and the management
-UI calls `/api/v1/admin/*` paths that 404 on the current worker.
+**Why (at packet start):** Cloud Run had no write path for core records —
+`production-composition.ts` exposed per-request creation repository factories that no
+route used. The same paths existed on both surfaces with different auth/shapes, and the
+management UI called `/api/v1/admin/*` paths that 404 on the current worker.
 **Do:** Add POST /clients + /projects (+ leads/meetings GET/POST) to the employee router
 via the shared use-cases with capability checks, {data} envelope, idempotency. Record the
 per-route contract decision in `docs/google-cloud-runtime-foundation.md` (production =
@@ -322,6 +322,17 @@ document one remedy (thin D1-backed `/api/v1/admin/*` compatibility handlers, or
 detection in the two admin clients). Provider routes still 503.
 **Accept:** router tests: authorized create + idempotent replay, denial, scope-filtered
 reads, provider 503 assertion; contract section exists.
+
+The branch adds the four production creation paths and scoped lead/meeting reads through
+portable application use cases. Authenticated mutations require the host-only employee
+session and same-origin CSRF; the four core-record creation POSTs additionally require one
+bounded `Idempotency-Key` and return the `{data}` envelope. The Sites/D1 routes retain
+their existing development response
+shapes. The two admin clients now fail locally with `secure_session_not_ready` when the
+secure employee-session bootstrap is absent, so the development surface does not request
+unsupported `/api/v1/admin/access` or `/api/v1/admin/audit` endpoints. No D1
+administration compatibility handlers were added, and provider routes remain `503
+feature_unavailable`.
 
 ### BE-10 · Rate limiting on both surfaces (medium, after BE-04+BE-09; VERIFIED)
 **Why:** No rate limiting exists anywhere (verified). Cost-bearing dev routes: assistant

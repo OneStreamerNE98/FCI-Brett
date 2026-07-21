@@ -44,7 +44,7 @@ These decisions authorize local policy and route work only. They do not set the 
 ## Source-only Cloud Run employee routes
 
 - [x] Add bounded host-only session-cookie parsing, immediate credential hashing, exact same-origin mutation checks, hashed CSRF matching, generic denial responses, and secure cookie clearing.
-- [x] Compose PostgreSQL-backed dashboard, search, project list/exact-project, client list, and logout source routes.
+- [x] Compose PostgreSQL-backed dashboard, search, project list/exact-project/create, client list/create, lead list/create, project-meeting list/create, and logout source routes with capability, project-scope, and CSRF coverage; the four core-record creation POSTs additionally have idempotency and production-envelope coverage.
 - [x] Compose file list/upload/share, Gmail-file, and Calendar-create routes through authorization; without production action adapters they deliberately return `503 feature_unavailable` after authorization succeeds.
 - [x] Preserve health/readiness, drain behavior, migration-command separation, and denial of the Sites identity header in the Cloud Run module graph.
 - [x] Add source-only durable invitation fulfillment, Workspace OIDC verification, and secure session issuance. PR #38 implemented the path, PR #48 corrected real-callback compatibility, and PRs #54/#55 completed the OIDC-02 hardening and OIDC-03 security-test backfill in source. Both are source-only and undeployed. Every live configuration, migration, UI-composition, deployment, and owner-acceptance gate remains open.
