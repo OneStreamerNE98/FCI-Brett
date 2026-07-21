@@ -213,6 +213,10 @@ test("connection status separates configured services from persisted OAuth grant
 
   const result = await oauthModule.getGoogleConnectionStatus(config);
 
+  assert.deepEqual(
+    Object.keys(result).sort(),
+    ["account", "connected", "grantedServices", "requiresReauthorization", "services", "status"],
+  );
   assert.deepEqual(result.grantedServices, {
     drive: true,
     gmail: false,
@@ -245,6 +249,10 @@ test("a stored invalid-grant status remains explicitly reauthorization-required"
 
   const result = await oauthModule.getGoogleConnectionStatus(config);
 
+  assert.deepEqual(
+    Object.keys(result).sort(),
+    ["account", "connected", "grantedServices", "requiresReauthorization", "services", "status"],
+  );
   assert.equal(result.connected, false);
   assert.equal(result.status, "reauthorization-required");
   assert.equal(result.requiresReauthorization, true);
