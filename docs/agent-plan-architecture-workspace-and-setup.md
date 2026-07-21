@@ -956,7 +956,7 @@ simulation e2e adopt → ensure → rename journey; audit events asserted in D1.
 **Effort:** medium.
 
 ### SET-16 · Spreadsheets: system client-directory + owner-defined extras (medium, after SET-15)
-**Status:** In progress — `codex/set16-spreadsheets`, July 21, 2026.
+**Status:** In review — draft PR #88, `codex/set16-spreadsheets`, July 21, 2026.
 
 **Why:** `google-sheets.ts` maintains tabs/rows but cannot create workbooks — today the
 owner hand-creates the directory sheet and records an env var; and the blueprint now
