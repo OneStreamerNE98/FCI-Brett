@@ -82,7 +82,6 @@ export async function POST(request: NextRequest) {
   const setup = await getEffectiveGoogleRuntimeSetup();
   const { config, resources, blueprint, blueprintVersion } = setup;
   const key = parsed.body.key.trim();
-  const current = flattenWorkspaceRootFolders(blueprint).find((folder) => folder.key === key);
   let updatedBlueprint;
   try {
     updatedBlueprint = renameWorkspaceRootFolder(blueprint, key, parsed.body.name);
@@ -92,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
     throw error;
   }
-  if (!current) return response({ error: "The blueprint root folder was not found." }, 404);
+  const current = flattenWorkspaceRootFolders(blueprint).find((folder) => folder.key === key)!;
   const renamedNode = flattenWorkspaceRootFolders(updatedBlueprint).find((folder) => folder.key === key)!;
   if (renamedNode.name === current.name) return response({ error: "Choose a different folder name." }, 400);
 
