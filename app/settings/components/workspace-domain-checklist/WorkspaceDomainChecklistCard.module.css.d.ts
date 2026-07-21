@@ -1,0 +1,28 @@
+declare const styles: Readonly<{
+  card: string;
+  headerActions: string;
+  toggle: string;
+  list: string;
+  copy: string;
+  status: string;
+  "administrator-setup": string;
+  unavailable: string;
+  "manual-check": string;
+  "configuration-present": string;
+  "ready-to-connect": string;
+  connected: string;
+  "account-matched": string;
+  "secrets-present": string;
+  "setup-required": string;
+  "partially-configured": string;
+  "needs-review": string;
+  "reconnect-required": string;
+  "account-mismatch": string;
+  simulated: string;
+  link: string;
+  hostedPrerequisites: string;
+  hostedPrerequisitesHeading: string;
+  safeguards: string;
+}>;
+
+export default styles;
