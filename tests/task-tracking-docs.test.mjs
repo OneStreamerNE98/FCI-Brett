@@ -186,6 +186,10 @@ test("known merged packets have complete statuses and cannot regress to review-o
     ["SET-04", 44],
     ["SET-10", 56],
     ["SET-13", 76],
+    ["SET-15", 84],
+    ["SET-16", 88],
+    ["SET-19", 83],
+    ["SET-28", 87],
     ["KPI-01", 41],
     ["KPI-02", 52],
     ["KPI-03", 75],
@@ -328,6 +332,10 @@ test("the checklist dashboard records the merged baseline and current review que
   const set13Status = packetStatus(plan, "SET-13");
   assert.equal(set13Status, "Complete — PR #76, July 21, 2026. Source-only and undeployed; migration 0013 has not been applied to Sites.");
   assertMergedStatusHasNoReviewTerms("SET-13", set13Status);
+  assert.equal(packetStatus(plan, "SET-15"), "Complete — PR #84, July 21, 2026. Source-only and undeployed.");
+  assert.equal(packetStatus(plan, "SET-16"), "Complete — PR #88, July 21, 2026. Source-only and undeployed.");
+  assert.equal(packetStatus(plan, "SET-19"), "Complete — PR #83, July 21, 2026. Source-only and undeployed.");
+  assert.equal(packetStatus(plan, "SET-28"), "Complete — PR #87, July 21, 2026. Source-only and undeployed; migration 0016 has not been applied to Sites.");
   assert.match(staffLogin, /OIDC-02\/#54[\s\S]*OIDC-03\/#55[\s\S]*merged[\s\S]*source-only and undeployed/i);
   assert.match(foundation, /BE-09\/#51 is complete in source, merged, and undeployed/);
   assert.match(foundation, /BE-12\/#53 is complete in source, merged, and undeployed/);
