@@ -1317,7 +1317,7 @@ break any KPI; full suites pass.
 **Deps:** KPI-01. Effort: medium.
 
 ### KPI-03 · Installation dates + callback capture via audited drawer actions (medium, after KPI-02)
-**Status:** In review — draft PR #75, July 21, 2026. Source-only, undeployed, and not merged.
+**Status:** Complete — PR #75, July 21, 2026. Source-only and undeployed; migration 0014 has not been applied to Sites.
 
 **Why:** Install cycle time and callback rate are the two operations/quality KPIs every
 installer tracks — and this franchise's post-installation follow-up walkthrough makes the
