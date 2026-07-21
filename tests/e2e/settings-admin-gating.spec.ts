@@ -71,7 +71,8 @@ test("Office identity sees every protected Settings action disabled and explaine
 
   await page.locator(".settings-nav").getByRole("button", { name: "Workflow & notifications", exact: true }).click();
   await expect(page.getByRole("button", { name: "Save defaults" })).toBeDisabled();
-  await expect(page.locator(".administrator-action-note")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Save Chat routing" })).toBeDisabled();
+  await expect(page.locator(".administrator-action-note")).toHaveCount(2);
 
   await page.locator(".settings-nav").getByRole("button", { name: "My account", exact: true }).click();
   await expect(page.getByRole("button", { name: "Save my preferences" })).toBeEnabled();
