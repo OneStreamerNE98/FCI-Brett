@@ -19,6 +19,7 @@ const settingsMutationRoutes = [
   "app/api/v1/integrations/google/gmail/send-test/route.ts",
   "app/api/v1/integrations/google/calendar/test-hold/route.ts",
   "app/api/v1/integrations/google/sheets/sync/route.ts",
+  "app/api/v1/integrations/google/sheets/ensure/route.ts",
   "app/api/v1/integrations/google/setup/blueprint/route.ts",
 ];
 

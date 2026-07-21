@@ -10,7 +10,14 @@ const originalNodeEnvironment = process.env.NODE_ENV;
 const originalFetch = globalThis.fetch;
 process.env.NODE_ENV = "test";
 
-const workerEnvironment = {};
+let activeDatabase = null;
+const sheetsDatabaseProxy = {
+  prepare(...args) {
+    if (!activeDatabase) throw new Error("No active spreadsheet route database fixture.");
+    return activeDatabase.prepare(...args);
+  },
+};
+const workerEnvironment = { DB: sheetsDatabaseProxy };
 globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = workerEnvironment;
 
 const rootUrl = new URL("../", import.meta.url);
@@ -27,10 +34,13 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24738 } },
 });
 
-const [adoptRoute, ensureRoute, renameRoute, verifyRoute, projectDriveRoute, blueprintModule, oauthModule] = await Promise.all([
+const [adoptRoute, ensureRoute, renameRoute, sheetEnsureRoute, sheetStatusRoute, sheetSyncRoute, verifyRoute, projectDriveRoute, blueprintModule, oauthModule] = await Promise.all([
   vite.ssrLoadModule("/app/api/v1/integrations/google/drive/shared-drive/adopt/route.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/ensure-roots/route.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/rename/route.ts"),
+  vite.ssrLoadModule("/app/api/v1/integrations/google/sheets/ensure/route.ts"),
+  vite.ssrLoadModule("/app/api/v1/integrations/google/sheets/status/route.ts"),
+  vite.ssrLoadModule("/app/api/v1/integrations/google/sheets/sync/route.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/drive/verify/route.ts"),
   vite.ssrLoadModule("/app/api/v1/projects/[projectId]/drive/route.ts"),
   vite.ssrLoadModule("/app/lib/workspace-blueprint.ts"),
@@ -98,6 +108,7 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
     forceBlueprintConflict: false,
     project: null,
     mapping: null,
+    sheetStates: [],
   };
 
   const database = {
@@ -114,6 +125,12 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
           query.kind = "all";
           if (/FROM workspace_resources WHERE connection_key = \?/u.test(sql)) {
             return { results: state.resources.filter((row) => row.connection_key === query.values[0]) };
+          }
+          if (/FROM google_sheet_sync_state WHERE connection_key = \?/u.test(sql)) {
+            return { results: state.sheetStates.filter((row) => row.connection_key === query.values[0]) };
+          }
+          if (/^SELECT c\.id, c\.client_code/u.test(sql) || /^SELECT p\.id, p\.project_number/u.test(sql)) {
+            return { results: [] };
           }
           throw new Error(`Unexpected all query: ${sql}`);
         },
@@ -207,6 +224,22 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
           }
           if (sql.startsWith("UPDATE google_connections SET last_success_at")) return { meta: { changes: 1 } };
           if (sql.startsWith("UPDATE google_connections SET")) return { meta: { changes: 1 } };
+          if (sql.startsWith("INSERT INTO google_sheet_sync_state")) {
+            const [connectionKey, entityType, status, lastSyncedAt, lastErrorCode, lastErrorMessage, lastAttemptAt] = query.values;
+            const next = {
+              connection_key: connectionKey,
+              entity_type: entityType,
+              status,
+              last_synced_at: lastSyncedAt,
+              last_error_code: lastErrorCode,
+              last_error_message: lastErrorMessage,
+              last_attempt_at: lastAttemptAt,
+            };
+            const index = state.sheetStates.findIndex((row) => row.connection_key === connectionKey && row.entity_type === entityType);
+            if (index === -1) state.sheetStates.push(next);
+            else state.sheetStates[index] = next;
+            return { meta: { changes: 1 } };
+          }
           throw new Error(`Unexpected run query: ${sql}`);
         },
       };
@@ -222,6 +255,7 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
 }
 
 function applyEnvironment(database, values) {
+  activeDatabase = database;
   for (const key of Object.keys(workerEnvironment)) delete workerEnvironment[key];
   Object.assign(workerEnvironment, values, { DB: database });
 }
@@ -262,7 +296,7 @@ async function workspaceEnvironment(database, overrides = {}) {
       `google-connection:${config.connectionKey}:refresh`,
     ),
     key_version: config.tokenEncryptionKeyVersion,
-    scopes_json: JSON.stringify([config.serviceScopes.drive]),
+    scopes_json: JSON.stringify(config.enabledServices.map((service) => config.serviceScopes[service])),
     status: "connected",
   };
 }
@@ -387,6 +421,70 @@ function installEnsureProvider(rootId) {
   return { folders, calls };
 }
 
+function installSpreadsheetProvider({ rootId, targetFolderId, existing = [] }) {
+  const files = new Map(existing.map((file) => [file.appProperties.fciResourceKind, file]));
+  const tabs = new Map();
+  const calls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = init.method ?? "GET";
+    const serializedBody = init.body ? String(init.body) : "";
+    const body = serializedBody.trimStart().startsWith("{") ? JSON.parse(serializedBody) : null;
+    calls.push({ url, method, body });
+    if (url.href === "https://oauth2.googleapis.com/token") {
+      return Response.json({ access_token: "FCI_TEST_ACCESS_TOKEN", expires_in: 3600 });
+    }
+    if (url.pathname === `/drive/v3/files/${targetFolderId}` && method === "GET") {
+      return Response.json({
+        id: targetFolderId,
+        name: "00_Company Admin",
+        mimeType: "application/vnd.google-apps.folder",
+        parents: [rootId],
+        trashed: false,
+      });
+    }
+    if (url.pathname === "/drive/v3/files" && method === "GET") {
+      const key = (url.searchParams.get("q") ?? "").match(/value='([^']+)'/u)?.[1];
+      return Response.json({ files: key && files.has(key) ? [files.get(key)] : [] });
+    }
+    if (url.pathname === "/drive/v3/files" && method === "POST") {
+      const key = body.appProperties.fciResourceKind;
+      const file = {
+        id: `provider-sheet-${key}`,
+        name: body.name,
+        mimeType: body.mimeType,
+        parents: body.parents,
+        trashed: false,
+        webViewLink: `https://docs.google.test/${key}`,
+        appProperties: body.appProperties,
+      };
+      files.set(key, file);
+      return Response.json(file);
+    }
+    const spreadsheetId = url.pathname.match(/^\/v4\/spreadsheets\/([^/:]+)(?::batchUpdate)?/u)?.[1];
+    if (spreadsheetId) {
+      const decoded = decodeURIComponent(spreadsheetId);
+      const sheetTabs = tabs.get(decoded) ?? new Map();
+      tabs.set(decoded, sheetTabs);
+      if (url.pathname.endsWith(":batchUpdate") && method === "POST") {
+        for (const request of body.requests ?? []) {
+          const title = request.addSheet?.properties?.title;
+          if (title && !sheetTabs.has(title)) sheetTabs.set(title, sheetTabs.size + 1);
+        }
+        return Response.json({ replies: [] });
+      }
+      if (url.pathname.endsWith("/values:batchUpdate") && method === "POST") return Response.json({ totalUpdatedRows: 2 });
+      if (url.pathname.includes("/values/") && url.pathname.endsWith(":clear") && method === "POST") return Response.json({ clearedRange: "Project Register" });
+      if (url.pathname.includes("/values/") && method === "GET") return Response.json({ values: [] });
+      if (method === "GET") {
+        return Response.json({ sheets: [...sheetTabs].map(([title, sheetId]) => ({ properties: { title, sheetId } })) });
+      }
+    }
+    throw new Error(`Unexpected provider request: ${method} ${url}`);
+  };
+  return { calls, files, tabs };
+}
+
 function savedResource({ id, connectionKey = "google-workspace", resourceType, resourceKey, externalId, parentExternalId = null, origin = "adopted", name }) {
   return {
     id,
@@ -509,6 +607,7 @@ test("setup mutations reject non-admin and cross-origin requests before database
     [adoptRoute, "/api/v1/integrations/google/drive/shared-drive/adopt", {}],
     [ensureRoute, "/api/v1/integrations/google/drive/folders/ensure-roots", {}],
     [renameRoute, "/api/v1/integrations/google/drive/folders/rename", { key: "client-accounts", name: "Clients" }],
+    [sheetEnsureRoute, "/api/v1/integrations/google/sheets/ensure", {}],
   ];
   for (const [route, path, body] of cases) {
     const officeResponse = await route.POST(routeRequest(path, OFFICE_EMAIL, body));
@@ -527,6 +626,10 @@ test("simulation adopt → blueprint-driven ensure → idempotent ensure → ren
     management: "owner",
     children: [],
   });
+  fixtureBlueprint.spreadsheets.push(
+    { key: "first-run-import", name: "First-run Import", targetFolderKey: "company-admin", management: "owner", role: "import" },
+    { key: "project-ledger", name: "Project Ledger", targetFolderKey: "company-admin", management: "owner", role: "reference" },
+  );
   const database = fakeDatabase({ blueprint: fixtureBlueprint });
   simulationEnvironment(database);
   globalThis.fetch = async () => {
@@ -555,6 +658,21 @@ test("simulation adopt → blueprint-driven ensure → idempotent ensure → ren
   assert.equal(secondEnsureResponse.status, 200);
   assert.deepEqual(secondEnsure.counts, { found: 7, created: 0, adopted: 0 });
 
+  const firstSpreadsheetResponse = await sheetEnsureRoute.POST(routeRequest("/api/v1/integrations/google/sheets/ensure"));
+  const firstSpreadsheets = await firstSpreadsheetResponse.json();
+  assert.equal(firstSpreadsheetResponse.status, 201);
+  assert.deepEqual(firstSpreadsheets.counts, { found: 0, created: 3, adopted: 0 });
+  assert.deepEqual(firstSpreadsheets.spreadsheets.map(({ key, role }) => ({ key, role })), [
+    { key: "client-directory", role: "system-mirror" },
+    { key: "first-run-import", role: "import" },
+    { key: "project-ledger", role: "reference" },
+  ]);
+
+  const secondSpreadsheetResponse = await sheetEnsureRoute.POST(routeRequest("/api/v1/integrations/google/sheets/ensure"));
+  const secondSpreadsheets = await secondSpreadsheetResponse.json();
+  assert.equal(secondSpreadsheetResponse.status, 200);
+  assert.deepEqual(secondSpreadsheets.counts, { found: 3, created: 0, adopted: 0 });
+
   const systemRenameResponse = await renameRoute.POST(routeRequest(
     "/api/v1/integrations/google/drive/folders/rename",
     ADMIN_EMAIL,
@@ -581,8 +699,151 @@ test("simulation adopt → blueprint-driven ensure → idempotent ensure → ren
   const eventTypes = database.state.events.map((event) => event.eventType);
   assert.ok(eventTypes.includes("setup.shared_drive_adopted"));
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.drive_roots_ensured").length, 2);
+  assert.equal(eventTypes.filter((eventType) => eventType === "setup.spreadsheets_ensured").length, 2);
+  assert.match(database.state.events.find((event) => event.eventType === "setup.spreadsheets_ensured").detail, /outcomes=client-directory:created,first-run-import:created,project-ledger:created/u);
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.folder_renamed").length, 1);
   assert.match(database.state.events.find((event) => event.eventType === "setup.folder_renamed").detail, /key=client-accounts/u);
+});
+
+test("live spreadsheet ensure creates, adopts, prepares by role, and stays idempotent", async () => {
+  const rootId = "app-shared-drive-123";
+  const targetFolderId = "company-admin-folder-123";
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.spreadsheets.push(
+    { key: "first-run-import", name: "First-run Import", targetFolderKey: "company-admin", management: "owner", role: "import" },
+    { key: "project-ledger", name: "Project Ledger", targetFolderKey: "company-admin", management: "owner", role: "reference" },
+  );
+  const database = fakeDatabase({ blueprint, blueprintConnectionKey: "google-workspace" });
+  await workspaceEnvironment(database, { GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,sheets" });
+  database.state.resources.push(
+    savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+    savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: targetFolderId, parentExternalId: rootId, name: "00_Company Admin" }),
+  );
+  const provider = installSpreadsheetProvider({
+    rootId,
+    targetFolderId,
+    existing: [{
+      id: "provider-import-first-run",
+      name: "First-run Import",
+      mimeType: "application/vnd.google-apps.spreadsheet",
+      parents: [targetFolderId],
+      trashed: false,
+      webViewLink: "https://docs.google.test/first-run-import",
+      appProperties: { fciResourceKind: "first-run-import" },
+    }],
+  });
+
+  const firstResponse = await sheetEnsureRoute.POST(routeRequest("/api/v1/integrations/google/sheets/ensure"));
+  const first = await firstResponse.json();
+  assert.equal(firstResponse.status, 201, JSON.stringify(first));
+  assert.deepEqual(first.counts, { found: 0, created: 2, adopted: 1 });
+  assert.deepEqual(first.spreadsheets.map(({ key, outcome }) => ({ key, outcome })), [
+    { key: "client-directory", outcome: "created" },
+    { key: "first-run-import", outcome: "adopted" },
+    { key: "project-ledger", outcome: "created" },
+  ]);
+
+  const createBodies = provider.calls
+    .filter((call) => call.url.pathname === "/drive/v3/files" && call.method === "POST")
+    .map((call) => call.body);
+  assert.deepEqual(createBodies.map((body) => body.appProperties), [
+    { fciResourceKind: "client-directory" },
+    { fciResourceKind: "project-ledger" },
+  ]);
+  assert.deepEqual([...provider.tabs.get("provider-sheet-client-directory").keys()], ["Client Directory", "Project Register"]);
+  assert.deepEqual([...provider.tabs.get("provider-import-first-run").keys()], ["Clients Import", "Projects Import"]);
+  assert.equal(provider.calls.some((call) => call.url.hostname === "sheets.googleapis.com" && call.url.pathname.includes("provider-sheet-project-ledger")), false);
+  assert.equal(database.state.resources.filter((row) => row.resource_type === "sheets.spreadsheet").length, 3);
+  const event = database.state.events.find((candidate) => candidate.eventType === "setup.spreadsheets_ensured");
+  assert.equal(event.detail, "found=0;created=2;adopted=1;outcomes=client-directory:created,first-run-import:adopted,project-ledger:created");
+
+  const statusResponse = await sheetStatusRoute.GET(routeRequest("/api/v1/integrations/google/sheets/status", OFFICE_EMAIL));
+  const status = await statusResponse.json();
+  assert.equal(statusResponse.status, 200);
+  assert.equal(statusResponse.headers.get("cache-control"), "no-store");
+  assert.equal(status.mirror.source, "app");
+  assert.equal(status.mirror.spreadsheetUrl, "https://docs.google.com/spreadsheets/d/provider-sheet-client-directory/edit");
+
+  const callsBeforeSync = provider.calls.length;
+  const syncResponse = await sheetSyncRoute.POST(routeRequest("/api/v1/integrations/google/sheets/sync"));
+  const sync = await syncResponse.json();
+  assert.equal(syncResponse.status, 200, JSON.stringify(sync));
+  assert.equal(sync.mirror.source, "app");
+  assert.equal(sync.mirror.clients.status, "synced");
+  assert.ok(provider.calls.slice(callsBeforeSync).some((call) => (
+    call.url.hostname === "sheets.googleapis.com"
+    && call.url.pathname.includes("provider-sheet-client-directory")
+  )));
+
+  const secondResponse = await sheetEnsureRoute.POST(routeRequest("/api/v1/integrations/google/sheets/ensure"));
+  const second = await secondResponse.json();
+  assert.equal(secondResponse.status, 200);
+  assert.deepEqual(second.counts, { found: 3, created: 0, adopted: 0 });
+  assert.equal(provider.calls.filter((call) => call.url.pathname === "/drive/v3/files" && call.method === "POST").length, 2);
+  assert.equal(provider.calls.some((call) => call.method === "DELETE"), false);
+});
+
+test("sheet mirror status labels the environment ID as fallback when no app registry row exists", async () => {
+  const database = fakeDatabase();
+  await workspaceEnvironment(database, {
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,sheets",
+    GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID: "environment-directory-sheet",
+  });
+  globalThis.fetch = async () => {
+    throw new Error("Sheet status must not call Google.");
+  };
+
+  const response = await sheetStatusRoute.GET(routeRequest("/api/v1/integrations/google/sheets/status", OFFICE_EMAIL));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.mirror.source, "env");
+  assert.equal(body.mirror.configured, true);
+  assert.equal(body.mirror.spreadsheetUrl, "https://docs.google.com/spreadsheets/d/environment-directory-sheet/edit");
+});
+
+test("spreadsheet ensure preflights target folders and honors its exact setup lease", async (t) => {
+  await t.test("missing target fails before lease or provider work", async () => {
+    const database = fakeDatabase();
+    simulationEnvironment(database);
+    database.state.resources.push(savedResource({
+      id: "shared",
+      connectionKey: "workspace-simulation",
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: "workspace-simulation-shared-drive",
+      name: "FCI Operations",
+    }));
+    globalThis.fetch = async () => {
+      throw new Error("A missing target preflight must not call Google.");
+    };
+
+    const response = await sheetEnsureRoute.POST(routeRequest("/api/v1/integrations/google/sheets/ensure"));
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "spreadsheet_target_folder_missing");
+    assert.match(body.error, /Ensure the Shared Drive root folders/u);
+    assert.equal(database.state.leases.size, 0);
+    assert.equal(database.state.events.length, 0);
+  });
+
+  await t.test("active spreadsheet lease returns 409 without registry writes", async () => {
+    const database = fakeDatabase();
+    simulationEnvironment(database);
+    database.state.resources.push(
+      savedResource({ id: "shared", connectionKey: "workspace-simulation", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: "workspace-simulation-shared-drive", name: "FCI Operations" }),
+      savedResource({ id: "company-admin", connectionKey: "workspace-simulation", resourceType: "drive.folder", resourceKey: "company-admin", externalId: "workspace-simulation-folder-company-admin", name: "00_Company Admin" }),
+    );
+    database.state.leases.set("workspace-simulation:setup:spreadsheets", {
+      status: "in-progress",
+      leaseExpiresAt: Date.now() + 60_000,
+    });
+
+    const response = await sheetEnsureRoute.POST(routeRequest("/api/v1/integrations/google/sheets/ensure"));
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "workspace_setup_lease_conflict");
+    assert.equal(database.state.resources.some((row) => row.resource_type === "sheets.spreadsheet"), false);
+  });
 });
 
 test("ensure-roots returns 409 while the exact connection setup lease is active", async () => {
@@ -740,7 +1001,7 @@ test("ensure-roots maps a conflicting same-name blueprint identity to 409 withou
   assert.equal(database.state.resources.some((row) => row.resource_key === "second-sibling"), false);
 });
 
-test("adopt and rename reject unknown request fields before setup state changes", async () => {
+test("setup actions reject unknown request fields before setup state changes", async () => {
   const database = fakeDatabase();
   simulationEnvironment(database);
   const adoptResponse = await adoptRoute.POST(routeRequest(
@@ -765,5 +1026,13 @@ test("adopt and rename reject unknown request fields before setup state changes"
     { unexpected: true },
   ));
   assert.equal(ensureResponse.status, 400);
+  assert.equal(database.state.resources.length, 0);
+
+  const spreadsheetResponse = await sheetEnsureRoute.POST(routeRequest(
+    "/api/v1/integrations/google/sheets/ensure",
+    ADMIN_EMAIL,
+    { unexpected: true },
+  ));
+  assert.equal(spreadsheetResponse.status, 400);
   assert.equal(database.state.resources.length, 0);
 });

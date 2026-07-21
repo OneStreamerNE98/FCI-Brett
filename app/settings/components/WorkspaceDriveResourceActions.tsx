@@ -25,6 +25,7 @@ export type WorkspaceSetupResource = {
   name?: string;
   blueprintName: string;
   management?: "owner" | "system";
+  role?: "system-mirror" | "import" | "reference";
   parentKey?: string | null;
   externalId?: string;
   source: WorkspaceResourceSource;
@@ -195,6 +196,41 @@ function FolderRenameAction({
   </form>;
 }
 
+function SpreadsheetActions({
+  resource,
+  notify,
+  onChanged,
+}: {
+  resource: WorkspaceSetupResource;
+  notify: Notify;
+  onChanged: (change: WorkspaceDriveChange) => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function ensureSpreadsheets() {
+    setBusy(true);
+    try {
+      const { response, data } = await postJson<{
+        ensured?: boolean;
+        counts?: { found: number; created: number; adopted: number };
+      }>("/api/v1/integrations/google/sheets/ensure");
+      if (!response.ok || !data.ensured) throw new Error(data.error ?? "The Workspace spreadsheets could not be ensured.");
+      const counts = data.counts ?? { found: 0, created: 0, adopted: 0 };
+      notify(`Spreadsheets checked: ${counts.created} created, ${counts.adopted} adopted, ${counts.found} found.`, "success");
+      await onChanged({});
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Workspace spreadsheets could not be ensured.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="workspace-resource-action-buttons">
+    <AdministratorActionButton className="primary-button" isAdmin onClick={() => void ensureSpreadsheets()} disabled={busy}>{busy ? "Ensuring…" : "Ensure spreadsheets"}</AdministratorActionButton>
+    {resource.url && <a className="soft-button" href={resource.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open</a>}
+  </div>;
+}
+
 export function WorkspaceDriveResourceActions({
   resource,
   notify,
@@ -209,6 +245,9 @@ export function WorkspaceDriveResourceActions({
   }
   if (resource.resourceType === "drive.folder") {
     return <FolderRenameAction resource={resource} notify={notify} onChanged={onChanged} />;
+  }
+  if (resource.resourceType === "sheets.spreadsheet") {
+    return <SpreadsheetActions resource={resource} notify={notify} onChanged={onChanged} />;
   }
   return <div className="workspace-resource-action-buttons">{resource.url ? <a className="soft-button" href={resource.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open</a> : <span className="workspace-resource-action-note">Later setup packet</span>}</div>;
 }

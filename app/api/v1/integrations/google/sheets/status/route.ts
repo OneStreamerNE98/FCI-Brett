@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
-import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
+import { getEffectiveGoogleRuntimeSetup, getGoogleConnectionStatus } from "../../../../../../lib/google-oauth-sites";
 import { getGoogleSheetMirrorStatus } from "../../../../../../lib/google-sheets-sites";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 
@@ -9,8 +9,9 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
+  const setup = await getEffectiveGoogleRuntimeSetup();
+  const { config } = setup;
   const connection = await getGoogleConnectionStatus(config);
-  const mirror = await getGoogleSheetMirrorStatus(config, connection);
-  return NextResponse.json({ mirror });
+  const mirror = await getGoogleSheetMirrorStatus(config, connection, setup.effectiveResources.clientDirectorySheet.source);
+  return NextResponse.json({ mirror }, { headers: { "Cache-Control": "no-store" } });
 }

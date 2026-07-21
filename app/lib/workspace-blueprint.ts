@@ -1,5 +1,6 @@
 export type WorkspaceBlueprintManagement = "owner" | "system";
 export type WorkspaceBlueprintTemplateKind = "doc" | "sheet";
+export type WorkspaceBlueprintSpreadsheetRole = "system-mirror" | "import" | "reference";
 export type WorkspaceBlueprintWeekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
 
 export type WorkspaceBlueprintFolder = Readonly<{
@@ -14,6 +15,7 @@ export type WorkspaceBlueprintSpreadsheet = Readonly<{
   name: string;
   targetFolderKey: string;
   management: WorkspaceBlueprintManagement;
+  role: WorkspaceBlueprintSpreadsheetRole;
 }>;
 
 export type WorkspaceBlueprintTemplate = Readonly<{
@@ -177,6 +179,7 @@ const SEED_WORKSPACE_BLUEPRINT: WorkspaceBlueprint = deepFreeze({
     name: "FCI Operations Directory",
     targetFolderKey: "company-admin",
     management: "system",
+    role: "system-mirror",
   }],
   templates: [
     { key: "estimate-proposal", name: "Estimate Proposal", kind: "doc", targetFolderKey: "templates", management: "owner" },
@@ -266,6 +269,13 @@ function key(value: unknown, path: string): string {
 
 function management(value: unknown, path: string): WorkspaceBlueprintManagement {
   if (value !== "owner" && value !== "system") invalid(path, "must be owner or system.");
+  return value;
+}
+
+function spreadsheetRole(value: unknown, path: string): WorkspaceBlueprintSpreadsheetRole {
+  if (value !== "system-mirror" && value !== "import" && value !== "reference") {
+    invalid(path, "must be system-mirror, import, or reference.");
+  }
   return value;
 }
 
@@ -382,12 +392,13 @@ function assertNoUnexpectedSystemFolders(folders: readonly WorkspaceBlueprintFol
 }
 
 function sanitizeSpreadsheet(value: unknown, path: string): WorkspaceBlueprintSpreadsheet {
-  const record = object(value, path, ["key", "name", "targetFolderKey", "management"]);
+  const record = object(value, path, ["key", "name", "targetFolderKey", "management", "role"]);
   return {
     key: key(record.key, `${path}.key`),
     name: fileName(record.name, `${path}.name`),
     targetFolderKey: key(record.targetFolderKey, `${path}.targetFolderKey`),
     management: management(record.management, `${path}.management`),
+    role: spreadsheetRole(record.role, `${path}.role`),
   };
 }
 
@@ -528,6 +539,8 @@ export function sanitizeWorkspaceBlueprint(value: unknown): WorkspaceBlueprint {
   }
   const unexpectedSystemSpreadsheet = sanitized.spreadsheets.find((spreadsheet) => spreadsheet.management === "system" && spreadsheet.key !== "client-directory");
   if (unexpectedSystemSpreadsheet) invalid(`blueprint.spreadsheets[${unexpectedSystemSpreadsheet.key}].management`, "cannot mark an owner-defined spreadsheet as system-managed.");
+  const unexpectedMirrorSpreadsheet = sanitized.spreadsheets.find((spreadsheet) => spreadsheet.role === "system-mirror" && spreadsheet.key !== "client-directory");
+  if (unexpectedMirrorSpreadsheet) invalid(`blueprint.spreadsheets[${unexpectedMirrorSpreadsheet.key}].role`, "only the system Client Directory can use the system-mirror role.");
 
   for (const seedLabel of SEED_WORKSPACE_BLUEPRINT.gmail.labels) {
     const label = sanitized.gmail.labels.find((candidate) => candidate.key === seedLabel.key);

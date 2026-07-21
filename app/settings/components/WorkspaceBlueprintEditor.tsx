@@ -7,6 +7,7 @@ import { AdministratorActionButton } from "../../components/AdministratorActionB
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
 import {
   flattenWorkspaceBlueprintFolders,
+  flattenWorkspaceRootFolders,
   WORKSPACE_BLUEPRINT_LIMITS,
   WORKSPACE_BLUEPRINT_NAMING_TOKENS,
   WORKSPACE_BLUEPRINT_WEEKDAYS,
@@ -168,6 +169,7 @@ export function WorkspaceBlueprintEditor({ notify, refreshKey = 0 }: { notify: N
   }, []);
 
   const folderOptions = useMemo(() => draft ? flattenWorkspaceBlueprintFolders(draft) : [], [draft]);
+  const spreadsheetFolderOptions = useMemo(() => draft ? flattenWorkspaceRootFolders(draft) : [], [draft]);
   const dirty = Boolean(draft && savedBlueprint && JSON.stringify(draft) !== JSON.stringify(savedBlueprint));
 
   const renameFolder = useCallback((collection: FolderCollectionKey, folderKey: string, name: string) => {
@@ -207,8 +209,9 @@ export function WorkspaceBlueprintEditor({ notify, refreshKey = 0 }: { notify: N
       next.spreadsheets.push({
         key: unusedKey("new-spreadsheet", existing),
         name: "New spreadsheet",
-        targetFolderKey: flattenWorkspaceBlueprintFolders(next)[0]?.key ?? "company-admin",
+        targetFolderKey: flattenWorkspaceRootFolders(next)[0]?.key ?? "company-admin",
         management: "owner",
+        role: "reference",
       });
     });
   }, [updateDraft]);
@@ -295,12 +298,13 @@ export function WorkspaceBlueprintEditor({ notify, refreshKey = 0 }: { notify: N
       </fieldset>
 
       <fieldset className="workspace-blueprint-list">
-        <legend>Spreadsheets</legend><p>The Client Directory is locked; owner-defined extras can target any blueprint folder.</p>
+        <legend>Spreadsheets</legend><p>The Client Directory mirror is locked. Owner-defined import sheets prepare entity tabs; reference sheets stay read-only for future bounded readers.</p>
         {draft.spreadsheets.map((spreadsheet, index) => {
           const locked = spreadsheet.management === "system";
           return <div className={`workspace-blueprint-list-row ${locked ? "locked" : ""}`} key={spreadsheet.key}>
             <label>Spreadsheet name<input aria-label={`${spreadsheet.key} spreadsheet name`} value={spreadsheet.name} disabled={locked} onChange={(event) => updateDraft((next) => { next.spreadsheets[index].name = event.target.value; })} /></label>
-            <label>Target folder<select aria-label={`${spreadsheet.key} spreadsheet target folder`} value={spreadsheet.targetFolderKey} disabled={locked} onChange={(event) => updateDraft((next) => { next.spreadsheets[index].targetFolderKey = event.target.value; })}>{folderOptions.map((folder) => <option value={folder.key} key={folder.key}>{folder.path}</option>)}</select></label>
+            <label>Role<select aria-label={`${spreadsheet.key} spreadsheet role`} value={spreadsheet.role} disabled={locked} onChange={(event) => updateDraft((next) => { next.spreadsheets[index].role = event.target.value as "import" | "reference"; })}>{locked && <option value="system-mirror">System mirror</option>}<option value="import">Client &amp; project import</option><option value="reference">Reference (read-only)</option></select></label>
+            <label>Target folder<select aria-label={`${spreadsheet.key} spreadsheet target folder`} value={spreadsheet.targetFolderKey} disabled={locked} onChange={(event) => updateDraft((next) => { next.spreadsheets[index].targetFolderKey = event.target.value; })}>{spreadsheetFolderOptions.map((folder) => <option value={folder.key} key={folder.key}>{folder.path}</option>)}</select></label>
             <code>{spreadsheet.key}</code>{locked ? <LockBadge label={spreadsheet.name} reason={SYSTEM_SHEET_REASON} /> : <button type="button" className="icon-button workspace-blueprint-remove" aria-label={`Remove ${spreadsheet.name} spreadsheet`} onClick={() => updateDraft((next) => { next.spreadsheets.splice(index, 1); })}><Trash2 size={14} /></button>}
           </div>;
         })}

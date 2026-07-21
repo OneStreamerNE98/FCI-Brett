@@ -11,6 +11,7 @@ type MirrorStatus = {
   projects: { status: string; lastSyncedAt: number | null; lastError: string | null };
   lastSyncedAt: number | null;
   reason: string | null;
+  source: "app" | "env" | "none";
 };
 type ReadinessPayload = {
   credentialsPresent: boolean;
@@ -40,6 +41,7 @@ type WorkspaceResourcesPayload = {
     name?: string;
     blueprintName: string;
     management?: "owner" | "system";
+    role?: "system-mirror" | "import" | "reference";
     parentKey?: string | null;
     externalId?: string;
     source: "app" | "env" | "none";
@@ -113,6 +115,7 @@ function unsyncedMirror(): MirrorStatus {
     projects: { status: "not-synced", lastSyncedAt: null, lastError: null },
     lastSyncedAt: null,
     reason: null,
+    source: "app",
   };
 }
 
@@ -136,7 +139,7 @@ function workspaceResources(overrides: Partial<WorkspaceResourcesPayload> = {}):
   return {
     resources: [
       { key: "primary", resourceType: "drive.shared-drive", label: "Shared Drive", name: "FCI Operations", blueprintName: "FCI Operations", management: "owner", parentKey: null, externalId: "drive-id", source: "env", state: "Found" },
-      { key: "client-directory", resourceType: "sheets.spreadsheet", label: "Client directory spreadsheet", name: "FCI Operations Directory", blueprintName: "FCI Operations Directory", management: "system", parentKey: "company-admin", externalId: "sheet-id", source: "app", origin: "created", state: "Created" },
+      { key: "client-directory", resourceType: "sheets.spreadsheet", label: "Client directory spreadsheet", name: "FCI Operations Directory", blueprintName: "FCI Operations Directory", management: "system", role: "system-mirror", parentKey: "company-admin", externalId: "sheet-id", source: "app", origin: "created", state: "Created" },
       { key: "client-appointments", resourceType: "calendar.calendar", label: "Client appointments calendar", name: "FCI • Client Appointments", blueprintName: "FCI • Client Appointments", management: "system", parentKey: null, externalId: "appointments-id", source: "env", state: "Found" },
       { key: "field-schedule", resourceType: "calendar.calendar", label: "Field schedule calendar", name: "FCI • Field Schedule", blueprintName: "FCI • Field Schedule", management: "system", parentKey: null, source: "none", state: "Not configured" },
     ],
@@ -594,10 +597,16 @@ test("administrator edits and saves a structured Workspace blueprint while syste
   const correspondenceLock = blueprintCard.getByRole("button", { name: "05_Correspondence is locked", exact: true });
   await correspondenceLock.focus();
   await expect(correspondenceLock.locator("xpath=following-sibling::*[@role='tooltip']")).toContainText("renaming or removing it would break the filing contract", { ignoreCase: true });
+  await expect(blueprintCard.getByLabel("client-directory spreadsheet role", { exact: true })).toBeDisabled();
+  await expect(blueprintCard.getByLabel("client-directory spreadsheet role", { exact: true })).toHaveValue("system-mirror");
 
   await blueprintCard.getByLabel("01_Client Accounts folder name", { exact: true }).fill("01_Custom Clients");
   await blueprintCard.getByRole("button", { name: "Add template", exact: true }).click();
   await blueprintCard.getByLabel("new-template template name", { exact: true }).fill("Site Visit Packet");
+  await blueprintCard.getByRole("button", { name: "Add spreadsheet", exact: true }).click();
+  await expect(blueprintCard.getByLabel("new-spreadsheet spreadsheet role", { exact: true })).toHaveValue("reference");
+  await blueprintCard.getByLabel("new-spreadsheet spreadsheet name", { exact: true }).fill("First-run Import");
+  await blueprintCard.getByLabel("new-spreadsheet spreadsheet role", { exact: true }).selectOption("import");
   await expect(blueprintCard.getByRole("button", { name: "Save blueprint", exact: true })).toBeEnabled();
   await blueprintCard.getByRole("button", { name: "Save blueprint", exact: true }).click();
 
@@ -611,6 +620,7 @@ test("administrator edits and saves a structured Workspace blueprint while syste
   expect(reflected.body.version).toBe(1);
   expect(reflected.body.blueprint.drive.roots.find((folder) => folder.key === "client-accounts")?.name).toBe("01_Custom Clients");
   expect(reflected.body.blueprint.templates.at(-1)).toEqual(expect.objectContaining({ key: "new-template", name: "Site Visit Packet" }));
+  expect(reflected.body.blueprint.spreadsheets.at(-1)).toEqual(expect.objectContaining({ key: "new-spreadsheet", name: "First-run Import", role: "import" }));
   expect(reflected.body.blueprint.drive.projectFolders.find((folder) => folder.key === "correspondence")?.name).toBe("05_Correspondence");
   expect(blueprintApi.current()).toEqual({ blueprint: reflected.body.blueprint, version: reflected.body.version });
 });
@@ -816,11 +826,15 @@ test("simulation reset removes the registry-backed resource and refreshes the Re
   await expect(directoryRow).toContainText("Simulated");
 });
 
-test("simulation Resources journey adopts the Shared Drive, ensures blueprint roots, and renames an owner folder", async ({ page }) => {
+test("simulation Resources journey adopts Drive, ensures roots and spreadsheet roles, then renames an owner folder", async ({ page }) => {
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await page.unroute("**/api/v1/integrations/google/setup/blueprint");
   const blueprint = structuredClone(seedWorkspaceBlueprint()) as WorkspaceBlueprint;
   blueprint.drive.roots.push({ key: "primary", name: "03_Primary Archive", management: "owner", children: [] });
+  blueprint.spreadsheets.push(
+    { key: "first-run-import", name: "First-run Import", targetFolderKey: "company-admin", management: "owner", role: "import" },
+    { key: "project-ledger", name: "Project Ledger", targetFolderKey: "company-admin", management: "owner", role: "reference" },
+  );
   const blueprintApi = await mockWorkspaceBlueprint(page, blueprint, 1);
   const folderResources: WorkspaceResourcesPayload["resources"] = [];
   const appendFolders = (
@@ -845,6 +859,18 @@ test("simulation Resources journey adopts the Shared Drive, ensures blueprint ro
     }
   };
   appendFolders(blueprint.drive.roots, null, "");
+  const spreadsheetResources: WorkspaceResourcesPayload["resources"] = blueprint.spreadsheets.map((spreadsheet) => ({
+    key: spreadsheet.key,
+    resourceType: "sheets.spreadsheet",
+    label: spreadsheet.role === "system-mirror" ? "Client directory spreadsheet" : spreadsheet.role === "import" ? "Import spreadsheet" : "Reference spreadsheet",
+    name: spreadsheet.name,
+    blueprintName: spreadsheet.name,
+    management: spreadsheet.management,
+    role: spreadsheet.role,
+    parentKey: spreadsheet.targetFolderKey,
+    source: "none",
+    state: "Simulated",
+  }));
   let resources: WorkspaceResourcesPayload["resources"] = [{
     key: "primary",
     resourceType: "drive.shared-drive",
@@ -855,7 +881,7 @@ test("simulation Resources journey adopts the Shared Drive, ensures blueprint ro
     parentKey: null,
     source: "none",
     state: "Simulated",
-  }, ...folderResources];
+  }, ...spreadsheetResources, ...folderResources];
   const payload = (): WorkspaceResourcesPayload => ({
     resources,
     connectReady: true,
@@ -903,6 +929,20 @@ test("simulation Resources journey adopts the Shared Drive, ensures blueprint ro
       body: JSON.stringify({ ensured: true, simulated: true, counts: { found: 0, created: folderResources.length, adopted: 0 } }),
     });
   });
+  await page.route("**/api/v1/integrations/google/sheets/ensure", async (route) => {
+    resources = resources.map((resource) => resource.resourceType === "sheets.spreadsheet" ? {
+      ...resource,
+      externalId: resource.key === "client-directory" ? "workspace-simulation-directory-sheet" : `workspace-simulation-spreadsheet-${resource.key}`,
+      url: `/settings?section=google-workspace&workspace-simulation=spreadsheet-${resource.key}`,
+      source: "app",
+      origin: "created",
+    } : resource);
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ ensured: true, simulated: true, counts: { found: 0, created: spreadsheetResources.length, adopted: 0 } }),
+    });
+  });
   await page.route("**/api/v1/integrations/google/drive/folders/rename", async (route) => {
     const body = route.request().postDataJSON() as { key: string; name: string };
     const updated = structuredClone(blueprintApi.current().blueprint) as WorkspaceBlueprint;
@@ -943,6 +983,13 @@ test("simulation Resources journey adopts the Shared Drive, ensures blueprint ro
   await expect(resourcesCard.getByRole("button", { name: "Ensure root folders" })).toBeEnabled();
 
   await resourcesCard.getByRole("button", { name: "Ensure root folders" }).click();
+  await resourcesCard.getByRole("button", { name: "Ensure spreadsheets" }).first().click();
+  const importRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "First-run Import" });
+  const referenceRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "Project Ledger" });
+  await expect(importRow).toContainText("App-managed");
+  await expect(referenceRow).toContainText("App-managed");
+  await expect(importRow.getByRole("link", { name: "Open" })).toBeVisible();
+  await expect(referenceRow.getByRole("link", { name: "Open" })).toBeVisible();
   const clientRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "01_Client Accounts" });
   await expect(clientRow.getByRole("button", { name: "Rename" })).toBeVisible();
   const collidingFolderRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "03_Primary Archive" });

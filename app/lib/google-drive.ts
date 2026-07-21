@@ -5,6 +5,7 @@ const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
 const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
+const SPREADSHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet";
 const MAX_MANAGED_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_MANAGED_APP_PROPERTIES = 12;
 
@@ -87,6 +88,11 @@ export type DriveManagedFileUploadResult = {
   created: boolean;
   file: DriveManagedFile;
 };
+
+export type DriveBlueprintSpreadsheetEnsureResult = Readonly<{
+  created: boolean;
+  file: DriveManagedFile;
+}>;
 
 function driveQueryString(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -570,6 +576,62 @@ export class GoogleDriveClient {
       throw new GoogleIntegrationError("duplicate_drive_file", "More than one managed Google Drive file has the same source identity.", 409);
     }
     return matches.length === 1 ? asManagedFile(matches[0]) : null;
+  }
+
+  /**
+   * Finds a blueprint spreadsheet by its stable identity anywhere in the
+   * configured Shared Drive, or creates it under the requested managed folder.
+   */
+  async ensureBlueprintSpreadsheet(input: {
+    parentId: string;
+    key: string;
+    name: string;
+  }): Promise<DriveBlueprintSpreadsheetEnsureResult> {
+    const key = ensureNonEmptyString(input.key, "The blueprint spreadsheet key", 41);
+    const name = sanitizeDriveFileName(ensureNonEmptyString(input.name, "The spreadsheet name", 300));
+    const appProperties = normalizedAppProperties({ fciResourceKind: key });
+    await this.assertContained(input.parentId);
+    const q = `trashed = false and appProperties has { key='fciResourceKind' and value='${driveQueryString(key)}' }`;
+    const listParameters = this.addListOptions(new URLSearchParams({
+      q,
+      fields: "files(id,name,mimeType,parents,trashed,webViewLink,appProperties)",
+      pageSize: "3",
+    }));
+    const listed = await this.request<{ files?: DriveFile[] }>(`files?${listParameters.toString()}`);
+    const matches = listed.files ?? [];
+    if (matches.length > 1) {
+      throw new GoogleIntegrationError("duplicate_drive_file", `More than one spreadsheet has the blueprint identity ${key}.`, 409);
+    }
+    if (matches.length === 1) {
+      const existing = matches[0];
+      if (existing.mimeType !== SPREADSHEET_MIME_TYPE || existing.trashed) {
+        throw new GoogleIntegrationError("invalid_blueprint_spreadsheet", `The blueprint identity ${key} belongs to a file that is not a Google Sheet.`, 409);
+      }
+      return Object.freeze({ created: false, file: asManagedFile(existing) });
+    }
+
+    const createParameters = this.addFileOptions(new URLSearchParams({
+      fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties",
+    }));
+    const created = await this.request<DriveFile>(`files?${createParameters.toString()}`, {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        mimeType: SPREADSHEET_MIME_TYPE,
+        parents: [input.parentId],
+        appProperties,
+      }),
+    });
+    if (
+      !created.id
+      || created.mimeType !== SPREADSHEET_MIME_TYPE
+      || created.trashed
+      || !created.parents?.includes(input.parentId)
+      || created.appProperties?.fciResourceKind !== key
+    ) {
+      throw new GoogleIntegrationError("drive_create_invalid_response", "Google Drive did not confirm the managed spreadsheet identity. Check Drive before retrying.", 503);
+    }
+    return Object.freeze({ created: true, file: asManagedFile(created) });
   }
 
   /**

@@ -195,3 +195,109 @@ test("same-name reuse never steals a different blueprint folder identity", async
   assert.equal(calls.some((call) => call.method === "POST"), false);
   assert.equal(calls.some((call) => call.method === "DELETE"), false);
 });
+
+test("blueprint spreadsheet ensure searches the Shared Drive identity, creates with appProperties, and is idempotent after a move", async () => {
+  const calls = [];
+  let created = false;
+  const spreadsheet = () => ({
+    id: "sheet-client-directory",
+    name: "FCI Operations Directory",
+    mimeType: "application/vnd.google-apps.spreadsheet",
+    parents: [created ? "archive-folder" : "company-admin-folder"],
+    trashed: false,
+    webViewLink: "https://docs.google.test/sheet-client-directory",
+    appProperties: { fciResourceKind: "client-directory" },
+  });
+  const folder = {
+    id: "company-admin-folder",
+    name: "00_Company Admin",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: ["shared-drive-root"],
+    trashed: false,
+  };
+  const fetcher = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = init.method ?? "GET";
+    calls.push({ url, init, method });
+    if (url.pathname.endsWith("/files/company-admin-folder") && method === "GET") return Response.json(folder);
+    if (url.pathname.endsWith("/files") && method === "GET") {
+      const query = url.searchParams.get("q") ?? "";
+      assert.match(query, /fciResourceKind/u);
+      assert.match(query, /client-directory/u);
+      assert.doesNotMatch(query, /in parents/u);
+      assert.equal(url.searchParams.get("corpora"), "drive");
+      return Response.json({ files: created ? [spreadsheet()] : [] });
+    }
+    if (url.pathname.endsWith("/files") && method === "POST") {
+      assert.equal(url.searchParams.get("supportsAllDrives"), "true");
+      assert.equal(url.searchParams.get("corpora"), null);
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        name: "FCI Operations Directory",
+        mimeType: "application/vnd.google-apps.spreadsheet",
+        parents: ["company-admin-folder"],
+        appProperties: { fciResourceKind: "client-directory" },
+      });
+      created = true;
+      return Response.json({ ...spreadsheet(), parents: ["company-admin-folder"] });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+  const client = new GoogleDriveClient("test-token", config(), fetcher);
+
+  const first = await client.ensureBlueprintSpreadsheet({
+    parentId: "company-admin-folder",
+    key: "client-directory",
+    name: "FCI Operations Directory",
+  });
+  assert.equal(first.created, true);
+  assert.equal(first.file.appProperties.fciResourceKind, "client-directory");
+
+  const second = await client.ensureBlueprintSpreadsheet({
+    parentId: "company-admin-folder",
+    key: "client-directory",
+    name: "FCI Operations Directory",
+  });
+  assert.equal(second.created, false);
+  assert.deepEqual(second.file.parents, ["archive-folder"]);
+  assert.equal(calls.filter((call) => call.method === "POST").length, 1);
+  assert.ok(calls.every((call) => call.method !== "DELETE"));
+});
+
+test("blueprint spreadsheet ensure rejects duplicate identities and wrong MIME types", async (t) => {
+  const folder = {
+    id: "company-admin-folder",
+    name: "00_Company Admin",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: ["shared-drive-root"],
+    trashed: false,
+  };
+  for (const fixture of [
+    {
+      name: "duplicates",
+      files: [
+        { id: "sheet-one", name: "One", mimeType: "application/vnd.google-apps.spreadsheet", appProperties: { fciResourceKind: "client-directory" } },
+        { id: "sheet-two", name: "Two", mimeType: "application/vnd.google-apps.spreadsheet", appProperties: { fciResourceKind: "client-directory" } },
+      ],
+      code: "duplicate_drive_file",
+    },
+    {
+      name: "wrong MIME",
+      files: [{ id: "doc-one", name: "One", mimeType: "application/vnd.google-apps.document", appProperties: { fciResourceKind: "client-directory" } }],
+      code: "invalid_blueprint_spreadsheet",
+    },
+  ]) {
+    await t.test(fixture.name, async () => {
+      const fetcher = async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname.endsWith("/files/company-admin-folder")) return Response.json(folder);
+        if (url.pathname.endsWith("/files")) return Response.json({ files: fixture.files });
+        throw new Error(`Unexpected request: ${url}`);
+      };
+      const client = new GoogleDriveClient("test-token", config(), fetcher);
+      await assert.rejects(
+        client.ensureBlueprintSpreadsheet({ parentId: "company-admin-folder", key: "client-directory", name: "Directory" }),
+        (error) => error.code === fixture.code && error.status === 409,
+      );
+    });
+  }
+});
