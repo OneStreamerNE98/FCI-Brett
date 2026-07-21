@@ -61,6 +61,22 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   `main` and resolve documentation-ledger conflicts by keeping main's newer status
   wording while preserving your branch's content additions.
 
+### Roles (owner-confirmed, July 21, 2026)
+
+- **Claude (Fable) — orchestrator:** plans the work, authors and sequences the packets
+  and ledgers, reviews every code PR before merge, and delivers the final review
+  verdict. Reviews run as multi-lens agent fleets with adversarial verification;
+  security-critical surfaces (authorization boundaries, OIDC/session/CSRF/consent
+  code) are additionally read line-by-line by the orchestrator itself.
+- **Codex — implementer:** builds the packets exactly as written in the plan ledger
+  (why/do/accept), one packet per draft PR, and runs the complete post-merge ledger
+  flip after each of its merges.
+- **Owner (Jason) — merge authority and gates:** merges PRs (may delegate a named PR),
+  and holds every owner gate: new scopes, API keys, billing, live resources,
+  deployment, second user, real data.
+- Neither agent merges the other agent's PR without the owner explicitly delegating
+  that PR by number. Review findings are addressed by the branch's owning agent.
+
 ## Useful commands
 
 ```powershell
