@@ -344,7 +344,7 @@ administration compatibility handlers were added, and provider routes remain `50
 feature_unavailable`.
 
 ### BE-10 · Rate limiting on both surfaces (medium, after BE-04+BE-09; VERIFIED)
-**Status:** In progress — `codex/be10-production-backend`.
+**Status:** In review — draft PR #82, July 21, 2026. Source-only and undeployed.
 
 **Why:** No rate limiting exists anywhere (verified). Cost-bearing dev routes: assistant
 (OpenAI), uploads (R2), sheets/sync + project drive provisioning (Google quota). The
