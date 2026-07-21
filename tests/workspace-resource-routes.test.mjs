@@ -380,13 +380,17 @@ test("resources GET is admin-only, source-tagged, no-store, masked, and contains
   assert.equal(body.identity.intakeMailboxMatches, true);
   assert.deepEqual(body.identity.allowedDomains, ["cherryhillfci.com"]);
   assert.equal(body.identity.mode, "workspace");
-  assert.equal(body.resources.length, 4);
+  assert.equal(body.resources.length, 10);
   assert.deepEqual(
     body.resources.find((resource) => resource.key === "client-directory"),
     {
       key: "client-directory",
+      resourceType: "sheets.spreadsheet",
       label: "Client directory spreadsheet",
+      name: "FCI Operations Directory",
       blueprintName: "FCI Operations Directory",
+      management: "system",
+      parentKey: "company-admin",
       externalId: "app-directory-sheet",
       source: "app",
       origin: "created",
@@ -396,6 +400,10 @@ test("resources GET is admin-only, source-tagged, no-store, masked, and contains
     },
   );
   assert.equal(body.resources.find((resource) => resource.key === "primary").state, "Found");
+  assert.deepEqual(
+    body.resources.filter((resource) => resource.resourceType === "drive.folder").map((resource) => resource.key),
+    ["company-admin", "templates", "client-accounts", "projects", "archive", "unsorted-intake"],
+  );
   for (const forbidden of [configuredSecret, configuredEncryptionKey, connection.refresh_token_ciphertext]) {
     assert.equal(serialized.includes(forbidden), false);
   }
@@ -428,6 +436,48 @@ test("resources identity compares the actual stored connection account to the in
   assert.equal(identityQueries.length, 1);
   assert.match(identityQueries[0].sql, /^SELECT google_email, status FROM google_connections/u);
   assert.doesNotMatch(identityQueries[0].sql, /refresh_token|scopes_json|google_subject/u);
+});
+
+test("resources preserve persisted Shared Drive restriction false values for honest verification", async () => {
+  const database = fakeDatabase({
+    resources: [{
+      id: "resource-shared-drive",
+      connection_key: "google-workspace",
+      resource_type: "drive.shared-drive",
+      resource_key: "primary",
+      external_id: "app-shared-drive",
+      parent_external_id: null,
+      external_url: "https://drive.google.com/drive/folders/app-shared-drive",
+      origin: "adopted",
+      metadata_json: JSON.stringify({
+        name: "FCI Operations",
+        restrictions: { domainUsersOnly: false, driveMembersOnly: true },
+      }),
+      created_by: ADMIN_EMAIL,
+      created_at: 1_790_000_000_000,
+      updated_at: 1_790_000_001_000,
+    }],
+  });
+  workspaceEnvironment(database);
+
+  const response = await resourcesRoute.GET(routeRequest(
+    "/api/v1/integrations/google/setup/resources",
+    ADMIN_EMAIL,
+  ));
+  const body = await response.json();
+  const sharedDrive = body.resources.find((resource) => resource.resourceType === "drive.shared-drive");
+
+  assert.equal(response.status, 200);
+  assert.equal(sharedDrive.source, "app");
+  assert.equal(sharedDrive.origin, "adopted");
+  assert.equal(sharedDrive.state, "Adopted");
+  assert.deepEqual(sharedDrive.restrictions, {
+    adminManagedRestrictions: null,
+    copyRequiresWriterPermission: null,
+    domainUsersOnly: false,
+    driveMembersOnly: true,
+    sharingFoldersRequiresOrganizerPermission: null,
+  });
 });
 
 test("resources GET returns 403 for an Office user before schema or database work", async () => {

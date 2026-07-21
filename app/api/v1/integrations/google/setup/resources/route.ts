@@ -1,8 +1,8 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 
-import { listWorkspaceResources } from "../../../../../../adapters/d1/workspace-resources";
-import { getEffectiveGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
+import { getEffectiveGoogleRuntimeSetup } from "../../../../../../lib/google-oauth-sites";
+import { flattenWorkspaceRootFolders, type WorkspaceBlueprint } from "../../../../../../lib/workspace-blueprint";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 
@@ -11,36 +11,78 @@ type ConnectionIdentityRow = Readonly<{
   status: string;
 }>;
 
-const RESOURCE_PRESENTATION = [
+function resourcePresentation(blueprint: WorkspaceBlueprint) {
+  const calendarName = (key: string, fallback: string) => blueprint.calendars.find((calendar) => calendar.key === key)?.name ?? fallback;
+  const spreadsheetName = (key: string, fallback: string) => blueprint.spreadsheets.find((spreadsheet) => spreadsheet.key === key)?.name ?? fallback;
+  return [
   {
     key: "primary",
     resourceType: "drive.shared-drive",
     label: "Shared Drive",
-    blueprintName: "FCI Operations",
-    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeConfig>>) => config.drive.rootFolderId,
+    name: blueprint.drive.sharedDriveName,
+    blueprintName: blueprint.drive.sharedDriveName,
+    management: "owner",
+    parentKey: null,
+    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => config.drive.rootFolderId,
   },
   {
     key: "client-directory",
     resourceType: "sheets.spreadsheet",
     label: "Client directory spreadsheet",
-    blueprintName: "FCI Operations Directory",
-    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeConfig>>) => config.clientDirectorySheetId,
+    name: spreadsheetName("client-directory", "FCI Operations Directory"),
+    blueprintName: spreadsheetName("client-directory", "FCI Operations Directory"),
+    management: "system",
+    parentKey: "company-admin",
+    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => config.clientDirectorySheetId,
   },
   {
     key: "client-appointments",
     resourceType: "calendar.calendar",
     label: "Client appointments calendar",
-    blueprintName: "FCI • Client Appointments",
-    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeConfig>>) => config.clientAppointmentsCalendarId,
+    name: calendarName("client-appointments", "FCI • Client Appointments"),
+    blueprintName: calendarName("client-appointments", "FCI • Client Appointments"),
+    management: "system",
+    parentKey: null,
+    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => config.clientAppointmentsCalendarId,
   },
   {
     key: "field-schedule",
     resourceType: "calendar.calendar",
     label: "Field schedule calendar",
-    blueprintName: "FCI • Field Schedule",
-    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeConfig>>) => config.fieldScheduleCalendarId,
+    name: calendarName("field-schedule", "FCI • Field Schedule"),
+    blueprintName: calendarName("field-schedule", "FCI • Field Schedule"),
+    management: "system",
+    parentKey: null,
+    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => config.fieldScheduleCalendarId,
   },
-] as const;
+  ...flattenWorkspaceRootFolders(blueprint).map((folder) => ({
+    key: folder.key,
+    resourceType: "drive.folder" as const,
+    label: folder.parentKey ? "Workspace subfolder" : "Root folder",
+    name: folder.name,
+    blueprintName: folder.path,
+    management: folder.management,
+    parentKey: folder.parentKey,
+    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => {
+      void config;
+      return undefined;
+    },
+  })),
+  ] as const;
+}
+
+function restrictions(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const flag = (key: string) => typeof record[key] === "boolean" ? record[key] as boolean : null;
+  return {
+    adminManagedRestrictions: flag("adminManagedRestrictions"),
+    copyRequiresWriterPermission: flag("copyRequiresWriterPermission"),
+    domainUsersOnly: flag("domainUsersOnly"),
+    driveMembersOnly: flag("driveMembersOnly"),
+    sharingFoldersRequiresOrganizerPermission: flag("sharingFoldersRequiresOrganizerPermission"),
+  };
+}
 
 function resourceState(
   simulation: boolean,
@@ -68,30 +110,35 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
 
-  const config = await getEffectiveGoogleRuntimeConfig();
-  const [savedRows, connection] = await Promise.all([
-    listWorkspaceResources(env.DB, config.connectionKey),
+  const setup = await getEffectiveGoogleRuntimeSetup();
+  const { config, resources: savedRows, blueprint } = setup;
+  const connection = await (
     config.simulation
       ? Promise.resolve<ConnectionIdentityRow | null>(null)
       : env.DB.prepare(
         "SELECT google_email, status FROM google_connections WHERE connection_key = ?",
-      ).bind(config.connectionKey).first<ConnectionIdentityRow>(),
-  ]);
+      ).bind(config.connectionKey).first<ConnectionIdentityRow>()
+  );
   const savedByIdentity = new Map(savedRows.map((row) => [`${row.resourceType}:${row.resourceKey}`, row]));
-  const resources = RESOURCE_PRESENTATION.map((presentation) => {
+  const resources = resourcePresentation(blueprint).map((presentation) => {
     const saved = savedByIdentity.get(`${presentation.resourceType}:${presentation.key}`);
     const appManaged = Boolean(saved?.externalId.trim());
-    const effectiveId = presentation.effectiveId(config);
+    const effectiveId = saved?.externalId || presentation.effectiveId(config);
     const source = appManaged ? "app" as const : config.simulation ? "none" as const : effectiveId ? "env" as const : "none" as const;
     return {
       key: presentation.key,
+      resourceType: presentation.resourceType,
       label: presentation.label,
+      name: presentation.name,
       blueprintName: presentation.blueprintName,
+      management: presentation.management,
+      parentKey: presentation.parentKey,
       ...(effectiveId ? { externalId: effectiveId } : {}),
       source,
       ...(appManaged && saved ? { origin: saved.origin } : {}),
       ...(appManaged && saved?.externalUrl ? { url: saved.externalUrl } : {}),
       ...(appManaged && saved ? { updatedAt: saved.updatedAt } : {}),
+      ...(presentation.resourceType === "drive.shared-drive" && saved ? { restrictions: restrictions(saved.metadata.restrictions) } : {}),
       state: resourceState(config.simulation, source, appManaged ? saved?.origin : undefined),
     };
   });

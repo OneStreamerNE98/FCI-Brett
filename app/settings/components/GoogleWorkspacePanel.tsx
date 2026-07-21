@@ -8,6 +8,11 @@ import { OperationsDataTable, OperationsDataTableCell } from "../../components/o
 import { Status } from "../../components/operations/OperationsPrimitives";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
+import {
+  WorkspaceDriveResourceActions,
+  type WorkspaceSetupResource,
+  type WorkspaceSetupResourcesPayload,
+} from "./WorkspaceDriveResourceActions";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
@@ -71,30 +76,6 @@ type ConnectionHealthPayload = {
 };
 type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 type WorkspaceReadinessState = "idle" | "loading" | "ready" | "error";
-type WorkspaceResourceSource = "app" | "env" | "none";
-type WorkspaceResourceState = "Found" | "Created" | "Adopted" | "Not configured" | "Simulated";
-type WorkspaceSetupResource = {
-  key: string;
-  label: string;
-  blueprintName: string;
-  externalId?: string;
-  source: WorkspaceResourceSource;
-  origin?: string;
-  url?: string;
-  updatedAt?: number;
-  state: WorkspaceResourceState;
-};
-type WorkspaceSetupResourcesPayload = {
-  resources: WorkspaceSetupResource[];
-  connectReady: boolean;
-  simulation: boolean;
-  identity: {
-    connectionAccount: string | null;
-    intakeMailboxMatches: boolean | null;
-    allowedDomains: string[];
-    mode: "simulation" | "workspace";
-  };
-};
 type WorkspaceSetupResourcesState = "idle" | "loading" | "ready" | "error";
 
 const WORKSPACE_PREREQUISITE_COLUMNS = [
@@ -113,6 +94,7 @@ const WORKSPACE_RESOURCE_COLUMNS = [
   { key: "resource", label: "Resource" },
   { key: "state", label: "State" },
   { key: "source", label: "Source" },
+  { key: "actions", label: "Setup actions" },
 ] as const;
 
 const CONNECTION_SERVICES: readonly { key: GoogleServiceKey; label: string }[] = [
@@ -183,21 +165,33 @@ function maskWorkspaceAccountForDisplay(value: string | null | undefined) {
   return `${local.slice(0, Math.min(2, local.length))}•••@${domain}`;
 }
 
-function workspaceResourceSourceLabel(source: WorkspaceResourceSource) {
+function workspaceResourceSourceLabel(source: WorkspaceSetupResource["source"]) {
   if (source === "app") return "App-managed";
   if (source === "env") return "Environment value";
   return "—";
 }
 
-function workspaceResourceStateClass(state: WorkspaceResourceState) {
+function workspaceResourceStateClass(state: WorkspaceSetupResource["state"]) {
   return state.toLowerCase().replaceAll(" ", "-");
+}
+
+function workspaceResourceEnvironmentKey(resource: WorkspaceSetupResource) {
+  const expectedTypeByKey: Partial<Record<string, WorkspaceSetupResource["resourceType"]>> = {
+    primary: "drive.shared-drive",
+    "client-directory": "sheets.spreadsheet",
+    "client-appointments": "calendar.calendar",
+    "field-schedule": "calendar.calendar",
+  };
+  const expectedType = expectedTypeByKey[resource.key];
+  if (!expectedType || (resource.resourceType && resource.resourceType !== expectedType)) return undefined;
+  return WORKSPACE_RESOURCE_ENV_BY_KEY[resource.key];
 }
 
 function missingWorkspaceDotenvTemplate(details: MissingDetail[], resources: WorkspaceSetupResource[], simulation: boolean) {
   const appManagedEnvironmentKeys = new Set(
     resources
       .filter((resource) => resource.source === "app")
-      .map((resource) => WORKSPACE_RESOURCE_ENV_BY_KEY[resource.key])
+      .map(workspaceResourceEnvironmentKey)
       .filter((value): value is string => Boolean(value)),
   );
   const included = new Set<string>();
@@ -215,7 +209,7 @@ function missingWorkspaceDotenvTemplate(details: MissingDetail[], resources: Wor
   }
   if (!simulation) {
     for (const resource of resources) {
-      if (resource.source === "none") includeEnvironmentKey(WORKSPACE_RESOURCE_ENV_BY_KEY[resource.key] ?? "");
+      if (resource.source === "none") includeEnvironmentKey(workspaceResourceEnvironmentKey(resource) ?? "");
     }
   }
   return lines.join("\n");
@@ -323,6 +317,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       isAdmin ? loadWorkspaceResources(force) : Promise.resolve(),
     ]);
   }, [checkSetup, isAdmin, loadConnectionHealth, loadWorkspaceResources]);
+
+  const refreshAfterDriveSetup = useCallback(async (change: { driveVerified?: boolean; blueprintChanged?: boolean }) => {
+    if (change.driveVerified) setDriveVerified(true);
+    if (change.blueprintChanged) setBlueprintEditorRevision((current) => current + 1);
+    invalidateCachedGet("/api/v1/google-workspace");
+    invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+    await Promise.all([checkSetup(true), loadWorkspaceResources(true)]);
+  }, [checkSetup, loadWorkspaceResources]);
 
   useEffect(() => {
     if (readinessChecked.current) return;
@@ -603,7 +605,12 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const connected = workspace?.connectionStatus === "connected";
   const reconnectRequired = workspace?.requiresReauthorization === true;
   const connectComplete = connected && !reconnectRequired;
-  const driveReady = connectComplete && workspace?.driveConnected === true && workspace?.storageConfigured === true;
+  const effectiveSharedDriveConfigured = Boolean(workspaceResources?.resources.some((resource) => (
+    (resource.resourceType === "drive.shared-drive" || (!resource.resourceType && resource.key === "primary"))
+    && resource.key === "primary"
+    && resource.externalId
+  )));
+  const driveReady = connectComplete && workspace?.driveConnected === true && (workspace?.storageConfigured === true || effectiveSharedDriveConfigured);
   const gmailReady = connected && workspace?.gmailEnabled === true && workspace?.gmailConnected === true;
   const calendarReady = connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
   const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
@@ -682,7 +689,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       </li>
       <li className={`workspace-setup-step ${stepStatusClass(driveStepStatus)}`}>
         <header><span className="workspace-step-number">2</span><div><h3>Verify the Shared Drive</h3><p>Confirm the configured FCI Operations Shared Drive before any project folder is created.</p></div><span className="workspace-step-status">{driveStepStatus}</span></header>
-        <div className="workspace-step-body"><p className="workspace-step-summary"><FolderOpen size={15} /> <span><strong>{storageName}</strong>{driveReady || simulation ? " is available for a direct verification." : " remains blocked until the connection and Drive prerequisite are ready."}</span></p><div className="workspace-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void verifyGoogleDrive()} disabled={working || (!simulation && !driveReady)}>{working ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton></div>{!simulation && <p className="workspace-env-note"><strong>Project-folder provisioning:</strong> <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> is a hosted environment value, not an in-app toggle. Keep it off until this verification passes.</p>}</div>
+        <div className="workspace-step-body"><p className="workspace-step-summary"><FolderOpen size={15} /> <span><strong>{storageName}</strong>{driveReady || simulation ? " is available for a direct verification." : " remains blocked until the connection and Drive prerequisite are ready."}</span></p><div className="workspace-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void verifyGoogleDrive()} disabled={working || (!simulation && !driveReady)}>{working ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton></div>{!simulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback. Project-folder provisioning still uses the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> gate.</p>}</div>
       </li>
       <li className={`workspace-setup-step ${stepStatusClass(gmailStepStatus)}`}>
         <header><span className="workspace-step-number">3</span><div><h3>Prepare Gmail</h3><p>Create or refresh the three FCI labels, then exercise the review-first inbox tools.</p></div><span className="workspace-step-status">{gmailStepStatus}</span></header>
@@ -694,7 +701,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       </li>
       <li className={`workspace-setup-step ${stepStatusClass(sheetsStepStatus)}`}>
         <header><span className="workspace-step-number">5</span><div><h3>Sync the Sheets mirror</h3><p>Check and reconcile the generated Client Directory and Project Register.</p></div><span className="workspace-step-status">{sheetsStepStatus}</span></header>
-        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirror?.clients.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirror?.projects.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Provisioning reminder:</strong> project-folder provisioning stays controlled by the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> value; this screen does not toggle it.</p></div>
+        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirror?.clients.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirror?.projects.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Provisioning reminder:</strong> <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> remains a hosted environment value, not an in-app toggle.</p></div>
       </li>
     </ol>
     {isAdmin && <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />}
@@ -703,7 +710,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         <div><p className="eyebrow">Workspace setup</p><h3 id="workspace-resources-heading">Resources</h3></div>
         {!isAdmin ? <Status text="Administrator access" /> : workspaceResources ? <Status text={workspaceResources.simulation ? "Simulated" : workspaceResources.connectReady ? "Connection ready" : "Setup required"} /> : <Status text={workspaceResourcesState === "error" ? "Unavailable" : "Loading"} />}
       </header>
-      <p>Review the app-managed registry and environment fallbacks here. Resource actions arrive in the next setup packets; this card does not create, adopt, verify, or delete Google content.</p>
+      <p>Adopt and verify the company Shared Drive, ensure the blueprint-defined root tree, and rename owner-managed folders. Setup actions never delete Google content.</p>
       {!isAdmin ? <p className="workspace-admin-readonly"><ShieldCheck size={15} /><span>Workspace resource status is available to Administrators. No administrator setup request is made for this Office view.</span></p> : <>
         {workspaceResourcesState === "loading" && !workspaceResources && <p className="workspace-resources-message" role="status">Loading the Workspace resource registry…</p>}
         {workspaceResourcesError && <div className="workspace-resources-error" role="alert"><span>{workspaceResourcesError}</span><button className="soft-button" type="button" onClick={() => void loadWorkspaceResources(true)}>Retry resources</button></div>}
@@ -714,10 +721,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
             <div><dt>Mode</dt><dd>{workspaceResources.identity.mode === "simulation" ? "Simulation" : "Workspace"}</dd></div>
           </dl>
           {resourceRows.length > 0 ? <OperationsDataTable className="workspace-resource-table" columns={WORKSPACE_RESOURCE_COLUMNS} labelledBy="workspace-resources-heading">
-            {resourceRows.map((resource) => <tr key={resource.key}>
+            {resourceRows.map((resource) => <tr key={`${resource.resourceType ?? "legacy"}:${resource.key}`}>
               <OperationsDataTableCell label="Resource"><span className="workspace-resource-name"><strong>{resource.label}</strong><small>{resource.blueprintName}</small></span></OperationsDataTableCell>
               <OperationsDataTableCell label="State"><span className={`workspace-resource-state ${workspaceResourceStateClass(resource.state)}`}>{resource.state}</span></OperationsDataTableCell>
               <OperationsDataTableCell label="Source"><span className={`workspace-resource-source ${resource.source}`}>{workspaceResourceSourceLabel(resource.source)}</span></OperationsDataTableCell>
+              <OperationsDataTableCell label="Setup actions"><WorkspaceDriveResourceActions resource={resource} notify={notify} onChanged={refreshAfterDriveSetup} /></OperationsDataTableCell>
             </tr>)}
           </OperationsDataTable> : <p className="workspace-resources-message">No Workspace resource rows were returned.</p>}
         </>}

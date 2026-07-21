@@ -351,7 +351,8 @@ test("wires development controls and exposes Workspace-only live configuration p
   assert.doesNotMatch(app, /3 email suggestions approved and filed/);
   assert.match(workspaceApi, /credentialsPresent/);
   assert.match(workspaceApi, /connected: connection\.connected/);
-  assert.match(workspaceApi, /getGoogleRuntimeConfig/);
+  assert.match(workspaceApi, /getEffectiveGoogleRuntimeSetup/);
+  assert.match(workspaceApi, /const google = \(await getEffectiveGoogleRuntimeSetup\(\)\)\.config/);
   assert.match(workspaceApi, /runtimeMode: google\.environment/);
   assert.match(workspaceApi, /simulation: google\.simulation/);
   assert.match(app, /Local Workspace simulation/);

@@ -1,8 +1,10 @@
 import { env } from "cloudflare:workers";
 
 import { createD1GoogleOauthPersistence } from "../adapters/d1/google-oauth-persistence";
+import { getWorkspaceBlueprint } from "../adapters/d1/workspace-blueprints";
 import { listWorkspaceResources } from "../adapters/d1/workspace-resources";
 import * as oauth from "./google-oauth";
+import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "./workspace-blueprint";
 import {
   applyEffectiveWorkspaceConfig,
   resolveEffectiveWorkspaceResources,
@@ -17,6 +19,41 @@ function providerFetch(input: RequestInfo | URL, init?: RequestInit) {
 
 export function getGoogleRuntimeConfig(input?: oauth.EnvironmentValues) {
   return oauth.getGoogleRuntimeConfig(input ?? env as unknown as oauth.EnvironmentValues);
+}
+
+export type EffectiveGoogleRuntimeSetup = Readonly<{
+  config: EffectiveGoogleRuntimeConfig;
+  resources: Awaited<ReturnType<typeof listWorkspaceResources>>;
+  blueprint: WorkspaceBlueprint;
+  blueprintVersion: number;
+}>;
+
+export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleRuntimeSetup> {
+  const config = getGoogleRuntimeConfig();
+  const [savedRows, persistedBlueprint] = await Promise.all([
+    listWorkspaceResources(env.DB, config.connectionKey),
+    getWorkspaceBlueprint(env.DB, config.connectionKey),
+  ]);
+  const blueprint = persistedBlueprint?.blueprint ?? seedWorkspaceBlueprint();
+  const effective = applyEffectiveWorkspaceConfig(
+    config,
+    resolveEffectiveWorkspaceResources(config, savedRows),
+  );
+  const namedConfig = Object.freeze({
+    ...effective,
+    drive: Object.freeze({
+      ...effective.drive,
+      storageName: config.simulation
+        ? `${blueprint.drive.sharedDriveName} (local simulation)`
+        : blueprint.drive.sharedDriveName,
+    }),
+  });
+  return Object.freeze({
+    config: namedConfig,
+    resources: Object.freeze([...savedRows]),
+    blueprint,
+    blueprintVersion: persistedBlueprint?.version ?? 0,
+  });
 }
 
 export async function getEffectiveGoogleRuntimeConfig(): Promise<EffectiveGoogleRuntimeConfig> {

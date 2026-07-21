@@ -17,9 +17,10 @@ const expectedComponents = new Map([
   ["TestingLaunchPanel.tsx", ["TestingLaunchPanel"]],
   ["WorkspaceDefaultsPanel.tsx", ["WorkspaceDefaultsPanel"]],
   ["WorkspaceBlueprintEditor.tsx", ["WorkspaceBlueprintEditor"]],
+  ["WorkspaceDriveResourceActions.tsx", ["WorkspaceDriveResourceActions"]],
 ]);
 
-test("keeps the nine Settings component modules explicit and outside FloorOpsApp", async () => {
+test("keeps the Settings component modules explicit and outside FloorOpsApp", async () => {
   const directoryUrl = new URL("app/settings/components/", root);
   const files = (await readdir(directoryUrl)).filter((file) => file.endsWith(".tsx")).sort();
   assert.deepEqual(files, [...expectedComponents.keys()].sort());

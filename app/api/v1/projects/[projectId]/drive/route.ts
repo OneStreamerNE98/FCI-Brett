@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../lib/google-drive";
 import { mapGoogleIntegrationError } from "../../../../../lib/google-integration-error";
-import { GoogleIntegrationError, getGoogleAccessToken, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
+import { GoogleIntegrationError, getEffectiveGoogleRuntimeConfig, getGoogleAccessToken, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
 import { enforceDevelopmentRequestRateLimit } from "../../../../../lib/development-request-rate-limit";
 import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
@@ -38,8 +38,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   const rateLimitResponse = enforceDevelopmentRequestRateLimit("project-drive-provisioning", auth.user.email);
   if (rateLimitResponse) return rateLimitResponse;
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
-  if (!config.oauthReady) return noStore({ error: "Google Drive setup is incomplete.", missing: config.missing }, { status: 409 });
+  const config = await getEffectiveGoogleRuntimeConfig();
+  if (!config.connectReady || !config.drive.rootFolderId) return noStore({ error: "Google Drive setup is incomplete.", missing: config.missing }, { status: 409 });
   if (!config.provisioningEnabled) {
     return noStore({ error: "Shared Drive folder creation is disabled. Enable Workspace provisioning only after the company drive is verified." }, { status: 409 });
   }

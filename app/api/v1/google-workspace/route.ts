@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "cloudflare:workers";
 import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-workspace";
-import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getEffectiveGoogleRuntimeSetup, getGoogleConnectionStatus } from "../../../lib/google-oauth-sites";
 import { readGoogleChatPublicConfig } from "../../../lib/google-chat-notifier-sites";
 import { requireOfficeUser } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const google = getGoogleRuntimeConfig();
+  const google = (await getEffectiveGoogleRuntimeSetup()).config;
   const workspace = google.drive;
   const [connection, chatNotifications] = await Promise.all([
     getGoogleConnectionStatus(google),

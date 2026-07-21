@@ -524,8 +524,9 @@ button { color:inherit; }
 .workspace-identity-state.ready{background:#edf4ef;color:#35674d}
 .workspace-identity-state.mismatch{background:#f7ede2;color:#805b38}
 .workspace-resource-table{margin-bottom:12px}
-.workspace-resource-table th:nth-child(1){width:46%}
-.workspace-resource-table th:nth-child(2),.workspace-resource-table th:nth-child(3){width:27%}
+.workspace-resource-table th:nth-child(1){width:30%}
+.workspace-resource-table th:nth-child(2),.workspace-resource-table th:nth-child(3){width:14%}
+.workspace-resource-table th:nth-child(4){width:42%}
 .workspace-resource-name strong,.workspace-resource-name small{display:block}
 .workspace-resource-name strong{color:var(--ink);font-size:12px}
 .workspace-resource-name small{margin-top:3px;color:var(--text-muted);font-size:12px}
@@ -533,6 +534,19 @@ button { color:inherit; }
 .workspace-resource-state.not-configured,.workspace-resource-source.none{background:#f0eeeb;color:#6c655f}
 .workspace-resource-state.simulated{background:#e9eef7;color:#405f8a}
 .workspace-resource-source.env{background:#f6eee5;color:#7b542e}
+.workspace-resource-actions{display:grid;gap:7px;min-width:210px}
+.workspace-resource-action-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.workspace-resource-action-buttons .soft-button,.workspace-resource-action-buttons .primary-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:32px;padding:6px 9px;font-size:12px}
+.workspace-restrictions-chip,.workspace-resource-locked,.workspace-resource-action-note{display:inline-flex;align-items:center;gap:5px;width:max-content;max-width:100%;font-size:12px;line-height:1.35}
+.workspace-restrictions-chip{border-radius:999px;padding:4px 7px;background:#f0eeeb;color:#6c655f;font-weight:800}
+.workspace-restrictions-chip.verified{background:#edf4ef;color:#35674d}
+.workspace-restrictions-chip.warning{background:#f7ede2;color:#805b38}
+.workspace-resource-locked{color:#675f58;font-weight:700}
+.workspace-resource-action-note{color:var(--text-muted)}
+.workspace-drive-candidates{display:flex;align-items:flex-end;flex-wrap:wrap;gap:7px;padding:9px;border:1px solid #e1d8cc;border-radius:8px;background:#fffaf4}
+.workspace-drive-candidates label{display:grid;flex:1 1 220px;gap:4px;color:#5c554f;font-size:12px;font-weight:700}
+.workspace-drive-candidates select,.workspace-resource-rename input{width:100%;min-height:34px;border:1px solid #d9d4ce;border-radius:7px;background:#fff;padding:6px 8px;color:var(--ink);font:600 12px var(--font-ui)}
+.workspace-resource-rename{display:grid;grid-template-columns:minmax(130px,1fr) auto auto;align-items:end;gap:6px}
 .workspace-copy-helpers{display:grid;gap:9px;padding-top:12px;border-top:1px solid #e4ded7}
 .workspace-copy-helpers>div:first-child h4{margin:0;font:700 12px var(--font-display)}
 .workspace-copy-helpers>div:first-child p{margin:4px 0 0;color:var(--text-muted);font-size:12px;line-height:1.5}
@@ -593,6 +607,9 @@ button { color:inherit; }
   .workspace-connection-card-actions{width:100%;justify-items:start;padding-left:42px}
   .workspace-resource-identity{grid-template-columns:1fr}
   .workspace-resources-error{align-items:flex-start;flex-direction:column}
+  .workspace-resource-actions{min-width:0}
+  .workspace-resource-rename{grid-template-columns:1fr}
+  .workspace-resource-rename button{width:100%}
   .workspace-copy-value{align-items:stretch;flex-direction:column}
   .workspace-copy-value .soft-button,.workspace-copy-helpers article>.soft-button{width:100%}
   .workspace-connection-health>header{flex-direction:column;gap:7px}

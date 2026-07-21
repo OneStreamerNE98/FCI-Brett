@@ -93,7 +93,10 @@ test("administrator connection health maps the bounded payload without inventing
 });
 
 test("Workspace resources are an admin-only sibling card with endpoint-owned states", async () => {
-  const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
+  const [panel, actions] = await Promise.all([
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/settings/components/WorkspaceDriveResourceActions.tsx"),
+  ]);
 
   assert.match(panel, /if \(!isAdmin\) return;[\s\S]+cachedGetJson<WorkspaceSetupResourcesPayload>\("\/api\/v1\/integrations\/google\/setup\/resources"/);
   assert.match(panel, /isAdmin \? loadWorkspaceResources\(force\) : Promise\.resolve\(\)/);
@@ -112,8 +115,11 @@ test("Workspace resources are an admin-only sibling card with endpoint-owned sta
   assert.ok(healthCard > stepListEnd, "Connection health must be a sibling, not nested in Step 1");
 
   for (const state of ["Found", "Created", "Adopted", "Not configured", "Simulated"]) {
-    assert.match(panel, new RegExp(`"${state}"`));
+    assert.match(`${panel}\n${actions}`, new RegExp(`"${state}"`));
   }
+  assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/shared-drive\/adopt/);
+  assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/folders\/ensure-roots/);
+  assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/folders\/rename/);
   assert.match(panel, /workspaceResourceSourceLabel[\s\S]+App-managed[\s\S]+Environment value/);
   assert.match(panel, /workspace-resource-state/);
   assert.match(panel, /workspace-resource-source/);
@@ -146,7 +152,9 @@ test("Workspace setup masks accounts and exposes copy-exact safe helpers", async
   assert.match(panel, /GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI: "<OAuth redirect URI shown above>"/);
   assert.match(panel, /GOOGLE_INTEGRATION_MODE: "<workspace or simulation>"/);
   assert.match(panel, /detail\.envVar\.match\(\/\[A-Z\]\[A-Z0-9_\]\+\/g\)/);
-  assert.match(panel, /resource\.source === "none"[\s\S]+WORKSPACE_RESOURCE_ENV_BY_KEY\[resource\.key\]/);
+  assert.match(panel, /function workspaceResourceEnvironmentKey\(resource: WorkspaceSetupResource\)/);
+  assert.match(panel, /resource\.source === "none"[\s\S]+workspaceResourceEnvironmentKey\(resource\)/);
+  assert.match(panel, /primary: "drive\.shared-drive"[\s\S]+resource\.resourceType !== expectedType/);
   assert.match(panel, /"client-directory": "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID"/);
   assert.match(panel, /if \(!simulation\) \{[\s\S]+resource\.source === "none"/);
   assert.match(panel, /const copyHelperStateReady = workspaceReadinessState === "ready" && workspaceResourcesState === "ready" && workspaceResources !== null/);
