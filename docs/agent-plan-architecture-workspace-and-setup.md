@@ -846,7 +846,7 @@ card's sentence may say so.
 **Accept:** cards render invariantly; existing safeguards text + install panel unchanged.
 
 ### SET-13 · Workspace resource registry + effective-config layer + resources card (large, after completed SET-03+04+10) — FIRST in the dashboard-setup feature
-**Status:** In progress — `codex/set13-workspace-resources`, July 21, 2026.
+**Status:** Complete — PR #76, July 21, 2026. Source-only and undeployed; migration 0013 has not been applied to Sites.
 
 **Why:** Owner-approved direction ([design doc](dashboard-workspace-setup-design.md)):
 dashboard-created resource IDs persist app-side and become runtime-authoritative with
