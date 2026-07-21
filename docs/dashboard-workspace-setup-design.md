@@ -101,7 +101,7 @@ built from the `DRIVE_BLUEPRINT` literals, `sanitizeWorkspaceBlueprint()`):
 | `99_Unsorted Intake` root; `05_Correspondence` subtree (`Email Archive`, `Email Attachments`) | `DEFAULT_FILING_RULES` in `app/lib/google-workspace.ts` pins these literal names — renaming breaks email filing |
 | Client-directory sheet entry; its tabs/headers (tabs are not in the blueprint at all) | `ensureSheetTabs`/`ensureHeaders` in `app/lib/google-sheets.ts` own the structure |
 | `FCI/*` Gmail labels | The filing flow depends on exact names |
-| Calendar config keys (`client-appointments`, `field-schedule`) | Runtime config keys; display attributes stay editable |
+| Calendar config keys (`client-appointments`, `field-schedule`, `holidays`) | Runtime config keys; display attributes stay editable |
 | Folder identity `appProperties` (`fciRootKey`, `fciFolderKind`, `fciTemplateKey`, `fciResourceKind`) | Rename-safe reconciliation depends on them; never owner-visible |
 | Project/client number formats (`L-YYYY-…`, `CL-…`) | Code + PostgreSQL CHECK constraints (`app/domain/lead.ts`, `app/application/create-client.ts`) — changing them is a data migration, not config |
 

@@ -104,6 +104,11 @@ export const CORE_REHEARSAL_SOURCE_INVENTORY = [
     reason: "App-managed resource IDs require approved production reauthorization and reconciliation into integration_resources; no raw development rows are carried.",
   },
   {
+    sourceCategory: "workspace_blueprints",
+    disposition: "transformed",
+    reason: "Development setup definitions require separately approved production authorization and configuration reconciliation; no raw blueprint rows are carried.",
+  },
+  {
     sourceCategory: "drive_folder_mappings",
     disposition: "blocking",
     reason: "Drive mappings require production connector identity and ownership reconciliation.",
@@ -147,6 +152,7 @@ export const DEFERRED_SOURCE_CATEGORIES = [
   "google_oauth_attempts",
   "google_connections",
   "workspace_resources",
+  "workspace_blueprints",
   "drive_folder_mappings",
   "google_drive_operations",
   "google_sheet_sync_state",

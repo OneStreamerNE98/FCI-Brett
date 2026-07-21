@@ -99,7 +99,7 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
 
 test("bounded core rehearsal inventory exactly classifies every D1 table plus R2 without a runtime D1 import", async () => {
   const schemaTables = discoverD1TableNames(d1Schema);
-  assert.equal(schemaTables.length, 22);
+  assert.equal(schemaTables.length, 23);
   assert.deepEqual(
     CORE_REHEARSAL_SOURCE_INVENTORY.map((entry) => entry.sourceCategory).sort(),
     [...schemaTables, "r2_objects"].sort(),
@@ -126,6 +126,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
       google_oauth_attempts: "excluded",
       google_connections: "transformed",
       workspace_resources: "transformed",
+      workspace_blueprints: "transformed",
       drive_folder_mappings: "blocking",
       google_drive_operations: "excluded",
       google_sheet_sync_state: "excluded",
@@ -143,7 +144,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
   assert.doesNotMatch(rehearsalSource, /\$\{table\}:(?:content|identifiers):v1/);
 
   const inventory = createCoreRecordRehearsalPlan(fixture, options).sourceInventory;
-  assert.equal(inventory.length, 23);
+  assert.equal(inventory.length, 24);
   assert.deepEqual(
     Object.fromEntries(inventory.map((entry) => [entry.sourceCategory, entry.sourceCount])),
     {
@@ -164,6 +165,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
       google_oauth_attempts: 0,
       google_connections: 0,
       workspace_resources: 0,
+      workspace_blueprints: 0,
       drive_folder_mappings: 0,
       google_drive_operations: 0,
       google_sheet_sync_state: 0,
@@ -518,7 +520,7 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
     providerCalls: 0,
   });
   assert.ok(Object.values(report.tables).every((table) => table.matched));
-  assert.equal(report.sourceInventory.length, 23);
+  assert.equal(report.sourceInventory.length, 24);
   assert.deepEqual(
     report.sourceInventory.map(({ sourceCategory, disposition, sourceCount }) => ({
       sourceCategory,

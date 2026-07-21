@@ -48,7 +48,7 @@ window, and cleanup procedure.
   reconciliation after recovery.
 
 The current format-version-2 bounded core rehearsal always reports
-`cutoverReady: false`. Its report inventories all 22 D1 tables plus R2 with a
+`cutoverReady: false`. Its report inventories all 23 D1 tables plus R2 with a
 reasoned disposition. Only clients, contacts, leads, projects, project meetings,
 and classified activity carry bounded rows and receive end-to-end hash
 reconciliation. Project rows must include explicit null `flooringCategory`,

@@ -103,9 +103,11 @@ test("Workspace resources are an admin-only sibling card with endpoint-owned sta
 
   const stepListStart = panel.indexOf('<ol className="workspace-setup-steps"');
   const stepListEnd = panel.indexOf("</ol>", stepListStart);
+  const blueprintCard = panel.indexOf("{isAdmin && <WorkspaceBlueprintEditor");
   const resourcesCard = panel.indexOf('<section className="workspace-setup-card workspace-resources-card"');
   const healthCard = panel.indexOf('{isAdmin && <section className="workspace-connection-health"');
   assert.ok(stepListStart >= 0 && stepListEnd > stepListStart);
+  assert.ok(blueprintCard > stepListEnd && blueprintCard < resourcesCard, "Blueprint must be an admin-only sibling between the step list and Resources");
   assert.ok(resourcesCard > stepListEnd, "Resources must be a sibling after the five-step list");
   assert.ok(healthCard > stepListEnd, "Connection health must be a sibling, not nested in Step 1");
 
@@ -154,11 +156,44 @@ test("Workspace setup masks accounts and exposes copy-exact safe helpers", async
 
   const connectionActions = panel.indexOf('className="workspace-connection-card-actions"');
   const healthCard = panel.indexOf('{isAdmin && <section className="workspace-connection-health"');
-  const blueprint = panel.indexOf('<div className="drive-blueprint"');
+  const safeguards = panel.indexOf('<div className="workspace-checklist"');
   assert.ok(connectionActions >= 0 && healthCard > connectionActions);
   assert.match(panel.slice(connectionActions, healthCard), /Disconnect Workspace/);
-  assert.doesNotMatch(panel.slice(healthCard, blueprint), /Disconnect Workspace/);
+  assert.doesNotMatch(panel.slice(healthCard, safeguards), /Disconnect Workspace/);
   assert.equal(panel.match(/Disconnect Workspace/g)?.length, 1);
+});
+
+test("Workspace blueprint is a structured admin editor and the legacy static card is removed", async () => {
+  const [panel, editor, blueprint, css] = await Promise.all([
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/settings/components/WorkspaceBlueprintEditor.tsx"),
+    read("app/lib/workspace-blueprint.ts"),
+    read("app/globals.css"),
+  ]);
+
+  assert.match(panel, /isAdmin && <WorkspaceBlueprintEditor notify=\{notify\} refreshKey=\{blueprintEditorRevision\}/);
+  assert.match(panel, /setBlueprintEditorRevision\(\(current\) => current \+ 1\)/);
+  assert.doesNotMatch(panel, /DRIVE_BLUEPRINT|className="drive-blueprint"|project-folder-list/);
+  assert.doesNotMatch(css, /\.drive-blueprint|\.project-folder-list/);
+
+  assert.match(editor, /fetch\("\/api\/v1\/integrations\/google\/setup\/blueprint", \{ cache: "no-store" \}\)/);
+  assert.match(editor, /method: "PUT"[\s\S]+expectedVersion: version/);
+  assert.match(editor, /response\.status === 409[\s\S]+setConflictVersion/);
+  assert.match(editor, /Load latest/);
+  assert.match(editor, /Save blueprint/);
+  assert.doesNotMatch(editor, /setInterval|debounce|auto-?save/i);
+  for (const section of ["Business and naming", "Folder tree", "Templates", "Spreadsheets", "Calendar defaults", "Gmail filing labels"]) {
+    assert.match(editor, new RegExp(section));
+  }
+  for (const contract of ["05_Correspondence", "Email Archive", "Email Attachments", "FCI Holidays", "client-directory"]) {
+    assert.match(`${editor}\n${blueprint}`, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(editor, /System[\s\S]+role="tooltip"/);
+  assert.match(editor, /Add folder/);
+  assert.match(editor, /Add template/);
+  assert.match(editor, /Add spreadsheet/);
+  assert.match(editor, /WORKSPACE_BLUEPRINT_NAMING_TOKENS/);
+  assert.match(editor, /FeatureStateBadge state="Planned"/);
 });
 
 test("Office viewers make no resource request and receive an access-owned connection status", async () => {

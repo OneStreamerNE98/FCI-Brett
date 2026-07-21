@@ -18,6 +18,7 @@ const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
 const integrityIndexMigration = "0011_lazy_big_bertha.sql";
 const workspaceResourceMigrationPrefix = "0013_";
+const workspaceBlueprintMigrationPrefix = "0015_";
 
 const requiredDevelopmentIndexes = [
   "clients_code_unique_idx",
@@ -147,6 +148,53 @@ test("keeps the SET-13 Workspace registry in one additive migration with its uni
   for (const origin of ["created", "adopted", "env-adopted"]) {
     assert.match(effectiveConfigSource, new RegExp(`"${origin}"`));
   }
+});
+
+test("keeps the SET-14 Workspace blueprint in chained migration 0015 with one current row per connection", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(workspaceBlueprintMigrationPrefix));
+  assert.equal(migration, "0015_stale_zarda.sql");
+  assert.equal(files.filter((file) => file.startsWith(workspaceBlueprintMigrationPrefix)).length, 1);
+
+  const [migrationSql, schemaSource, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(root, "db", "schema.ts"), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0014_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0015_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+
+  assert.match(migrationSql, /CREATE TABLE `workspace_blueprints`/);
+  for (const column of [
+    ["id", "text PRIMARY KEY NOT NULL"],
+    ["connection_key", "text NOT NULL"],
+    ["version", "integer NOT NULL"],
+    ["blueprint_json", "text NOT NULL"],
+    ["created_by", "text NOT NULL"],
+    ["created_at", "integer NOT NULL"],
+    ["updated_by", "text NOT NULL"],
+    ["updated_at", "integer NOT NULL"],
+  ]) {
+    assert.match(migrationSql, new RegExp("`" + column[0] + "` " + column[1] + "(?:,|\\s)"));
+  }
+  assert.match(migrationSql, /CREATE UNIQUE INDEX `workspace_blueprints_connection_unique` ON `workspace_blueprints` \(`connection_key`\)/);
+  assert.doesNotMatch(migrationSql, /\b(?:ALTER|DROP|UPDATE|INSERT|DELETE|TRUNCATE|RENAME)\b/i);
+  assert.match(schemaSource, /export const workspaceBlueprints = sqliteTable\("workspace_blueprints"/);
+  assert.match(schemaSource, /uniqueIndex\("workspace_blueprints_connection_unique"\)/);
+
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.equal(Object.keys(snapshot.tables).length, 23);
+  assert.ok(snapshot.tables.workspace_blueprints);
+  for (const column of ["installation_started_at", "installation_completed_at", "had_callback", "callback_note"]) {
+    assert.ok(snapshot.tables.projects.columns[column], `0015 must preserve KPI-03 column ${column}`);
+  }
+  assert.deepEqual(journal.entries.at(-1), {
+    idx: 15,
+    version: "6",
+    when: journal.entries.at(-1).when,
+    tag: "0015_stale_zarda",
+    breakpoints: true,
+  });
 });
 
 test("packages the complete Drizzle migration sequence for Sites deployment", async () => {

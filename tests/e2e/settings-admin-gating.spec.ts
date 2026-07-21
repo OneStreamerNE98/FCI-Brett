@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { seedWorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
 
 async function readIdentity(page: Page) {
   return page.evaluate(async () => {
@@ -7,7 +8,48 @@ async function readIdentity(page: Page) {
   });
 }
 
+async function mockIdentityForExternalServer(page: Page, isAdmin: boolean) {
+  if (process.env.FCI_E2E_EXTERNAL_SERVER !== "true") return;
+  await page.route("**/api/v1/settings/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        preferences: { displayTimezone: "America/New_York", replySignature: "" },
+        updatedAt: null,
+        isAdmin,
+      }),
+    });
+  });
+  await page.route("**/api/v1/settings/workspace", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        settings: {
+          timezone: "America/New_York",
+          appointmentCalendarName: "FCI • Client Appointments",
+          fieldCalendarName: "FCI • Field Schedule",
+          calendarSetupMode: "create-shared",
+          appointmentCalendarId: "",
+          fieldCalendarId: "",
+          calendarEditPolicy: "app-authoritative",
+          appointmentReminderHours: 24,
+          crewReminderHours: 24,
+          inboxReviewMode: "review-first",
+          officeNotificationEmail: "",
+        },
+        updatedAt: null,
+      }),
+    });
+  });
+}
+
 test("Administrator identity keeps protected Settings actions available", async ({ page }) => {
+  await mockIdentityForExternalServer(page, true);
+  await page.route("**/api/v1/integrations/google/setup/blueprint", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ blueprint: seedWorkspaceBlueprint(), version: 0, seeded: true }) });
+  });
   await page.goto("/settings?section=calendar");
   await expect(page.getByRole("heading", { level: 2, name: "Calendar & appointments" })).toBeVisible();
 
@@ -23,12 +65,15 @@ test("Administrator identity keeps protected Settings actions available", async 
 });
 
 test("Office identity sees every protected Settings action disabled and explained", async ({ page }) => {
+  await mockIdentityForExternalServer(page, false);
   let connectionDetailGets = 0;
   let resourceGets = 0;
+  let blueprintGets = 0;
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/connection") connectionDetailGets += 1;
     if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/setup/resources") resourceGets += 1;
+    if (request.method() === "GET" && url.pathname === "/api/v1/integrations/google/setup/blueprint") blueprintGets += 1;
   });
   await page.setExtraHTTPHeaders({
     "oai-authenticated-user-email": "e2e-office@example.test",
@@ -47,10 +92,12 @@ test("Office identity sees every protected Settings action disabled and explaine
   await page.locator(".settings-nav").getByRole("button", { name: "Google Workspace", exact: true }).click();
   await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
   await expect(page.locator(".workspace-connection-health")).toHaveCount(0);
+  await expect(page.locator(".workspace-blueprint-card")).toHaveCount(0);
   await page.getByRole("button", { name: "Check readiness" }).click();
   await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
   expect(connectionDetailGets).toBe(0);
   expect(resourceGets).toBe(0);
+  expect(blueprintGets).toBe(0);
   for (const action of [
     "Reset simulation data",
     "Verify Shared Drive",

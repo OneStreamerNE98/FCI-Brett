@@ -16,6 +16,7 @@ const expectedComponents = new Map([
   ["SettingsDataNotice.tsx", ["SettingsDataNotice"]],
   ["TestingLaunchPanel.tsx", ["TestingLaunchPanel"]],
   ["WorkspaceDefaultsPanel.tsx", ["WorkspaceDefaultsPanel"]],
+  ["WorkspaceBlueprintEditor.tsx", ["WorkspaceBlueprintEditor"]],
 ]);
 
 test("keeps the nine Settings component modules explicit and outside FloorOpsApp", async () => {

@@ -1,3 +1,7 @@
+import { DRIVE_BLUEPRINT, seedWorkspaceBlueprint } from "./workspace-blueprint";
+
+export { DRIVE_BLUEPRINT } from "./workspace-blueprint";
+
 export type FilingRuleDraft = {
   id?: string;
   name: string;
@@ -156,40 +160,19 @@ export function evaluateInboxFilingRules(input: {
   return { kind: "intake", reason: "No enabled built-in filing rule matched this message.", requiresManualReview: true };
 }
 
-export const DRIVE_BLUEPRINT = {
-  sharedDriveName: "FCI Operations",
-  roots: [
-    "00_Company Admin / Client Directory (Google Sheet)",
-    "01_Client Accounts / {CLIENT_CODE} — {CLIENT_NAME} / 00_Client Profile & Master Documents",
-    "02_Projects / {YEAR} / {PROJECT_NUMBER} — {PROJECT_NAME}",
-    "99_Archive",
-    "99_Unsorted Intake",
-  ],
-  projectFolders: [
-    "00_Admin",
-    "01_Lead & Proposal",
-    "02_Contract & Submittals",
-    "03_Schedule & Field",
-    "04_Photos & QA",
-    "05_Correspondence / Email Archive",
-    "05_Correspondence / Email Attachments",
-    "06_Closeout",
-  ],
-  gmailLabels: ["FCI/Intake", "FCI/Needs Review", "FCI/Filed"],
-} as const;
-
 export function resolveDriveWorkspace(input: {
   sharedDriveId?: string;
   simulation?: boolean;
 }) {
   const rootFolderId = input.simulation ? "workspace-simulation-drive" : input.sharedDriveId?.trim();
+  const blueprint = seedWorkspaceBlueprint();
 
   return {
     mode: "shared-drive" as const,
     modeIsValid: true,
     rootFolderId,
     storageLabel: input.simulation ? "Simulated Shared Drive" : "Company Shared Drive",
-    storageName: input.simulation ? "FCI Operations (local simulation)" : DRIVE_BLUEPRINT.sharedDriveName,
+    storageName: input.simulation ? `${blueprint.drive.sharedDriveName} (local simulation)` : blueprint.drive.sharedDriveName,
     storageRequirementLabel: "Shared Drive ID",
   };
 }
@@ -201,6 +184,7 @@ export function buildProjectFolderPlan(input: {
   projectName: string;
   year?: string;
 }) {
+  const blueprint = seedWorkspaceBlueprint();
   const year = input.year ?? new Date().getUTCFullYear().toString();
   const clientFolder = `01_Client Accounts/${input.clientCode} — ${input.clientName}`;
   const projectFolder = `02_Projects/${year}/${input.projectNumber} — ${input.projectName}`;
@@ -209,7 +193,7 @@ export function buildProjectFolderPlan(input: {
     clientFolders: ["00_Client Profile & Master Documents", "Projects (shortcuts only)"],
     projectFolder,
     projectFolders: DRIVE_BLUEPRINT.projectFolders,
-    gmailLabels: DRIVE_BLUEPRINT.gmailLabels,
+    gmailLabels: blueprint.gmail.labels.map((label) => label.name),
   };
 }
 

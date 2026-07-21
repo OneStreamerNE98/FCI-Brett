@@ -33,7 +33,15 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 
-const [clientsRoute, projectsRoute, filingRuleRoute, accountSettingsRoute, workspaceSettingsRoute, googleChatConfigRoute] =
+const [
+  clientsRoute,
+  projectsRoute,
+  filingRuleRoute,
+  accountSettingsRoute,
+  workspaceSettingsRoute,
+  googleChatConfigRoute,
+  workspaceBlueprintRoute,
+] =
   await Promise.all([
     vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
     vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
@@ -41,6 +49,7 @@ const [clientsRoute, projectsRoute, filingRuleRoute, accountSettingsRoute, works
     vite.ssrLoadModule("/app/api/v1/settings/me/route.ts"),
     vite.ssrLoadModule("/app/api/v1/settings/workspace/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/chat/config/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/integrations/google/setup/blueprint/route.ts"),
   ]);
 
 after(async () => {
@@ -112,6 +121,13 @@ const cases = [
     maximumBytes: 8_000,
     error: "Google Chat notification settings are too large.",
     invoke: (request) => googleChatConfigRoute.PATCH(request),
+  },
+  {
+    name: "Workspace blueprint update",
+    method: "PUT",
+    maximumBytes: 64 * 1024,
+    error: "The Workspace blueprint request is too large.",
+    invoke: (request) => workspaceBlueprintRoute.PUT(request),
   },
 ];
 

@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 const testUserEmail = "e2e-admin@example.test";
 const browserUserEmail = process.env.FCI_LOCAL_DEV_USER_EMAIL ?? testUserEmail;
+const baseURL = process.env.FCI_E2E_ORIGIN ?? "http://localhost:4173";
+const useExternalServer = process.env.FCI_E2E_EXTERNAL_SERVER === "true";
 const inheritedEnvironment = Object.fromEntries(
   Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
 );
@@ -19,7 +21,7 @@ export default defineConfig({
     ? [["github"], ["html", { outputFolder: "work/playwright-report", open: "never" }]]
     : [["list"], ["html", { outputFolder: "work/playwright-report", open: "never" }]],
   use: {
-    baseURL: "http://localhost:4173",
+    baseURL,
     extraHTTPHeaders: {
       "oai-authenticated-user-email": browserUserEmail,
       "oai-authenticated-user-full-name": encodeURIComponent("E2E Admin"),
@@ -35,7 +37,7 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: {
+  webServer: useExternalServer ? undefined : {
     command: "npm run e2e:server",
     url: "http://localhost:4173/manifest.webmanifest",
     reuseExistingServer: false,
