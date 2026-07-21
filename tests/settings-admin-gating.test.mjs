@@ -16,6 +16,7 @@ const settingsMutationRoutes = [
   "app/api/v1/integrations/google/gmail/send-test/route.ts",
   "app/api/v1/integrations/google/calendar/test-hold/route.ts",
   "app/api/v1/integrations/google/sheets/sync/route.ts",
+  "app/api/v1/integrations/google/setup/blueprint/route.ts",
 ];
 
 test("exposes the authenticated user's Administrator flag through the shared account request", async () => {
@@ -50,14 +51,16 @@ test("keeps every existing Settings mutation gate enforced on the server", async
 });
 
 test("guards Administrator integration GETs before schema or persistence work", async () => {
-  const [connectionSource, resourcesSource] = await Promise.all([
+  const [connectionSource, resourcesSource, blueprintSource] = await Promise.all([
     read("app/api/v1/integrations/google/connection/route.ts"),
     read("app/api/v1/integrations/google/setup/resources/route.ts"),
+    read("app/api/v1/integrations/google/setup/blueprint/route.ts"),
   ]);
   const deleteStart = connectionSource.indexOf("export async function DELETE");
   const handlers = [
     connectionSource.slice(connectionSource.indexOf("export async function GET"), deleteStart),
     resourcesSource.slice(resourcesSource.indexOf("export async function GET")),
+    blueprintSource.slice(blueprintSource.indexOf("export async function GET"), blueprintSource.indexOf("export async function PUT")),
   ];
 
   assert.ok(deleteStart > connectionSource.indexOf("export async function GET"));

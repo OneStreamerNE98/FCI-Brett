@@ -460,12 +460,16 @@ test("simulation reset deletes registry rows only for the simulation connection 
     "POST",
   ));
   const registryDeletes = database.queries.filter((query) => /DELETE FROM workspace_resources/u.test(query.sql));
+  const blueprintDeletes = database.queries.filter((query) => /DELETE FROM workspace_blueprints/u.test(query.sql));
 
   assert.equal(response.status, 200);
   assert.equal(registryDeletes.length, 1);
   assert.deepEqual(registryDeletes[0].values, ["workspace-simulation"]);
   assert.match(registryDeletes[0].sql, /WHERE connection_key = \?/u);
   assert.doesNotMatch(registryDeletes[0].sql, /google-workspace/u);
+  assert.equal(blueprintDeletes.length, 1);
+  assert.deepEqual(blueprintDeletes[0].values, ["workspace-simulation"]);
+  assert.match(blueprintDeletes[0].sql, /WHERE connection_key = \?/u);
 
   const resourcesResponse = await resourcesRoute.GET(routeRequest(
     "/api/v1/integrations/google/setup/resources",

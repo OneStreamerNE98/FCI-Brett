@@ -1,6 +1,6 @@
 # D1 development deployment migrations
 
-Status: Migrations 0012, 0013, and 0014 implemented in merged source; none deployed or applied to Sites by this change
+Status: Migrations 0012, 0013, and 0014 implemented in merged source; SET-14 migration 0015 implemented in this source branch; none deployed or applied to Sites by this change
 Scope: Controlled single-user development environment using test data only
 
 ## Boundary
@@ -70,7 +70,29 @@ Migration 0014 contains four additive `ALTER TABLE ... ADD` statements only. It 
 
 This migration does not add scheduling, crews, shifts, recognized revenue, or a follow-up-completed field. Its installation dates are the canonical seed that future Scheduling work must consume rather than duplicate. PostgreSQL and rehearsal parity remain deferred to KPI-04; migration 0014 neither changes nor applies a production migration.
 
-Migration 0014 is source-only, merged through PR #75, undeployed, and unapplied to the hosted development D1 database. Migrations 0012 and 0013 are also still unapplied there. Any future approved Sites deployment must back up the controlled test database, apply the pending sequence in order, verify all three migration records, and smoke-test project reads plus the Workspace resource registry and both audited project actions. Until that happens, the live development site must be treated as having none of the KPI-02, SET-13, or KPI-03 schema additions.
+Migration 0014 is source-only, merged through PR #75, undeployed, and unapplied to the hosted development D1 database. Migrations 0012 and 0013 are also still unapplied there. Migration 0015 below is likewise source-only; its section records the current pending sequence and smoke-test boundary.
+
+## SET-14 Workspace blueprint — source only
+
+Migration `0015_stale_zarda.sql` follows merged KPI-03 migration `0014` and creates the
+`workspace_blueprints` table plus its unique `connection_key` index. One current row per
+Google connection stores a sanitized blueprint JSON document, an optimistic-concurrency
+version, and create/update actor and timestamp metadata. An absent row means the
+application-owned seed at version zero; no seed row or data backfill is written by the
+migration.
+
+Migration 0015 is additive only. It contains one `CREATE TABLE` and one `CREATE UNIQUE
+INDEX`, with no project alteration, backfill, rewrite, drop, delete, truncate, or
+production-schema change. The table is part of the controlled D1 development connector;
+production adoption requires separately approved authorization and configuration
+reconciliation rather than copying development rows.
+
+Migration 0015 is source-only and unapplied to the hosted development D1 database. Any
+future approved Sites deployment must back up the controlled test database, apply the
+pending 0012→0015 sequence in order, verify all four migration records, and smoke-test
+project reads/actions, the Workspace resource registry, and blueprint seed/save/conflict
+behavior. Until that happens, the live development site must be treated as having none
+of the KPI-02, SET-13, KPI-03, or SET-14 schema additions.
 
 ## Migration 0011 existing development database safety
 

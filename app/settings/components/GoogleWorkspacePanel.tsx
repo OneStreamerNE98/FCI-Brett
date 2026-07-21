@@ -7,7 +7,7 @@ import { AdministratorActionButton } from "../../components/AdministratorActionB
 import { OperationsDataTable, OperationsDataTableCell } from "../../components/operations/OperationsDataTable";
 import { Status } from "../../components/operations/OperationsPrimitives";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
-import { DRIVE_BLUEPRINT } from "../../lib/google-workspace";
+import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
@@ -250,6 +250,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [filingLoading, setFilingLoading] = useState(false);
   const [filingSubmitting, setFilingSubmitting] = useState(false);
   const [oauthResult, setOauthResult] = useState<string | null>(null);
+  const [blueprintEditorRevision, setBlueprintEditorRevision] = useState(0);
   const readinessChecked = useRef(false);
 
   const checkSetup = useCallback(async (force = false) => {
@@ -574,6 +575,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setCalendarEvents([]);
       setGmailLabelsReady(true);
       setCalendarChecked(false);
+      setBlueprintEditorRevision((current) => current + 1);
       notify(`Workspace simulation reset with ${data.messages} sample messages and ${data.events} calendar events.`, "success");
       invalidateCachedGet("/api/v1/google-workspace");
       invalidateCachedGet("/api/v1/integrations/google/connection");
@@ -695,6 +697,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirror?.clients.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirror?.projects.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Provisioning reminder:</strong> project-folder provisioning stays controlled by the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> value; this screen does not toggle it.</p></div>
       </li>
     </ol>
+    {isAdmin && <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />}
     <section className="workspace-setup-card workspace-resources-card" aria-labelledby="workspace-resources-heading">
       <header>
         <div><p className="eyebrow">Workspace setup</p><h3 id="workspace-resources-heading">Resources</h3></div>
@@ -761,7 +764,6 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         <p className="workspace-connection-health-note">Recorded permission reflects the saved Google consent only. It is not a live provider-health or freshness check.</p>
       </>}
     </section>}
-    <div className="drive-blueprint"><div><h3>{simulation ? "Simulated Shared Drive blueprint" : "Company Shared Drive blueprint"}</h3><p>{storageName}</p></div><ol>{DRIVE_BLUEPRINT.roots.map((item) => <li key={item}>{item}</li>)}</ol><div className="project-folder-list"><strong>Every independent project receives:</strong>{DRIVE_BLUEPRINT.projectFolders.map((item) => <span key={item}><FolderOpen size={13} />{item}</span>)}</div></div>
     <div className="workspace-checklist"><h3>{simulation ? "Simulation safeguards" : "Workspace launch safeguards"}</h3><label><input type="checkbox" /> {simulation ? "Use only seeded sample data" : "Use a company-owned Shared Drive and sender mailbox"}</label><label><input type="checkbox" /> {simulation ? "Confirm no OAuth account or Google token is connected" : "Restrict authorization to the approved Workspace domain"}</label><label><input type="checkbox" /> Keep Gmail filing review-first and project-specific</label><label><input type="checkbox" /> Verify the two shared calendars and Sheet mirror before staff launch</label></div>
     {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
   </section>;

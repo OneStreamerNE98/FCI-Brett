@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
 
 type MirrorStatus = {
   configured: boolean;
@@ -149,8 +150,53 @@ async function mockWorkspaceResources(page: Page, payload: WorkspaceResourcesPay
   });
 }
 
+async function mockWorkspaceBlueprint(page: Page, initial: WorkspaceBlueprint = seedWorkspaceBlueprint(), initialVersion = 0) {
+  let blueprint = structuredClone(initial) as WorkspaceBlueprint;
+  let version = initialVersion;
+  let nextSaveFailure: { status: number; error: string } | null = null;
+  await page.route("**/api/v1/integrations/google/setup/blueprint", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ blueprint, version, seeded: version === 0 }) });
+      return;
+    }
+    if (nextSaveFailure) {
+      const failure = nextSaveFailure;
+      nextSaveFailure = null;
+      await route.fulfill({ status: failure.status, contentType: "application/json", body: JSON.stringify({ error: failure.error }) });
+      return;
+    }
+    const body = route.request().postDataJSON() as { blueprint: WorkspaceBlueprint; expectedVersion: number };
+    if (body.expectedVersion !== version) {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "The Workspace blueprint changed after this editor loaded. Load the latest version before saving again.",
+          code: "workspace_blueprint_version_conflict",
+          currentVersion: version,
+        }),
+      });
+      return;
+    }
+    blueprint = structuredClone(body.blueprint);
+    version += 1;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ blueprint, version, seeded: false }) });
+  });
+  return {
+    current: () => ({ blueprint: structuredClone(blueprint), version }),
+    replace: (nextBlueprint: WorkspaceBlueprint, nextVersion: number) => {
+      blueprint = structuredClone(nextBlueprint) as WorkspaceBlueprint;
+      version = nextVersion;
+    },
+    failNextSave: (status: number, error: string) => {
+      nextSaveFailure = { status, error };
+    },
+  };
+}
+
 test.beforeEach(async ({ page }) => {
   await mockWorkspaceResources(page);
+  await mockWorkspaceBlueprint(page);
 });
 
 function step(page: Page, heading: string) {
@@ -350,6 +396,162 @@ test("administrator connection health exhaustively maps account, mode, status, e
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<field-schedule-calendar ID>");
   await resourcesCard.getByRole("button", { name: "Copy command" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("openssl rand -base64 32");
+});
+
+test("administrator edits and saves a structured Workspace blueprint while system filing folders stay locked", async ({ page }) => {
+  await page.unroute("**/api/v1/integrations/google/setup/blueprint");
+  const blueprintApi = await mockWorkspaceBlueprint(page);
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+
+  const blueprintCard = page.locator(".workspace-blueprint-card");
+  await expect(blueprintCard.getByRole("heading", { level: 3, name: "Blueprint" })).toBeVisible();
+  await expect(page.locator(".workspace-resources-card")).toBeVisible();
+  await expect(page.locator(".workspace-connection-health")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect Workspace" })).toHaveCount(1);
+  await expect(blueprintCard.getByLabel("holidays calendar display name", { exact: true })).toHaveValue("FCI Holidays");
+
+  const correspondence = blueprintCard.getByLabel("05_Correspondence folder name", { exact: true });
+  await expect(correspondence).toBeDisabled();
+  const correspondenceLock = blueprintCard.getByRole("button", { name: "05_Correspondence is locked", exact: true });
+  await correspondenceLock.focus();
+  await expect(correspondenceLock.locator("xpath=following-sibling::*[@role='tooltip']")).toContainText("renaming or removing it would break the filing contract", { ignoreCase: true });
+
+  await blueprintCard.getByLabel("01_Client Accounts folder name", { exact: true }).fill("01_Custom Clients");
+  await blueprintCard.getByRole("button", { name: "Add template", exact: true }).click();
+  await blueprintCard.getByLabel("new-template template name", { exact: true }).fill("Site Visit Packet");
+  await expect(blueprintCard.getByRole("button", { name: "Save blueprint", exact: true })).toBeEnabled();
+  await blueprintCard.getByRole("button", { name: "Save blueprint", exact: true }).click();
+
+  await expect(blueprintCard.getByText("Saved version 1", { exact: true })).toBeVisible();
+  await expect(blueprintCard.getByText("All blueprint changes saved", { exact: true })).toBeVisible();
+  const reflected = await page.evaluate(async () => {
+    const response = await fetch("/api/v1/integrations/google/setup/blueprint", { cache: "no-store" });
+    return { status: response.status, body: await response.json() };
+  }) as { status: number; body: { blueprint: WorkspaceBlueprint; version: number } };
+  expect(reflected.status).toBe(200);
+  expect(reflected.body.version).toBe(1);
+  expect(reflected.body.blueprint.drive.roots.find((folder) => folder.key === "client-accounts")?.name).toBe("01_Custom Clients");
+  expect(reflected.body.blueprint.templates.at(-1)).toEqual(expect.objectContaining({ key: "new-template", name: "Site Visit Packet" }));
+  expect(reflected.body.blueprint.drive.projectFolders.find((folder) => folder.key === "correspondence")?.name).toBe("05_Correspondence");
+  expect(blueprintApi.current()).toEqual({ blueprint: reflected.body.blueprint, version: reflected.body.version });
+});
+
+test("a stale blueprint save preserves the local draft and requires loading the latest version", async ({ page }) => {
+  await page.unroute("**/api/v1/integrations/google/setup/blueprint");
+  const blueprintApi = await mockWorkspaceBlueprint(page);
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  const blueprintCard = page.locator(".workspace-blueprint-card");
+  const clientFolder = blueprintCard.locator(".workspace-blueprint-folder-row").filter({ hasText: "client-accounts" }).getByRole("textbox");
+  await clientFolder.fill("01_Local Draft");
+
+  const externallySaved = structuredClone(seedWorkspaceBlueprint()) as WorkspaceBlueprint;
+  const externalClientFolder = externallySaved.drive.roots.find((folder) => folder.key === "client-accounts");
+  if (!externalClientFolder) throw new Error("Seed blueprint is missing client-accounts.");
+  externalClientFolder.name = "01_External Version";
+  blueprintApi.replace(externallySaved, 1);
+
+  await blueprintCard.getByRole("button", { name: "Save blueprint", exact: true }).click();
+  const conflict = blueprintCard.getByRole("alert");
+  await expect(conflict).toContainText("changed after this editor loaded", { ignoreCase: true });
+  await expect(clientFolder).toHaveValue("01_Local Draft");
+  await expect(blueprintCard.getByRole("button", { name: "Save blueprint", exact: true })).toBeDisabled();
+
+  await clientFolder.fill("01_Local Draft Revised");
+  await expect(conflict).toBeVisible();
+  await expect(blueprintCard.getByRole("button", { name: "Save blueprint", exact: true })).toBeDisabled();
+  await conflict.getByRole("button", { name: "Load latest (v1)", exact: true }).click();
+
+  await expect(blueprintCard.getByLabel("01_External Version folder name", { exact: true })).toHaveValue("01_External Version");
+  await expect(blueprintCard.getByText("Saved version 1", { exact: true })).toBeVisible();
+  await expect(blueprintCard.getByText("All blueprint changes saved", { exact: true })).toBeVisible();
+  await expect(blueprintCard.getByRole("alert")).toHaveCount(0);
+});
+
+test("blueprint save failures preserve the draft for retry and discard clears non-conflict errors", async ({ page }) => {
+  await page.unroute("**/api/v1/integrations/google/setup/blueprint");
+  const blueprintApi = await mockWorkspaceBlueprint(page);
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  const blueprintCard = page.locator(".workspace-blueprint-card");
+  const clientFolder = blueprintCard.locator(".workspace-blueprint-folder-row").filter({ hasText: "client-accounts" }).getByRole("textbox");
+  await clientFolder.fill("01_Retry Clients");
+  blueprintApi.failNextSave(503, "Temporary save failure.");
+  await blueprintCard.getByRole("button", { name: "Save blueprint", exact: true }).click();
+
+  await expect(blueprintCard.getByRole("alert")).toContainText("Temporary save failure.");
+  await expect(clientFolder).toHaveValue("01_Retry Clients");
+  await blueprintCard.getByRole("button", { name: "Retry save", exact: true }).click();
+  await expect(blueprintCard.getByText("Saved version 1", { exact: true })).toBeVisible();
+
+  await clientFolder.fill("01_Throwaway Draft");
+  blueprintApi.failNextSave(503, "Another temporary failure.");
+  await blueprintCard.getByRole("button", { name: "Save blueprint", exact: true }).click();
+  await expect(blueprintCard.getByRole("alert")).toContainText("Another temporary failure.");
+  await blueprintCard.getByRole("button", { name: "Discard changes", exact: true }).click();
+
+  await expect(clientFolder).toHaveValue("01_Retry Clients");
+  await expect(blueprintCard.getByRole("alert")).toHaveCount(0);
+  await expect(blueprintCard.getByText("All blueprint changes saved", { exact: true })).toBeVisible();
+  expect(blueprintApi.current().version).toBe(1);
+});
+
+test("simulation reset reloads the seed blueprint after deleting the saved simulation row", async ({ page }) => {
+  const customized = structuredClone(seedWorkspaceBlueprint()) as WorkspaceBlueprint;
+  const clientFolder = customized.drive.roots.find((folder) => folder.key === "client-accounts");
+  if (!clientFolder) throw new Error("Seed blueprint is missing client-accounts.");
+  clientFolder.name = "01_Custom Simulation Clients";
+
+  await page.unroute("**/api/v1/integrations/google/setup/blueprint");
+  const blueprintApi = await mockWorkspaceBlueprint(page, customized, 4);
+  const simulationHealth: ConnectionHealthPayload = {
+    ...connectedHealth(),
+    runtimeMode: "simulation",
+    simulation: true,
+    connection: { ...connectedHealth().connection, account: "Local Workspace simulation", grantedServices: null },
+  };
+  await mockConnectionHealth(page, simulationHealth);
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness({ runtimeMode: "simulation", simulation: true })) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+  await page.route("**/api/v1/integrations/google/simulation/reset", async (route) => {
+    blueprintApi.replace(seedWorkspaceBlueprint(), 0);
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reset: true, messages: 2, events: 0 }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  const blueprintCard = page.locator(".workspace-blueprint-card");
+  await expect(blueprintCard.getByLabel("01_Custom Simulation Clients folder name", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Reset simulation data", exact: true }).click();
+
+  await expect(blueprintCard.getByLabel("01_Client Accounts folder name", { exact: true })).toBeVisible();
+  await expect(blueprintCard.getByText("Seed defaults · version 0", { exact: true })).toBeVisible();
+  await expect(blueprintCard.getByText("All blueprint changes saved", { exact: true })).toBeVisible();
 });
 
 test("copy helpers do not claim configuration is complete when readiness is unavailable", async ({ page }) => {

@@ -16,6 +16,7 @@ const appSurfacePaths = [
   "app/settings/components/SettingsDataNotice.tsx",
   "app/settings/components/TestingLaunchPanel.tsx",
   "app/settings/components/WorkspaceDefaultsPanel.tsx",
+  "app/settings/components/WorkspaceBlueprintEditor.tsx",
 ];
 const readAppSurface = async () => (await Promise.all(appSurfacePaths.map(read))).join("\n");
 
@@ -277,9 +278,10 @@ test("makes company shared calendars authoritative without a personal-calendar m
 });
 
 test("models clients, independent projects, and review-first email filing", async () => {
-  const [app, schema, clientsApi, projectsApi, rulesApi, workspace] = await Promise.all([
+  const [app, schema, clientsApi, projectsApi, rulesApi, workspace, blueprint] = await Promise.all([
     readAppSurface(), read("db/schema.ts"), read("app/api/v1/clients/route.ts"),
     read("app/api/v1/projects/route.ts"), read("app/api/v1/filing-rules/route.ts"), read("app/lib/google-workspace.ts"),
+    read("app/lib/workspace-blueprint.ts"),
   ]);
   assert.match(app, /Client Directory/);
   assert.match(app, /multiple independent projects/);
@@ -291,7 +293,7 @@ test("models clients, independent projects, and review-first email filing", asyn
   assert.match(projectsApi, /client_id/);
   assert.match(rulesApi, /approval_required/);
   assert.match(workspace, /needs-project-selection/);
-  assert.match(workspace, /FCI\/Needs Review/);
+  assert.match(blueprint, /FCI\/Needs Review/);
 });
 
 test("applies enabled built-in filing rules to inbox hints without automatic Gmail writes", async () => {
@@ -354,7 +356,8 @@ test("wires development controls and exposes Workspace-only live configuration p
   assert.match(workspaceApi, /simulation: google\.simulation/);
   assert.match(app, /Local Workspace simulation/);
   assert.match(app, /Connect Google Workspace/);
-  assert.match(app, /Simulated Shared Drive blueprint/);
+  assert.match(app, /WorkspaceBlueprintEditor/);
+  assert.doesNotMatch(app, /Simulated Shared Drive blueprint/);
   assert.match(envExample, /GOOGLE_INTEGRATION_MODE=simulation/);
   assert.match(envExample, /GOOGLE_WORKSPACE_ENABLED_SERVICES=drive,gmail,calendar,sheets/);
   assert.match(envExample, /GOOGLE_WORKSPACE_SHARED_DRIVE_ID=/);

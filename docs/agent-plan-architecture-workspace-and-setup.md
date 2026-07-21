@@ -412,7 +412,7 @@ database connection; KPI-04 owns the PostgreSQL columns and activation of those 
 Keep every existing guard
 (FCI TEST name rule, 16 MiB/5,000-row caps, `^fci_rehearsal_` schema, refuse production,
 exact acknowledgment). `cutoverReady` stays hardcoded false.
-**Accept:** inventory covers all 22 current tables (unit test fails on unclassified); extended
+**Accept:** inventory covers all 23 current tables (unit test fails on unclassified); extended
 fixture imports green; `cutoverReady:false`.
 
 ### BE-13 · Fail-closed schema targeting (small, no deps)
@@ -894,6 +894,8 @@ values; migration guard updated; simulation e2e reset round-trip. All existing
 (storage port later).
 
 ### SET-14 · Workspace blueprint: model, seed, persistence, structured editor (large, after SET-13)
+**Status:** In progress — `codex/set14-workspace-blueprint`, July 21, 2026.
+
 **Why:** Owner requirement: the folder tree, spreadsheets, templates, and setup
 attributes must be owner-definable in the dashboard, not hardcoded; `DRIVE_BLUEPRINT`
 becomes the seed of a versioned, persisted blueprint the setup engine consumes.

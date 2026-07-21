@@ -286,6 +286,20 @@ export const workspaceResources = sqliteTable("workspace_resources", {
   ),
 ]);
 
+/** Versioned owner-defined Google Workspace setup blueprint, one current row per connection. */
+export const workspaceBlueprints = sqliteTable("workspace_blueprints", {
+  id: text("id").primaryKey(),
+  connectionKey: text("connection_key").notNull(),
+  version: integer("version").notNull(),
+  blueprintJson: text("blueprint_json", { mode: "json" }).notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  uniqueIndex("workspace_blueprints_connection_unique").on(table.connectionKey),
+]);
+
 export const driveFolderMappings = sqliteTable("drive_folder_mappings", {
   id: text("id").primaryKey(),
   connectionKey: text("connection_key").notNull(),

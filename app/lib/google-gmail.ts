@@ -1,4 +1,5 @@
 import { GoogleIntegrationError, type GoogleFetch, type GoogleRuntimeConfig } from "./google-oauth";
+import { seedWorkspaceBlueprint } from "./workspace-blueprint";
 
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const MAX_MESSAGE_RESULTS = 20;
@@ -17,12 +18,20 @@ export const GMAIL_ARCHIVE_LIMITS = {
   maxTotalAttachmentBytes: 20 * MEBIBYTE,
 } as const;
 
-export const FCI_GMAIL_LABELS = {
-  root: "FCI",
-  intake: "FCI/Intake",
-  needsReview: "FCI/Needs Review",
-  filed: "FCI/Filed",
-} as const;
+const SEED_GMAIL_LABELS = new Map(seedWorkspaceBlueprint().gmail.labels.map((label) => [label.key, label.name]));
+
+function seedGmailLabel(key: "intake" | "needs-review" | "filed") {
+  const value = SEED_GMAIL_LABELS.get(key);
+  if (!value) throw new TypeError(`The Workspace blueprint seed is missing the ${key} Gmail label.`);
+  return value;
+}
+
+export const FCI_GMAIL_LABELS = Object.freeze({
+  root: seedGmailLabel("intake").split("/")[0],
+  intake: seedGmailLabel("intake"),
+  needsReview: seedGmailLabel("needs-review"),
+  filed: seedGmailLabel("filed"),
+});
 
 type GmailLabel = {
   id: string;
