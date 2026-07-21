@@ -928,7 +928,7 @@ GET reflects version+1); office user sees no editor; reset restores seed.
 **Effort:** large.
 
 ### SET-15 · Shared Drive adopt/verify + blueprint-driven root folder tree + rename (medium, after SET-14)
-**Status:** In review — draft PR #84, July 21, 2026. Source-only and undeployed.
+**Status:** Complete — PR #84, July 21, 2026. Source-only and undeployed.
 
 **Why:** Owner starter set: Shared Drive adopt/verify plus the standard folder tree —
 now blueprint-driven, so next year's folder is a dashboard edit, not a code change.
@@ -956,7 +956,7 @@ simulation e2e adopt → ensure → rename journey; audit events asserted in D1.
 **Effort:** medium.
 
 ### SET-16 · Spreadsheets: system client-directory + owner-defined extras (medium, after SET-15)
-**Status:** In review — draft PR #88, `codex/set16-spreadsheets`, July 21, 2026.
+**Status:** Complete — PR #88, July 21, 2026. Source-only and undeployed.
 
 **Why:** `google-sheets.ts` maintains tabs/rows but cannot create workbooks — today the
 owner hand-creates the directory sheet and records an env var; and the blueprint now
@@ -1033,7 +1033,7 @@ present.
 **Effort:** medium.
 
 ### SET-19 · Domain & tenant guided checklist card (small, after SET-13; parallel with SET-14)
-**Status:** In review — draft PR #83, July 21, 2026. Source-only and undeployed.
+**Status:** Complete — PR #83, July 21, 2026. Source-only and undeployed.
 
 **Why:** Owner decision: Admin-console/DNS/OAuth/API-enablement/secrets/Groups stay
 manual; the dashboard should guide them with instructions, external deep links, and
@@ -1207,7 +1207,7 @@ truthfully; simulation e2e registers and reads a fixture reference sheet.
 **Effort:** medium. **Cost:** $0.
 
 ### SET-28 · End-user settings foundation: "My settings" (medium, after SET-13; full value after live login)
-**Status:** In review — draft PR #87, July 21, 2026. Source-only and undeployed; migration 0016 has not been applied to Sites.
+**Status:** Complete — PR #87, July 21, 2026. Source-only and undeployed; migration 0016 has not been applied to Sites.
 
 **Why:** Owner requirement: the setup surface must serve two audiences — initial/admin
 organization setup, and each end user's own settings — so employee rollout does not
@@ -1221,6 +1221,9 @@ landing view) only where a consumer exists. Per-user rows persist keyed by the
 employee identity (works for the single dev user now; scales with live login).
 Server-side: users write only their own rows; admin gates untouched (UI gating is
 honesty, not security).
+Any future packet that grows the notification catalog MUST widen-on-read by merging
+missing or unknown keys against defaults, or ship a data migration; the current
+all-or-nothing normalizer would otherwise silently reset saved preferences.
 **Accept:** own-rows-only enforced in route tests; unconsumed preferences carry
 Planned badges (render-invariance test); non-admin users see My settings but no admin
 cards; simulation e2e edits and persists a preference; SET-07 slug pins unchanged.

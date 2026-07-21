@@ -469,6 +469,7 @@ export function sanitizeWorkspaceBlueprint(value: unknown): WorkspaceBlueprint {
   const folderKeys = new Set<string>();
   const folderCounter = { value: 0 };
   const roots = array(drive.roots, "blueprint.drive.roots").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.roots[${index}]`, 1, folderKeys, folderCounter));
+  const rootFolderKeys = new Set(folderKeys);
   const clientFolders = array(drive.clientFolders, "blueprint.drive.clientFolders").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.clientFolders[${index}]`, 1, folderKeys, folderCounter));
   const projectFolders = array(drive.projectFolders, "blueprint.drive.projectFolders").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.projectFolders[${index}]`, 1, folderKeys, folderCounter));
 
@@ -478,7 +479,7 @@ export function sanitizeWorkspaceBlueprint(value: unknown): WorkspaceBlueprint {
   const spreadsheets = spreadsheetValues.map((spreadsheet, index) => {
     const sanitized = sanitizeSpreadsheet(spreadsheet, `blueprint.spreadsheets[${index}]`);
     uniqueKey(sanitized.key, `blueprint.spreadsheets[${index}].key`, spreadsheetKeys);
-    if (!folderKeys.has(sanitized.targetFolderKey)) invalid(`blueprint.spreadsheets[${index}].targetFolderKey`, `does not reference a folder key: ${sanitized.targetFolderKey}.`);
+    if (!rootFolderKeys.has(sanitized.targetFolderKey)) invalid(`blueprint.spreadsheets[${index}].targetFolderKey`, `does not reference a Shared Drive root-tree folder key: ${sanitized.targetFolderKey}.`);
     return sanitized;
   });
 

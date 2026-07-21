@@ -158,6 +158,39 @@ test("spreadsheet roles accept import and reference while reserving system-mirro
   assert.equal(ownerMirror.path, "blueprint.spreadsheets[owner-mirror].role");
 });
 
+test("spreadsheet targets stay in the Shared Drive root tree while templates retain per-record targets", async (t) => {
+  for (const [collection, targetFolderKey] of [
+    ["client", "client-profile"],
+    ["project", "admin"],
+  ]) {
+    await t.test(`rejects a ${collection} folder target for a spreadsheet`, () => {
+      const error = validationError((value) => {
+        value.spreadsheets.push({
+          key: `${collection}-sheet`,
+          name: `${collection} sheet`,
+          targetFolderKey,
+          management: "owner",
+          role: "reference",
+        });
+      });
+
+      assert.equal(error.path, "blueprint.spreadsheets[1].targetFolderKey");
+      assert.match(error.message, /Shared Drive root-tree folder key/u);
+    });
+  }
+
+  const value = draft();
+  value.templates.push(
+    { key: "client-template", name: "Client template", kind: "doc", targetFolderKey: "client-profile", management: "owner" },
+    { key: "project-template", name: "Project template", kind: "doc", targetFolderKey: "admin", management: "owner" },
+  );
+
+  assert.deepEqual(
+    sanitizeWorkspaceBlueprint(value).templates.slice(-2).map((template) => template.targetFolderKey),
+    ["client-profile", "admin"],
+  );
+});
+
 test("change summary is bounded and contains no blueprint names", () => {
   const before = seedWorkspaceBlueprint();
   const after = draft();

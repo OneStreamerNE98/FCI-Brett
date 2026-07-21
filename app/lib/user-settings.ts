@@ -54,7 +54,11 @@ export function defaultUserSettingsPreferences(): UserSettingsPreferences {
   };
 }
 
-/** Accepts only the complete closed catalog so unknown future keys never become implied consumers. */
+/**
+ * Accepts only the complete closed catalog so unknown future keys never become implied consumers.
+ * A future catalog expansion must widen-on-read by merging missing or unknown keys against defaults,
+ * or ship a data migration; otherwise this all-or-nothing normalizer resets saved preferences.
+ */
 export function normalizeUserNotificationPreferences(value: unknown): UserNotificationPreferences | null {
   if (!isRecord(value)) return null;
   const keys = Object.keys(value);
