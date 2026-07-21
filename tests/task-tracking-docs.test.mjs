@@ -95,7 +95,7 @@ test("tracking guard captures wrapped statuses and rejects line-local stale merg
   assert.doesNotThrow(() =>
     assertNoStaleMergedPrReferences(
       "fixture.md",
-      "PR #54 is complete and undeployed.\nDraft PR #52 remains open.\n#540 is in progress.",
+      "PR #54 is complete and undeployed.\nDraft PR #56 remains open.\n#540 is in progress.",
       [54],
     ),
   );
@@ -170,6 +170,7 @@ test("known merged packets have complete statuses and cannot regress to review-o
     ["SET-03", 44],
     ["SET-04", 44],
     ["KPI-01", 41],
+    ["KPI-02", 52],
     ["TRK-01", 32],
     ["TRK-02", 66],
   ]);
@@ -259,16 +260,16 @@ test("the checklist dashboard records the merged baseline and current review que
   const oidc = read("docs/be04-oidc-review-and-followups.md");
   const handoff = read("docs/codex-to-codex-handoff.md");
 
-  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `218266d1e0741284e10c736bb5a9404dc7b891e2`/);
+  assert.match(checklists, /July 20, 2026[\s\S]*`main` at `c2f8b265a7be42f0c091c127923734c7608566bc`/);
   assert.match(checklists, /PR #49 completed OIDC-04[\s\S]*PR #50 guarded that completed status/);
   assert.match(
     checklists,
-    /OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged\.\s+PRs #54\/#55 are source-only and undeployed\.\s+PR #51 completed BE-09 and is merged source-only and undeployed\.\s+PR #53 completed BE-12 and is merged source-only and undeployed\.\s+Draft PR #52 and PRs #56–#57 remain unmerged and undeployed\./,
+    /OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged\.\s+PRs #54\/#55 are source-only and undeployed\.\s+PR #51 completed BE-09 and is merged source-only and undeployed\.\s+PR #53 completed BE-12 and is merged source-only and undeployed\.\s+PR #52 completed KPI-02 and is merged source-only and undeployed; migration 0012 is unapplied to Sites, and KPI-03 is now assignable\.\s+PRs #56–#57 remain unmerged and undeployed\./,
   );
   assert.doesNotMatch(checklists, /drafts #51–#57|drafts #51–#53|drafts #51–#53 and #55–#57/i);
-  assert.match(handoff, /source status is reconciled against merged `main` baseline `218266d`/);
-  assert.match(plan, /\*\*GitHub baseline:\*\* source is reconciled against `main` at `218266d` after PR #53/);
-  assert.match(audit, /Source status is reconciled against merged `main` baseline `218266d`/);
+  assert.match(handoff, /source status is reconciled against merged `main` baseline `c2f8b26`/);
+  assert.match(plan, /\*\*GitHub baseline:\*\* source is reconciled against `main` at `c2f8b26` after PR #52/);
+  assert.match(audit, /Source status is reconciled against merged `main` baseline `c2f8b26`/);
 
   const reviewQueue = section(checklists, "## Current GitHub review snapshot", "## Checklists by topic");
   for (const pr of [51, 52, 53, 54, 55, 56, 57, 66]) {
@@ -278,13 +279,11 @@ test("the checklist dashboard records the merged baseline and current review que
   assert.match(reviewQueue, /pull\/55\)[^\n]*Merged into `main`[^\n]*source-only and undeployed/);
   assert.match(reviewQueue, /pull\/66\)[^\n]*Merged into `main`[^\n]*source-only and undeployed/);
   assert.match(reviewQueue, /pull\/51\)[^\n]*Merged into `main`[^\n]*source-only and undeployed/);
+  assert.match(reviewQueue, /pull\/52\)[^\n]*Merged into `main`[^\n]*source-only and undeployed[^\n]*migration 0012 unapplied[^\n]*KPI-03 now assignable/);
   assert.match(reviewQueue, /pull\/53\)[^\n]*Merged into `main`[^\n]*source-only and undeployed/);
   assert.match(reviewQueue, /does not change any owner checkbox or mark remaining unmerged source complete/);
 
-  const expectedPlanDrafts = new Map([
-    ["KPI-02", 52],
-    ["SET-10", 56],
-  ]);
+  const expectedPlanDrafts = new Map([["SET-10", 56]]);
   for (const [packet, pr] of expectedPlanDrafts) {
     const status = packetStatus(plan, packet);
     assert.match(status, new RegExp(`^In review — draft PR #${pr}\\b`), `${packet} does not record draft PR #${pr}`);
@@ -305,18 +304,22 @@ test("the checklist dashboard records the merged baseline and current review que
     audit,
     /BE-12 complete in PR #53; source-only and undeployed:[^\n]*disposable GitHub CI PostgreSQL 16 schema; no approved hosted development\/staging rehearsal, production migration or grant apply, or live-data operation has run\./,
   );
+  const kpi02Status = packetStatus(plan, "KPI-02");
+  assert.match(kpi02Status, /^Complete — PR #52, July 20, 2026\. Source-only and undeployed; migration 0012 has not been applied to Sites\.$/);
+  assertMergedStatusHasNoReviewTerms("KPI-02", kpi02Status);
   assert.match(staffLogin, /OIDC-02\/#54[\s\S]*OIDC-03\/#55[\s\S]*merged[\s\S]*source-only and undeployed/i);
   assert.match(foundation, /BE-09\/#51 is complete in source, merged, and undeployed/);
   assert.match(foundation, /BE-12\/#53 is complete in source, merged, and undeployed/);
-  assert.match(frontend, /KPI-02\/#52, SET-10\/#56, and the logo refresh\/#57 remain open and unmerged/);
-  assert.match(architecture, /PRs #54\/#55[\s\S]*merged source-only and undeployed[\s\S]*BE-09\/#51 is merged source-only and undeployed[\s\S]*BE-12\/#53 is merged source-only and undeployed[\s\S]*draft PR #52 and PRs #56–#57 remain unmerged/i);
+  assert.match(frontend, /KPI-02\/#52 is merged source-only and undeployed; SET-10\/#56 and the logo refresh\/#57 remain open and unmerged/);
+  assert.match(architecture, /PRs #54\/#55[\s\S]*merged source-only and undeployed[\s\S]*BE-09\/#51 is merged source-only and undeployed[\s\S]*BE-12\/#53 is merged source-only and undeployed[\s\S]*KPI-02\/#52 is merged source-only and undeployed[\s\S]*PRs #56–#57 remain unmerged/i);
 
   const checklistNextWork = section(checklists, "## Recommended next work", "## Safety boundary");
   assert.match(checklistNextWork, /OIDC-04 is complete in PRs #49\/#50/);
   assert.match(checklistNextWork, /TRK-02 is complete in PR #66/);
   assert.match(checklistNextWork, /BE-07\+SET-05, SET-11, SET-09\+WS-10, and WS-13/);
-  assert.match(checklistNextWork, /PR #51 completed BE-09[\s\S]*BE-10\/BE-14 are now assignable[\s\S]*KPI-03 waits for #52/);
-  assert.match(checklistNextWork, /merge order #52 → #56 → #57/);
+  assert.match(checklistNextWork, /PR #51 completed BE-09[\s\S]*BE-10\/BE-14 are now assignable[\s\S]*PR #52 completed KPI-02[\s\S]*KPI-03 is now assignable/);
+  assert.match(checklistNextWork, /merge order #56 → #57/);
+  assert.doesNotMatch(checklistNextWork, /#52 →|KPI-03 waits for #52/i);
   assert.doesNotMatch(checklistNextWork, /merge order #53|#53 →/);
   assert.doesNotMatch(checklistNextWork, /OIDC-04's merge-train documentation\/guard reconciliation is first/);
 });
@@ -406,9 +409,9 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
   assert.doesNotMatch(startNow, /TRK-02[^\n]*(?:in progress|lands before)/i);
   assert.match(startNow, /BE-09 is complete in source in PR #51 and remains undeployed/);
   assert.match(startNow, /BE-12 is complete in source in PR #53 and remains undeployed/);
-  assert.match(startNow, /The remaining reviewed merge train starts with\s+KPI-02 \(#52\), SET-10 \(#56\), and the logo refresh \(#57\)/);
+  assert.match(startNow, /KPI-02 is complete in source in PR #52[\s\S]*remaining reviewed\s+merge train is SET-10 \(#56\), then the logo refresh \(#57\); KPI-03 is now assignable/);
   assert.doesNotMatch(startNow, /BE-12 \(#53\)|#53 →/);
-  for (const [packet, pr] of [["KPI-02", 52], ["SET-10", 56]]) {
+  for (const [packet, pr] of [["SET-10", 56]]) {
     assert.match(startNow, new RegExp(`${packet}[\\s\\S]*#${pr}`), `${packet}/#${pr} is missing from the current review queue`);
   }
   assert.match(startNow, /logo refresh \(#57\)/);
@@ -416,7 +419,9 @@ test("deployed semantic-table, completed actionable-list and Settings source, an
   const firstWave = section(plan, "**Wave 1 — next PRs, in this order where they share files:**", "**Wave 2 — current:**");
   assert.match(firstWave, /Actionable-list pattern slice[\s\S]*complete in PR #33[\s\S]*SET-01 Settings panel extraction[\s\S]*PR #35[\s\S]*SET-02[\s\S]*PR #37[\s\S]*KPI-01[\s\S]*PR #41/i);
   const secondWave = section(plan, "**Wave 2 — current:**", "**Owner/Brett track");
-  assert.match(secondWave, /#52 → #56 → #57/);
+  assert.match(secondWave, /#56 → #57/);
+  assert.match(secondWave, /KPI-03 is assignable because PR #52\s+merged/);
+  assert.doesNotMatch(secondWave, /#52 →|KPI-03 waits for #52/i);
   assert.doesNotMatch(secondWave, /#53 →|BE-12 \(#53\)/);
 
   const design = read("docs/design-critique-fix-plan.md");

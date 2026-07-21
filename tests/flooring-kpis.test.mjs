@@ -122,8 +122,11 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
   assert.match(definitions, /Project\/install cycle time/);
   assert.match(definitions, /contractValue.*estimatedValue/si);
   assert.match(definitions, /Revenue per square foot[\s\S]*arithmetic mean/);
+  assert.match(definitions, /Status: Tier-1 and KPI-02 implemented on `main` through PR #52[\s\S]*Source-only and undeployed[\s\S]*Migration 0012 not applied to Sites/);
+  assert.doesNotMatch(definitions, /open draft|implemented for review/i);
   assert.match(designLedger, /LeadStatusPanel.*intentionally remain a static list/);
   assert.match(executionLedger, /KPI-01[\s\S]+Complete — PR #41, July 19, 2026/);
-  assert.match(executionLedger, /FloorOpsApp single-file queue[\s\S]+now KPI-02 → KPI-03/);
-  assert.match(executionLedger, /KPI-02[\s\S]+In review — draft PR #52 from `codex\/kpi02-flooring-inputs`, July 20, 2026\. Source-only and not merged or deployed\./);
+  assert.match(executionLedger, /FloorOpsApp single-file queue[\s\S]+queue is now KPI-03/);
+  assert.match(executionLedger, /KPI-02[\s\S]+Complete — PR #52, July 20, 2026\. Source-only and undeployed; migration 0012 has not been applied to Sites\./);
+  assert.doesNotMatch(executionLedger, /KPI-02[^\n]*(?:open draft|in review|not merged)|#52 →/i);
 });
