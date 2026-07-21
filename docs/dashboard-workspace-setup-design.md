@@ -277,4 +277,20 @@ no Docs API scope; no Shared-Drive creation; **no deletion of Google content eve
 background jobs; no permissions editor; no freeform-JSON editing; no blueprint-history
 UI. The WS owner track (WS-01/02/05–08), the one-account boundary, and the two-OAuth-
 client separation are unchanged. Packet sequencing, acceptance criteria, and the test
-strategy live in the agent execution plan (SET-13…SET-22, WS-14).
+strategy live in the agent execution plan (SET-13…SET-28, WS-14…WS-16, and
+Workstream E).
+
+## 6. July 21 owner additions (summary)
+
+- **Spreadsheet roles:** blueprint `spreadsheets[]` entries carry
+  `role: "system-mirror" | "import" | "reference"`. Import sheets feed the SET-25
+  first-run client + project import; reference sheets (owner-named future example: a
+  project details/ledger table) are registered and readable through SET-27's bounded
+  generic reader with no consumers required up front and no write path ever.
+- **Maps on client and project screens:** GI-03/GI-04 cover both surfaces; the
+  directions link uses the Google Maps URL form that opens the phone's default/Google
+  Maps app for turn-by-turn.
+- **Two-audience settings:** SET-28 splits the Settings IA into admin "Workspace &
+  company setup" and per-user "My settings" (profile display, notification
+  preferences for GI-02, per-user defaults), own-rows-only server enforcement,
+  honest Planned badges until consumers exist.
