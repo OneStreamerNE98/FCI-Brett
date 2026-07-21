@@ -1031,7 +1031,7 @@ present.
 **Effort:** medium.
 
 ### SET-19 · Domain & tenant guided checklist card (small, after SET-13; parallel with SET-14)
-**Status:** In progress — `codex/set19-domain-checklist`, July 21, 2026.
+**Status:** In review — draft PR #83, July 21, 2026. Source-only and undeployed.
 
 **Why:** Owner decision: Admin-console/DNS/OAuth/API-enablement/secrets/Groups stay
 manual; the dashboard should guide them with instructions, external deep links, and
