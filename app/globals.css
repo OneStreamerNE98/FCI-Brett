@@ -416,6 +416,8 @@ button { color:inherit; }
   .operations-data-table tr{grid-template-columns:1fr;padding:14px}
   .operations-data-table td,.rules-data-table td:nth-child(2),.rules-data-table td:nth-child(3),.rules-data-table td:nth-child(5){grid-column:1}
   .operations-data-table td{grid-template-columns:96px minmax(0,1fr)}
+  .operations-data-table thead{margin:-1px;padding:0;border:0;clip-path:inset(50%);contain:size layout paint}
+  .operations-data-table thead tr,.operations-data-table thead th{width:1px!important;max-width:1px;min-width:0;padding:0;overflow:hidden}
 }
 
 .workspace-prerequisites{margin:15px 0 18px;padding:15px;border:1px solid #ded7cf;border-radius:10px;background:#fcfaf7}
@@ -445,6 +447,34 @@ button { color:inherit; }
 .workspace-step-body{padding:14px 15px}
 .workspace-step-body>.workspace-connection{margin-bottom:12px}
 .workspace-step-body>.workspace-actions:last-child{margin-bottom:0}
+.workspace-connection-health{margin:0 0 12px;padding:14px;border:1px solid #d9e2dc;border-radius:9px;background:#fbfdfb}
+.workspace-connection-health>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.workspace-connection-health>header .eyebrow{margin:0 0 3px}
+.workspace-connection-health h4{font:700 13px var(--font-display);margin:0}
+.workspace-connection-health-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0 0 12px}
+.workspace-connection-health-summary>div{min-width:0;padding:10px 11px;border:1px solid #e2e8e3;border-radius:8px;background:#fff}
+.workspace-connection-health-summary dt{color:var(--text-muted);font-size:12px;font-weight:700}
+.workspace-connection-health-summary dd{margin:4px 0 0;color:var(--ink);font-size:12px;font-weight:800;overflow-wrap:anywhere}
+.workspace-connection-service-table{margin-bottom:10px}
+.workspace-connection-service-table th:nth-child(1){width:34%}
+.workspace-connection-service-table th:nth-child(2),.workspace-connection-service-table th:nth-child(3){width:33%}
+.workspace-connection-service-table td{padding-top:11px;padding-bottom:11px}
+.workspace-service-state{display:inline-flex;border-radius:999px;padding:4px 7px;background:#edf4ef;color:#35674d;font-size:12px;font-weight:800;line-height:1.25}
+.workspace-service-state.inactive{background:#f0eeeb;color:#6c655f}
+.workspace-connection-health-note,.workspace-connection-health-message{margin:0;color:var(--text-muted);font-size:12px;line-height:1.5}
+.workspace-connection-health-note{margin-bottom:12px}
+.workspace-connection-health-error{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#805b38;font-size:12px;line-height:1.45}
+.workspace-connection-health-error .soft-button{flex:0 0 auto;height:32px}
+.workspace-connection-health>.workspace-actions{margin:0}
+@container operations-table (min-width:431px){
+  .workspace-connection-service-table .operations-data-table-frame{overflow:hidden;border:1px solid #e2e8e3;border-radius:8px;background:#fff}
+  .workspace-connection-service-table table{display:table}
+  .workspace-connection-service-table thead{position:static;width:auto;height:auto;overflow:visible;clip:auto;white-space:normal}
+  .workspace-connection-service-table tbody{display:table-row-group}
+  .workspace-connection-service-table tr{display:table-row;padding:0;border:0;border-radius:0;background:transparent}
+  .workspace-connection-service-table td{display:table-cell;padding:11px 13px;border-top:1px solid #eee8e1}
+  .workspace-connection-service-table td::before{display:none;content:none}
+}
 .workspace-step-summary{display:flex;align-items:flex-start;gap:7px;margin:0 0 12px;font-size:12px;line-height:1.5;color:#5b6d63}
 .workspace-step-summary svg{flex:0 0 auto;margin-top:1px;color:#397056}
 .workspace-step-summary strong{display:block;color:var(--ink)}
@@ -461,6 +491,9 @@ button { color:inherit; }
   .workspace-prerequisites{padding:13px}
   .workspace-setup-step>header{grid-template-columns:30px minmax(0,1fr)}
   .workspace-step-status{grid-column:2;justify-self:start}
+  .workspace-connection-health>header{flex-direction:column;gap:7px}
+  .workspace-connection-health-summary{grid-template-columns:1fr}
+  .workspace-connection-health-error{align-items:flex-start;flex-direction:column}
   .workspace-sheet-summary{grid-template-columns:1fr}
   .workspace-prerequisite-table tr{grid-template-columns:1fr}
   .workspace-prerequisite-table td{grid-column:1}

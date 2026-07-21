@@ -349,20 +349,19 @@ available; do not respond by exposing the value or creating an untracked OAuth c
 1. Run **Check readiness** and capture the safe `workspace.connectionStatus` field from
    `GET /api/v1/google-workspace`; it must equal `reauthorization-required`. A definitive
    `invalid_grant` is not transient: stop automatic retries and do not log the provider
-   response or token. In the current build, the Settings summary derives its reconnect
-   wording from a separate boolean and may show only a generic setup/connect state, so a
-   visible label alone is not acceptable drill evidence.
+   response or token. The administrator-only connection-health card reflects the stored
+   reauthorization state and its recorded permissions, but those details are not a live
+   provider-health check; retain the safe API status as the drill evidence.
 2. Confirm the intended connection account is still active, company-controlled, and the
    exact configured intake mailbox. Resolve an account suspension or ownership issue
    before reconnecting.
 3. Invoke the authorized same-origin
    `DELETE /api/v1/integrations/google/connection` connection flow. The normal
-   **Disconnect** button uses this route when the connector is healthy, but the current
-   panel may hide that button after `invalid_grant`; until that UI limitation is fixed,
-   an authorized developer must perform this step with controlled support tooling. This
-   clears the unusable local connection and attempts revocation; it is safe if Google has
-   already revoked the token. If the exact API status and deletion evidence cannot be
-   captured, mark the drill blocked rather than claiming recovery.
+   **Disconnect Workspace** button remains available inside the administrator
+   connection-health card when a stored connection requires reauthorization. This clears the
+   unusable local connection and attempts revocation; it is safe if Google has already
+   revoked the token. If the exact API status and deletion evidence cannot be captured,
+   mark the drill blocked rather than claiming recovery.
 4. Select **Connect Google Workspace**, authorize that exact account again, and approve
    every currently enabled service scope.
 5. Re-run Drive, Gmail, Calendar, and Sheets independently, then repeat one bounded

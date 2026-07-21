@@ -110,6 +110,8 @@ export type GoogleOauthDependencies = Readonly<{
 export type GoogleWorkspaceMode = "simulation" | "workspace";
 export type GoogleService = "drive" | "gmail" | "calendar" | "sheets";
 
+const GOOGLE_SERVICES: readonly GoogleService[] = ["drive", "gmail", "calendar", "sheets"];
+
 export type GoogleMissingConfiguration = {
   label: string;
   envVar: string;
@@ -183,7 +185,7 @@ function workspaceBoolean(input: EnvironmentValues, name: string) {
 
 function workspaceServices(input: EnvironmentValues, simulation: boolean) {
   const configured = simulation ? ["drive", "gmail", "calendar", "sheets"] : list(workspaceValue(input, "ENABLED_SERVICES"));
-  const known = new Set<GoogleService>(["drive", "gmail", "calendar", "sheets"]);
+  const known = new Set<GoogleService>(GOOGLE_SERVICES);
   const unknown = configured.filter((service) => !known.has(service as GoogleService));
   const requestedKnown = configured.filter((service): service is GoogleService => known.has(service as GoogleService));
   const enabled = Array.from(new Set<GoogleService>(["drive", ...requestedKnown]));
@@ -654,6 +656,12 @@ function serviceIsGranted(config: GoogleRuntimeConfig, scopes: string[], service
   return scopes.includes(config.serviceScopes[service]);
 }
 
+function grantedGoogleServices(config: GoogleRuntimeConfig, scopes: string[]) {
+  return Object.fromEntries(
+    GOOGLE_SERVICES.map((service) => [service, serviceIsGranted(config, scopes, service)]),
+  ) as Record<GoogleService, boolean>;
+}
+
 export async function getGoogleConnectionStatus(
   config: GoogleRuntimeConfig,
   dependencies: Pick<GoogleOauthDependencies, "persistence">,
@@ -664,27 +672,34 @@ export async function getGoogleConnectionStatus(
       status: "connected",
       account: "Local Workspace simulation",
       services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: null,
       requiresReauthorization: false,
     };
   }
   const connection = await dependencies.persistence.findConnection(config.connectionKey);
   const email = connection?.googleEmail ?? null;
   const scopes = storedScopes(connection?.scopesJson);
+  const grantedServices = grantedGoogleServices(config, scopes);
   const accountAllowed = Boolean(email && googleAccountIsAllowed(config, email));
   const hasUsableConnection = connection?.status === "connected" && accountAllowed;
   const services = {
-    drive: Boolean(hasUsableConnection && serviceIsGranted(config, scopes, "drive")),
-    gmail: Boolean(hasUsableConnection && config.gmailEnabled && serviceIsGranted(config, scopes, "gmail")),
-    calendar: Boolean(hasUsableConnection && config.calendarEnabled && serviceIsGranted(config, scopes, "calendar")),
-    sheets: Boolean(hasUsableConnection && config.sheetsEnabled && serviceIsGranted(config, scopes, "sheets")),
+    drive: Boolean(hasUsableConnection && grantedServices.drive),
+    gmail: Boolean(hasUsableConnection && config.gmailEnabled && grantedServices.gmail),
+    calendar: Boolean(hasUsableConnection && config.calendarEnabled && grantedServices.calendar),
+    sheets: Boolean(hasUsableConnection && config.sheetsEnabled && grantedServices.sheets),
   };
-  const requiresReauthorization = Boolean(connection && (!accountAllowed || (hasUsableConnection && config.enabledServices.some((service) => !serviceIsGranted(config, scopes, service)))));
+  const requiresReauthorization = Boolean(connection && (
+    connection.status === "reauthorization-required"
+    || !accountAllowed
+    || (hasUsableConnection && config.enabledServices.some((service) => !grantedServices[service]))
+  ));
   const status = !connection ? "not-connected" : requiresReauthorization ? "reauthorization-required" : connection.status;
   return {
     connected: status === "connected",
     status,
     account: email ? `${email.slice(0, 2)}•••@${email.split("@")[1] ?? ""}` : null,
     services,
+    grantedServices,
     requiresReauthorization,
   };
 }
