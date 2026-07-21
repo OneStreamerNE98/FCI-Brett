@@ -928,7 +928,7 @@ GET reflects version+1); office user sees no editor; reset restores seed.
 **Effort:** large.
 
 ### SET-15 · Shared Drive adopt/verify + blueprint-driven root folder tree + rename (medium, after SET-14)
-**Status:** In progress — `codex/set15-drive-root-tree`, July 21, 2026.
+**Status:** In review — draft PR #84, July 21, 2026. Source-only and undeployed.
 
 **Why:** Owner starter set: Shared Drive adopt/verify plus the standard folder tree —
 now blueprint-driven, so next year's folder is a dashboard edit, not a code change.
