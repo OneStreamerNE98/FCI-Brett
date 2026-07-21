@@ -6,7 +6,7 @@ Status: Audit complete; the production persistence, authorization/OIDC, deployme
 PRs #54/#55 are merged source-only and undeployed.
 BE-09/#51 is merged source-only and undeployed.
 BE-12/#53 is merged source-only and undeployed.
-KPI-02/#52 and SET-10/#56 are merged source-only and undeployed; migration 0012 is unapplied to Sites. PR #57 remains unmerged; broader product decisions and implementation remain open.
+KPI-02/#52, SET-10/#56, and the logo refresh/#57 are merged source-only and undeployed; migration 0012 is unapplied to Sites. Broader product decisions and implementation remain open.
 
 Depends on: [Setup inputs](00-setup-inputs.md) and the [complete architecture audit](../complete-product-and-google-cloud-architecture-audit.md)
 
