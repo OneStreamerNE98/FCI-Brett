@@ -1,13 +1,14 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
 Date: July 19, 2026 · Status reconciled: July 20, 2026 · Source baseline: `main` @
-`f387ad4` after PR #51 completed the BE-09 production core-record route packet. PRs #63/#64 added the
+`218266d` after PR #53 completed the BE-12 rehearsal inventory packet. PR #51 previously
+completed the BE-09 production core-record route packet. PRs #63/#64 added the
 dashboard-driven Workspace setup workstream, and PR #65 codified the multi-agent
 coordination protocol. PRs #54/#55 completed
 OIDC-02/OIDC-03; PRs #60/#62 reconciled their merged status; and PR #61 expanded the
 Fable follow-up instructions.
 PR #66 completed TRK-02 tracking-guard hardening.
-PRs #52–#53 and #56–#57 remain open drafts. Deployment baseline: `adc79b8`, private Sites development version 40,
+PR #52 and PRs #56–#57 remain open drafts. Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -184,7 +185,7 @@ contract before persistence; grep for raw `request.json()` in those routes retur
 
 The unused route is deleted rather than retained as a 410 stub, `actorFrom`
 is removed, and the assistant's separate records-only answer mode remains covered.
-The immutable D1 history is unchanged; BE-12 must classify the table as
+The immutable D1 history is unchanged; BE-12 classifies the table as
 `records: excluded (legacy, no migration)`.
 
 **Why:** At packet start, the generic JSON record store had no UI caller and was
@@ -196,7 +197,7 @@ Porting dead surface to PostgreSQL would waste a packet.
 update the two tests. **Keep** the assistant "records-only" assertion in
 `tests/rendered-html.test.mjs` (~line 112) — it tests the assistant's answer mode, not
 this route. Do NOT touch `db/schema.ts` or drizzle history; record
-`records: excluded (legacy, no migration)` for BE-12's inventory.
+`records: excluded (legacy, no migration)` in BE-12's inventory.
 **Accept:** `npm test` passes; grep `actorFrom` in app/ empty; local migrations unchanged.
 
 ### BE-04 · Workspace OIDC login, invitation redemption, session issuance on the Cloud Run router (large, no deps; VERIFIED)
@@ -258,7 +259,8 @@ configuration, or deployment has been applied.
 
 **Why:** At BE-06 packet start, `leads` (drizzle 0010) and `project_meetings` (0009) were
 D1-only with inline SQL and the rehearsal migrated only clients, contacts, projects, and
-activity events. Draft PR #53 now expands the rehearsal to the v6 lead and meeting tables.
+activity events. PR #53 completed the source-only rehearsal expansion to the v6 lead and
+meeting tables.
 The client/project port pattern (`app/ports/client-repository.ts` + d1 + postgres adapters
 + `creation-idempotency.ts`) is the template.
 **Do:** Define lead/meeting ports; extract route SQL verbatim into d1 adapters (byte-
@@ -372,8 +374,8 @@ Chromium suite; the image-publish job correctly skips. Nothing has been applied,
 published, deployed, executed, or configured.
 
 ### BE-12 · Rehearsal inventory expansion (medium, after BE-06; VERIFIED with corrections)
-**Status:** In review — draft PR #53 from `codex/be12-rehearsal-inventory`, July 20,
-2026. Source-only and not merged; the bounded integration ran only against a disposable GitHub CI
+**Status:** Complete — PR #53, July 20, 2026. Source-only and undeployed; the bounded
+integration ran only against a disposable GitHub CI
 PostgreSQL 16 schema. No approved hosted development/staging rehearsal, production
 migration or grant apply, live-data operation, hosted configuration, or deployment has
 been executed.
@@ -1191,18 +1193,19 @@ format). Effort: small.
 
 # Task tracking and doc reconciliation (the no-confusion rule)
 
-**GitHub baseline:** source is reconciled against `main` at `f387ad4` after PR #51
-completed the BE-09 production core-record route packet. PRs #63/#64 added the dashboard-driven
+**GitHub baseline:** source is reconciled against `main` at `218266d` after PR #53
+completed the BE-12 rehearsal inventory packet. PR #51 previously completed the BE-09
+production core-record route packet. PRs #63/#64 added the dashboard-driven
 Workspace setup workstream, and PR #65 codified the multi-agent coordination protocol.
 PRs #54/#55 completed OIDC-02/OIDC-03 in source,
 PRs #60/#62 reconciled their merged status, and PR #61 expanded the Fable follow-up
 instructions.
 PR #66 completed TRK-02 tracking-guard hardening.
-PRs #52–#53 and #56–#57 remain open drafts. None of these source changes is deployed.
+PR #52 and PRs #56–#57 remain open drafts. None of these source changes is deployed.
 The exact deployed baseline
 remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
 version 40, which includes PR #30's semantic Settings rules table. The listed source
-packets that are merged, including PRs #51 and #66, are undeployed. Delivery PRs mirror items in these ledgers and do
+packets that are merged, including PRs #51, #53, and #66, are undeployed. Delivery PRs mirror items in these ledgers and do
 not become a separate task source of truth.
 
 **This document is the status ledger for these three workstreams** (the same pattern as
@@ -1293,8 +1296,9 @@ OIDC-04 is complete in PR #49, with its closure guarded by PR #50. OIDC-02 and O
 are complete in source in PRs #54/#55.
 TRK-02 is complete in PR #66.
 BE-09 is complete in source in PR #51 and remains undeployed.
+BE-12 is complete in source in PR #53 and remains undeployed.
 The remaining reviewed merge train starts with
-BE-12 (#53), KPI-02 (#52), SET-10 (#56), and the logo refresh (#57).
+KPI-02 (#52), SET-10 (#56), and the logo refresh (#57).
 Those drafts must not be reassigned. The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
 SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
 apply, deployment, live login, another user, or real data.
@@ -1335,9 +1339,10 @@ Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
    (#48) are complete in source. Latest combined-main Node/build/lint, Terraform, and
    Chromium checks are green; nothing was applied, configured, published, or deployed.
 
-**Wave 2 — current:** PR #51 is merged and the BE-09 completion is recorded.
+**Wave 2 — current:** PRs #51 and #53 are merged and the BE-09 and BE-12 completions are
+recorded.
 Continue the remaining reviewed drafts in order
-#53 → #52 → #56 → #57, running the complete post-merge flip after each. After shared
+#52 → #56 → #57, running the complete post-merge flip after each. After shared
 UI siblings merge, rerun the survivor's focused browser tests.
 BE-10/BE-14 are now assignable because PR #51 merged; KPI-03 waits for #52. The unclaimed parallel-safe tracks are
 BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
