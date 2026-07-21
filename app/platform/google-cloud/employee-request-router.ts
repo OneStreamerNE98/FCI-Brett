@@ -57,6 +57,7 @@ import {
   readEmployeeOidcAttemptCookie,
   type EmployeeOidcClient,
 } from "./employee-oidc.ts";
+import { RequestRateLimitExceeded } from "./request-rate-limit.ts";
 
 const MAX_URL_LENGTH = 2_048;
 const MAX_SEARCH_LENGTH = 200;
@@ -1805,6 +1806,16 @@ export function createEmployeeRequestRouter(
     } catch (error) {
       if (response.headersSent) {
         response.destroy();
+        return;
+      }
+      if (error instanceof RequestRateLimitExceeded) {
+        response.setHeader("Retry-After", error.retryAfterSeconds);
+        failureResponse(
+          request,
+          response,
+          new HttpFailure(429, "rate_limited"),
+          clearOidcAttemptOnFailure ? [CLEAR_EMPLOYEE_OIDC_ATTEMPT_COOKIE] : [],
+        );
         return;
       }
       if (error instanceof HttpFailure) {

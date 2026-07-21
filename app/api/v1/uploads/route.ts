@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { R2ObjectStorage } from "../../../adapters/r2/object-storage";
+import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
@@ -28,6 +29,8 @@ export async function POST(request: NextRequest) {
   if (originError) return originError;
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
+  const rateLimitResponse = enforceDevelopmentRequestRateLimit("uploads", auth.user.email);
+  if (rateLimitResponse) return rateLimitResponse;
   const contentType = request.headers.get("content-type") ?? "";
   if (!/^multipart\/form-data\b/i.test(contentType) || !/;\s*boundary=(?:"[^"]+"|[^;\s]+)/i.test(contentType)) {
     return NextResponse.json({ error: "upload must be valid multipart form data with a boundary" }, { status: 400 });

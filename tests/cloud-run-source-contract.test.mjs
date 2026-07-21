@@ -106,6 +106,8 @@ test("preserves Sites/Vinext commands while adding a physically separate Cloud R
   assert.match(serverEntry, /createFoundationServer/);
   assert.match(serverEntry, /createAuthorizationService/);
   assert.match(serverEntry, /createEmployeeRequestRouter/);
+  assert.match(serverEntry, /createEmployeeRequestRateLimit/);
+  assert.match(serverEntry, /config\.requestRateLimit/);
   assert.doesNotMatch(serverEntry, /testMode|testActions/);
   assert.match(migrationEntry, /runProductionSchemaMigrations/);
   assert.match(migrationEntry, /role: config\.postgres\.migrationRole/);
@@ -136,6 +138,8 @@ test("builds isolated service and job entries without migration SQL in the servi
 
   assert.match(serviceGraph, /__Host-fci_session/);
   assert.match(serviceGraph, /createEmployeeRequestRouter/);
+  assert.match(serviceGraph, /security\.request_rate_limited/);
+  assert.match(serviceGraph, /rate_limit_exceeded/);
   assert.match(serviceGraph, /capabilityIsCurrentForScope/);
   assert.doesNotMatch(
     serviceGraph,

@@ -57,12 +57,20 @@ export type ProductionEmployeeOidcConfig = Readonly<{
   allowedHostedDomain: "cherryhillfci.com";
 }>;
 
+export type ProductionRequestRateLimitConfig = Readonly<{
+  capacity: number;
+  refillTokens: number;
+  refillIntervalMs: number;
+}>;
+
 export type ProductionConfig = Readonly<{
   appEnvironment: "production";
   deploymentStage: DeploymentStage;
   host: "0.0.0.0";
   port: number;
   postgres: ProductionPostgresConfig;
+  /** Always active; omitted variables use the bounded fail-closed defaults. */
+  requestRateLimit: ProductionRequestRateLimitConfig;
   /** Null preserves the pre-login fail-closed router when no OIDC values exist. */
   employeeOidc: ProductionEmployeeOidcConfig | null;
 }>;
@@ -460,6 +468,41 @@ function resolvePoolConfig(environment: ProductionEnvironment, accessMode: Postg
   });
 }
 
+function resolveRequestRateLimitConfig(
+  environment: ProductionEnvironment,
+): ProductionRequestRateLimitConfig {
+  const capacity = optionalInteger(
+    environment,
+    "FCI_REQUEST_RATE_LIMIT_CAPACITY",
+    60,
+    1,
+    1_000,
+  );
+  const refillTokens = optionalInteger(
+    environment,
+    "FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS",
+    60,
+    1,
+    1_000,
+  );
+  if (refillTokens > capacity) {
+    throw new Error(
+      "FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS must not exceed FCI_REQUEST_RATE_LIMIT_CAPACITY",
+    );
+  }
+  return Object.freeze({
+    capacity,
+    refillTokens,
+    refillIntervalMs: optionalInteger(
+      environment,
+      "FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS",
+      60_000,
+      1_000,
+      3_600_000,
+    ),
+  });
+}
+
 /**
  * Loads only the Google Cloud production boundary. Unlike the development UI
  * helper, every environment and access selector here is explicit and invalid
@@ -497,6 +540,7 @@ export function loadProductionConfig(
     ? postgresIdentifier(environment, "FCI_POSTGRES_MIGRATION_ROLE")
     : null;
   const pool = resolvePoolConfig(environment, accessMode);
+  const requestRateLimit = resolveRequestRateLimitConfig(environment);
   // Read the secret only after all non-secret selectors and bounds have passed.
   const { password, passwordSource } = resolvePassword(environment, dependencies);
   const employeeOidc = employeeOidcConfig(environment, dependencies);
@@ -525,6 +569,7 @@ export function loadProductionConfig(
     host: "0.0.0.0" as const,
     port: optionalInteger(environment, "PORT", 8080, 1, 65_535),
     postgres,
+    requestRateLimit,
     employeeOidc,
   });
 }

@@ -25,6 +25,9 @@ import {
   type ProductionConfig,
   type ProductionEnvironment,
 } from "../../app/platform/google-cloud/production-config.ts";
+import {
+  createEmployeeRequestRateLimit,
+} from "../../app/platform/google-cloud/request-rate-limit.ts";
 
 export type CloudRunFoundationDependencies = Readonly<{
   loadConfig?: (environment: ProductionEnvironment) => ProductionConfig;
@@ -64,6 +67,11 @@ export async function startCloudRunFoundation(
     repository: composition.repositories.authorization,
     sessions: composition.repositories.identity,
     audit: composition.repositories.securityAudit,
+    beforeEmployeeDispatch: createEmployeeRequestRateLimit({
+      config: config.requestRateLimit,
+      audit: composition.repositories.securityAudit,
+      newId: randomUUID,
+    }),
     newId: randomUUID,
   });
   const applicationHandler = createEmployeeRequestRouter({
