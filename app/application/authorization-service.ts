@@ -16,6 +16,7 @@ import {
   type FieldLinkAccessContext,
   type FieldLinkDenialReason,
   type FieldLinkSnapshot,
+  type AuthorizationOperation,
   type OperationDenialReason,
   type SessionDenialReason,
 } from "./authorization-policy";
@@ -97,8 +98,18 @@ export type AuthorizationServiceDependencies = Readonly<{
   repository: AuthorizationRepository;
   sessions: Pick<IdentityPersistenceRepository, "revokeSession">;
   audit: SecurityAuditRepository;
+  beforeEmployeeDispatch?: (request: AuthorizedEmployeeDispatch) => void | Promise<void>;
   now?: () => number;
   newId: () => string;
+}>;
+
+export type AuthorizedEmployeeDispatch = Readonly<{
+  context: EmployeeAccessContext;
+  operation: AuthorizationOperation;
+  projectId: string | null;
+  requestId: string | null;
+  correlationId: string;
+  occurredAt: number;
 }>;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -292,6 +303,18 @@ export function createAuthorizationService(
       );
       return { allowed: false, reason: "missing_capability" };
     }
+
+    await dependencies.beforeEmployeeDispatch?.({
+      context: session.context,
+      // An allowed operation has already passed isAuthorizationOperation in
+      // authorizeOperation, so only a closed server-owned operation reaches
+      // the pre-dispatch hook.
+      operation: stableRequest.operation as AuthorizationOperation,
+      projectId: stableRequest.projectId,
+      requestId: stableRequest.requestId,
+      correlationId: stableRequest.correlationId,
+      occurredAt: checkedAt,
+    });
 
     // Routine scoped reads rely on normal request telemetry. Sensitive allows
     // are recorded before a provider or mutation callback can run, so an audit

@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../_workspace-data";
+import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { responseOutputText } from "./response-output";
@@ -270,6 +271,8 @@ export async function POST(request: NextRequest) {
   if (originError) return originError;
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
+  const rateLimitResponse = enforceDevelopmentRequestRateLimit("assistant", auth.user.email);
+  if (rateLimitResponse) return rateLimitResponse;
   const declaredLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > 9_000) return NextResponse.json({ error: "Question request is too large." }, { status: 413 });
   const rawBody = await request.text();

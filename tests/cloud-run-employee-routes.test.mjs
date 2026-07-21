@@ -29,6 +29,9 @@ const {
 const { createEmployeeRequestRouter } = await vite.ssrLoadModule(
   "/app/platform/google-cloud/employee-request-router.ts",
 );
+const { createEmployeeRequestRateLimit } = await vite.ssrLoadModule(
+  "/app/platform/google-cloud/request-rate-limit.ts",
+);
 
 after(async () => {
   await vite.close();
@@ -386,6 +389,15 @@ async function startHarness(options = {}) {
     repository,
     audit,
     sessions,
+    ...(options.requestRateLimit
+      ? {
+          beforeEmployeeDispatch: createEmployeeRequestRateLimit({
+            config: options.requestRateLimit,
+            audit,
+            newId: randomUUID,
+          }),
+        }
+      : {}),
     now: () => NOW,
     newId: randomUUID,
   });
@@ -695,6 +707,112 @@ test("functional read routes use the named authorization gateways and PM-scoped 
     assert.equal(running.repositoryCalls.clientLists[0].limit, 100);
     assert.ok(running.repositoryCalls.sessionHashes.every((hash) => hash === SESSION_HASH));
     assert.equal(JSON.stringify(running.repositoryCalls).includes(SESSION_CREDENTIAL), false);
+  } finally {
+    await running.close();
+  }
+});
+
+test("production token bucket preserves allowed bytes and denies before route dispatch with audit evidence", async () => {
+  const baseline = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+  const limited = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    requestRateLimit: {
+      capacity: 1,
+      refillTokens: 1,
+      refillIntervalMs: 60_000,
+    },
+  });
+  try {
+    const baselineResponse = await baseline.request("/api/v1/dashboard");
+    const allowedResponse = await limited.request("/api/v1/dashboard");
+    assert.equal(baselineResponse.status, 200);
+    assert.equal(allowedResponse.status, 200);
+    assert.equal(allowedResponse.headers.get("retry-after"), null);
+    for (const header of [
+      "cache-control",
+      "content-security-policy",
+      "content-type",
+      "referrer-policy",
+      "x-content-type-options",
+      "x-frame-options",
+    ]) {
+      assert.equal(
+        allowedResponse.headers.get(header),
+        baselineResponse.headers.get(header),
+        header,
+      );
+    }
+    assert.deepEqual(
+      Buffer.from(await allowedResponse.arrayBuffer()),
+      Buffer.from(await baselineResponse.arrayBuffer()),
+    );
+
+    const deniedResponse = await limited.request("/api/v1/dashboard");
+    assert.equal(deniedResponse.status, 429);
+    assert.equal(deniedResponse.headers.get("retry-after"), "60");
+    assert.deepEqual(await json(deniedResponse), { error: "rate_limited" });
+    assert.equal(limited.repositoryCalls.dashboards.length, 1);
+    assert.equal(limited.audits.length, 1);
+    assert.deepEqual(limited.audits[0], {
+      id: limited.audits[0].id,
+      executorType: "user",
+      executorUserId: ROLE_IDENTITIES.administrator.userId,
+      executorKey: ROLE_IDENTITIES.administrator.email,
+      originatingUserId: null,
+      originatingActorKey: null,
+      action: "security.request_rate_limited",
+      targetType: "operation",
+      targetId: "dashboard.view",
+      result: "denied",
+      reasonCode: "rate_limit_exceeded",
+      requestId: limited.audits[0].requestId,
+      correlationId: limited.audits[0].correlationId,
+      source: "request_rate_limit",
+      metadata: {
+        capacity: 1,
+        refill_tokens: 1,
+        refill_interval_ms: 60_000,
+        project_scoped: false,
+        retry_after_seconds: 60,
+      },
+      occurredAt: NOW,
+      retentionPolicyKey: "security_audit",
+      retentionUntil: null,
+    });
+    assert.doesNotMatch(
+      JSON.stringify(limited.audits[0]),
+      /__Host|sha256:|cookie|authorization|csrf|body/i,
+    );
+  } finally {
+    await baseline.close();
+    await limited.close();
+  }
+});
+
+test("rate-limit audit failure fails closed before protected route work", async () => {
+  const auditError = new Error("FCI TEST — DO NOT USE rate-limit audit unavailable secret-detail");
+  const running = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    requestRateLimit: {
+      capacity: 1,
+      refillTokens: 1,
+      refillIntervalMs: 60_000,
+    },
+    auditError,
+  });
+  try {
+    const allowed = await running.request("/api/v1/dashboard");
+    assert.equal(allowed.status, 200);
+    await allowed.body?.cancel();
+
+    const denied = await running.request("/api/v1/dashboard");
+    assert.equal(denied.status, 503);
+    assert.equal(denied.headers.get("retry-after"), null);
+    const body = await denied.text();
+    assert.equal(body, '{"error":"service_unavailable"}');
+    assert.doesNotMatch(body, /secret-detail|audit unavailable/i);
+    assert.equal(running.repositoryCalls.dashboards.length, 1);
+    assert.equal(running.audits.length, 0);
   } finally {
     await running.close();
   }

@@ -53,11 +53,49 @@ test("loads an explicit private Cloud SQL runtime configuration with bounded def
     queryTimeoutMs: 35_000,
     keepAliveInitialDelayMs: 10_000,
   });
+  assert.deepEqual(config.requestRateLimit, {
+    capacity: 60,
+    refillTokens: 60,
+    refillIntervalMs: 60_000,
+  });
   assert.equal(Object.isFrozen(config), true);
   assert.equal(Object.isFrozen(config.postgres), true);
   assert.equal(Object.isFrozen(config.postgres.pool), true);
+  assert.equal(Object.isFrozen(config.requestRateLimit), true);
   assert.equal(Object.keys(config.postgres).includes("password"), false);
   assert.doesNotMatch(JSON.stringify(config), new RegExp(TEST_PASSWORD));
+});
+
+test("keeps production request limiting active by default and bounds every override", () => {
+  const config = loadProductionConfig(runtimeEnvironment({
+    FCI_REQUEST_RATE_LIMIT_CAPACITY: "120",
+    FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS: "30",
+    FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS: "5000",
+  }));
+  assert.deepEqual(config.requestRateLimit, {
+    capacity: 120,
+    refillTokens: 30,
+    refillIntervalMs: 5_000,
+  });
+
+  for (const [overrides, pattern] of [
+    [{ FCI_REQUEST_RATE_LIMIT_CAPACITY: "0" }, /FCI_REQUEST_RATE_LIMIT_CAPACITY/],
+    [{ FCI_REQUEST_RATE_LIMIT_CAPACITY: "1001" }, /FCI_REQUEST_RATE_LIMIT_CAPACITY/],
+    [{ FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS: "0" }, /FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS/],
+    [{ FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS: "1001" }, /FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS/],
+    [{ FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS: "999" }, /FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS/],
+    [{ FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS: "3600001" }, /FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS/],
+    [{ FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS: "1.5" }, /FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS/],
+    [{
+      FCI_REQUEST_RATE_LIMIT_CAPACITY: "10",
+      FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS: "11",
+    }, /must not exceed/],
+  ]) {
+    assert.throws(
+      () => loadProductionConfig(runtimeEnvironment(overrides)),
+      pattern,
+    );
+  }
 });
 
 test("fails closed on missing or approximate environment and access selectors", () => {

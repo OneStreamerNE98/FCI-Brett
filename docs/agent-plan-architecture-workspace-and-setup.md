@@ -344,6 +344,8 @@ administration compatibility handlers were added, and provider routes remain `50
 feature_unavailable`.
 
 ### BE-10 · Rate limiting on both surfaces (medium, after BE-04+BE-09; VERIFIED)
+**Status:** In progress — `codex/be10-production-backend`.
+
 **Why:** No rate limiting exists anywhere (verified). Cost-bearing dev routes: assistant
 (OpenAI), uploads (R2), sheets/sync + project drive provisioning (Google quota). The
 acceptance checklist requires limits before go-live.
@@ -353,6 +355,10 @@ per-instance is acceptable at max two instances per CONNECTION-BUDGET.md); 429 +
 Retry-After + security-audit event; configurable via production-config, fail-closed
 defaults. Dev: light fixed-window per office user on the four cost routes. Document.
 **Accept:** threshold tests (429 + audit event); under-threshold byte-identical.
+
+**Implementation record:** [Request rate limiting](request-rate-limiting.md) pins the
+two surface contracts, production configuration bounds, audit evidence, and per-instance
+deployment limitation.
 
 ### BE-11 · Deployment mechanism source definitions (medium; source complete, apply owner-gated)
 **Status:** Complete — PR #47, July 19, 2026. Source-only, unpublished, unapplied, and undeployed.
