@@ -58,7 +58,7 @@ function routeRequest(path, email, method = "GET", cookies = {}) {
   };
 }
 
-function fakeDatabase({ resources = [], connection = null } = {}) {
+function fakeDatabase({ resources = [], connection = null, blueprint = null } = {}) {
   const queries = [];
   const oauthAttempts = [];
   const savedConnections = [];
@@ -86,6 +86,16 @@ function fakeDatabase({ resources = [], connection = null } = {}) {
             return oauthAttempts.find((attempt) => attempt.state_hash === query.values[0]) ?? null;
           }
           if (/FROM google_connections/u.test(sql)) return currentConnection;
+          if (/FROM workspace_blueprints/u.test(sql)) return blueprint ? {
+            id: "blueprint-fixture",
+            connection_key: query.values[0],
+            version: 1,
+            blueprint_json: JSON.stringify(blueprint),
+            created_by: ADMIN_EMAIL,
+            created_at: 1,
+            updated_by: ADMIN_EMAIL,
+            updated_at: 1,
+          } : null;
           return null;
         },
         async run() {
@@ -390,6 +400,7 @@ test("resources GET is admin-only, source-tagged, no-store, masked, and contains
       name: "FCI Operations Directory",
       blueprintName: "FCI Operations Directory",
       management: "system",
+      role: "system-mirror",
       parentKey: "company-admin",
       externalId: "app-directory-sheet",
       source: "app",
@@ -407,6 +418,42 @@ test("resources GET is admin-only, source-tagged, no-store, masked, and contains
   for (const forbidden of [configuredSecret, configuredEncryptionKey, connection.refresh_token_ciphertext]) {
     assert.equal(serialized.includes(forbidden), false);
   }
+});
+
+test("resources include every blueprint spreadsheet with its honest role and registry state", async () => {
+  const { seedWorkspaceBlueprint } = await vite.ssrLoadModule("/app/lib/workspace-blueprint.ts");
+  const blueprint = structuredClone(seedWorkspaceBlueprint());
+  blueprint.spreadsheets.push(
+    { key: "first-run-import", name: "First-run Import", targetFolderKey: "company-admin", management: "owner", role: "import" },
+    { key: "project-ledger", name: "Project Ledger", targetFolderKey: "company-admin", management: "owner", role: "reference" },
+  );
+  const database = fakeDatabase({
+    blueprint,
+    resources: [{
+      id: "resource-ledger",
+      connection_key: "google-workspace",
+      resource_type: "sheets.spreadsheet",
+      resource_key: "project-ledger",
+      external_id: "app-project-ledger",
+      parent_external_id: "company-admin-folder",
+      external_url: "https://docs.google.com/spreadsheets/d/app-project-ledger/edit",
+      origin: "created",
+      metadata_json: JSON.stringify({ role: "reference" }),
+      created_by: ADMIN_EMAIL,
+      created_at: 1,
+      updated_at: 2,
+    }],
+  });
+  workspaceEnvironment(database);
+
+  const response = await resourcesRoute.GET(routeRequest("/api/v1/integrations/google/setup/resources", ADMIN_EMAIL));
+  const body = await response.json();
+  const spreadsheetRows = body.resources.filter((resource) => resource.resourceType === "sheets.spreadsheet");
+  assert.deepEqual(spreadsheetRows.map(({ key, role, state }) => ({ key, role, state })), [
+    { key: "client-directory", role: "system-mirror", state: "Not configured" },
+    { key: "first-run-import", role: "import", state: "Not configured" },
+    { key: "project-ledger", role: "reference", state: "Created" },
+  ]);
 });
 
 test("resources identity compares the actual stored connection account to the intake mailbox", async () => {

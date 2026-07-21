@@ -52,6 +52,7 @@ test("seed preserves the legacy Drive/Gmail contract and includes FCI Holidays",
     "FCI Holidays",
   ]);
   assert.ok(seed.calendars.every((calendar) => calendar.workingHours.days.length > 0));
+  assert.equal(seed.spreadsheets[0].role, "system-mirror");
   assert.equal(Object.isFrozen(seed), true);
   assert.equal(Object.isFrozen(seed.drive.roots), true);
 });
@@ -62,6 +63,7 @@ test("sanitizer accepts owner edits and normalizes detached data", () => {
   value.drive.roots[0].name = "00_Administration";
   value.drive.roots.push({ key: "year-2027", name: "2027", management: "owner", children: [] });
   value.templates.push({ key: "site-walk", name: "Site Walk", kind: "doc", targetFolderKey: "year-2027", management: "owner" });
+  value.spreadsheets.push({ key: "legacy-ledger", name: "Legacy Project Ledger", targetFolderKey: "year-2027", management: "owner", role: "reference" });
   value.calendars[0].name = "FCI • Consultations";
   value.calendars[0].defaultEventMinutes = 75;
   value.calendars[0].workingHours = { days: ["monday", "wednesday"], start: "09:00", end: "16:30" };
@@ -70,6 +72,7 @@ test("sanitizer accepts owner edits and normalizes detached data", () => {
   assert.equal(sanitized.business.displayName, "FCI TEST — DO NOT USE");
   assert.equal(sanitized.drive.roots.at(-1).key, "year-2027");
   assert.equal(sanitized.templates.at(-1).targetFolderKey, "year-2027");
+  assert.equal(sanitized.spreadsheets.at(-1).role, "reference");
   assert.equal(sanitized.calendars[0].defaultEventMinutes, 75);
   assert.equal(Object.isFrozen(sanitized.templates), true);
   assert.ok(flattenWorkspaceBlueprintFolders(sanitized).some((folder) => folder.path === "Shared Drive / 2027"));
@@ -85,6 +88,7 @@ test("sanitizer names exact locked system paths", async (t) => {
     }, "blueprint.drive.roots[unsorted-intake]"],
     ["correspondence subtree", (value) => { value.drive.projectFolders.find((folder) => folder.key === "correspondence").children[0].name = "Mail"; }, "blueprint.drive.projectFolders[correspondence].children[email-archive].name"],
     ["client directory", (value) => { value.spreadsheets[0].targetFolderKey = "archive"; }, "blueprint.spreadsheets[client-directory]"],
+    ["client directory role", (value) => { value.spreadsheets[0].role = "import"; }, "blueprint.spreadsheets[client-directory]"],
     ["FCI label", (value) => { value.gmail.labels[0].name = "Inbox"; }, "blueprint.gmail.labels[intake]"],
     ["calendar key", (value) => { value.calendars.find((calendar) => calendar.key === "holidays").key = "days-off"; }, "blueprint.calendars[holidays].key"],
   ];
@@ -117,7 +121,7 @@ test("sanitizer enforces folder keys, names, depth, counts, tokens, and referenc
     ["spreadsheet count", (value) => {
       while (value.spreadsheets.length <= WORKSPACE_BLUEPRINT_LIMITS.spreadsheets) {
         const index = value.spreadsheets.length;
-        value.spreadsheets.push({ key: `sheet-${index}`, name: `Sheet ${index}`, targetFolderKey: "company-admin", management: "owner" });
+        value.spreadsheets.push({ key: `sheet-${index}`, name: `Sheet ${index}`, targetFolderKey: "company-admin", management: "owner", role: "reference" });
       }
     }, "blueprint.spreadsheets"],
     ["unknown token", (value) => { value.naming.projectFolderPattern = "{number} — {name} — {client}"; }, "blueprint.naming.projectFolderPattern"],
@@ -130,6 +134,28 @@ test("sanitizer enforces folder keys, names, depth, counts, tokens, and referenc
       assert.ok(error.path.startsWith(pathPrefix), `${error.path} should start with ${pathPrefix}`);
     });
   }
+});
+
+test("spreadsheet roles accept import and reference while reserving system-mirror", () => {
+  const value = draft();
+  value.spreadsheets.push(
+    { key: "first-run-import", name: "First-run Import", targetFolderKey: "company-admin", management: "owner", role: "import" },
+    { key: "project-ledger", name: "Project Ledger", targetFolderKey: "company-admin", management: "owner", role: "reference" },
+  );
+  assert.deepEqual(
+    sanitizeWorkspaceBlueprint(value).spreadsheets.map((spreadsheet) => spreadsheet.role),
+    ["system-mirror", "import", "reference"],
+  );
+
+  const invalidRole = validationError((blueprint) => {
+    blueprint.spreadsheets.push({ key: "bad-role", name: "Bad Role", targetFolderKey: "company-admin", management: "owner", role: "write-back" });
+  });
+  assert.equal(invalidRole.path, "blueprint.spreadsheets[1].role");
+
+  const ownerMirror = validationError((blueprint) => {
+    blueprint.spreadsheets.push({ key: "owner-mirror", name: "Owner Mirror", targetFolderKey: "company-admin", management: "owner", role: "system-mirror" });
+  });
+  assert.equal(ownerMirror.path, "blueprint.spreadsheets[owner-mirror].role");
 });
 
 test("change summary is bounded and contains no blueprint names", () => {

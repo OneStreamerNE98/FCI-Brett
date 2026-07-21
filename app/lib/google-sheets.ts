@@ -8,6 +8,8 @@ const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
 const CLIENT_DIRECTORY_TAB = "Client Directory";
 const PROJECT_REGISTER_TAB = "Project Register";
+export const GOOGLE_IMPORT_CLIENTS_TAB = "Clients Import";
+export const GOOGLE_IMPORT_PROJECTS_TAB = "Projects Import";
 const CLIENT_HEADERS = [
   "Client Code", "Client / Company", "Status", "Primary Contact", "Email", "Phone",
   "Client Folder Link", "Active Project Count", "Account Notes", "Last Updated", "FCI Client ID",
@@ -70,6 +72,7 @@ export type GoogleSheetMirrorStatus = {
   projects: { status: string; lastSyncedAt: number | null; lastError: string | null };
   lastSyncedAt: number | null;
   reason: string | null;
+  source: "app" | "env" | "none";
 };
 
 export type GoogleSheetSyncResult = {
@@ -253,6 +256,28 @@ async function ensureHeaders(client: GoogleSheetsClient, clientSheet: SheetPrope
   ]);
 }
 
+/** Prepares only the application-owned mirror schema; it never synchronizes rows. */
+export async function prepareGoogleDirectorySpreadsheet(client: GoogleSheetsClient) {
+  const { clientSheet, projectSheet } = await ensureSheetTabs(client);
+  await ensureHeaders(client, clientSheet, projectSheet);
+}
+
+/**
+ * Reserves clearly marked entity tabs for SET-25. Column schemas stay owned by
+ * the review-first importer packet, so this preparation deliberately writes no
+ * headers or entity rows.
+ */
+export async function prepareGoogleImportSpreadsheet(client: GoogleSheetsClient) {
+  const metadata = await client.metadata();
+  const missing = [GOOGLE_IMPORT_CLIENTS_TAB, GOOGLE_IMPORT_PROJECTS_TAB]
+    .filter((title) => !sheetProperties(metadata, title));
+  if (missing.length) {
+    await client.batchUpdate(missing.map((title) => ({
+      addSheet: { properties: { title, gridProperties: { rowCount: 1000, columnCount: 20 } } },
+    })));
+  }
+}
+
 function clientCells(row: ClientMirrorRow) {
   return [
     cell(row.code), cell(row.name), statusLabel(row.status), cell(row.primaryContact), cell(row.email), cell(row.phone),
@@ -334,7 +359,7 @@ async function updateSyncState(
 function configuredMirrorError(config: GoogleRuntimeConfig) {
   if (config.simulation) return null;
   if (config.clientDirectorySheetIdInvalid) return new GoogleIntegrationError("invalid_sheet_id", "The Client Directory spreadsheet ID is invalid. Check the Google Workspace configuration.", 503);
-  if (!config.clientDirectorySheetId) return new GoogleIntegrationError("sheet_not_configured", "Set the Client Directory spreadsheet ID before syncing clients and projects.", 409);
+  if (!config.clientDirectorySheetId) return new GoogleIntegrationError("sheet_not_configured", "Ensure the Client Directory spreadsheet from Workspace Resources before syncing clients and projects.", 409);
   if (!config.sheetsEnabled) return new GoogleIntegrationError("sheets_not_enabled", "Enable Sheets for the Google Workspace connection, then reconnect Google.", 409);
   return null;
 }
@@ -367,8 +392,7 @@ export async function syncGoogleDirectory(
     }
     const accessToken = await dependencies.getAccessToken(config, "sheets");
     const client = new GoogleSheetsClient(accessToken, spreadsheetId, dependencies.fetch);
-    const { clientSheet, projectSheet } = await ensureSheetTabs(client);
-    await ensureHeaders(client, clientSheet, projectSheet);
+    await prepareGoogleDirectorySpreadsheet(client);
     const [clients, projects] = await Promise.all([
       dependencies.persistence.loadClientRows(config.connectionKey),
       dependencies.persistence.loadProjectRows(config.connectionKey),
@@ -412,6 +436,7 @@ export async function getGoogleSheetMirrorStatus(
   config: GoogleRuntimeConfig,
   connection: { services: { sheets: boolean } },
   dependencies: Pick<GoogleSheetsOperationsDependencies, "persistence">,
+  source: "app" | "env" | "none" = config.simulation ? "none" : config.clientDirectorySheetId ? "env" : "none",
 ): Promise<GoogleSheetMirrorStatus> {
   const states = await dependencies.persistence.getSyncStates(config.connectionKey);
   const byType = new Map(states.map((state) => [state.entity_type, state]));
@@ -423,7 +448,7 @@ export async function getGoogleSheetMirrorStatus(
   let reason: string | null = null;
   if (config.simulation) reason = null;
   else if (config.clientDirectorySheetIdInvalid) reason = "The configured spreadsheet ID is invalid.";
-  else if (!configured) reason = "Add the Client Directory spreadsheet ID to Google Workspace settings.";
+  else if (!configured) reason = "Ensure the Client Directory spreadsheet from the Resources card in Workspace settings.";
   else if (!enabled) reason = "Enable Google Sheets for the Workspace connection, then reconnect Google.";
   else if (!connected) reason = "Reconnect Google and approve the Sheets permission.";
   const lastSyncedAt = Math.max(clients?.last_synced_at ?? 0, projects?.last_synced_at ?? 0) || null;
@@ -437,5 +462,6 @@ export async function getGoogleSheetMirrorStatus(
     projects: { status: projects?.status ?? "not-synced", lastSyncedAt: projects?.last_synced_at ?? null, lastError: projects?.last_error_message ?? null },
     lastSyncedAt,
     reason,
+    source,
   };
 }

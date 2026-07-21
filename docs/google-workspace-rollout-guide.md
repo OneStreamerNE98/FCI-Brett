@@ -47,12 +47,13 @@ Do not connect a personal `@gmail.com` account in live mode. The application req
 
 ## Resource map
 
-Create these resources before turning on live folder provisioning:
+Create the company-owned resources below before launch. The application now creates
+and registers the blueprint spreadsheets after the Shared Drive is adopted.
 
 | Resource | Recommended name | Used for |
 | --- | --- | --- |
 | Shared Drive | `FCI Operations` | Canonical client/project files, email copies, attachments, photos, and closeout documents |
-| Spreadsheet | `FCI Operations Directory` | Client Directory and Project Register mirror |
+| Spreadsheet | `FCI Operations Directory` | App-managed Client Directory and Project Register mirror |
 | Calendar 1 | `FCI • Client Appointments` | Site visits, measurements, client meetings, and confirmations |
 | Calendar 2 | `FCI • Field Schedule` | Published job assignments and crew schedule |
 | Mailbox | `operations@cherryhillfci.com` (proposed) | Company Gmail intake and app connection |
@@ -60,9 +61,9 @@ Create these resources before turning on live folder provisioning:
 
 > **Dashboard-driven setup (SET-13 onward):** Settings → Google Workspace can now
 > adopt the manually created Shared Drive, verify its read-only sharing restrictions,
-> create or reuse the blueprint-defined root folder tree, and rename owner-managed root
-> folders. Later packets add the directory spreadsheet, calendars, extra spreadsheets,
-> and starter templates — see the
+> create or reuse the blueprint-defined root folder tree, ensure every blueprint-defined
+> spreadsheet, and rename owner-managed root folders. Later packets add calendars and
+> starter templates — see the
 > [dashboard workspace setup design](dashboard-workspace-setup-design.md). The manual
 > path below remains valid, and remains required for Shared Drive creation and every
 > Admin-console/DNS/OAuth/secret step.
@@ -107,13 +108,20 @@ Drive content. Owner-managed root names can then be changed from the Resources t
 system-managed filing folders remain locked because their names are part of the filing
 contract.
 
-## Part 3: create the Client Directory spreadsheet
+## Part 3: ensure the blueprint spreadsheets
 
-1. In the `FCI Operations` Shared Drive, create a Google Sheet.
-2. Name it `FCI Operations Directory`.
-3. Leave the workbook otherwise empty; the application maintains its Client Directory and Project Register tabs.
-4. Copy the spreadsheet ID from its URL. It is the value between `/d/` and `/edit`.
-5. Keep the connection account as a Shared Drive member so it can update the sheet.
+1. Connect the approved Workspace account and adopt the `FCI Operations` Shared Drive.
+2. In **Settings → Google Workspace → Resources**, select **Ensure root folders**.
+3. Select **Ensure spreadsheets**. The application creates or reuses each workbook by
+   its stable blueprint identity, saves the resulting ID in the app-managed registry,
+   and prepares only the tabs appropriate to its role.
+4. Open the Client directory spreadsheet from its Resources row and confirm that the
+   Client Directory and Project Register tabs exist.
+5. Keep the connection account as a Shared Drive member so it can update the mirror.
+
+Do not hand-create a directory workbook for a new setup. An existing
+`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` can remain as a first-boot/legacy fallback,
+but an app-managed registry ID becomes authoritative after **Ensure spreadsheets**.
 
 The application remains the source of truth. The spreadsheet is one-way: use it to view, filter, export, and maintain the intentionally spreadsheet-owned Account Notes column. Other spreadsheet edits do not write back into the application.
 
@@ -261,7 +269,8 @@ GOOGLE_WORKSPACE_ALLOWED_DOMAINS=cherryhillfci.com
 GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_SHARED_DRIVE_ID=<Shared Drive ID>
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false
-GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<spreadsheet ID>
+# Optional legacy/first-boot fallback; leave unset for app-managed spreadsheet setup
+GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<existing spreadsheet ID>
 GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar ID>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar ID>
@@ -306,7 +315,8 @@ Settings → Google Workspace reports missing prerequisites in a semantic table 
        the direct Drive verification before continuing.
     3. **Prepare Gmail** — prepare the three FCI labels, then verify message listing and the explicit review-first tools.
     4. **Verify Calendar** — list events and create a private test hold.
-    5. **Sync the Sheets mirror** — refresh status and sync the Client Directory and Project Register.
+    5. **Sync the Sheets mirror** — ensure blueprint spreadsheets from Resources,
+       refresh status, and sync the Client Directory and Project Register.
 6. Later steps remain visible but blocked until the prior step is confirmed by its endpoint. In simulation, all five steps are marked **Simulated** and their controls remain testable without Google access.
 7. Use only clearly marked test records.
 8. After Shared Drive verification, set `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=true` in the hosted environment and deploy the environment update; it is not an in-app toggle.
@@ -505,7 +515,7 @@ Do not store real client data until every required item is complete.
 - [ ] Authorized account and allowed domain are exact.
 - [ ] Shared Drive is verified and external sharing is reviewed.
 - [ ] Both calendars exist and their IDs are verified.
-- [ ] Directory spreadsheet ID is correct.
+- [ ] Directory spreadsheet is registered as app-managed, or its temporary environment fallback is explicitly documented.
 - [ ] Secrets exist only in hosted secret storage.
 - [ ] Gmail, Drive, Calendar, and Sheets tests pass independently.
 - [ ] Review & copy retains Gmail Inbox and uses the selected project.

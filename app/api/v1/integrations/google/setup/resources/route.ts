@@ -13,7 +13,6 @@ type ConnectionIdentityRow = Readonly<{
 
 function resourcePresentation(blueprint: WorkspaceBlueprint) {
   const calendarName = (key: string, fallback: string) => blueprint.calendars.find((calendar) => calendar.key === key)?.name ?? fallback;
-  const spreadsheetName = (key: string, fallback: string) => blueprint.spreadsheets.find((spreadsheet) => spreadsheet.key === key)?.name ?? fallback;
   return [
   {
     key: "primary",
@@ -25,16 +24,23 @@ function resourcePresentation(blueprint: WorkspaceBlueprint) {
     parentKey: null,
     effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => config.drive.rootFolderId,
   },
-  {
-    key: "client-directory",
-    resourceType: "sheets.spreadsheet",
-    label: "Client directory spreadsheet",
-    name: spreadsheetName("client-directory", "FCI Operations Directory"),
-    blueprintName: spreadsheetName("client-directory", "FCI Operations Directory"),
-    management: "system",
-    parentKey: "company-admin",
-    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => config.clientDirectorySheetId,
-  },
+  ...blueprint.spreadsheets.map((spreadsheet) => ({
+    key: spreadsheet.key,
+    resourceType: "sheets.spreadsheet" as const,
+    label: spreadsheet.role === "system-mirror"
+      ? "Client directory spreadsheet"
+      : spreadsheet.role === "import"
+        ? "Import spreadsheet"
+        : "Reference spreadsheet",
+    name: spreadsheet.name,
+    blueprintName: spreadsheet.name,
+    management: spreadsheet.management,
+    role: spreadsheet.role,
+    parentKey: spreadsheet.targetFolderKey,
+    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => (
+      spreadsheet.key === "client-directory" ? config.clientDirectorySheetId : undefined
+    ),
+  })),
   {
     key: "client-appointments",
     resourceType: "calendar.calendar",
@@ -132,6 +138,7 @@ export async function GET(request: NextRequest) {
       name: presentation.name,
       blueprintName: presentation.blueprintName,
       management: presentation.management,
+      ...("role" in presentation ? { role: presentation.role } : {}),
       parentKey: presentation.parentKey,
       ...(effectiveId ? { externalId: effectiveId } : {}),
       source,

@@ -60,6 +60,24 @@ export type SaveWorkspaceBlueprintResult =
 
 const SELECT_BLUEPRINT = "SELECT id, connection_key, version, blueprint_json, created_by, created_at, updated_by, updated_at FROM workspace_blueprints WHERE connection_key = ?";
 
+function upgradeStoredBlueprint(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.spreadsheets)) return value;
+  return {
+    ...record,
+    spreadsheets: record.spreadsheets.map((spreadsheet) => {
+      if (!spreadsheet || typeof spreadsheet !== "object" || Array.isArray(spreadsheet)) return spreadsheet;
+      const entry = spreadsheet as Record<string, unknown>;
+      if (entry.role !== undefined) return spreadsheet;
+      return {
+        ...entry,
+        role: entry.key === "client-directory" ? "system-mirror" : "reference",
+      };
+    }),
+  };
+}
+
 function persisted(row: WorkspaceBlueprintRow): PersistedWorkspaceBlueprint {
   if (!Number.isSafeInteger(row.version) || row.version < 1) {
     throw new TypeError("Stored Workspace blueprint version is invalid.");
@@ -74,7 +92,9 @@ function persisted(row: WorkspaceBlueprintRow): PersistedWorkspaceBlueprint {
     id: row.id,
     connectionKey: row.connection_key,
     version: row.version,
-    blueprint: sanitizeWorkspaceBlueprint(parsed),
+    // Blueprints saved before spreadsheet roles were introduced remain valid.
+    // The next owner save persists the explicit upgraded shape.
+    blueprint: sanitizeWorkspaceBlueprint(upgradeStoredBlueprint(parsed)),
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,

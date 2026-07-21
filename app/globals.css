@@ -492,7 +492,7 @@ button { color:inherit; }
 .workspace-blueprint-list{display:grid;gap:8px}
 .workspace-blueprint-list>p{margin-bottom:2px!important}
 .workspace-blueprint-list-row{display:grid;grid-template-columns:minmax(155px,1fr) minmax(110px,.45fr) minmax(170px,1fr) auto auto;align-items:end;gap:8px;padding:9px;border:1px solid #e6ebe7;border-radius:8px;background:#fbfdfb}
-.workspace-blueprint-list-row.locked{grid-template-columns:minmax(155px,1fr) minmax(170px,1fr) auto auto}
+.workspace-blueprint-list-row.locked{grid-template-columns:minmax(155px,1fr) minmax(110px,.45fr) minmax(170px,1fr) auto auto}
 .workspace-blueprint-list-row>code{align-self:center}
 .workspace-blueprint-calendars{gap:10px}
 .workspace-blueprint-calendar{display:grid;gap:9px;padding:10px;border:1px solid #e6ebe7;border-radius:8px;background:#fbfdfb}

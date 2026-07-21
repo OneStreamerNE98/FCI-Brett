@@ -325,6 +325,9 @@ test("keeps the app authoritative while mirroring clients and projects to Google
   assert.match(clientsApi, /trySyncGoogleDirectory/);
   assert.match(projectsApi, /trySyncGoogleDirectory/);
   assert.match(statusApi, /getGoogleSheetMirrorStatus/);
+  assert.match(statusApi, /getEffectiveGoogleRuntimeSetup/);
+  assert.match(statusApi, /effectiveResources\.clientDirectorySheet\.source/);
+  assert.match(syncApi, /getEffectiveGoogleRuntimeSetup/);
   assert.match(syncApi, /requireSameOrigin/);
   assert.match(schema, /googleSheetSyncState/);
   assert.match(guide, /Project Register/);

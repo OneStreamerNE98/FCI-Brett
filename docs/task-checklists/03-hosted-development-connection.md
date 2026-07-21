@@ -20,7 +20,8 @@ GOOGLE_WORKSPACE_ALLOWED_DOMAINS=cherryhillfci.com
 GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_SHARED_DRIVE_ID=<shared-drive-id>
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false
-GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<spreadsheet-id>
+# Optional legacy/first-boot fallback; leave unset for app-managed spreadsheet setup
+GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<existing-spreadsheet-id>
 GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar-id>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar-id>
@@ -43,12 +44,14 @@ Do not paste either value into GitHub, documentation, email, Drive, screenshots,
 
 - [ ] Deploy the hosted configuration with Drive provisioning disabled.
 - [ ] Open **Settings → Google Workspace → Check readiness**.
-- [ ] Resolve every missing item.
+- [ ] Resolve every OAuth, identity, domain, and mailbox prerequisite. Resource-ID rows
+      may remain unset until the app-managed Resources actions run.
 - [ ] Select **Connect Google Workspace** and authorize the exact approved operations account.
 - [ ] Verify the Shared Drive.
+- [ ] In Resources, ensure the Shared Drive root folders and then ensure the blueprint spreadsheets.
 - [ ] Prepare Gmail labels and list test messages.
 - [ ] List Calendar events and create a test hold.
-- [ ] Run the Google Sheets mirror.
+- [ ] Confirm the directory row is app-managed (or explicitly labeled environment fallback), then run the Google Sheets mirror.
 - [ ] Only after Drive verification, enable Drive provisioning and deploy the setting change.
 - [ ] Create one test project folder and confirm it is inside the correct Shared Drive.
 

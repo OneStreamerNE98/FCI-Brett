@@ -9,6 +9,7 @@ import {
   applyEffectiveWorkspaceConfig,
   resolveEffectiveWorkspaceResources,
   type EffectiveGoogleRuntimeConfig,
+  type EffectiveWorkspaceResources,
 } from "./workspace-effective-config";
 
 export * from "./google-oauth";
@@ -24,6 +25,7 @@ export function getGoogleRuntimeConfig(input?: oauth.EnvironmentValues) {
 export type EffectiveGoogleRuntimeSetup = Readonly<{
   config: EffectiveGoogleRuntimeConfig;
   resources: Awaited<ReturnType<typeof listWorkspaceResources>>;
+  effectiveResources: EffectiveWorkspaceResources;
   blueprint: WorkspaceBlueprint;
   blueprintVersion: number;
 }>;
@@ -35,10 +37,8 @@ export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleR
     getWorkspaceBlueprint(env.DB, config.connectionKey),
   ]);
   const blueprint = persistedBlueprint?.blueprint ?? seedWorkspaceBlueprint();
-  const effective = applyEffectiveWorkspaceConfig(
-    config,
-    resolveEffectiveWorkspaceResources(config, savedRows),
-  );
+  const effectiveResources = resolveEffectiveWorkspaceResources(config, savedRows);
+  const effective = applyEffectiveWorkspaceConfig(config, effectiveResources);
   const namedConfig = Object.freeze({
     ...effective,
     drive: Object.freeze({
@@ -51,6 +51,7 @@ export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleR
   return Object.freeze({
     config: namedConfig,
     resources: Object.freeze([...savedRows]),
+    effectiveResources,
     blueprint,
     blueprintVersion: persistedBlueprint?.version ?? 0,
   });

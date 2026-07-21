@@ -49,7 +49,8 @@ Before switching modes:
 - Create the company users and select one administrator connection account that also owns the Gmail intake mailbox.
 - Create a Shared Drive named `FCI Operations`.
 - Create `FCI • Client Appointments` and `FCI • Field Schedule` calendars.
-- Create the Client Directory spreadsheet and use the connection account as the intake mailbox.
+- Use the connection account as the intake mailbox. After connecting, use Workspace
+  Resources to ensure the root folders and app-managed Client Directory spreadsheet.
 - Enable the Drive, Gmail, Calendar, and Sheets APIs in the development Google Cloud project.
 - Keep Pub/Sub disabled until the Gmail background-processing worker is implemented.
 - Configure the OAuth consent screen and a Web application OAuth client.
@@ -69,6 +70,7 @@ GOOGLE_WORKSPACE_ALLOWED_DOMAINS=cherryhillfci.com
 GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=
 GOOGLE_WORKSPACE_SHARED_DRIVE_ID=
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false
+# Optional legacy/first-boot fallback; leave unset for app-managed spreadsheet setup
 GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=
 GOOGLE_WORKSPACE_INTAKE_MAILBOX=
 GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=
@@ -77,7 +79,9 @@ GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=
 
 When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address. Readiness fails closed when the values differ because Gmail operates as the connected account.
 
-Connect Workspace, verify the Shared Drive, then enable Drive provisioning. The application rejects consumer domains that are not listed in `GOOGLE_WORKSPACE_ALLOWED_DOMAINS`.
+Connect Workspace, adopt and verify the Shared Drive, ensure its root folders and
+blueprint spreadsheets from Resources, then enable Drive provisioning. The application
+rejects consumer domains that are not listed in `GOOGLE_WORKSPACE_ALLOWED_DOMAINS`.
 
 ## Launch boundary
 

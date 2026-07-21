@@ -32,7 +32,8 @@ test("Workspace setup is a five-step endpoint-driven flow with callback refresh"
   assert.match(panel, /searchParams\.get\("google"\)/);
   assert.match(panel, /invalidateCachedGet\("\/api\/v1\/google-workspace"\)[\s\S]+checkSetup\(true\)/);
   assert.doesNotMatch(panel, /Run the readiness check to refresh this panel/);
-  assert.match(panel, /GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED[\s\S]+hosted environment value, not an in-app toggle/);
+  assert.match(panel, /Project-folder provisioning still uses the hosted[\s\S]+GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED[\s\S]+gate/);
+  assert.match(panel, /Sheets authority:[\s\S]+ensure blueprint spreadsheets in Resources[\s\S]+GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID[\s\S]+first-boot fallback/);
 });
 
 test("Workspace prerequisites use a semantic metadata-only table", async () => {
@@ -123,6 +124,7 @@ test("Workspace resources are an admin-only sibling card with endpoint-owned sta
   assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/shared-drive\/adopt/);
   assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/folders\/ensure-roots/);
   assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/folders\/rename/);
+  assert.match(actions, /\/api\/v1\/integrations\/google\/sheets\/ensure/);
   assert.match(panel, /workspaceResourceSourceLabel[\s\S]+App-managed[\s\S]+Environment value/);
   assert.match(panel, /workspace-resource-state/);
   assert.match(panel, /workspace-resource-source/);
@@ -212,6 +214,10 @@ test("Workspace blueprint is a structured admin editor and the legacy static car
   assert.match(editor, /Add folder/);
   assert.match(editor, /Add template/);
   assert.match(editor, /Add spreadsheet/);
+  assert.match(editor, /spreadsheet role/);
+  assert.match(editor, /System mirror/);
+  assert.match(editor, /Client &amp; project import/);
+  assert.match(editor, /Reference \(read-only\)/);
   assert.match(editor, /WORKSPACE_BLUEPRINT_NAMING_TOKENS/);
   assert.match(editor, /FeatureStateBadge state="Planned"/);
 });

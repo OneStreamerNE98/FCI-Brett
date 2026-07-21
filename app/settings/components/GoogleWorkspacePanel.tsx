@@ -61,6 +61,7 @@ type SheetMirrorStatus = {
   projects: { status: string; lastSyncedAt: number | null; lastError: string | null };
   lastSyncedAt: number | null;
   reason: string | null;
+  source: "app" | "env" | "none";
 };
 type SetupStepStatus = "Complete" | "Ready" | "Blocked by previous step" | "Blocked by prerequisites" | "Administrator access" | "Simulated";
 type GoogleServiceKey = "drive" | "gmail" | "calendar" | "sheets";
@@ -251,6 +252,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     if (change.blueprintChanged) setBlueprintEditorRevision((current) => current + 1);
     invalidateCachedGet("/api/v1/google-workspace");
     invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+    invalidateCachedGet("/api/v1/integrations/google/sheets/status");
     await Promise.all([checkSetup(true), loadWorkspaceResources(true)]);
   }, [checkSetup, loadWorkspaceResources]);
 
@@ -626,7 +628,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       </li>
       <li className={`workspace-setup-step ${stepStatusClass(sheetsStepStatus)}`}>
         <header><span className="workspace-step-number">5</span><div><h3>Sync the Sheets mirror</h3><p>Check and reconcile the generated Client Directory and Project Register.</p></div><span className="workspace-step-status">{sheetsStepStatus}</span></header>
-        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirror?.clients.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirror?.projects.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Provisioning reminder:</strong> <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> remains a hosted environment value, not an in-app toggle.</p></div>
+        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirror?.clients.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirror?.projects.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback{sheetMirror ? `; current mirror source: ${simulation ? "local simulation" : sheetMirror.source === "app" ? "app-managed" : sheetMirror.source === "env" ? "environment fallback" : "not configured"}` : ""}.</p></div>
       </li>
     </ol>
     {isAdmin && <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />}
@@ -635,7 +637,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         <div><p className="eyebrow">Workspace setup</p><h3 id="workspace-resources-heading">Resources</h3></div>
         {!isAdmin ? <Status text="Administrator access" /> : workspaceResources ? <Status text={workspaceResources.simulation ? "Simulated" : workspaceResources.connectReady ? "Connection ready" : "Setup required"} /> : <Status text={workspaceResourcesState === "error" ? "Unavailable" : "Loading"} />}
       </header>
-      <p>Adopt and verify the company Shared Drive, ensure the blueprint-defined root tree, and rename owner-managed folders. Setup actions never delete Google content.</p>
+      <p>Adopt and verify the company Shared Drive, ensure the blueprint-defined root tree and spreadsheets, and rename owner-managed folders. Setup actions never delete Google content.</p>
       {!isAdmin ? <p className="workspace-admin-readonly"><ShieldCheck size={15} /><span>Workspace resource status is available to Administrators. No administrator setup request is made for this Office view.</span></p> : <>
         {workspaceResourcesState === "loading" && !workspaceResources && <p className="workspace-resources-message" role="status">Loading the Workspace resource registry…</p>}
         {workspaceResourcesError && <div className="workspace-resources-error" role="alert"><span>{workspaceResourcesError}</span><button className="soft-button" type="button" onClick={() => void loadWorkspaceResources(true)}>Retry resources</button></div>}

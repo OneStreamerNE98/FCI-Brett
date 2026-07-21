@@ -20,6 +20,43 @@ after(async () => {
   await vite.close();
 });
 
+test("stored blueprints from before spreadsheet roles are upgraded on read", async () => {
+  const legacy = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  delete legacy.spreadsheets[0].role;
+  legacy.spreadsheets.push({
+    key: "project-ledger",
+    name: "Project Ledger",
+    targetFolderKey: "company-admin",
+    management: "owner",
+  });
+  const database = {
+    prepare(sql) {
+      assert.match(sql, /^SELECT id, connection_key/u);
+      return {
+        bind() { return this; },
+        async first() {
+          return {
+            id: "blueprint-legacy",
+            connection_key: "workspace-simulation",
+            version: 3,
+            blueprint_json: JSON.stringify(legacy),
+            created_by: "admin@example.test",
+            created_at: 1_790_000_000_000,
+            updated_by: "admin@example.test",
+            updated_at: 1_790_000_001_000,
+          };
+        },
+      };
+    },
+  };
+
+  const stored = await adapter.getWorkspaceBlueprint(database, "workspace-simulation");
+  assert.deepEqual(stored.blueprint.spreadsheets.map(({ key, role }) => ({ key, role })), [
+    { key: "client-directory", role: "system-mirror" },
+    { key: "project-ledger", role: "reference" },
+  ]);
+});
+
 test("a committed blueprint save returns without a fallible post-commit read", async () => {
   let committed = false;
   let firstCalls = 0;

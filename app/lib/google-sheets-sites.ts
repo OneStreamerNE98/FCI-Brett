@@ -33,6 +33,7 @@ export function trySyncGoogleDirectory(config: GoogleRuntimeConfig, actor: strin
 export function getGoogleSheetMirrorStatus(
   config: GoogleRuntimeConfig,
   connection: { services: { sheets: boolean } },
+  source?: "app" | "env" | "none",
 ) {
-  return getGoogleSheetMirrorStatusCore(config, connection, dependencies);
+  return getGoogleSheetMirrorStatusCore(config, connection, dependencies, source);
 }
