@@ -1,7 +1,7 @@
 # Agent execution plan: backend architecture, Google Workspace connection, and Settings/Setup alignment
 
 Date: July 19, 2026 · Status reconciled: July 20, 2026 · Source baseline: `main` @
-`599e39f` after PR #57 completed the logo asset refresh — the reviewed merge train is fully merged.
+`599e39f` after PR #57 merged the reviewed application-logo asset refresh.
 PR #52 previously completed the KPI-02 flooring booking inputs and reporting packet,
 PR #53 completed the BE-12 rehearsal inventory packet, and PR #51 completed the BE-09
 production core-record route packet. PRs #63/#64 added the
@@ -10,11 +10,10 @@ coordination protocol. PRs #54/#55 completed
 OIDC-02/OIDC-03; PRs #60/#62 reconciled their merged status; and PR #61 expanded the
 Fable follow-up instructions.
 PR #66 completed TRK-02 tracking-guard hardening.
-PRs #56 and #57 are merged source-only and undeployed — the reviewed merge train is
-fully merged. PRs #68–#71 recorded the post-merge reconciliations. This revision adds
-Workstream E (Google-native integrations, GI-01…GI-07), SET-23…SET-26, WS-15/WS-16,
-and the July 21 setup-panel review amendments.
-Deployment baseline: `adc79b8`, private Sites development version 40,
+PRs #56/#57 are merged source-only and undeployed; the reviewed PR #51–#57 merge
+train is complete. This revision adds Workstream E (Google-native integrations,
+GI-01…GI-07), SET-23…SET-26, WS-15/WS-16, and the July 21 setup-panel review
+amendments. Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -1445,7 +1444,8 @@ publishing runbook; simulation/dev harness for card rendering. **Effort:** large
 # Task tracking and doc reconciliation (the no-confusion rule)
 
 **GitHub baseline:** source is reconciled against `main` at `599e39f` after PR #57
-completed the SET-10 Workspace connection-health packet. PR #52 previously completed
+merged the reviewed application-logo asset refresh. PR #56 completed the SET-10
+Workspace connection-health packet, and PR #52 previously completed
 the KPI-02 flooring booking inputs and reporting packet, PR #53 completed the BE-12
 rehearsal inventory packet, and PR #51 completed the BE-09 production core-record route
 packet. PRs #63/#64 added the dashboard-driven
@@ -1455,8 +1455,8 @@ PRs #60/#62 reconciled their merged status, and PR #61 expanded the Fable follow
 instructions.
 PR #66 completed TRK-02 tracking-guard hardening.
 PRs #52, #56, and #57 are merged source-only and undeployed; migration 0012 is
-unapplied to Sites. The reviewed merge train is fully merged. None of these later
-source changes is deployed.
+unapplied to Sites. The reviewed PR #51–#57 merge train is complete. None of these
+later source changes is deployed.
 The exact deployed baseline
 remains PR #32 at `adc79b855041db04cc3ca2a3eb232bc72408d33b`, private Sites development
 version 40, which includes PR #30's semantic Settings rules table. The listed source
@@ -1553,11 +1553,11 @@ TRK-02 is complete in PR #66.
 BE-09 is complete in source in PR #51 and remains undeployed.
 BE-12 is complete in source in PR #53 and remains undeployed.
 KPI-02 is complete in source in PR #52 and remains undeployed. SET-10 is complete in
-source in PR #56 and remains undeployed. The logo refresh is complete in PR #57 —
-the reviewed merge train is fully merged. KPI-03 and SET-13 are now assignable, and
-the Workstream E starters GI-01, GI-02, and GI-05 are assignable in parallel with the
-SET track once their listed dependencies are met (GI-02 immediately).
-The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
+source in PR #56 and remains undeployed. The application-logo refresh is complete in
+merged source in PR #57 and remains undeployed; the reviewed PR #51–#57 merge train is
+complete. KPI-03 and SET-13 are now assignable, and the Workstream E starters GI-01,
+GI-02, and GI-05 are assignable in parallel with the SET track once their listed
+dependencies are met (GI-02 immediately). The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
 SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
 apply, deployment, live login, another user, or real data.
 
@@ -1597,8 +1597,10 @@ Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
    (#48) are complete in source. Latest combined-main Node/build/lint, Terraform, and
    Chromium checks are green; nothing was applied, configured, published, or deployed.
 
-**Wave 2 — current:** PRs #51, #52, #53, #56, and #57 are merged — the reviewed merge
-train is fully merged and its completions are recorded.
+**Wave 2 — current:** PRs #51–#57 are merged and the BE-09, KPI-02, BE-12, SET-10,
+OIDC-02/OIDC-03, and application-logo refresh completions are recorded. The reviewed
+merge train and its post-merge tracking flips are complete; the shared-UI browser reruns
+are green.
 The dashboard-setup track starts now: SET-13 → SET-14 (SET-19 parallel), then
 SET-15 → {SET-16, SET-17, SET-05} → SET-18 → SET-21, with SET-23…SET-26 following
 their listed dependencies. Workstream E runs in parallel where dependencies allow:

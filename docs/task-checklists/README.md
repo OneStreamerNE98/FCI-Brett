@@ -15,14 +15,14 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | BE-09/#51 and BE-12/#53 merged source-only | Finish the remaining migration/cutover tooling, approved calculator evidence, and owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40; KPI-02/#52, SET-10/#56, and later merged UI source remain undeployed | KPI-03 owns the next `FloorOpsApp.tsx` slot; SET-13 is now assignable, and the reviewed merge train is fully merged through PR #57. |
+| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40; KPI-02/#52, SET-10/#56, logo refresh/#57, and later merged UI source remain undeployed | KPI-03 owns the next `FloorOpsApp.tsx` slot; SET-13 is now assignable. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
 
 ## Immediate owner and administrator handoff
 
-Status reconciled on July 21, 2026 against merged source baseline `main` at `599e39f205a67c3f558eb47faabc139dd6d6b57c` and the separate PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`.
+Status reconciled on July 20, 2026 against merged source baseline `main` at `599e39f205a67c3f558eb47faabc139dd6d6b57c` and the separate PR #32 deployment baseline at `adc79b855041db04cc3ca2a3eb232bc72408d33b`.
 The deployed commit remains private Sites development version 40 and includes PR #30's semantic rules table from `aa8ed8f`. The `codex/actionable-lists` slice is complete in source in PR #33 and is not deployed. The `codex/settings-panel-extraction` SET-01 slice is complete in source in PR #35 and is not deployed; the later source-only packets through PR #48 are likewise merged and undeployed.
 PR #49 completed OIDC-04's documentation reconciliation, PR #50 guarded that completed status, PR #60 reconciled OIDC-02 tracking, PR #61 updated the Fable review instructions, and PR #62 reconciled OIDC-03 tracking.
 PRs #63/#64 added the dashboard-driven Workspace setup workstream, and PR #65 codified the multi-agent coordination protocol.
@@ -32,8 +32,8 @@ PR #51 completed BE-09 and is merged source-only and undeployed.
 PR #53 completed BE-12 and is merged source-only and undeployed.
 PR #52 completed KPI-02 and is merged source-only and undeployed; migration 0012 is unapplied to Sites, and KPI-03 is now assignable.
 PR #56 completed SET-10 and is merged source-only and undeployed.
-PR #57 completed the logo asset refresh and is merged source-only and undeployed.
-No merge or draft authorizes live identity/provider configuration, infrastructure or migration apply, image publication, job execution, or deployment.
+PR #57 completed the application logo asset refresh and is merged source-only and undeployed; the reviewed PR #51–#57 merge train is complete.
+No source merge authorizes live identity/provider configuration, infrastructure or migration apply, image publication, job execution, or deployment.
 
 ### Jason / business owner
 
@@ -50,7 +50,7 @@ Completed July 18, 2026: Jason used the audited **Assign to me** action on the f
 
 ## Current GitHub review snapshot
 
-This dated snapshot describes review work only; it does not change any owner checkbox or mark remaining unmerged source complete.
+This dated snapshot records review work only; it does not change any owner checkbox or authorize deployment.
 
 | PR | Packet | Review state and dependency |
 | --- | --- | --- |
@@ -96,12 +96,12 @@ These checklists are owner-facing setup, decision, acceptance, and operations re
 The agent ledgers above own sequencing. OIDC-04 is complete in PRs #49/#50, and PRs #54/#55 completed the source OIDC preconditions.
 TRK-02 is complete in PR #66.
 PR #51 completed BE-09 in source; BE-10/BE-14 are now assignable. PR #52 completed KPI-02 in source; KPI-03 is now assignable.
-The reviewed merge train is fully merged through PR #57. SET-13 is now assignable because SET-03, SET-04, and SET-10 are complete. The still-unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. No checklist item here authorizes a live provider, staging run, migration/apply, production UI composition, owner acceptance, or deployment.
+The reviewed PR #51–#57 merge train is complete. SET-13 is now assignable because SET-03, SET-04, and SET-10 are complete. The still-unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. No checklist item here authorizes a live provider, staging run, migration/apply, production UI composition, owner acceptance, or deployment.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 
-Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. Later source through PR #48, documentation reconciliation through PR #50, BE-09 in PR #51, KPI-02 in PR #52, BE-12 in PR #53, OIDC-02/OIDC-03 in PRs #54/#55, SET-10 in PR #56, and TRK-02 in PR #66 are merged but undeployed.
-PR #57 is merged source-only and undeployed. None of the remaining steps above authorizes production deployment, live OIDC/session admission, staging execution, a migration or infrastructure apply, a second user, or real data.
+Private Sites development version 40 is the latest controlled release. PR #32 merged at `adc79b8`, and that exact deployed commit includes PR #30's semantic-table slice at `aa8ed8f`. Later source through PR #48, documentation reconciliation through PR #50, BE-09 in PR #51, KPI-02 in PR #52, BE-12 in PR #53, OIDC-02/OIDC-03 in PRs #54/#55, SET-10 in PR #56, logo refresh in PR #57, and TRK-02 in PR #66 are merged but undeployed.
+None of the remaining steps above authorizes production deployment, live OIDC/session admission, staging execution, a migration or infrastructure apply, a second user, or real data.
 
 ## Safety boundary
 
