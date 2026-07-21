@@ -11,7 +11,9 @@ OIDC-02/OIDC-03; PRs #60/#62 reconciled their merged status; and PR #61 expanded
 Fable follow-up instructions.
 PR #66 completed TRK-02 tracking-guard hardening.
 PRs #56/#57 are merged source-only and undeployed; the reviewed PR #51–#57 merge
-train is complete. Deployment baseline: `adc79b8`, private Sites development version 40,
+train is complete. This revision adds Workstream E (Google-native integrations,
+GI-01…GI-07), SET-23…SET-26, WS-15/WS-16, and the July 21 setup-panel review
+amendments. Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -640,6 +642,39 @@ card shows the scope granted.
 **Accept:** connection status shows `auth/calendar` granted; the audit trail records one
 reauthorization pair; no other scope changed; checklist-02 row checked with a date.
 
+### WS-15 · OWNER — Maps Platform billing, restricted API keys, budget alert (small, after WS-02; gates GI-03/GI-04)
+**Why:** The adopted Maps integrations (job-site maps, address validation,
+autocomplete) use API keys, not the connector OAuth account, and require a billing
+account on the Google Cloud project. The owner budget is ≤$50/month; expected actual
+usage is ~$0–10/month inside free tiers, and a budget alert enforces the ceiling. See
+[Google integration opportunities](../google-integration-opportunities.md) — this file
+lives at `docs/`, adjust the relative link if moved.
+**Do (owner, guided):** Attach a company-controlled Cloud Billing account to the
+verified development project (checklist 02); enable Maps Embed API, Address Validation
+API, Places API (New), and (when GI-scheduling work starts) Routes API; create two
+restricted keys — a browser key HTTP-referrer-restricted to the app's hostname and a
+server key IP/app-restricted; set a Cloud Billing budget with alerts at $10 and $25;
+record the non-secret key names (never key values) in the configuration inventory.
+**Accept:** both keys exist with their restrictions; budget alerts configured;
+checklist-02 rows checked with dates; no key value in the repo or checklists.
+
+### WS-16 · OWNER — Google-native quick wins, no code (small, anytime)
+**Why:** Four owner setup clicks deliver weekly value with zero development and zero
+new scopes: client self-booking, professional outbound identity, a KPI dashboard, and
+app-like installs. Bundled with two supporting confirmations.
+**Do (owner, guided — full steps in `docs/task-checklists/11-google-quick-wins.md`):**
+(1) Create a Calendar **appointment schedule** on `FCI • Client Appointments` for
+site-visit/measurement slots and use its booking link in estimate follow-ups. (2)
+Verify the **`ops@` send-as alias** in Gmail so app-sent mail uses the company
+identity. (3) Connect **Looker Studio** (free) to the `FCI Operations Directory` sheet
+and build the weekly ops dashboard (pipeline by stage, jobs by status, closeout
+aging). (4) **Force-install/pin the PWA** for office staff via Chrome Enterprise Core
+(free). (5) Create an **`FCI Holidays`** calendar (config-as-calendar for future
+scheduling). (6) Confirm the **Workspace edition is Business Standard or higher**
+(gates GI-06 Drive Labels and premium booking features).
+**Accept:** each checklist-11 row checked with a date; booking link recorded; edition
+recorded; no code or configuration change in the app itself.
+
 ---
 
 # Workstream C — Settings/Setup UI alignment (SET)
@@ -804,6 +839,10 @@ indicators, NO buttons; identical render regardless of backend state (there is n
 — rendered test asserts invariance under differing mocked payloads); live-data-cleanup
 card cross-links the simulation reset. Code comment: replace, don't augment, when real
 endpoints exist. No docs-path links in UI copy.
+Amendment (decision pinned): when backup/restore is eventually built, the mechanism is
+a scheduled app-data export dropped into a `00_Company Admin/Backups` Drive folder
+under the existing drive scope — native Google, no new infrastructure; the placeholder
+card's sentence may say so.
 **Accept:** cards render invariantly; existing safeguards text + install panel unchanged.
 
 ### SET-13 · Workspace resource registry + effective-config layer + resources card (large, after completed SET-03+04+10) — FIRST in the dashboard-setup feature
@@ -828,6 +867,15 @@ admin `GET /api/v1/integrations/google/setup/resources` (registry+env+blueprint 
 no Google calls). (6) "Workspace setup → Resources" card skeleton in
 `GoogleWorkspacePanel.tsx` (status rows, state chips, source badges; action buttons
 arrive with later packets). (7) Simulation reset deletes simulation registry rows.
+(8) Amendments (July 21 review of the merged panel): the resources card gains
+identity-summary rows (connected account ↔ intake-mailbox match, allowed domains,
+mode) and copy-exact setup helpers (the OAuth redirect URI, a copyable dotenv template
+of missing keys with placeholders, the `openssl rand -base64 32` key command — names
+and placeholders only, never values); **mask the displayed connection account**
+everywhere it renders (currently printed unmasked in both the health card and Step 1);
+relocate the buried Disconnect button to the connection card level; new setup cards
+render as siblings of the step list, and the SET-10 health card moves out of Step 1 to
+match.
 **Accept:** resolver unit matrix (all source×presence combinations, `connectReady`
 split, filter-not-rewrite); a pin test proving base `getGoogleRuntimeConfig` output
 unchanged on a fixture env; authorize connects with resource IDs absent but still 409s
@@ -858,6 +906,10 @@ dropdowns, Business-attributes form (display name, naming patterns with token le
 calendar defaults), "Planned" rows for later catalog items, explicit Save. Migrate
 `resolveDriveWorkspace` storage name + Gmail labels prepare to read the (identical)
 seed values. Simulation reset deletes the simulation blueprint row.
+Amendments: remove the legacy static `drive-blueprint` card from the panel when the
+editor lands (it would duplicate the editor's tree); the blueprint gains an
+`FCI Holidays` calendar row (config-as-calendar — the WS-16 owner step creates it, the
+blueprint records it for future scheduling consumers).
 **Accept:** sanitizer matrix (system-path 400s, bounds, tokens, references); seed ≡
 legacy `DRIVE_BLUEPRINT` pin; PUT version-conflict 409; bounded-body rejection; editor
 e2e (rename owner folder + add template + locked `05_Correspondence` attempt → Save →
@@ -876,7 +928,9 @@ external-sharing verification chip). `POST /api/v1/integrations/google/drive/sha
 → 409 with candidates for explicit re-POST). `POST .../drive/folders/ensure-roots`
 iterating blueprint roots (children included) with `getOrCreateFolder` identity
 `fciRootKey=<node.key>` + `reuseByName` (adopts and stamps same-name manual folders);
-setup lease `<connectionKey>:setup:drive-roots`. `POST .../drive/folders/rename`
+setup lease `<connectionKey>:setup:drive-roots`. Amendment: rewrite the Step-2
+"hosted environment value" on-screen note once the Shared Drive ID becomes
+app-managed in this packet (the copy must follow the routes). `POST .../drive/folders/rename`
 (owner-managed keys only, 400 for system keys; updates the Drive name and the blueprint
 node atomically; `setup.folder_renamed` event). Migrate `drive/verify` and the project
 provisioning route to effective config. Wire Resources-card rows and buttons.
@@ -901,7 +955,8 @@ folder (Drive scope; no new scopes). For the system `client-directory` entry onl
 created/adopted detail) events. Migrate `sheets/status` + `sheets/sync` to effective
 config with the source surfaced in the status payload
 (`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` becomes fallback). Resources-card rows;
-Step-5 unconfigured copy points here.
+Step-5 unconfigured copy points here. Amendment: rewrite the Step-5 provisioning
+env-var on-screen note in the same spirit once the sheet ID is app-managed.
 **Accept:** create and adopt branches (mocked); created file carries the identity
 `appProperties`; ensure is idempotent; an owner-defined extra spreadsheet in a fixture
 blueprint is created without tab preparation; the mirror runs against the app-managed
@@ -916,7 +971,12 @@ upload-conversion — no new scopes, no Docs API — with the template list owne
 `pre-install-checklist`; CSV for `project-budget`) rendered with
 `business.displayName` and the closed token legend; a minimal titled-shell generator
 for owner-added templates (definition lives in the blueprint, content is authored in
-Google afterward). Extend `GoogleDriveClient` multipart upload so metadata `mimeType`
+Google afterward). Amendment (adopted from the integration research): per-project
+document creation from these templates upgrades to real Docs-API merge — `files.copy`
+the template, then one `documents.batchUpdate` ReplaceAllText pass for the
+`{{token}}` set, verified to work under the existing `drive` scope (enable the Docs
+API on the GCP project; no new consent). The HTML-upload path remains only for
+creating the seed template files themselves. Extend `GoogleDriveClient` multipart upload so metadata `mimeType`
 (Google-native target) may differ from the media content type (Drive upload-conversion
 under the held `auth/drive` scope), preserving `findOrUploadManagedFile` idempotency.
 `POST /api/v1/integrations/google/drive/templates/ensure` — ensures the Templates
@@ -965,6 +1025,10 @@ endpoints; no repo-doc links in UI copy; presence/absence only, never values.
 **Accept:** rendered tests across unconfigured/partial/connectReady mocked states;
 grep-verified zero new routes and no env values in markup; non-admin variant renders
 informational copy only.
+Amendments: the card also shows the copy-exact setup helpers (shared with SET-13 —
+implement once); retire the four decorative safeguard checkboxes at the panel bottom
+(dead controls with no state — their content folds into this card), and reconcile with
+the existing prerequisites section rather than adding a second table.
 **Effort:** small.
 
 ### SET-20 · Calendar create-or-adopt behind the granted-scope gate (medium, after SET-05 + WS-14)
@@ -979,7 +1043,10 @@ breaks). `POST /api/v1/integrations/google/calendar/ensure`: hard 409 naming the
 required scope unless the stored connection's granted scopes include `auth/calendar`;
 find-by-summary from the blueprint calendar names → adopt, else `calendars.insert`;
 registry + `setup.calendar_created` events; created IDs become runtime-authoritative
-through the resolver. Resources-card calendar rows un-gate from the connection GET's
+through the resolver. Amendment: add the optional Meet-link checkbox
+(`conferenceData.createRequest`, existing scope) to hold/event creation in this
+packet — a few lines, for virtual pre-qualification consults.
+Resources-card calendar rows un-gate from the connection GET's
 granted scopes. Simulation grants everything.
 **Accept:** scope-gate 409 names the exact scope; without the flag the requested scopes
 are byte-identical to today (pin); superset mapping keeps reconnect tests green;
@@ -1036,6 +1103,63 @@ create blank Sheet + create from template → links rendered; existing provision
 filing tests untouched.
 **Effort:** medium. **Depends:** SET-15 (effective config for the blank-only path),
 SET-17 (templates), KPI-02/#52 merged for the `FloorOpsApp.tsx` slot.
+
+### SET-23 · In-app document viewer (medium, after SET-15; UI in the FloorOpsApp queue)
+**Why:** Owner request: clicking a document anywhere it is listed (project files,
+templates, filed emails) opens it inside the app instead of bouncing to Drive.
+**Do:** Viewer modal/panel embedding the Google Drive preview
+(`https://drive.google.com/file/d/<id>/preview`) — renders Docs, Sheets, Slides, PDFs,
+images, and Office files natively with no new scopes and no file bytes proxied (the
+viewer's own Google session provides access via Shared Drive membership). Open-in-Google
+and Download fallbacks; a clear guidance state when the preview is blocked (no Google
+session or no access); CSP `frame-src` allowance for `https://drive.google.com` only;
+simulation mode renders a placeholder preview card. Wire from the project files list
+and (once SET-17 lands) template rows.
+**Accept:** rendered tests for viewer open/fallback/guidance states driven by mocked
+payloads; CSP change pinned by a test; no new scopes (grep); simulation e2e clicks a
+simulated file and sees the placeholder; office non-admin can view (viewing is routine
+work). **Effort:** medium. **Cost:** $0.
+
+### SET-24 · Employee-login readiness card + read-only policy cards (small, after SET-13; activates fully when login goes live)
+**Why:** The second OAuth client (employee login) has no setup surface — its config,
+invitation state, and activation gate live in docs and the access page; and the fixed
+role matrix / session policy invite "why can't I change this?" confusion.
+**Do:** (1) Login-readiness card in the setup area: login-client configuration
+presence (names only), open-invitation count from the existing access data, and the
+owner activation-gate status — presence/absence, never values. (2) Read-only policy
+cards using the locked-with-reason pattern: the role matrix
+(Administrator/Office/Project Manager/Field link — what each can do) and the session
+policy (30-minute idle / 8-hour absolute), each with one sentence on why it is fixed.
+**Accept:** rendered tests across unconfigured/partial/ready mocked states; zero new
+endpoints beyond one presence read; no secret or env values in markup; non-admin
+variant informational only. **Effort:** small. **Cost:** $0.
+
+### SET-25 · First-run client import (medium, after SET-16)
+**Why:** Day-one onboarding gap: nothing loads the company's existing client list when
+real use begins — without this, launch starts with manual re-entry.
+**Do:** Admin-gated, review-first, one-time import: owner pastes existing clients into
+a clearly-marked import tab of the directory sheet (or uploads a CSV); the app reads
+via existing Sheets plumbing, presents a preview with duplicate detection (email/phone/
+address match against existing records), and the admin confirms per-row or in bulk.
+Imported records get a provenance marker in `activity_events`. Bounded batch size;
+re-runnable safely (idempotent on the duplicate check); the import surface hides once
+records exist unless explicitly reopened. Respects the test-data boundary: importing
+REAL client data remains blocked behind the WS-11 acceptance gate — until then the
+importer works on test data and says so.
+**Accept:** preview/confirm/duplicate branches tested; idempotent re-run; provenance
+rows written; the real-data gate notice asserted; simulation e2e imports a fixture
+sheet. **Effort:** medium. **Cost:** $0.
+
+### SET-26 · Project-document search (small-medium, after SET-15; UI in the FloorOpsApp queue)
+**Why:** Daily-use glue: "find the change order for this project" from inside the app.
+**Do:** Search box on the project files panel: Drive `files.list` with
+`fullText contains '<query>'` scoped to the project's provisioned folder (and
+`driveId`), existing `auth/drive` scope, server-side route (admin not required —
+routine work) with bounded query length and result count; results open in the SET-23
+viewer. Simulation searches the simulated registry/fixtures.
+**Accept:** route tests (scoping to the project folder asserted in the request shape,
+bounded inputs, non-project files never returned in mocks); e2e simulated search →
+viewer open; no new scopes. **Effort:** small-medium. **Cost:** $0.
 
 ---
 
@@ -1195,6 +1319,128 @@ format). Effort: small.
 
 ---
 
+# Workstream E — Google-native integrations (GI)
+
+Goal: tighten the app's integration with Google products the company already pays for,
+selected from the adopted
+[Google integration opportunities](google-integration-opportunities.md) research
+(owner budget ≤$50/month; the whole workstream is expected to cost ~$0–10/month
+actual). Every packet is source-only, simulation-testable, and owner-gated for any new
+scope, API key, or billing attachment. GI packets follow the same guardrails, status
+rules, and draft-PR workflow as Workstreams A–D.
+
+### GI-01 · Google Forms lead intake (small, after SET-16)
+**Why:** A public lead form replaces ad-hoc phone/email capture, feeding the same
+pipeline the app already mirrors.
+**Do:** Owner creates the lead form in Forms UI (name, address, rooms, flooring type,
+preferred contact) linked to a response Sheet; a checklist-11 row records the form and
+Sheet IDs. The app polls the response Sheet on its existing scheduled Sheets reads
+(existing `spreadsheets` scope, no webhook), maps rows to lead records review-first
+(new-lead queue, not silent creation), and marks processed rows by row index +
+timestamp watermark. Duplicate handling reuses SET-25's matcher.
+**Accept:** ingestion tests with fixture response rows (mapping, watermark, duplicate
+branch, malformed-row tolerance); review-first queue asserted (no auto-created lead
+without confirmation); simulation e2e. **Effort:** small. **Cost:** $0.
+
+### GI-02 · Chat webhook notifier + notification-routing settings (medium, independent)
+**Why:** One-way pushes into Chat spaces the team already has on their phones — new
+lead, filing-review needed, schedule change, warranty follow-up — with deep links back
+into the app. No OAuth at all; webhook URLs are per-space secrets.
+**Do:** Feature-gated notifier module (off by default, same gating pattern as the
+other push capabilities): typed event catalog, cardsV2 payloads with deep links,
+retry-once-then-log delivery, never blocking the triggering request. Owner provisions
+webhook URLs into hosted secrets (names surfaced in SET-04's table; values never in
+the app). Settings card: event type → space mapping with per-event toggles, rendered
+from a config endpoint; non-admins read-only. Audit each send in
+`google_integration_events`.
+**Accept:** notifier unit tests (event → payload shape, gate-off default, failure
+isolation); settings-card rendered tests; no webhook URL ever in a response or the
+repo (grep + test); simulation logs instead of posting. **Effort:** medium.
+**Cost:** $0 (Chat included in Workspace; webhooks unpriced).
+
+### GI-03 · Job-site map + navigation link on the project page (small, after WS-15; FloorOpsApp queue)
+**Why:** See the site (satellite view for driveway/staging assessment) on every
+project page, and one-tap navigation for crews.
+**Do:** Maps Embed API iframe (browser key from WS-15; free with unlimited usage) plus
+a plain Google Maps directions URL (no key). Renders when the project has a stored
+geocode or address; CSP `frame-src` allowance for the Google Maps embed origin;
+graceful no-address state. Simulation renders a placeholder map card.
+**Accept:** rendered tests for address/no-address/simulation states; CSP pinned; the
+navigation URL shape pinned; no server proxying of map tiles. **Effort:** small.
+**Cost:** $0 (Embed API free unlimited; URLs free).
+
+### GI-04 · Address validation + autocomplete at lead entry (medium, after WS-15; FloorOpsApp queue)
+**Why:** Typo-proof, USPS-standardized job-site addresses with lat/lng captured at
+lead creation — one prevented wrong-address truck roll pays for years of usage.
+**Do:** Server route calling Address Validation API (server key; `enableUspsCass`
+optional) on lead create/edit; store the standardized address + geocode + a validation
+verdict on the record (used later by GI-03). Front-end Places Autocomplete (New) with
+session tokens terminated by the validation call (that termination makes the
+autocomplete session free — pin the session-token flow in tests). Review-first: the
+user confirms the standardized suggestion; never silently overwrite what was typed.
+Bounded input; validation failures fall back to accepting the typed address with a
+flag. Simulation returns fixture validations.
+**Accept:** route tests (verdict branches, fallback, bounded input, no key in
+responses); session-token flow pinned; the confirm-don't-overwrite behavior asserted;
+simulation e2e on the lead form. **Effort:** medium. **Cost:** ~$0 at current volume
+(5,000 free validations/month; WS-15 budget alert enforces the ceiling).
+
+### GI-05 · Per-project Drive activity feed (medium, after SET-15)
+**Why:** Crew photo/measurement drops into project folders become visible in the app
+without folder re-listing — "what changed on this project" at a glance.
+**Do:** Serialized `changes.getStartPageToken`/`changes.list` cursor polling per
+Shared Drive (existing `auth/drive` scope; the page token never expires, so scheduled
+polling works with zero standing infrastructure — the same serialized pattern as the
+repo's chosen Gmail history polling; explicitly no `changes.watch`, no Pub/Sub).
+Changes are attributed to projects via the provisioned folder mappings and stored as
+bounded recent-activity rows; an activity panel on the project page renders them.
+Cursor state persisted alongside the existing sync-state pattern.
+**Accept:** polling unit tests (cursor advance, attribution via folder mapping,
+bounded retention, unrelated-file filtering); no watch/Pub/Sub calls (grep + the
+never-delete-style call-recording suite extended to assert no watch subscriptions);
+simulation fixtures drive the panel e2e. **Effort:** medium. **Cost:** $0.
+
+### GI-06 · Drive Labels status taxonomy (medium, after WS-16 edition confirmation + SET-15)
+**Why:** Draft/sent/approved/closed status and project/client tags on every file the
+app touches — one Drive query answers "all unsigned proposals," and status is visible
+in Drive's own UI too.
+**Do:** Owner creates the small label taxonomy once in the Admin console Label Manager
+(no API; guided by a checklist-11 row). The app applies labels via
+`files.modifyLabels` (verified to work under the existing full `drive` scope) at the
+natural moments: filing an email, creating a document from a template, proposal
+send/closeout transitions. A label-driven filter on the project files panel uses
+label-scoped `files.list` queries. Label field IDs are configuration (blueprint-style
+registry rows), not hardcoded. Requires Workspace Business Standard+ — hard-gate on
+the WS-16 edition confirmation and render an honest unavailable state otherwise.
+**Accept:** label-apply request shapes pinned; edition gate asserted (unavailable
+state when unconfirmed); filter queries scoped; simulation parity.
+**Effort:** medium. **Cost:** $0 (no API charge; edition already licensed).
+
+### GI-07 · FCI Workspace Add-on: Gmail context panel + smart chips (large, after live employee login; owner-gated consent + private Marketplace)
+**Why:** The marquee "meet them inside Google" integration: opening a client email in
+Gmail shows FCI context (client, project stage, install dates, folder link) with
+one-click file-to-project — including employees' own mailboxes the connector cannot
+see — and FCI links pasted in Docs/Sheets unfurl as live smart chips.
+**Do:** One Workspace Add-on with HTTP-endpoint (alternate-runtime) card endpoints on
+the existing Cloud Run service: Gmail contextual trigger using the deliberately narrow
+per-open-message scopes (`gmail.addons.execute`,
+`gmail.addons.current.message.readonly`, `userinfo.email`) mapped to the existing OIDC
+employee identity; file-to-project posts the message ID to the backend which runs the
+EXISTING review-first filing pipeline via the connector; `linkPreviewTriggers` for
+Docs/Sheets smart chips (`workspace.linkpreview` scope) rendering a live project card.
+Verify Google-signed ID tokens on every call. Published PRIVATE to the org via the
+Marketplace SDK (unreviewed, internal, free) — listing creation is an owner step.
+Blocked on: live employee login (identity mapping) and owner approval of the add-on
+consent surface (a third OAuth client class; never merged with the connector or login
+clients).
+**Accept:** card-endpoint tests with signed-token verification (reject unsigned/wrong
+audience); the filing path proven to reuse the existing review-first pipeline (no new
+Gmail write scopes — grep); smart-chip card contract tests; a documented owner
+publishing runbook; simulation/dev harness for card rendering. **Effort:** large.
+**Cost:** $0 (unpriced add-on runtime on existing infrastructure).
+
+---
+
 # Task tracking and doc reconciliation (the no-confusion rule)
 
 **GitHub baseline:** source is reconciled against `main` at `599e39f` after PR #57
@@ -1309,7 +1555,9 @@ BE-12 is complete in source in PR #53 and remains undeployed.
 KPI-02 is complete in source in PR #52 and remains undeployed. SET-10 is complete in
 source in PR #56 and remains undeployed. The application-logo refresh is complete in
 merged source in PR #57 and remains undeployed; the reviewed PR #51–#57 merge train is
-complete. KPI-03 and SET-13 are now assignable. The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
+complete. KPI-03 and SET-13 are now assignable, and the Workstream E starters GI-01,
+GI-02, and GI-05 are assignable in parallel with the SET track once their listed
+dependencies are met (GI-02 immediately). The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
 SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
 apply, deployment, live login, another user, or real data.
 
@@ -1353,6 +1601,13 @@ Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
 OIDC-02/OIDC-03, and application-logo refresh completions are recorded. The reviewed
 merge train and its post-merge tracking flips are complete; the shared-UI browser reruns
 are green.
+The dashboard-setup track starts now: SET-13 → SET-14 (SET-19 parallel), then
+SET-15 → {SET-16, SET-17, SET-05} → SET-18 → SET-21, with SET-23…SET-26 following
+their listed dependencies. Workstream E runs in parallel where dependencies allow:
+GI-02 immediately; GI-01/GI-05 after their SET dependencies; GI-03/GI-04 after the
+WS-15 owner step; GI-06 after WS-16's edition confirmation; GI-07 after live employee
+login. The `FloorOpsApp.tsx` single-file queue order is KPI-03 → SET-22 UI → GI-03 →
+GI-04 → SET-26 UI.
 BE-10/BE-14 are assignable because PR #51 merged, and KPI-03 is assignable because PR #52
 merged. SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. The
 unclaimed parallel-safe tracks are

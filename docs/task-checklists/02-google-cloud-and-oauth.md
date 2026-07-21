@@ -77,6 +77,14 @@ Do not reuse the broad data-connector client for employee sign-in.
 - [ ] Limit the setting to the organizational unit or group that needs it.
 - [ ] Do not configure domain-wide delegation for the development environment.
 
+## Maps Platform (WS-15 — gates GI-03/GI-04)
+
+- [ ] Owner decision: approve attaching a company-controlled Cloud Billing account to the verified development project for Maps Platform usage (integration budget ≤$50/month; expected actual ~$0–10/month inside free tiers).
+- [ ] Enable Maps Embed API, Address Validation API, and Places API (New); enable Routes API only when crew drive-time work is scheduled.
+- [ ] Create a browser API key restricted by HTTP referrer to the application hostname, and a server API key with IP/application restriction.
+- [ ] Set a Cloud Billing budget with alerts at $10 and $25.
+- [ ] Record the non-secret key names in the configuration inventory; never record key values.
+
 ## Completion result
 
 The development portion of this action is complete when the candidate is verified as the company development project; its parent, identifiers, company-controlled administration, billing state, and API inventory are recorded; the owner has approved the exact setup changes; the Internal development application and data-connector client exist; the exact development callback is accepted; API Controls trust is scoped; and the client secret is stored outside GitHub. Production remains incomplete until its separately approved project, hostname, client, callback, and secret storage exist.

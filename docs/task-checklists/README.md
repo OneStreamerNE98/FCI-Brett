@@ -76,6 +76,7 @@ This dated snapshot records review work only; it does not change any owner check
 9. [Operations, recovery, and security](08-operations-recovery-and-security.md)
 10. [Frontend and multi-user hardening](09-frontend-and-multi-user-hardening.md)
 11. [Complete product and integration architecture](10-complete-product-and-integration-architecture.md)
+12. [Google-native quick wins (no code)](11-google-quick-wins.md)
 12. [Codex-to-Codex coworker handoff](../codex-to-codex-handoff.md)
 
 Read the [20-user product and architecture review](../20-user-product-and-architecture-review.md) for the evidence, priority findings, corrected delivery order, and product ideas behind these task checklists.
