@@ -53,6 +53,17 @@ test("Workspace prerequisites use a semantic metadata-only table", async () => {
   assert.match(oauth, /envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS"/);
 });
 
+test("Workspace readiness surfaces only Google Chat missing-secret names without changing OAuth readiness", async () => {
+  const route = await read("app/api/v1/google-workspace/route.ts");
+
+  assert.match(route, /import \{ readGoogleChatPublicConfig \} from "\.\.\/\.\.\/\.\.\/lib\/google-chat-notifier-sites"/);
+  assert.match(route, /const \[connection, chatNotifications\] = await Promise\.all\(/);
+  assert.match(route, /\.\.\.chatNotifications\.missingDetails/);
+  assert.match(route, /const credentialsPresent = google\.oauthReady && Boolean\(/);
+  assert.doesNotMatch(route, /credentialsPresent\s*=.*chatNotifications/);
+  assert.doesNotMatch(route, /chatNotifications\.(?:webhook|url|secretValue)/i);
+});
+
 test("administrator connection health maps the bounded payload without inventing provider health", async () => {
   const [panel, route, oauth] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),

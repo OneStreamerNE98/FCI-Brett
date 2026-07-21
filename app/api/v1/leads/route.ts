@@ -9,6 +9,7 @@ import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-aut
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { MAX_LEAD_BODY_BYTES } from "../../../domain/lead";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -54,5 +55,16 @@ export async function POST(request: NextRequest) {
     const status = result.kind === "forbidden" ? 403 : result.kind === "invalid" ? 400 : 409;
     return NextResponse.json({ error: result.message }, { status });
   }
+  queueGoogleChatNotification(
+    {
+      eventType: "lead.created",
+      entityId: result.value.id,
+      leadNumber: result.value.leadNumber,
+      company: result.value.company,
+      projectName: result.value.projectName,
+    },
+    auth.user.email,
+    request.nextUrl.origin,
+  );
   return NextResponse.json({ lead: result.value }, { status: 201 });
 }

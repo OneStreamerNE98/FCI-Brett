@@ -7,6 +7,7 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 const appSurfacePaths = [
   "app/FloorOpsApp.tsx",
+  "app/settings/components/ChatNotificationSettingsCard.tsx",
   "app/settings/components/DataSecurityPanel.tsx",
   "app/settings/components/DirectorySyncPanel.tsx",
   "app/settings/components/GoogleWorkspacePanel.tsx",
@@ -17,6 +18,27 @@ const appSurfacePaths = [
   "app/settings/components/WorkspaceDefaultsPanel.tsx",
 ];
 const readAppSurface = async () => (await Promise.all(appSurfacePaths.map(read))).join("\n");
+
+test("renders feature-gated Google Chat routing without a webhook-value field", async () => {
+  const [card, defaults, css] = await Promise.all([
+    read("app/settings/components/ChatNotificationSettingsCard.tsx"),
+    read("app/settings/components/WorkspaceDefaultsPanel.tsx"),
+    read("app/globals.css"),
+  ]);
+
+  assert.match(card, /const CHAT_CONFIG_URL = "\/api\/v1\/integrations\/google\/chat\/config"/);
+  assert.match(card, /"lead\.created"[\s\S]+"gmail\.filing_review_needed"[\s\S]+"calendar\.schedule_changed"[\s\S]+"project\.warranty_follow_up_due"/);
+  assert.match(card, /Simulation log only/);
+  assert.match(card, /Read-only notification routing/);
+  assert.match(card, /config\.missingDetails\.map/);
+  assert.match(card, /space\.secretEnvVar/);
+  assert.match(card, /body: JSON\.stringify\(\{ events: events\.map\(\(\{ type, enabled, spaceKey \}\)/);
+  assert.doesNotMatch(card, /<input[^>]+type="url"|<textarea[^>]+(?:webhook|secret|token)/i);
+  assert.match(defaults, /<div className="settings-panel-stack">[\s\S]+<ChatNotificationSettingsCard notify=\{notify\} isAdmin=\{isAdmin\}/);
+  assert.match(defaults, /loadState !== "ready"[\s\S]+mode === "workflow" \? <WorkflowSettingsStack/);
+  assert.match(css, /\.settings-panel-stack\{display:grid;min-width:0;gap:15px\}/);
+  assert.match(css, /@media \(max-width:700px\)[\s\S]+\.chat-routing-list>li\{grid-template-columns:1fr\}/);
+});
 
 function containingSelector(css, declarationIndex) {
   const ruleStart = css.lastIndexOf("{", declarationIndex);

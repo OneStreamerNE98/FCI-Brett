@@ -7,6 +7,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 const settingsMutationRoutes = [
   "app/api/v1/settings/workspace/route.ts",
+  "app/api/v1/integrations/google/chat/config/route.ts",
   "app/api/v1/integrations/google/simulation/reset/route.ts",
   "app/api/v1/integrations/google/authorize/route.ts",
   "app/api/v1/integrations/google/drive/verify/route.ts",

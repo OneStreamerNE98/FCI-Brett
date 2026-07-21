@@ -1,9 +1,10 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Building2, CalendarDays, Check, Mail, ShieldCheck } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
+import { ChatNotificationSettingsCard } from "./ChatNotificationSettingsCard";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
@@ -36,6 +37,13 @@ const defaultWorkspacePreferences: WorkspacePreferenceValues = {
   inboxReviewMode: "review-first",
   officeNotificationEmail: "",
 };
+
+function WorkflowSettingsStack({ children, notify, isAdmin }: { children: ReactNode; notify: Notify; isAdmin: boolean }) {
+  return <div className="settings-panel-stack">
+    {children}
+    <ChatNotificationSettingsCard notify={notify} isAdmin={isAdmin} />
+  </div>;
+}
 
 export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }: { mode: "calendar" | "workflow"; notify: Notify; onGoogleSetup: () => void; isAdmin: boolean }) {
   const [settings, setSettings] = useState<WorkspacePreferenceValues>(defaultWorkspacePreferences);
@@ -91,13 +99,14 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
     }
   }
   if (loadState !== "ready") {
-    return <section className="panel settings-form-panel">
+    const panel = <section className="panel settings-form-panel">
       <div className="settings-heading">
         <div><p className="eyebrow">{mode === "calendar" ? "Organization calendar plan" : "Operating defaults"}</p><h2>{mode === "calendar" ? "Calendar & appointments" : "Workflow & notifications"}</h2><p>{mode === "calendar" ? "Keep company work in two shared FCI Workspace calendars: one for client appointments and one for field scheduling." : "Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled."}</p></div>
         <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
       </div>
       <SettingsDataNotice state={loadState} error={loadError} onRetry={() => void loadWorkspaceSettings(true)} />
     </section>;
+    return mode === "workflow" ? <WorkflowSettingsStack notify={notify} isAdmin={isAdmin}>{panel}</WorkflowSettingsStack> : panel;
   }
   if (mode === "calendar") {
     return <section className="panel settings-form-panel">
@@ -150,20 +159,22 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
       </form>
     </section>;
   }
-  return <section className="panel settings-form-panel">
-    <div className="settings-heading">
-      <div><p className="eyebrow">Operating defaults</p><h2>Workflow & notifications</h2><p>Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled.</p></div>
-      <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
-    </div>
-    <form onSubmit={save}>
-      <div className="form-row">
-        <label>Client reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label>
-        <label>Crew reminder hours<input type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} /></label>
+  return <WorkflowSettingsStack notify={notify} isAdmin={isAdmin}>
+    <section className="panel settings-form-panel">
+      <div className="settings-heading">
+        <div><p className="eyebrow">Operating defaults</p><h2>Workflow & notifications</h2><p>Set simple defaults for the office. These are saved now and will be used by appointment and field-message automation as it is enabled.</p></div>
+        <button className="soft-button" type="button" onClick={onGoogleSetup}><Building2 size={15} /> Google connection</button>
       </div>
-      <label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label>
-      <div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div>
-      <footer><AdministratorActionButton type="submit" className="primary-button" isAdmin={isAdmin} disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</AdministratorActionButton></footer>
-    </form>
-  </section>;
+      <form onSubmit={save}>
+        <div className="form-row">
+          <label>Client reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label>
+          <label>Crew reminder hours<input type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} /></label>
+        </div>
+        <label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label>
+        <div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div>
+        <footer><AdministratorActionButton type="submit" className="primary-button" isAdmin={isAdmin} disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</AdministratorActionButton></footer>
+      </form>
+    </section>
+  </WorkflowSettingsStack>;
 }
 

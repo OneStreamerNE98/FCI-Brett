@@ -35,6 +35,7 @@ For local testing only, set `FCI_LOCAL_DEV_USER_EMAIL` in `.env.local` to your o
 - Email and file-filing rule configuration under Settings
 - One protected company Google Workspace OAuth connection for Drive, Gmail, Calendar, and Sheets
 - Local Workspace simulation with sample mail, calendar events, folders, drafts, and Sheet sync state
+- Source-only, default-off [Google Chat notifications](docs/google-chat-notifications.md) with typed one-way cards, secret-name-only routing, and simulation audit logging; no webhook is configured and no live message is sent
 - Google Drive / Shared Drive and Google Sheet organizational blueprint
 - On-demand Gmail review suggestions, Calendar test controls, client/project activity, and an in-development AI assistant; a durable Gmail queue/watch processor and project scheduling remain planned
 - Durable project meeting notes with Otter links, summaries, decisions, action items, transcript excerpts, and assistant evidence
