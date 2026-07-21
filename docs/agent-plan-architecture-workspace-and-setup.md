@@ -894,7 +894,7 @@ values; migration guard updated; simulation e2e reset round-trip. All existing
 (storage port later).
 
 ### SET-14 · Workspace blueprint: model, seed, persistence, structured editor (large, after SET-13)
-**Status:** In review — draft PR #81, July 21, 2026. Source-only and undeployed;
+**Status:** Complete — PR #81, July 21, 2026. Source-only and undeployed;
 migration 0015 has not been applied to Sites.
 
 **Why:** Owner requirement: the folder tree, spreadsheets, templates, and setup

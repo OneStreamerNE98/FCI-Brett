@@ -14,6 +14,7 @@ import {
   workspaceCopyHelperState,
   workspaceDomainChecklistStatusClass,
   workspaceDomainChecklistSummary,
+  workspaceSharedDriveRestrictionStatus,
   type WorkspaceChecklistLoadState,
   type WorkspaceChecklistMissingDetail,
   type WorkspaceChecklistResourceSource,
@@ -40,6 +41,7 @@ export type WorkspaceDomainChecklistCardProps = {
   connectionState: WorkspaceChecklistLoadState;
   connectionStatus: string | null;
   requiresReauthorization: boolean;
+  sharedDriveDomainUsersOnly: boolean | null;
   notify: Notify;
 };
 
@@ -87,7 +89,9 @@ const DOMAIN_CHECKLIST_ITEMS: readonly {
   {
     key: "secrets",
     title: "Hosted secrets",
-    instruction: "Store the OAuth client secret and token-encryption key only in this Site's runtime settings marked as secrets.",
+    instruction: "Open this Site's settings and store the OAuth client secret and token-encryption key only in runtime settings marked as secrets.",
+    href: "https://chatgpt.com/sites",
+    linkLabel: "Open Sites",
   },
   {
     key: "groups",
@@ -114,6 +118,7 @@ export function WorkspaceDomainChecklistCard({
   connectionState,
   connectionStatus,
   requiresReauthorization,
+  sharedDriveDomainUsersOnly,
   notify,
 }: WorkspaceDomainChecklistCardProps) {
   const [collapsed, setCollapsed] = useState(false);
@@ -137,6 +142,9 @@ export function WorkspaceDomainChecklistCard({
   const displayedMissingDetails = visibleWorkspacePrerequisites(missingDetails, resources);
   const dotenvTemplate = missingWorkspaceDotenvTemplate(missingDetails, resources, simulation);
   const copyState = workspaceCopyHelperState(readinessState, resourcesState, resourcesAvailable);
+  const sharedDriveRestrictionStatus = workspaceSharedDriveRestrictionStatus(
+    resourcesState === "ready" && resourcesAvailable ? sharedDriveDomainUsersOnly : null,
+  );
 
   async function copySetupHelper(value: string, label: string) {
     try {
@@ -155,7 +163,7 @@ export function WorkspaceDomainChecklistCard({
         {isAdmin && connected && <button className={`soft-button ${styles.toggle}`} type="button" aria-expanded={expanded} aria-controls="workspace-domain-checklist-content" onClick={() => setCollapsed((current) => !current)}>{expanded ? "Collapse" : "Expand"}<ChevronDown size={14} aria-hidden="true" /></button>}
       </div>
     </header>
-    <p>Use these source-only checks for manual Google Admin, Cloud Console, and hosting work. Confirm the correct company tenant and development project before making changes.</p>
+    <p>Use this guide for the Google Admin, Cloud Console, and hosting steps that remain manual. Confirm the correct company tenant and development project before making changes.</p>
     {expanded && <div id="workspace-domain-checklist-content">
       {!isAdmin && <p className="workspace-admin-readonly"><ShieldCheck size={15} /><span>An Administrator completes tenant setup. This Office view is informational and makes no administrator setup request.</span></p>}
       <ol className={styles.list}>
@@ -193,7 +201,8 @@ export function WorkspaceDomainChecklistCard({
           <div className="workspace-copy-value"><code>{WORKSPACE_TOKEN_KEY_COMMAND}</code><button className="soft-button" type="button" onClick={() => void copySetupHelper(WORKSPACE_TOKEN_KEY_COMMAND, "Encryption-key command")}><Copy size={14} /> Copy command</button></div>
         </article>
       </div>}
-      <p className={styles.safeguards}><ShieldCheck size={15} /><span>{simulation ? "Use only seeded sample data; no OAuth account or Google token is connected." : "Keep Gmail filing review-first and project-specific; before staff launch, verify the company-owned Shared Drive and sender mailbox, both shared calendars, and the Sheets mirror."}</span></p>
+      {isAdmin && <p className={styles.restrictions}><strong>Shared Drive external sharing</strong><span className={`${styles.status} ${styles[workspaceDomainChecklistStatusClass(sharedDriveRestrictionStatus)]}`}>{sharedDriveRestrictionStatus}</span></p>}
+      <p className={styles.safeguards}><ShieldCheck size={15} aria-hidden="true" /><span>{simulation ? "Use only seeded sample data; no OAuth account or Google token is connected. Keep Gmail filing review-first and project-specific, and verify both shared calendars and the Sheets mirror before staff launch." : "Keep authorization restricted to the approved Workspace domain. Keep Gmail filing review-first and project-specific; before staff launch, verify the company-owned Shared Drive and sender mailbox, both shared calendars, and the Sheets mirror."}</span></p>
     </div>}
   </section>;
 }

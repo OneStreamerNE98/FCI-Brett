@@ -36,16 +36,19 @@ test("Workspace setup is a five-step endpoint-driven flow with callback refresh"
 });
 
 test("Workspace prerequisites use a semantic metadata-only table", async () => {
-  const [panel, readinessRoute, oauth] = await Promise.all([
+  const [panel, checklist, readinessRoute, oauth] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx"),
     read("app/api/v1/google-workspace/route.ts"),
     read("app/lib/google-oauth.ts"),
   ]);
 
-  assert.match(panel, /OperationsDataTable[\s\S]+WORKSPACE_PREREQUISITE_COLUMNS/);
-  assert.match(panel, /Configured in the hosting environment, not this app/);
-  assert.match(panel, /Hosted environment value/);
-  assert.match(panel, /Hosted secret — never in the app or Git/);
+  assert.match(checklist, /OperationsDataTable[\s\S]+WORKSPACE_PREREQUISITE_COLUMNS/);
+  assert.match(checklist, /Configured in the hosting environment, not this app/);
+  assert.match(checklist, /Hosted environment value/);
+  assert.match(checklist, /Hosted secret — never in the app or Git/);
+  assert.match(panel, /<WorkspaceDomainChecklistCard/);
+  assert.doesNotMatch(panel, /WORKSPACE_PREREQUISITE_COLUMNS|workspace-prerequisite-table/);
   assert.match(readinessRoute, /missingDetails/);
   assert.match(readinessRoute, /FCI_ADMIN_EMAILS/);
   assert.match(oauth, /export type GoogleMissingConfiguration/);
@@ -131,7 +134,11 @@ test("Workspace resources are an admin-only sibling card with endpoint-owned sta
 });
 
 test("Workspace setup masks accounts and exposes copy-exact safe helpers", async () => {
-  const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
+  const [panel, checklist, helper] = await Promise.all([
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx"),
+    read("app/settings/components/workspace-domain-checklist/workspace-domain-checklist.ts"),
+  ]);
 
   assert.match(panel, /function maskWorkspaceAccountForDisplay/);
   assert.match(panel, /connected \? `\$\{maskedWorkspaceAccount\} is connected with \$\{selectedServices\}\.`/);
@@ -143,32 +150,37 @@ test("Workspace setup masks accounts and exposes copy-exact safe helpers", async
   assert.match(panel, /Connected account ↔ intake mailbox/);
   assert.match(panel, /workspaceResources\.identity\.allowedDomains/);
   assert.match(panel, /workspaceResources\.identity\.mode/);
-  assert.match(panel, /https:\/\/groundwork-flooring-ops\.jaggerisagoodboy\.chatgpt\.site\/api\/v1\/integrations\/google\/callback/);
-  assert.match(panel, /openssl rand -base64 32/);
-  assert.match(panel, /Missing hosted keys/);
-  assert.match(panel, /navigator\.clipboard\.writeText\(value\)/);
-  assert.match(panel, /GOOGLE_WORKSPACE_CLIENT_SECRET: "<secret>"/);
-  assert.match(panel, /GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY: "<secret 32-byte base64 value>"/);
-  assert.match(panel, /GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI: "<OAuth redirect URI shown above>"/);
-  assert.match(panel, /GOOGLE_INTEGRATION_MODE: "<workspace or simulation>"/);
-  assert.match(panel, /detail\.envVar\.match\(\/\[A-Z\]\[A-Z0-9_\]\+\/g\)/);
-  assert.match(panel, /function workspaceResourceEnvironmentKey\(resource: WorkspaceSetupResource\)/);
-  assert.match(panel, /resource\.source === "none"[\s\S]+workspaceResourceEnvironmentKey\(resource\)/);
-  assert.match(panel, /primary: "drive\.shared-drive"[\s\S]+resource\.resourceType !== expectedType/);
-  assert.match(panel, /"client-directory": "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID"/);
-  assert.match(panel, /if \(!simulation\) \{[\s\S]+resource\.source === "none"/);
-  assert.match(panel, /const copyHelperStateReady = workspaceReadinessState === "ready" && workspaceResourcesState === "ready" && workspaceResources !== null/);
-  assert.match(panel, /copyHelperStateReady && missingDotenvTemplate/);
-  assert.match(panel, /copyHelperStateUnavailable[\s\S]+Missing-key status is unavailable/);
-  assert.doesNotMatch(panel, /detail\.(value|secretValue|configuredValue)/);
+  assert.match(helper, /https:\/\/groundwork-flooring-ops\.jaggerisagoodboy\.chatgpt\.site\/api\/v1\/integrations\/google\/callback/);
+  assert.match(helper, /openssl rand -base64 32/);
+  assert.match(checklist, /Missing hosted keys/);
+  assert.match(checklist, /navigator\.clipboard\.writeText\(value\)/);
+  assert.match(helper, /GOOGLE_WORKSPACE_CLIENT_SECRET: "<secret>"/);
+  assert.match(helper, /GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY: "<secret 32-byte base64 value>"/);
+  assert.match(helper, /GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI: "<OAuth redirect URI shown above>"/);
+  assert.match(helper, /GOOGLE_INTEGRATION_MODE: "<workspace or simulation>"/);
+  assert.match(helper, /detail\.envVar\.match\(ENVIRONMENT_KEY_PATTERN\)/);
+  assert.match(helper, /function workspaceResourceEnvironmentKey\(resource: WorkspaceChecklistResourceSource\)/);
+  assert.match(helper, /primary: "drive\.shared-drive"[\s\S]+resource\.resourceType && resource\.resourceType !== expectedType/);
+  assert.match(helper, /resource\.source === "none"[\s\S]+workspaceResourceEnvironmentKey\(resource\)/);
+  assert.match(helper, /"client-directory": "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID"/);
+  assert.match(helper, /if \(!simulation\) \{[\s\S]+resource\.source === "none"/);
+  assert.match(checklist, /workspaceCopyHelperState\(readinessState, resourcesState, resourcesAvailable\)/);
+  assert.match(checklist, /copyState === "ready" && dotenvTemplate/);
+  assert.match(checklist, /copyState === "unavailable"[\s\S]+Missing-key status is unavailable/);
+  assert.doesNotMatch(`${panel}\n${checklist}\n${helper}`, /detail\.(value|secretValue|configuredValue)/);
+  assert.equal((`${panel}\n${checklist}`.match(/Copy-exact setup helpers/g) ?? []).length, 1);
+  assert.doesNotMatch(panel, /workspace-copy-helpers|copySetupHelper|missingWorkspaceDotenvTemplate/);
 
   const connectionActions = panel.indexOf('className="workspace-connection-card-actions"');
   const healthCard = panel.indexOf('{isAdmin && <section className="workspace-connection-health"');
-  const safeguards = panel.indexOf('<div className="workspace-checklist"');
   assert.ok(connectionActions >= 0 && healthCard > connectionActions);
   assert.match(panel.slice(connectionActions, healthCard), /Disconnect Workspace/);
-  assert.doesNotMatch(panel.slice(healthCard, safeguards), /Disconnect Workspace/);
+  assert.doesNotMatch(panel.slice(healthCard), /Disconnect Workspace/);
   assert.equal(panel.match(/Disconnect Workspace/g)?.length, 1);
+  assert.doesNotMatch(panel, /workspace-checklist|type="checkbox"/);
+  assert.match(checklist, /Keep authorization restricted to the approved Workspace domain/);
+  assert.match(checklist, /Keep Gmail filing review-first and project-specific/);
+  assert.match(checklist, /verify the company-owned Shared Drive and sender mailbox, both shared calendars, and the Sheets mirror/);
 });
 
 test("Workspace blueprint is a structured admin editor and the legacy static card is removed", async () => {

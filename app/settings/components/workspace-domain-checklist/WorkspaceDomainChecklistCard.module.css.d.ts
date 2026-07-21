@@ -13,6 +13,8 @@ declare const styles: Readonly<{
   connected: string;
   "account-matched": string;
   "secrets-present": string;
+  restricted: string;
+  "not-verified": string;
   "setup-required": string;
   "partially-configured": string;
   "needs-review": string;
@@ -22,6 +24,7 @@ declare const styles: Readonly<{
   link: string;
   hostedPrerequisites: string;
   hostedPrerequisitesHeading: string;
+  restrictions: string;
   safeguards: string;
 }>;
 

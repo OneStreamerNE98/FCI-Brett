@@ -9,6 +9,7 @@ import {
   WORKSPACE_TOKEN_KEY_COMMAND,
   workspaceCopyHelperState,
   workspaceDomainChecklistSummary,
+  workspaceSharedDriveRestrictionStatus,
 } from "../app/settings/components/workspace-domain-checklist/workspace-domain-checklist.ts";
 
 const detail = (envVar, secret = false) => ({ label: `Missing ${envVar}`, envVar, secret });
@@ -121,6 +122,27 @@ test("connected evidence claims only the saved connection and exact account matc
   assert.equal(workspaceDomainChecklistSummary(result), "Connected");
 });
 
+test("current OAuth configuration gaps override a previously connected record", () => {
+  const connected = {
+    connectReady: true,
+    intakeMailboxMatches: true,
+    hasConnectionAccount: true,
+    connectionStatus: "connected",
+  };
+
+  assert.equal(statuses(evidence({
+    ...connected,
+    missingDetails: [detail("GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI")],
+  })).oauth, "Partially configured");
+  assert.equal(statuses(evidence({
+    ...connected,
+    missingDetails: [
+      detail("GOOGLE_WORKSPACE_CLIENT_ID"),
+      detail("GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI"),
+    ],
+  })).oauth, "Setup required");
+});
+
 test("compound account mismatch and reauthorization evidence fail closed", () => {
   const mismatch = statuses(evidence({
     connectReady: true,
@@ -187,10 +209,13 @@ test("SET-13 copy-exact helpers retain safe placeholders and filter app-managed 
     detail("GOOGLE_WORKSPACE_CLIENT_SECRET", true),
     detail("GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS"),
     detail("GOOGLE_WORKSPACE_SHARED_DRIVE_ID"),
+    detail("GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID"),
   ];
   const resources = [
-    { key: "primary", source: "app" },
-    { key: "client-directory", source: "none" },
+    { key: "primary", resourceType: "drive.shared-drive", source: "app" },
+    { key: "client-directory", resourceType: "drive.folder", source: "none" },
+    { key: "client-appointments", resourceType: "drive.folder", source: "app" },
+    { key: "field-schedule", resourceType: "calendar.calendar", source: "none" },
   ];
 
   assert.equal(WORKSPACE_OAUTH_REDIRECT_URI, "https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback");
@@ -199,9 +224,10 @@ test("SET-13 copy-exact helpers retain safe placeholders and filter app-managed 
     "GOOGLE_WORKSPACE_CLIENT_SECRET=<secret>",
     "GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations-account@company.example>",
     "GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations-account@company.example>",
-    "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<spreadsheet ID>",
+    "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<client-appointments-calendar ID>",
+    "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<field-schedule-calendar ID>",
   ].join("\n"));
-  assert.deepEqual(visibleWorkspacePrerequisites(details, resources), details.slice(0, 2));
+  assert.deepEqual(visibleWorkspacePrerequisites(details, resources), [details[0], details[1], details[3]]);
   assert.equal(missingWorkspaceDotenvTemplate([], resources, true), "");
 });
 
@@ -213,6 +239,12 @@ test("copy-helper availability requires both successful payloads", () => {
   assert.equal(workspaceCopyHelperState("ready", "error", true), "unavailable");
 });
 
+test("Shared Drive restrictions never overclaim an absent or permissive verification payload", () => {
+  assert.equal(workspaceSharedDriveRestrictionStatus(true), "Restricted");
+  assert.equal(workspaceSharedDriveRestrictionStatus(false), "Needs review");
+  assert.equal(workspaceSharedDriveRestrictionStatus(null), "Not verified");
+});
+
 test("the extracted card is route-free, admin-aware, and contains no decorative controls", async () => {
   const component = await readFile(new URL("../app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx", import.meta.url), "utf8");
   const helper = await readFile(new URL("../app/settings/components/workspace-domain-checklist/workspace-domain-checklist.ts", import.meta.url), "utf8");
@@ -222,12 +254,14 @@ test("the extracted card is route-free, admin-aware, and contains no decorative 
   assert.match(component, /!isAdmin && <p className="workspace-admin-readonly"/);
   assert.match(component, /isAdmin && item\.href/);
   assert.match(component, /isAdmin && <div className="workspace-copy-helpers"/);
+  assert.match(component, /Shared Drive external sharing/);
+  assert.match(component, /sharedDriveDomainUsersOnly/);
   assert.doesNotMatch(component, /\bfetch\s*\(|cachedGetJson|process\.env|import\.meta\.env|<input\b|type="checkbox"/);
   assert.doesNotMatch(component, /\.md(?:["'#?])|repo-doc|secretValue|configuredValue|detail\.value|externalId/);
   assert.doesNotMatch(helper, /process\.env|import\.meta\.env|secretValue|configuredValue|detail\.value|externalId/);
 
   const hrefs = [...component.matchAll(/href: "([^"]+)"/g)].map((match) => new URL(match[1]));
-  assert.equal(hrefs.length, 5);
-  assert.ok(hrefs.every((url) => ["admin.google.com", "console.cloud.google.com"].includes(url.hostname)));
+  assert.equal(hrefs.length, 6);
+  assert.ok(hrefs.every((url) => ["admin.google.com", "console.cloud.google.com", "chatgpt.com"].includes(url.hostname)));
   assert.equal((component.match(/target="_blank" rel="noreferrer"/g) ?? []).length, 1, "one mapped anchor renders every approved external URL with safe attributes");
 });

@@ -93,6 +93,14 @@ test("Office identity sees every protected Settings action disabled and explaine
   await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
   await expect(page.locator(".workspace-connection-health")).toHaveCount(0);
   await expect(page.locator(".workspace-blueprint-card")).toHaveCount(0);
+  const tenantChecklist = page.locator(".workspace-prerequisites");
+  await expect(tenantChecklist.getByRole("heading", { level: 3, name: "Domain & tenant checklist", exact: true })).toBeVisible();
+  await expect(tenantChecklist.getByRole("listitem")).toHaveCount(6);
+  await expect(tenantChecklist.getByText("Administrator setup", { exact: true })).toHaveCount(6);
+  await expect(tenantChecklist.getByRole("link")).toHaveCount(0);
+  await expect(tenantChecklist.getByRole("heading", { level: 4, name: "Copy-exact setup helpers" })).toHaveCount(0);
+  await expect(tenantChecklist.getByRole("table", { name: "Hosted Workspace configuration" })).toHaveCount(0);
+  await expect(tenantChecklist.locator('input[type="checkbox"]')).toHaveCount(0);
   await page.getByRole("button", { name: "Check readiness" }).click();
   await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
   expect(connectionDetailGets).toBe(0);

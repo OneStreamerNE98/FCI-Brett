@@ -1,13 +1,12 @@
+import type { WorkspaceSetupResource } from "../WorkspaceDriveResourceActions";
+
 export type WorkspaceChecklistMissingDetail = {
   label: string;
   envVar: string;
   secret: boolean;
 };
 
-export type WorkspaceChecklistResourceSource = {
-  key: string;
-  source: "app" | "env" | "none";
-};
+export type WorkspaceChecklistResourceSource = Pick<WorkspaceSetupResource, "key" | "resourceType" | "source">;
 
 export type WorkspaceChecklistLoadState = "idle" | "loading" | "ready" | "error";
 
@@ -33,6 +32,8 @@ export type WorkspaceDomainChecklistStatus =
   | "Account matched"
   | "Account mismatch"
   | "Secrets present"
+  | "Restricted"
+  | "Not verified"
   | "Manual check";
 
 export type WorkspaceDomainChecklistStatusClassName =
@@ -49,6 +50,8 @@ export type WorkspaceDomainChecklistStatusClassName =
   | "account-matched"
   | "account-mismatch"
   | "secrets-present"
+  | "restricted"
+  | "not-verified"
   | "manual-check";
 
 export type WorkspaceDomainChecklistEvidence = {
@@ -149,10 +152,12 @@ function operationsAccountStatus(evidence: WorkspaceDomainChecklistEvidence, mis
 
 function oauthStatus(evidence: WorkspaceDomainChecklistEvidence, missing: ReadonlySet<string>): WorkspaceDomainChecklistStatus {
   if (evidence.connectionKnown && evidence.requiresReauthorization) return "Reconnect required";
+  if (evidence.readinessKnown) {
+    const pairStatus = statusForConfiguredPair(OAUTH_ENVS.filter((environmentKey) => missing.has(environmentKey)).length);
+    if (pairStatus) return pairStatus;
+  }
   if (evidence.connectionKnown && evidence.connectionStatus === "connected") return "Connected";
   if (!evidence.readinessKnown) return "Unavailable";
-  const pairStatus = statusForConfiguredPair(OAUTH_ENVS.filter((environmentKey) => missing.has(environmentKey)).length);
-  if (pairStatus) return pairStatus;
   if (!evidence.resourcesKnown) return "Unavailable";
   return evidence.connectReady ? "Ready to connect" : "Configuration present";
 }
@@ -210,11 +215,29 @@ export function workspaceDomainChecklistStatusClass(status: WorkspaceDomainCheck
   return status.toLowerCase().replaceAll(" ", "-") as WorkspaceDomainChecklistStatusClassName;
 }
 
+export function workspaceSharedDriveRestrictionStatus(domainUsersOnly: boolean | null) {
+  if (domainUsersOnly === true) return "Restricted" as const;
+  if (domainUsersOnly === false) return "Needs review" as const;
+  return "Not verified" as const;
+}
+
+function workspaceResourceEnvironmentKey(resource: WorkspaceChecklistResourceSource) {
+  const expectedTypeByKey: Partial<Record<string, WorkspaceSetupResource["resourceType"]>> = {
+    primary: "drive.shared-drive",
+    "client-directory": "sheets.spreadsheet",
+    "client-appointments": "calendar.calendar",
+    "field-schedule": "calendar.calendar",
+  };
+  const expectedType = expectedTypeByKey[resource.key];
+  if (!expectedType || (resource.resourceType && resource.resourceType !== expectedType)) return undefined;
+  return WORKSPACE_RESOURCE_ENV_BY_KEY[resource.key];
+}
+
 function getAppManagedEnvironmentKeys(resources: readonly WorkspaceChecklistResourceSource[]) {
   return new Set(
     resources
       .filter((resource) => resource.source === "app")
-      .map((resource) => WORKSPACE_RESOURCE_ENV_BY_KEY[resource.key])
+      .map(workspaceResourceEnvironmentKey)
       .filter((value): value is string => Boolean(value)),
   );
 }
@@ -249,7 +272,7 @@ export function missingWorkspaceDotenvTemplate(
   }
   if (!simulation) {
     for (const resource of resources) {
-      if (resource.source === "none") includeEnvironmentKey(WORKSPACE_RESOURCE_ENV_BY_KEY[resource.key] ?? "");
+      if (resource.source === "none") includeEnvironmentKey(workspaceResourceEnvironmentKey(resource) ?? "");
     }
   }
   return lines.join("\n");

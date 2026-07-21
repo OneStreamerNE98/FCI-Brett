@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, CalendarDays, CheckCircle2, CircleAlert, Copy, FileText, FolderOpen, Mail, ShieldCheck, X, Zap } from "lucide-react";
+import { Building2, CalendarDays, CheckCircle2, CircleAlert, FileText, FolderOpen, Mail, ShieldCheck, X, Zap } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { OperationsDataTable, OperationsDataTableCell } from "../../components/operations/OperationsDataTable";
@@ -13,6 +13,7 @@ import {
   type WorkspaceSetupResource,
   type WorkspaceSetupResourcesPayload,
 } from "./WorkspaceDriveResourceActions";
+import { WorkspaceDomainChecklistCard } from "./workspace-domain-checklist/WorkspaceDomainChecklistCard";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
@@ -78,12 +79,6 @@ type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 type WorkspaceReadinessState = "idle" | "loading" | "ready" | "error";
 type WorkspaceSetupResourcesState = "idle" | "loading" | "ready" | "error";
 
-const WORKSPACE_PREREQUISITE_COLUMNS = [
-  { key: "requirement", label: "Requirement" },
-  { key: "environment", label: "Environment key" },
-  { key: "origin", label: "Origin" },
-] as const;
-
 const CONNECTION_SERVICE_COLUMNS = [
   { key: "service", label: "Service" },
   { key: "enabled", label: "FCI configuration" },
@@ -103,33 +98,6 @@ const CONNECTION_SERVICES: readonly { key: GoogleServiceKey; label: string }[] =
   { key: "calendar", label: "Calendar" },
   { key: "sheets", label: "Sheets" },
 ];
-
-const WORKSPACE_OAUTH_REDIRECT_URI = "https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback";
-const WORKSPACE_TOKEN_KEY_COMMAND = "openssl rand -base64 32";
-const WORKSPACE_RESOURCE_ENV_BY_KEY: Readonly<Record<string, string>> = {
-  primary: "GOOGLE_WORKSPACE_SHARED_DRIVE_ID",
-  "client-directory": "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID",
-  "client-appointments": "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID",
-  "field-schedule": "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID",
-};
-const WORKSPACE_DOTENV_PLACEHOLDERS: Readonly<Record<string, string>> = {
-  FCI_ADMIN_EMAILS: "<authorized-chatgpt-sign-in-email>",
-  GOOGLE_INTEGRATION_MODE: "<workspace or simulation>",
-  GOOGLE_WORKSPACE_ENABLED_SERVICES: "<comma-separated approved services>",
-  GOOGLE_WORKSPACE_CLIENT_ID: "<OAuth web client ID>",
-  GOOGLE_WORKSPACE_CLIENT_SECRET: "<secret>",
-  GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI: "<OAuth redirect URI shown above>",
-  GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY: "<secret 32-byte base64 value>",
-  GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION: "<key version>",
-  GOOGLE_WORKSPACE_ALLOWED_DOMAINS: "<company-workspace-domain>",
-  GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "<operations-account@company.example>",
-  GOOGLE_WORKSPACE_SHARED_DRIVE_ID: "<Shared Drive ID>",
-  GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED: "<true or false>",
-  GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID: "<spreadsheet ID>",
-  GOOGLE_WORKSPACE_INTAKE_MAILBOX: "<operations-account@company.example>",
-  GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID: "<client-appointments-calendar ID>",
-  GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID: "<field-schedule-calendar ID>",
-};
 
 function stepStatus({ simulation, previousComplete = true, prerequisitesReady, complete }: { simulation: boolean; previousComplete?: boolean; prerequisitesReady: boolean; complete: boolean }): SetupStepStatus {
   if (simulation) return "Simulated";
@@ -173,46 +141,6 @@ function workspaceResourceSourceLabel(source: WorkspaceSetupResource["source"]) 
 
 function workspaceResourceStateClass(state: WorkspaceSetupResource["state"]) {
   return state.toLowerCase().replaceAll(" ", "-");
-}
-
-function workspaceResourceEnvironmentKey(resource: WorkspaceSetupResource) {
-  const expectedTypeByKey: Partial<Record<string, WorkspaceSetupResource["resourceType"]>> = {
-    primary: "drive.shared-drive",
-    "client-directory": "sheets.spreadsheet",
-    "client-appointments": "calendar.calendar",
-    "field-schedule": "calendar.calendar",
-  };
-  const expectedType = expectedTypeByKey[resource.key];
-  if (!expectedType || (resource.resourceType && resource.resourceType !== expectedType)) return undefined;
-  return WORKSPACE_RESOURCE_ENV_BY_KEY[resource.key];
-}
-
-function missingWorkspaceDotenvTemplate(details: MissingDetail[], resources: WorkspaceSetupResource[], simulation: boolean) {
-  const appManagedEnvironmentKeys = new Set(
-    resources
-      .filter((resource) => resource.source === "app")
-      .map(workspaceResourceEnvironmentKey)
-      .filter((value): value is string => Boolean(value)),
-  );
-  const included = new Set<string>();
-  const lines: string[] = [];
-  const includeEnvironmentKey = (environmentKey: string) => {
-    const placeholder = WORKSPACE_DOTENV_PLACEHOLDERS[environmentKey];
-    if (!placeholder || included.has(environmentKey) || appManagedEnvironmentKeys.has(environmentKey)) return;
-    included.add(environmentKey);
-    lines.push(`${environmentKey}=${placeholder}`);
-  };
-  for (const detail of details) {
-    for (const environmentKey of detail.envVar.match(/[A-Z][A-Z0-9_]+/g) ?? []) {
-      includeEnvironmentKey(environmentKey);
-    }
-  }
-  if (!simulation) {
-    for (const resource of resources) {
-      if (resource.source === "none") includeEnvironmentKey(workspaceResourceEnvironmentKey(resource) ?? "");
-    }
-  }
-  return lines.join("\n");
 }
 
 export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: Notify; projects: Project[]; isAdmin: boolean }) {
@@ -591,15 +519,6 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
   }
 
-  async function copySetupHelper(value: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      notify(`${label} copied.`, "success");
-    } catch {
-      notify(`${label} could not be copied. Select the text and copy it manually.`, "error");
-    }
-  }
-
   const simulation = workspace?.simulation === true;
   const configured = simulation || workspaceResources?.connectReady === true;
   const connected = workspace?.connectionStatus === "connected";
@@ -625,9 +544,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const hasStoredConnection = !simulation && Boolean(workspace?.connectionStatus && workspace.connectionStatus !== "not-connected");
   const maskedWorkspaceAccount = maskWorkspaceAccountForDisplay(workspace?.connectionAccount);
   const resourceRows = workspaceResources?.resources ?? [];
-  const missingDotenvTemplate = missingWorkspaceDotenvTemplate(missingDetails, resourceRows, workspaceResources?.simulation === true);
-  const copyHelperStateReady = workspaceReadinessState === "ready" && workspaceResourcesState === "ready" && workspaceResources !== null;
-  const copyHelperStateUnavailable = workspaceReadinessState === "error" || workspaceResourcesState === "error";
+  const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
   const resourceIdentityMatch = workspaceResources?.identity.intakeMailboxMatches;
   const resourceIdentityMatchLabel = resourceIdentityMatch === true ? "Matches" : resourceIdentityMatch === false ? "Does not match" : "Not verified";
   const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
@@ -658,17 +575,25 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       <b>{simulation ? "LOCAL" : connected ? "CONNECTED" : "SETUP"}</b>
     </div>
     {!simulation && oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
-    {!simulation && <section className="workspace-prerequisites" aria-labelledby="workspace-prerequisites-heading">
-      <header><div><p className="eyebrow">Environment prerequisites</p><h3 id="workspace-prerequisites-heading">Hosted Workspace configuration</h3></div><Status text={missingDetails.length ? "Setup required" : "Complete"} /></header>
-      <p>Configured in the hosting environment, not this app. Only presence or absence is shown; configured values and secrets are never returned.</p>
-      {missingDetails.length > 0 ? <OperationsDataTable className="workspace-prerequisite-table" columns={WORKSPACE_PREREQUISITE_COLUMNS} labelledBy="workspace-prerequisites-heading">
-        {missingDetails.map((detail) => <tr key={`${detail.label}-${detail.envVar}`}>
-          <OperationsDataTableCell label="Requirement"><strong>{detail.label}</strong></OperationsDataTableCell>
-          <OperationsDataTableCell label="Environment key"><code>{detail.envVar}</code></OperationsDataTableCell>
-          <OperationsDataTableCell label="Origin"><span className={`workspace-origin-tag ${detail.secret ? "secret" : "value"}`}>{detail.secret ? "Hosted secret — never in the app or Git" : "Hosted environment value"}</span></OperationsDataTableCell>
-        </tr>)}
-      </OperationsDataTable> : <p className="workspace-prerequisites-ready"><CheckCircle2 size={15} /> All required hosted values are present.</p>}
-    </section>}
+    <WorkspaceDomainChecklistCard
+      isAdmin={isAdmin}
+      simulation={simulation}
+      connected={connected}
+      readinessState={workspaceReadinessState}
+      missingDetails={missingDetails}
+      resourcesState={workspaceResourcesState}
+      resourcesAvailable={workspaceResources !== null}
+      resources={resourceRows}
+      connectReady={workspaceResources?.connectReady === true}
+      allowedDomainCount={workspaceResources?.identity.allowedDomains.length ?? 0}
+      intakeMailboxMatches={workspaceResources?.identity.intakeMailboxMatches ?? null}
+      hasConnectionAccount={Boolean(workspaceResources?.identity.connectionAccount)}
+      connectionState={connectionHealthState}
+      connectionStatus={connectionHealth?.connection.status ?? null}
+      requiresReauthorization={connectionHealth?.connection.requiresReauthorization === true}
+      sharedDriveDomainUsersOnly={sharedDriveDomainUsersOnly}
+      notify={notify}
+    />
     <ol className="workspace-setup-steps" aria-label="Google Workspace setup steps">
       <li className={`workspace-setup-step ${stepStatusClass(connectStepStatus)}`}>
         <header><span className="workspace-step-number">1</span><div><h3>Connect Google Workspace</h3><p>Authorize the one approved company account, or reset the isolated local simulation.</p></div><span className="workspace-step-status">{connectStepStatus}</span></header>
@@ -729,21 +654,6 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
             </tr>)}
           </OperationsDataTable> : <p className="workspace-resources-message">No Workspace resource rows were returned.</p>}
         </>}
-        <div className="workspace-copy-helpers" aria-labelledby="workspace-copy-helpers-heading">
-          <div><h4 id="workspace-copy-helpers-heading">Copy-exact setup helpers</h4><p>These helpers contain names and safe placeholders only. They never copy a configured value, OAuth secret, encryption key, or token.</p></div>
-          <article>
-            <div><strong>OAuth redirect URI</strong><span>Paste this URI character-for-character into the development OAuth web client.</span></div>
-            <div className="workspace-copy-value"><code>{WORKSPACE_OAUTH_REDIRECT_URI}</code><button className="soft-button" type="button" onClick={() => void copySetupHelper(WORKSPACE_OAUTH_REDIRECT_URI, "OAuth redirect URI")}><Copy size={14} /> Copy URI</button></div>
-          </article>
-          <article>
-            <div><strong>Missing hosted keys</strong><span>Paste the template into hosted runtime settings, then replace every placeholder in approved secret storage.</span></div>
-            {copyHelperStateReady && missingDotenvTemplate ? <><pre><code>{missingDotenvTemplate}</code></pre><button className="soft-button" type="button" onClick={() => void copySetupHelper(missingDotenvTemplate, "Missing-key dotenv template")}><Copy size={14} /> Copy missing-key template</button></> : copyHelperStateReady ? <p className="workspace-copy-empty"><CheckCircle2 size={14} /> No hosted configuration keys are currently missing.</p> : <p className="workspace-resources-message" role="status">{copyHelperStateUnavailable ? "Missing-key status is unavailable. Retry the readiness and Resources checks before copying configuration." : "Loading missing-key status…"}</p>}
-          </article>
-          <article>
-            <div><strong>Generate the token-encryption key</strong><span>Run this command on a trusted computer; store its output only as a hosted secret.</span></div>
-            <div className="workspace-copy-value"><code>{WORKSPACE_TOKEN_KEY_COMMAND}</code><button className="soft-button" type="button" onClick={() => void copySetupHelper(WORKSPACE_TOKEN_KEY_COMMAND, "Encryption-key command")}><Copy size={14} /> Copy command</button></div>
-          </article>
-        </div>
       </>}
     </section>
     {isAdmin && <section className="workspace-connection-health" aria-labelledby="workspace-connection-health-heading">
@@ -772,7 +682,6 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         <p className="workspace-connection-health-note">Recorded permission reflects the saved Google consent only. It is not a live provider-health or freshness check.</p>
       </>}
     </section>}
-    <div className="workspace-checklist"><h3>{simulation ? "Simulation safeguards" : "Workspace launch safeguards"}</h3><label><input type="checkbox" /> {simulation ? "Use only seeded sample data" : "Use a company-owned Shared Drive and sender mailbox"}</label><label><input type="checkbox" /> {simulation ? "Confirm no OAuth account or Google token is connected" : "Restrict authorization to the approved Workspace domain"}</label><label><input type="checkbox" /> Keep Gmail filing review-first and project-specific</label><label><input type="checkbox" /> Verify the two shared calendars and Sheet mirror before staff launch</label></div>
     {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
   </section>;
 }

@@ -86,7 +86,8 @@
 .ready-to-connect,
 .connected,
 .account-matched,
-.secrets-present {
+.secrets-present,
+.restricted {
   background: #edf4ef;
   color: #35674d;
 }
@@ -103,6 +104,11 @@
 .simulated {
   background: #e9eef7;
   color: #405f8a;
+}
+
+.not-verified {
+  background: #f0eeeb;
+  color: #6c655f;
 }
 
 .link {
@@ -139,6 +145,19 @@
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.restrictions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 10px 11px;
+  border: 1px solid #e4ded7;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
 }
 
 .safeguards {
@@ -181,5 +200,10 @@
   .hostedPrerequisitesHeading {
     flex-direction: column;
     gap: 7px;
+  }
+
+  .restrictions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
