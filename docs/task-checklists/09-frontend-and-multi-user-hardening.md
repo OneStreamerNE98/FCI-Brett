@@ -4,7 +4,7 @@ Owner: Codex/developer, with workflow decisions from the business owner
 
 Status: In progress — later structural and multi-user work remains.
 PR #32 at `adc79b8` is deployed as private Sites development version 40, including PR #30's semantic Settings rules table at `aa8ed8f`; source-only PRs #33/#35/#37/#41/#44 are merged and undeployed.
-KPI-02/#52 is merged source-only and undeployed; SET-10/#56 and the logo refresh/#57 remain open and unmerged.
+KPI-02/#52 and SET-10/#56 are merged source-only and undeployed; the logo refresh/#57 remains open and unmerged.
 
 Depends on: Approved roles/capabilities and production API contracts
 
