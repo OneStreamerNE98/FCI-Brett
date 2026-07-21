@@ -1,0 +1,1 @@
+ALTER TABLE `user_preferences` ADD `notification_preferences_json` text DEFAULT '{"lead.created":false,"gmail.filing_review_needed":false,"calendar.schedule_changed":false,"project.warranty_follow_up_due":false}' NOT NULL;

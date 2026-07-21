@@ -36,7 +36,6 @@ import {
   PROJECT_STATUS_FILTERS,
   projectLifecycleFromSearch,
   projectStatusFromSearch,
-  SETTINGS_SECTIONS,
   settingsSectionFromSearch,
   type InboxBucket,
   type LeadStageFilter,
@@ -49,7 +48,8 @@ import { DataSecurityPanel } from "./settings/components/DataSecurityPanel";
 import { DirectorySyncPanel } from "./settings/components/DirectorySyncPanel";
 import { GmailFilingModal, GoogleWorkspacePanel, type GmailFilingPreview, type WorkspaceMessage } from "./settings/components/GoogleWorkspacePanel";
 import { InboxRulesPanel, RuleModal } from "./settings/components/InboxRulesPanel";
-import { MyAccountPanel } from "./settings/components/MyAccountPanel";
+import { MySettingsPanel } from "./settings/components/MySettingsPanel";
+import { SettingsAudienceNavigation } from "./settings/components/SettingsAudienceNavigation";
 import { TestingLaunchPanel } from "./settings/components/TestingLaunchPanel";
 import { WorkspaceDefaultsPanel } from "./settings/components/WorkspaceDefaultsPanel";
 import { FLOORING_CATEGORIES, type FlooringCategory } from "./domain/project-creation";
@@ -270,6 +270,11 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     const canonicalUrl = `${operationsPath(view)}${canonicalSearch ? `?${canonicalSearch}` : ""}`;
     router.replace(canonicalUrl, { scroll: false });
   }, [router, search, view]);
+
+  useEffect(() => {
+    if (view !== "Settings" || isAdmin || settingsArea === "My account") return;
+    router.replace(operationsHref("Settings", { settingsSection: "My account" }), { scroll: false });
+  }, [isAdmin, router, settingsArea, view]);
 
   const refreshDirectoryData = useCallback(() => {
     async function getJson(path: string) {
@@ -933,7 +938,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         </div>
         <div ref={profileMenuRef} className="sidebar-menu-wrap profile-menu-wrap">
           <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); setNotificationsOpen(false); }} aria-controls="account-actions-popover" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>{accessLabel}</span></div><MoreHorizontal size={18} /></button>
-          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button><button onClick={() => navigateToSettings("My account")}><Settings size={15} /> My account</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
+          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button>{accessLabel === "Admin" && <button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button>}<button onClick={() => navigateToSettings("My account")}><Settings size={15} /> My settings</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
         </div>
       </aside>
 
@@ -1485,16 +1490,17 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin }: { 
 }
 
 function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, isAdmin, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; isAdmin: boolean; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
-  return <><PageTitle eyebrow="Control center" title="Settings" text="Keep account preferences, one Google Workspace connection, inbox rules, calendar defaults, and safeguards in one simple place." state="In development" />
-    <div className="settings-layout"><aside className="settings-nav panel">{SETTINGS_SECTIONS.map((option) => <button className={section === option ? "active" : ""} aria-current={section === option ? "page" : undefined} key={option} onClick={() => onSection(option)}>{option}<ChevronRight size={15} /></button>)}</aside>
-      {section === "My account" && <MyAccountPanel notify={notify} userName={userName} userEmail={userEmail} onGoogleSetup={onGoogleSetup} onTimezoneChange={onTimezoneChange} />}
-      {section === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} isAdmin={isAdmin} />}
-      {section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
-      {section === "Inbox & file rules" && <InboxRulesPanel rules={rules} onAddRule={onAddRule} onUpdateRule={onUpdateRule} onDeleteRule={onDeleteRule} />}
-      {section === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets", "info"); }} isAdmin={isAdmin} />}
-      {section === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
-      {section === "Data & security" && <DataSecurityPanel />}
-      {section === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
+  const visibleSection: SettingsSection = isAdmin ? section : "My account";
+  return <><PageTitle eyebrow="Control center" title="Settings" text={isAdmin ? "Manage your own preferences separately from Workspace and company setup." : "Manage the preferences tied to your signed-in FCI account."} state="In development" />
+    <div className="settings-layout"><SettingsAudienceNavigation section={visibleSection} isAdmin={isAdmin} onSection={onSection} />
+      {visibleSection === "My account" && <MySettingsPanel notify={notify} userName={userName} userEmail={userEmail} onTimezoneChange={onTimezoneChange} />}
+      {isAdmin && visibleSection === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} isAdmin={isAdmin} />}
+      {isAdmin && visibleSection === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
+      {isAdmin && visibleSection === "Inbox & file rules" && <InboxRulesPanel rules={rules} onAddRule={onAddRule} onUpdateRule={onUpdateRule} onDeleteRule={onDeleteRule} />}
+      {isAdmin && visibleSection === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets", "info"); }} isAdmin={isAdmin} />}
+      {isAdmin && visibleSection === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
+      {isAdmin && visibleSection === "Data & security" && <DataSecurityPanel />}
+      {isAdmin && visibleSection === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
     </div></>;
 }
 

@@ -64,11 +64,11 @@ test("settings never expose editable defaults after a failed load and support re
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings · In development" }).click();
   const accountError = page.getByRole("alert").filter({ hasText: "Saved settings could not be loaded" });
   await expect(accountError).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save my preferences" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save my settings" })).toHaveCount(0);
 
   failAccountSettings = false;
   await accountError.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByRole("button", { name: "Save my preferences" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Save my settings" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Calendar & appointments" }).click();
   const workspaceError = page.getByRole("alert").filter({ hasText: "Saved settings could not be loaded" });

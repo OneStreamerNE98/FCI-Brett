@@ -12,7 +12,8 @@ const expectedComponents = new Map([
   ["DirectorySyncPanel.tsx", ["DirectorySyncPanel"]],
   ["GoogleWorkspacePanel.tsx", ["GoogleWorkspacePanel", "GmailFilingModal"]],
   ["InboxRulesPanel.tsx", ["InboxRulesPanel", "RuleModal"]],
-  ["MyAccountPanel.tsx", ["MyAccountPanel"]],
+  ["MySettingsPanel.tsx", ["MySettingsPanel"]],
+  ["SettingsAudienceNavigation.tsx", ["SettingsAudienceNavigation"]],
   ["SettingsDataNotice.tsx", ["SettingsDataNotice"]],
   ["TestingLaunchPanel.tsx", ["TestingLaunchPanel"]],
   ["WorkspaceDefaultsPanel.tsx", ["WorkspaceDefaultsPanel"]],
@@ -35,17 +36,18 @@ test("keeps the Settings component modules explicit and outside FloorOpsApp", as
   }
 });
 
-test("keeps SettingsView as an eight-section dispatcher without panel behavior", async () => {
+test("keeps SettingsView as an eight-section, two-audience dispatcher without panel behavior", async () => {
   const app = await read("app/FloorOpsApp.tsx");
+  const navigation = await read("app/settings/components/SettingsAudienceNavigation.tsx");
   const settingsView = app.slice(app.indexOf("function SettingsView"), app.indexOf("function GmailReplyModal"));
   assert.ok(settingsView.startsWith("function SettingsView"));
   assert.deepEqual(
-    [...settingsView.matchAll(/section === "([^"]+)"/g)].map((match) => match[1]),
+    [...settingsView.matchAll(/visibleSection === "([^"]+)"/g)].map((match) => match[1]),
     [...SETTINGS_SECTIONS],
   );
 
   const branches = [
-    ["My account", "MyAccountPanel"],
+    ["My account", "MySettingsPanel"],
     ["Google Workspace", "GoogleWorkspacePanel"],
     ["Calendar & appointments", "WorkspaceDefaultsPanel"],
     ["Inbox & file rules", "InboxRulesPanel"],
@@ -58,12 +60,20 @@ test("keeps SettingsView as an eight-section dispatcher without panel behavior",
   for (const [section, component] of branches) {
     assert.match(
       settingsView,
-      new RegExp(`section === "${section.replace(/[&]/g, "\\&")}" && <${component}\\b`),
+      new RegExp(`visibleSection === "${section.replace(/[&]/g, "\\&")}" && <${component}\\b`),
       `${section} must dispatch to ${component}`,
     );
   }
 
-  assert.match(settingsView, /section === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar"/);
-  assert.match(settingsView, /section === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow"/);
+  assert.match(settingsView, /visibleSection === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar"/);
+  assert.match(settingsView, /visibleSection === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow"/);
+  assert.match(settingsView, /const visibleSection: SettingsSection = isAdmin \? section : "My account"/);
+  for (const section of SETTINGS_SECTIONS.slice(1)) {
+    assert.match(settingsView, new RegExp(`isAdmin && visibleSection === "${section.replace(/[&]/g, "\\&")}"`));
+  }
+  assert.match(settingsView, /<SettingsAudienceNavigation section=\{visibleSection\} isAdmin=\{isAdmin\}/);
+  assert.match(navigation, /label="My settings"/);
+  assert.match(navigation, /Workspace &amp; company setup/);
+  assert.match(navigation, /\{isAdmin && <section/);
   assert.doesNotMatch(settingsView, /\b(?:useState|useEffect|useCallback|cachedGetJson)\b|fetch\s*\(|<form\b|<table\b|OperationsDataTable/);
 });

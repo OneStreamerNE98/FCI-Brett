@@ -27,14 +27,14 @@ test("exposes the authenticated user's Administrator flag through the shared acc
   const [accountRoute, app, myAccount, cache] = await Promise.all([
     read("app/api/v1/settings/me/route.ts"),
     read("app/FloorOpsApp.tsx"),
-    read("app/settings/components/MyAccountPanel.tsx"),
+    read("app/settings/components/MySettingsPanel.tsx"),
     read("app/lib/client-get-cache.ts"),
   ]);
 
   assert.match(accountRoute, /isAdmin: auth\.user\.isAdmin/);
   assert.match(app, /cachedGetJson<\{ preferences\?: \{ displayTimezone\?: unknown \}; isAdmin\?: unknown \}>\("\/api\/v1\/settings\/me"\)/);
   assert.match(myAccount, /cachedGetJson[^\n]+\("\/api\/v1\/settings\/me"/);
-  assert.match(myAccount, /fetch\("\/api\/v1\/settings\/me", \{ method: "PATCH"/);
+  assert.match(myAccount, /fetch\("\/api\/v1\/settings\/me", \{[\s\S]+method: "PATCH"/);
   assert.match(cache, /if \(!options\.force && existing\?\.inFlight\) return existing\.inFlight/);
 });
 

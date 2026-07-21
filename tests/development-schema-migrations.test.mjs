@@ -19,6 +19,7 @@ const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
 const integrityIndexMigration = "0011_lazy_big_bertha.sql";
 const workspaceResourceMigrationPrefix = "0013_";
 const workspaceBlueprintMigrationPrefix = "0015_";
+const userSettingsMigrationPrefix = "0016_";
 
 const requiredDevelopmentIndexes = [
   "clients_code_unique_idx",
@@ -188,11 +189,47 @@ test("keeps the SET-14 Workspace blueprint in chained migration 0015 with one cu
   for (const column of ["installation_started_at", "installation_completed_at", "had_callback", "callback_note"]) {
     assert.ok(snapshot.tables.projects.columns[column], `0015 must preserve KPI-03 column ${column}`);
   }
-  assert.deepEqual(journal.entries.at(-1), {
+  assert.deepEqual(journal.entries.at(15), {
     idx: 15,
     version: "6",
-    when: journal.entries.at(-1).when,
+    when: journal.entries.at(15).when,
     tag: "0015_stale_zarda",
+    breakpoints: true,
+  });
+});
+
+test("keeps SET-28 per-user notification preferences in additive migration 0016", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(userSettingsMigrationPrefix));
+  assert.equal(migration, "0016_melted_goblin_queen.sql");
+  assert.equal(files.filter((file) => file.startsWith(userSettingsMigrationPrefix)).length, 1);
+
+  const [migrationSql, schemaSource, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(root, "db", "schema.ts"), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0015_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0016_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+
+  assert.match(migrationSql, /^ALTER TABLE `user_preferences` ADD `notification_preferences_json` text DEFAULT '.+' NOT NULL;\s*$/u);
+  assert.doesNotMatch(migrationSql, /\b(?:DROP|UPDATE|INSERT|DELETE|TRUNCATE|RENAME)\b/iu);
+  assert.match(schemaSource, /notificationPreferencesJson: text\("notification_preferences_json"\)\.notNull\(\)\.default\(/u);
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.equal(Object.keys(snapshot.tables).length, 23);
+  assert.deepEqual(snapshot.tables.user_preferences.columns.notification_preferences_json, {
+    name: "notification_preferences_json",
+    type: "text",
+    primaryKey: false,
+    notNull: true,
+    autoincrement: false,
+    default: "'{\"lead.created\":false,\"gmail.filing_review_needed\":false,\"calendar.schedule_changed\":false,\"project.warranty_follow_up_due\":false}'",
+  });
+  assert.deepEqual(journal.entries.at(-1), {
+    idx: 16,
+    version: "6",
+    when: journal.entries.at(-1).when,
+    tag: "0016_melted_goblin_queen",
     breakpoints: true,
   });
 });
