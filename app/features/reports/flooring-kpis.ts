@@ -1,5 +1,9 @@
 export const FLOORING_KPI_TIME_ZONE = "America/New_York";
 export const FINANCIAL_RESTRICTION_LABEL = "Administrator only";
+// Must stay identical to FLOORING_CATEGORIES in app/domain/project-creation.ts —
+// a category present there but missing here silently vanishes from product mix.
+// tests/flooring-kpis.test.mjs pins the two lists equal.
+export const FLOORING_KPI_CATEGORIES = ["hardwood", "carpet", "luxury-vinyl", "tile-stone", "laminate", "specialty", "mixed"] as const;
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 const backlogStatuses = new Set(["planning", "mobilizing", "installation", "closeout"]);
@@ -16,8 +20,18 @@ export type FlooringKpiLead = Readonly<{
 export type FlooringKpiProject = Readonly<{
   status: string;
   estimatedValue: number | null;
+  flooringCategory: string | null;
+  squareFeet: number | null;
+  contractValue: number | null;
   createdAt?: number | null;
   updatedAt?: number | null;
+}>;
+
+export type FlooringKpiProductMix = Readonly<{
+  category: string;
+  jobCount: number;
+  valuedJobCount: number;
+  valueShare: number | null;
 }>;
 
 export type FlooringKpiSourceWinRate = Readonly<{
@@ -33,18 +47,24 @@ export type FlooringKpiResult = Readonly<{
   decidedLeads: number;
   winRate: number | null;
   winRateBySource: FlooringKpiSourceWinRate[];
-  bookedLeadCount: number;
-  bookedValue: number;
-  averageConvertedLeadValue: number | null;
-  convertedLeadValueCount: number;
-  averageCreatedProjectValue: number | null;
-  createdProjectValueCount: number;
+  bookedJobCount: number;
+  bookedValue: number | null;
+  averageJobValue: number | null;
+  averageJobValueCount: number;
   averageSalesCycleDays: number | null;
   salesCycleLeadCount: number;
   backlogCount: number;
   backlogValue: number | null;
   backlogValueCount: number;
   jobsCompleted: number;
+  productMix: FlooringKpiProductMix[];
+  flooringCategoryCaptureCount: number;
+  revenuePerSquareFoot: number | null;
+  revenuePerSquareFootJobCount: number;
+  squareFeetCaptureCount: number;
+  estimateAccuracy: number | null;
+  estimateAccuracyJobCount: number;
+  contractValueCaptureCount: number;
 }>;
 
 function normalizedStatus(value: string) {
@@ -53,6 +73,19 @@ function normalizedStatus(value: string) {
 
 function reportableAmount(value: number | null) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function reportableSquareFeet(value: number | null) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function reportableCategory(value: string | null) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return (FLOORING_KPI_CATEGORIES as readonly string[]).includes(normalized) ? normalized : null;
+}
+
+function preferredProjectValue(project: FlooringKpiProject) {
+  return reportableAmount(project.contractValue) ?? reportableAmount(project.estimatedValue);
 }
 
 function reportableTimestamp(value: number | null | undefined) {
@@ -115,10 +148,9 @@ export function calculateFlooringKpis(
     sourceGroups.set(source, group);
   }
 
-  const bookedLeads = convertedLeads.filter((lead) => timestampFallsInMonth(lead.updatedAt, selectedMonth, timeZone));
-  const bookedValues = bookedLeads.map((lead) => reportableAmount(lead.estimatedValue)).filter((value): value is number => value !== null);
-  const convertedLeadValues = convertedLeads.map((lead) => reportableAmount(lead.estimatedValue)).filter((value): value is number => value !== null);
-  const createdProjectValues = projects.map((project) => reportableAmount(project.estimatedValue)).filter((value): value is number => value !== null);
+  const bookedProjects = projects.filter((project) => timestampFallsInMonth(project.createdAt, selectedMonth, timeZone));
+  const bookedValues = bookedProjects.map(preferredProjectValue).filter((value): value is number => value !== null);
+  const projectValues = projects.map(preferredProjectValue).filter((value): value is number => value !== null);
   const salesCycleDays = convertedLeads.flatMap((lead) => {
     const createdAt = reportableTimestamp(lead.createdAt);
     const convertedAt = reportableTimestamp(lead.updatedAt);
@@ -129,6 +161,41 @@ export function calculateFlooringKpis(
   const backlogProjects = projects.filter((project) => backlogStatuses.has(normalizedStatus(project.status)));
   const backlogValues = backlogProjects.map((project) => reportableAmount(project.estimatedValue)).filter((value): value is number => value !== null);
   const jobsCompleted = projects.filter((project) => normalizedStatus(project.status) === "completed" && timestampFallsInMonth(project.updatedAt, selectedMonth, timeZone)).length;
+  const productMixGroups = new Map<string, { jobCount: number; valuedJobCount: number; value: number }>();
+  for (const project of bookedProjects) {
+    const category = reportableCategory(project.flooringCategory);
+    if (category === null) continue;
+    const group = productMixGroups.get(category) ?? { jobCount: 0, valuedJobCount: 0, value: 0 };
+    group.jobCount += 1;
+    const value = preferredProjectValue(project);
+    if (value !== null) {
+      group.valuedJobCount += 1;
+      group.value += value;
+    }
+    productMixGroups.set(category, group);
+  }
+  const productMixValueTotal = [...productMixGroups.values()].reduce((total, group) => total + group.value, 0);
+  const productMix = FLOORING_KPI_CATEGORIES.flatMap((category) => {
+    const group = productMixGroups.get(category);
+    return group ? [{
+      category,
+      jobCount: group.jobCount,
+      valuedJobCount: group.valuedJobCount,
+      valueShare: group.valuedJobCount > 0 && productMixValueTotal > 0 ? group.value / productMixValueTotal : null,
+    }] : [];
+  });
+  const squareFeetCaptureCount = bookedProjects.filter((project) => reportableSquareFeet(project.squareFeet) !== null).length;
+  const revenuePerSquareFootValues = bookedProjects.flatMap((project) => {
+    const squareFeet = reportableSquareFeet(project.squareFeet);
+    const value = preferredProjectValue(project);
+    return squareFeet !== null && value !== null ? [value / squareFeet] : [];
+  });
+  const contractValueCaptureCount = bookedProjects.filter((project) => reportableAmount(project.contractValue) !== null).length;
+  const estimateAccuracyValues = bookedProjects.flatMap((project) => {
+    const contractValue = reportableAmount(project.contractValue);
+    const estimatedValue = reportableAmount(project.estimatedValue);
+    return contractValue !== null && estimatedValue !== null && estimatedValue > 0 ? [contractValue / estimatedValue] : [];
+  });
 
   return {
     selectedMonth,
@@ -138,17 +205,23 @@ export function calculateFlooringKpis(
     winRateBySource: [...sourceGroups.entries()]
       .map(([source, result]) => ({ source, ...result, rate: result.won / result.decided }))
       .sort((left, right) => left.source.localeCompare(right.source)),
-    bookedLeadCount: bookedLeads.length,
-    bookedValue: bookedValues.reduce((total, value) => total + value, 0),
-    averageConvertedLeadValue: average(convertedLeadValues),
-    convertedLeadValueCount: convertedLeadValues.length,
-    averageCreatedProjectValue: average(createdProjectValues),
-    createdProjectValueCount: createdProjectValues.length,
+    bookedJobCount: bookedProjects.length,
+    bookedValue: bookedProjects.length === 0 ? 0 : bookedValues.length > 0 ? bookedValues.reduce((total, value) => total + value, 0) : null,
+    averageJobValue: average(projectValues),
+    averageJobValueCount: projectValues.length,
     averageSalesCycleDays: average(salesCycleDays),
     salesCycleLeadCount: salesCycleDays.length,
     backlogCount: backlogProjects.length,
     backlogValue: backlogProjects.length === 0 ? 0 : backlogValues.length > 0 ? backlogValues.reduce((total, value) => total + value, 0) : null,
     backlogValueCount: backlogValues.length,
     jobsCompleted,
+    productMix,
+    flooringCategoryCaptureCount: productMix.reduce((total, category) => total + category.jobCount, 0),
+    revenuePerSquareFoot: average(revenuePerSquareFootValues),
+    revenuePerSquareFootJobCount: revenuePerSquareFootValues.length,
+    squareFeetCaptureCount,
+    estimateAccuracy: average(estimateAccuracyValues),
+    estimateAccuracyJobCount: estimateAccuracyValues.length,
+    contractValueCaptureCount,
   };
 }

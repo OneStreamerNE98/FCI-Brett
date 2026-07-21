@@ -30,15 +30,20 @@ export async function GET(request: NextRequest) {
   const clientId = request.nextUrl.searchParams.get("clientId");
   // Resolve links only from the active provider. Simulation and the company
   // Shared Drive keep independent mappings for the same project.
-  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.project_manager, p.estimated_value, p.created_by, p.created_at, p.updated_at, c.name AS client_name, c.client_code, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
+  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.created_by, p.created_at, p.updated_at, c.name AS client_name, c.client_code, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
   const statement = env.DB.prepare(query);
   const result = clientId ? await statement.bind(config.connectionKey, clientId).all() : await statement.bind(config.connectionKey).all();
   const projects = result.results.map((row: unknown) => {
     const record = row as Record<string, unknown>;
     const projectManagerId = authorizedProjectManagerId(record.project_manager, auth.user.email);
-    return { ...record, project_manager: projectManagerId, project_manager_id: projectManagerId };
+    return {
+      ...record,
+      project_manager: projectManagerId,
+      project_manager_id: projectManagerId,
+      contract_value: auth.user.isAdmin ? record.contract_value : null,
+    };
   });
-  return NextResponse.json({ projects });
+  return NextResponse.json({ projects }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {
@@ -53,6 +58,9 @@ export async function POST(request: NextRequest) {
     tooLargeMessage: "Project details are too large.",
   });
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  if (!auth.user.isAdmin && parsed.body.contractValue !== undefined && parsed.body.contractValue !== null) {
+    return NextResponse.json({ error: "An FCI administrator must record contract value." }, { status: 403 });
+  }
 
   const result = await createProject(
     parsed.body,

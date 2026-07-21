@@ -31,9 +31,21 @@ Migration `0011_lazy_big_bertha.sql` moves the remaining runtime-only integrity 
 
 The application runtime contains no `CREATE TABLE` or `CREATE INDEX` statements. This removes the former first-request schema batch from every worker isolate while preserving the portable client/project creation invariants.
 
-## Existing development database safety
+## KPI-02 additive project fields — open draft PR #52
 
-The new migration is additive and does not drop, delete, truncate, rewrite, or backfill data. Its unique indexes intentionally fail if existing test records contain duplicate client codes, duplicate client names, or duplicate project numbers.
+Migration `0012_green_magneto.sql` is included only in open draft PR #52. It adds three nullable columns to the development `projects` table:
+
+- `flooring_category` (`text`) stores one server-validated value from `hardwood`, `carpet`, `luxury-vinyl`, `tile-stone`, `laminate`, `specialty`, or `mixed`;
+- `square_feet` (`integer`) stores a server-validated positive whole number; and
+- `contract_value` (`integer`) stores a server-validated non-negative whole-dollar sold price. The development API accepts and returns this financial field only for Administrators.
+
+All three columns are nullable so existing project rows remain valid. The migration has no backfill, index, constraint, data rewrite, drop, delete, or truncate operation. PostgreSQL parity is intentionally deferred to KPI-04; this D1 migration does not alter or apply any production migration.
+
+PR #52 is source-only and undeployed. Reviewing or merging it does not apply migration `0012` to the hosted D1 database. A contributor may apply it only to the fixed placeholder local database with `npm run db:migrate:local`. The hosted migration remains behind a separate owner-approved Sites deployment: back up the controlled development database, deploy the reviewed merged source, verify that Sites recorded the pending migration successfully, and smoke-test project creation and the new optional fields. Until that deployment completes, the live development site must be treated as not having these columns.
+
+## Migration 0011 existing development database safety
+
+Migration `0011` is additive and does not drop, delete, truncate, rewrite, or backfill data. Its unique indexes intentionally fail if existing test records contain duplicate client codes, duplicate client names, or duplicate project numbers.
 
 Before the first hosted deployment containing this migration:
 

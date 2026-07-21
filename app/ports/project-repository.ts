@@ -10,6 +10,9 @@ export type ProjectCreationIntent = {
     site: string | null;
     projectManagerId: string;
     estimatedValue: number | null;
+    flooringCategory: string | null;
+    squareFeet: number | null;
+    contractValue: number | null;
     createdBy: string;
     createdAt: number;
     updatedAt: number;
