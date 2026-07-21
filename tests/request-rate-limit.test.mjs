@@ -115,7 +115,7 @@ test("documents the closed production policy and the exact development cost rout
     "FCI_REQUEST_RATE_LIMIT_CAPACITY",
     "FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS",
     "FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS",
-    "there is no\ndisable switch",
+    "there is no\\r?\\ndisable switch",
     "process-local",
     "POST /api/v1/assistant",
     "POST /api/v1/uploads",
