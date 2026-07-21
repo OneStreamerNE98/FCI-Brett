@@ -260,6 +260,28 @@ export const googleConnections = sqliteTable("google_connections", {
   revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
 });
 
+/** App-managed Google Workspace resource IDs for the controlled development connector. */
+export const workspaceResources = sqliteTable("workspace_resources", {
+  id: text("id").primaryKey(),
+  connectionKey: text("connection_key").notNull(),
+  resourceType: text("resource_type").notNull(),
+  resourceKey: text("resource_key").notNull(),
+  externalId: text("external_id").notNull(),
+  parentExternalId: text("parent_external_id"),
+  externalUrl: text("external_url"),
+  origin: text("origin").notNull(),
+  metadataJson: text("metadata_json", { mode: "json" }).notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  uniqueIndex("workspace_resources_connection_type_key_unique").on(
+    table.connectionKey,
+    table.resourceType,
+    table.resourceKey,
+  ),
+]);
+
 export const driveFolderMappings = sqliteTable("drive_folder_mappings", {
   id: text("id").primaryKey(),
   connectionKey: text("connection_key").notNull(),

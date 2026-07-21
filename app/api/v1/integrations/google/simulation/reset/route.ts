@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
     env.DB.prepare("DELETE FROM google_drive_operations WHERE connection_key = ?").bind(config.connectionKey),
     env.DB.prepare("DELETE FROM google_sheet_sync_state WHERE connection_key = ?").bind(config.connectionKey),
     env.DB.prepare("DELETE FROM google_integration_events WHERE connection_key = ?").bind(config.connectionKey),
+    env.DB.prepare("DELETE FROM workspace_resources WHERE connection_key = ?").bind(config.connectionKey),
   ]);
   return NextResponse.json(await resetWorkspaceSimulation(), { headers: { "Cache-Control": "no-store" } });
 }

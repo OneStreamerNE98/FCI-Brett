@@ -62,7 +62,7 @@ test("administrator connection health maps the bounded payload without inventing
 
   assert.match(panel, /if \(!isAdmin\) return;[\s\S]+cachedGetJson<ConnectionHealthPayload>\("\/api\/v1\/integrations\/google\/connection"/);
   assert.match(panel, /isAdmin && <section className="workspace-connection-health"/);
-  assert.match(panel, /connectionHealth\.connection\.account/);
+  assert.match(panel, /maskWorkspaceAccountForDisplay\(connectionHealth\.connection\.account\)/);
   assert.match(panel, /connectionHealth\.runtimeMode/);
   assert.match(panel, /connectionHealth\.connection\.status/);
   assert.match(panel, /connectionHealth\.connection\.requiresReauthorization/);
@@ -79,4 +79,83 @@ test("administrator connection health maps the bounded payload without inventing
   assert.match(oauth, /const grantedServices = grantedGoogleServices\(config, scopes\)/);
   const payloadType = panel.slice(panel.indexOf("type ConnectionHealthPayload"), panel.indexOf("type ConnectionHealthState"));
   assert.doesNotMatch(payloadType, /lastSuccess|lastChecked|expiresAt|freshness/i);
+});
+
+test("Workspace resources are an admin-only sibling card with endpoint-owned states", async () => {
+  const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
+
+  assert.match(panel, /if \(!isAdmin\) return;[\s\S]+cachedGetJson<WorkspaceSetupResourcesPayload>\("\/api\/v1\/integrations\/google\/setup\/resources"/);
+  assert.match(panel, /isAdmin \? loadWorkspaceResources\(force\) : Promise\.resolve\(\)/);
+  assert.match(panel, /No administrator setup request is made for this Office view\./);
+  assert.match(panel, /const configured = simulation \|\| workspaceResources\?\.connectReady === true/);
+  assert.match(panel, /disabled=\{!configured \|\| working\}/);
+
+  const stepListStart = panel.indexOf('<ol className="workspace-setup-steps"');
+  const stepListEnd = panel.indexOf("</ol>", stepListStart);
+  const resourcesCard = panel.indexOf('<section className="workspace-setup-card workspace-resources-card"');
+  const healthCard = panel.indexOf('{isAdmin && <section className="workspace-connection-health"');
+  assert.ok(stepListStart >= 0 && stepListEnd > stepListStart);
+  assert.ok(resourcesCard > stepListEnd, "Resources must be a sibling after the five-step list");
+  assert.ok(healthCard > stepListEnd, "Connection health must be a sibling, not nested in Step 1");
+
+  for (const state of ["Found", "Created", "Adopted", "Not configured", "Simulated"]) {
+    assert.match(panel, new RegExp(`"${state}"`));
+  }
+  assert.match(panel, /workspaceResourceSourceLabel[\s\S]+App-managed[\s\S]+Environment value/);
+  assert.match(panel, /workspace-resource-state/);
+  assert.match(panel, /workspace-resource-source/);
+
+  const resourceTableStart = panel.indexOf('<OperationsDataTable className="workspace-resource-table"');
+  const resourceTableEnd = panel.indexOf("</OperationsDataTable>", resourceTableStart);
+  assert.ok(resourceTableStart >= 0 && resourceTableEnd > resourceTableStart);
+  assert.doesNotMatch(panel.slice(resourceTableStart, resourceTableEnd), /<button|AdministratorActionButton/);
+});
+
+test("Workspace setup masks accounts and exposes copy-exact safe helpers", async () => {
+  const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
+
+  assert.match(panel, /function maskWorkspaceAccountForDisplay/);
+  assert.match(panel, /connected \? `\$\{maskedWorkspaceAccount\} is connected with \$\{selectedServices\}\.`/);
+  assert.match(panel, /maskWorkspaceAccountForDisplay\(workspaceResources\.identity\.connectionAccount\)/);
+  assert.match(panel, /maskWorkspaceAccountForDisplay\(connectionHealth\.connection\.account\)/);
+  assert.doesNotMatch(panel, /workspace\?\.connectionAccount \?\?/);
+  assert.doesNotMatch(panel, /<dd>\{connectionHealth\.connection\.account/);
+
+  assert.match(panel, /Connected account ↔ intake mailbox/);
+  assert.match(panel, /workspaceResources\.identity\.allowedDomains/);
+  assert.match(panel, /workspaceResources\.identity\.mode/);
+  assert.match(panel, /https:\/\/groundwork-flooring-ops\.jaggerisagoodboy\.chatgpt\.site\/api\/v1\/integrations\/google\/callback/);
+  assert.match(panel, /openssl rand -base64 32/);
+  assert.match(panel, /Missing hosted keys/);
+  assert.match(panel, /navigator\.clipboard\.writeText\(value\)/);
+  assert.match(panel, /GOOGLE_WORKSPACE_CLIENT_SECRET: "<secret>"/);
+  assert.match(panel, /GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY: "<secret 32-byte base64 value>"/);
+  assert.match(panel, /GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI: "<OAuth redirect URI shown above>"/);
+  assert.match(panel, /GOOGLE_INTEGRATION_MODE: "<workspace or simulation>"/);
+  assert.match(panel, /detail\.envVar\.match\(\/\[A-Z\]\[A-Z0-9_\]\+\/g\)/);
+  assert.match(panel, /resource\.source === "none"[\s\S]+WORKSPACE_RESOURCE_ENV_BY_KEY\[resource\.key\]/);
+  assert.match(panel, /"client-directory": "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID"/);
+  assert.match(panel, /if \(!simulation\) \{[\s\S]+resource\.source === "none"/);
+  assert.match(panel, /const copyHelperStateReady = workspaceReadinessState === "ready" && workspaceResourcesState === "ready" && workspaceResources !== null/);
+  assert.match(panel, /copyHelperStateReady && missingDotenvTemplate/);
+  assert.match(panel, /copyHelperStateUnavailable[\s\S]+Missing-key status is unavailable/);
+  assert.doesNotMatch(panel, /detail\.(value|secretValue|configuredValue)/);
+
+  const connectionActions = panel.indexOf('className="workspace-connection-card-actions"');
+  const healthCard = panel.indexOf('{isAdmin && <section className="workspace-connection-health"');
+  const blueprint = panel.indexOf('<div className="drive-blueprint"');
+  assert.ok(connectionActions >= 0 && healthCard > connectionActions);
+  assert.match(panel.slice(connectionActions, healthCard), /Disconnect Workspace/);
+  assert.doesNotMatch(panel.slice(healthCard, blueprint), /Disconnect Workspace/);
+  assert.equal(panel.match(/Disconnect Workspace/g)?.length, 1);
+});
+
+test("Office viewers make no resource request and receive an access-owned connection status", async () => {
+  const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
+
+  assert.match(panel, /if \(!isAdmin\) return;[\s\S]+\/api\/v1\/integrations\/google\/setup\/resources/);
+  assert.match(panel, /isAdmin \? loadWorkspaceResources\(force\) : Promise\.resolve\(\)/);
+  assert.match(panel, /!isAdmin \? "Administrator access" : configured/);
+  assert.match(panel, /!isAdmin \? "Administrator setup only" : configured/);
+  assert.match(panel, /An Administrator can review connection prerequisites and authorize the approved company account\./);
 });

@@ -43,6 +43,20 @@ All three columns are nullable so existing project rows remain valid. The migrat
 
 PR #52 is merged source-only and undeployed. Its merge did not apply migration `0012` to the hosted D1 database. A contributor may apply it only to the fixed placeholder local database with `npm run db:migrate:local`. The hosted migration remains behind a separate owner-approved Sites deployment: back up the controlled development database, deploy the reviewed merged source, verify that Sites recorded the pending migration successfully, and smoke-test project creation and the new optional fields. Until that deployment completes, the live development site must be treated as not having these columns.
 
+## SET-13 Workspace resource registry — source only
+
+Migration `0013` adds the `workspace_resources` registry for app-managed Google Workspace
+resource IDs. Rows are isolated by `connection_key` and uniquely identify one
+`resource_type` + `resource_key` pair. The registry records created/adopted external IDs,
+optional parent and URL metadata, origin, metadata JSON, actor, and timestamps.
+
+The migration is additive only: it creates one table and its unique index, with no
+backfill, rewrite, drop, delete, or truncate. The production Google connector does not
+consume this D1 table; a future approved production flow reconciles these identities into
+the existing PostgreSQL `integration_resources` boundary after fresh production
+authorization. Migration `0013` is source-only and unapplied to Sites until a separate
+owner-approved controlled deployment.
+
 ## Migration 0011 existing development database safety
 
 Migration `0011` is additive and does not drop, delete, truncate, rewrite, or backfill data. Its unique indexes intentionally fail if existing test records contain duplicate client codes, duplicate client names, or duplicate project numbers.

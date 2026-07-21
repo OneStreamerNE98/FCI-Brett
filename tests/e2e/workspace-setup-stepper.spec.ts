@@ -31,6 +31,27 @@ type ConnectionHealthPayload = {
     requiresReauthorization: boolean;
   };
 };
+type WorkspaceResourcesPayload = {
+  resources: Array<{
+    key: string;
+    label: string;
+    blueprintName: string;
+    externalId?: string;
+    source: "app" | "env" | "none";
+    origin?: "created" | "adopted" | "env-adopted";
+    url?: string;
+    updatedAt?: number;
+    state: "Found" | "Created" | "Adopted" | "Not configured" | "Simulated";
+  }>;
+  connectReady: boolean;
+  simulation: boolean;
+  identity: {
+    connectionAccount: string | null;
+    intakeMailboxMatches: boolean | null;
+    allowedDomains: string[];
+    mode: "simulation" | "workspace";
+  };
+};
 
 const missingInvariant = "Google Workspace intake mailbox matching the single approved connection account";
 
@@ -92,6 +113,26 @@ function connectedHealth(): ConnectionHealthPayload {
   };
 }
 
+function workspaceResources(overrides: Partial<WorkspaceResourcesPayload> = {}): WorkspaceResourcesPayload {
+  return {
+    resources: [
+      { key: "primary", label: "Shared Drive", blueprintName: "FCI Operations", externalId: "drive-id", source: "env", state: "Found" },
+      { key: "client-directory", label: "Client directory spreadsheet", blueprintName: "FCI Operations Directory", externalId: "sheet-id", source: "app", origin: "created", state: "Created" },
+      { key: "client-appointments", label: "Client appointments calendar", blueprintName: "FCI • Client Appointments", externalId: "appointments-id", source: "env", state: "Found" },
+      { key: "field-schedule", label: "Field schedule calendar", blueprintName: "FCI • Field Schedule", source: "none", state: "Not configured" },
+    ],
+    connectReady: true,
+    simulation: false,
+    identity: {
+      connectionAccount: "operations@cherryhillfci.com",
+      intakeMailboxMatches: true,
+      allowedDomains: ["cherryhillfci.com"],
+      mode: "workspace",
+    },
+    ...overrides,
+  };
+}
+
 async function mockConnectionHealth(page: Page, payload: ConnectionHealthPayload) {
   await page.route("**/api/v1/integrations/google/connection", async (route) => {
     if (route.request().method() === "GET") {
@@ -101,6 +142,16 @@ async function mockConnectionHealth(page: Page, payload: ConnectionHealthPayload
     await route.continue();
   });
 }
+
+async function mockWorkspaceResources(page: Page, payload: WorkspaceResourcesPayload = workspaceResources()) {
+  await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) });
+  });
+}
+
+test.beforeEach(async ({ page }) => {
+  await mockWorkspaceResources(page);
+});
 
 function step(page: Page, heading: string) {
   return page.locator(".workspace-setup-step").filter({ has: page.getByRole("heading", { level: 3, name: heading, exact: true }) });
@@ -124,6 +175,15 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
     secret: false,
   }];
   let mirror = unsyncedMirror();
+
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(workspaceResources({ connectReady: currentReadiness.credentialsPresent })),
+    });
+  });
 
   await mockConnectionHealth(page, connectedHealth());
 
@@ -200,6 +260,7 @@ test("OAuth callback state is removed only after an automatic forced readiness r
 });
 
 test("administrator connection health exhaustively maps account, mode, status, enabled services, and recorded grants", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://localhost:4173" });
   const health: ConnectionHealthPayload = {
     runtimeMode: "workspace",
     simulation: false,
@@ -236,7 +297,7 @@ test("administrator connection health exhaustively maps account, mode, status, e
   await page.goto("/settings?section=google-workspace");
 
   const card = page.locator(".workspace-connection-health");
-  await expect(card.getByRole("heading", { level: 4, name: "Connection health" })).toBeVisible();
+  await expect(card.getByRole("heading", { level: 3, name: "Connection health" })).toBeVisible();
   await expect(card).toContainText(health.connection.account!);
   await expect(card).not.toContainText("summary-only@example.test");
   const summary = card.locator(".workspace-connection-health-summary");
@@ -259,9 +320,62 @@ test("administrator connection health exhaustively maps account, mode, status, e
     await expect(row.locator("td").nth(1)).toHaveText(expected.enabled);
     await expect(row.locator("td").nth(2)).toHaveText(expected.grant);
   }
-  await expect(card.getByRole("button", { name: "Disconnect Workspace" })).toBeVisible();
+  await expect(page.locator(".workspace-connection-card-actions").getByRole("button", { name: "Disconnect Workspace" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Disconnect Workspace" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Reconnect Google Workspace" })).toBeVisible();
+
+  const setupSteps = page.locator("ol.workspace-setup-steps");
+  const resourcesCard = page.locator(".workspace-resources-card");
+  await expect(resourcesCard).toBeVisible();
+  await expect(setupSteps).toBeVisible();
+  expect(await resourcesCard.evaluate((resources) => {
+    const steps = document.querySelector("ol.workspace-setup-steps");
+    const health = document.querySelector(".workspace-connection-health");
+    return Boolean(
+      steps
+      && health
+      && resources.parentElement === steps.parentElement
+      && health.parentElement === steps.parentElement
+      && (steps.compareDocumentPosition(resources) & Node.DOCUMENT_POSITION_FOLLOWING),
+    );
+  })).toBe(true);
+  await expect(resourcesCard).toContainText("op•••@cherryhillfci.com");
+  await expect(resourcesCard).not.toContainText("operations@cherryhillfci.com");
+  await expect(resourcesCard.locator(".workspace-resource-table tbody tr")).toHaveCount(4);
+  await expect(resourcesCard.locator(".workspace-resource-table button")).toHaveCount(0);
+
+  await resourcesCard.getByRole("button", { name: "Copy URI" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback");
+  await resourcesCard.getByRole("button", { name: "Copy missing-key template" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<field-schedule-calendar ID>");
+  await resourcesCard.getByRole("button", { name: "Copy command" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("openssl rand -base64 32");
+});
+
+test("copy helpers do not claim configuration is complete when readiness is unavailable", async ({ page }) => {
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page, workspaceResources({
+    resources: workspaceResources().resources.map((resource) => ({
+      ...resource,
+      externalId: resource.externalId ?? `${resource.key}-id`,
+      source: resource.source === "none" ? "env" : resource.source,
+      state: resource.state === "Not configured" ? "Found" : resource.state,
+    })),
+  }));
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable" }) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+
+  const resourcesCard = page.locator(".workspace-resources-card");
+  await expect(resourcesCard.getByText("Missing-key status is unavailable. Retry the readiness and Resources checks before copying configuration.", { exact: true })).toBeVisible();
+  await expect(resourcesCard.getByText("No hosted configuration keys are currently missing.", { exact: true })).toHaveCount(0);
+  await expect(resourcesCard.getByRole("button", { name: "Copy missing-key template" })).toHaveCount(0);
 });
 
 test("simulation labels every OAuth permission not applicable instead of claiming a grant", async ({ page }) => {
@@ -278,6 +392,18 @@ test("simulation labels every OAuth permission not applicable instead of claimin
       requiresReauthorization: false,
     },
   };
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page, workspaceResources({
+    connectReady: true,
+    simulation: true,
+    resources: workspaceResources().resources.map((resource) => ({ ...resource, state: "Simulated" })),
+    identity: {
+      connectionAccount: "Local Workspace simulation",
+      intakeMailboxMatches: true,
+      allowedDomains: [],
+      mode: "simulation",
+    },
+  }));
   await mockConnectionHealth(page, health);
   await page.route("**/api/v1/google-workspace", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness({ runtimeMode: "simulation", simulation: true })) });
@@ -300,4 +426,19 @@ test("simulation labels every OAuth permission not applicable instead of claimin
   await expect(card).toBeVisible();
   expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test("simulation reset removes the registry-backed resource and refreshes the Resources card", async ({ page }, testInfo) => {
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await page.goto("/settings?section=google-workspace");
+
+  const resourcesCard = page.locator(".workspace-resources-card");
+  const directoryRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "Client directory spreadsheet" });
+  if (testInfo.retry === 0) await expect(directoryRow).toContainText("App-managed");
+  await expect(directoryRow).toContainText("Simulated");
+
+  await page.getByRole("button", { name: "Reset simulation data" }).click();
+  await expect(directoryRow).toContainText("—");
+  await expect(directoryRow).not.toContainText("App-managed");
+  await expect(directoryRow).toContainText("Simulated");
 });

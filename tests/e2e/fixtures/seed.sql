@@ -86,3 +86,38 @@ INSERT INTO projects (
   1783900800000,
   1783900800000
 );
+
+-- SET-13 reset fixture: one app-managed simulation resource proves that the
+-- Administrator reset removes only the simulation registry partition.
+DELETE FROM workspace_resources
+WHERE connection_key = 'workspace-simulation'
+  AND resource_type = 'sheets.spreadsheet'
+  AND resource_key = 'client-directory';
+
+INSERT INTO workspace_resources (
+  id,
+  connection_key,
+  resource_type,
+  resource_key,
+  external_id,
+  parent_external_id,
+  external_url,
+  origin,
+  metadata_json,
+  created_by,
+  created_at,
+  updated_at
+) VALUES (
+  'e2e-workspace-resource-reset',
+  'workspace-simulation',
+  'sheets.spreadsheet',
+  'client-directory',
+  'workspace-simulation-seeded-directory-sheet',
+  'workspace-simulation-drive',
+  'https://docs.google.com/spreadsheets/d/workspace-simulation-seeded-directory-sheet/edit',
+  'created',
+  '{}',
+  'e2e-admin@example.test',
+  1783900800000,
+  1783900800000
+);

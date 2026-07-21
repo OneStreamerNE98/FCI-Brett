@@ -155,7 +155,7 @@ Runtime readiness receives no direct migration-history table access. It compares
 
 The format-version-2 rehearsal snapshot is a strict, test-only exchange format rather than a raw D1 export. It:
 
-- inventories all 21 D1 schema tables plus R2 objects with a reason and one disposition (`migrated`, `transformed`, `excluded`, or `blocking`); a schema-derived test fails if a new D1 table is not classified, while the production runtime does not import the D1 schema;
+- inventories all 22 D1 schema tables plus R2 objects with a reason and one disposition (`migrated`, `transformed`, `excluded`, or `blocking`); a schema-derived test fails if a new D1 table is not classified, while the production runtime does not import the D1 schema;
 - carries only clients, contacts, leads, projects, project meetings, and explicitly classified activity events as bounded row payloads; every inventory-only category must report zero even when its eventual disposition is excluded or transformed;
 - requires every project to include `flooringCategory`, `squareFeet`, and `contractValue` as explicit null placeholders, keeps those keys in prepared rows and SHA-256 evidence, and refuses non-null values before database access until KPI-04 adds the reviewed PostgreSQL migration and importer mapping;
 - requires client/project names, lead company/contact/project/site fields, and project-meeting titles to equal `FCI TEST — DO NOT USE` or begin with that exact marker plus a space;

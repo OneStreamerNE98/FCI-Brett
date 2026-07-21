@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleDriveClient } from "../../../../../lib/google-drive";
-import { assertExpectedGoogleAccount, assertGrantedGoogleServiceScopes, consumeGoogleOauthAttempt, exchangeGoogleAuthorizationCode, fetchGoogleUserProfile, getGoogleRuntimeConfig, saveGoogleConnection, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
+import { assertExpectedGoogleAccount, assertGrantedGoogleServiceScopes, consumeGoogleOauthAttempt, exchangeGoogleAuthorizationCode, fetchGoogleUserProfile, getEffectiveGoogleRuntimeConfig, saveGoogleConnection, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
 import { requireOfficeUser } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 
@@ -14,9 +14,9 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return appRedirect(request, "admin-required");
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
+  const config = await getEffectiveGoogleRuntimeConfig();
   if (config.simulation) return appRedirect(request, "simulation-ready");
-  if (!config.oauthReady) return appRedirect(request, "setup-needed");
+  if (!config.connectReady) return appRedirect(request, "setup-needed");
 
   const providerError = request.nextUrl.searchParams.get("error");
   if (providerError) {
@@ -34,8 +34,10 @@ export async function GET(request: NextRequest) {
     assertGrantedGoogleServiceScopes(config, tokens.scope);
     const profile = await fetchGoogleUserProfile(tokens.accessToken);
     assertExpectedGoogleAccount(config, profile);
-    const drive = new GoogleDriveClient(tokens.accessToken, config);
-    await drive.verifyRootFolder();
+    if (config.drive.rootFolderId) {
+      const drive = new GoogleDriveClient(tokens.accessToken, config);
+      await drive.verifyRootFolder();
+    }
     await saveGoogleConnection(config, tokens, profile, auth.user.email);
     await writeGoogleIntegrationEvent(config, "oauth.connected", auth.user.email, "connection", config.connectionKey, "mode=workspace");
     const response = appRedirect(request, "connected");
