@@ -388,8 +388,8 @@ mobile close control remains clear of the wordmark.
 
 | Surface | Primary | Fallback |
 | --- | --- | --- |
-| Expanded/mobile sidebar | `/fci-logo-enhanced-master.svg` | Existing PNG master retained in `public/` |
-| Collapsed desktop rail | `/fci-app-icon-master.svg` | Existing PNG master retained in `public/` |
+| Expanded/mobile sidebar | `/fci-logo-enhanced-master.svg` | `public/fci-logo-enhanced-master.png` retained |
+| Collapsed desktop rail | `/fci-app-icon-master.svg` | `public/fci-app-icon-master.png` retained |
 | Browser icon/shortcut | SVG | PNG browser-icon fallback |
 | Web-app manifest | SVG, `sizes: any` | PNG, `1254x1254` |
 | Apple touch icon | PNG | — |
