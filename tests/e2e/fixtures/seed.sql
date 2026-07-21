@@ -67,6 +67,10 @@ INSERT INTO projects (
   flooring_category,
   square_feet,
   contract_value,
+  installation_started_at,
+  installation_completed_at,
+  had_callback,
+  callback_note,
   created_by,
   created_at,
   updated_at
@@ -82,6 +86,10 @@ INSERT INTO projects (
   'luxury-vinyl',
   5000,
   132500,
+  NULL,
+  NULL,
+  0,
+  NULL,
   'e2e-admin@example.test',
   1783900800000,
   1783900800000

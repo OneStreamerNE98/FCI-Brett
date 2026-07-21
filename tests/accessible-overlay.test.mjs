@@ -49,14 +49,16 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /event\.target !== event\.currentTarget/);
   assert.match(overlay, /!closeOnBackdropRef\.current \|\| busyRef\.current/);
 
-  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 11);
+  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 13);
   assert.doesNotMatch(overlayConsumers, /<div className="modal-backdrop"/);
   assert.doesNotMatch(overlayConsumers, /<div className="drawer-backdrop"/);
   assert.match(overlayConsumers, /variant="drawer"/);
   assert.match(overlayConsumers, /busy=\{loading \|\| submitting\}/);
   assert.match(overlayConsumers, /busy=\{saving\}/);
-  assert.equal(overlayConsumers.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 5);
-  assert.equal(overlayConsumers.match(/onClick=\{onClose\} disabled=\{saving\}>Cancel/g)?.length, 6);
+  assert.equal(overlayConsumers.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 7);
+  assert.equal(overlayConsumers.match(/onClick=\{onClose\} disabled=\{saving\}>Cancel/g)?.length, 8);
+  assert.match(overlayConsumers, /ariaLabel=\{`Record installation dates for \$\{project\.number\}`\}/);
+  assert.match(overlayConsumers, /ariaLabel=\{`Record follow-up result for \$\{project\.number\}`\}/);
   assert.match(overlayConsumers, /aria-label="Close project" disabled=\{busy\}/);
   assert.match(css, /\.accessible-overlay-backdrop,\.accessible-overlay-panel\{overscroll-behavior:contain\}/);
 });

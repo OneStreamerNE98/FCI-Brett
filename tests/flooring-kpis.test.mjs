@@ -75,6 +75,36 @@ test("uses the Cherry Hill business month at UTC boundaries", () => {
   assert.equal(monthKeyForTimestamp(Date.parse("2026-08-01T04:00:00Z")), "2026-08");
 });
 
+test("uses explicit completion dates before the fallback and computes install quality from completed jobs", () => {
+  const common = {
+    status: "completed",
+    estimatedValue: null,
+    flooringCategory: null,
+    squareFeet: null,
+    contractValue: null,
+    createdAt: null,
+  };
+  const result = calculateFlooringKpis([], [
+    // No explicit completion: the July updatedAt fallback keeps this legacy project in July.
+    { ...common, updatedAt: Date.parse("2026-07-05T12:00:00Z"), hadCallback: true },
+    // Explicit July completion wins over an August updatedAt and contributes a valid two-day cycle.
+    { ...common, installationStartedAt: Date.parse("2026-07-10T12:00:00Z"), installationCompletedAt: Date.parse("2026-07-12T12:00:00Z"), updatedAt: Date.parse("2026-08-05T12:00:00Z"), hadCallback: true },
+    // A same-instant pair is a valid zero-day installation cycle.
+    { ...common, installationStartedAt: Date.parse("2026-07-15T12:00:00Z"), installationCompletedAt: Date.parse("2026-07-15T12:00:00Z"), updatedAt: Date.parse("2026-07-16T12:00:00Z"), hadCallback: false },
+    // Reversed dates do not contribute to cycle time, but the completed job remains in the callback denominator.
+    { ...common, installationStartedAt: Date.parse("2026-07-22T12:00:00Z"), installationCompletedAt: Date.parse("2026-07-20T12:00:00Z"), updatedAt: Date.parse("2026-07-21T12:00:00Z"), hadCallback: null },
+    // Explicit August completion wins over a July updatedAt, excluding this project from July entirely.
+    { ...common, installationStartedAt: Date.parse("2026-07-30T12:00:00Z"), installationCompletedAt: Date.parse("2026-08-02T12:00:00Z"), updatedAt: Date.parse("2026-07-31T12:00:00Z"), hadCallback: true },
+  ], "2026-07");
+
+  assert.equal(result.jobsCompleted, 4);
+  assert.equal(result.averageInstallCycleDays, 1);
+  assert.equal(result.installCycleJobCount, 2);
+  assert.equal(result.callbackRate, 0.5);
+  assert.equal(result.callbackJobCount, 2);
+  assert.equal(result.callbackCompletedJobCount, 4);
+});
+
 test("returns honest empty states instead of invalid math", () => {
   const result = calculateFlooringKpis(
     [{ status: "active", source: "Website", estimatedValue: 5_000, createdAt: 10, updatedAt: 20 }],
@@ -90,6 +120,11 @@ test("returns honest empty states instead of invalid math", () => {
   assert.equal(result.backlogCount, 1);
   assert.equal(result.backlogValue, null);
   assert.equal(result.jobsCompleted, 0);
+  assert.equal(result.averageInstallCycleDays, null);
+  assert.equal(result.installCycleJobCount, 0);
+  assert.equal(result.callbackRate, null);
+  assert.equal(result.callbackJobCount, 0);
+  assert.equal(result.callbackCompletedJobCount, 0);
   assert.deepEqual(result.productMix, []);
   assert.equal(result.flooringCategoryCaptureCount, 0);
   assert.equal(result.revenuePerSquareFoot, null);
@@ -119,7 +154,9 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
   assert.match(panel, /operationsHref\("Projects", \{ projectStatus: "Active" \}\)/);
   assert.match(definitions, /converted.*converted, lost/si);
   assert.match(definitions, /A denominator of zero.*em dash/si);
-  assert.match(definitions, /Project\/install cycle time/);
+  assert.match(definitions, /effectiveCompletionAt = valid installationCompletedAt \?\? valid updatedAt/);
+  assert.match(definitions, /\*\*Install cycle days\*\*[\s\S]*same-day installation is a valid zero-day result/);
+  assert.match(definitions, /\*\*Callback rate\*\*[\s\S]*hadCallback = true[\s\S]*all selected-month completed projects/);
   assert.match(definitions, /contractValue.*estimatedValue/si);
   assert.match(definitions, /Revenue per square foot[\s\S]*arithmetic mean/);
   assert.match(definitions, /Status: Tier-1 and KPI-02 implemented on `main` through PR #52[\s\S]*Source-only and undeployed[\s\S]*Migration 0012 not applied to Sites/);

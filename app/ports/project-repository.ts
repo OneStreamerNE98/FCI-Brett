@@ -61,7 +61,38 @@ export type ProjectManagerAssignmentIntent = {
 
 export type ProjectManagerAssignmentRepositoryResult = { outcome: "updated" } | { outcome: "project-not-found" };
 
+type ProjectOperationActivity = {
+  id: string;
+  recordId: string;
+  actor: string;
+  detail: string;
+  createdAt: number;
+};
+
+export type ProjectInstallationDatesIntent = {
+  projectId: string;
+  installationStartedAt: number;
+  installationCompletedAt: number;
+  updatedAt: number;
+  activity: ProjectOperationActivity & { action: "Installation dates recorded" };
+};
+
+export type ProjectFollowUpResultIntent = {
+  projectId: string;
+  hadCallback: boolean;
+  callbackNote: string | null;
+  updatedAt: number;
+  activity: ProjectOperationActivity & { action: "Follow-up result recorded" };
+};
+
+export type ProjectOperationRepositoryResult = { outcome: "updated" } | { outcome: "project-not-found" };
+
 export interface ProjectRepository {
   create(intent: ProjectCreationIntent): Promise<ProjectCreationRepositoryResult>;
   assignManager(intent: ProjectManagerAssignmentIntent): Promise<ProjectManagerAssignmentRepositoryResult>;
+}
+
+export interface ProjectOperationsRepository {
+  recordInstallationDates(intent: ProjectInstallationDatesIntent): Promise<ProjectOperationRepositoryResult>;
+  recordFollowUpResult(intent: ProjectFollowUpResultIntent): Promise<ProjectOperationRepositoryResult>;
 }

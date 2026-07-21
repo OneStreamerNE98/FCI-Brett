@@ -47,6 +47,7 @@ test("project creation validates string and numeric JSON fields before use", asy
   assert.match(route, /officeIdentityForEmail/);
   assert.match(route, /project_manager: projectManagerId,[\s\S]*project_manager_id: projectManagerId/);
   assert.match(route, /p\.flooring_category, p\.square_feet, p\.contract_value/);
+  assert.match(route, /p\.installation_started_at, p\.installation_completed_at, p\.had_callback, p\.callback_note/);
   assert.match(route, /contract_value: auth\.user\.isAdmin \? record\.contract_value : null/);
   assert.match(route, /NextResponse\.json\(\{ projects \}, \{ headers: \{ "Cache-Control": "no-store" \} \}\)/);
   assert.match(route, /!auth\.user\.isAdmin && parsed\.body\.contractValue/);
@@ -72,6 +73,35 @@ test("project creation makes the project and activity one conditional D1 batch",
   assert.match(adapter, /outcome: "project-not-found"/);
 });
 
+test("project operation D1 updates and their activity evidence stay in conditional batches", async () => {
+  const [adapter, application] = await Promise.all([
+    read("app/adapters/d1/project-repository.ts"),
+    read("app/application/record-project-operation.ts"),
+  ]);
+  const installationStart = adapter.indexOf("async recordInstallationDates");
+  const followUpStart = adapter.indexOf("async recordFollowUpResult");
+  assert.ok(installationStart >= 0 && followUpStart > installationStart);
+  const installation = adapter.slice(installationStart, followUpStart);
+  const followUp = adapter.slice(followUpStart);
+
+  assert.match(installation, /database\.batch\(\[/);
+  assert.match(installation, /UPDATE projects SET installation_started_at = \?, installation_completed_at = \?, updated_at = \? WHERE id = \?/);
+  assert.match(installation, /INSERT INTO activity_events[\s\S]*WHERE EXISTS \(SELECT 1 FROM projects WHERE id = \? AND installation_started_at = \? AND installation_completed_at = \? AND updated_at = \?\)/);
+  assert.match(installation, /activity\.id, activity\.recordId, activity\.action, activity\.actor, activity\.detail, activity\.createdAt/);
+  assert.match(installation, /intent\.projectId, intent\.installationStartedAt, intent\.installationCompletedAt, intent\.updatedAt/);
+
+  assert.match(followUp, /const hadCallback = intent\.hadCallback \? 1 : 0/);
+  assert.match(followUp, /database\.batch\(\[/);
+  assert.match(followUp, /UPDATE projects SET had_callback = \?, callback_note = \?, updated_at = \? WHERE id = \?/);
+  assert.match(followUp, /INSERT INTO activity_events[\s\S]*WHERE EXISTS \(SELECT 1 FROM projects WHERE id = \? AND had_callback = \? AND callback_note IS \? AND updated_at = \?\)/);
+  assert.match(followUp, /activity\.id, activity\.recordId, activity\.action, activity\.actor, activity\.detail, activity\.createdAt/);
+  assert.match(followUp, /intent\.projectId, hadCallback, intent\.callbackNote, intent\.updatedAt/);
+
+  assert.match(application, /action: "Installation dates recorded"/);
+  assert.match(application, /action: "Follow-up result recorded"/);
+  assert.match(application, /Post-installation callback: \$\{normalized\.value\.hadCallback \? "Yes" : "No"\}/);
+});
+
 test("KPI-02 D1 migration is immutable additive-only and has no backfill or constraint", async () => {
   const [migration, journal] = await Promise.all([
     read("drizzle/0012_green_magneto.sql"),
@@ -84,6 +114,26 @@ test("KPI-02 D1 migration is immutable additive-only and has no backfill or cons
   assert.match(migration, /ALTER TABLE `projects` ADD `contract_value` integer;/);
   assert.doesNotMatch(migration, /NOT NULL|UNIQUE|UPDATE|INSERT|DELETE/i);
   assert.match(journal, /"idx": 12[\s\S]*"tag": "0012_green_magneto"/);
+});
+
+test("KPI-03 D1 migration 0014 is strictly additive and performs no DML, drop, or backfill", async () => {
+  const [migration, journal] = await Promise.all([
+    read("drizzle/0014_strange_anita_blake.sql"),
+    read("drizzle/meta/_journal.json"),
+  ]);
+  const statements = migration
+    .split(/-->\s*statement-breakpoint/)
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+
+  assert.deepEqual(statements, [
+    "ALTER TABLE `projects` ADD `installation_started_at` integer;",
+    "ALTER TABLE `projects` ADD `installation_completed_at` integer;",
+    "ALTER TABLE `projects` ADD `had_callback` integer DEFAULT false NOT NULL;",
+    "ALTER TABLE `projects` ADD `callback_note` text;",
+  ]);
+  assert.doesNotMatch(migration, /\b(?:DROP|UPDATE|INSERT|DELETE|CREATE|RENAME)\b/i);
+  assert.match(journal, /"idx": 14[\s\S]*"tag": "0014_strange_anita_blake"/);
 });
 
 test("KPI-02 e2e cleanup removes reserved project activity before reserved projects", async () => {

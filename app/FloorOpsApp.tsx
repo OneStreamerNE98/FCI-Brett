@@ -18,7 +18,7 @@ import { Avatar, Metric, PageTitle, PanelHeader, Status } from "./components/ope
 import { OperationsActionableList, OperationsActionableListItem } from "./components/operations/OperationsActionableList";
 import { ActiveRouteFilter } from "./features/reports/ActiveRouteFilter";
 import { BusinessKpisPanel } from "./features/reports/BusinessKpisPanel";
-import { FINANCIAL_RESTRICTION_LABEL } from "./features/reports/flooring-kpis";
+import { FINANCIAL_RESTRICTION_LABEL, FLOORING_KPI_TIME_ZONE } from "./features/reports/flooring-kpis";
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
 import { cachedGetJson } from "./lib/client-get-cache";
 import {
@@ -51,10 +51,11 @@ import { MyAccountPanel } from "./settings/components/MyAccountPanel";
 import { TestingLaunchPanel } from "./settings/components/TestingLaunchPanel";
 import { WorkspaceDefaultsPanel } from "./settings/components/WorkspaceDefaultsPanel";
 import { FLOORING_CATEGORIES, type FlooringCategory } from "./domain/project-creation";
+import { CALLBACK_NOTE_MAX_LENGTH } from "./domain/project-operations";
 
 type Lead = { id: string; number: string; company: string; contact: string; project: string; value: string; estimatedValue: number; stage: string; source: string; next: string; site: string; status: string; initials: string; color: string; createdAt?: number | null; updatedAt?: number | null };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; driveFolderId?: string; driveUrl?: string };
-type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; site: string; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; driveFolderId?: string; driveUrl?: string };
+type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; driveFolderId?: string; driveUrl?: string };
 type DashboardSummary = {
   generatedAt: number;
   metrics: { activeLeads: number; estimatedPipelineValue: number; activeProjects: number; clientCount: number; meetingCount: number; filedEmailCount: number };
@@ -102,6 +103,8 @@ const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
 const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const projectOperationDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: FLOORING_KPI_TIME_ZONE });
+const projectOperationDateInputFormatter = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: FLOORING_KPI_TIME_ZONE });
 const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
 const CLIENT_ACTIONABLE_COLUMNS = ["Client", "Primary contact", "Projects", ""] as const;
 const PROJECT_ACTIONABLE_COLUMNS = ["Project", "Status", "Schedule & site", "Value", ""] as const;
@@ -144,6 +147,35 @@ function optionalRecordNumber(value: unknown) {
 function optionalFlooringCategory(value: unknown): FlooringCategory | null {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
   return (FLOORING_CATEGORIES as readonly string[]).includes(normalized) ? normalized as FlooringCategory : null;
+}
+
+function optionalProjectTimestamp(value: unknown) {
+  const timestamp = optionalRecordNumber(value);
+  return timestamp !== null && Number.isSafeInteger(timestamp) && timestamp >= 0 && !Number.isNaN(new Date(timestamp).getTime()) ? timestamp : null;
+}
+
+function formatProjectOperationDate(timestamp: number | null) {
+  return timestamp === null ? "Not yet recorded" : projectOperationDateFormatter.format(new Date(timestamp));
+}
+
+function projectOperationDateInputValue(timestamp: number | null) {
+  if (timestamp === null) return "";
+  const parts = projectOperationDateInputFormatter.formatToParts(new Date(timestamp));
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  return year && month && day ? `${year}-${month}-${day}` : "";
+}
+
+function projectOperationTimestampFromDateInput(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const timestamp = Date.UTC(year, month - 1, day, 12);
+  const date = new Date(timestamp);
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? timestamp : null;
 }
 
 function isActiveProject(project: Project) {
@@ -276,7 +308,10 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
         const estimatedValue = optionalRecordNumber(project.estimated_value);
         const squareFeet = optionalRecordNumber(project.square_feet);
         const contractValue = optionalRecordNumber(project.contract_value);
-        return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory: optionalFlooringCategory(project.flooring_category), squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0 ? squareFeet : null, contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0 ? contractValue : null, site: String(project.site ?? "Site pending"), managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
+        const installationStartedAt = optionalProjectTimestamp(project.installation_started_at);
+        const installationCompletedAt = optionalProjectTimestamp(project.installation_completed_at);
+        const callbackNote = typeof project.callback_note === "string" && project.callback_note.trim() ? project.callback_note.trim() : null;
+        return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory: optionalFlooringCategory(project.flooring_category), squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0 ? squareFeet : null, contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0 ? contractValue : null, installationStartedAt, installationCompletedAt, hadCallback: project.had_callback === true || project.had_callback === 1, callbackNote, site: String(project.site ?? "Site pending"), managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
       }));
       setDashboard(dashboardData as unknown as DashboardSummary);
       setLiveDataState("ready");
@@ -785,6 +820,42 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
     }
   }
 
+  async function recordProjectInstallationDates(project: Project, installationStartedAt: number, installationCompletedAt: number) {
+    const response = await fetch("/api/v1/projects", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "record-installation-dates", projectId: project.id, installationStartedAt, installationCompletedAt }),
+    });
+    const data = await response.json().catch(() => ({})) as { installationStartedAt?: number; installationCompletedAt?: number; updatedAt?: number; error?: string };
+    if (!response.ok || !Number.isSafeInteger(data.installationStartedAt) || !Number.isSafeInteger(data.installationCompletedAt)) {
+      throw new Error(data.error ?? "Installation dates could not be recorded.");
+    }
+    const updateProject = (item: Project): Project => item.id === project.id
+      ? { ...item, installationStartedAt: data.installationStartedAt as number, installationCompletedAt: data.installationCompletedAt as number, updatedAt: optionalProjectTimestamp(data.updatedAt) ?? item.updatedAt }
+      : item;
+    setProjectItems((current) => current.map(updateProject));
+    setSelectedProject((current) => current ? updateProject(current) : current);
+    notify(`Installation dates recorded for ${project.number}`, "success");
+  }
+
+  async function recordProjectFollowUpResult(project: Project, hadCallback: boolean, callbackNote: string | null) {
+    const response = await fetch("/api/v1/projects", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "record-follow-up-result", projectId: project.id, hadCallback, callbackNote }),
+    });
+    const data = await response.json().catch(() => ({})) as { hadCallback?: boolean; callbackNote?: string | null; updatedAt?: number; error?: string };
+    if (!response.ok || typeof data.hadCallback !== "boolean") {
+      throw new Error(data.error ?? "The follow-up result could not be recorded.");
+    }
+    const updateProject = (item: Project): Project => item.id === project.id
+      ? { ...item, hadCallback: data.hadCallback as boolean, callbackNote: typeof data.callbackNote === "string" && data.callbackNote.trim() ? data.callbackNote.trim() : null, updatedAt: optionalProjectTimestamp(data.updatedAt) ?? item.updatedAt }
+      : item;
+    setProjectItems((current) => current.map(updateProject));
+    setSelectedProject((current) => current ? updateProject(current) : current);
+    notify(`Follow-up result recorded for ${project.number}`, "success");
+  }
+
   function handleWorkspaceSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape" && searchResults.length > 0) {
       event.preventDefault();
@@ -931,7 +1002,7 @@ export function FloorOpsApp({ initialView, environment, userName, userEmail, acc
       {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} managerId={userEmail.trim().toLowerCase()} managerLabel={userName.trim() || userEmail} isAdmin={isAdmin} onClose={closeNewProject} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
       {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} returnFocusRef={leadDrawerReturnFocusRef} />}
-      {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
+      {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
       {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
       {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"} aria-atomic="true">
         {toast.kind === "success" ? <CheckCircle2 size={18} aria-hidden="true" /> : toast.kind === "info" ? <Info size={18} aria-hidden="true" /> : <CircleAlert size={18} aria-hidden="true" />}
@@ -1444,7 +1515,7 @@ function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client
 
 function NewProjectModal({ clients, initialClientId, managerId, managerLabel, isAdmin, onClose, onSave }: { clients: Client[]; initialClientId: string | null; managerId: string; managerLabel: string; isAdmin: boolean; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); const estimatedValue = form.get("value") ? Number(form.get("value")) : null; const flooringCategory = optionalFlooringCategory(form.get("flooringCategory")); const squareFeet = form.get("squareFeet") ? Number(form.get("squareFeet")) : null; const contractValue = isAdmin && form.get("contractValue") ? Number(form.get("contractValue")) : null; try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory, squareFeet, contractValue, site: String(form.get("site")), managerId, lead: projectManagerLabel(managerId, managerId, managerLabel), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); const estimatedValue = form.get("value") ? Number(form.get("value")) : null; const flooringCategory = optionalFlooringCategory(form.get("flooringCategory")); const squareFeet = form.get("squareFeet") ? Number(form.get("squareFeet")) : null; const contractValue = isAdmin && form.get("contractValue") ? Number(form.get("contractValue")) : null; try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory, squareFeet, contractValue, installationStartedAt: null, installationCompletedAt: null, hadCallback: false, callbackNote: null, site: String(form.get("site")), managerId, lead: projectManagerLabel(managerId, managerId, managerLabel), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
   const selectedClientId = initialClientId && clients.some((client) => client.id === initialClientId) ? initialClientId : clients[0]?.id ?? "";
   return <AccessibleOverlay ariaLabel="Create a project" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client<select data-overlay-initial-focus name="clientId" required defaultValue={selectedClientId} disabled={clients.length === 0}>{clients.length === 0 && <option value="">Create a client first</option>}{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="Project name" /></label><div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><div className="assigned-manager-field" aria-label={`Project manager: ${managerLabel}, signed-in account`}><span>Project manager</span><strong>{managerLabel}</strong><small>{managerId} · signed-in account</small></div></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value <span className="optional-label">Optional</span><input name="value" type="number" min="0" step="1" inputMode="numeric" placeholder="Estimated amount" /></label></div><div className="form-row"><label>Flooring category <span className="optional-label">Optional</span><select name="flooringCategory" defaultValue=""><option value="">Not yet captured</option>{FLOORING_CATEGORIES.map((category) => <option key={category} value={category}>{displayStatus(category, category)}</option>)}</select></label><label>Square feet <span className="optional-label">Optional</span><input name="squareFeet" type="number" min="1" step="1" inputMode="numeric" placeholder="Project square footage" /></label></div><label>Contract value <span className="optional-label">Optional</span><input name="contractValue" type="number" min="0" step="1" inputMode="numeric" placeholder={isAdmin ? "Sold price at booking" : FINANCIAL_RESTRICTION_LABEL} disabled={!isAdmin} aria-describedby="contract-value-help" /></label><p id="contract-value-help" className="form-help"><ShieldCheck size={14} /> {isAdmin ? "Contract value is a financial field visible to administrators." : "An administrator can record the sold price at booking."}</p><p className="form-help"><ShieldCheck size={14} /> The project is assigned to your authorized signed-in account. An administrator can correct an unassigned legacy project from its project drawer.</p><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || clients.length === 0}>{saving ? "Creating…" : clients.length === 0 ? "Add a client first" : "Create project"}</button></footer></form></AccessibleOverlay>;
 }
@@ -1475,10 +1546,12 @@ function LeadDrawer({ lead, onClose, onAdvance, returnFocusRef }: { lead: Lead; 
   </AccessibleOverlay>;
 }
 
-function ProjectDrawer({ project, onClose, notify, onProvisionDrive, onAssignToMe, isAdmin, currentUserEmail, returnFocusRef }: { project: Project; onClose: () => void; notify: Notify; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; isAdmin: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
+function ProjectDrawer({ project, onClose, notify, onProvisionDrive, onAssignToMe, onRecordInstallationDates, onRecordFollowUpResult, isAdmin, currentUserEmail, returnFocusRef }: { project: Project; onClose: () => void; notify: Notify; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; onRecordInstallationDates: (project: Project, installationStartedAt: number, installationCompletedAt: number) => Promise<void>; onRecordFollowUpResult: (project: Project, hadCallback: boolean, callbackNote: string | null) => Promise<void>; isAdmin: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
   const [tab, setTab] = useState<"Overview" | "Meetings">("Overview");
   const [provisioning, setProvisioning] = useState(false);
   const [assigningManager, setAssigningManager] = useState(false);
+  const [installationDatesOpen, setInstallationDatesOpen] = useState(false);
+  const [followUpResultOpen, setFollowUpResultOpen] = useState(false);
   const busy = provisioning || assigningManager;
 
   async function handleDrive() {
@@ -1500,22 +1573,81 @@ function ProjectDrawer({ project, onClose, notify, onProvisionDrive, onAssignToM
     }
   }
 
-  return <AccessibleOverlay variant="drawer" ariaLabel={`${project.number} ${project.name}`} contentClassName="project-drawer" onClose={onClose} busy={busy} returnFocusRef={returnFocusRef}>
+  return <><AccessibleOverlay variant="drawer" ariaLabel={`${project.number} ${project.name}`} contentClassName="project-drawer" onClose={onClose} busy={busy} returnFocusRef={returnFocusRef}>
       <header><button data-overlay-initial-focus onClick={onClose} aria-label="Close project" disabled={busy}><X size={20} /></button><Status text={project.status} /><span>{project.number}</span></header>
       <div className="drawer-title"><p>{project.client}</p><h2>{project.name}</h2><div><span><MapPin size={14} />{project.site}</span><span><CalendarDays size={14} />{project.date}</span></div></div>
       <nav aria-label="Available project views">{(["Overview", "Meetings"] as const).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
       <div className="drawer-body" tabIndex={0} aria-label="Project details">
         {tab === "Overview" ? <>
           <section className="project-health"><div><span>Delivery progress</span><strong>Not tracked yet</strong></div><p><CheckCircle2 size={15} /> This live project is managed independently from other client work</p></section>
-          <div className="drawer-stats"><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Contract value</span><strong>{!isAdmin ? FINANCIAL_RESTRICTION_LABEL : project.contractValue === null ? "Not yet captured" : money(project.contractValue)}</strong></div><div><span>Flooring category</span><strong>{project.flooringCategory === null ? "Not yet captured" : displayStatus(project.flooringCategory, project.flooringCategory)}</strong></div><div><span>Square feet</span><strong>{project.squareFeet === null ? "Not yet captured" : new Intl.NumberFormat("en-US").format(project.squareFeet)}</strong></div><div className="project-manager-stat"><span>Project manager</span><strong>{project.lead}</strong>{project.managerId === currentUserEmail ? <small>Assigned to your signed-in account</small> : isAdmin ? <button className="manager-assignment-button" onClick={() => void handleAssignToMe()} disabled={assigningManager}>{assigningManager ? "Assigning…" : "Assign to me"}</button> : project.managerId ? <small>Authorized office account</small> : <small>No authorized manager is assigned</small>}</div><div><span>Meetings</span><strong>Working</strong></div><div><span>Drive folder</span><strong>{project.driveFolderId ? "Ready" : "Setup required"}</strong></div></div>
-          <section className="project-capability-plan"><header><div><h3>Planned project capabilities</h3><p>These items are informational and are not available as controls yet.</p></div><FeatureStateBadge state="Planned" /></header><ul><li>Durable tasks and follow-ups</li><li>Indexed project files beyond the working Drive folder link</li><li>Crews, shifts, and field schedule</li><li>Project activity feed and outbound updates</li></ul></section>
+          <div className="drawer-stats"><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Contract value</span><strong>{!isAdmin ? FINANCIAL_RESTRICTION_LABEL : project.contractValue === null ? "Not yet captured" : money(project.contractValue)}</strong></div><div><span>Flooring category</span><strong>{project.flooringCategory === null ? "Not yet captured" : displayStatus(project.flooringCategory, project.flooringCategory)}</strong></div><div><span>Square feet</span><strong>{project.squareFeet === null ? "Not yet captured" : new Intl.NumberFormat("en-US").format(project.squareFeet)}</strong></div><div><span>Installation started</span><strong>{formatProjectOperationDate(project.installationStartedAt)}</strong></div><div><span>Installation completed</span><strong>{formatProjectOperationDate(project.installationCompletedAt)}</strong></div><div><span>Post-installation callback</span><strong>{project.hadCallback ? "Yes recorded" : "No recorded callback"}</strong>{project.callbackNote ? <small>{project.callbackNote}</small> : !project.hadCallback && <small>Default No can include an uncaptured legacy result.</small>}</div><div className="project-manager-stat"><span>Project manager</span><strong>{project.lead}</strong>{project.managerId === currentUserEmail ? <small>Assigned to your signed-in account</small> : isAdmin ? <button className="manager-assignment-button" onClick={() => void handleAssignToMe()} disabled={assigningManager}>{assigningManager ? "Assigning…" : "Assign to me"}</button> : project.managerId ? <small>Authorized office account</small> : <small>No authorized manager is assigned</small>}</div><div><span>Meetings</span><strong>Working</strong></div><div><span>Drive folder</span><strong>{project.driveFolderId ? "Ready" : "Setup required"}</strong></div></div>
+          <section className="project-operation-actions"><header><h3>Installation &amp; follow-up</h3><p>{isAdmin ? "Record the dates and callback outcome used by flooring KPI reporting." : "Only an administrator can record installation dates and callback results."}</p></header>{isAdmin && <div><button type="button" className="soft-button" onClick={() => setInstallationDatesOpen(true)}><CalendarDays size={16} /> Record installation dates</button><button type="button" className="soft-button" onClick={() => setFollowUpResultOpen(true)}><MessageSquareText size={16} /> Record follow-up result</button></div>}</section>
+          <section className="project-capability-plan"><header><div><h3>Planned project capabilities</h3><p>These items are informational and are not available as controls yet.</p></div><FeatureStateBadge state="Planned" /></header><ul><li>Durable tasks and scheduled reminders</li><li>Indexed project files beyond the working Drive folder link</li><li>Crews, shifts, and field schedule</li><li>Project activity feed and outbound updates</li></ul></section>
         </> : <ProjectMeetings project={project} notify={notify} />}
       </div>
       <footer>
         <span className="planned-project-updates"><FeatureStateBadge state="Planned" /> Project updates</span>
         <button className="soft-button" onClick={handleDrive} disabled={busy}><FolderOpen size={16} /> {provisioning ? "Creating folder…" : project.driveUrl ? "Open Drive folder" : "Create Drive folder"}</button>
       </footer>
-  </AccessibleOverlay>;
+  </AccessibleOverlay>
+    {installationDatesOpen && <InstallationDatesModal project={project} onClose={() => setInstallationDatesOpen(false)} onSave={(installationStartedAt, installationCompletedAt) => onRecordInstallationDates(project, installationStartedAt, installationCompletedAt)} />}
+    {followUpResultOpen && <FollowUpResultModal project={project} onClose={() => setFollowUpResultOpen(false)} onSave={(hadCallback, callbackNote) => onRecordFollowUpResult(project, hadCallback, callbackNote)} />}
+  </>;
+}
+
+function InstallationDatesModal({ project, onClose, onSave }: { project: Project; onClose: () => void; onSave: (installationStartedAt: number, installationCompletedAt: number) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const installationStartedAt = projectOperationTimestampFromDateInput(String(form.get("installationStartedAt") ?? ""));
+    const installationCompletedAt = projectOperationTimestampFromDateInput(String(form.get("installationCompletedAt") ?? ""));
+    if (installationStartedAt === null || installationCompletedAt === null) {
+      setError("Enter valid installation start and completion dates.");
+      return;
+    }
+    if (installationCompletedAt < installationStartedAt) {
+      setError("Installation completion must be on or after installation start.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(installationStartedAt, installationCompletedAt);
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Installation dates could not be recorded.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <AccessibleOverlay ariaLabel={`Record installation dates for ${project.number}`} contentClassName="modal project-operation-modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">{project.number}</p><h2>Record installation dates</h2></div><button type="button" onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}>{error && <p className="project-operation-error" role="alert">{error}</p>}<div className="form-row"><label>Installation started<input data-overlay-initial-focus name="installationStartedAt" type="date" defaultValue={projectOperationDateInputValue(project.installationStartedAt)} required disabled={saving} /></label><label>Installation completed<input name="installationCompletedAt" type="date" defaultValue={projectOperationDateInputValue(project.installationCompletedAt)} required disabled={saving} /></label></div><p className="form-help"><ShieldCheck size={14} /> These dates feed install-cycle and completed-job reporting. Saving appends an activity event.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Record installation dates"}</button></footer></form></AccessibleOverlay>;
+}
+
+function FollowUpResultModal({ project, onClose, onSave }: { project: Project; onClose: () => void; onSave: (hadCallback: boolean, callbackNote: string | null) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const callbackNote = String(form.get("callbackNote") ?? "").trim();
+    setSaving(true);
+    try {
+      await onSave(form.get("hadCallback") === "yes", callbackNote || null);
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "The follow-up result could not be recorded.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <AccessibleOverlay ariaLabel={`Record follow-up result for ${project.number}`} contentClassName="modal project-operation-modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">{project.number}</p><h2>Record follow-up result</h2></div><button type="button" onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}>{error && <p className="project-operation-error" role="alert">{error}</p>}<label>Post-installation callback<select data-overlay-initial-focus name="hadCallback" defaultValue={project.hadCallback ? "yes" : "no"} disabled={saving}><option value="yes">Yes</option><option value="no">No</option></select></label><label>Callback note <span className="optional-label">Optional</span><textarea name="callbackNote" defaultValue={project.callbackNote ?? ""} maxLength={CALLBACK_NOTE_MAX_LENGTH} placeholder="Record a concise result or issue" disabled={saving} /></label><p className="form-help"><ShieldCheck size={14} /> Callback notes are limited to {CALLBACK_NOTE_MAX_LENGTH.toLocaleString()} characters. Saving appends an activity event.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Record follow-up result"}</button></footer></form></AccessibleOverlay>;
 }
 
 function meetingDateInputValue() {

@@ -1317,13 +1317,15 @@ break any KPI; full suites pass.
 **Deps:** KPI-01. Effort: medium.
 
 ### KPI-03 · Installation dates + callback capture via audited drawer actions (medium, after KPI-02)
+**Status:** In review — draft PR #75, July 21, 2026. Source-only, undeployed, and not merged.
+
 **Why:** Install cycle time and callback rate are the two operations/quality KPIs every
 installer tracks — and this franchise's post-installation follow-up walkthrough makes the
 callback question a natural existing step. But project editing does not exist yet
 (tracked step-7 roadmap work). The repo already has the right interim pattern: the
 audited, admin-only "Assign to me" drawer action.
-**Do:** (1) Additive next-unused migration (coordinate with the merged schema history
-before work starts; SET-13 consumes 0013): `installation_started_at` (ms),
+**Do:** (1) Additive migration 0014, following merged SET-13 migration 0013:
+`installation_started_at` (ms),
 `installation_completed_at` (ms), `had_callback` (integer boolean default 0),
 `callback_note` (text, bounded) on `projects`. (2) Following the manager-assignment
 pattern exactly (admin-only, same-origin, reason-free single-purpose action, activity
@@ -1336,7 +1338,7 @@ documented `updatedAt` approximation for jobs-completed timing with
 `installation_completed_at` where present (fallback rule pinned in the doc). (4) These
 fields are the forward-compatible seed for the future Scheduling milestone — note in the
 definitions doc that Scheduling must consume, not duplicate, them.
-**Files:** `db/schema.ts`, `drizzle/`, `app/api/v1/projects/[projectId]/route.ts` (extend
+**Files:** `db/schema.ts`, `drizzle/`, `app/api/v1/projects/route.ts` (extend
 the existing audited-action PATCH surface), `app/FloorOpsApp.tsx` (drawer),
 `docs/flooring-kpis.md`, `tests/`.
 **Accept:** both actions are admin-gated server-side and append activity events; invalid
