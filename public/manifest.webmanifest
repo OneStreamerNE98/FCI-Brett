@@ -8,10 +8,16 @@
   "theme_color": "#f6f2ed",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "/fci-app-icon-master.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/fci-app-icon-master.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

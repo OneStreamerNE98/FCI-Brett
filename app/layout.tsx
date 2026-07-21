@@ -19,7 +19,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase: new URL(origin), title, description,
     manifest: "/manifest.webmanifest",
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    icons: {
+      icon: [
+        { url: "/fci-app-icon-master.svg", type: "image/svg+xml", sizes: "any" },
+        { url: "/fci-app-icon-master.png", type: "image/png", sizes: "1254x1254" },
+      ],
+      shortcut: "/fci-app-icon-master.svg",
+      apple: [{ url: "/fci-app-icon-master.png", type: "image/png", sizes: "1254x1254" }],
+    },
     applicationName: development ? "FCI Operations Dev" : "FCI Operations",
     appleWebApp: { capable: true, title: development ? "FCI Ops Dev" : "FCI Operations", statusBarStyle: "default" },
     openGraph: { title, description, type: "website" },

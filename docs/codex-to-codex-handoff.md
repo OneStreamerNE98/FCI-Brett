@@ -125,6 +125,13 @@ The owner completed the flagged hosted project-manager correction on July 18, 20
 6. SET-10/#56 is complete in merged source and remains undeployed; it exposes no live provider-health claim, and SET-13 is now assignable.
    Logo refresh/#57 is the sole remaining reviewed draft and is not merged or deployed. The other unclaimed independent packets remain coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13.
 
+The dated [Claude/Fable review handoff for PRs #51–#57](pr-51-57-claude-fable-review-handoff.md)
+remains the review record for the exact reviewed heads, outcomes, tests, dependencies,
+impact boundaries, documentation follow-ups, and reviewer questions. It is a snapshot,
+not a live status ledger. No item in that review packet authorizes a merge, deployment,
+migration or infrastructure apply, hosted configuration change, provider connection,
+second user, or real data.
+
 Build `codex/admin-field-links` only when field assignments are scheduled. It needs a distinct hashed Field Link store plus exact-project issuance, expiry, lookup, revocation, and the later Field Links tab; do not reuse file links.
 
 Do not build custom roles, a permission-toggle matrix, per-user overrides, editable session/invitation policy, user deletion/re-enablement, or a per-device session console for the first rollout.

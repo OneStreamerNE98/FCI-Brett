@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -35,7 +36,11 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(page, /OperationsRoutePage/);
   assert.match(routePage, /FloorOpsApp/);
   assert.match(layout, /Floor Coverings International \| Commercial Operations/);
-  assert.match(app, /floor-coverings-international-logo\.png/);
+  assert.match(app, /fci-logo-enhanced-master\.svg/);
+  assert.match(app, /fci-app-icon-master\.svg/);
+  assert.match(layout, /fci-app-icon-master\.svg/);
+  assert.match(layout, /fci-app-icon-master\.png/);
+  assert.match(layout, /shortcut: "\/fci-app-icon-master\.svg"/);
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
   assert.match(app, /Gmail project inbox/);
@@ -44,7 +49,9 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(app, /Ask FCI Assistant/);
   assert.match(css, /--cream:#f6f2ed/);
   assert.match(css, /\.sidebar \{ background:var\(--cream\); color:var\(--ink\);/);
-  assert.match(css, /\.brand \{ padding:0; margin:0 4px 26px; background:transparent;/);
+  assert.match(css, /\.brand \{ height:82px; padding:0; margin:0 4px 26px; overflow:hidden; background:#fff;/);
+  assert.match(css, /\.brand-full \{ display:block; width:100%; height:100%; object-fit:cover;/);
+  assert.match(css, /\.sidebar\.collapsed \.brand \.brand-compact img\{display:block\}/);
   assert.match(css, /@media \(max-width:560px\)/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
@@ -134,12 +141,52 @@ test("retires the legacy generic records endpoint and its unused actor helper", 
   assert.doesNotMatch(workspaceData, /\bactorFrom\b/);
 });
 
-test("includes migrations and the Floor Coverings International logo asset", async () => {
+test("includes migrations and preserves the supplied Floor Coverings International logo assets", async () => {
   await Promise.all([
     access(new URL("drizzle/0000_glossy_nekra.sql", root)),
     access(new URL("drizzle/0006_wide_sprite.sql", root)),
-    access(new URL("public/floor-coverings-international-logo.png", root)),
-    access(new URL("public/manifest.webmanifest", root)),
+  ]);
+  const [appIcon, fullLogo, appIconSvg, fullLogoSvg, manifest] = await Promise.all([
+    readFile(new URL("public/fci-app-icon-master.png", root)),
+    readFile(new URL("public/fci-logo-enhanced-master.png", root)),
+    read("public/fci-app-icon-master.svg"),
+    read("public/fci-logo-enhanced-master.svg"),
+    read("public/manifest.webmanifest"),
+  ]);
+
+  const pngDimensions = (asset) => ({
+    width: asset.readUInt32BE(16),
+    height: asset.readUInt32BE(20),
+  });
+  assert.equal(appIcon.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  assert.equal(fullLogo.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  assert.deepEqual(pngDimensions(appIcon), { width: 1254, height: 1254 });
+  assert.deepEqual(pngDimensions(fullLogo), { width: 1254, height: 1254 });
+  assert.equal(createHash("sha256").update(appIcon).digest("hex"), "f39b41e506baee0df8515c216b680e684ce71e7bbf8f7e3256c44abddb4e27e5");
+  assert.equal(createHash("sha256").update(fullLogo).digest("hex"), "051752f82c9763ca1a23460ba3b00a0e531d691b44e31aa5f7711fe6cdd4eb05");
+  assert.equal(createHash("sha256").update(appIconSvg).digest("hex"), "b510970816cefa2ca1d43b424de7de5f687910c902e95d369693d72315593050");
+  assert.equal(createHash("sha256").update(fullLogoSvg).digest("hex"), "81946ae0e8d4a5a53b639f95708ef288615c9b1082adb5b9800602b39b971506");
+  for (const svg of [appIconSvg, fullLogoSvg]) {
+    assert.match(svg, /<svg\b/i);
+    assert.match(svg, /\bwidth="1254"/i);
+    assert.match(svg, /\bheight="1254"/i);
+    assert.doesNotMatch(svg, /<(?:script|foreignObject|image)\b/i);
+    assert.doesNotMatch(svg, /\son[a-z]+\s*=/i);
+    assert.doesNotMatch(svg, /\b(?:href|xlink:href)\s*=\s*["'](?!#)/i);
+  }
+  assert.deepEqual(JSON.parse(manifest).icons, [
+    {
+      src: "/fci-app-icon-master.svg",
+      sizes: "any",
+      type: "image/svg+xml",
+      purpose: "any",
+    },
+    {
+      src: "/fci-app-icon-master.png",
+      sizes: "1254x1254",
+      type: "image/png",
+      purpose: "any",
+    },
   ]);
 });
 
