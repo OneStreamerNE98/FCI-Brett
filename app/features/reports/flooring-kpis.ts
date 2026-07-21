@@ -1,5 +1,8 @@
 export const FLOORING_KPI_TIME_ZONE = "America/New_York";
 export const FINANCIAL_RESTRICTION_LABEL = "Administrator only";
+// Must stay identical to FLOORING_CATEGORIES in app/domain/project-creation.ts —
+// a category present there but missing here silently vanishes from product mix.
+// tests/flooring-kpis.test.mjs pins the two lists equal.
 export const FLOORING_KPI_CATEGORIES = ["hardwood", "carpet", "luxury-vinyl", "tile-stone", "laminate", "specialty", "mixed"] as const;
 
 const MILLISECONDS_PER_DAY = 86_400_000;

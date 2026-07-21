@@ -3,12 +3,18 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   calculateFlooringKpis,
+  FLOORING_KPI_CATEGORIES,
   FLOORING_KPI_TIME_ZONE,
   monthKeyForTimestamp,
 } from "../app/features/reports/flooring-kpis.ts";
+import { FLOORING_CATEGORIES } from "../app/domain/project-creation.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
+
+test("the reports category allowlist stays identical to the domain capture allowlist", () => {
+  assert.deepEqual([...FLOORING_KPI_CATEGORIES], [...FLOORING_CATEGORIES]);
+});
 
 test("pins every Tier-1 and KPI-02 flooring formula to current lead and project fields", () => {
   const leads = [
@@ -23,7 +29,7 @@ test("pins every Tier-1 and KPI-02 flooring formula to current lead and project 
     { status: "mobilizing", estimatedValue: null, flooringCategory: "carpet", squareFeet: 2_000, contractValue: 60_000, createdAt: Date.parse("2026-07-02T13:00:00Z"), updatedAt: 2 },
     { status: "installation", estimatedValue: 0, flooringCategory: "hardwood", squareFeet: 500, contractValue: 0, createdAt: Date.parse("2026-07-03T13:00:00Z"), updatedAt: 2 },
     { status: "closeout", estimatedValue: 50_000, flooringCategory: "tile-stone", squareFeet: 1_000, contractValue: null, createdAt: Date.parse("2026-06-15T13:00:00Z"), updatedAt: 2 },
-    { status: "completed", estimatedValue: 25_000, flooringCategory: "luxury-vinyl", squareFeet: 1_000, contractValue: 30_000, createdAt: Date.parse("2026-07-04T13:00:00Z"), updatedAt: Date.parse("2026-07-15T12:00:00Z") },
+    { status: "completed", estimatedValue: 20_000, flooringCategory: "luxury-vinyl", squareFeet: 1_000, contractValue: 30_000, createdAt: Date.parse("2026-07-04T13:00:00Z"), updatedAt: Date.parse("2026-07-15T12:00:00Z") },
     { status: "completed", estimatedValue: 25_000, flooringCategory: null, squareFeet: null, contractValue: null, createdAt: Date.parse("2026-07-05T13:00:00Z"), updatedAt: Date.parse("2026-08-01T01:00:00Z") },
     { status: "cancelled", estimatedValue: 40_000, flooringCategory: null, squareFeet: null, contractValue: null, createdAt: Date.parse("2026-07-06T13:00:00Z"), updatedAt: 2 },
   ];
@@ -56,7 +62,9 @@ test("pins every Tier-1 and KPI-02 flooring formula to current lead and project 
   assert.equal(result.revenuePerSquareFoot, 22.5);
   assert.equal(result.revenuePerSquareFootJobCount, 4);
   assert.equal(result.squareFeetCaptureCount, 4);
-  assert.equal(result.estimateAccuracy, 1.2);
+  // 1.35 = mean(120000/100000, 30000/20000); the aggregate 150000/120000 = 1.25
+  // would fail, keeping the mean-of-ratios formula falsifiable in this suite.
+  assert.equal(result.estimateAccuracy, 1.35);
   assert.equal(result.estimateAccuracyJobCount, 2);
   assert.equal(result.contractValueCaptureCount, 4);
 });
@@ -117,5 +125,5 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
   assert.match(designLedger, /LeadStatusPanel.*intentionally remain a static list/);
   assert.match(executionLedger, /KPI-01[\s\S]+Complete — PR #41, July 19, 2026/);
   assert.match(executionLedger, /FloorOpsApp single-file queue[\s\S]+now KPI-02 → KPI-03/);
-  assert.match(executionLedger, /KPI-02[\s\S]+In review — open draft PR #52 from `codex\/kpi02-flooring-inputs`, July 20, 2026\. Source-only and undeployed\./);
+  assert.match(executionLedger, /KPI-02[\s\S]+In review — draft PR #52 from `codex\/kpi02-flooring-inputs`, July 20, 2026\. Source-only and not merged or deployed\./);
 });
