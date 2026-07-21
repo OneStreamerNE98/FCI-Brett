@@ -635,3 +635,58 @@ button { color:inherit; }
   .job-site-map-placeholder{justify-content:flex-start;min-height:160px;padding:20px}
   .job-site-map-card>footer>a{width:100%}
 }
+
+/* Feature-gated Google Chat notification routing. */
+.settings-panel-stack{display:grid;min-width:0;gap:15px}
+.settings-panel-stack>*{min-width:0}
+.chat-notification-settings{min-width:0}
+.chat-notification-settings .settings-heading>svg{flex:0 0 auto;color:#397056}
+.chat-mode-summary{display:flex;align-items:flex-start;gap:10px;margin:4px 0 15px;padding:13px;border:1px solid #e1d8ce;border-radius:9px;background:#faf8f5;color:#736a63}
+.chat-mode-summary.simulation{border-color:#cfdfd4;background:#f2f8f4;color:#397056}
+.chat-mode-summary.webhook{border-color:#cbdcd1;background:#edf6f0;color:#2d674a}
+.chat-mode-summary>svg{flex:0 0 auto;margin-top:1px}
+.chat-mode-summary>div{display:grid;min-width:0;gap:3px}
+.chat-mode-summary strong{color:var(--ink);font-size:12px}
+.chat-mode-summary span{color:#6f6661;font-size:12px;line-height:1.5}
+.chat-read-only-note{margin-bottom:15px}
+.chat-secret-section{margin:15px 0;padding:15px;border:1px solid #ded7cf;border-radius:10px;background:#fcfaf7}
+.chat-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.chat-section-heading>div{min-width:0}
+.chat-section-heading h3{margin:0;font:700 13px var(--font-display)}
+.chat-section-heading p{margin:4px 0 0;color:var(--text-muted);font-size:12px;line-height:1.5}
+.chat-secret-list{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.chat-secret-list>li{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:11px 12px;border:1px solid #e4ddd5;border-radius:8px;background:#fff}
+.chat-secret-list>li>div{display:grid;min-width:0;gap:4px}
+.chat-secret-list strong{font-size:12px}
+.chat-secret-list code,.chat-missing-details code{color:#4d4541;font:600 12px/1.45 var(--font-ui);overflow-wrap:anywhere}
+.chat-secret-status{display:inline-flex;border-radius:999px;padding:5px 8px;font-size:12px;font-weight:800;line-height:1.25;white-space:nowrap}
+.chat-secret-status.ready{background:#e7f2ea;color:#35674d}
+.chat-secret-status.missing{background:#f7ede2;color:#805b38}
+.chat-missing-details{margin-top:10px;padding:11px 12px;border:1px solid #ead8c5;border-radius:8px;background:#fff9f1;color:#7b542e}
+.chat-missing-details>strong{font-size:12px}
+.chat-missing-details ul{display:grid;gap:7px;margin:8px 0 0;padding:0;list-style:none}
+.chat-missing-details li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:start}
+.chat-missing-details li>span{color:#796a5c;font-size:12px;line-height:1.45;text-align:right}
+.chat-routing-fieldset{min-width:0;margin:0;padding:0;border:0}
+.chat-routing-fieldset>legend{padding:0;color:var(--accent-dark);font:700 13px var(--font-display)}
+.chat-routing-fieldset>p{margin:5px 0 12px;color:var(--text-muted);font-size:12px;line-height:1.5}
+.chat-routing-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.chat-routing-list>li{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,.45fr);align-items:stretch;gap:10px}
+.chat-routing-list .settings-checkbox{min-width:0;margin:0}
+.chat-routing-list .settings-checkbox input{flex:0 0 auto;width:15px;min-height:15px;margin:1px 0 0;padding:0}
+.chat-routing-list .chat-space-select{display:grid;align-content:start;gap:6px;min-width:0;padding:9px 11px;border:1px solid #e4ddd5;border-radius:8px;background:#fff}
+.chat-routing-list .chat-space-select>span{font-size:12px;font-weight:800}
+.chat-routing-list .chat-space-select select{min-width:0;margin:0}
+.chat-routing-fieldset:disabled .settings-checkbox,.chat-routing-fieldset:disabled .chat-space-select{cursor:not-allowed;background:#f5f2ee;color:#746d67}
+
+@media (max-width:700px){
+  .chat-routing-list>li{grid-template-columns:1fr}
+}
+
+@media (max-width:560px){
+  .chat-section-heading{display:grid}
+  .chat-section-heading .workspace-origin-tag{justify-self:start}
+  .chat-secret-list>li,.chat-missing-details li{grid-template-columns:1fr}
+  .chat-secret-status{justify-self:start}
+  .chat-missing-details li>span{text-align:left}
+}

@@ -28,6 +28,11 @@ gates. Effort tiers assume the app's existing OAuth + API plumbing.
 | 8 | **Drive shortcuts in the blueprint** | "Field Schedule — This Week" folder of shortcuts to active projects for crews; master price-sheet shortcut inside every project folder. One canonical file, surfaced where crews look. | `files.create` shortcut mimeType, existing scope; small blueprint (SET-15/21) add-on. Caveat: shortcuts break if targets are deleted (engine never deletes — fine). | Free |
 | 9 | **Chat webhooks for ops notifications** | Push to team Chat spaces on phones: new lead, filing review needed, schedule change, warranty follow-up due — with deep links back into FCI. | Incoming webhooks: **no OAuth at all**; per-space secret URLs, owner-provisioned; a feature-gated notifier module off by default (matches the repo's gated-push pattern). | Free |
 
+GI-02 implements item 9 as a source-only, default-off boundary with simulation audit
+logging, strict secret-name-only configuration, and no live send. See the
+[Google Chat notification boundary](google-chat-notifications.md). Owner webhook
+provisioning, hosted values, deployment, and any live test remain separately gated.
+
 ## Tier 2 — high value, needs an owner gate (scope, billing account, or edition)
 
 | # | Integration | What it does | Gate | Cost |

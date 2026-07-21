@@ -1400,6 +1400,8 @@ branch, malformed-row tolerance); review-first queue asserted (no auto-created l
 without confirmation); simulation e2e. **Effort:** small. **Cost:** $0.
 
 ### GI-02 · Chat webhook notifier + notification-routing settings (medium, independent)
+**Status:** In progress — `codex/gi02-chat-notifier`, July 21, 2026.
+
 **Why:** One-way pushes into Chat spaces the team already has on their phones — new
 lead, filing-review needed, schedule change, warranty follow-up — with deep links back
 into the app. No OAuth at all; webhook URLs are per-space secrets.

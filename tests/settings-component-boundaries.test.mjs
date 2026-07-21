@@ -7,6 +7,7 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 const expectedComponents = new Map([
+  ["ChatNotificationSettingsCard.tsx", ["ChatNotificationSettingsCard"]],
   ["DataSecurityPanel.tsx", ["DataSecurityPanel"]],
   ["DirectorySyncPanel.tsx", ["DirectorySyncPanel"]],
   ["GoogleWorkspacePanel.tsx", ["GoogleWorkspacePanel", "GmailFilingModal"]],
@@ -17,7 +18,7 @@ const expectedComponents = new Map([
   ["WorkspaceDefaultsPanel.tsx", ["WorkspaceDefaultsPanel"]],
 ]);
 
-test("keeps the eight Settings component modules explicit and outside FloorOpsApp", async () => {
+test("keeps the nine Settings component modules explicit and outside FloorOpsApp", async () => {
   const directoryUrl = new URL("app/settings/components/", root);
   const files = (await readdir(directoryUrl)).filter((file) => file.endsWith(".tsx")).sort();
   assert.deepEqual(files, [...expectedComponents.keys()].sort());

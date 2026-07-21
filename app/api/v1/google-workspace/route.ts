@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { env } from "cloudflare:workers";
 import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-workspace";
 import { getGoogleConnectionStatus, getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { readGoogleChatPublicConfig } from "../../../lib/google-chat-notifier-sites";
 import { requireOfficeUser } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
@@ -21,10 +22,14 @@ export async function GET(request: NextRequest) {
   await ensureWorkspaceSchema();
   const google = getGoogleRuntimeConfig();
   const workspace = google.drive;
-  const connection = await getGoogleConnectionStatus(google);
+  const [connection, chatNotifications] = await Promise.all([
+    getGoogleConnectionStatus(google),
+    readGoogleChatPublicConfig(),
+  ]);
   const adminAllowlist = (env as unknown as Record<string, string | undefined>).FCI_ADMIN_EMAILS;
   const missingDetails = [
     ...google.missingDetails,
+    ...chatNotifications.missingDetails,
     ...(!adminAllowlist ? [{ label: "FCI administrator allowlist", envVar: "FCI_ADMIN_EMAILS", secret: false }] : []),
   ];
   const missing = missingDetails.map((detail) => detail.label);

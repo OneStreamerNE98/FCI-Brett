@@ -252,6 +252,26 @@ GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar ID>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar ID>
 ```
 
+Google Chat notifications are a separate, optional one-way integration. GI-02 keeps
+the feature off by default and does not authorize provisioning a webhook or changing
+hosted configuration. When a later owner-approved live test is scheduled, use only
+these hosted names; mark every webhook URL as a secret and never place a value in the
+app, Git, Drive, screenshots, or evidence:
+
+```dotenv
+GOOGLE_CHAT_NOTIFICATIONS_ENABLED=false
+GOOGLE_CHAT_SALES_WEBHOOK_URL=<hosted secret>
+GOOGLE_CHAT_OFFICE_OPS_WEBHOOK_URL=<hosted secret>
+GOOGLE_CHAT_FIELD_WEBHOOK_URL=<hosted secret>
+GOOGLE_CHAT_SERVICE_WEBHOOK_URL=<hosted secret>
+```
+
+Settings → Workflow & notifications shows each exact secret name and only its
+configured/missing state. Administrators map the four closed event types to those
+fixed space aliases and enable them individually; office users see the same mapping
+read-only. The browser never receives a webhook URL. See the
+[Google Chat notification boundary](google-chat-notifications.md).
+
 For the current development environment, `FCI_OFFICE_EMAILS` is the ChatGPT sign-in email. It is deliberately separate from `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, which is the company Google account allowed to connect data. `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account, and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address.
 
 Keep folder provisioning `false` until Drive verification passes. Saving source files or `.openai/hosting.json` does not configure these values; a saved Sites version must be deployed separately before a hosted environment-setting change takes effect.
