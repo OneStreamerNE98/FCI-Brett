@@ -112,8 +112,9 @@ test("Administrator can save closed Google Chat event routing without receiving 
   expect(browserIssues, browserIssues.join("\n\n")).toEqual([]);
 });
 
-test("office user sees the same Google Chat mapping as explicit read-only configuration", async ({ page }) => {
+test("office user cannot render or request Administrator Google Chat configuration", async ({ page }) => {
   const browserIssues = monitorBrowserIssues(page);
+  let getRequests = 0;
   let patchRequests = 0;
   await page.setExtraHTTPHeaders({
     "oai-authenticated-user-email": "e2e-office@example.test",
@@ -121,24 +122,20 @@ test("office user sees the same Google Chat mapping as explicit read-only config
     "oai-authenticated-user-full-name-encoding": "percent-encoded-utf-8",
   });
   await page.route("**/api/v1/integrations/google/chat/config", async (route) => {
+    if (route.request().method() === "GET") getRequests += 1;
     if (route.request().method() === "PATCH") patchRequests += 1;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...chatConfigFixture, canEdit: false }) });
   });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/settings?section=workflow-notifications");
-  const card = page.locator(".chat-notification-settings");
-  await expect(card.getByRole("heading", { level: 2, name: "Google Chat notifications" })).toBeVisible();
-  await expect(card.getByRole("note").filter({ hasText: "Read-only notification routing" })).toBeVisible();
-  await expect(card.getByRole("checkbox", { name: /New lead/ })).toBeDisabled();
-  await expect(card.getByLabel("Chat space for New lead")).toBeDisabled();
-  await expect(card.getByRole("button", { name: "Save Chat routing" })).toBeDisabled();
-  await expect(card).toContainText("Filing review needed");
-  await expect(card).toContainText("Schedule change");
-  await expect(card).toContainText("Warranty follow-up due");
-  await expect(card).toContainText("GOOGLE_CHAT_OFFICE_OPS_WEBHOOK_URL");
+  await expect(page).toHaveURL(/\/settings$/u);
+  await expect(page.getByRole("heading", { level: 2, name: "My settings" })).toBeVisible();
+  await expect(page.locator(".chat-notification-settings")).toHaveCount(0);
+  await expect(page.locator(".settings-nav").getByText("Workspace & company setup", { exact: true })).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText(forbiddenWebhookSentinel);
   await expect(page.locator("body")).not.toContainText(forbiddenTokenSentinel);
+  expect(getRequests).toBe(0);
   expect(patchRequests).toBe(0);
   await expectNoHorizontalOverflow(page);
   expect(browserIssues, browserIssues.join("\n\n")).toEqual([]);
