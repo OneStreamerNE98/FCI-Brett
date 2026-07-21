@@ -1410,7 +1410,7 @@ repo (grep + test); simulation logs instead of posting. **Effort:** medium.
 **Cost:** $0 (Chat included in Workspace; webhooks unpriced).
 
 ### GI-03 · Job-site map + navigation link on the client and project screens (small-medium, after WS-15; FloorOpsApp queue) — OWNER PRIORITY (July 21)
-**Status:** In progress — `codex/gi03-job-site-maps`, July 21, 2026.
+**Status:** In review — draft PR #80, July 21, 2026. Source-only and undeployed; live satellite embeds remain blocked on WS-15 restricted browser-key configuration.
 
 **Why:** See the site (satellite view for driveway/staging assessment) on every
 client and project screen, and one-tap navigation for crews.
