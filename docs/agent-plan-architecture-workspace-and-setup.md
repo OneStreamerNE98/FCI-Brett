@@ -256,8 +256,9 @@ cleanly when ungated.
 lint and both builds pass. Source-only; no migration, grant, database, hosted
 configuration, or deployment has been applied.
 
-**Why:** `leads` (drizzle 0010) and `project_meetings` (0009) are D1-only with inline SQL
-in their routes; the rehearsal migrates only clients/contacts/projects/activity_events.
+**Why:** At BE-06 packet start, `leads` (drizzle 0010) and `project_meetings` (0009) were
+D1-only with inline SQL and the rehearsal migrated only clients, contacts, projects, and
+activity events. Draft PR #53 now expands the rehearsal to the v6 lead and meeting tables.
 The client/project port pattern (`app/ports/client-repository.ts` + d1 + postgres adapters
 + `creation-idempotency.ts`) is the template.
 **Do:** Define lead/meeting ports; extract route SQL verbatim into d1 adapters (byte-
@@ -371,19 +372,31 @@ Chromium suite; the image-publish job correctly skips. Nothing has been applied,
 published, deployed, executed, or configured.
 
 ### BE-12 · Rehearsal inventory expansion (medium, after BE-06; VERIFIED with corrections)
-**Status:** In review — draft PR #53 from `codex/be12-rehearsal-inventory`, July 20, 2026. Source-only and not merged, applied, configured, or deployed.
+**Status:** In review — draft PR #53 from `codex/be12-rehearsal-inventory`, July 20,
+2026. Source-only and not merged; the bounded integration ran only against a disposable GitHub CI
+PostgreSQL 16 schema. No approved hosted development/staging rehearsal, production
+migration or grant apply, live-data operation, hosted configuration, or deployment has
+been executed.
 
-**Why:** The cutover requirement to classify EVERY source category as
+**Why (at packet start):** The cutover requirement to classify EVERY source category as
 migrated/transformed/excluded/blocking comes from
 `docs/runbooks/google-cloud/migration-cutover-and-recovery.md`, "1. Staging migration
-rehearsal" (lines 25–27) — **not** the platform ADR. `db/schema.ts` exports 21 tables;
-the rehearsal covers 4, is silent on the other 17 plus R2 objects.
+rehearsal" (lines 25–27) — **not** the platform ADR. At that point, `db/schema.ts`
+exported 21 tables while the rehearsal covered 4 and was silent on the other 17 plus R2
+objects.
 **Do:** Add an inventory section to the rehearsal report enumerating every schema-exported
 table + R2, each classified with a reason (records: excluded legacy per BE-03;
-workspace_simulation_state: excluded dev-only; google_connections: blocking until BE-08;
-leads/meetings: migrated once v6 applies). Derive the table list from `db/schema.ts` so
-new tables can't escape classification. Extend the snapshot format (major version bump) to
-carry leads/meetings into v6 tables with hash verification; keep every existing guard
+workspace_simulation_state: excluded dev-only; google_connections: transformed only by a
+separately approved production reauthorization, never credential copying; leads/meetings:
+migrated into the now-defined v6 tables). Every inventory-only category remains zero-only
+and fails before database access; a disposition never authorizes silent data loss.
+Derive the table list from `db/schema.ts` so new tables can't escape classification.
+Extend the snapshot format (major version bump) to
+carry leads/meetings into v6 tables with hash verification. Format v2 must also require
+the project keys `flooringCategory`, `squareFeet`, and `contractValue`, preserve those
+keys as null in prepared rows and hash evidence, and refuse any non-null value before a
+database connection; KPI-04 owns the PostgreSQL columns and activation of those values.
+Keep every existing guard
 (FCI TEST name rule, 16 MiB/5,000-row caps, `^fci_rehearsal_` schema, refuse production,
 exact acknowledgment). `cutoverReady` stays hardcoded false.
 **Accept:** inventory covers all 21 tables (unit test fails on unclassified); extended
@@ -1160,12 +1173,14 @@ BE-06/BE-07 claim — coordinate version numbers via the registry, never renumbe
 the same nullable columns with CHECK constraints (category allowlist, square_feet > 0,
 contract_value ≥ 0, completed ≥ started); extend `infrastructure/postgres/
 least-privilege.sql` grants and readiness expectations; extend the postgres project
-repository row mapping; add the columns to the BE-12 rehearsal snapshot format and
-inventory classification so migrated projects carry their KPI data.
+repository row mapping; activate the three already-required nullable BE-12 format-v2
+project keys so non-null values are validated, imported, read back, and included in hash
+reconciliation. Keep the existing `projects: transformed` inventory classification.
 **Files:** `app/platform/postgres/production-schema-migrations.ts` (append only),
 `infrastructure/postgres/least-privilege.sql`,
 `app/platform/google-cloud/database-readiness.ts`,
-`app/adapters/postgres/project-repository.ts`, rehearsal modules per BE-12, `tests/`.
+`app/adapters/postgres/project-repository.ts`, rehearsal modules per BE-12 (activate the
+already-required nullable format-v2 placeholders and import their values), `tests/`.
 **Accept:** existing checksums unchanged, new version registered; gated PG16 integration
 tests apply and round-trip the columns; rehearsal imports KPI fields with hash
 verification; `npm test` passes.

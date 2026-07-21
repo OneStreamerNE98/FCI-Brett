@@ -31,7 +31,9 @@ The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-f
 - Cloud-Run-compilable Drive, Gmail, Calendar, Sheets, and OAuth cores with injected fetch, clock, secret-store, and persistence seams. The source-only production OAuth workflow uses exact-version multi-key decryption and the version-3 integration port, but is deliberately absent from production route composition.
 - A separate migration command using a one-connection pool, the immutable checksum runner, a session advisory lock, and an explicit validated migration-owner `SET ROLE`. Normal requests never import or call the migration runner.
 - Source-only capability roles and exact grants. The runtime role receives no schema creation, delete, truncate, reference, trigger, sequence, function, or broad future-table privilege.
-- A bounded test-data rehearsal for production-compatible clients, contacts, projects, and explicitly classified client/project activity events.
+- A bounded test-data rehearsal for production-compatible clients, contacts, leads,
+  projects, project meetings, and explicitly classified client/project/lead activity
+  events.
 
 ## Employee API contract
 
@@ -143,7 +145,7 @@ Keep Cloud Run minimum instances at zero and optional Cloud Tasks, Scheduler, Pu
 - a `NOLOGIN` runtime capability role; and
 - a development/staging-only rehearsal importer scoped to one isolated rehearsal schema.
 
-Use [`infrastructure/postgres/rehearsal-importer-template.sql`](../infrastructure/postgres/rehearsal-importer-template.sql) only as a reviewed per-schema grant template after the isolated rehearsal schema has been migrated. It rejects non-rehearsal schema names and validates the expected core-table boundary; it has not been applied anywhere.
+Use [`infrastructure/postgres/rehearsal-importer-template.sql`](../infrastructure/postgres/rehearsal-importer-template.sql) only as a reviewed per-schema grant template after the isolated rehearsal schema has been migrated. It rejects non-rehearsal schema names and validates the exact nine-table migration/control boundary needed by the six imported tables. It has not been applied to a hosted or shared database; GitHub CI exercises equivalent exact grants in its disposable rehearsal schema without executing this template file.
 
 The environment-specific migration login must have permission to set the owner role, and the migration command verifies `CURRENT_USER` after `SET ROLE`. Inherited membership alone would leave new objects owned by the login and would not apply the owner role’s default privileges.
 
@@ -151,12 +153,15 @@ Runtime readiness receives no direct migration-history table access. It compares
 
 ## Bounded core rehearsal
 
-The rehearsal snapshot is a strict, test-only exchange format rather than a raw D1 export. It:
+The format-version-2 rehearsal snapshot is a strict, test-only exchange format rather than a raw D1 export. It:
 
-- requires every client and project name to equal `FCI TEST — DO NOT USE` or begin with that exact marker plus a space;
+- inventories all 21 D1 schema tables plus R2 objects with a reason and one disposition (`migrated`, `transformed`, `excluded`, or `blocking`); a schema-derived test fails if a new D1 table is not classified, while the production runtime does not import the D1 schema;
+- carries only clients, contacts, leads, projects, project meetings, and explicitly classified activity events as bounded row payloads; every inventory-only category must report zero even when its eventual disposition is excluded or transformed;
+- requires every project to include `flooringCategory`, `squareFeet`, and `contractValue` as explicit null placeholders, keeps those keys in prepared rows and SHA-256 evidence, and refuses non-null values before database access until KPI-04 adds the reviewed PostgreSQL migration and importer mapping;
+- requires client/project names, lead company/contact/project/site fields, and project-meeting titles to equal `FCI TEST — DO NOT USE` or begin with that exact marker plus a space;
 - rejects snapshot files larger than 16 MiB and rejects more than 5,000 bounded core rows before row mapping;
 - accepts only production-compatible UUIDs, codes, statuses, timestamps, relationships, and explicit activity results/correlation IDs;
-- rejects identifier remapping, orphan relationships, duplicate normalized client names, multiple primary contacts, non-null legacy Drive fields, unknown fields, and any deferred source category with records;
+- rejects identifier remapping, orphan relationships, duplicate normalized client names, multiple primary contacts, non-null legacy Drive fields, unknown fields, unclassified activity, and any nonzero inventory-only source category before database access;
 - requires an empty, pre-migrated schema matching `^fci_rehearsal_[a-z0-9_]{1,49}$` and a restricted rehearsal importer role;
 - verifies that every target migration version, name, and immutable checksum exactly matches the reviewed source registry before inserting;
 - inserts in foreign-key order in one bounded transaction and preserves IDs, timestamps, relationships, and audit meaning;
@@ -164,7 +169,7 @@ The rehearsal snapshot is a strict, test-only exchange format rather than a raw 
 - reads the destination back and compares per-table counts, content SHA-256 evidence, and identifier SHA-256 evidence before commit; and
 - always reports `cutoverReady: false`.
 
-The current rehearsal does **not** migrate leads, meetings, generic records, Gmail archives, Drive mappings, OAuth attempts/tokens, Google connections, settings, user preferences, R2 objects, or unclassified legacy activity. OAuth and token material must never be exported into a snapshot; production Google authorization will be established again through the approved production connector.
+The current rehearsal does **not** migrate non-null flooring KPI values, generic records, Gmail archives, Drive mappings, OAuth attempts/tokens, Google connections, settings, user preferences, R2 objects, or unclassified legacy activity. Its Google-connection disposition documents separately approved production reauthorization; it does not authorize discarding a nonzero source count or copying credential ciphertext. OAuth and token material must never be exported into a snapshot; production Google authorization will be established again through the approved production connector.
 
 This is evidence that the bounded core path can be rehearsed. It is not evidence that the complete development application can be cut over.
 

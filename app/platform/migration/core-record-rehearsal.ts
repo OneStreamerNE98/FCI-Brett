@@ -17,11 +17,122 @@ export const CORE_REHEARSAL_TEST_MARKER = "FCI TEST — DO NOT USE";
 export const CORE_REHEARSAL_SOURCE_SYSTEM = "d1-development-test-export";
 export const CORE_REHEARSAL_MAX_ROWS = 5_000;
 
+export const CORE_REHEARSAL_SOURCE_INVENTORY = [
+  {
+    sourceCategory: "records",
+    disposition: "excluded",
+    reason: "Legacy generic records were retired by BE-03 and have no production migration.",
+  },
+  {
+    sourceCategory: "activity_events",
+    disposition: "transformed",
+    reason: "Classified activity is transformed to explicit client, project, or lead relationships.",
+  },
+  {
+    sourceCategory: "webhook_receipts",
+    disposition: "excluded",
+    reason: "Development webhook delivery receipts are transient replay-control data.",
+  },
+  {
+    sourceCategory: "clients",
+    disposition: "transformed",
+    reason: "Test clients are normalized to the production client schema without legacy Drive fields.",
+  },
+  {
+    sourceCategory: "contacts",
+    disposition: "transformed",
+    reason: "Test contacts are normalized to the production contact schema.",
+  },
+  {
+    sourceCategory: "leads",
+    disposition: "migrated",
+    reason: "Marked test leads map to the immutable PostgreSQL v6 leads table.",
+  },
+  {
+    sourceCategory: "projects",
+    disposition: "transformed",
+    reason: "Test projects are normalized to the production project schema without legacy Drive fields.",
+  },
+  {
+    sourceCategory: "project_meetings",
+    disposition: "migrated",
+    reason: "Marked test project meetings map to the immutable PostgreSQL v6 project_meetings table.",
+  },
+  {
+    sourceCategory: "filing_rules",
+    disposition: "blocking",
+    reason: "Production filing-rule ownership and migration semantics are not implemented.",
+  },
+  {
+    sourceCategory: "workspace_settings",
+    disposition: "blocking",
+    reason: "Development Workspace settings cannot be admitted to production automatically.",
+  },
+  {
+    sourceCategory: "user_preferences",
+    disposition: "blocking",
+    reason: "Production user mapping and preference migration are not implemented.",
+  },
+  {
+    sourceCategory: "mail_items",
+    disposition: "blocking",
+    reason: "Production mail-item migration and authorization semantics are not implemented.",
+  },
+  {
+    sourceCategory: "gmail_file_archives",
+    disposition: "blocking",
+    reason: "Gmail archive metadata requires a separately reviewed production mapping.",
+  },
+  {
+    sourceCategory: "gmail_file_archive_artifacts",
+    disposition: "blocking",
+    reason: "Gmail archive artifacts require a separately reviewed storage migration.",
+  },
+  {
+    sourceCategory: "google_oauth_attempts",
+    disposition: "excluded",
+    reason: "OAuth attempts are transient and must never be migrated.",
+  },
+  {
+    sourceCategory: "google_connections",
+    disposition: "transformed",
+    reason: "Production connections require separately approved reauthorization; no credential ciphertext is carried.",
+  },
+  {
+    sourceCategory: "drive_folder_mappings",
+    disposition: "blocking",
+    reason: "Drive mappings require production connector identity and ownership reconciliation.",
+  },
+  {
+    sourceCategory: "google_drive_operations",
+    disposition: "excluded",
+    reason: "Development provider-operation history is not production source data.",
+  },
+  {
+    sourceCategory: "google_sheet_sync_state",
+    disposition: "excluded",
+    reason: "Development sync cursors and leases must be recreated in production.",
+  },
+  {
+    sourceCategory: "google_integration_events",
+    disposition: "blocking",
+    reason: "Integration-event migration and production audit meaning are not implemented.",
+  },
+  {
+    sourceCategory: "workspace_simulation_state",
+    disposition: "excluded",
+    reason: "Workspace simulation state is development-only test infrastructure.",
+  },
+  {
+    sourceCategory: "r2_objects",
+    disposition: "blocking",
+    reason: "R2 objects require an approved, hash-verified object-storage migration.",
+  },
+] as const;
+
 export const DEFERRED_SOURCE_CATEGORIES = [
   "records",
   "webhook_receipts",
-  "leads",
-  "project_meetings",
   "filing_rules",
   "workspace_settings",
   "user_preferences",
@@ -40,9 +151,12 @@ export const DEFERRED_SOURCE_CATEGORIES = [
 ] as const;
 
 type DeferredSourceCategory = (typeof DEFERRED_SOURCE_CATEGORIES)[number];
+type SourceInventoryDefinition = (typeof CORE_REHEARSAL_SOURCE_INVENTORY)[number];
+type SourceCategory = SourceInventoryDefinition["sourceCategory"];
+type SourceDisposition = SourceInventoryDefinition["disposition"];
 type RehearsalEnvironment = "development" | "staging";
 type ActivityResult = "succeeded" | "failed" | "denied";
-type ActivityRecordType = "client" | "project";
+type ActivityRecordType = "client" | "project" | "lead";
 
 type PreparedClient = {
   id: string;
@@ -87,8 +201,54 @@ type PreparedProject = {
   site: string | null;
   projectManager: string | null;
   estimatedValue: number | null;
+  flooringCategory: null;
+  squareFeet: null;
+  contractValue: null;
   createdBy: string;
   updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  version: "1";
+};
+
+type PreparedLead = {
+  id: string;
+  leadNumber: string;
+  company: string;
+  contactName: string;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  projectName: string;
+  source: string;
+  stage: string;
+  site: string;
+  estimatedValue: number;
+  nextAction: string;
+  nextActionAt: string | null;
+  ownerEmail: string;
+  status: "active" | "converted" | "lost" | "archived";
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+  version: "1";
+};
+
+type PreparedProjectMeeting = {
+  id: string;
+  projectId: string;
+  title: string;
+  meetingAt: string;
+  meetingType: "client" | "site-walk" | "internal" | "pre-install" | "closeout" | "other";
+  sourceProvider: "manual" | "otter" | "link";
+  sourceUrl: string | null;
+  attendees: string[];
+  notes: string | null;
+  transcript: string | null;
+  summary: string | null;
+  decisions: string | null;
+  actionItems: string[];
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
   version: "1";
@@ -110,7 +270,9 @@ type PreparedActivityEvent = {
 export type PreparedCoreRecordSnapshot = {
   clients: PreparedClient[];
   contacts: PreparedContact[];
+  leads: PreparedLead[];
   projects: PreparedProject[];
+  projectMeetings: PreparedProjectMeeting[];
   activityEvents: PreparedActivityEvent[];
 };
 
@@ -123,8 +285,17 @@ export type CoreRecordTableEvidence = {
 export type CoreRecordEvidence = {
   clients: CoreRecordTableEvidence;
   contacts: CoreRecordTableEvidence;
+  leads: CoreRecordTableEvidence;
   projects: CoreRecordTableEvidence;
+  projectMeetings: CoreRecordTableEvidence;
   activityEvents: CoreRecordTableEvidence;
+};
+
+export type CoreRecordSourceInventoryEntry = {
+  sourceCategory: SourceCategory;
+  disposition: SourceDisposition;
+  reason: string;
+  sourceCount: number;
 };
 
 export type CoreRecordRehearsalOptions = {
@@ -141,10 +312,11 @@ export type CoreRecordRehearsalPlan = {
   rows: PreparedCoreRecordSnapshot;
   sourceEvidence: CoreRecordEvidence;
   deferredSourceCounts: Record<DeferredSourceCategory, 0>;
+  sourceInventory: CoreRecordSourceInventoryEntry[];
 };
 
 export type CoreRecordRehearsalReport = {
-  formatVersion: 1;
+  formatVersion: 2;
   dataClassification: "test";
   scope: "bounded-core-only";
   targetEnvironment: RehearsalEnvironment;
@@ -153,7 +325,9 @@ export type CoreRecordRehearsalReport = {
   tables: {
     clients: ReconciledTableEvidence;
     contacts: ReconciledTableEvidence;
+    leads: ReconciledTableEvidence;
     projects: ReconciledTableEvidence;
+    projectMeetings: ReconciledTableEvidence;
     activityEvents: ReconciledTableEvidence;
   };
   sideEffects: {
@@ -162,6 +336,7 @@ export type CoreRecordRehearsalReport = {
     providerCalls: 0;
   };
   deferredSourceCounts: Record<DeferredSourceCategory, 0>;
+  sourceInventory: CoreRecordSourceInventoryEntry[];
   cutoverReady: false;
 };
 
@@ -214,11 +389,23 @@ const PROJECT_STATUSES = new Set([
   "cancelled",
   "archived",
 ]);
+const LEAD_STATUSES = new Set(["active", "converted", "lost", "archived"]);
+const PROJECT_MEETING_TYPES = new Set([
+  "client",
+  "site-walk",
+  "internal",
+  "pre-install",
+  "closeout",
+  "other",
+]);
+const PROJECT_MEETING_SOURCE_PROVIDERS = new Set(["manual", "otter", "link"]);
 const ACTIVITY_RESULTS = new Set(["succeeded", "failed", "denied"]);
 const POSTGRES_IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]*$/;
 const CANONICAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CLIENT_CODE_PATTERN = /^CL-[A-Z0-9]{8}$/;
 const PROJECT_NUMBER_PATTERN = /^CF-[0-9]{4}-[A-Z0-9]{8}$/;
+const LEAD_NUMBER_PATTERN = /^L-[0-9]{4}-[A-Z0-9]{8}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const MAX_TEXT_LENGTH = 20_000;
 const DEFAULT_LOCK_TIMEOUT_MS = 5_000;
@@ -233,7 +420,9 @@ const TOP_LEVEL_KEYS = [
   "deferredSourceCounts",
   "clients",
   "contacts",
+  "leads",
   "projects",
+  "projectMeetings",
   "activityEvents",
 ] as const;
 const CLIENT_KEYS = [
@@ -272,10 +461,54 @@ const PROJECT_KEYS = [
   "site",
   "projectManager",
   "estimatedValue",
+  "flooringCategory",
+  "squareFeet",
+  "contractValue",
   "driveFolderId",
   "driveUrl",
   "createdBy",
   "updatedBy",
+  "createdAt",
+  "updatedAt",
+  "version",
+] as const;
+const LEAD_KEYS = [
+  "id",
+  "leadNumber",
+  "company",
+  "contactName",
+  "contactEmail",
+  "contactPhone",
+  "projectName",
+  "source",
+  "stage",
+  "site",
+  "estimatedValue",
+  "nextAction",
+  "nextActionAt",
+  "ownerEmail",
+  "status",
+  "createdBy",
+  "updatedBy",
+  "createdAt",
+  "updatedAt",
+  "version",
+] as const;
+const PROJECT_MEETING_KEYS = [
+  "id",
+  "projectId",
+  "title",
+  "meetingAt",
+  "meetingType",
+  "sourceProvider",
+  "sourceUrl",
+  "attendees",
+  "notes",
+  "transcript",
+  "summary",
+  "decisions",
+  "actionItems",
+  "createdBy",
   "createdAt",
   "updatedAt",
   "version",
@@ -350,6 +583,98 @@ function nullableText(value: unknown, label: string, allowBlank = true): string 
     fail("invalid_snapshot_value", `${label} must be null or a nonempty string`);
   }
   return value;
+}
+
+function productionText(value: unknown, label: string, maxLength: number): string {
+  const text = requiredText(value, label, maxLength);
+  if (/\p{Cc}/u.test(text)) {
+    fail("invalid_snapshot_value", `${label} contains a control character`);
+  }
+  return text;
+}
+
+function nullableProductionText(
+  value: unknown,
+  label: string,
+  maxLength: number,
+  allowLineBreaks = false,
+): string | null {
+  if (value === null) return null;
+  const text = requiredText(value, label, maxLength);
+  const checked = allowLineBreaks ? text.replace(/[\t\n\r]/g, "") : text;
+  if (/\p{Cc}/u.test(checked)) {
+    fail("invalid_snapshot_value", `${label} contains an unsupported control character`);
+  }
+  return text;
+}
+
+function normalizedEmail(value: unknown, label: string, required: true): string;
+function normalizedEmail(value: unknown, label: string, required?: false): string | null;
+function normalizedEmail(value: unknown, label: string, required = false): string | null {
+  if (value === null && !required) return null;
+  const email = productionText(value, label, 254);
+  if (email !== email.toLowerCase() || !EMAIL_PATTERN.test(email)) {
+    fail("invalid_snapshot_value", `${label} must be a normalized email address`);
+  }
+  return email;
+}
+
+function nullableCanonicalTimestamp(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return canonicalTimestamp(value, label);
+}
+
+function postgresInteger(value: unknown, label: string): number {
+  const integer = nonnegativeSafeInteger(value, label);
+  if (integer > 2_147_483_647) {
+    fail("invalid_snapshot_value", `${label} must fit a PostgreSQL integer`);
+  }
+  return integer;
+}
+
+function boundedStringList(
+  value: unknown,
+  label: string,
+  maximumItems: number,
+): string[] {
+  const entries = arrayValue(value, label);
+  if (entries.length > maximumItems) {
+    fail("invalid_snapshot_value", `${label} exceeds the item limit`);
+  }
+  const result = entries.map((entry, index) =>
+    nullableProductionText(entry, `${label}[${index}]`, 160, true),
+  );
+  if (result.some((entry) => entry === null) || new Set(result).size !== result.length) {
+    fail("invalid_snapshot_value", `${label} must contain unique nonempty strings`);
+  }
+  return result as string[];
+}
+
+function projectMeetingSourceUrl(
+  value: unknown,
+  provider: PreparedProjectMeeting["sourceProvider"],
+  label: string,
+): string | null {
+  if (provider === "manual") {
+    if (value !== null) fail("invalid_snapshot_value", `${label} must be null for a manual meeting`);
+    return null;
+  }
+  const sourceUrl = productionText(value, label, 900);
+  let parsed: URL;
+  try {
+    parsed = new URL(sourceUrl);
+  } catch {
+    fail("invalid_snapshot_value", `${label} must be a valid HTTPS URL`);
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+    fail("invalid_snapshot_value", `${label} must be a credential-free HTTPS URL`);
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  const isOtter = hostname === "otter.ai" || hostname.endsWith(".otter.ai");
+  if ((provider === "otter") !== isOtter) {
+    fail("invalid_snapshot_value", `${label} does not match the declared source provider`);
+  }
+  return sourceUrl;
 }
 
 function canonicalUuid(value: unknown, label: string): string {
@@ -460,9 +785,9 @@ function tableEvidence<T extends { id: string }>(table: string, rows: readonly T
   const ordered = [...rows].sort((left, right) => left.id.localeCompare(right.id));
   return {
     count: ordered.length,
-    contentSha256: sha256Evidence(`${table}:content:v1`, ordered),
+    contentSha256: sha256Evidence(`${table}:content:v2`, ordered),
     identifiersSha256: sha256Evidence(
-      `${table}:identifiers:v1`,
+      `${table}:identifiers:v2`,
       ordered.map((row) => row.id),
     ),
   };
@@ -472,7 +797,9 @@ function createEvidence(rows: PreparedCoreRecordSnapshot): CoreRecordEvidence {
   return {
     clients: tableEvidence("clients", rows.clients),
     contacts: tableEvidence("contacts", rows.contacts),
+    leads: tableEvidence("leads", rows.leads),
     projects: tableEvidence("projects", rows.projects),
+    projectMeetings: tableEvidence("project_meetings", rows.projectMeetings),
     activityEvents: tableEvidence("activity_events", rows.activityEvents),
   };
 }
@@ -491,7 +818,7 @@ function deferredCounts(value: unknown): Record<DeferredSourceCategory, 0> {
     if (count !== 0) {
       fail(
         "deferred_source_data_present",
-        `The bounded core rehearsal refuses deferred source category ${category}`,
+        `The bounded core rehearsal refuses inventory-only source category ${category}`,
       );
     }
     result[category] = 0;
@@ -499,12 +826,38 @@ function deferredCounts(value: unknown): Record<DeferredSourceCategory, 0> {
   return result;
 }
 
+function sourceInventory(
+  rows: PreparedCoreRecordSnapshot,
+  deferredSourceCounts: Record<DeferredSourceCategory, 0>,
+): CoreRecordSourceInventoryEntry[] {
+  const payloadCounts: Partial<Record<SourceCategory, number>> = {
+    activity_events: rows.activityEvents.length,
+    clients: rows.clients.length,
+    contacts: rows.contacts.length,
+    leads: rows.leads.length,
+    projects: rows.projects.length,
+    project_meetings: rows.projectMeetings.length,
+  };
+  return CORE_REHEARSAL_SOURCE_INVENTORY.map((entry) => {
+    const sourceCount =
+      payloadCounts[entry.sourceCategory] ??
+      deferredSourceCounts[entry.sourceCategory as DeferredSourceCategory];
+    if (sourceCount === undefined) {
+      fail(
+        "unclassified_source_category",
+        `Source category ${entry.sourceCategory} has no bounded inventory count`,
+      );
+    }
+    return { ...entry, sourceCount };
+  });
+}
+
 function prepareSnapshot(value: unknown): {
   rows: PreparedCoreRecordSnapshot;
   deferredSourceCounts: Record<DeferredSourceCategory, 0>;
 } {
   const source = exactObject(value, TOP_LEVEL_KEYS, "snapshot");
-  if (source.formatVersion !== 1) fail("unsupported_snapshot_version", "snapshot.formatVersion must be 1");
+  if (source.formatVersion !== 2) fail("unsupported_snapshot_version", "snapshot.formatVersion must be 2");
   if (source.dataClassification !== "test") {
     fail("unsafe_data_classification", "snapshot.dataClassification must be test");
   }
@@ -514,12 +867,16 @@ function prepareSnapshot(value: unknown): {
   const deferredSourceCounts = deferredCounts(source.deferredSourceCounts);
   const clientEntries = arrayValue(source.clients, "snapshot.clients");
   const contactEntries = arrayValue(source.contacts, "snapshot.contacts");
+  const leadEntries = arrayValue(source.leads, "snapshot.leads");
   const projectEntries = arrayValue(source.projects, "snapshot.projects");
+  const projectMeetingEntries = arrayValue(source.projectMeetings, "snapshot.projectMeetings");
   const activityEntries = arrayValue(source.activityEvents, "snapshot.activityEvents");
   const totalRows =
     clientEntries.length +
     contactEntries.length +
+    leadEntries.length +
     projectEntries.length +
+    projectMeetingEntries.length +
     activityEntries.length;
   if (totalRows > CORE_REHEARSAL_MAX_ROWS) {
     fail(
@@ -603,6 +960,68 @@ function prepareSnapshot(value: unknown): {
   const primaryClientIds = contacts.filter((row) => row.isPrimary).map((row) => row.clientId);
   assertUnique(primaryClientIds, "Primary-contact client IDs");
 
+  const leads = leadEntries.map((entry, index) => {
+    const row = exactObject(entry, LEAD_KEYS, `leads[${index}]`);
+    const id = canonicalUuid(row.id, `leads[${index}].id`);
+    const leadNumber = productionText(row.leadNumber, `leads[${index}].leadNumber`, 15);
+    if (!LEAD_NUMBER_PATTERN.test(leadNumber)) {
+      fail("invalid_identifier", `leads[${index}].leadNumber is not production-compatible`);
+    }
+    const company = productionText(row.company, `leads[${index}].company`, 180);
+    const contactName = productionText(row.contactName, `leads[${index}].contactName`, 160);
+    const projectName = productionText(row.projectName, `leads[${index}].projectName`, 180);
+    const site = productionText(row.site, `leads[${index}].site`, 300);
+    if (
+      !markedTestRecordName(company) ||
+      !markedTestRecordName(contactName) ||
+      !markedTestRecordName(projectName) ||
+      !markedTestRecordName(site)
+    ) {
+      fail(
+        "unsafe_test_record",
+        `leads[${index}] company, contact, project, and site must include the test-data marker`,
+      );
+    }
+    const status = productionText(row.status, `leads[${index}].status`, 20) as PreparedLead["status"];
+    if (!LEAD_STATUSES.has(status)) fail("invalid_status", `leads[${index}].status is unsupported`);
+    const nextActionAt = nullableCanonicalTimestamp(
+      row.nextActionAt,
+      `leads[${index}].nextActionAt`,
+    );
+    if (nextActionAt !== null && new Date(nextActionAt).getTime() < 0) {
+      fail("invalid_timestamp", `leads[${index}].nextActionAt must be at or after the Unix epoch`);
+    }
+    const createdAt = canonicalTimestamp(row.createdAt, `leads[${index}].createdAt`);
+    const updatedAt = canonicalTimestamp(row.updatedAt, `leads[${index}].updatedAt`);
+    if (updatedAt < createdAt) fail("invalid_timestamp_order", `leads[${index}] timestamps are out of order`);
+    return {
+      id,
+      leadNumber,
+      company,
+      contactName,
+      contactEmail: normalizedEmail(row.contactEmail, `leads[${index}].contactEmail`),
+      contactPhone: nullableProductionText(row.contactPhone, `leads[${index}].contactPhone`, 40),
+      projectName,
+      source: productionText(row.source, `leads[${index}].source`, 80),
+      stage: productionText(row.stage, `leads[${index}].stage`, 80),
+      site,
+      estimatedValue: postgresInteger(row.estimatedValue, `leads[${index}].estimatedValue`),
+      nextAction: productionText(row.nextAction, `leads[${index}].nextAction`, 500),
+      nextActionAt,
+      ownerEmail: normalizedEmail(row.ownerEmail, `leads[${index}].ownerEmail`, true),
+      status,
+      createdBy: requiredText(row.createdBy, `leads[${index}].createdBy`),
+      updatedBy: requiredText(row.updatedBy, `leads[${index}].updatedBy`),
+      createdAt,
+      updatedAt,
+      version: versionOne(row.version, `leads[${index}].version`),
+    } satisfies PreparedLead;
+  });
+
+  assertUnique(leads.map((row) => row.id), "Lead IDs");
+  assertUnique(leads.map((row) => row.leadNumber), "Lead numbers");
+  const leadIds = new Set(leads.map((row) => row.id));
+
   const projects = projectEntries.map((entry, index) => {
     const row = exactObject(entry, PROJECT_KEYS, `projects[${index}]`);
     const id = canonicalUuid(row.id, `projects[${index}].id`);
@@ -621,6 +1040,16 @@ function prepareSnapshot(value: unknown): {
     if (row.driveFolderId !== null || row.driveUrl !== null) {
       fail("unsupported_legacy_drive_data", `projects[${index}] contains deferred legacy Drive fields`);
     }
+    if (
+      row.flooringCategory !== null ||
+      row.squareFeet !== null ||
+      row.contractValue !== null
+    ) {
+      fail(
+        "kpi04_fields_deferred",
+        `projects[${index}] flooringCategory, squareFeet, and contractValue are deferred to KPI-04 and must be null in snapshot format 2`,
+      );
+    }
     const createdAt = canonicalTimestamp(row.createdAt, `projects[${index}].createdAt`);
     const updatedAt = canonicalTimestamp(row.updatedAt, `projects[${index}].updatedAt`);
     if (updatedAt < createdAt) fail("invalid_timestamp_order", `projects[${index}] timestamps are out of order`);
@@ -633,6 +1062,9 @@ function prepareSnapshot(value: unknown): {
       site: nullableText(row.site, `projects[${index}].site`),
       projectManager: nullableText(row.projectManager, `projects[${index}].projectManager`),
       estimatedValue: nullableEstimatedValue(row.estimatedValue, `projects[${index}].estimatedValue`),
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
       createdBy: requiredText(row.createdBy, `projects[${index}].createdBy`),
       updatedBy: requiredText(row.updatedBy, `projects[${index}].updatedBy`),
       createdAt,
@@ -645,16 +1077,120 @@ function prepareSnapshot(value: unknown): {
   assertUnique(projects.map((row) => row.projectNumber), "Project numbers");
   const projectIds = new Set(projects.map((row) => row.id));
 
+  const projectMeetings = projectMeetingEntries.map((entry, index) => {
+    const row = exactObject(entry, PROJECT_MEETING_KEYS, `projectMeetings[${index}]`);
+    const id = canonicalUuid(row.id, `projectMeetings[${index}].id`);
+    const projectId = canonicalUuid(row.projectId, `projectMeetings[${index}].projectId`);
+    if (!projectIds.has(projectId)) {
+      fail("orphan_source_record", `projectMeetings[${index}] has no source project`);
+    }
+    const title = nullableProductionText(row.title, `projectMeetings[${index}].title`, 160, true);
+    if (title === null || !markedTestRecordName(title)) {
+      fail("unsafe_test_record", `projectMeetings[${index}].title must include the test-data marker`);
+    }
+    const meetingType = requiredText(
+      row.meetingType,
+      `projectMeetings[${index}].meetingType`,
+      20,
+    ) as PreparedProjectMeeting["meetingType"];
+    if (!PROJECT_MEETING_TYPES.has(meetingType)) {
+      fail("invalid_snapshot_value", `projectMeetings[${index}].meetingType is unsupported`);
+    }
+    const sourceProvider = requiredText(
+      row.sourceProvider,
+      `projectMeetings[${index}].sourceProvider`,
+      10,
+    ) as PreparedProjectMeeting["sourceProvider"];
+    if (!PROJECT_MEETING_SOURCE_PROVIDERS.has(sourceProvider)) {
+      fail("invalid_snapshot_value", `projectMeetings[${index}].sourceProvider is unsupported`);
+    }
+    const sourceUrl = projectMeetingSourceUrl(
+      row.sourceUrl,
+      sourceProvider,
+      `projectMeetings[${index}].sourceUrl`,
+    );
+    const attendees = boundedStringList(
+      row.attendees,
+      `projectMeetings[${index}].attendees`,
+      40,
+    );
+    const actionItems = boundedStringList(
+      row.actionItems,
+      `projectMeetings[${index}].actionItems`,
+      50,
+    );
+    const notes = nullableProductionText(row.notes, `projectMeetings[${index}].notes`, 25_000, true);
+    const transcript = nullableProductionText(
+      row.transcript,
+      `projectMeetings[${index}].transcript`,
+      100_000,
+      true,
+    );
+    const summary = nullableProductionText(
+      row.summary,
+      `projectMeetings[${index}].summary`,
+      12_000,
+      true,
+    );
+    const decisions = nullableProductionText(
+      row.decisions,
+      `projectMeetings[${index}].decisions`,
+      12_000,
+      true,
+    );
+    if (
+      sourceUrl === null &&
+      notes === null &&
+      transcript === null &&
+      summary === null &&
+      decisions === null &&
+      actionItems.length === 0
+    ) {
+      fail("invalid_snapshot_value", `projectMeetings[${index}] has no meeting evidence`);
+    }
+    const createdAt = canonicalTimestamp(row.createdAt, `projectMeetings[${index}].createdAt`);
+    const updatedAt = canonicalTimestamp(row.updatedAt, `projectMeetings[${index}].updatedAt`);
+    if (updatedAt < createdAt) {
+      fail("invalid_timestamp_order", `projectMeetings[${index}] timestamps are out of order`);
+    }
+    return {
+      id,
+      projectId,
+      title,
+      meetingAt: canonicalTimestamp(row.meetingAt, `projectMeetings[${index}].meetingAt`),
+      meetingType,
+      sourceProvider,
+      sourceUrl,
+      attendees,
+      notes,
+      transcript,
+      summary,
+      decisions,
+      actionItems,
+      createdBy: requiredText(row.createdBy, `projectMeetings[${index}].createdBy`),
+      createdAt,
+      updatedAt,
+      version: versionOne(row.version, `projectMeetings[${index}].version`),
+    } satisfies PreparedProjectMeeting;
+  });
+
+  assertUnique(projectMeetings.map((row) => row.id), "Project-meeting IDs");
+
   const activityEvents = activityEntries.map(
     (entry, index) => {
       const row = exactObject(entry, ACTIVITY_KEYS, `activityEvents[${index}]`);
       const id = canonicalUuid(row.id, `activityEvents[${index}].id`);
-      if (row.recordType !== "client" && row.recordType !== "project") {
+      if (row.recordType !== "client" && row.recordType !== "project" && row.recordType !== "lead") {
         fail("unclassified_activity", `activityEvents[${index}].recordType must be explicit`);
       }
       const recordType = row.recordType;
       const recordId = canonicalUuid(row.recordId, `activityEvents[${index}].recordId`);
-      const knownRecord = recordType === "client" ? clientIds.has(recordId) : projectIds.has(recordId);
+      const knownRecord =
+        recordType === "client"
+          ? clientIds.has(recordId)
+          : recordType === "project"
+            ? projectIds.has(recordId)
+            : leadIds.has(recordId);
       if (!knownRecord) fail("orphan_source_record", `activityEvents[${index}] has no classified source record`);
       const result = requiredText(row.result, `activityEvents[${index}].result`) as ActivityResult;
       if (!ACTIVITY_RESULTS.has(result)) {
@@ -676,7 +1212,10 @@ function prepareSnapshot(value: unknown): {
   );
   assertUnique(activityEvents.map((row) => row.id), "Activity-event IDs");
 
-  return { rows: { clients, contacts, projects, activityEvents }, deferredSourceCounts };
+  return {
+    rows: { clients, contacts, leads, projects, projectMeetings, activityEvents },
+    deferredSourceCounts,
+  };
 }
 
 function timeout(value: number | undefined, fallback: number, label: string): number {
@@ -732,6 +1271,7 @@ export function createCoreRecordRehearsalPlan(
     rows: prepared.rows,
     sourceEvidence: createEvidence(prepared.rows),
     deferredSourceCounts: prepared.deferredSourceCounts,
+    sourceInventory: sourceInventory(prepared.rows, prepared.deferredSourceCounts),
   };
 }
 
@@ -818,6 +1358,54 @@ async function insertPreparedRows(
   );
   await insertBatches(
     client,
+    "leads",
+    [
+      "id",
+      "lead_number",
+      "company",
+      "contact_name",
+      "contact_email",
+      "contact_phone",
+      "project_name",
+      "source",
+      "stage",
+      "site",
+      "estimated_value",
+      "next_action",
+      "next_action_at",
+      "owner_email",
+      "status",
+      "created_by",
+      "updated_by",
+      "created_at",
+      "updated_at",
+      "version",
+    ],
+    insertValues(rows.leads, (row) => [
+      row.id,
+      row.leadNumber,
+      row.company,
+      row.contactName,
+      row.contactEmail,
+      row.contactPhone,
+      row.projectName,
+      row.source,
+      row.stage,
+      row.site,
+      row.estimatedValue,
+      row.nextAction,
+      row.nextActionAt,
+      row.ownerEmail,
+      row.status,
+      row.createdBy,
+      row.updatedBy,
+      row.createdAt,
+      row.updatedAt,
+      row.version,
+    ]),
+  );
+  await insertBatches(
+    client,
     "projects",
     [
       "id",
@@ -852,11 +1440,54 @@ async function insertPreparedRows(
   );
   await insertBatches(
     client,
+    "project_meetings",
+    [
+      "id",
+      "project_id",
+      "title",
+      "meeting_at",
+      "meeting_type",
+      "source_provider",
+      "source_url",
+      "attendees",
+      "notes",
+      "transcript",
+      "summary",
+      "decisions",
+      "action_items",
+      "created_by",
+      "created_at",
+      "updated_at",
+      "version",
+    ],
+    insertValues(rows.projectMeetings, (row) => [
+      row.id,
+      row.projectId,
+      row.title,
+      row.meetingAt,
+      row.meetingType,
+      row.sourceProvider,
+      row.sourceUrl,
+      JSON.stringify(row.attendees),
+      row.notes,
+      row.transcript,
+      row.summary,
+      row.decisions,
+      JSON.stringify(row.actionItems),
+      row.createdBy,
+      row.createdAt,
+      row.updatedAt,
+      row.version,
+    ]),
+  );
+  await insertBatches(
+    client,
     "activity_events",
     [
       "id",
       "client_id",
       "project_id",
+      "lead_id",
       "action",
       "actor_id",
       "correlation_id",
@@ -869,6 +1500,7 @@ async function insertPreparedRows(
       row.id,
       row.recordType === "client" ? row.recordId : null,
       row.recordType === "project" ? row.recordId : null,
+      row.recordType === "lead" ? row.recordId : null,
       row.action,
       row.actorId,
       row.correlationId,
@@ -901,7 +1533,9 @@ async function assertEmptyTarget(client: CoreRehearsalClient): Promise<void> {
     `SELECT
        (SELECT count(*)::text FROM clients) AS "clients",
        (SELECT count(*)::text FROM contacts) AS "contacts",
+       (SELECT count(*)::text FROM leads) AS "leads",
        (SELECT count(*)::text FROM projects) AS "projects",
+       (SELECT count(*)::text FROM project_meetings) AS "projectMeetings",
        (SELECT count(*)::text FROM activity_events) AS "activityEvents",
        (SELECT count(*)::text FROM idempotency_requests) AS "idempotencyRequests",
        (SELECT count(*)::text FROM outbox_events) AS "outboxEvents"`,
@@ -910,7 +1544,9 @@ async function assertEmptyTarget(client: CoreRehearsalClient): Promise<void> {
   const total =
     databaseCount(row.clients, "clients count") +
     databaseCount(row.contacts, "contacts count") +
+    databaseCount(row.leads, "leads count") +
     databaseCount(row.projects, "projects count") +
+    databaseCount(row.projectMeetings, "project meetings count") +
     databaseCount(row.activityEvents, "activity events count") +
     databaseCount(row.idempotencyRequests, "idempotency requests count") +
     databaseCount(row.outboxEvents, "outbox events count");
@@ -960,6 +1596,16 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
             version::text AS "version"
      FROM contacts ORDER BY id`,
   );
+  const leads = await client.query(
+    `SELECT id::text AS "id", lead_number AS "leadNumber", company,
+            contact_name AS "contactName", contact_email AS "contactEmail",
+            contact_phone AS "contactPhone", project_name AS "projectName", source, stage,
+            site, estimated_value AS "estimatedValue", next_action AS "nextAction",
+            next_action_at AS "nextActionAt", owner_email AS "ownerEmail", status,
+            created_by AS "createdBy", updated_by AS "updatedBy", created_at AS "createdAt",
+            updated_at AS "updatedAt", version::text AS "version"
+     FROM leads ORDER BY id`,
+  );
   const projects = await client.query(
     `SELECT id::text AS "id", project_number AS "projectNumber", client_id::text AS "clientId",
             name, status, site, project_manager AS "projectManager",
@@ -968,17 +1614,28 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
             version::text AS "version"
      FROM projects ORDER BY id`,
   );
+  const projectMeetings = await client.query(
+    `SELECT id::text AS "id", project_id::text AS "projectId", title,
+            meeting_at AS "meetingAt", meeting_type AS "meetingType",
+            source_provider AS "sourceProvider", source_url AS "sourceUrl", attendees,
+            notes, transcript, summary, decisions, action_items AS "actionItems",
+            created_by AS "createdBy", created_at AS "createdAt", updated_at AS "updatedAt",
+            version::text AS "version"
+     FROM project_meetings ORDER BY id`,
+  );
   const activityEvents = await client.query(
     `SELECT id::text AS "id",
-            CASE WHEN client_id IS NOT NULL THEN 'client' ELSE 'project' END AS "recordType",
-            COALESCE(client_id, project_id)::text AS "recordId", action, actor_id AS "actorId",
+            CASE WHEN client_id IS NOT NULL THEN 'client'
+                 WHEN project_id IS NOT NULL THEN 'project'
+                 ELSE 'lead' END AS "recordType",
+            COALESCE(client_id, project_id, lead_id)::text AS "recordId", action, actor_id AS "actorId",
             correlation_id AS "correlationId", result, reason, detail,
             occurred_at AS "occurredAt"
      FROM activity_events ORDER BY id`,
   );
 
   const targetLikeSnapshot = {
-    formatVersion: 1,
+    formatVersion: 2,
     dataClassification: "test",
     sourceSystem: CORE_REHEARSAL_SOURCE_SYSTEM,
     deferredSourceCounts: Object.fromEntries(
@@ -996,13 +1653,35 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
       createdAt: databaseTimestamp(row.createdAt, "destination contact createdAt"),
       updatedAt: databaseTimestamp(row.updatedAt, "destination contact updatedAt"),
     })),
+    leads: leads.rows.map((row) => ({
+      ...row,
+      nextActionAt:
+        row.nextActionAt === null
+          ? null
+          : databaseTimestamp(row.nextActionAt, "destination lead nextActionAt"),
+      estimatedValue: databaseEstimatedValue(
+        row.estimatedValue,
+        "destination lead estimatedValue",
+      ),
+      createdAt: databaseTimestamp(row.createdAt, "destination lead createdAt"),
+      updatedAt: databaseTimestamp(row.updatedAt, "destination lead updatedAt"),
+    })),
     projects: projects.rows.map((row) => ({
       ...row,
       driveFolderId: null,
       driveUrl: null,
       estimatedValue: databaseEstimatedValue(row.estimatedValue, "destination project estimatedValue"),
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
       createdAt: databaseTimestamp(row.createdAt, "destination project createdAt"),
       updatedAt: databaseTimestamp(row.updatedAt, "destination project updatedAt"),
+    })),
+    projectMeetings: projectMeetings.rows.map((row) => ({
+      ...row,
+      meetingAt: databaseTimestamp(row.meetingAt, "destination project meeting meetingAt"),
+      createdAt: databaseTimestamp(row.createdAt, "destination project meeting createdAt"),
+      updatedAt: databaseTimestamp(row.updatedAt, "destination project meeting updatedAt"),
     })),
     activityEvents: activityEvents.rows.map((row) => ({
       ...row,
@@ -1117,7 +1796,13 @@ export async function runCoreRecordRehearsal(
     const tables = {
       clients: reconciledTable("clients", plan.sourceEvidence.clients, destinationEvidence.clients),
       contacts: reconciledTable("contacts", plan.sourceEvidence.contacts, destinationEvidence.contacts),
+      leads: reconciledTable("leads", plan.sourceEvidence.leads, destinationEvidence.leads),
       projects: reconciledTable("projects", plan.sourceEvidence.projects, destinationEvidence.projects),
+      projectMeetings: reconciledTable(
+        "project meetings",
+        plan.sourceEvidence.projectMeetings,
+        destinationEvidence.projectMeetings,
+      ),
       activityEvents: reconciledTable(
         "activity events",
         plan.sourceEvidence.activityEvents,
@@ -1131,7 +1816,7 @@ export async function runCoreRecordRehearsal(
     transactionStarted = false;
 
     return {
-      formatVersion: 1,
+      formatVersion: 2,
       dataClassification: "test",
       scope: "bounded-core-only",
       targetEnvironment: plan.targetEnvironment,
@@ -1144,6 +1829,7 @@ export async function runCoreRecordRehearsal(
         providerCalls: 0,
       },
       deferredSourceCounts: plan.deferredSourceCounts,
+      sourceInventory: plan.sourceInventory,
       cutoverReady: false,
     };
   } catch (error) {

@@ -193,7 +193,9 @@ test("rehearsal importer is isolated from fci_app and receives only prefix-valid
     "GRANT USAGE ON SCHEMA :\"fci_rehearsal_schema\" TO fci_rehearsal_importer;",
     "GRANT SELECT, INSERT ON TABLE :\"fci_rehearsal_schema\".clients TO fci_rehearsal_importer;",
     "GRANT SELECT, INSERT ON TABLE :\"fci_rehearsal_schema\".contacts TO fci_rehearsal_importer;",
+    "GRANT SELECT, INSERT ON TABLE :\"fci_rehearsal_schema\".leads TO fci_rehearsal_importer;",
     "GRANT SELECT, INSERT ON TABLE :\"fci_rehearsal_schema\".projects TO fci_rehearsal_importer;",
+    "GRANT SELECT, INSERT ON TABLE :\"fci_rehearsal_schema\".project_meetings TO fci_rehearsal_importer;",
     "GRANT SELECT, INSERT ON TABLE :\"fci_rehearsal_schema\".activity_events TO fci_rehearsal_importer;",
     "GRANT SELECT ON TABLE :\"fci_rehearsal_schema\".production_schema_migrations TO fci_rehearsal_importer;",
     "GRANT SELECT ON TABLE :\"fci_rehearsal_schema\".idempotency_requests TO fci_rehearsal_importer;",
@@ -203,6 +205,7 @@ test("rehearsal importer is isolated from fci_app and receives only prefix-valid
   assert.match(rehearsalTemplate, /\^fci_rehearsal_\[a-z0-9_\]/);
   assert.match(rehearsalTemplate, /SET LOCAL ROLE fci_migration_owner/);
   assert.match(rehearsalTemplate, /owner_role\.rolname = 'fci_migration_owner'/);
+  assert.match(rehearsalTemplate, /SELECT count\(\*\) = 9 AS fci_rehearsal_schema_has_required_tables/);
   assert.doesNotMatch(rehearsalTemplate.replace(/^--.*$/gm, ""), /\bfci_app\b/);
   assert.doesNotMatch(rehearsalSource, /INSERT INTO (?:idempotency_requests|outbox_events)/);
 });
