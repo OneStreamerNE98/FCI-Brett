@@ -1,6 +1,6 @@
 # D1 development deployment migrations
 
-Status: Implemented in source; not deployed or applied by this change
+Status: Migrations 0012 and 0013 implemented in merged source; KPI-03 migration 0014 is in review; none deployed or applied to Sites by this change
 Scope: Controlled single-user development environment using test data only
 
 ## Boundary
@@ -56,6 +56,21 @@ consume this D1 table; a future approved production flow reconciles these identi
 the existing PostgreSQL `integration_resources` boundary after fresh production
 authorization. Migration `0013` is source-only and unapplied to Sites until a separate
 owner-approved controlled deployment.
+
+## KPI-03 additive installation and callback fields — in review
+
+Migration `0014_strange_anita_blake.sql` is generated in the current KPI-03 source branch. It follows SET-13's migration `0013` and adds four columns to the development `projects` table:
+
+- `installation_started_at` (`integer`, nullable) stores the server-validated installation start date as a millisecond timestamp;
+- `installation_completed_at` (`integer`, nullable) stores the server-validated installation completion date as a millisecond timestamp, with the action contract requiring completion on or after start;
+- `had_callback` (`integer` boolean, non-null, default `false`) records callback occurrence; and
+- `callback_note` (`text`, nullable) stores optional trimmed follow-up context, bounded by the server to 1,000 characters.
+
+Migration 0014 contains four additive `ALTER TABLE ... ADD` statements only. It has no `UPDATE` or other backfill statement, index, table rebuild, data rewrite, drop, delete, or truncate operation. SQLite supplies the new `had_callback = false` default to existing rows; as a result, storage alone cannot distinguish an untouched legacy project from an explicitly recorded “No”. Reports therefore describe callback rate as callback occurrence across completed jobs, not as proof that every follow-up result was captured. Date order and note bounds are enforced by the audited server action rather than by rewriting existing rows.
+
+This migration does not add scheduling, crews, shifts, recognized revenue, or a follow-up-completed field. Its installation dates are the canonical seed that future Scheduling work must consume rather than duplicate. PostgreSQL and rehearsal parity remain deferred to KPI-04; migration 0014 neither changes nor applies a production migration.
+
+Migration 0014 is source-only, in review, and unapplied to the hosted development D1 database. Migrations 0012 and 0013 are also still unapplied there. Any future approved Sites deployment must back up the controlled test database, apply the pending sequence in order, verify all three migration records, and smoke-test project reads plus the Workspace resource registry and both audited project actions. Until that happens, the live development site must be treated as having none of the KPI-02, SET-13, or KPI-03 schema additions.
 
 ## Migration 0011 existing development database safety
 

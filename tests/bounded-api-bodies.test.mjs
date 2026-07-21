@@ -76,10 +76,10 @@ const cases = [
     invoke: (request) => projectsRoute.POST(request),
   },
   {
-    name: "project-manager correction",
+    name: "project action",
     method: "PATCH",
     maximumBytes: 64_000,
-    error: "Project manager correction is too large.",
+    error: "Project action is too large.",
     invoke: (request) => projectsRoute.PATCH(request),
   },
   {

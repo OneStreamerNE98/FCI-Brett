@@ -1,4 +1,6 @@
-export const FLOORING_KPI_TIME_ZONE = "America/New_York";
+import { FLOORING_OPERATIONS_TIME_ZONE } from "../../domain/project-operations.ts";
+
+export const FLOORING_KPI_TIME_ZONE = FLOORING_OPERATIONS_TIME_ZONE;
 export const FINANCIAL_RESTRICTION_LABEL = "Administrator only";
 // Must stay identical to FLOORING_CATEGORIES in app/domain/project-creation.ts —
 // a category present there but missing here silently vanishes from product mix.
@@ -23,6 +25,9 @@ export type FlooringKpiProject = Readonly<{
   flooringCategory: string | null;
   squareFeet: number | null;
   contractValue: number | null;
+  installationStartedAt?: number | null;
+  installationCompletedAt?: number | null;
+  hadCallback?: boolean | null;
   createdAt?: number | null;
   updatedAt?: number | null;
 }>;
@@ -57,6 +62,11 @@ export type FlooringKpiResult = Readonly<{
   backlogValue: number | null;
   backlogValueCount: number;
   jobsCompleted: number;
+  averageInstallCycleDays: number | null;
+  installCycleJobCount: number;
+  callbackRate: number | null;
+  callbackJobCount: number;
+  callbackCompletedJobCount: number;
   productMix: FlooringKpiProductMix[];
   flooringCategoryCaptureCount: number;
   revenuePerSquareFoot: number | null;
@@ -89,7 +99,12 @@ function preferredProjectValue(project: FlooringKpiProject) {
 }
 
 function reportableTimestamp(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  return typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value >= 0
+    && !Number.isNaN(new Date(value).getTime())
+    ? value
+    : null;
 }
 
 function average(values: number[]) {
@@ -121,6 +136,10 @@ export function monthKeyForTimestamp(timestamp: number, timeZone = FLOORING_KPI_
 function timestampFallsInMonth(timestamp: number | null | undefined, month: string, timeZone: string) {
   const value = reportableTimestamp(timestamp);
   return value !== null && monthKeyForTimestamp(value, timeZone) === month;
+}
+
+function effectiveProjectCompletionTimestamp(project: FlooringKpiProject) {
+  return reportableTimestamp(project.installationCompletedAt) ?? reportableTimestamp(project.updatedAt);
 }
 
 export function calculateFlooringKpis(
@@ -160,7 +179,15 @@ export function calculateFlooringKpis(
   });
   const backlogProjects = projects.filter((project) => backlogStatuses.has(normalizedStatus(project.status)));
   const backlogValues = backlogProjects.map((project) => reportableAmount(project.estimatedValue)).filter((value): value is number => value !== null);
-  const jobsCompleted = projects.filter((project) => normalizedStatus(project.status) === "completed" && timestampFallsInMonth(project.updatedAt, selectedMonth, timeZone)).length;
+  const completedProjects = projects.filter((project) => normalizedStatus(project.status) === "completed" && timestampFallsInMonth(effectiveProjectCompletionTimestamp(project), selectedMonth, timeZone));
+  const installCycleDays = completedProjects.flatMap((project) => {
+    const startedAt = reportableTimestamp(project.installationStartedAt);
+    const completedAt = reportableTimestamp(project.installationCompletedAt);
+    return startedAt !== null && completedAt !== null && completedAt >= startedAt
+      ? [(completedAt - startedAt) / MILLISECONDS_PER_DAY]
+      : [];
+  });
+  const callbackJobCount = completedProjects.filter((project) => project.hadCallback === true).length;
   const productMixGroups = new Map<string, { jobCount: number; valuedJobCount: number; value: number }>();
   for (const project of bookedProjects) {
     const category = reportableCategory(project.flooringCategory);
@@ -214,7 +241,12 @@ export function calculateFlooringKpis(
     backlogCount: backlogProjects.length,
     backlogValue: backlogProjects.length === 0 ? 0 : backlogValues.length > 0 ? backlogValues.reduce((total, value) => total + value, 0) : null,
     backlogValueCount: backlogValues.length,
-    jobsCompleted,
+    jobsCompleted: completedProjects.length,
+    averageInstallCycleDays: average(installCycleDays),
+    installCycleJobCount: installCycleDays.length,
+    callbackRate: completedProjects.length > 0 ? callbackJobCount / completedProjects.length : null,
+    callbackJobCount,
+    callbackCompletedJobCount: completedProjects.length,
     productMix,
     flooringCategoryCaptureCount: productMix.reduce((total, category) => total + category.jobCount, 0),
     revenuePerSquareFoot: average(revenuePerSquareFootValues),

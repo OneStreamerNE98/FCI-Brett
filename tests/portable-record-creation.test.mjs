@@ -9,15 +9,17 @@ const vite = await createServer({
   root: fileURLToPath(rootUrl),
   configFile: false,
   appType: "custom",
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, hmr: false },
 });
 
-const [clientApplication, projectApplication, authorizationModule, clientDomain, projectDomain, mirrorAdapterModule] = await Promise.all([
+const [clientApplication, projectApplication, projectOperationApplication, authorizationModule, clientDomain, projectDomain, projectOperationDomain, mirrorAdapterModule] = await Promise.all([
   vite.ssrLoadModule("/app/application/create-client.ts"),
   vite.ssrLoadModule("/app/application/create-project.ts"),
+  vite.ssrLoadModule("/app/application/record-project-operation.ts"),
   vite.ssrLoadModule("/app/application/creation-authorization.ts"),
   vite.ssrLoadModule("/app/domain/client-creation.ts"),
   vite.ssrLoadModule("/app/domain/project-creation.ts"),
+  vite.ssrLoadModule("/app/domain/project-operations.ts"),
   vite.ssrLoadModule("/app/adapters/google/directory-mirror.ts"),
 ]);
 
@@ -27,9 +29,11 @@ after(async () => {
 
 const { createClient } = clientApplication;
 const { assignProjectManager, createProject } = projectApplication;
+const { recordProjectOperation } = projectOperationApplication;
 const { creationAuthorizationFor, CREATION_CAPABILITIES } = authorizationModule;
 const { normalizeClientCreation } = clientDomain;
 const { normalizeProjectCreation, normalizeProjectManagerAssignment, normalizeProjectManagerId, PROJECT_MANAGER_IDENTITY_ERROR } = projectDomain;
+const { CALLBACK_NOTE_MAX_LENGTH, normalizeProjectOperation } = projectOperationDomain;
 const { createDirectoryMirror } = mirrorAdapterModule;
 
 function sequence(values) {
@@ -130,6 +134,20 @@ test("portable domain validation preserves the client and project API messages",
       flooringCategory: "luxury-vinyl",
       squareFeet: 2_500,
       contractValue: 0,
+    },
+  });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Explicit nulls", estimatedValue: null, squareFeet: null, contractValue: null }), {
+    ok: true,
+    value: {
+      clientId: "client-1",
+      name: "Explicit nulls",
+      status: "planning",
+      site: null,
+      projectManagerId: null,
+      estimatedValue: null,
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
     },
   });
 });
@@ -409,6 +427,149 @@ test("admin project-manager correction is narrow, authorized, and audited", asyn
   assert.deepEqual(missing, { ok: false, kind: "project-not-found", message: "project not found" });
 });
 
+test("installation-date and follow-up actions use closed, bounded validation", () => {
+  const startedAt = Date.UTC(2026, 6, 10, 12);
+  const completedAt = Date.UTC(2026, 6, 12, 12);
+  assert.deepEqual(normalizeProjectOperation({
+    action: "record-installation-dates",
+    projectId: " project-1 ",
+    installationStartedAt: startedAt,
+    installationCompletedAt: completedAt,
+  }), {
+    ok: true,
+    value: { action: "record-installation-dates", projectId: "project-1", installationStartedAt: startedAt, installationCompletedAt: completedAt },
+  });
+  assert.deepEqual(normalizeProjectOperation({
+    action: "record-installation-dates",
+    projectId: "project-1",
+    installationStartedAt: completedAt,
+    installationCompletedAt: startedAt,
+  }), { ok: false, message: "installation completion must be on or after installation start" });
+  assert.deepEqual(normalizeProjectOperation({
+    action: "record-installation-dates",
+    projectId: "project-1",
+    installationStartedAt: startedAt,
+    installationCompletedAt: completedAt,
+    status: "completed",
+  }), { ok: false, message: "Only installation dates can be changed by this action." });
+  assert.deepEqual(normalizeProjectOperation({
+    action: "record-follow-up-result",
+    projectId: "project-1",
+    hadCallback: true,
+    callbackNote: "  Returned to secure a transition strip.  ",
+  }), {
+    ok: true,
+    value: { action: "record-follow-up-result", projectId: "project-1", hadCallback: true, callbackNote: "Returned to secure a transition strip." },
+  });
+  assert.deepEqual(normalizeProjectOperation({
+    action: "record-follow-up-result",
+    projectId: "project-1",
+    hadCallback: false,
+    callbackNote: "x".repeat(CALLBACK_NOTE_MAX_LENGTH + 1),
+  }), { ok: false, message: `callback note must be ${CALLBACK_NOTE_MAX_LENGTH} characters or fewer and contain valid text` });
+  assert.deepEqual(normalizeProjectOperation({
+    action: "record-follow-up-result",
+    projectId: "project-1",
+    hadCallback: "yes",
+  }), { ok: false, message: "hadCallback must be true or false" });
+});
+
+test("admin project-operation actions are authorized first and append exact activity intents", async () => {
+  const forbidden = await recordProjectOperation(
+    null,
+    { actorId: "office@example.test", canManageProjects: false },
+    {
+      repository: {
+        recordInstallationDates: async () => assert.fail("repository must not be called"),
+        recordFollowUpResult: async () => assert.fail("repository must not be called"),
+      },
+      newId: () => assert.fail("ID generator must not be called"),
+      now: () => assert.fail("clock must not be called"),
+    },
+  );
+  assert.deepEqual(forbidden, { ok: false, kind: "forbidden", message: "You do not have permission to record project operations." });
+
+  const startedAt = Date.parse("2026-07-01T01:00:00Z");
+  const completedAt = Date.parse("2026-07-02T01:00:00Z");
+  let installationIntent;
+  const installation = await recordProjectOperation(
+    { action: "record-installation-dates", projectId: "project-1", installationStartedAt: startedAt, installationCompletedAt: completedAt },
+    { actorId: "admin@example.test", canManageProjects: true },
+    {
+      repository: {
+        recordInstallationDates: async (intent) => { installationIntent = intent; return { outcome: "updated" }; },
+        recordFollowUpResult: async () => assert.fail("wrong repository action"),
+      },
+      newId: () => "installation-activity-1",
+      now: () => 1_784_000_000_000,
+    },
+  );
+  assert.deepEqual(installationIntent, {
+    projectId: "project-1",
+    installationStartedAt: startedAt,
+    installationCompletedAt: completedAt,
+    updatedAt: 1_784_000_000_000,
+    activity: {
+      id: "installation-activity-1",
+      recordId: "project-1",
+      action: "Installation dates recorded",
+      actor: "admin@example.test",
+      detail: "Installation recorded from 2026-06-30 to 2026-07-01",
+      createdAt: 1_784_000_000_000,
+    },
+  });
+  assert.deepEqual(installation, {
+    ok: true,
+    value: { action: "record-installation-dates", projectId: "project-1", installationStartedAt: startedAt, installationCompletedAt: completedAt, updatedAt: 1_784_000_000_000 },
+  });
+
+  let followUpIntent;
+  const followUp = await recordProjectOperation(
+    { action: "record-follow-up-result", projectId: "project-1", hadCallback: true, callbackNote: "Loose transition strip" },
+    { actorId: "admin@example.test", canManageProjects: true },
+    {
+      repository: {
+        recordInstallationDates: async () => assert.fail("wrong repository action"),
+        recordFollowUpResult: async (intent) => { followUpIntent = intent; return { outcome: "updated" }; },
+      },
+      newId: () => "follow-up-activity-1",
+      now: () => 1_784_000_000_001,
+    },
+  );
+  assert.deepEqual(followUpIntent, {
+    projectId: "project-1",
+    hadCallback: true,
+    callbackNote: "Loose transition strip",
+    updatedAt: 1_784_000_000_001,
+    activity: {
+      id: "follow-up-activity-1",
+      recordId: "project-1",
+      action: "Follow-up result recorded",
+      actor: "admin@example.test",
+      detail: "Post-installation callback: Yes · Note recorded",
+      createdAt: 1_784_000_000_001,
+    },
+  });
+  assert.deepEqual(followUp, {
+    ok: true,
+    value: { action: "record-follow-up-result", projectId: "project-1", hadCallback: true, callbackNote: "Loose transition strip", updatedAt: 1_784_000_000_001 },
+  });
+
+  const missing = await recordProjectOperation(
+    { action: "record-follow-up-result", projectId: "missing", hadCallback: false },
+    { actorId: "admin@example.test", canManageProjects: true },
+    {
+      repository: {
+        recordInstallationDates: async () => assert.fail("wrong repository action"),
+        recordFollowUpResult: async () => ({ outcome: "project-not-found" }),
+      },
+      newId: () => "missing-activity",
+      now: () => 1_784_000_000_002,
+    },
+  );
+  assert.deepEqual(missing, { ok: false, kind: "project-not-found", message: "project not found" });
+});
+
 test("duplicate clients and missing project clients map exactly and never request a mirror", async () => {
   let mirrorCalls = 0;
   const mirror = { requestSync: async () => { mirrorCalls += 1; return { status: "synced", message: "unexpected" }; } };
@@ -664,8 +825,10 @@ test("domain and application services have no framework or provider imports", as
     "app/application/create-project.ts",
     "app/application/creation-authorization.ts",
     "app/application/mirror-after-create.ts",
+    "app/application/record-project-operation.ts",
     "app/domain/client-creation.ts",
     "app/domain/project-creation.ts",
+    "app/domain/project-operations.ts",
   ];
   const sources = await Promise.all(paths.map((path) => readFile(new URL(path, rootUrl), "utf8")));
   for (const source of sources) {

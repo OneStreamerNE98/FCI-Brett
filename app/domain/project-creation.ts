@@ -109,8 +109,8 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
   const status = ((record.status as string | undefined)?.trim().toLowerCase() || "planning") as ProjectStatus;
   if (!PROJECT_STATUSES.includes(status)) return { ok: false, message: "project status is invalid" };
 
-  const estimatedValue = record.estimatedValue as number | undefined;
-  if (estimatedValue !== undefined && (!Number.isSafeInteger(estimatedValue) || estimatedValue < 0)) {
+  const estimatedValue = record.estimatedValue as number | null | undefined;
+  if (estimatedValue !== undefined && estimatedValue !== null && (!Number.isSafeInteger(estimatedValue) || estimatedValue < 0)) {
     return { ok: false, message: "estimated value must be a non-negative whole number" };
   }
 
