@@ -344,7 +344,7 @@ administration compatibility handlers were added, and provider routes remain `50
 feature_unavailable`.
 
 ### BE-10 · Rate limiting on both surfaces (medium, after BE-04+BE-09; VERIFIED)
-**Status:** In review — draft PR #82, July 21, 2026. Source-only and undeployed.
+**Status:** Complete — PR #82, July 21, 2026. Source-only and undeployed.
 
 **Why:** No rate limiting exists anywhere (verified). Cost-bearing dev routes: assistant
 (OpenAI), uploads (R2), sheets/sync + project drive provisioning (Google quota). The
@@ -1511,7 +1511,7 @@ branch, malformed-row tolerance); review-first queue asserted (no auto-created l
 without confirmation); simulation e2e. **Effort:** small. **Cost:** $0.
 
 ### GI-02 · Chat webhook notifier + notification-routing settings (medium, independent)
-**Status:** In progress — `codex/gi02-chat-notifier`, July 21, 2026.
+**Status:** Complete — PR #79, July 21, 2026. Source-only and undeployed.
 
 **Why:** One-way pushes into Chat spaces the team already has on their phones — new
 lead, filing-review needed, schedule change, warranty follow-up — with deep links back
@@ -1529,7 +1529,7 @@ repo (grep + test); simulation logs instead of posting. **Effort:** medium.
 **Cost:** $0 (Chat included in Workspace; webhooks unpriced).
 
 ### GI-03 · Job-site map + navigation link on the client and project screens (small-medium, after WS-15; FloorOpsApp queue) — OWNER PRIORITY (July 21)
-**Status:** In review — draft PR #80, July 21, 2026. Source-only and undeployed; live satellite embeds remain blocked on WS-15 restricted browser-key configuration.
+**Status:** Complete — PR #80, July 21, 2026. Source-only and undeployed; live satellite embeds remain blocked on WS-15 restricted browser-key configuration.
 
 **Why:** See the site (satellite view for driveway/staging assessment) on every
 client and project screen, and one-tap navigation for crews.
