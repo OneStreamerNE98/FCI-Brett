@@ -56,6 +56,7 @@ function createBehaviorDatabase() {
     resources: [],
     sheetStates: [],
     simulationState: null,
+    throwBeforeBatch: null,
   };
 
   function changes(count) {
@@ -378,6 +379,10 @@ function createBehaviorDatabase() {
     prepare: statement,
     async batch(statements) {
       state.batchCount += 1;
+      if (state.throwBeforeBatch === state.batchCount) {
+        state.throwBeforeBatch = null;
+        throw new Error("FCI TEST simulated archive copy failure");
+      }
       if (state.loseLeaseBeforeBatch === state.batchCount) {
         for (const operation of state.operations) {
           if (operation.status === "in-progress") operation.lease_expires_at += 1;
@@ -514,8 +519,9 @@ async function configureLive(databaseFixture) {
   };
 }
 
-function installLiveFilingProvider(databaseFixture, messageId) {
+function installLiveFilingProvider(messageId) {
   const gmailRaw = Buffer.from("From: client@example.test\r\nTo: operations@cherryhillfci.com\r\nSubject: FCI TEST\r\n\r\nTest body").toString("base64url");
+  const liveAttachmentBytes = Buffer.from("FCI TEST attachment");
   const folderById = {
     "live-project-root": {
       id: "live-project-root",
@@ -565,14 +571,28 @@ function installLiveFilingProvider(databaseFixture, messageId) {
           labelIds: ["INBOX"],
           snippet: "FCI TEST body",
           payload: {
-            mimeType: "text/plain",
+            mimeType: "multipart/mixed",
             headers: [
               { name: "From", value: "Client <client@example.test>" },
               { name: "To", value: "operations@cherryhillfci.com" },
               { name: "Subject", value: "FCI TEST — DO NOT USE" },
               { name: "Date", value: "Wed, 22 Jul 2026 10:00:00 -0400" },
             ],
-            body: { data: Buffer.from("FCI TEST body").toString("base64url"), size: 13 },
+            body: { size: 0 },
+            parts: [
+              {
+                partId: "0",
+                mimeType: "text/plain",
+                body: { data: Buffer.from("FCI TEST body").toString("base64url"), size: 13 },
+              },
+              {
+                partId: "1",
+                filename: "FCI-Test-Attachment.pdf",
+                mimeType: "application/pdf",
+                headers: [{ name: "Content-Disposition", value: "attachment; filename=FCI-Test-Attachment.pdf" }],
+                body: { data: liveAttachmentBytes.toString("base64url"), size: liveAttachmentBytes.byteLength },
+              },
+            ],
           },
         });
       }
@@ -612,22 +632,22 @@ function installLiveFilingProvider(databaseFixture, messageId) {
       }] : [] });
     }
     if (url.hostname === "www.googleapis.com" && url.pathname === "/upload/drive/v3/files" && method === "POST") {
-      const archiveId = databaseFixture.state.archives[0]?.id;
+      const multipart = await init.body.text();
+      const metadataJson = multipart.match(/Content-Type: application\/json; charset=UTF-8\r\n\r\n(\{[^\r]+\})\r\n--/u)?.[1];
+      if (!metadataJson) throw new Error("Live filing fixture could not read Drive upload metadata.");
+      const metadata = JSON.parse(metadataJson);
+      const isAttachment = metadata.appProperties?.fciArchiveKind === "attachment";
       return Response.json({
-        id: "live-email-file",
-        name: `FCI-FCI2026-001-${messageId}.eml`,
-        mimeType: "message/rfc822",
-        parents: ["live-email-archive"],
+        id: isAttachment ? "live-attachment-file" : "live-email-file",
+        name: metadata.name,
+        mimeType: metadata.mimeType,
+        parents: metadata.parents,
         trashed: false,
-        webViewLink: "https://drive.google.test/live-email-file",
-        appProperties: {
-          fciArchiveId: archiveId,
-          fciArtifactKey: "original-eml",
-          fciArchiveKind: "email-eml",
-          fciProjectId: PROJECT_ID,
-          fciGmailMessageId: messageId,
-        },
-        size: "95",
+        webViewLink: isAttachment
+          ? "https://drive.google.test/live-attachment-file"
+          : "https://drive.google.test/live-email-file",
+        appProperties: metadata.appProperties,
+        size: String(isAttachment ? liveAttachmentBytes.byteLength : 95),
       });
     }
     throw new Error(`Unexpected live filing provider request: ${method} ${url}`);
@@ -641,6 +661,13 @@ function filingEventShape(row) {
     entityId: row.entity_id,
     detailKeys: row.detail.split(";").map((part) => part.split("=", 1)[0]).sort(),
   };
+}
+
+function nestedKeyShape(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, nestedKeyShape(value[key])]),
+  );
 }
 
 function liveResidue() {
@@ -798,14 +825,26 @@ test("live and simulation Gmail filing emit the same durable event-row shape", a
       { params: Promise.resolve({ messageId: MESSAGE_ID }) },
     );
     assert.equal(simulationResponse.status, 200, JSON.stringify(await simulationResponse.clone().json()));
+    const simulationBody = await simulationResponse.json();
 
     await configureLive(liveDatabase);
-    installLiveFilingProvider(liveDatabase, liveMessageId);
+    installLiveFilingProvider(liveMessageId);
     const liveResponse = await gmailFileRoute.POST(
       routeRequest(`/api/v1/integrations/google/gmail/messages/${liveMessageId}/file`, "POST", { projectId: PROJECT_ID }),
       { params: Promise.resolve({ messageId: liveMessageId }) },
     );
     assert.equal(liveResponse.status, 200, JSON.stringify(await liveResponse.clone().json()));
+    const liveBody = await liveResponse.json();
+
+    const simulationAttachmentShapes = simulationBody.archive.attachments.map(nestedKeyShape);
+    const liveAttachmentShapes = liveBody.archive.attachments.map(nestedKeyShape);
+    assert.deepEqual(simulationAttachmentShapes, liveAttachmentShapes);
+    assert.deepEqual(liveAttachmentShapes, [{
+      byteSize: null,
+      driveUrl: null,
+      filename: null,
+      mimeType: null,
+    }]);
 
     assert.deepEqual(
       simulationDatabase.state.integrationEvents.map(filingEventShape),
@@ -817,6 +856,83 @@ test("live and simulation Gmail filing emit the same durable event-row shape", a
     );
     assert.ok(liveDatabase.state.integrationEvents.every((event) => event.connection_key === LIVE_CONNECTION));
     assert.ok(simulationDatabase.state.integrationEvents.every((event) => event.connection_key === SIMULATION_CONNECTION));
+  } finally {
+    configureSimulation(database);
+  }
+});
+
+test("simulated Gmail filing failure emits activity and integration audit rows", async () => {
+  const failureDatabase = createBehaviorDatabase();
+  try {
+    configureSimulation(failureDatabase);
+    await simulation.getSimulationState();
+    failureDatabase.state.throwBeforeBatch = failureDatabase.state.batchCount + 2;
+
+    const response = await gmailFileRoute.POST(
+      routeRequest(`/api/v1/integrations/google/gmail/messages/${MESSAGE_ID}/file`, "POST", { projectId: PROJECT_ID }),
+      { params: Promise.resolve({ messageId: MESSAGE_ID }) },
+    );
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), {
+      error: "The Workspace Gmail integration could not complete that request.",
+    });
+
+    assert.deepEqual(
+      failureDatabase.state.activities.map((row) => row.action),
+      ["workspace_simulation.gmail_approved", "workspace_simulation.gmail_failed"],
+    );
+    const failureActivity = failureDatabase.state.activities.at(-1);
+    assert.deepEqual({
+      recordId: failureActivity.record_id,
+      action: failureActivity.action,
+      actor: failureActivity.actor,
+      detail: failureActivity.detail,
+    }, {
+      recordId: PROJECT_ID,
+      action: "workspace_simulation.gmail_failed",
+      actor: ADMIN_EMAIL,
+      detail: "Review-approved Gmail archive stopped; code=gmail_file_archive_failed; no Inbox label was removed",
+    });
+    assert.deepEqual(
+      failureDatabase.state.integrationEvents.map(integrationProjection),
+      [
+        {
+          connectionKey: SIMULATION_CONNECTION,
+          eventType: "gmail.archive_approved",
+          actor: ADMIN_EMAIL,
+          entityType: "project",
+          entityId: PROJECT_ID,
+          detail: "mode=simulation;inbox_retained=true",
+        },
+        {
+          connectionKey: SIMULATION_CONNECTION,
+          eventType: "gmail.archive_failed",
+          actor: ADMIN_EMAIL,
+          entityType: "project",
+          entityId: PROJECT_ID,
+          detail: "mode=simulation;code=gmail_file_archive_failed",
+        },
+      ],
+    );
+    assert.deepEqual({
+      status: failureDatabase.state.archives[0].status,
+      lastErrorCode: failureDatabase.state.archives[0].last_error_code,
+    }, {
+      status: "failed",
+      lastErrorCode: "gmail_file_archive_failed",
+    });
+    assert.deepEqual({
+      status: failureDatabase.state.operations[0].status,
+      leaseExpiresAt: failureDatabase.state.operations[0].lease_expires_at,
+      lastErrorCode: failureDatabase.state.operations[0].last_error_code,
+    }, {
+      status: "failed",
+      leaseExpiresAt: null,
+      lastErrorCode: "gmail_file_archive_failed",
+    });
+    assert.equal(failureDatabase.state.artifacts.length, 0);
+    const failureState = JSON.parse(failureDatabase.state.simulationState.state_json);
+    assert.equal(failureState.messages[0].labelIds.includes("FCI_FILED"), false);
   } finally {
     configureSimulation(database);
   }

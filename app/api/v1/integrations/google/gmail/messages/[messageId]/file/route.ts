@@ -346,7 +346,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
       assertLeaseGuard(copyResults.at(-1));
       filedEmailDriveUrl = emailDriveUrl;
       filedAttachmentCount = attachmentRows.length;
-      responseAttachments = attachmentRows;
+      responseAttachments = attachmentRows.map((attachment) => ({
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        byteSize: attachment.byteSize,
+        driveUrl: attachment.driveUrl,
+      }));
     } else {
       const emailArtifactKey = "original-eml";
       const emailUpload = await workspace.drive!.findOrUploadManagedFile({
