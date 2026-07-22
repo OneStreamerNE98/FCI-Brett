@@ -15,6 +15,10 @@ export async function POST(request: NextRequest) {
   if (!config.simulation) return NextResponse.json({ error: "Simulation reset is available only in local Workspace simulation mode." }, { status: 409 });
 
   await env.DB.batch([
+    // Development activity rows do not carry a connection key. Simulation-owned
+    // actions are therefore namespaced and removed with SQLite GLOB, where the
+    // underscore is literal rather than LIKE's single-character wildcard.
+    env.DB.prepare("DELETE FROM activity_events WHERE action GLOB 'workspace_simulation.*'"),
     env.DB.prepare("DELETE FROM gmail_file_archive_artifacts WHERE archive_id IN (SELECT id FROM gmail_file_archives WHERE connection_key = ?)").bind(config.connectionKey),
     env.DB.prepare("DELETE FROM gmail_file_archives WHERE connection_key = ?").bind(config.connectionKey),
     env.DB.prepare("DELETE FROM drive_folder_mappings WHERE connection_key = ?").bind(config.connectionKey),

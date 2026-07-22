@@ -4,6 +4,10 @@ import {
   type GoogleFetch,
   type GoogleRuntimeConfig,
 } from "./google-oauth";
+import {
+  calendarEventsListedIntegrationEvent,
+  calendarHoldCreatedIntegrationEvent,
+} from "./google-integration-events";
 
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const UPCOMING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -192,13 +196,18 @@ export async function listWorkspaceCalendarEvents(
     dependencies,
   );
   const result = await calendar.listUpcomingEvents();
+  const event = calendarEventsListedIntegrationEvent(
+    calendarId,
+    result.window,
+    result.events.length,
+  );
   await dependencies.writeIntegrationEvent(
     config,
-    "calendar.workspace_events_listed",
+    event.eventType,
     actor,
-    "calendar",
-    calendarId,
-    `window=${result.window.start}/${result.window.end};count=${result.events.length}`,
+    event.entityType,
+    event.entityId,
+    event.detail,
   );
   return result;
 }
@@ -216,13 +225,14 @@ export async function createWorkspaceCalendarHold(
     dependencies,
   );
   const event = await calendar.createTestHold(start);
+  const integrationEvent = calendarHoldCreatedIntegrationEvent(event);
   await dependencies.writeIntegrationEvent(
     config,
-    "calendar.workspace_hold_created",
+    integrationEvent.eventType,
     actor,
-    "calendar_event",
-    event.id,
-    `start=${event.start};end=${event.end};visibility=private;attendees=none;notifications=none`,
+    integrationEvent.entityType,
+    integrationEvent.entityId,
+    integrationEvent.detail,
   );
   return event;
 }

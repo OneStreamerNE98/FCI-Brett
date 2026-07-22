@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     const drive = new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
     const root = await drive.verifyRootFolder();
     await writeGoogleIntegrationEvent(config, "drive.root_verified", auth.user.email, "workspace", root.id, "mode=workspace");
-    return noStore({ verified: true, workspace: { name: root.name, url: root.url, runtimeMode: config.environment } });
+    return noStore({ verified: true, simulated: false, workspace: { name: root.name, url: root.url, runtimeMode: config.environment } });
   } catch (error) {
     return errorResponse(error);
   }

@@ -3,6 +3,7 @@ import {
   type GoogleFetch,
   type GoogleRuntimeConfig,
 } from "./google-oauth";
+import { sheetsDirectorySyncedIntegrationEvent } from "./google-integration-events";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
@@ -371,7 +372,9 @@ export async function syncGoogleDirectory(
 ): Promise<GoogleSheetSyncResult> {
   const configurationError = configuredMirrorError(config);
   if (configurationError) throw configurationError;
-  const spreadsheetId = config.simulation ? "workspace-simulation-sheet" : config.clientDirectorySheetId!;
+  const spreadsheetId = config.simulation
+    ? config.clientDirectorySheetId ?? "workspace-simulation-directory-sheet"
+    : config.clientDirectorySheetId!;
   await Promise.all([
     updateSyncState(config, "clients", { status: "syncing", actor }, dependencies),
     updateSyncState(config, "projects", { status: "syncing", actor }, dependencies),
@@ -387,7 +390,18 @@ export async function syncGoogleDirectory(
         updateSyncState(config, "clients", { status: "synced", syncedAt: completedAt, actor }, dependencies),
         updateSyncState(config, "projects", { status: "synced", syncedAt: completedAt, actor }, dependencies),
       ]);
-      await dependencies.writeIntegrationEvent(config, "sheets.simulation_directory_synced", actor, "workspace-simulation", spreadsheetId, JSON.stringify({ clients: clients.length, projects: projects.length }));
+      const integrationEvent = sheetsDirectorySyncedIntegrationEvent(spreadsheetId, {
+        clients: clients.length,
+        projects: projects.length,
+      });
+      await dependencies.writeIntegrationEvent(
+        config,
+        integrationEvent.eventType,
+        actor,
+        integrationEvent.entityType,
+        integrationEvent.entityId,
+        integrationEvent.detail,
+      );
       return { clients: { inserted: 0, updated: clients.length, total: clients.length }, projects: { total: projects.length }, spreadsheetUrl: null, completedAt };
     }
     const accessToken = await dependencies.getAccessToken(config, "sheets");
@@ -404,7 +418,18 @@ export async function syncGoogleDirectory(
       updateSyncState(config, "clients", { status: "synced", syncedAt: completedAt, actor }, dependencies),
       updateSyncState(config, "projects", { status: "synced", syncedAt: completedAt, actor }, dependencies),
     ]);
-    await dependencies.writeIntegrationEvent(config, "sheets.directory.synced", actor, "google-sheet", spreadsheetId, JSON.stringify({ clients: clientResult.total, projects: projectResult.total }));
+    const integrationEvent = sheetsDirectorySyncedIntegrationEvent(spreadsheetId, {
+      clients: clientResult.total,
+      projects: projectResult.total,
+    });
+    await dependencies.writeIntegrationEvent(
+      config,
+      integrationEvent.eventType,
+      actor,
+      integrationEvent.entityType,
+      integrationEvent.entityId,
+      integrationEvent.detail,
+    );
     return { clients: clientResult, projects: projectResult, spreadsheetUrl: sheetUrl(spreadsheetId), completedAt };
   } catch (error) {
     const detail = errorDetails(error);

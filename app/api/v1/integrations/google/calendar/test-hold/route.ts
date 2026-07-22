@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup } from "../../../../../../lib/google-oauth-sites";
+import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
 import { createWorkspaceCalendarHold } from "../../../../../../lib/google-calendar-sites";
+import { calendarHoldCreatedIntegrationEvent } from "../../../../../../lib/google-integration-events";
 import { createSimulationCalendarHold } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
   if (!config.calendarEnabled) {
     return noStore({ error: "Enable Calendar for the Google Workspace connection before testing appointments." }, { status: 409 });
   }
-  if (!config.oauthReady) {
+  if (!config.oauthReady || !config.clientAppointmentsCalendarId) {
     return noStore({ error: "Google Calendar setup is incomplete.", code: "calendar_configuration_required", missing: config.missing }, { status: 409 });
   }
 
@@ -71,7 +72,20 @@ export async function POST(request: NextRequest) {
 
   try {
     const start = parseStart(body.start);
-    return noStore({ event: config.simulation ? await createSimulationCalendarHold(start) : await createWorkspaceCalendarHold(config, auth.user.email, start), simulated: config.simulation }, { status: 201 });
+    if (config.simulation) {
+      const event = await createSimulationCalendarHold(start);
+      const integrationEvent = calendarHoldCreatedIntegrationEvent(event);
+      await writeGoogleIntegrationEvent(
+        config,
+        integrationEvent.eventType,
+        auth.user.email,
+        integrationEvent.entityType,
+        integrationEvent.entityId,
+        integrationEvent.detail,
+      );
+      return noStore({ event, simulated: true }, { status: 201 });
+    }
+    return noStore({ event: await createWorkspaceCalendarHold(config, auth.user.email, start), simulated: false }, { status: 201 });
   } catch (error) {
     if (error instanceof GoogleIntegrationError) {
       return noStore({ error: error.message, code: error.code }, { status: error.status });
