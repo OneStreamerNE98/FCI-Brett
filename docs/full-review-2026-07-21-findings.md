@@ -215,6 +215,10 @@ spreadsheet is rejected (containment); never-delete grep-guards unchanged.
 **Effort:** medium. **Cost:** $0.
 
 ### FIX-03 · Simulation audit + failure-mode parity, and complete reset (P2s F-6/F-8 + reset/status-shape P3s; small-medium)
+**Status:** Complete — PR #100, July 22, 2026. Source-only and undeployed. Residual
+follow-up recorded: project Drive provisioning still hand-rolls divergent
+`google_integration_events` types between modes (out of this packet's stated scope);
+fold into a later parity/uniformity packet.
 **Why:** the integration-audit surface is empty in simulation and the lease-conflict
 409 has no simulated twin, so two live behaviors cannot be seen or regression-tested
 without a real Google account — contrary to the simulation-parity law.
