@@ -198,6 +198,7 @@ readiness states; existing route tests stay green.
 **Effort:** medium. **Cost:** $0.
 
 ### FIX-02 · Blueprint-aware project provisioning with one identity-stamping scheme (P1 F-1 + stamping/containment P3s; medium)
+**Status:** Complete — PR #97, July 22, 2026. Source-only and undeployed.
 **Why:** provisioning forks the Drive tree after any root rename or blueprint edit —
 the exact silent-drift failure the workspace registry exists to prevent.
 **Do:** `provisionProjectFolders` resolves the client-accounts/projects roots by
