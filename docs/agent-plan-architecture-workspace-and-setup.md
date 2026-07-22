@@ -1229,6 +1229,103 @@ Planned badges (render-invariance test); non-admin users see My settings but no 
 cards; simulation e2e edits and persists a preference; SET-07 slug pins unchanged.
 **Effort:** medium. **Cost:** $0.
 
+### SET-29 · Workspace settings stage shell: status banner + four collapsible stages + InfoHint (medium-large; R2 — after the full-review R1 fix packets)
+**Why:** Owner-approved redesign (July 21, 2026): the Google Workspace section is a
+nine-piece single-column scroll that restates the same mode/connection state nine
+times from three independently loaded endpoints (full-review UI-honesty lens, P2, at
+`58e4498`). Design authority: `docs/settings-redesign-spec.md` + the approved
+`docs/settings-redesign-wireframe.html`.
+**Do:** In `GoogleWorkspacePanel.tsx`, add the single status banner (mode chip +
+plain-words headline with the next step + "Stage N of 4"), the reusable `SetupStage`
+collapsible shell (auto-collapse complete stages, auto-expand the first incomplete
+one), and the reusable `InfoHint` ⓘ primitive (hover/focus tooltip, tap-to-reveal at
+390 px, `aria-describedby`, never env values) per spec §3.1/§4. Slot the EXISTING
+cards into the four stages unchanged (checklist→1, connect step→2,
+blueprint+resources→3, Gmail/Calendar/Sheets steps→4; connection-health card stays
+temporarily in stage 2). Remove the old mode card — the banner replaces it. No API,
+server, or behavior change.
+**Accept:** banner is the only mode/connection readout it introduces (old mode-card
+strings no longer render — render-invariance test); stage auto-collapse/expand
+asserted; InfoHint keyboard/touch accessibility asserted; every existing
+workspace-setup-stepper e2e behavior keeps an equivalent assertion against the new
+frame (mutation-sensitive updates, no coverage deletions); SET-07 slug pins unchanged.
+**Effort:** medium-large. **Cost:** $0.
+
+### SET-30 · Stage 1 "Prepare the tenant" interior (small-medium, after SET-29)
+**Why:** Hosting/env guidance is interleaved mid-flow in today's steps; tenant
+preparation is Brett's outside-the-app lane and must read as one checklist
+(spec §3.2).
+**Do:** Move into Stage 1, in order: the domain/tenant checklist rows (DONE/MISSING
+with one InfoHint per row), the hosted-configuration prerequisites (names only,
+never values), and the copy-exact helpers with the Step-2/Step-5 env-var notes
+relocated here. Stage completes at `connectReady`; chip shows "x of y".
+**Accept:** copy-helper contents byte-identical to today's (existing assertions
+retargeted); env-note text no longer renders inside Stages 2-4; completion flips
+exactly at `connectReady`; checklist behavior tests stay green.
+**Effort:** small-medium. **Cost:** $0.
+
+### SET-31 · Stage 2 "Connect" with health as an expander (small, after SET-30)
+**Why:** Connection health is connection detail, not a separate bottom card; the
+Resources/Health near-duplicate tables are a verified P2 (spec §3.3).
+**Do:** Stage 2 holds the connect/reconnect/disconnect actions and, in simulation
+mode, the simulation reset with the "runs locally, nothing sent to Google"
+explanation. Fold the bottom connection-health card into an expander inside Stage 2
+(account, granted-vs-enabled services, reauthorization warnings). Delete the
+standalone health card; its Mode/Status rows do not migrate (banner owns them).
+**Accept:** health details render only inside the expander; the deleted card's
+non-duplicate content (account, services, reauth warnings) all present; disconnect/
+reauthorization flows keep their existing e2e coverage against the new location.
+**Effort:** small. **Cost:** $0.
+
+### SET-32 · Stage 3 unified define-and-create surface (medium, after SET-31)
+**Why:** Blueprint editing and resource creation are one workflow ("decide what
+exists, then create it — in order") artificially split across an editor, a table,
+and per-row actions today (spec §3.4).
+**Do:** Merge the Resources table + `WorkspaceDriveResourceActions` into a
+dependency-ordered creation list beside the blueprint editor: Shared Drive
+(adopt/verify) → folder tree (ensure-roots) → spreadsheets (directory + owner
+extras) → templates → calendars (verify-only until WS-14, labeled). Each row shows
+its own state and an InfoHint saying what will be created and where; each row
+unlocks the next. Presentation unification ONLY: leases, review-first adoption,
+never-delete, idempotency, and simulation parity are untouched server-side.
+**Accept:** every setup action reachable today is reachable in the ordered list with
+identical request/response behavior (existing route/e2e assertions retargeted); row
+gating asserted (a later row is disabled until its dependency reports
+created/adopted); stage completion ignores calendar verify-only rows while WS-14 is
+pending.
+**Effort:** medium. **Cost:** $0.
+
+### SET-33 · Stage 4 "Verify & maintain" (small-medium, after SET-32)
+**Why:** First-run service verifications and ongoing upkeep are different activities
+mixed together today (spec §3.5).
+**Do:** Stage 4 holds Gmail labels + test email, Calendar window/test hold, and
+Sheets mirror sync, followed by the ongoing surfaces (drift/reconcile when SET-18
+lands, renames, notification routing) labeled "ongoing". The stage chip reads READY
+once each service verification has passed at least once; the stage never shows
+"complete". Use the shared sheet-status label mapper from the full-review FIX packet
+if merged; otherwise reuse the polished FloorOpsApp label map — never render raw
+backend enum values.
+**Accept:** raw mirror-status enums never render (mutation-sensitive assertion);
+existing Gmail/Calendar/Sheets verification e2e coverage retargeted; ongoing items
+visually distinct from first-run verifications.
+**Effort:** small-medium. **Cost:** $0.
+
+### SET-34 · Redesign cross-cutting sweep: anchors, naming, 390 px, duplicate-status audit (small, after SET-33)
+**Why:** Close out spec §3.6: deep links should land on the relevant stage, the
+non-admin nav/section naming mismatch confuses users, and the single-status rule
+needs a final enforcement pass.
+**Do:** Add per-stage URL anchors (`#workspace-stage-1`…`4`) with the SET-07 section
+slug unchanged; retarget the Client Directory "Configure" and Testing & launch
+bounce-links to their stage anchors; unify the non-admin nav label and section name
+to "My settings" everywhere; verify 390 px behavior per stage (banner wraps, hints
+tap-to-reveal); sweep the panel for any remaining mode/connection restatement
+outside the banner and stage chips and remove it.
+**Accept:** anchor navigation e2e (deep link opens the right stage expanded); SET-07
+slug pins byte-identical; one name for the non-admin section in nav and switch;
+a render-invariance test asserts the banner and stage chips are the only
+mode/connection readouts in the panel.
+**Effort:** small. **Cost:** $0.
+
 ---
 
 # Workstream D — Flooring KPIs & reporting (KPI)
@@ -1698,6 +1795,19 @@ merged. SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. Th
 unclaimed parallel-safe tracks are
 BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
 broad primitive/CSS consolidation tracks.
+
+**Design-remediation wave order (approved July 21, 2026 — anti-rework):** the
+full-codebase review and the settings redesign run in four waves so nothing is built
+twice. **R1** — full-review foundation fix packets (FIX-xx, forthcoming findings
+ledger) that touch shared primitives, config layering, or test infrastructure.
+**R2** — the SET-29 → SET-34 stage-shell series (design authority:
+`docs/settings-redesign-spec.md` + approved wireframe; strictly one packet at a
+time — all six touch `GoogleWorkspacePanel.tsx`). **R3** — remaining full-review fix
+packets that touch settings UI, built on the new frame. **R4** — the feature queue
+resumes stage-native. Settings-UI packets that would add cards to the old layout
+(SET-23 viewer placement, SET-24, SET-27 card) WAIT for SET-29; engine-side packets
+(SET-17, SET-18, SET-21, SET-25, GI-04, and the FloorOpsApp queue) are unaffected
+and proceed in parallel with R1-R3.
 
 **Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
 inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only

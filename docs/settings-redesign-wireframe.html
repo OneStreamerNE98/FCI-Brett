@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workspace setup — proposed four-stage flow (wireframe)</title>
+<style>
+  :root { --ink:#2b2622; --mut:#6b625a; --line:#d9d2c9; --bg:#faf8f5; --card:#fff; --ok:#35674d; --okbg:#e6f1e9; --wait:#805b38; --waitbg:#f7ede2; --accent:#405f8a; --accentbg:#e9eef7; }
+  * { box-sizing:border-box; margin:0; }
+  body { font:14px/1.5 system-ui, sans-serif; color:var(--ink); background:var(--bg); padding:24px; max-width:860px; margin:0 auto; }
+  h1 { font-size:18px; margin-bottom:4px; }
+  .note { color:var(--mut); font-size:12px; margin-bottom:18px; }
+  .banner { display:flex; align-items:center; gap:14px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .banner .mode { font-weight:800; background:var(--accentbg); color:var(--accent); border-radius:999px; padding:5px 10px; font-size:12px; }
+  .banner .prog { margin-left:auto; text-align:right; }
+  .banner .prog b { display:block; font-size:13px; }
+  .banner .prog span { font-size:12px; color:var(--mut); }
+  .stage { background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:12px; overflow:hidden; }
+  .stage > header { display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:default; background:#fcfaf7; border-bottom:1px solid transparent; }
+  .stage.open > header { border-bottom-color:var(--line); }
+  .num { width:26px; height:26px; border-radius:50%; display:grid; place-items:center; font-weight:900; font-size:12px; background:#e9eee9; color:var(--ok); flex:0 0 auto; }
+  .stage h2 { font-size:14px; }
+  .stage header p { font-size:12px; color:var(--mut); }
+  .chip { margin-left:auto; font-size:11px; font-weight:800; border-radius:999px; padding:4px 9px; white-space:nowrap; }
+  .chip.done { background:var(--okbg); color:var(--ok); }
+  .chip.now { background:var(--accentbg); color:var(--accent); }
+  .chip.later { background:var(--waitbg); color:var(--wait); }
+  .body { padding:14px; }
+  .row { display:flex; align-items:center; gap:10px; border:1px dashed var(--line); border-radius:8px; padding:10px 12px; margin-bottom:8px; background:#fffdfa; }
+  .row .st { margin-left:auto; font-size:11px; font-weight:800; }
+  .row .st.done { color:var(--ok); } .row .st.ready { color:var(--accent); } .row .st.wait { color:var(--wait); }
+  .btn { border:1px solid var(--line); background:#fff; border-radius:7px; padding:5px 10px; font-size:12px; font-weight:700; color:var(--accent); }
+  .hint { display:inline-grid; place-items:center; width:16px; height:16px; border-radius:50%; border:1px solid var(--mut); color:var(--mut); font-size:10px; font-weight:900; cursor:help; }
+  .hintdemo { position:relative; }
+  .hintdemo .tip { position:absolute; left:24px; top:-6px; background:var(--ink); color:#fff; font-size:11px; padding:6px 9px; border-radius:6px; width:230px; z-index:2; }
+  .sub { font-size:12px; color:var(--mut); margin:6px 0 10px; }
+  .collapsed-note { padding:10px 14px; font-size:12px; color:var(--mut); font-style:italic; }
+  .legend { margin-top:18px; font-size:12px; color:var(--mut); border-top:1px solid var(--line); padding-top:12px; }
+</style>
+</head>
+<body>
+  <h1>Settings → Google Workspace — proposed four-stage flow</h1>
+  <p class="note">Wireframe for approval. Stages auto-collapse when complete and the first incomplete stage auto-expands. Every ⓘ is a plain-language hover/tap hint. One status banner replaces the current 4–5 repeated status displays.</p>
+
+  <div class="banner">
+    <span class="mode">SIMULATION</span>
+    <div><b>Not connected to Google yet</b><br><span style="font-size:12px;color:var(--mut)">Next: finish Stage 1, then Connect</span></div>
+    <div class="prog"><b>Stage 1 of 4</b><span>Prepare the tenant</span></div>
+  </div>
+
+  <div class="stage open">
+    <header><span class="num">1</span><div><h2>Prepare the tenant</h2><p>One-time steps done in Google's consoles — usually your Workspace admin</p></div><span class="chip now">IN PROGRESS · 3 of 6</span></header>
+    <div class="body">
+      <div class="row">Domain verified &amp; operations account exists <span class="hint">i</span><span class="st done">DONE</span></div>
+      <div class="row">Workspace APIs enabled (Drive, Gmail, Calendar, Sheets) <span class="hint">i</span><span class="st done">DONE</span></div>
+      <div class="row hintdemo">OAuth client + redirect URI <span class="hint">i</span><span class="tip">The app's ID card with Google. Copy the exact redirect address below — one wrong character and sign-in fails.</span><span class="st ready">COPY HELPER ↓</span></div>
+      <div class="row">Hosted configuration values entered <span class="hint">i</span><span class="st wait">2 MISSING</span></div>
+      <p class="sub">Copy-exact helpers live here (redirect URI · settings template · key command) — moved out of the setup steps so they never interrupt the flow.</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <header><span class="num">2</span><div><h2>Connect</h2><p>Authorize the one company Google account</p></div><span class="chip later">WAITING ON STAGE 1</span></header>
+    <div class="collapsed-note">Connect / reconnect / disconnect actions. Connection health (account, granted permissions) is an expander inside this stage — no separate card at the bottom of the page.</div>
+  </div>
+
+  <div class="stage">
+    <header><span class="num">3</span><div><h2>Define &amp; create your workspace</h2><p>Decide what exists, then create it — in order</p></div><span class="chip later">AFTER CONNECT</span></header>
+    <div class="body">
+      <p class="sub">Blueprint (folders · spreadsheets · templates · naming) sits beside the creation list. Each row unlocks the next:</p>
+      <div class="row">1. Shared Drive <span class="hint">i</span><button class="btn">Adopt</button><span class="st ready">FOUND — ADOPT</span></div>
+      <div class="row">2. Folder tree (from your blueprint) <button class="btn">Create</button><span class="st wait">AFTER DRIVE</span></div>
+      <div class="row">3. Spreadsheets (directory + your extras) <button class="btn">Create</button><span class="st wait">AFTER FOLDERS</span></div>
+      <div class="row">4. Templates <button class="btn">Create</button><span class="st wait">AFTER FOLDERS</span></div>
+      <div class="row">5. Calendars <span class="hint">i</span><button class="btn">Verify</button><span class="st wait">VERIFY-ONLY FOR NOW</span></div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <header><span class="num">4</span><div><h2>Verify &amp; maintain</h2><p>Prove each service works, then ongoing upkeep</p></div><span class="chip later">AFTER CREATION</span></header>
+    <div class="collapsed-note">Gmail labels &amp; test email · Calendar test hold · Sheets mirror sync · then ongoing: drift check (reconcile), renames, notification routing. Labeled "ongoing," separate from first-run.</div>
+  </div>
+
+  <p class="legend"><b>Also in this redesign:</b> "My settings" and "My account" become one name · other Settings sections link to a specific stage, not the page top · every stage works at phone width with tap-to-reveal hints · non-admins never see any of this (unchanged).</p>
+</body>
+</html>
