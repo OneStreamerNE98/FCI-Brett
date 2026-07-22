@@ -1798,14 +1798,15 @@ broad primitive/CSS consolidation tracks.
 
 **Design-remediation wave order (approved July 21, 2026 — anti-rework):** the
 full-codebase review and the settings redesign run in four waves so nothing is built
-twice. **R1** — full-review foundation fix packets (FIX-01…FIX-06 in
+twice. **R1** — full-review foundation fix packets (FIX-01…FIX-06 plus FIX-10 in
 `docs/full-review-2026-07-21-findings.md`) that touch shared primitives, config
 layering, or test infrastructure.
 **R2** — the SET-29 → SET-34 stage-shell series (design authority:
 `docs/settings-redesign-spec.md` + approved wireframe; strictly one packet at a
 time — all six touch `GoogleWorkspacePanel.tsx`). **R3** — remaining full-review fix
-packets that touch settings UI, built on the new frame. **R4** — the feature queue
-resumes stage-native. Settings-UI packets that would add cards to the old layout
+packets that touch settings UI, built on the new frame (FIX-07, FIX-08). **R4** — the
+feature queue resumes stage-native, plus FIX-09 and the production-only FIX-11
+(anonymous login-flow throttle). Settings-UI packets that would add cards to the old layout
 (SET-23 viewer placement, SET-24, SET-27 card) WAIT for SET-29; engine-side packets
 (SET-17, SET-18, SET-21, SET-25, GI-04, and the FloorOpsApp queue) are unaffected
 and proceed in parallel with R1-R3.
