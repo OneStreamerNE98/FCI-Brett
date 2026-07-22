@@ -4,6 +4,7 @@ import {
   type GoogleRuntimeConfig,
 } from "./google-oauth";
 import { sheetsDirectorySyncedIntegrationEvent } from "./google-integration-events";
+import type { SheetMirrorStatus } from "./sheet-mirror-status";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
@@ -61,19 +62,6 @@ export type MirrorStateRow = {
   last_error_code: string | null;
   last_error_message: string | null;
   last_attempt_at: number | null;
-};
-
-export type GoogleSheetMirrorStatus = {
-  configured: boolean;
-  enabled: boolean;
-  connected: boolean;
-  spreadsheetUrl: string | null;
-  spreadsheetName: string | null;
-  clients: { status: string; lastSyncedAt: number | null; lastError: string | null };
-  projects: { status: string; lastSyncedAt: number | null; lastError: string | null };
-  lastSyncedAt: number | null;
-  reason: string | null;
-  source: "app" | "env" | "none";
 };
 
 export type GoogleSheetSyncResult = {
@@ -462,7 +450,7 @@ export async function getGoogleSheetMirrorStatus(
   connection: { services: { sheets: boolean } },
   dependencies: Pick<GoogleSheetsOperationsDependencies, "persistence">,
   source: "app" | "env" | "none" = config.simulation ? "none" : config.clientDirectorySheetId ? "env" : "none",
-): Promise<GoogleSheetMirrorStatus> {
+): Promise<SheetMirrorStatus> {
   const states = await dependencies.persistence.getSyncStates(config.connectionKey);
   const byType = new Map(states.map((state) => [state.entity_type, state]));
   const clients = byType.get("clients");
