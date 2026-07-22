@@ -14,6 +14,12 @@ import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
 const MAX_CLIENT_BODY_BYTES = 64_000;
 
+function noStore(body: unknown, init: ResponseInit = {}) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
@@ -22,7 +28,7 @@ export async function GET(request: NextRequest) {
   // Folder links are connection-scoped so simulation and the live Shared Drive
   // can never expose each other's mappings.
   const result = await env.DB.prepare("SELECT c.id, c.client_code, c.name, c.status, c.industry, c.created_by, c.created_at, c.updated_at, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url, COUNT(p.id) AS project_count, (SELECT name FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_name, (SELECT email FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_email FROM clients c LEFT JOIN projects p ON p.client_id = c.id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'client' AND m.entity_id = c.id AND m.folder_key = 'client-root' GROUP BY c.id ORDER BY c.name ASC").bind(config.connectionKey).all();
-  return NextResponse.json({ clients: result.results });
+  return noStore({ clients: result.results });
 }
 
 export async function POST(request: NextRequest) {
@@ -36,7 +42,7 @@ export async function POST(request: NextRequest) {
     invalidMessage: "Client details must be valid JSON.",
     tooLargeMessage: "Client details are too large.",
   });
-  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  if (!parsed.ok) return noStore({ error: parsed.error }, { status: parsed.status });
 
   const result = await createClient(
     parsed.body,
@@ -54,5 +60,5 @@ export async function POST(request: NextRequest) {
     },
   );
   const httpResult = clientCreationHttpResult(result);
-  return NextResponse.json(httpResult.body, { status: httpResult.status });
+  return noStore(httpResult.body, { status: httpResult.status });
 }

@@ -339,6 +339,77 @@ test("Calendar requires the configured company calendar and never falls back to 
   assert.equal(fetchCalls, 0);
 });
 
+test("concurrent Calendar test holds reuse one private extended-property identity", async () => {
+  const configured = {
+    enabledServices: ["calendar"],
+    clientAppointmentsCalendarId: "appointments@group.calendar.google.com",
+    oauthReady: true,
+  };
+  const start = new Date("2026-07-24T15:00:00.000Z");
+  const requests = [];
+  let storedEvent = null;
+  let initialLookupCount = 0;
+  let releaseInitialLookups = () => undefined;
+  const initialLookupBarrier = new Promise((resolve) => {
+    releaseInitialLookups = resolve;
+  });
+
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    if (init.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      if (storedEvent) return Response.json({ error: "duplicate" }, { status: 409 });
+      storedEvent = {
+        id: body.id,
+        summary: body.summary,
+        status: "confirmed",
+        htmlLink: "https://calendar.google.com/calendar/event?eid=FCI_TEST_DEDUP_EVENT",
+        start: body.start,
+        end: body.end,
+        extendedProperties: body.extendedProperties,
+      };
+      return Response.json(storedEvent);
+    }
+    initialLookupCount += 1;
+    if (initialLookupCount <= 2) {
+      if (initialLookupCount === 2) releaseInitialLookups();
+      await initialLookupBarrier;
+      return Response.json({ items: [] });
+    }
+    return Response.json({ items: storedEvent ? [storedEvent] : [] });
+  };
+
+  const client = new calendarModule.GoogleCalendarClient("access-token", configured);
+  const [first, second] = await Promise.all([
+    client.createTestHold(start),
+    client.createTestHold(start),
+  ]);
+  const lookupRequests = requests.filter(({ init }) => init.method !== "POST");
+  const insertRequests = requests.filter(({ init }) => init.method === "POST");
+  const dedupKey = calendarModule.calendarTestHoldDedupKey(start);
+  const eventId = await calendarModule.calendarTestHoldEventId(start);
+
+  assert.equal(lookupRequests.length, 3);
+  assert.equal(insertRequests.length, 2);
+  for (const request of lookupRequests) {
+    const url = new URL(request.url);
+    assert.equal(
+      url.searchParams.get("privateExtendedProperty"),
+      `${calendarModule.CALENDAR_TEST_HOLD_DEDUP_PROPERTY}=${dedupKey}`,
+    );
+  }
+  for (const request of insertRequests) {
+    const inserted = JSON.parse(String(request.init.body));
+    assert.equal(inserted.id, eventId);
+    assert.deepEqual(inserted.extendedProperties, {
+      private: { [calendarModule.CALENDAR_TEST_HOLD_DEDUP_PROPERTY]: dedupKey },
+    });
+  }
+  assert.deepEqual(second.event, first.event);
+  assert.deepEqual([first.created, second.created].sort(), [false, true]);
+  assert.equal("extendedProperties" in first.event, false);
+});
+
 test("Gmail attachment artifact identity ignores unstable attachment IDs and order", () => {
   const firstHash = "A".repeat(43);
   const secondHash = "B".repeat(43);

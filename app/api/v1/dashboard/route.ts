@@ -19,6 +19,12 @@ type ActivityRow = {
   client_name: string | null;
 };
 
+function noStore(body: unknown, init: ResponseInit = {}) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 function numeric(value: number | string | null | undefined) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -42,7 +48,7 @@ export async function GET(request: NextRequest) {
     env.DB.prepare("SELECT COUNT(*) AS total FROM gmail_file_archives WHERE connection_key = ? AND status = 'filed'").bind(google.connectionKey).first<CountRow>(),
   ]);
 
-  return NextResponse.json({
+  return noStore({
     generatedAt: Date.now(),
     metrics: {
       activeLeads: numeric(pipeline?.active_leads),

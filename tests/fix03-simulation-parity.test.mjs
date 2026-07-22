@@ -1077,6 +1077,59 @@ test("one message lease serializes cross-project Gmail filing contenders", async
   }
 });
 
+test("simulation double-submit reuses one calendar test hold", async () => {
+  const fixture = createBehaviorDatabase();
+  try {
+    configureSimulation(fixture);
+    const requestedStart = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const requestBody = { start: requestedStart };
+    const [firstResponse, secondResponse] = await Promise.all([
+      calendarHoldRoute.POST(routeRequest(
+        "/api/v1/integrations/google/calendar/test-hold",
+        "POST",
+        requestBody,
+      )),
+      calendarHoldRoute.POST(routeRequest(
+        "/api/v1/integrations/google/calendar/test-hold",
+        "POST",
+        requestBody,
+      )),
+    ]);
+    const [first, second] = await Promise.all([firstResponse.json(), secondResponse.json()]);
+    const responses = [
+      { response: firstResponse, body: first },
+      { response: secondResponse, body: second },
+    ];
+    const created = responses.find(({ response }) => response.status === 201);
+    const blocked = responses.find(({ response }) => response.status === 409);
+
+    assert.deepEqual(responses.map(({ response }) => response.status).sort(), [201, 409]);
+    assert.equal(blocked.body.code, "calendar_test_hold_in_progress");
+    assert.equal("extendedProperties" in created.body.event, false);
+
+    const replayResponse = await calendarHoldRoute.POST(routeRequest(
+      "/api/v1/integrations/google/calendar/test-hold",
+      "POST",
+      requestBody,
+    ));
+    const replay = await replayResponse.json();
+    const stored = JSON.parse(fixture.state.simulationState.state_json);
+    const listed = await simulation.listSimulationCalendarEvents();
+    const listedHold = listed.events.find((event) => event.id === created.body.event.id);
+
+    assert.equal(replayResponse.status, 201);
+    assert.equal(replay.event.id, created.body.event.id);
+    assert.equal("extendedProperties" in replay.event, false);
+    assert.deepEqual(Object.keys(listedHold).sort(), ["end", "id", "start", "title"]);
+    assert.equal(stored.calendarEvents.filter((event) => event.start === requestedStart).length, 1);
+    assert.equal(fixture.state.integrationEvents.filter((event) => (
+      event.event_type === "calendar.workspace_hold_created"
+    )).length, 1);
+  } finally {
+    configureSimulation(database);
+  }
+});
+
 test("FIX-03 local simulation matches durable integration contracts and resets only simulation residue", async () => {
   const state = database.state;
   await simulation.getSimulationState();

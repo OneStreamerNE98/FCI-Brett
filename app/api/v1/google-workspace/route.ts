@@ -3,11 +3,17 @@ import { env } from "cloudflare:workers";
 import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-workspace";
 import { getEffectiveGoogleRuntimeSetup, getGoogleConnectionStatus } from "../../../lib/google-oauth-sites";
 import { readGoogleChatPublicConfig } from "../../../lib/google-chat-notifier-sites";
-import { requireOfficeUser } from "../../../lib/workspace-auth";
+import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
 const MAX_FOLDER_PLAN_BODY_BYTES = 8_000;
+
+function noStore(body: unknown, init: ResponseInit = {}) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
 
 function folderPlanText(value: unknown, maximum: number) {
   if (typeof value !== "string") return null;
@@ -36,7 +42,7 @@ export async function GET(request: NextRequest) {
   const adminAllowlistPresent = Boolean(adminAllowlist);
   const credentialsPresent = google.connectReady && adminAllowlistPresent;
   const configured = google.oauthReady && adminAllowlistPresent;
-  return NextResponse.json({
+  return noStore({
     configured,
     credentialsPresent,
     connected: connection.connected,
@@ -73,6 +79,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return originError;
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   const parsed = await parseBoundedJsonObject(request, {
@@ -80,7 +88,7 @@ export async function POST(request: NextRequest) {
     invalidMessage: "Client and project details must be valid JSON.",
     tooLargeMessage: "Client and project details are too large.",
   });
-  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  if (!parsed.ok) return noStore({ error: parsed.error }, { status: parsed.status });
   const body = {
     clientCode: folderPlanText(parsed.body.clientCode, 80),
     clientName: folderPlanText(parsed.body.clientName, 180),
@@ -88,6 +96,6 @@ export async function POST(request: NextRequest) {
     projectName: folderPlanText(parsed.body.projectName, 180),
   };
   const { clientCode, clientName, projectNumber, projectName } = body;
-  if (!clientCode || !clientName || !projectNumber || !projectName) return NextResponse.json({ error: "client and project details are required" }, { status: 400 });
-  return NextResponse.json({ plan: buildProjectFolderPlan({ clientCode, clientName, projectNumber, projectName }) });
+  if (!clientCode || !clientName || !projectNumber || !projectName) return noStore({ error: "client and project details are required" }, { status: 400 });
+  return noStore({ plan: buildProjectFolderPlan({ clientCode, clientName, projectNumber, projectName }) });
 }

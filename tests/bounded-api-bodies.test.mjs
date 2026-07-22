@@ -34,6 +34,7 @@ const vite = await createServer({
 });
 
 const [
+  assistantRoute,
   clientsRoute,
   projectsRoute,
   filingRuleRoute,
@@ -46,8 +47,10 @@ const [
   driveFolderEnsureRoute,
   templateEnsureRoute,
   spreadsheetEnsureRoute,
+  meetingsRoute,
 ] =
   await Promise.all([
+    vite.ssrLoadModule("/app/api/v1/assistant/route.ts"),
     vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
     vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
     vite.ssrLoadModule("/app/api/v1/filing-rules/[ruleId]/route.ts"),
@@ -60,6 +63,7 @@ const [
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/ensure-roots/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/templates/ensure/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/sheets/ensure/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/projects/[projectId]/meetings/route.ts"),
   ]);
 
 after(async () => {
@@ -84,6 +88,12 @@ function oversizedRequest(path, method, maximumBytes) {
 
 const cases = [
   {
+    name: "assistant question",
+    maximumBytes: 9_000,
+    error: "Question request is too large.",
+    invoke: (request) => assistantRoute.POST(request),
+  },
+  {
     name: "client creation",
     maximumBytes: 64_000,
     error: "Client details are too large.",
@@ -94,6 +104,14 @@ const cases = [
     maximumBytes: 64_000,
     error: "Project details are too large.",
     invoke: (request) => projectsRoute.POST(request),
+  },
+  {
+    name: "project meeting creation",
+    maximumBytes: 180_000,
+    error: "Meeting notes are too large.",
+    invoke: (request) => meetingsRoute.POST(request, {
+      params: Promise.resolve({ projectId: "project-1" }),
+    }),
   },
   {
     name: "project action",

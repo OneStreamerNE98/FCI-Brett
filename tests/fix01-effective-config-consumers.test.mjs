@@ -235,6 +235,12 @@ function calendarProviderUrls() {
     .filter((url) => url.startsWith("https://www.googleapis.com/calendar/v3/calendars/"));
 }
 
+function calendarProviderCalls() {
+  return state.providerCalls.filter((call) => (
+    call.url.startsWith("https://www.googleapis.com/calendar/v3/calendars/")
+  ));
+}
+
 function writtenIntegrationEvents() {
   return state.queries
     .filter((query) => query.kind === "run" && /^INSERT INTO google_integration_events/u.test(query.sql))
@@ -306,8 +312,11 @@ test("both Calendar routes use the app-saved calendar and retain env-only fallba
       {},
     ));
     assert.equal(holdResponse.status, 201, `${fixture.name} hold response`);
-    assert.equal(calendarProviderUrls().length, 1);
+    assert.equal(calendarProviderUrls().length, 2);
     assert.match(calendarProviderUrls()[0], new RegExp(`/calendars/${fixture.expected}/events\\?`));
+    assert.match(calendarProviderUrls()[0], /privateExtendedProperty=fciTestHoldKey%3D/u);
+    assert.equal(calendarProviderCalls()[0].init.method, undefined);
+    assert.equal(calendarProviderCalls()[1].init.method, "POST");
     assert.deepEqual(
       writtenIntegrationEvents().map((event) => ({ eventType: event.eventType, entityType: event.entityType })),
       [

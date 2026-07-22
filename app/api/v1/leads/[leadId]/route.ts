@@ -12,28 +12,34 @@ type RouteContext = { params: Promise<{ leadId: string }> };
 
 const MUTABLE_KEYS = new Set(["company", "contactName", "contactEmail", "contactPhone", "projectName", "source", "stage", "site", "estimatedValue", "nextAction", "nextActionAt", "ownerEmail", "status"]);
 
+function noStore(body: unknown, init: ResponseInit = {}) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   const { leadId } = await context.params;
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(leadId)) return NextResponse.json({ error: "Invalid lead." }, { status: 400 });
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(leadId)) return noStore({ error: "Invalid lead." }, { status: 400 });
   const parsed = await parseBoundedJsonObject(request, {
     maximumBytes: MAX_LEAD_BODY_BYTES,
     invalidMessage: "Lead details must be valid JSON.",
     tooLargeMessage: "Lead details are too large.",
   });
-  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  if (!parsed.ok) return noStore({ error: parsed.error }, { status: parsed.status });
   const suppliedKeys = Object.keys(parsed.body);
   if (suppliedKeys.length === 0 || suppliedKeys.some((key) => !MUTABLE_KEYS.has(key))) {
-    return NextResponse.json({ error: "Only supported lead fields can be updated." }, { status: 400 });
+    return noStore({ error: "Only supported lead fields can be updated." }, { status: 400 });
   }
 
   await ensureWorkspaceSchema();
   const repository = createD1LeadRepository(env.DB as unknown as D1Database);
   const current = await repository.findById(leadId);
-  if (!current) return NextResponse.json({ error: "Lead not found." }, { status: 404 });
+  if (!current) return noStore({ error: "Lead not found." }, { status: 404 });
   const currentValues: Record<string, unknown> = {
     company: current.company,
     contactName: current.contact_name,
@@ -50,7 +56,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     status: current.status,
   };
   const values = validateLeadValues({ ...currentValues, ...parsed.body });
-  if (!values) return NextResponse.json({ error: "One or more lead fields are invalid." }, { status: 400 });
+  if (!values) return noStore({ error: "One or more lead fields are invalid." }, { status: 400 });
 
   const now = Date.now();
   const activities: LeadActivityIntent[] = [];
@@ -83,7 +89,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     activities,
   });
   if (result.outcome === "lead-not-found") {
-    return NextResponse.json({ error: "Lead not found." }, { status: 404 });
+    return noStore({ error: "Lead not found." }, { status: 404 });
   }
-  return NextResponse.json({ lead: leadResponse(result.value) });
+  return noStore({ lead: leadResponse(result.value) });
 }

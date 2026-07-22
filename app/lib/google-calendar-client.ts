@@ -13,6 +13,20 @@ const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const UPCOMING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_UPCOMING_EVENTS = 20;
 const TEST_HOLD_DURATION_MS = 30 * 60 * 1000;
+export const CALENDAR_TEST_HOLD_DEDUP_PROPERTY = "fciTestHoldKey";
+
+export function calendarTestHoldDedupKey(start: Date) {
+  return `v1:${start.toISOString()}`;
+}
+
+export async function calendarTestHoldEventId(start: Date) {
+  const digest = new Uint8Array(await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(calendarTestHoldDedupKey(start)),
+  ));
+  // Hex is a valid subset of Calendar's lowercase base32hex event-ID alphabet.
+  return `fci${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
 
 type CalendarDateTime = {
   dateTime?: string;
@@ -26,6 +40,9 @@ type CalendarApiEvent = {
   htmlLink?: string;
   start?: CalendarDateTime;
   end?: CalendarDateTime;
+  extendedProperties?: {
+    private?: Record<string, string>;
+  };
 };
 
 export type CalendarEventSummary = {
@@ -134,6 +151,9 @@ export class GoogleCalendarClient {
       if (response.status === 429) {
         throw new GoogleIntegrationError("calendar_rate_limited", "Google Calendar is busy. Try again shortly.", 503);
       }
+      if (response.status === 409) {
+        throw new GoogleIntegrationError("calendar_event_conflict", "The Calendar event already exists.", 409);
+      }
       throw new GoogleIntegrationError("calendar_request_failed", "Google Calendar could not complete that operation. Try again.", 503);
     }
     return data as T;
@@ -161,26 +181,55 @@ export class GoogleCalendarClient {
 
   async createTestHold(start: Date) {
     const end = new Date(start.getTime() + TEST_HOLD_DURATION_MS);
-    const query = new URLSearchParams({ sendUpdates: "none", conferenceDataVersion: "0" });
     const calendarId = encodeURIComponent(this.workspaceCalendarId());
-    const result = await this.request<CalendarApiEvent>(`calendars/${calendarId}/events?${query.toString()}`, {
-      method: "POST",
-      body: JSON.stringify({
-        summary: "FCI Operations — Workspace test appointment",
-        start: { dateTime: start.toISOString() },
-        end: { dateTime: end.toISOString() },
-        visibility: "private",
-        guestsCanInviteOthers: false,
-        guestsCanModify: false,
-        guestsCanSeeOtherGuests: false,
-        reminders: { useDefault: false, overrides: [] },
-      }),
-    });
+    const dedupKey = calendarTestHoldDedupKey(start);
+    const findExisting = async () => {
+      const lookup = new URLSearchParams({
+        privateExtendedProperty: `${CALENDAR_TEST_HOLD_DEDUP_PROPERTY}=${dedupKey}`,
+        maxResults: "1",
+        showDeleted: "false",
+        fields: "items(id,summary,status,htmlLink,start,end)",
+      });
+      const existing = await this.request<{ items?: CalendarApiEvent[] }>(
+        `calendars/${calendarId}/events?${lookup.toString()}`,
+      );
+      return existing.items?.map(safeEvent).find((event) => event !== null) ?? null;
+    };
+    const existingEvent = await findExisting();
+    if (existingEvent) return { event: existingEvent, created: false } as const;
+
+    const insert = new URLSearchParams({ sendUpdates: "none", conferenceDataVersion: "0" });
+    let result: CalendarApiEvent;
+    try {
+      result = await this.request<CalendarApiEvent>(`calendars/${calendarId}/events?${insert.toString()}`, {
+        method: "POST",
+        body: JSON.stringify({
+          id: await calendarTestHoldEventId(start),
+          summary: "FCI Operations — Workspace test appointment",
+          start: { dateTime: start.toISOString() },
+          end: { dateTime: end.toISOString() },
+          visibility: "private",
+          guestsCanInviteOthers: false,
+          guestsCanModify: false,
+          guestsCanSeeOtherGuests: false,
+          reminders: { useDefault: false, overrides: [] },
+          extendedProperties: {
+            private: { [CALENDAR_TEST_HOLD_DEDUP_PROPERTY]: dedupKey },
+          },
+        }),
+      });
+    } catch (error) {
+      if (error instanceof GoogleIntegrationError && error.code === "calendar_event_conflict") {
+        const concurrentEvent = await findExisting();
+        if (concurrentEvent) return { event: concurrentEvent, created: false } as const;
+      }
+      throw error;
+    }
     const event = safeEvent(result);
     if (!event) {
       throw new GoogleIntegrationError("calendar_invalid_response", "Google Calendar created a test hold without the expected details. Check Calendar before retrying.", 503);
     }
-    return event;
+    return { event, created: true } as const;
   }
 }
 
@@ -224,15 +273,17 @@ export async function createWorkspaceCalendarHold(
     config,
     dependencies,
   );
-  const event = await calendar.createTestHold(start);
-  const integrationEvent = calendarHoldCreatedIntegrationEvent(event);
-  await dependencies.writeIntegrationEvent(
-    config,
-    integrationEvent.eventType,
-    actor,
-    integrationEvent.entityType,
-    integrationEvent.entityId,
-    integrationEvent.detail,
-  );
-  return event;
+  const result = await calendar.createTestHold(start);
+  if (result.created) {
+    const integrationEvent = calendarHoldCreatedIntegrationEvent(result.event);
+    await dependencies.writeIntegrationEvent(
+      config,
+      integrationEvent.eventType,
+      actor,
+      integrationEvent.entityType,
+      integrationEvent.entityId,
+      integrationEvent.detail,
+    );
+  }
+  return result.event;
 }
