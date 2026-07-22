@@ -1798,8 +1798,9 @@ broad primitive/CSS consolidation tracks.
 
 **Design-remediation wave order (approved July 21, 2026 — anti-rework):** the
 full-codebase review and the settings redesign run in four waves so nothing is built
-twice. **R1** — full-review foundation fix packets (FIX-xx, forthcoming findings
-ledger) that touch shared primitives, config layering, or test infrastructure.
+twice. **R1** — full-review foundation fix packets (FIX-01…FIX-06 in
+`docs/full-review-2026-07-21-findings.md`) that touch shared primitives, config
+layering, or test infrastructure.
 **R2** — the SET-29 → SET-34 stage-shell series (design authority:
 `docs/settings-redesign-spec.md` + approved wireframe; strictly one packet at a
 time — all six touch `GoogleWorkspacePanel.tsx`). **R3** — remaining full-review fix
