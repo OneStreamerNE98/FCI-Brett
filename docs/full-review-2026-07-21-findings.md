@@ -251,7 +251,7 @@ demonstrably surfaces; postgres suites run locally when the URL is set.
 **Effort:** small-medium. **Cost:** $0.
 
 ### FIX-05 · One shared sheet-mirror status label mapper (P2 F-12; small)
-**Status:** In review — PR #105, July 22, 2026. Source-only and undeployed.
+**Status:** Complete — PR #105, July 22, 2026. Source-only and undeployed.
 **Why:** one backend enum renders three different ways, twice leaking raw values;
 three local type declarations have drifted.
 **Do:** extract the polished FloorOpsApp label map + a single `SheetMirrorStatus`
