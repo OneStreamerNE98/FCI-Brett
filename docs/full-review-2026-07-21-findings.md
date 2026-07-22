@@ -5,10 +5,10 @@ commits behind current main, which adds only PR #89's reviewed follow-ups).
 **Method:** nine review lenses. Six ran as independent Opus agents (D1
 schema/migrations, UI honesty, test health, Google mutation safety, config layering,
 simulation parity); the dev-surface authorization matrix and the API-consistency
-census were performed inline by the orchestrating reviewer. Two lenses are
-**deferred to an addendum** (production employee-router authorization composition;
-architecture/duplication) — they were cut off by session-quota limits and will run in
-the next window. P0–P2 candidates were adversarially verified by independent refuter
+census were performed inline by the orchestrating reviewer. The final two lenses
+(production employee-router authorization composition; architecture/duplication)
+completed on July 22 — their results are in the **Addendum** below, making coverage
+nine of nine. P0–P2 candidates were adversarially verified by independent refuter
 agents where quota allowed; where a verifier could not run, the verification column
 says who verified (Fable = orchestrator checked the claim directly in the tree) or
 PLAUSIBLE (reported evidence is concrete but independently unconfirmed).
@@ -160,12 +160,13 @@ Fully reviewed: Google write paths (google-drive.ts in full + all mutating route
 config chain (every `getGoogleRuntimeConfig` caller classified), D1 chain 0000–0016 +
 PG v1–v6 (static), FloorOpsApp.tsx in full + settings panels, e2e suite health, all
 36 dev routes' auth/origin/rate-limit composition (inline), bounded-body and
-no-store census (inline). NOT yet reviewed: production
-`employee-request-router.ts` composition at this SHA (BE-04/BE-10 per-PR reviews
-stand; full-app lens deferred), architecture/duplication lens (deferred), chat
-notifier internals beyond its send path, PG statement modules byte-level, deep
-payload-shape diffs of every endpoint consumer. Deferred lenses append here as an
-addendum with any FIX-09+ packets.
+no-store census (inline); production `employee-request-router.ts`,
+`authorization-service.ts`/`authorization-policy.ts`, `request-rate-limit.ts`,
+`employee-oidc.ts`, and `secure-session-transport.ts` in full (Addendum). NOT
+reviewed: internals of the Postgres authorization/identity repository adapters
+(treated as per-PR-reviewed black boxes), chat notifier internals beyond its send
+path, PG statement modules byte-level, deep payload-shape diffs of every endpoint
+consumer.
 
 ---
 
@@ -309,9 +310,112 @@ fails them.
 
 ---
 
-**Sequencing recap:** R1 = FIX-01 → FIX-02 → FIX-03 → FIX-04 → FIX-05 → FIX-06
-(FIX-01/02 share `google-drive.ts` call-graph — run in order; FIX-03..06 are
-parallel-safe with each other but serialize with anything touching the same files).
-R2 = SET-29…SET-34. R3 = FIX-07 → FIX-08. R4 = FIX-09 + the feature queue.
-Engine feature packets (SET-17/18/21, SET-25, GI-04) remain parallel-safe
-throughout, subject to the same-file rule.
+**Sequencing recap:** R1 = FIX-01 → FIX-02 → FIX-03 → FIX-04 → FIX-05 → FIX-06 →
+FIX-10 (FIX-01/02 share `google-drive.ts` call-graph — run in order; FIX-03..06 and
+FIX-10 are parallel-safe with each other but serialize with anything touching the
+same files). R2 = SET-29…SET-34. R3 = FIX-07 → FIX-08. R4 = FIX-09 + FIX-11 + the
+feature queue. Engine feature packets (SET-17/18/21, SET-25, GI-04) remain
+parallel-safe throughout, subject to the same-file rule.
+
+---
+
+# Addendum — lenses 8 & 9 (completed July 22, 2026)
+
+Coverage is now nine of nine. Both deferred lenses ran as sequential Opus agents with
+adversarial verification; **neither found a P0 or P1.**
+
+## Lens 8 — Production authorization & session composition
+
+**Verdict: sound.** Request ordering is correct and fail-closed: login/logout are the
+only pre-session handlers (by design); every authenticated route flows `sessionHash`
+→ (POST) `requireMutationCredentials` (same-origin + double-submit CSRF) →
+`authorizeSession` (session validity → capability from the server-side snapshot →
+project-scope existence → sensitive-capability DB freshness → identity-keyed rate
+limit) → work. Capabilities and actor identity derive solely from the persisted
+session snapshot, never from client input; only target UUIDs and bodies come from the
+client and are strictly validated. 403-vs-404 mapping is consistent and non-leaking
+(scope → 404, session denial → 401 + clear-cookie, capability → 403); the router
+denial set exactly matches the policy union (no drift). OIDC verification (issuer,
+aud/azp, exp/iat/nbf, nonce, hd, email_verified, RS256-pinned JWKS rejecting
+jku/x5u/crit) and the `__Host-` SameSite=Strict session cookie + AES-256-GCM attempt
+cookie are solid.
+
+### F-14 · Anonymous OIDC login endpoints are unthrottled (P2; VERIFIED; production-only)
+The only request throttle is keyed by verified `userId` and is invoked exclusively
+inside `authorizeSession` (via `beforeEmployeeDispatch`). The pre-authentication
+surface — `POST /api/v1/session/google/start` and `GET
+/api/v1/session/google/callback` — never enters `authorizeSession`, and
+`foundation-server.ts` adds no front-door throttle. The callback performs an outbound
+HTTPS POST to Google's token endpoint once a caller presents a self-obtained
+encrypted attempt cookie plus its state, so an anonymous client can loop
+start→harvest→callback to drive unauthenticated outbound-request amplification
+against the FCI OAuth client (risking Google-side throttling of real logins) and hold
+Cloud Run sockets/instances open (cost / resource-exhaustion vector). Integration
+gap, not a per-packet bug: the rate-limit packet and the OIDC packet are each fine
+alone, but the identity-keyed limiter structurally cannot cover the endpoints that
+most need anonymous protection. Dev Sites surface does not run this router; no data
+exposure. → **FIX-11.**
+
+### F-15 · Throttle fires after 1–3 authorization DB round-trips (P3)
+For authenticated requests the identity-keyed limiter runs only after
+`findSessionByTokenHash`, optional `projectExistsForScope`, and optional
+`capabilityIsCurrentForScope` — so a rate-limited request still consumes those
+queries before the bucket rejects it. Low impact at ~20 trusted employees; the
+throttle protects downstream work handlers, not the authorization datastore.
+(Bundled into FIX-11's note; no standalone change.)
+
+## Lens 9 — Architecture & duplication
+
+**Verdict: well-factored for a 20-person shop.** The four ~1,800-line giants each
+carry mostly inherent complexity, and `SettingsView` is correctly a thin 14-line
+dispatcher (validating the SET-28 extraction). No P0/P1 architectural defects. One
+latent hazard and three consolidation opportunities:
+
+### F-16 · Duplicated Postgres advisory-lock ID across two subsystems (P2; VERIFIED)
+`core-record-rehearsal.ts` and the admin-access mutation path independently hard-code
+the same advisory-lock id `7314269172071302` with no shared constant. Two subsystems
+sharing one lock id can block or serialize each other unexpectedly, and a future edit
+to one copy silently desyncs the pair. → **FIX-10.**
+
+### F-17 · Per-route preamble hand-rolled 36 times; `no-store` applied 4 ways (P3)
+The `requireOfficeUser` + `"response" in auth` + `ensureWorkspaceSchema` (+
+`requireSameOrigin` for mutations) preamble is copy-pasted into all 36 routes, the
+`no-store` header uses four divergent idioms, and 8 routes omit it (already tracked by
+FIX-06). A single `withOfficeRoute` wrapper would eliminate the drift by
+construction — highest-value consolidation, but a broad diff; deferred to R4 as a
+mechanical follow-up, not urgent.
+
+### F-18 · Setup-action + settings-card boilerplate (P3)
+The four lease-guarded setup routes each redefine local `response`/`errorResponse`
+helpers; at least three settings cards copy the same `loadRequestRef` stale-guard +
+loading/error state machine. Candidates for one shared helper each; small, low-risk,
+R4.
+
+## New FIX packets from the addendum
+
+### FIX-10 · Single shared advisory-lock constant (P2 F-16; small; Wave R1)
+**Why:** two subsystems hard-code the same Postgres advisory-lock id independently; a
+future edit to one desyncs the pair, and sharing one id can serialize unrelated work.
+**Do:** extract `7314269172071302` to one exported constant (a shared
+platform/postgres locks module) imported by both `core-record-rehearsal.ts` and the
+admin-access mutation path. If the two locks are meant to be independent, give them
+distinct named constants instead — confirm intent from the two call sites first.
+**Accept:** a grep-guard test asserting the literal appears in exactly one source
+location; both call sites import the constant; behavior unchanged.
+**Effort:** small. **Cost:** $0.
+
+### FIX-11 · Anonymous login-flow throttle (P2 F-14 + P3 F-15; small-medium; Wave R4, production-only)
+**Why:** the identity-keyed limiter cannot cover the anonymous OIDC endpoints, which
+trigger outbound Google token calls — an amplification / cost vector.
+**Do:** add an anonymous/IP-or-global throttle in front of the router for
+`session/google/start` and `session/google/callback` (or inside the OIDC handlers),
+fail-closed and configurable via production-config, emitting a security-audit event
+on trip — mirroring BE-10's production limiter shape. Optionally move the
+identity-keyed check ahead of the sensitive-capability DB reads to address F-15. Dev
+Sites surface unaffected.
+**Accept:** threshold test that repeated anonymous start/callback calls get a
+throttled response + audit event; a legitimate single login is byte-identical; config
+default is fail-closed.
+**Effort:** small-medium. **Cost:** $0. **Note:** production-surface hardening —
+apply behind the same acceptance gate as the rest of the Cloud Run auth foundation;
+not a dev-environment blocker, which is why it is R4 rather than R1.
