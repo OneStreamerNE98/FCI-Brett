@@ -8,7 +8,7 @@ import { creationAuthorizationFor, CREATION_CAPABILITIES } from "../../../applic
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { clientCreationHttpResult } from "../../../lib/creation-http-result";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getEffectiveGoogleRuntimeSetup, getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
@@ -46,7 +46,9 @@ export async function POST(request: NextRequest) {
     }),
     {
       repository: createD1ClientRepository(env.DB as unknown as D1Database),
-      directoryMirror: createDirectoryMirror((actor) => trySyncGoogleDirectory(getGoogleRuntimeConfig(), actor)),
+      directoryMirror: createDirectoryMirror(async (actor) => (
+        trySyncGoogleDirectory((await getEffectiveGoogleRuntimeSetup()).config, actor)
+      )),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
     },

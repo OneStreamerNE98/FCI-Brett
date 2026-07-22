@@ -10,7 +10,7 @@ import { normalizeProjectManagerId } from "../../../domain/project-creation";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { projectCreationHttpResult } from "../../../lib/creation-http-result";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getEffectiveGoogleRuntimeSetup, getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
@@ -71,7 +71,9 @@ export async function POST(request: NextRequest) {
     }),
     {
       repository: createD1ProjectRepository(env.DB as unknown as D1Database),
-      directoryMirror: createDirectoryMirror((actor) => trySyncGoogleDirectory(getGoogleRuntimeConfig(), actor)),
+      directoryMirror: createDirectoryMirror(async (actor) => (
+        trySyncGoogleDirectory((await getEffectiveGoogleRuntimeSetup()).config, actor)
+      )),
       resolveProjectManagerId: (candidateId) => authorizedProjectManagerId(candidateId, auth.user.email),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),

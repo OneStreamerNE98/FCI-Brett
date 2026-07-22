@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleIntegrationError, getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
+import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup } from "../../../../../../lib/google-oauth-sites";
 import { listWorkspaceCalendarEvents } from "../../../../../../lib/google-calendar-sites";
 import { listSimulationCalendarEvents } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
+  const { config } = await getEffectiveGoogleRuntimeSetup();
   if (!config.calendarEnabled) {
     return noStore({ error: "Enable Calendar for the Google Workspace connection before using appointments." }, { status: 409 });
   }

@@ -33,9 +33,11 @@ export async function GET(request: NextRequest) {
     ...(!adminAllowlist ? [{ label: "FCI administrator allowlist", envVar: "FCI_ADMIN_EMAILS", secret: false }] : []),
   ];
   const missing = missingDetails.map((detail) => detail.label);
-  const credentialsPresent = google.oauthReady && Boolean((env as unknown as Record<string, string | undefined>).FCI_ADMIN_EMAILS);
+  const adminAllowlistPresent = Boolean(adminAllowlist);
+  const credentialsPresent = google.connectReady && adminAllowlistPresent;
+  const configured = google.oauthReady && adminAllowlistPresent;
   return NextResponse.json({
-    configured: credentialsPresent,
+    configured,
     credentialsPresent,
     connected: connection.connected,
     missing,
