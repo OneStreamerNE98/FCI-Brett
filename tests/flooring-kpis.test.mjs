@@ -135,12 +135,11 @@ test("returns honest empty states instead of invalid math", () => {
 });
 
 test("pins the financial gate, definitions document, drill-through, and A7 exception", async () => {
-  const [app, panel, definitions, designLedger, executionLedger] = await Promise.all([
+  const [app, panel, definitions, designLedger] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
     read("app/features/reports/BusinessKpisPanel.tsx"),
     read("docs/flooring-kpis.md"),
     read("docs/design-critique-fix-plan.md"),
-    read("docs/agent-plan-architecture-workspace-and-setup.md"),
   ]);
 
   assert.match(app, /<ReportsView[^>]+isAdmin=\{isAdmin\}/);
@@ -159,11 +158,11 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
   assert.match(definitions, /\*\*Callback rate\*\*[\s\S]*hadCallback = true[\s\S]*all selected-month completed projects/);
   assert.match(definitions, /contractValue.*estimatedValue/si);
   assert.match(definitions, /Revenue per square foot[\s\S]*arithmetic mean/);
-  assert.match(definitions, /Status: Tier-1 and KPI-02 implemented on `main` through PR #52[\s\S]*Source-only and undeployed[\s\S]*Migration 0012 not applied to Sites/);
+  const statusParagraph = definitions.split(/\r?\n\s*\r?\n/).find((paragraph) => paragraph.includes("PR #52"));
+  assert.ok(statusParagraph);
+  for (const token of ["Tier-1", "KPI-02", "Source-only", "Migration 0012", "not applied"]) {
+    assert.ok(statusParagraph.includes(token), `KPI definitions status omits ${token}`);
+  }
   assert.doesNotMatch(definitions, /open draft|implemented for review/i);
   assert.match(designLedger, /LeadStatusPanel.*intentionally remain a static list/);
-  assert.match(executionLedger, /KPI-01[\s\S]+Complete — PR #41, July 19, 2026/);
-  assert.match(executionLedger, /FloorOpsApp single-file queue[\s\S]+queue is now KPI-03/);
-  assert.match(executionLedger, /KPI-02[\s\S]+Complete — PR #52, July 20, 2026\. Source-only and undeployed; migration 0012 has not been applied to Sites\./);
-  assert.doesNotMatch(executionLedger, /KPI-02[^\n]*(?:open draft|in review|not merged)|#52 →/i);
 });

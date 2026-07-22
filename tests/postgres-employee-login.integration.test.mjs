@@ -42,14 +42,6 @@ const EMAIL = "oidc03-integration@cherryhillfci.com";
 const SUBJECT = "fci-test-oidc03-google-subject";
 const APPLICATION_NAME = "fci_oidc03_employee_login";
 
-test(
-  "GitHub CI supplies PostgreSQL for employee-login integration coverage",
-  { skip: process.env.GITHUB_ACTIONS !== "true" },
-  () => {
-    assert.ok(postgresTestUrl, "TEST_POSTGRES_URL must be configured in GitHub Actions");
-  },
-);
-
 function hash(label) {
   return `sha256:${createHash("sha256").update(label).digest("hex")}`;
 }

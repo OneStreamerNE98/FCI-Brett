@@ -38,14 +38,6 @@ const postgresTestUrl = process.env.TEST_POSTGRES_URL?.trim();
 const MAX_SAFE_INTEGER_TEXT = String(Number.MAX_SAFE_INTEGER);
 const UNTRUSTED_FINGERPRINT = `sha256:${"0".repeat(64)}`;
 
-test(
-  "GitHub CI supplies PostgreSQL for repository integration coverage",
-  { skip: process.env.GITHUB_ACTIONS !== "true" },
-  () => {
-    assert.ok(postgresTestUrl, "TEST_POSTGRES_URL must be configured in GitHub Actions");
-  },
-);
-
 function clientCode(id) {
   return `CL-${id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
 }

@@ -4,6 +4,7 @@ const testUserEmail = "e2e-admin@example.test";
 const browserUserEmail = process.env.FCI_LOCAL_DEV_USER_EMAIL ?? testUserEmail;
 const baseURL = process.env.FCI_E2E_ORIGIN ?? "http://localhost:4173";
 const useExternalServer = process.env.FCI_E2E_EXTERNAL_SERVER === "true";
+const retryOnlyPassReporter = "./tests/playwright/retry-only-pass-reporter.mjs";
 const inheritedEnvironment = Object.fromEntries(
   Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
 );
@@ -18,8 +19,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   outputDir: "work/playwright-results",
   reporter: process.env.CI
-    ? [["github"], ["html", { outputFolder: "work/playwright-report", open: "never" }]]
-    : [["list"], ["html", { outputFolder: "work/playwright-report", open: "never" }]],
+    ? [["github"], [retryOnlyPassReporter], ["html", { outputFolder: "work/playwright-report", open: "never" }]]
+    : [["list"], [retryOnlyPassReporter], ["html", { outputFolder: "work/playwright-report", open: "never" }]],
   use: {
     baseURL,
     extraHTTPHeaders: {

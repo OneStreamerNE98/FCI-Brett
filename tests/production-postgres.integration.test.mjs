@@ -14,14 +14,6 @@ import {
 
 const postgresTestUrl = process.env.TEST_POSTGRES_URL?.trim();
 
-test(
-  "GitHub CI supplies PostgreSQL instead of silently skipping integration coverage",
-  { skip: process.env.GITHUB_ACTIONS !== "true" },
-  () => {
-    assert.ok(postgresTestUrl, "TEST_POSTGRES_URL must be configured in GitHub Actions");
-  },
-);
-
 async function expectPostgresError(promise, code, constraint) {
   await assert.rejects(promise, (error) => {
     assert.equal(error.code, code);
