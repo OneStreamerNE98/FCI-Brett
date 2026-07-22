@@ -23,6 +23,7 @@ import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocu
 import { JobSiteMapCard } from "./features/maps/JobSiteMapCard";
 import { normalizeJobSiteLocation, type JobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
 import { cachedGetJson } from "./lib/client-get-cache";
+import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "./lib/sheet-mirror-status";
 import {
   canonicalOperationsSearch,
   inboxBucketFromSearch,
@@ -87,17 +88,6 @@ type ProjectMeeting = {
   createdBy: string;
   createdAt: number;
   updatedAt: number;
-};
-type SheetMirrorStatus = {
-  configured: boolean;
-  enabled: boolean;
-  connected: boolean;
-  spreadsheetUrl: string | null;
-  spreadsheetName: string | null;
-  clients: { status: string; lastSyncedAt: number | null; lastError: string | null };
-  projects: { status: string; lastSyncedAt: number | null; lastError: string | null };
-  lastSyncedAt: number | null;
-  reason: string | null;
 };
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
 
@@ -1109,17 +1099,9 @@ function LeadStatusPanel({ title, subtitle, leads, showRecordStatus = false, onL
   return <section className="panel pipeline-panel"><PanelHeader title={title} subtitle={subtitle} /><div className="pipeline-head"><span>Client / opportunity</span><span>{showRecordStatus ? "Status" : "Stage"}</span><span>Est. value</span><span>Next action</span></div>{leads.map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div className="client-cell-copy"><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={showRecordStatus ? displayStatus(lead.status, "Inactive") : lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell lead-status-next"><span><Clock3 size={14} />{lead.next}</span>{onLead && <button type="button" className="lead-status-detail" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button>}</div></div>)}</section>;
 }
 
-function sheetStateLabel(mirror: SheetMirrorStatus | null) {
-  if (!mirror) return "Checking sync";
-  if (mirror.clients.status === "syncing" || mirror.projects.status === "syncing") return "Syncing";
-  if (mirror.reason || mirror.clients.status === "failed" || mirror.projects.status === "failed") return "Needs attention";
-  if (mirror.clients.status === "synced" && mirror.projects.status === "synced") return "Synced";
-  return "Not synced";
-}
-
 function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProject, sheetMirror, onSyncGoogleSheet, syncingSheet }: { clients: Client[]; state: LiveDataState; projectCounts: Map<string, number>; onAdd: () => void; onClient: (client: Client, returnFocusTarget?: HTMLElement | null) => void; onNewProject: () => void; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
   const [clientFilter, setClientFilter] = useState("");
-  const syncLabel = sheetStateLabel(sheetMirror);
+  const syncLabel = sheetMirrorStatusLabel(sheetMirror);
   const synced = syncLabel === "Synced";
   const needsAttention = syncLabel === "Needs attention";
   const syncStateClass = synced ? "synced" : needsAttention ? "needs-attention" : syncLabel === "Checking sync" || syncLabel === "Syncing" ? "checking" : "not-synced";

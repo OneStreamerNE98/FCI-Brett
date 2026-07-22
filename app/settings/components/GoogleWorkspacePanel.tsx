@@ -7,6 +7,7 @@ import { AdministratorActionButton } from "../../components/AdministratorActionB
 import { OperationsDataTable, OperationsDataTableCell } from "../../components/operations/OperationsDataTable";
 import { Status } from "../../components/operations/OperationsPrimitives";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
+import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
 import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
 import {
   WorkspaceDriveResourceActions,
@@ -50,18 +51,6 @@ type WorkspaceReadiness = {
   clientDirectorySheetConfigured?: boolean;
   enabledServices?: string[];
   broadScopeAcknowledged?: boolean;
-};
-type SheetMirrorStatus = {
-  configured: boolean;
-  enabled: boolean;
-  connected: boolean;
-  spreadsheetUrl: string | null;
-  spreadsheetName: string | null;
-  clients: { status: string; lastSyncedAt: number | null; lastError: string | null };
-  projects: { status: string; lastSyncedAt: number | null; lastError: string | null };
-  lastSyncedAt: number | null;
-  reason: string | null;
-  source: "app" | "env" | "none";
 };
 type SetupStepStatus = "Complete" | "Ready" | "Blocked by previous step" | "Blocked by prerequisites" | "Administrator access" | "Simulated";
 type GoogleServiceKey = "drive" | "gmail" | "calendar" | "sheets";
@@ -628,7 +617,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       </li>
       <li className={`workspace-setup-step ${stepStatusClass(sheetsStepStatus)}`}>
         <header><span className="workspace-step-number">5</span><div><h3>Sync the Sheets mirror</h3><p>Check and reconcile the generated Client Directory and Project Register.</p></div><span className="workspace-step-status">{sheetsStepStatus}</span></header>
-        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirror?.clients.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirror?.projects.status ?? "Status unavailable"}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback{sheetMirror ? `; current mirror source: ${simulation ? "local simulation" : sheetMirror.source === "app" ? "app-managed" : sheetMirror.source === "env" ? "environment fallback" : "not configured"}` : ""}.</p></div>
+        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirrorStatusLabel(sheetMirror, "clients")}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirrorStatusLabel(sheetMirror, "projects")}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback{sheetMirror ? `; current mirror source: ${simulation ? "local simulation" : sheetMirror.source === "app" ? "app-managed" : sheetMirror.source === "env" ? "environment fallback" : "not configured"}` : ""}.</p></div>
       </li>
     </ol>
     {isAdmin && <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />}
