@@ -986,6 +986,8 @@ ID and env fallback is labeled; simulation e2e; existing sheet-sync tests untouc
 **Effort:** medium.
 
 ### SET-17 · Templates: blueprint-driven ensure with seed content (medium, after SET-15; parallel with SET-16)
+**Status:** In progress — `codex/set17-workspace-templates`, July 21, 2026.
+
 **Why:** Owner starter set: Doc/Sheet templates in a Templates folder, created via Drive
 upload-conversion — no new scopes, no Docs API — with the template list owner-definable.
 **Do:** `app/lib/workspace-templates.ts`: five seed template bodies (HTML for

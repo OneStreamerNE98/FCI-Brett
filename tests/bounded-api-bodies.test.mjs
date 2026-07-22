@@ -44,6 +44,7 @@ const [
   sharedDriveAdoptRoute,
   driveFolderRenameRoute,
   driveFolderEnsureRoute,
+  templateEnsureRoute,
   spreadsheetEnsureRoute,
 ] =
   await Promise.all([
@@ -57,6 +58,7 @@ const [
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/shared-drive/adopt/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/rename/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/ensure-roots/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/integrations/google/drive/templates/ensure/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/sheets/ensure/route.ts"),
   ]);
 
@@ -154,6 +156,12 @@ const cases = [
     maximumBytes: 1_000,
     error: "The Drive root-folder ensure request is too large.",
     invoke: (request) => driveFolderEnsureRoute.POST(request),
+  },
+  {
+    name: "Workspace template ensure",
+    maximumBytes: 1_000,
+    error: "The template ensure request is too large.",
+    invoke: (request) => templateEnsureRoute.POST(request),
   },
   {
     name: "Workspace spreadsheet ensure",

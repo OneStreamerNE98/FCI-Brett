@@ -41,6 +41,19 @@ function resourcePresentation(blueprint: WorkspaceBlueprint) {
       spreadsheet.key === "client-directory" ? config.clientDirectorySheetId : undefined
     ),
   })),
+  ...blueprint.templates.map((template) => ({
+    key: template.key,
+    resourceType: "drive.file" as const,
+    label: template.kind === "sheet" ? "Spreadsheet template" : "Document template",
+    name: template.name,
+    blueprintName: template.name,
+    management: template.management,
+    parentKey: "templates",
+    effectiveId: (config: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["config"]) => {
+      void config;
+      return undefined;
+    },
+  })),
   {
     key: "client-appointments",
     resourceType: "calendar.calendar",
