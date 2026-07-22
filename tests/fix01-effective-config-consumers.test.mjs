@@ -235,6 +235,17 @@ function calendarProviderUrls() {
     .filter((url) => url.startsWith("https://www.googleapis.com/calendar/v3/calendars/"));
 }
 
+function writtenIntegrationEvents() {
+  return state.queries
+    .filter((query) => query.kind === "run" && /^INSERT INTO google_integration_events/u.test(query.sql))
+    .map((query) => ({
+      eventType: query.values[2],
+      entityType: query.values[4],
+      entityId: query.values[5],
+      detail: query.values[6],
+    }));
+}
+
 function failedDirectoryEvent() {
   return state.queries.find((query) => (
     query.kind === "run"
@@ -282,6 +293,11 @@ test("both Calendar routes use the app-saved calendar and retain env-only fallba
     assert.equal(eventsResponse.status, 200, `${fixture.name} list response`);
     assert.equal(calendarProviderUrls().length, 1);
     assert.match(calendarProviderUrls()[0], new RegExp(`/calendars/${fixture.expected}/events\\?`));
+    assert.equal(writtenIntegrationEvents().length, 1);
+    assert.equal(writtenIntegrationEvents()[0].eventType, "calendar.workspace_events_listed");
+    assert.equal(writtenIntegrationEvents()[0].entityType, "calendar");
+    assert.equal(writtenIntegrationEvents()[0].entityId, fixture.expected);
+    assert.match(writtenIntegrationEvents()[0].detail, /^window=.+\/.+;count=0$/u);
 
     state.providerCalls = [];
     const holdResponse = await calendarHoldRoute.POST(officeRequest(
@@ -292,6 +308,14 @@ test("both Calendar routes use the app-saved calendar and retain env-only fallba
     assert.equal(holdResponse.status, 201, `${fixture.name} hold response`);
     assert.equal(calendarProviderUrls().length, 1);
     assert.match(calendarProviderUrls()[0], new RegExp(`/calendars/${fixture.expected}/events\\?`));
+    assert.deepEqual(
+      writtenIntegrationEvents().map((event) => ({ eventType: event.eventType, entityType: event.entityType })),
+      [
+        { eventType: "calendar.workspace_events_listed", entityType: "calendar" },
+        { eventType: "calendar.workspace_hold_created", entityType: "calendar_event" },
+      ],
+    );
+    assert.match(writtenIntegrationEvents()[1].detail, /^start=.+;end=.+;visibility=private;attendees=none;notifications=none$/u);
   }
 });
 

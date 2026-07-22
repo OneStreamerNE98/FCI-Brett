@@ -461,11 +461,12 @@ test("keeps local Workspace simulation isolated from the one company Workspace c
 });
 
 test("provides explicit Gmail and Calendar controls in simulation and Workspace modes", async () => {
-  const [oauth, gmail, gmailHelper, gmailSend, calendar, calendarHold, app, guide] = await Promise.all([
+  const [oauth, gmail, gmailHelper, gmailSend, calendar, calendarEvents, calendarHold, app, guide] = await Promise.all([
     read("app/lib/google-oauth.ts"), read("app/lib/google-gmail.ts"),
     read("app/api/v1/integrations/google/gmail/_route-helpers.ts"),
     read("app/api/v1/integrations/google/gmail/send-test/route.ts"),
     read("app/lib/google-calendar-client.ts"),
+    read("app/lib/google-integration-events.ts"),
     read("app/api/v1/integrations/google/calendar/test-hold/route.ts"),
     readAppSurface(), read("docs/testing-and-google-workspace-setup.md"),
   ]);
@@ -480,7 +481,7 @@ test("provides explicit Gmail and Calendar controls in simulation and Workspace 
   assert.match(gmail, /allowedDomains\.includes/);
   assert.match(gmailSend, /requireSameOrigin/);
   assert.match(calendar, /visibility: "private"/);
-  assert.match(calendar, /attendees=none/);
+  assert.match(calendarEvents, /attendees=none/);
   assert.match(calendarHold, /requireSameOrigin/);
   assert.match(calendarHold, /config\.simulation/);
   assert.match(app, /Google Workspace setup steps/);

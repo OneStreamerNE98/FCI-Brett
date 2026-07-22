@@ -109,6 +109,7 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
     queries: [],
     lastBlueprintSaveChanged: false,
     forceBlueprintConflict: false,
+    loseLeaseBeforeNextBatch: false,
     project: null,
     mapping: null,
     sheetStates: [],
@@ -163,6 +164,14 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
         },
         async run() {
           query.kind = "run";
+          const leasePredicate = "EXISTS (SELECT 1 FROM google_drive_operations WHERE operation_key = ? AND status = 'in-progress' AND lease_expires_at = ?)";
+          if (sql.includes(leasePredicate)) {
+            const [operationKey, expectedLease] = query.values.slice(-2);
+            const current = state.leases.get(operationKey);
+            if (current?.status !== "in-progress" || current.leaseExpiresAt !== expectedLease) {
+              return { meta: { changes: 0 } };
+            }
+          }
           if (sql.startsWith("INSERT INTO workspace_resources")) {
             const next = resourceRow(query.values);
             const index = state.resources.findIndex((row) => (
@@ -227,13 +236,13 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
             return { meta: { changes: 1 } };
           }
           if (sql.startsWith("INSERT INTO google_integration_events")) {
-            if (sql.includes("SELECT") && !state.lastBlueprintSaveChanged) return { meta: { changes: 0 } };
+            if (sql.includes("FROM workspace_blueprints") && !state.lastBlueprintSaveChanged) return { meta: { changes: 0 } };
             const [id, connectionKey, eventType, actor, entityType, entityId, detail, createdAt] = query.values;
             state.events.push({ id, connectionKey, eventType, actor, entityType, entityId, detail, createdAt });
             return { meta: { changes: 1 } };
           }
           if (sql.startsWith("INSERT INTO drive_folder_mappings")) {
-            const entityType = sql.match(/VALUES \(\?, \?, '([^']+)'/u)?.[1];
+            const entityType = sql.match(/(?:VALUES|SELECT) \?, \?, '([^']+)'/u)?.[1];
             const folderKey = sql.match(/, '([^']+)', \?, NULL/u)?.[1];
             const [id, connectionKey, entityId, driveFileId, driveUrl, createdAt, updatedAt] = query.values;
             const next = { id, connectionKey, entityType, entityId, folderKey, driveFileId, driveUrl, createdAt, updatedAt };
@@ -275,6 +284,14 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
       return statement;
     },
     async batch(statements) {
+      if (state.loseLeaseBeforeNextBatch) {
+        state.loseLeaseBeforeNextBatch = false;
+        for (const [operationKey, operation] of state.leases) {
+          if (operation.status === "in-progress") {
+            state.leases.set(operationKey, { ...operation, leaseExpiresAt: operation.leaseExpiresAt + 1 });
+          }
+        }
+      }
       const results = [];
       for (const statement of statements) results.push(await statement.run());
       return results;
@@ -617,6 +634,13 @@ function savedResource({ id, connectionKey = "google-workspace", resourceType, r
   };
 }
 
+function nestedKeyShape(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, nestedKeyShape(value[key])]),
+  );
+}
+
 test("Shared Drive adoption covers explicit ID, exact-name, zero, multiple, and environment origins", async (t) => {
   await t.test("explicit ID is verified, app-adopted, audited, and becomes effective for drive verify", async () => {
     const database = fakeDatabase();
@@ -709,6 +733,34 @@ test("Shared Drive adoption covers explicit ID, exact-name, zero, multiple, and 
     assert.equal(database.state.resources[0].external_id, "environment-drive-123");
     assert.equal(database.state.resources[0].origin, "adopted");
   });
+});
+
+test("Drive verification keeps the live and simulation response shapes identical", async () => {
+  const liveDatabase = fakeDatabase();
+  await workspaceEnvironment(liveDatabase, { GOOGLE_WORKSPACE_SHARED_DRIVE_ID: "live-verify-root" });
+  installProvider({ driveNames: { "live-verify-root": "FCI Live Verification" } });
+
+  const liveResponse = await verifyRoute.POST(routeRequest("/api/v1/integrations/google/drive/verify"));
+  const liveBody = await liveResponse.json();
+  assert.equal(liveResponse.status, 200);
+  assert.equal(liveBody.simulated, false);
+  assert.deepEqual(nestedKeyShape(liveBody), {
+    simulated: null,
+    verified: null,
+    workspace: { name: null, runtimeMode: null, url: null },
+  });
+
+  const simulationDatabase = fakeDatabase();
+  simulationEnvironment(simulationDatabase);
+  globalThis.fetch = async () => {
+    throw new Error("Simulation Drive verification must not call Google.");
+  };
+
+  const simulationResponse = await verifyRoute.POST(routeRequest("/api/v1/integrations/google/drive/verify"));
+  const simulationBody = await simulationResponse.json();
+  assert.equal(simulationResponse.status, 200);
+  assert.equal(simulationBody.simulated, true);
+  assert.deepEqual(nestedKeyShape(simulationBody), nestedKeyShape(liveBody));
 });
 
 test("setup mutations reject non-admin and cross-origin requests before database work", async () => {
@@ -856,6 +908,93 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.folder_renamed").length, 1);
   assert.match(database.state.events.find((event) => event.eventType === "setup.folder_renamed").detail, /key=projects/u);
   assert.equal(eventTypes.filter((eventType) => eventType === "drive.simulation_project_folder_provisioned").length, 1);
+});
+
+test("simulation project provisioning returns 409 for an active lease and succeeds after it expires", async () => {
+  const database = fakeDatabase();
+  simulationEnvironment(database);
+  globalThis.fetch = async () => {
+    throw new Error("Simulation project provisioning must not call Google.");
+  };
+  database.state.project = {
+    id: "project-active-lease",
+    project_number: "FCI2026-903",
+    name: "FCI TEST — DO NOT USE",
+    client_id: "client-active-lease",
+    client_code: "FCI TEST",
+    client_name: "DO NOT USE",
+  };
+  const operationKey = "workspace-simulation:provision-project:project-active-lease";
+  database.state.leases.set(operationKey, {
+    status: "in-progress",
+    leaseExpiresAt: Date.now() + 60_000,
+  });
+
+  const conflictResponse = await projectDriveRoute.POST(
+    routeRequest("/api/v1/projects/project-active-lease/drive"),
+    { params: Promise.resolve({ projectId: "project-active-lease" }) },
+  );
+  const conflict = await conflictResponse.json();
+  assert.equal(conflictResponse.status, 409);
+  assert.deepEqual(conflict, {
+    error: "A Drive folder request is already in progress for this project. Try again shortly.",
+  });
+  assert.equal(database.state.mappings.length, 0);
+  assert.equal(database.state.activities.length, 0);
+  assert.equal(database.state.events.length, 0);
+  assert.equal(database.state.leases.get(operationKey).status, "in-progress");
+  const leaseInsert = database.state.queries.find((query) => query.sql.startsWith("INSERT INTO google_drive_operations"));
+  assert.match(
+    leaseInsert.sql,
+    /ON CONFLICT\(operation_key\) DO UPDATE[\s\S]+WHERE google_drive_operations\.status != 'in-progress' OR google_drive_operations\.lease_expires_at < \?$/u,
+  );
+
+  database.state.leases.get(operationKey).leaseExpiresAt = Date.now() - 1;
+  const retryResponse = await projectDriveRoute.POST(
+    routeRequest("/api/v1/projects/project-active-lease/drive"),
+    { params: Promise.resolve({ projectId: "project-active-lease" }) },
+  );
+  const retry = await retryResponse.json();
+  assert.equal(retryResponse.status, 201, JSON.stringify(retry));
+  assert.equal(retry.simulated, true);
+  assert.deepEqual(database.state.mappings.map((mapping) => mapping.entityType).sort(), ["client", "project"]);
+  assert.equal(database.state.activities.length, 1);
+  assert.equal(
+    database.state.events.filter((event) => event.eventType === "drive.simulation_project_folder_provisioned").length,
+    1,
+  );
+  assert.equal(database.state.leases.get(operationKey).status, "completed");
+  assert.equal(database.state.leases.get(operationKey).leaseExpiresAt, null);
+});
+
+test("simulation project provisioning cannot commit after its exact lease is replaced", async () => {
+  const database = fakeDatabase();
+  simulationEnvironment(database);
+  globalThis.fetch = async () => {
+    throw new Error("Simulation project provisioning must not call Google.");
+  };
+  database.state.project = {
+    id: "project-stale-lease",
+    project_number: "FCI2026-904",
+    name: "FCI TEST — DO NOT USE",
+    client_id: "client-stale-lease",
+    client_code: "FCI TEST",
+    client_name: "DO NOT USE",
+  };
+  database.state.loseLeaseBeforeNextBatch = true;
+
+  const response = await projectDriveRoute.POST(
+    routeRequest("/api/v1/projects/project-stale-lease/drive"),
+    { params: Promise.resolve({ projectId: "project-stale-lease" }) },
+  );
+  const body = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(body.code, "project_drive_lease_lost");
+  assert.equal(database.state.mappings.length, 0);
+  assert.equal(database.state.activities.length, 0);
+  assert.equal(database.state.events.length, 0);
+  const operation = database.state.leases.get("workspace-simulation:provision-project:project-stale-lease");
+  assert.equal(operation.status, "in-progress");
 });
 
 test("simulation template ensure creates the central folder, covers owner shells, and is idempotent", async () => {

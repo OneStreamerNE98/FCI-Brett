@@ -10,6 +10,7 @@ import {
 
 const STATE_ID = "fci-workspace";
 const SIMULATION_ACCOUNT = "workspace-simulation@fci.example";
+const UPCOMING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type SimulationAttachment = {
   filename: string;
@@ -235,9 +236,18 @@ export class WorkspaceSimulationGmailClient {
   }
 }
 
-export async function listSimulationCalendarEvents() {
+export async function listSimulationCalendarEvents(now = new Date()) {
   const state = await getSimulationState();
-  return { events: state.calendarEvents, timeZone: "America/New_York", windowDays: 7, simulated: true };
+  return {
+    window: {
+      start: now.toISOString(),
+      end: new Date(now.getTime() + UPCOMING_WINDOW_MS).toISOString(),
+    },
+    events: state.calendarEvents,
+    timeZone: "America/New_York",
+    windowDays: 7,
+    simulated: true,
+  };
 }
 
 export async function createSimulationCalendarHold(start: Date) {
