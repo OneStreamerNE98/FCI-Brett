@@ -1328,6 +1328,41 @@ a render-invariance test asserts the banner and stage chips are the only
 mode/connection readouts in the panel.
 **Effort:** small. **Cost:** $0.
 
+### SET-35 · Per-user page layouts: Overview & Reports reorder + show/hide (medium, after SET-28 and FIX-05; FloorOpsApp queue) — OWNER PRIORITY (July 22)
+**Why:** Owner requirement (July 22, 2026, scope confirmed): each user personalizes
+their own Overview and Reports pages — reorder sections and show/hide them — with a
+deliberately simple UI. One shared mechanism for both pages; per-user, riding the
+SET-28 My-settings foundation.
+**Do:** (1) Data: extend `user_preferences` with a `page_layouts_json` column via an
+additive D1 migration (number assigned at merge time per the migration rule); shape
+`{ overview: { order: string[], hidden: string[] }, reports: {...} }`. Follow
+SET-28's widen-on-read law: missing/unknown keys merge against defaults — never
+reset saved preferences; unknown section keys are dropped on read and rejected on
+write against a closed per-page section catalog pinned in ONE shared module. Server:
+extend `/api/v1/settings/me` GET/PATCH (add `pageLayouts` to the closed
+PREFERENCE_KEYS set; existing bounded body and own-rows enforcement unchanged).
+(2) UI: an "Edit layout" button on each page. Edit mode: drag handle to reorder,
+✕ to hide, an "Add section" row listing hidden sections, and "Reset to default";
+Done saves. Keyboard path required: per-section Move up/Move down buttons in edit
+mode (drag is pointer-only sugar; no new dependency — native pointer/HTML5 DnD).
+Scope is reorder + show/hide ONLY — no resizing, no free-form grid, no widget
+gallery. (3) Honesty and gating: hiding is per-user presentation only; server-side
+authorization is untouched. The section catalog a user sees (including the add-back
+list) contains only sections that user can actually view — admin-gated sections
+(e.g. dollar-value KPI panels) never appear for non-admins, and layout preferences
+never widen access. Section keys map to the existing panel-level components; the
+Overview metrics row counts as one section.
+**Accept:** mutation-sensitive tests — reorder + hide persist across reload per
+user (two users hold different layouts simultaneously; own-rows route tests
+extended); reset restores the default order with nothing lost; unknown/stale
+section keys in a saved layout are ignored without error (widen-on-read test);
+keyboard-only reorder e2e passes; a non-admin's catalog and add-back list exclude
+admin-gated sections (render-invariance); the default layout renders byte-identical
+to today's pages for a user with no saved layout.
+**Effort:** medium. **Cost:** $0. **Sequencing:** touches `FloorOpsApp.tsx` — runs
+in the single-file queue AFTER FIX-05 (shared sheet-status label mapper) merges;
+parallel-safe with the SET-29 series (no GoogleWorkspacePanel overlap).
+
 ---
 
 # Workstream D — Flooring KPIs & reporting (KPI)
