@@ -1,8 +1,8 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleDriveClient } from "../../../../../lib/google-drive";
+import { buildProjectDriveBlueprintPlan, GoogleDriveClient } from "../../../../../lib/google-drive";
 import { mapGoogleIntegrationError } from "../../../../../lib/google-integration-error";
-import { GoogleIntegrationError, getEffectiveGoogleRuntimeConfig, getGoogleAccessToken, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
+import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, getGoogleAccessToken, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
 import { enforceDevelopmentRequestRateLimit } from "../../../../../lib/development-request-rate-limit";
 import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
@@ -38,7 +38,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   const rateLimitResponse = enforceDevelopmentRequestRateLimit("project-drive-provisioning", auth.user.email);
   if (rateLimitResponse) return rateLimitResponse;
   await ensureWorkspaceSchema();
-  const config = await getEffectiveGoogleRuntimeConfig();
+  const setup = await getEffectiveGoogleRuntimeSetup();
+  const { config, blueprint, resources } = setup;
   if (!config.connectReady || !config.drive.rootFolderId) return noStore({ error: "Google Drive setup is incomplete.", missing: config.missing }, { status: 409 });
   if (!config.provisioningEnabled) {
     return noStore({ error: "Shared Drive folder creation is disabled. Enable Workspace provisioning only after the company drive is verified." }, { status: 409 });
@@ -49,6 +50,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     .bind(projectId)
     .first<ProjectRow>();
   if (!project) return noStore({ error: "Project not found." }, { status: 404 });
+  const projectYear = project.project_number.slice(3, 7) || new Date().getUTCFullYear().toString();
 
   const existing = await env.DB.prepare("SELECT drive_file_id, drive_url FROM drive_folder_mappings WHERE connection_key = ? AND entity_type = 'project' AND entity_id = ? AND folder_key = 'project-root'")
     .bind(config.connectionKey, project.id)
@@ -65,11 +67,23 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     }
   }
   if (config.simulation) {
+    let blueprintPlan;
+    try {
+      blueprintPlan = buildProjectDriveBlueprintPlan(blueprint);
+    } catch (error) {
+      return errorResponse(error);
+    }
     const completedAt = Date.now();
     const clientFolderId = `sim-client-${project.client_id}`;
     const projectFolderId = `sim-project-${project.id}`;
     const clientUrl = `${request.nextUrl.origin}/?workspace-simulation=client&client=${encodeURIComponent(project.client_id)}`;
     const projectUrl = `${request.nextUrl.origin}/?workspace-simulation=project&project=${encodeURIComponent(project.id)}`;
+    const registeredRootId = (key: string) => resources.find((resource) => (
+      resource.resourceType === "drive.folder" && resource.resourceKey === key
+    ))?.externalId ?? `workspace-simulation-folder-${key}`;
+    const accountsRootId = registeredRootId(blueprintPlan.accountsRoot.key);
+    const projectsRootId = registeredRootId(blueprintPlan.projectsRoot.key);
+    const projectFolderName = `${project.project_number} — ${project.name}`;
     await env.DB.batch([
       env.DB.prepare("INSERT INTO drive_folder_mappings (id, connection_key, entity_type, entity_id, folder_key, drive_file_id, parent_drive_file_id, drive_url, created_at, updated_at) VALUES (?, ?, 'client', ?, 'client-root', ?, NULL, ?, ?, ?) ON CONFLICT(connection_key, entity_type, entity_id, folder_key) DO UPDATE SET drive_file_id = excluded.drive_file_id, drive_url = excluded.drive_url, updated_at = excluded.updated_at")
         .bind(crypto.randomUUID(), config.connectionKey, project.client_id, clientFolderId, clientUrl, completedAt, completedAt),
@@ -80,7 +94,33 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     ]);
     await writeGoogleIntegrationEvent(config, "drive.simulation_project_folder_provisioned", auth.user.email, "project", project.id, "mode=simulation");
     const sheetSync = await trySyncGoogleDirectory(config, auth.user.email);
-    return noStore({ created: true, simulated: true, driveFolderId: projectFolderId, driveUrl: projectUrl, environment: config.environment, sheetSync }, { status: 201 });
+    return noStore({
+      created: true,
+      simulated: true,
+      driveFolderId: projectFolderId,
+      driveUrl: projectUrl,
+      environment: config.environment,
+      sheetSync,
+      simulationPlan: {
+        roots: {
+          clientAccounts: { id: accountsRootId, name: blueprintPlan.accountsRoot.name },
+          projects: { id: projectsRootId, name: blueprintPlan.projectsRoot.name },
+        },
+        clientFolder: {
+          id: clientFolderId,
+          parentId: accountsRootId,
+          path: `${blueprintPlan.accountsRoot.name} / ${project.client_code} — ${project.client_name}`,
+        },
+        projectFolder: {
+          id: projectFolderId,
+          rootId: projectsRootId,
+          path: `${blueprintPlan.projectsRoot.name} / ${projectYear} / ${projectFolderName}`,
+        },
+        projectFolders: blueprintPlan.projectFolderPaths.map((path) => (
+          `${blueprintPlan.projectsRoot.name} / ${projectYear} / ${projectFolderName} / ${path.join(" / ")}`
+        )),
+      },
+    }, { status: 201 });
   }
   let accessToken: string;
   try {
@@ -102,7 +142,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   try {
     const provisioned = await drive.provisionProjectFolders({
       client: { id: project.client_id, code: project.client_code, name: project.client_name },
-      project: { id: project.id, number: project.project_number, name: project.name, year: project.project_number.slice(3, 7) || new Date().getUTCFullYear().toString() },
+      project: { id: project.id, number: project.project_number, name: project.name, year: projectYear },
+      blueprint,
     });
     const completedAt = Date.now();
     await env.DB.batch([

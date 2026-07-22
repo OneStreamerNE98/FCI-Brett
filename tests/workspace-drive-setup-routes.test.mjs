@@ -103,6 +103,8 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
     } : null,
     connection: null,
     events: [],
+    activities: [],
+    mappings: [],
     leases: new Map(),
     queries: [],
     lastBlueprintSaveChanged: false,
@@ -149,7 +151,14 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
           }
           if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) return state.connection;
           if (/FROM projects p JOIN clients c/u.test(sql)) return state.project;
-          if (/FROM drive_folder_mappings/u.test(sql)) return state.mapping;
+          if (/FROM drive_folder_mappings/u.test(sql)) {
+            return state.mapping ?? state.mappings.find((mapping) => (
+              mapping.connectionKey === query.values[0]
+              && mapping.entityType === "project"
+              && mapping.entityId === query.values[1]
+              && mapping.folderKey === "project-root"
+            )) ?? null;
+          }
           throw new Error(`Unexpected first query: ${sql}`);
         },
         async run() {
@@ -221,6 +230,25 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
             if (sql.includes("SELECT") && !state.lastBlueprintSaveChanged) return { meta: { changes: 0 } };
             const [id, connectionKey, eventType, actor, entityType, entityId, detail, createdAt] = query.values;
             state.events.push({ id, connectionKey, eventType, actor, entityType, entityId, detail, createdAt });
+            return { meta: { changes: 1 } };
+          }
+          if (sql.startsWith("INSERT INTO drive_folder_mappings")) {
+            const entityType = sql.match(/VALUES \(\?, \?, '([^']+)'/u)?.[1];
+            const folderKey = sql.match(/, '([^']+)', \?, NULL/u)?.[1];
+            const [id, connectionKey, entityId, driveFileId, driveUrl, createdAt, updatedAt] = query.values;
+            const next = { id, connectionKey, entityType, entityId, folderKey, driveFileId, driveUrl, createdAt, updatedAt };
+            const index = state.mappings.findIndex((mapping) => (
+              mapping.connectionKey === connectionKey
+              && mapping.entityType === entityType
+              && mapping.entityId === entityId
+              && mapping.folderKey === folderKey
+            ));
+            if (index === -1) state.mappings.push(next);
+            else state.mappings[index] = next;
+            return { meta: { changes: 1 } };
+          }
+          if (sql.startsWith("INSERT INTO activity_events")) {
+            state.activities.push({ values: [...query.values] });
             return { meta: { changes: 1 } };
           }
           if (sql.startsWith("UPDATE google_connections SET last_success_at")) return { meta: { changes: 1 } };
@@ -375,8 +403,8 @@ function installRenameProvider({ folderId, rootId, initialName, failCompensation
   return { patchNames, currentName: () => currentName };
 }
 
-function installEnsureProvider(rootId) {
-  const folders = [];
+function installEnsureProvider(rootId, initialFolders = []) {
+  const folders = structuredClone(initialFolders);
   const calls = [];
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
@@ -388,11 +416,11 @@ function installEnsureProvider(rootId) {
     if (url.pathname === "/drive/v3/files" && method === "GET") {
       const query = url.searchParams.get("q") ?? "";
       const parentId = query.match(/^'([^']+)' in parents/u)?.[1];
-      const identity = query.match(/value='([^']+)'/u)?.[1];
+      const identity = query.match(/key='([^']+)' and value='([^']+)'/u);
       const name = query.match(/name = '([^']+)'/u)?.[1];
       return Response.json({ files: folders.filter((folder) => (
         folder.parents.includes(parentId)
-        && (identity === undefined || folder.appProperties.fciRootKey === identity)
+        && (!identity || folder.appProperties?.[identity[1]] === identity[2])
         && (name === undefined || folder.name === name)
       )) });
     }
@@ -410,6 +438,18 @@ function installEnsureProvider(rootId) {
       return Response.json(folder);
     }
     const fileId = url.pathname.match(/^\/drive\/v3\/files\/([^/]+)$/u)?.[1];
+    if (fileId && method === "PATCH") {
+      const folder = folders.find((candidate) => candidate.id === decodeURIComponent(fileId));
+      if (!folder) throw new Error(`Unknown provider folder: ${decodeURIComponent(fileId)}`);
+      const body = JSON.parse(String(init.body));
+      const appProperties = { ...(folder.appProperties ?? {}) };
+      for (const [key, value] of Object.entries(body.appProperties ?? {})) {
+        if (value === null) delete appProperties[key];
+        else appProperties[key] = value;
+      }
+      folder.appProperties = appProperties;
+      return Response.json(folder);
+    }
     if (fileId && method === "GET") {
       const folder = folders.find((candidate) => candidate.id === decodeURIComponent(fileId));
       if (folder) return Response.json(folder);
@@ -693,7 +733,7 @@ test("setup mutations reject non-admin and cross-origin requests before database
   }
 });
 
-test("simulation adopt → blueprint-driven ensure → idempotent ensure → rename is audited", async () => {
+test("simulation adopt → ensure → rename → blueprint-aware project provision is end-to-end", async () => {
   const fixtureBlueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
   fixtureBlueprint.drive.sharedDriveName = "FCI Custom Operations";
   fixtureBlueprint.drive.roots.push({
@@ -701,6 +741,13 @@ test("simulation adopt → blueprint-driven ensure → idempotent ensure → ren
     name: "03_Fixture Operations",
     management: "owner",
     children: [],
+  });
+  fixtureBlueprint.drive.projectFolders.find((folder) => folder.key === "lead-proposal").name = "01_Custom Lead Package";
+  fixtureBlueprint.drive.projectFolders.push({
+    key: "field-notes",
+    name: "07_Field Notes",
+    management: "owner",
+    children: [{ key: "daily-logs", name: "Daily Logs", management: "owner", children: [] }],
   });
   fixtureBlueprint.spreadsheets.push(
     { key: "first-run-import", name: "First-run Import", targetFolderKey: "company-admin", management: "owner", role: "import" },
@@ -761,16 +808,45 @@ test("simulation adopt → blueprint-driven ensure → idempotent ensure → ren
   const renameResponse = await renameRoute.POST(routeRequest(
     "/api/v1/integrations/google/drive/folders/rename",
     ADMIN_EMAIL,
-    { key: "client-accounts", name: "01_Custom Clients" },
+    { key: "projects", name: "02_Custom Projects" },
   ));
   const renamed = await renameResponse.json();
   assert.equal(renameResponse.status, 200);
   assert.equal(renamed.renamed, true);
-  assert.equal(renamed.folder.name, "01_Custom Clients");
+  assert.equal(renamed.folder.name, "02_Custom Projects");
   assert.equal(
-    JSON.parse(database.state.blueprint.blueprint_json).drive.roots.find((folder) => folder.key === "client-accounts").name,
-    "01_Custom Clients",
+    JSON.parse(database.state.blueprint.blueprint_json).drive.roots.find((folder) => folder.key === "projects").name,
+    "02_Custom Projects",
   );
+
+  database.state.project = {
+    id: "project-fix02",
+    project_number: "FCI2026-902",
+    name: "FCI TEST — DO NOT USE",
+    client_id: "client-fix02",
+    client_code: "FCI TEST",
+    client_name: "DO NOT USE",
+  };
+  const rootResourcesBeforeProvision = database.state.resources.filter((row) => row.resource_type === "drive.folder").length;
+  const provisionResponse = await projectDriveRoute.POST(
+    routeRequest("/api/v1/projects/project-fix02/drive"),
+    { params: Promise.resolve({ projectId: "project-fix02" }) },
+  );
+  const provisioned = await provisionResponse.json();
+  assert.equal(provisionResponse.status, 201);
+  assert.equal(provisioned.simulated, true);
+  assert.deepEqual(provisioned.simulationPlan.roots.projects, {
+    id: "workspace-simulation-folder-projects",
+    name: "02_Custom Projects",
+  });
+  assert.equal(provisioned.simulationPlan.projectFolder.rootId, "workspace-simulation-folder-projects");
+  assert.match(provisioned.simulationPlan.projectFolder.path, /^02_Custom Projects \/ 2026 \/ FCI2026-902/u);
+  assert.ok(provisioned.simulationPlan.projectFolders.some((path) => path.endsWith("01_Custom Lead Package")));
+  assert.ok(provisioned.simulationPlan.projectFolders.some((path) => path.endsWith("07_Field Notes / Daily Logs")));
+  assert.equal(provisioned.simulationPlan.projectFolders.some((path) => path.includes("01_Lead & Proposal")), false);
+  assert.equal(database.state.resources.filter((row) => row.resource_type === "drive.folder").length, rootResourcesBeforeProvision);
+  assert.equal(new Set(database.state.resources.filter((row) => row.resource_type === "drive.folder").map((row) => row.resource_key)).size, rootResourcesBeforeProvision);
+  assert.deepEqual(database.state.mappings.map((mapping) => mapping.entityType).sort(), ["client", "project"]);
 
   const eventTypes = database.state.events.map((event) => event.eventType);
   assert.ok(eventTypes.includes("setup.shared_drive_adopted"));
@@ -778,7 +854,8 @@ test("simulation adopt → blueprint-driven ensure → idempotent ensure → ren
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.spreadsheets_ensured").length, 2);
   assert.match(database.state.events.find((event) => event.eventType === "setup.spreadsheets_ensured").detail, /outcomes=client-directory:created,first-run-import:created,project-ledger:created/u);
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.folder_renamed").length, 1);
-  assert.match(database.state.events.find((event) => event.eventType === "setup.folder_renamed").detail, /key=client-accounts/u);
+  assert.match(database.state.events.find((event) => event.eventType === "setup.folder_renamed").detail, /key=projects/u);
+  assert.equal(eventTypes.filter((eventType) => eventType === "drive.simulation_project_folder_provisioned").length, 1);
 });
 
 test("simulation template ensure creates the central folder, covers owner shells, and is idempotent", async () => {
@@ -1221,6 +1298,53 @@ test("ensure-roots returns 409 while the exact connection setup lease is active"
   assert.equal(response.status, 409);
   assert.equal(body.code, "workspace_setup_lease_conflict");
   assert.equal(database.state.resources.filter((row) => row.resource_type === "drive.folder").length, 0);
+});
+
+test("ensure-roots preserves created provenance while canonicalizing a registered legacy root identity", async () => {
+  const rootId = "app-shared-drive-123";
+  const clientRootId = "legacy-client-accounts-root";
+  const database = fakeDatabase({
+    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprintConnectionKey: "google-workspace",
+  });
+  await workspaceEnvironment(database);
+  database.state.resources.push(
+    savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+    savedResource({
+      id: "client-root",
+      resourceType: "drive.folder",
+      resourceKey: "client-accounts",
+      externalId: clientRootId,
+      parentExternalId: rootId,
+      origin: "created",
+      name: "01_Client Accounts",
+    }),
+  );
+  const provider = installEnsureProvider(rootId, [{
+    id: clientRootId,
+    name: "01_Client Accounts",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: [rootId],
+    trashed: false,
+    webViewLink: `https://drive.google.test/${clientRootId}`,
+    appProperties: { fciWorkspaceFolder: "client-accounts" },
+  }]);
+
+  const response = await ensureRoute.POST(routeRequest("/api/v1/integrations/google/drive/folders/ensure-roots"));
+  assert.equal(response.status, 201);
+  const savedClientRoot = database.state.resources.find((row) => (
+    row.resource_type === "drive.folder" && row.resource_key === "client-accounts"
+  ));
+  assert.equal(savedClientRoot.external_id, clientRootId);
+  assert.equal(savedClientRoot.origin, "created");
+  assert.deepEqual(provider.folders.find((folder) => folder.id === clientRootId).appProperties, {
+    fciRootKey: "client-accounts",
+  });
+  const identityPatch = provider.calls.find((call) => call.method === "PATCH");
+  assert.deepEqual(JSON.parse(String(identityPatch.body)), {
+    appProperties: { fciWorkspaceFolder: null, fciRootKey: "client-accounts" },
+  });
+  assert.equal(provider.calls.some((call) => call.method === "DELETE"), false);
 });
 
 test("live rename restores the provider's actual prior name when blueprint CAS loses", async () => {
