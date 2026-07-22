@@ -63,6 +63,18 @@ This dated snapshot records review work only; it does not change any owner check
 | [#57](https://github.com/OneStreamerNE98/FCI-Brett/pull/57) | Application logo asset refresh | Merged into `main`; source-only and undeployed; static UI assets and review documentation only. |
 | [#66](https://github.com/OneStreamerNE98/FCI-Brett/pull/66) | TRK-02 tracking-guard hardening | Merged into `main`; source-only and undeployed. |
 
+**Where current status lives (updated July 22, 2026):** the table above is the frozen
+record of the reviewed #51–#57 train and is not a running log. Authoritative, per-packet
+status is maintained in the guard-enforced `Status:` lines of the
+[agent execution plan](../agent-plan-architecture-workspace-and-setup.md), and full-review
+fix-packet status in the
+[full-codebase review findings](../full-review-2026-07-21-findings.md) — consult those for
+the exact current list, not this snapshot. Since that train, the dashboard-driven Workspace
+setup wave plus the flooring-KPI, rate-limiting, and Google-integration packets have merged
+source-only and undeployed; the nine-lens full-codebase review and the owner-approved
+four-stage settings redesign are published; and Wave R1 fixes are in progress. All merges
+remain source-only and undeployed and change no owner checkbox or deployment.
+
 ## Checklists by topic
 
 1. [Setup inputs and decisions](00-setup-inputs.md)
