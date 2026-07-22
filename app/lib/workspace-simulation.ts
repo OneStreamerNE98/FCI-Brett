@@ -7,6 +7,11 @@ import {
   type GmailReplyContext,
   type GmailReplyDraft,
 } from "./google-gmail";
+import {
+  CALENDAR_TEST_HOLD_DEDUP_PROPERTY,
+  calendarTestHoldDedupKey,
+  calendarTestHoldEventId,
+} from "./google-calendar-client";
 
 const STATE_ID = "fci-workspace";
 const SIMULATION_ACCOUNT = "workspace-simulation@fci.example";
@@ -28,6 +33,9 @@ type SimulationEvent = {
   title: string;
   start: string;
   end: string;
+  extendedProperties?: {
+    private?: Record<string, string>;
+  };
 };
 
 type SimulationState = {
@@ -243,20 +251,37 @@ export async function listSimulationCalendarEvents(now = new Date()) {
       start: now.toISOString(),
       end: new Date(now.getTime() + UPCOMING_WINDOW_MS).toISOString(),
     },
-    events: state.calendarEvents,
+    events: state.calendarEvents.map(publicSimulationEvent),
     timeZone: "America/New_York",
     windowDays: 7,
     simulated: true,
   };
 }
 
+function publicSimulationEvent(event: SimulationEvent) {
+  return { id: event.id, title: event.title, start: event.start, end: event.end };
+}
+
 export async function createSimulationCalendarHold(start: Date) {
   const state = await getSimulationState();
+  const dedupKey = calendarTestHoldDedupKey(start);
+  const existing = state.calendarEvents.find((event) => (
+    event.extendedProperties?.private?.[CALENDAR_TEST_HOLD_DEDUP_PROPERTY] === dedupKey
+  ));
+  if (existing) return { event: publicSimulationEvent(existing), created: false } as const;
   const end = new Date(start.getTime() + 30 * 60 * 1000);
-  const event = { id: `sim-event-${crypto.randomUUID()}`, title: "FCI Workspace simulation hold", start: start.toISOString(), end: end.toISOString() };
+  const event: SimulationEvent = {
+    id: `sim-${await calendarTestHoldEventId(start)}`,
+    title: "FCI Workspace simulation hold",
+    start: start.toISOString(),
+    end: end.toISOString(),
+    extendedProperties: {
+      private: { [CALENDAR_TEST_HOLD_DEDUP_PROPERTY]: dedupKey },
+    },
+  };
   state.calendarEvents.push(event);
   await writeState(state);
-  return event;
+  return { event: publicSimulationEvent(event), created: true } as const;
 }
 
 export const WORKSPACE_SIMULATION_ACCOUNT = SIMULATION_ACCOUNT;

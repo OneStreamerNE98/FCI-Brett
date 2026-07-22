@@ -17,7 +17,7 @@ const costRoutes = [
   {
     path: "app/api/v1/assistant/route.ts",
     scope: "assistant",
-    firstWork: 'const declaredLength = Number(request.headers.get("content-length"))',
+    firstWork: "await parseBoundedJsonObject(request",
   },
   {
     path: "app/api/v1/uploads/route.ts",

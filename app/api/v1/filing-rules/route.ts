@@ -8,6 +8,12 @@ import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
 const MAX_RULE_BODY_BYTES = 8_000;
 
+function noStore(body: unknown, init: ResponseInit = {}) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
@@ -22,7 +28,7 @@ export async function GET(request: NextRequest) {
     ...DEFAULT_FILING_RULES.map((rule) => ({ ...rule, ...overrides.get(rule.name.toLowerCase()) })),
     ...storedRules.filter((rule) => !builtInNames.has(String(rule.name).toLowerCase())),
   ].sort((left, right) => Number(left.priority) - Number(right.priority));
-  return NextResponse.json({ rules });
+  return noStore({ rules });
 }
 
 export async function POST(request: NextRequest) {
@@ -35,14 +41,14 @@ export async function POST(request: NextRequest) {
     invalidMessage: "Rule details must be valid JSON.",
     tooLargeMessage: "Rule details are too large.",
   });
-  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  if (!parsed.ok) return noStore({ error: parsed.error }, { status: parsed.status });
   const validation = validateFilingRuleCreate(parsed.body);
-  if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 });
+  if (!validation.ok) return noStore({ error: validation.error }, { status: 400 });
 
   await ensureWorkspaceSchema();
   const values = validation.values;
   const now = Date.now();
   const id = crypto.randomUUID();
   await env.DB.prepare("INSERT INTO filing_rules (id, name, enabled, priority, match_summary, action, target_category, approval_required, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id, values.name, values.enabled ? 1 : 0, values.priority, values.matchSummary, values.action, values.targetCategory, values.approvalRequired ? 1 : 0, auth.user.email, now, now).run();
-  return NextResponse.json({ id, createdAt: now }, { status: 201 });
+  return noStore({ id, createdAt: now }, { status: 201 });
 }

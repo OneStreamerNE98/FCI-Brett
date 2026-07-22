@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
@@ -21,6 +22,12 @@ const workspaceResourceMigrationPrefix = "0013_";
 const workspaceBlueprintMigrationPrefix = "0015_";
 const userSettingsMigrationPrefix = "0016_";
 const pageLayoutsMigrationPrefix = "0017_";
+const allowedDestructiveMigrations = new Map([
+  [
+    "0008_strong_korg.sql",
+    "ALTER TABLE `user_preferences` DROP COLUMN `personal_calendar_display`;",
+  ],
+]);
 
 const requiredDevelopmentIndexes = [
   "clients_code_unique_idx",
@@ -49,9 +56,84 @@ async function sourceFiles(directory) {
 
 async function migrationFiles(directory) {
   return (await readdir(directory, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && /^\d{4}_.+\.sql$/.test(entry.name))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
     .map((entry) => entry.name)
     .sort();
+}
+
+async function migrationSources(directory) {
+  const files = await migrationFiles(directory);
+  return Promise.all(files.map(async (file) => ({
+    file,
+    sql: await readFile(join(directory, file), "utf8"),
+  })));
+}
+
+function sqlWithoutLiteralsOrComments(sql) {
+  let output = "";
+  for (let index = 0; index < sql.length;) {
+    if (sql[index] === "'") {
+      output += "''";
+      index += 1;
+      while (index < sql.length) {
+        if (sql[index] !== "'") {
+          index += 1;
+          continue;
+        }
+        if (sql[index + 1] === "'") {
+          index += 2;
+          continue;
+        }
+        index += 1;
+        break;
+      }
+      continue;
+    }
+    if (sql[index] === "-" && sql[index + 1] === "-") {
+      index += 2;
+      while (index < sql.length && sql[index] !== "\n" && sql[index] !== "\r") index += 1;
+      output += "\n";
+      continue;
+    }
+    if (sql[index] === "/" && sql[index + 1] === "*") {
+      index += 2;
+      while (index < sql.length && !(sql[index] === "*" && sql[index + 1] === "/")) index += 1;
+      index = Math.min(sql.length, index + 2);
+      output += " ";
+      continue;
+    }
+    output += sql[index];
+    index += 1;
+  }
+  return output;
+}
+
+function destructiveDdlStatements(sql) {
+  return sqlWithoutLiteralsOrComments(sql)
+    .split(";")
+    .map((statement) => statement.replace(/\s+/gu, " ").trim())
+    .filter(Boolean)
+    .filter((statement) => {
+      if (/^(?:DROP|TRUNCATE)\b/iu.test(statement)) return true;
+      if (/^CREATE\s+OR\s+REPLACE\b/iu.test(statement)) return true;
+      if (!/^ALTER\b/iu.test(statement)) return false;
+      return !/^ALTER\s+TABLE\s+(?:`[^`]+`|"[^"]+"|\[[^\]]+\]|[A-Za-z_][A-Za-z0-9_.]*)\s+ADD(?:\s+COLUMN)?\s+/iu.test(statement);
+    });
+}
+
+function assertNoUnexpectedDestructiveDdl(migrations) {
+  const violations = [];
+  for (const { file, sql } of migrations) {
+    const destructiveStatements = destructiveDdlStatements(sql);
+    if (destructiveStatements.length === 0) continue;
+    if (allowedDestructiveMigrations.get(file) === sql.trim()) continue;
+    for (const statement of destructiveStatements) violations.push({ file, statement });
+  }
+  assert.deepEqual(
+    violations,
+    [],
+    `Unexpected destructive DDL:\n${violations.map(({ file, statement }) => `${file}: ${statement}`).join("\n")}`,
+  );
 }
 
 test("keeps the normal request schema helper free of D1 and schema DDL", async () => {
@@ -98,6 +180,7 @@ test("keeps development data integrity and lookup indexes in the versioned Drizz
   const journal = JSON.parse(await readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8"));
   const journalTags = journal.entries.map((entry) => entry.tag);
 
+  for (const file of files) assert.match(file, /^\d{4}_.+\.sql$/u);
   assert.deepEqual(journalTags, files.map((file) => basename(file, ".sql")));
   for (const indexName of requiredDevelopmentIndexes) {
     assert.match(migrationSql, new RegExp("CREATE (?:UNIQUE )?INDEX (?:IF NOT EXISTS )?`" + indexName + "`"));
@@ -109,6 +192,45 @@ test("keeps development data integrity and lookup indexes in the versioned Drizz
   for (const indexName of requiredDevelopmentIndexes) {
     assert.match(integrityIndexSql, new RegExp("INDEX IF NOT EXISTS `" + indexName + "`"));
   }
+});
+
+test("keeps the complete Drizzle migration chain free of new destructive DDL", async () => {
+  assertNoUnexpectedDestructiveDdl(await migrationSources(drizzleRoot));
+});
+
+test("the Drizzle guard discovers and rejects a synthetic destructive migration", async () => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "fci-fix06-migrations-"));
+  try {
+    await writeFile(
+      join(temporaryRoot, "manual_destructive.sql"),
+      "-- don't hide this guard\nDROP TABLE `clients`;\nSELECT 'sentinel';",
+      "utf8",
+    );
+    const migrations = await migrationSources(temporaryRoot);
+    assert.deepEqual(migrations.map(({ file }) => file), ["manual_destructive.sql"]);
+    assert.throws(
+      () => assertNoUnexpectedDestructiveDdl(migrations),
+      /manual_destructive\.sql: DROP TABLE `clients`/u,
+    );
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("the Drizzle guard covers destructive DDL forms without rejecting quoted names", () => {
+  for (const [file, sql] of [
+    ["drop_column.sql", "ALTER TABLE `clients` DROP COLUMN `status`;"],
+    ["drop_index.sql", "DROP INDEX `clients_name_idx`;"],
+    ["truncate.sql", "TRUNCATE TABLE `clients`;"],
+    ["rename.sql", "ALTER TABLE `clients` RENAME TO `former_clients`;"],
+    ["replace.sql", "CREATE OR REPLACE VIEW `client_names` AS SELECT `name` FROM `clients`;"],
+  ]) {
+    assert.throws(() => assertNoUnexpectedDestructiveDdl([{ file, sql }]), new RegExp(file, "u"));
+  }
+  assert.doesNotThrow(() => assertNoUnexpectedDestructiveDdl([{
+    file: "quoted_drop_identifier.sql",
+    sql: "ALTER TABLE `clients` ADD COLUMN `drop` text DEFAULT 'DROP TABLE ignored';",
+  }]));
 });
 
 test("keeps the SET-13 Workspace registry in one additive migration with its unique identity", async () => {

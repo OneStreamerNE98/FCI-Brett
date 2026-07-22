@@ -263,6 +263,7 @@ type; labels byte-identical to today's polished set.
 **Effort:** small. **Cost:** $0.
 
 ### FIX-06 · API uniformity bundle (P3s; small)
+**Status:** In progress — `codex/fix06-api-uniformity`, July 22, 2026.
 **Why:** close the small deviations so the invariants stay simple and testable.
 **Do:** add `requireSameOrigin` to the `google-workspace` POST planner; add
 `Cache-Control: no-store` to the eight data routes lacking it; migrate `assistant`

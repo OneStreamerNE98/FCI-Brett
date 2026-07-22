@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 import { ensureWorkspaceSchema } from "../_workspace-data";
+import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
@@ -273,13 +274,14 @@ export async function POST(request: NextRequest) {
   if ("response" in auth) return auth.response;
   const rateLimitResponse = enforceDevelopmentRequestRateLimit("assistant", auth.user.email);
   if (rateLimitResponse) return rateLimitResponse;
-  const declaredLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > 9_000) return NextResponse.json({ error: "Question request is too large." }, { status: 413 });
-  const rawBody = await request.text();
-  if (new TextEncoder().encode(rawBody).byteLength > 9_000) return NextResponse.json({ error: "Question request is too large." }, { status: 413 });
-  const body = (() => { try { return JSON.parse(rawBody) as { question?: unknown; projectId?: unknown }; } catch { return null; } })();
-  const question = typeof body?.question === "string" ? body.question.trim() : "";
-  const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: 9_000,
+    invalidMessage: "question is required",
+    tooLargeMessage: "Question request is too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const question = typeof parsed.body.question === "string" ? parsed.body.question.trim() : "";
+  const projectId = typeof parsed.body.projectId === "string" ? parsed.body.projectId.trim() : "";
   if (!question) return NextResponse.json({ error: "question is required" }, { status: 400 });
   if (question.length > 2_000 || /[\u0000-\u001f\u007f]/.test(question)) return NextResponse.json({ error: "question is too long or contains invalid characters" }, { status: 413 });
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(projectId)) return NextResponse.json({ error: "Choose one project before asking the assistant." }, { status: 400 });

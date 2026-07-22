@@ -9,6 +9,7 @@ import {
 import { creationAuthorizationFor } from "../../../../../application/creation-authorization";
 import { AUTHORIZATION_CAPABILITIES } from "../../../../../application/authorization-capabilities";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
+import { parseBoundedJsonObject } from "../../../../../lib/api-json-body";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 
 type RouteContext = { params: Promise<{ projectId: string }> };
@@ -45,16 +46,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const { projectId } = await context.params;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(projectId)) return NextResponse.json({ error: "Invalid project." }, { status: 400 });
 
-  const declaredLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > 180_000) return NextResponse.json({ error: "Meeting notes are too large." }, { status: 413 });
-  const rawBody = await request.text();
-  if (new TextEncoder().encode(rawBody).byteLength > 180_000) return NextResponse.json({ error: "Meeting notes are too large." }, { status: 413 });
-  const body = (() => { try { return JSON.parse(rawBody) as Record<string, unknown>; } catch { return null; } })();
-  if (!body) return NextResponse.json({ error: "Meeting details must be valid JSON." }, { status: 400 });
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: 180_000,
+    invalidMessage: "Meeting details must be valid JSON.",
+    tooLargeMessage: "Meeting notes are too large.",
+  });
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
   await ensureWorkspaceSchema();
   const result = await createProjectMeeting(
     projectId,
-    body,
+    parsed.body,
     creationAuthorizationFor({
       actorId: auth.user.email,
       capabilities: [AUTHORIZATION_CAPABILITIES.meetingsUpdate],

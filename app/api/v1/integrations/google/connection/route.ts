@@ -3,12 +3,18 @@ import { disconnectGoogleConnection, getGoogleConnectionStatus, getGoogleRuntime
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 
+function noStore(body: unknown, init: ResponseInit = {}) {
+  const response = NextResponse.json(body, init);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
+
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const config = getGoogleRuntimeConfig();
-  return NextResponse.json({ runtimeMode: config.environment, simulation: config.simulation, connection: await getGoogleConnectionStatus(config), enabledServices: config.enabledServices });
+  return noStore({ runtimeMode: config.environment, simulation: config.simulation, connection: await getGoogleConnectionStatus(config), enabledServices: config.enabledServices });
 }
 
 export async function DELETE(request: NextRequest) {
@@ -20,5 +26,5 @@ export async function DELETE(request: NextRequest) {
   const config = getGoogleRuntimeConfig();
   const result = await disconnectGoogleConnection(config);
   await writeGoogleIntegrationEvent(config, "oauth.disconnected", auth.user.email, "connection", config.connectionKey, `mode=${config.environment};google_revocation=${result.revocationRequested ? "requested" : "not-confirmed"}`);
-  return NextResponse.json({ disconnected: true, revocationRequested: result.revocationRequested });
+  return noStore({ disconnected: true, revocationRequested: result.revocationRequested });
 }

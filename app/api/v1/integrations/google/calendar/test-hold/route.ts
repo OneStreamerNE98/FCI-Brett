@@ -1,6 +1,13 @@
+import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  acquireWorkspaceSetupLease,
+  completeWorkspaceSetupLease,
+  failWorkspaceSetupLease,
+  type WorkspaceSetupLease,
+} from "../../../../../../adapters/d1/workspace-setup-leases";
 import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
-import { createWorkspaceCalendarHold } from "../../../../../../lib/google-calendar-sites";
+import { calendarTestHoldEventId, createWorkspaceCalendarHold } from "../../../../../../lib/google-calendar-sites";
 import { calendarHoldCreatedIntegrationEvent } from "../../../../../../lib/google-integration-events";
 import { createSimulationCalendarHold } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
@@ -70,23 +77,53 @@ export async function POST(request: NextRequest) {
     return noStore({ error: "Only an optional start timestamp may be supplied for a test hold." }, { status: 400 });
   }
 
+  let lease: WorkspaceSetupLease | null = null;
   try {
     const start = parseStart(body.start);
-    if (config.simulation) {
-      const event = await createSimulationCalendarHold(start);
-      const integrationEvent = calendarHoldCreatedIntegrationEvent(event);
-      await writeGoogleIntegrationEvent(
-        config,
-        integrationEvent.eventType,
-        auth.user.email,
-        integrationEvent.entityType,
-        integrationEvent.entityId,
-        integrationEvent.detail,
-      );
-      return noStore({ event, simulated: true }, { status: 201 });
+    const now = Date.now();
+    lease = await acquireWorkspaceSetupLease(env.DB, {
+      id: crypto.randomUUID(),
+      connectionKey: config.connectionKey,
+      action: `calendar-test-hold:${await calendarTestHoldEventId(start)}`,
+      scopeKey: "calendar-test-hold",
+      actor: auth.user.email,
+      now,
+    });
+    if (!lease) {
+      return noStore({
+        error: "A Calendar test hold request is already in progress. Try again shortly.",
+        code: "calendar_test_hold_in_progress",
+      }, { status: 409 });
     }
-    return noStore({ event: await createWorkspaceCalendarHold(config, auth.user.email, start), simulated: false }, { status: 201 });
+
+    if (config.simulation) {
+      const result = await createSimulationCalendarHold(start);
+      if (result.created) {
+        const integrationEvent = calendarHoldCreatedIntegrationEvent(result.event);
+        await writeGoogleIntegrationEvent(
+          config,
+          integrationEvent.eventType,
+          auth.user.email,
+          integrationEvent.entityType,
+          integrationEvent.entityId,
+          integrationEvent.detail,
+        );
+      }
+      await completeWorkspaceSetupLease(env.DB, lease, Date.now());
+      return noStore({ event: result.event, simulated: true }, { status: 201 });
+    }
+    const event = await createWorkspaceCalendarHold(config, auth.user.email, start);
+    await completeWorkspaceSetupLease(env.DB, lease, Date.now());
+    return noStore({ event, simulated: false }, { status: 201 });
   } catch (error) {
+    if (lease) {
+      await failWorkspaceSetupLease(
+        env.DB,
+        lease,
+        error instanceof GoogleIntegrationError ? error.code : "calendar_test_hold_failed",
+        Date.now(),
+      );
+    }
     if (error instanceof GoogleIntegrationError) {
       return noStore({ error: error.message, code: error.code }, { status: error.status });
     }
