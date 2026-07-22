@@ -14,6 +14,7 @@ const settingsMutationRoutes = [
   "app/api/v1/integrations/google/drive/shared-drive/adopt/route.ts",
   "app/api/v1/integrations/google/drive/folders/ensure-roots/route.ts",
   "app/api/v1/integrations/google/drive/folders/rename/route.ts",
+  "app/api/v1/integrations/google/drive/templates/ensure/route.ts",
   "app/api/v1/integrations/google/connection/route.ts",
   "app/api/v1/integrations/google/gmail/labels/prepare/route.ts",
   "app/api/v1/integrations/google/gmail/send-test/route.ts",

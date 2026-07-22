@@ -330,6 +330,14 @@ test("OAuth callback keeps setup-needed denial when OAuth credentials are incomp
 });
 
 test("resources GET is admin-only, source-tagged, no-store, masked, and contains no secrets", async () => {
+  const { flattenWorkspaceRootFolders, seedWorkspaceBlueprint } = await vite.ssrLoadModule("/app/lib/workspace-blueprint.ts");
+  const seedBlueprint = seedWorkspaceBlueprint();
+  const setupCalendarKeys = new Set(["client-appointments", "field-schedule"]);
+  const expectedResourceCount = 1
+    + seedBlueprint.spreadsheets.length
+    + seedBlueprint.templates.length
+    + seedBlueprint.calendars.filter((calendar) => setupCalendarKeys.has(calendar.key)).length
+    + flattenWorkspaceRootFolders(seedBlueprint).length;
   const configuredSecret = "configured-client-secret-must-not-appear";
   const configuredEncryptionKey = Buffer.alloc(32, 17).toString("base64url");
   const resources = [{
@@ -390,7 +398,7 @@ test("resources GET is admin-only, source-tagged, no-store, masked, and contains
   assert.equal(body.identity.intakeMailboxMatches, true);
   assert.deepEqual(body.identity.allowedDomains, ["cherryhillfci.com"]);
   assert.equal(body.identity.mode, "workspace");
-  assert.equal(body.resources.length, 10);
+  assert.equal(body.resources.length, expectedResourceCount);
   assert.deepEqual(
     body.resources.find((resource) => resource.key === "client-directory"),
     {
@@ -454,6 +462,50 @@ test("resources include every blueprint spreadsheet with its honest role and reg
     { key: "first-run-import", role: "import", state: "Not configured" },
     { key: "project-ledger", role: "reference", state: "Created" },
   ]);
+});
+
+test("resources include blueprint templates as centrally stored Drive files with Open-ready registry state", async () => {
+  const { seedWorkspaceBlueprint } = await vite.ssrLoadModule("/app/lib/workspace-blueprint.ts");
+  const blueprint = structuredClone(seedWorkspaceBlueprint());
+  blueprint.templates.push({
+    key: "site-measurement",
+    name: "Site Measurement",
+    kind: "doc",
+    targetFolderKey: "client-profile",
+    management: "owner",
+  });
+  const database = fakeDatabase({
+    blueprint,
+    resources: [{
+      id: "resource-site-measurement-template",
+      connection_key: "google-workspace",
+      resource_type: "drive.file",
+      resource_key: "site-measurement",
+      external_id: "app-site-measurement-template",
+      parent_external_id: "templates-folder",
+      external_url: "https://docs.google.com/document/d/app-site-measurement-template/edit",
+      origin: "created",
+      metadata_json: JSON.stringify({ kind: "doc", targetFolderKey: "client-profile" }),
+      created_by: ADMIN_EMAIL,
+      created_at: 1,
+      updated_at: 2,
+    }],
+  });
+  workspaceEnvironment(database);
+
+  const response = await resourcesRoute.GET(routeRequest("/api/v1/integrations/google/setup/resources", ADMIN_EMAIL));
+  const body = await response.json();
+  const templateRows = body.resources.filter((resource) => resource.resourceType === "drive.file");
+
+  assert.deepEqual(templateRows.map(({ key, label, parentKey, state }) => ({ key, label, parentKey, state })), [
+    { key: "estimate-proposal", label: "Document template", parentKey: "templates", state: "Not configured" },
+    { key: "installation-work-order", label: "Document template", parentKey: "templates", state: "Not configured" },
+    { key: "change-order", label: "Document template", parentKey: "templates", state: "Not configured" },
+    { key: "pre-install-checklist", label: "Document template", parentKey: "templates", state: "Not configured" },
+    { key: "project-budget", label: "Spreadsheet template", parentKey: "templates", state: "Not configured" },
+    { key: "site-measurement", label: "Document template", parentKey: "templates", state: "Created" },
+  ]);
+  assert.equal(templateRows.at(-1).url, "https://docs.google.com/document/d/app-site-measurement-template/edit");
 });
 
 test("resources identity compares the actual stored connection account to the intake mailbox", async () => {

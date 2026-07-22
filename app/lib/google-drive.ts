@@ -80,7 +80,10 @@ export type DriveManagedFileLookup = {
 
 export type DriveManagedFileUpload = DriveManagedFileLookup & {
   name: string;
+  /** Google Drive metadata MIME type; use a Google-native type to request conversion. */
   mimeType: string;
+  /** Source bytes MIME type. Defaults to mimeType for ordinary binary uploads. */
+  mediaMimeType?: string;
   bytes: Uint8Array;
 };
 
@@ -202,6 +205,7 @@ function multipartUploadBody(metadata: Record<string, unknown>, bytes: Uint8Arra
     `--${boundary}`,
     `Content-Type: ${mimeType}`,
     "Content-Transfer-Encoding: binary",
+    "",
     "",
   ].join("\r\n"));
   const suffix = encoder.encode(`\r\n--${boundary}--\r\n`);
@@ -442,6 +446,7 @@ export class GoogleDriveClient {
     key: string;
     name: string;
     reuseByName?: boolean;
+    appProperties?: Record<string, string>;
   }): Promise<DriveFolderEnsureResult> {
     const key = ensureNonEmptyString(input.key, "The blueprint folder key", 64);
     const name = ensureNonEmptyString(input.name, "The blueprint folder name", 120);
@@ -449,16 +454,19 @@ export class GoogleDriveClient {
       throw new GoogleIntegrationError("invalid_drive_folder_name", "A blueprint folder name cannot contain a path separator.", 400);
     }
     const identity = { key: "fciRootKey", value: key } satisfies FolderIdentity;
-    const properties = { fciRootKey: key };
+    const properties = normalizedAppProperties({ ...(input.appProperties ?? {}), fciRootKey: key });
     await this.assertContained(input.parentId);
     const managed = await this.childFoldersByIdentity(input.parentId, identity);
     if (managed.length > 1) {
       throw new GoogleIntegrationError("duplicate_drive_folder", `More than one managed Google Drive folder matched ${name}.`, 409);
     }
     if (managed.length === 1) {
-      const folder = managed[0];
+      const matched = managed[0];
+      const needsStamp = Object.entries(properties)
+        .some(([propertyKey, propertyValue]) => matched.appProperties?.[propertyKey] !== propertyValue);
+      const folder = needsStamp ? await this.stampFolder(matched, properties) : matched;
       return Object.freeze({
-        outcome: "found",
+        outcome: needsStamp ? "adopted" : "found",
         folder: Object.freeze({ id: folder.id, name: folder.name, url: folderUrl(folder), parents: Object.freeze([...(folder.parents ?? [])]) }),
       });
     }
@@ -478,9 +486,12 @@ export class GoogleDriveClient {
           );
         }
         if (existingKey === key) {
-          const folder = named[0];
+          const matched = named[0];
+          const needsStamp = Object.entries(properties)
+            .some(([propertyKey, propertyValue]) => matched.appProperties?.[propertyKey] !== propertyValue);
+          const folder = needsStamp ? await this.stampFolder(matched, properties) : matched;
           return Object.freeze({
-            outcome: "found",
+            outcome: needsStamp ? "adopted" : "found",
             folder: Object.freeze({ id: folder.id, name: folder.name, url: folderUrl(folder), parents: Object.freeze([...(folder.parents ?? [])]) }),
           });
         }
@@ -647,6 +658,7 @@ export class GoogleDriveClient {
     }
     const name = sanitizeDriveFileName(ensureNonEmptyString(input.name, "The Drive file name", 300));
     const mimeType = normalizedMimeType(input.mimeType);
+    const mediaMimeType = normalizedMimeType(input.mediaMimeType ?? input.mimeType);
     const appProperties = normalizedAppProperties(input.appProperties);
     const existing = await this.findManagedFile({ parentId: input.parentId, appProperties });
     if (existing) return { created: false, file: existing };
@@ -656,13 +668,15 @@ export class GoogleDriveClient {
     // two simultaneous first attempts cannot race Drive's create endpoint.
     await this.assertContained(input.parentId);
     const boundary = `fci-${crypto.randomUUID()}`;
-    const multipart = multipartUploadBody({ name, mimeType, parents: [input.parentId], appProperties }, input.bytes, mimeType, boundary);
+    const multipart = multipartUploadBody({ name, mimeType, parents: [input.parentId], appProperties }, input.bytes, mediaMimeType, boundary);
     const parameters = this.addUploadOptions(new URLSearchParams({
       uploadType: "multipart",
       fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties,md5Checksum,size",
     }));
     const uploaded = await this.uploadRequest<DriveFile>(`files?${parameters.toString()}`, multipart, `multipart/related; boundary=${boundary}`);
-    if (!uploaded.id || !uploaded.name || !uploaded.mimeType || uploaded.trashed || !uploaded.parents?.includes(input.parentId)) {
+    const identityConfirmed = Object.entries(appProperties)
+      .every(([key, value]) => uploaded.appProperties?.[key] === value);
+    if (!uploaded.id || !uploaded.name || !uploaded.mimeType || uploaded.trashed || !uploaded.parents?.includes(input.parentId) || !identityConfirmed) {
       throw new GoogleIntegrationError("drive_upload_invalid_response", "Google Drive uploaded the file without the expected managed-folder details. Check Drive before retrying.", 503);
     }
     return { created: true, file: asManagedFile(uploaded) };

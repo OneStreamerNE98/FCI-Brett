@@ -231,6 +231,41 @@ function SpreadsheetActions({
   </div>;
 }
 
+function TemplateActions({
+  resource,
+  notify,
+  onChanged,
+}: {
+  resource: WorkspaceSetupResource;
+  notify: Notify;
+  onChanged: (change: WorkspaceDriveChange) => Promise<void> | void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function ensureTemplates() {
+    setBusy(true);
+    try {
+      const { response, data } = await postJson<{
+        ensured?: boolean;
+        counts?: { found: number; created: number; adopted: number };
+      }>("/api/v1/integrations/google/drive/templates/ensure");
+      if (!response.ok || !data.ensured) throw new Error(data.error ?? "The Workspace templates could not be ensured.");
+      const counts = data.counts ?? { found: 0, created: 0, adopted: 0 };
+      notify(`Templates checked: ${counts.created} created, ${counts.adopted} adopted, ${counts.found} found.`, "success");
+      await onChanged({});
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Workspace templates could not be ensured.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="workspace-resource-action-buttons">
+    <AdministratorActionButton className="primary-button" isAdmin onClick={() => void ensureTemplates()} disabled={busy}>{busy ? "Ensuring…" : "Ensure templates"}</AdministratorActionButton>
+    {resource.url && <a className="soft-button" href={resource.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open</a>}
+  </div>;
+}
+
 export function WorkspaceDriveResourceActions({
   resource,
   notify,
@@ -248,6 +283,9 @@ export function WorkspaceDriveResourceActions({
   }
   if (resource.resourceType === "sheets.spreadsheet") {
     return <SpreadsheetActions resource={resource} notify={notify} onChanged={onChanged} />;
+  }
+  if (resource.resourceType === "drive.file") {
+    return <TemplateActions resource={resource} notify={notify} onChanged={onChanged} />;
   }
   return <div className="workspace-resource-action-buttons">{resource.url ? <a className="soft-button" href={resource.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open</a> : <span className="workspace-resource-action-note">Later setup packet</span>}</div>;
 }

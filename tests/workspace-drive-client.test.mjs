@@ -125,6 +125,62 @@ test("blueprint folder ensure looks up identity before name, adopts and stamps o
   assert.ok(calls.every((call) => call.method !== "DELETE"));
 });
 
+test("blueprint folder ensure repairs supplemental appProperties without duplicate creation", async () => {
+  const calls = [];
+  let appProperties = { fciRootKey: "templates" };
+  const folder = () => ({
+    id: "templates-folder",
+    name: "03_Templates",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: ["shared-drive-root"],
+    trashed: false,
+    webViewLink: "https://drive.google.test/templates-folder",
+    appProperties,
+  });
+  const fetcher = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = init.method ?? "GET";
+    calls.push({ url, init, method });
+    if (url.pathname.endsWith("/files") && method === "GET") {
+      assert.match(url.searchParams.get("q"), /fciRootKey/u);
+      return Response.json({ files: [folder()] });
+    }
+    if (url.pathname.endsWith("/files/templates-folder") && method === "PATCH") {
+      const body = JSON.parse(String(init.body));
+      assert.deepEqual(body, {
+        appProperties: { fciRootKey: "templates", fciFolderKind: "templates" },
+      });
+      appProperties = body.appProperties;
+      return Response.json(folder());
+    }
+    if (url.pathname.endsWith("/files/templates-folder") && method === "GET") return Response.json(folder());
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+  const client = new GoogleDriveClient("test-token", config(), fetcher);
+
+  const first = await client.ensureBlueprintFolder({
+    parentId: "shared-drive-root",
+    key: "templates",
+    name: "03_Templates",
+    reuseByName: true,
+    appProperties: { fciRootKey: "ignored-caller-value", fciFolderKind: "templates" },
+  });
+  assert.equal(first.outcome, "adopted");
+  assert.deepEqual(appProperties, { fciRootKey: "templates", fciFolderKind: "templates" });
+
+  const second = await client.ensureBlueprintFolder({
+    parentId: "shared-drive-root",
+    key: "templates",
+    name: "03_Templates",
+    reuseByName: true,
+    appProperties: { fciFolderKind: "templates" },
+  });
+  assert.equal(second.outcome, "found");
+  assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
+  assert.equal(calls.filter((call) => call.method === "POST").length, 0);
+  assert.equal(calls.filter((call) => call.method === "DELETE").length, 0);
+});
+
 test("folder rename is contained, bounded to PATCH metadata, and confirms the provider response", async () => {
   const calls = [];
   let name = "01_Client Accounts";
@@ -300,4 +356,116 @@ test("blueprint spreadsheet ensure rejects duplicate identities and wrong MIME t
       );
     });
   }
+});
+
+test("managed file upload separates Google-native metadata MIME from media MIME and remains idempotent", async () => {
+  const calls = [];
+  const source = "<!doctype html><title>Estimate proposal</title>";
+  const bytes = new TextEncoder().encode(source);
+  let uploaded = false;
+  const managedFile = () => ({
+    id: "template-estimate-proposal",
+    name: "Estimate Proposal",
+    mimeType: "application/vnd.google-apps.document",
+    parents: ["shared-drive-root"],
+    trashed: false,
+    webViewLink: "https://docs.google.test/template-estimate-proposal",
+    appProperties: { fciTemplateKey: "estimate-proposal" },
+  });
+  const fetcher = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = init.method ?? "GET";
+    calls.push({ url, init, method });
+    if (url.pathname === "/drive/v3/files" && method === "GET") {
+      assert.match(url.searchParams.get("q"), /fciTemplateKey/u);
+      assert.match(url.searchParams.get("q"), /estimate-proposal/u);
+      return Response.json({ files: uploaded ? [managedFile()] : [] });
+    }
+    if (url.pathname === "/upload/drive/v3/files" && method === "POST") {
+      assert.equal(url.searchParams.get("uploadType"), "multipart");
+      assert.equal(url.searchParams.get("supportsAllDrives"), "true");
+      const contentType = init.headers["Content-Type"];
+      const boundary = contentType.match(/^multipart\/related; boundary=(.+)$/u)?.[1];
+      assert.ok(boundary);
+      assert.ok(init.body instanceof Blob);
+      const body = new TextDecoder().decode(await init.body.arrayBuffer());
+      assert.equal(body, [
+        `--${boundary}`,
+        "Content-Type: application/json; charset=UTF-8",
+        "",
+        JSON.stringify({
+          name: "Estimate Proposal",
+          mimeType: "application/vnd.google-apps.document",
+          parents: ["shared-drive-root"],
+          appProperties: { fciTemplateKey: "estimate-proposal" },
+        }),
+        `--${boundary}`,
+        "Content-Type: text/html",
+        "Content-Transfer-Encoding: binary",
+        "",
+        source,
+        `--${boundary}--`,
+        "",
+      ].join("\r\n"));
+      uploaded = true;
+      return Response.json(managedFile());
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+  const client = new GoogleDriveClient("test-token", config(), fetcher);
+
+  const first = await client.findOrUploadManagedFile({
+    parentId: "shared-drive-root",
+    name: "Estimate Proposal",
+    mimeType: "application/vnd.google-apps.document",
+    mediaMimeType: "text/html",
+    bytes,
+    appProperties: { fciTemplateKey: "estimate-proposal" },
+  });
+  assert.equal(first.created, true);
+  assert.equal(first.file.mimeType, "application/vnd.google-apps.document");
+
+  const second = await client.findOrUploadManagedFile({
+    parentId: "shared-drive-root",
+    name: "Estimate Proposal",
+    mimeType: "application/vnd.google-apps.document",
+    mediaMimeType: "text/html",
+    bytes,
+    appProperties: { fciTemplateKey: "estimate-proposal" },
+  });
+  assert.equal(second.created, false);
+  assert.equal(calls.filter((call) => call.url.pathname === "/upload/drive/v3/files").length, 1);
+  assert.equal(calls.filter((call) => call.method === "DELETE").length, 0);
+});
+
+test("managed file upload rejects a provider response that drops its stable appProperties identity", async () => {
+  const fetcher = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const method = init.method ?? "GET";
+    if (url.pathname === "/drive/v3/files" && method === "GET") return Response.json({ files: [] });
+    if (url.pathname === "/upload/drive/v3/files" && method === "POST") {
+      return Response.json({
+        id: "template-without-identity",
+        name: "Estimate Proposal",
+        mimeType: "application/vnd.google-apps.document",
+        parents: ["shared-drive-root"],
+        trashed: false,
+        appProperties: {},
+      });
+    }
+    throw new Error(`Unexpected request: ${method} ${url}`);
+  };
+  const client = new GoogleDriveClient("test-token", config(), fetcher);
+
+  await assert.rejects(
+    client.findOrUploadManagedFile({
+      parentId: "shared-drive-root",
+      name: "Estimate Proposal",
+      mimeType: "application/vnd.google-apps.document",
+      mediaMimeType: "text/html",
+      bytes: new TextEncoder().encode("<p>Estimate</p>"),
+      appProperties: { fciTemplateKey: "estimate-proposal" },
+    }),
+    (error) => error?.code === "drive_upload_invalid_response" && error?.status === 503,
+  );
 });

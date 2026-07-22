@@ -337,6 +337,7 @@ test("the checklist dashboard records the merged baseline and current review que
   assertMergedStatusHasNoReviewTerms("SET-13", set13Status);
   assert.equal(packetStatus(plan, "SET-15"), "Complete — PR #84, July 21, 2026. Source-only and undeployed.");
   assert.equal(packetStatus(plan, "SET-16"), "Complete — PR #88, July 21, 2026. Source-only and undeployed.");
+  assert.equal(packetStatus(plan, "SET-17"), "In review — draft PR #92, July 21, 2026. Source-only and undeployed.");
   assert.equal(packetStatus(plan, "SET-19"), "Complete — PR #83, July 21, 2026. Source-only and undeployed.");
   assert.equal(packetStatus(plan, "SET-28"), "Complete — PR #87, July 21, 2026. Source-only and undeployed; migration 0016 has not been applied to Sites.");
   assert.equal(packetStatus(plan, "BE-10"), "Complete — PR #82, July 21, 2026. Source-only and undeployed.");

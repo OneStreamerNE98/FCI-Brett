@@ -826,7 +826,7 @@ test("simulation reset removes the registry-backed resource and refreshes the Re
   await expect(directoryRow).toContainText("Simulated");
 });
 
-test("simulation Resources journey adopts Drive, ensures roots and spreadsheet roles, then renames an owner folder", async ({ page }) => {
+test("simulation Resources journey adopts Drive, ensures roots, spreadsheets, and templates, then renames an owner folder", async ({ page }) => {
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await page.unroute("**/api/v1/integrations/google/setup/blueprint");
   const blueprint = structuredClone(seedWorkspaceBlueprint()) as WorkspaceBlueprint;
@@ -871,6 +871,17 @@ test("simulation Resources journey adopts Drive, ensures roots and spreadsheet r
     source: "none",
     state: "Simulated",
   }));
+  const templateResources: WorkspaceResourcesPayload["resources"] = blueprint.templates.map((template) => ({
+    key: template.key,
+    resourceType: "drive.file",
+    label: template.kind === "sheet" ? "Spreadsheet template" : "Document template",
+    name: template.name,
+    blueprintName: template.name,
+    management: template.management,
+    parentKey: "templates",
+    source: "none",
+    state: "Simulated",
+  }));
   let resources: WorkspaceResourcesPayload["resources"] = [{
     key: "primary",
     resourceType: "drive.shared-drive",
@@ -881,7 +892,7 @@ test("simulation Resources journey adopts Drive, ensures roots and spreadsheet r
     parentKey: null,
     source: "none",
     state: "Simulated",
-  }, ...spreadsheetResources, ...folderResources];
+  }, ...spreadsheetResources, ...templateResources, ...folderResources];
   const payload = (): WorkspaceResourcesPayload => ({
     resources,
     connectReady: true,
@@ -943,6 +954,20 @@ test("simulation Resources journey adopts Drive, ensures roots and spreadsheet r
       body: JSON.stringify({ ensured: true, simulated: true, counts: { found: 0, created: spreadsheetResources.length, adopted: 0 } }),
     });
   });
+  await page.route("**/api/v1/integrations/google/drive/templates/ensure", async (route) => {
+    resources = resources.map((resource) => resource.resourceType === "drive.file" ? {
+      ...resource,
+      externalId: `workspace-simulation-template-${resource.key}`,
+      url: `/settings?section=google-workspace&workspace-simulation=template-${resource.key}`,
+      source: "app",
+      origin: "created",
+    } : resource);
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ ensured: true, simulated: true, counts: { found: 0, created: templateResources.length, adopted: 0 } }),
+    });
+  });
   await page.route("**/api/v1/integrations/google/drive/folders/rename", async (route) => {
     const body = route.request().postDataJSON() as { key: string; name: string };
     const updated = structuredClone(blueprintApi.current().blueprint) as WorkspaceBlueprint;
@@ -984,12 +1009,19 @@ test("simulation Resources journey adopts Drive, ensures roots and spreadsheet r
 
   await resourcesCard.getByRole("button", { name: "Ensure root folders" }).click();
   await resourcesCard.getByRole("button", { name: "Ensure spreadsheets" }).first().click();
+  await resourcesCard.getByRole("button", { name: "Ensure templates" }).first().click();
   const importRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "First-run Import" });
   const referenceRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "Project Ledger" });
   await expect(importRow).toContainText("App-managed");
   await expect(referenceRow).toContainText("App-managed");
   await expect(importRow.getByRole("link", { name: "Open" })).toBeVisible();
   await expect(referenceRow.getByRole("link", { name: "Open" })).toBeVisible();
+  const estimateTemplateRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "Estimate Proposal" });
+  const budgetTemplateRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "Project Budget" });
+  await expect(estimateTemplateRow).toContainText("App-managed");
+  await expect(budgetTemplateRow).toContainText("App-managed");
+  await expect(estimateTemplateRow.getByRole("link", { name: "Open" })).toBeVisible();
+  await expect(budgetTemplateRow.getByRole("link", { name: "Open" })).toBeVisible();
   const clientRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "01_Client Accounts" });
   await expect(clientRow.getByRole("button", { name: "Rename" })).toBeVisible();
   const collidingFolderRow = resourcesCard.locator(".workspace-resource-table tbody tr").filter({ hasText: "03_Primary Archive" });
