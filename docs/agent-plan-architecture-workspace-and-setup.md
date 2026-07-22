@@ -1363,6 +1363,33 @@ to today's pages for a user with no saved layout.
 in the single-file queue AFTER FIX-05 (shared sheet-status label mapper) merges;
 parallel-safe with the SET-29 series (no GoogleWorkspacePanel overlap).
 
+### SET-36 · Read-only "Who has access" card in Data & security (small, independent)
+**Why:** Owner request (July 22, 2026): the development gate's office/admin allowlists
+live only in hosted configuration, so nothing inside the app shows who is currently
+allowed in. A display-only card gives the owner that visibility without creating any
+edit surface. Context for maintainers: this card covers the DEVELOPMENT env-gate
+only; end-user access management for the Google-login era is already owned by
+People & Access (invitations + roles) and supersedes this card once live login
+lands — the card must say so.
+**Do:** Add a read-only "Who has access" card to the admin-only Data & security
+panel showing: the configured `FCI_OFFICE_EMAILS` list, `FCI_OFFICE_DOMAINS` list,
+and `FCI_ADMIN_EMAILS` list (names/emails only — these are identifiers, never
+secrets, keys, or tokens), an honest fail-closed empty state when unset ("Office
+access is not configured — the app denies everyone"), and a plain-words note that
+this list is maintained in hosting configuration and that live-login user
+management happens in People & Access. Server: a small admin-gated GET (or an
+extension of an existing admin settings read) — `requireOfficeUser(admin)`,
+`Cache-Control: no-store`, display-only; NO mutation surface of any kind. The card
+never renders for non-admins.
+**Accept:** non-admin request to the endpoint returns 403 and the card is absent
+from a non-admin's rendered settings (render-invariance); displayed values match
+the configured environment exactly incl. multi-value lists and the unset
+fail-closed state; grep-guard that the new endpoint contains no write/mutation
+handler; no-store asserted; the People & Access note text pinned.
+**Effort:** small. **Cost:** $0. **Sequencing:** touches `DataSecurityPanel.tsx` +
+one small route — independent of the FloorOpsApp queue and the SET-29 series;
+assignable anytime.
+
 ---
 
 # Workstream D — Flooring KPIs & reporting (KPI)
