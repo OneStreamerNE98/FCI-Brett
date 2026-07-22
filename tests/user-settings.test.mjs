@@ -7,6 +7,7 @@ import {
   normalizeUserNotificationPreferences,
   parseStoredUserNotificationPreferences,
 } from "../app/lib/user-settings.ts";
+import { defaultPageLayouts } from "../app/lib/page-layouts.ts";
 
 const ADMIN_EMAIL = "admin@cherryhillfci.com";
 const OFFICE_EMAIL = "office@cherryhillfci.com";
@@ -66,7 +67,8 @@ function fakeDatabase(initialRows = {}) {
               display_timezone: query.values[1],
               reply_signature: query.values[2],
               notification_preferences_json: query.values[3],
-              updated_at: query.values[4],
+              page_layouts_json: query.values[4],
+              updated_at: query.values[5],
             });
             return { meta: { changes: 1 } };
           }
@@ -105,6 +107,20 @@ function notificationPreferences(enabledKey) {
   return Object.fromEntries(Object.keys(defaultUserNotificationPreferences()).map((key) => [key, key === enabledKey]));
 }
 
+function pageLayouts(overviewFirst, overviewHidden, reportsFirst, reportsHidden) {
+  const defaults = defaultPageLayouts(false);
+  return {
+    overview: {
+      order: [overviewFirst, ...defaults.overview.order.filter((key) => key !== overviewFirst)],
+      hidden: [overviewHidden],
+    },
+    reports: {
+      order: [reportsFirst, ...defaults.reports.order.filter((key) => key !== reportsFirst)],
+      hidden: [reportsHidden],
+    },
+  };
+}
+
 test("keeps the per-user notification catalog closed and fails stored corruption to safe defaults", () => {
   const defaults = defaultUserNotificationPreferences();
   assert.deepEqual(defaults, {
@@ -131,11 +147,13 @@ test("GET and PATCH read and write only the authenticated identity row", async (
     displayTimezone: "America/Chicago",
     replySignature: "Admin signature",
     notificationPreferences: notificationPreferences("lead.created"),
+    pageLayouts: pageLayouts("scheduling", "gmail-project-inbox", "projects-by-status", "future-reports"),
   };
   const officePreferences = {
     displayTimezone: "America/Denver",
     replySignature: "Office signature",
     notificationPreferences: notificationPreferences("calendar.schedule_changed"),
+    pageLayouts: pageLayouts("active-projects", "scheduling", "business-kpis", "summary-metrics"),
   };
 
   const adminWrite = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", adminPreferences));
@@ -145,7 +163,9 @@ test("GET and PATCH read and write only the authenticated identity row", async (
 
   const officeBefore = await route.GET(routeRequest(OFFICE_EMAIL));
   assert.equal(officeBefore.status, 200);
-  assert.deepEqual((await officeBefore.json()).preferences.notificationPreferences, defaultUserNotificationPreferences());
+  const officeBeforeBody = await officeBefore.json();
+  assert.deepEqual(officeBeforeBody.preferences.notificationPreferences, defaultUserNotificationPreferences());
+  assert.deepEqual(officeBeforeBody.preferences.pageLayouts, defaultPageLayouts(false));
   assert.equal(database.queries.at(-1).values[0], OFFICE_EMAIL);
 
   const officeWrite = await route.PATCH(routeRequest(OFFICE_EMAIL, "PATCH", officePreferences));
@@ -153,18 +173,82 @@ test("GET and PATCH read and write only the authenticated identity row", async (
   assert.deepEqual((await officeWrite.json()).preferences, officePreferences);
   assert.equal(database.rows.size, 2);
 
-  const adminReadWithTargetQuery = await route.GET(routeRequest(ADMIN_EMAIL, "GET", undefined, `/api/v1/settings/me?userEmail=${encodeURIComponent(OFFICE_EMAIL)}`));
+  const [adminReadWithTargetQuery, officeRead] = await Promise.all([
+    route.GET(routeRequest(ADMIN_EMAIL, "GET", undefined, `/api/v1/settings/me?userEmail=${encodeURIComponent(OFFICE_EMAIL)}`)),
+    route.GET(routeRequest(OFFICE_EMAIL)),
+  ]);
   const adminBody = await adminReadWithTargetQuery.json();
   assert.equal(adminReadWithTargetQuery.status, 200);
   assert.deepEqual(adminBody.preferences, adminPreferences);
   assert.equal(adminBody.isAdmin, true);
-  assert.equal(database.queries.at(-1).values[0], ADMIN_EMAIL);
 
-  const officeRead = await route.GET(routeRequest(OFFICE_EMAIL));
   const officeBody = await officeRead.json();
   assert.equal(officeBody.isAdmin, false);
   assert.deepEqual(officeBody.preferences, officePreferences);
-  assert.equal(database.queries.at(-1).values[0], OFFICE_EMAIL);
+  assert.deepEqual(database.queries.slice(-2).map(({ values }) => values[0]).sort(), [ADMIN_EMAIL, OFFICE_EMAIL].sort());
+  assert.notEqual(database.rows.get(ADMIN_EMAIL).page_layouts_json, database.rows.get(OFFICE_EMAIL).page_layouts_json);
+});
+
+test("widens stale stored layouts and preserves them through unrelated partial updates", async () => {
+  const savedLayouts = {
+    overview: { order: ["scheduling", "stale-section", "metrics"], hidden: ["gmail-project-inbox", "stale-section"] },
+  };
+  const database = fakeDatabase({
+    [OFFICE_EMAIL]: {
+      display_timezone: "America/New_York",
+      reply_signature: "Before",
+      notification_preferences_json: JSON.stringify(notificationPreferences("lead.created")),
+      page_layouts_json: JSON.stringify(savedLayouts),
+      updated_at: 10,
+    },
+  });
+  setEnvironment(database);
+
+  const before = await route.GET(routeRequest(OFFICE_EMAIL));
+  const beforeBody = await before.json();
+  assert.deepEqual(beforeBody.preferences.pageLayouts.overview, {
+    order: ["scheduling", "metrics", "lead-pipeline", "active-projects", "gmail-project-inbox"],
+    hidden: ["gmail-project-inbox"],
+  });
+  assert.deepEqual(beforeBody.preferences.pageLayouts.reports, defaultPageLayouts(false).reports);
+
+  const update = await route.PATCH(routeRequest(OFFICE_EMAIL, "PATCH", { replySignature: "After" }));
+  assert.equal(update.status, 200);
+  const updatedPreferences = (await update.json()).preferences;
+  assert.equal(updatedPreferences.replySignature, "After");
+  assert.deepEqual(updatedPreferences.pageLayouts, beforeBody.preferences.pageLayouts);
+  assert.deepEqual(JSON.parse(database.rows.get(OFFICE_EMAIL).page_layouts_json).overview, beforeBody.preferences.pageLayouts.overview);
+});
+
+test("page-layout-only PATCH preserves every existing SET-28 preference", async () => {
+  const notificationPreferences = {
+    "lead.created": true,
+    "gmail.filing_review_needed": false,
+    "calendar.schedule_changed": true,
+    "project.warranty_follow_up_due": false,
+  };
+  const database = fakeDatabase({
+    [OFFICE_EMAIL]: {
+      display_timezone: "America/Los_Angeles",
+      reply_signature: "Keep this signature exactly.",
+      notification_preferences_json: JSON.stringify(notificationPreferences),
+      page_layouts_json: JSON.stringify(defaultPageLayouts(false)),
+      updated_at: 10,
+    },
+  });
+  setEnvironment(database);
+  const nextLayouts = pageLayouts("scheduling", "gmail-project-inbox", "projects-by-status", "future-reports");
+
+  const update = await route.PATCH(routeRequest(OFFICE_EMAIL, "PATCH", { pageLayouts: nextLayouts }));
+  assert.equal(update.status, 200);
+  const preferences = (await update.json()).preferences;
+  assert.equal(preferences.displayTimezone, "America/Los_Angeles");
+  assert.equal(preferences.replySignature, "Keep this signature exactly.");
+  assert.deepEqual(preferences.notificationPreferences, notificationPreferences);
+  assert.deepEqual(preferences.pageLayouts, nextLayouts);
+  assert.equal(database.rows.get(OFFICE_EMAIL).display_timezone, "America/Los_Angeles");
+  assert.equal(database.rows.get(OFFICE_EMAIL).reply_signature, "Keep this signature exactly.");
+  assert.equal(database.rows.get(OFFICE_EMAIL).notification_preferences_json, JSON.stringify(notificationPreferences));
 });
 
 test("rejects target-identity injection, malformed preferences, cross-origin writes, and unauthenticated access before persistence", async () => {
@@ -182,6 +266,12 @@ test("rejects target-identity injection, malformed preferences, cross-origin wri
 
   const incompleteCatalog = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", { notificationPreferences: { "lead.created": true } }));
   assert.equal(incompleteCatalog.status, 400);
+  assert.equal(database.queries.filter(({ operation }) => operation === "run").length, 0);
+
+  const unknownLayout = defaultPageLayouts(true);
+  unknownLayout.overview.order = ["invented", ...unknownLayout.overview.order];
+  const unknownSection = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", { pageLayouts: unknownLayout }));
+  assert.equal(unknownSection.status, 400);
   assert.equal(database.queries.filter(({ operation }) => operation === "run").length, 0);
 
   const crossOrigin = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", validPreferences, "/api/v1/settings/me", "https://fci.example.test", "https://outside.example.test"));

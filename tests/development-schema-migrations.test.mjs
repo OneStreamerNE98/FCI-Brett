@@ -20,6 +20,7 @@ const integrityIndexMigration = "0011_lazy_big_bertha.sql";
 const workspaceResourceMigrationPrefix = "0013_";
 const workspaceBlueprintMigrationPrefix = "0015_";
 const userSettingsMigrationPrefix = "0016_";
+const pageLayoutsMigrationPrefix = "0017_";
 
 const requiredDevelopmentIndexes = [
   "clients_code_unique_idx",
@@ -225,11 +226,48 @@ test("keeps SET-28 per-user notification preferences in additive migration 0016"
     autoincrement: false,
     default: "'{\"lead.created\":false,\"gmail.filing_review_needed\":false,\"calendar.schedule_changed\":false,\"project.warranty_follow_up_due\":false}'",
   });
-  assert.deepEqual(journal.entries.at(-1), {
+  const journalEntry = journal.entries.find(({ tag }) => tag === "0016_melted_goblin_queen");
+  assert.deepEqual(journalEntry, {
     idx: 16,
     version: "6",
-    when: journal.entries.at(-1).when,
+    when: journalEntry.when,
     tag: "0016_melted_goblin_queen",
+    breakpoints: true,
+  });
+});
+
+test("keeps SET-35 per-user page layouts in the current additive migration", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(pageLayoutsMigrationPrefix));
+  assert.equal(migration, "0017_sleepy_natasha_romanoff.sql");
+  assert.equal(files.filter((file) => file.startsWith(pageLayoutsMigrationPrefix)).length, 1);
+
+  const [migrationSql, schemaSource, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(root, "db", "schema.ts"), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0016_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0017_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+
+  assert.match(migrationSql, /^ALTER TABLE `user_preferences` ADD `page_layouts_json` text DEFAULT '\{\}' NOT NULL;\s*$/u);
+  assert.doesNotMatch(migrationSql, /\b(?:DROP|UPDATE|INSERT|DELETE|TRUNCATE|RENAME)\b/iu);
+  assert.match(schemaSource, /pageLayoutsJson: text\("page_layouts_json"\)\.notNull\(\)\.default\("\{\}"\)/u);
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.deepEqual(Object.keys(snapshot.tables).sort(), Object.keys(previousSnapshot.tables).sort());
+  assert.deepEqual(snapshot.tables.user_preferences.columns.page_layouts_json, {
+    name: "page_layouts_json",
+    type: "text",
+    primaryKey: false,
+    notNull: true,
+    autoincrement: false,
+    default: "'{}'",
+  });
+  assert.deepEqual(journal.entries.at(-1), {
+    idx: 17,
+    version: "6",
+    when: journal.entries.at(-1).when,
+    tag: "0017_sleepy_natasha_romanoff",
     breakpoints: true,
   });
 });

@@ -244,19 +244,24 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
 });
 
 test("keeps My settings scoped to the authenticated office user and honest about planned consumers", async () => {
-  const [schema, preferencesApi, app, mySettings, notificationCatalog] = await Promise.all([
+  const [schema, preferencesApi, app, mySettings, notificationCatalog, pageLayouts, layoutEditor] = await Promise.all([
     read("db/schema.ts"), read("app/api/v1/settings/me/route.ts"), readAppSurface(),
     read("app/settings/components/MySettingsPanel.tsx"), read("app/lib/user-settings.ts"),
+    read("app/lib/page-layouts.ts"), read("app/components/operations/PageLayoutEditor.tsx"),
   ]);
   assert.match(schema, /export const userPreferences = sqliteTable\("user_preferences"/);
   assert.match(schema, /userEmail: text\("user_email"\)\.primaryKey\(\)/);
   assert.match(schema, /notificationPreferencesJson: text\("notification_preferences_json"\)/);
+  assert.match(schema, /pageLayoutsJson: text\("page_layouts_json"\)/);
   assert.match(preferencesApi, /requireOfficeUser\(request\)/);
   assert.match(preferencesApi, /requireSameOrigin\(request\)/);
   assert.match(preferencesApi, /WHERE user_email = \?/);
   assert.match(preferencesApi, /auth\.user\.email/);
   assert.match(preferencesApi, /notification_preferences_json/);
   assert.match(preferencesApi, /normalizeUserNotificationPreferences/);
+  assert.match(preferencesApi, /normalizePageLayoutsForWrite/);
+  assert.match(preferencesApi, /page_layouts_json/);
+  assert.match(preferencesApi, /PREFERENCE_KEYS[^\n]+pageLayouts/);
   assert.match(preferencesApi, /displayTimezone/);
   assert.match(preferencesApi, /replySignature/);
   assert.doesNotMatch(preferencesApi, /display_name|displayName/);
@@ -272,6 +277,16 @@ test("keeps My settings scoped to the authenticated office user and honest about
   assert.match(notificationCatalog, /"gmail\.filing_review_needed"/);
   assert.match(notificationCatalog, /"calendar\.schedule_changed"/);
   assert.match(notificationCatalog, /"project\.warranty_follow_up_due"/);
+  assert.match(pageLayouts, /PAGE_LAYOUT_SECTION_CATALOG/);
+  assert.match(pageLayouts, /normalizePageLayoutsForRead/);
+  assert.match(pageLayouts, /normalizePageLayoutsForWrite/);
+  assert.match(layoutEditor, /draggable/);
+  assert.match(layoutEditor, /Move up/);
+  assert.match(layoutEditor, /Move down/);
+  assert.match(layoutEditor, /Reset to default/);
+  assert.match(layoutEditor, /Add section/);
+  assert.match(app, /<PageLayoutEditor page="overview"/);
+  assert.match(app, /<PageLayoutEditor page="reports"/);
 });
 
 test("makes company shared calendars authoritative without a personal-calendar mode", async () => {

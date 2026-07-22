@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { Activity, BriefcaseBusiness, CheckCircle2, ChevronRight, Clock3, RefreshCw, ShieldCheck, Zap, type LucideIcon } from "lucide-react";
 import { operationsHref } from "../../lib/operations-routes";
@@ -6,7 +6,6 @@ import {
   calculateFlooringKpis,
   FINANCIAL_RESTRICTION_LABEL,
   FLOORING_KPI_TIME_ZONE,
-  monthKeyForTimestamp,
   type FlooringKpiLead,
   type FlooringKpiProject,
 } from "./flooring-kpis";
@@ -16,6 +15,8 @@ type BusinessKpisPanelProps = {
   projects: readonly FlooringKpiProject[];
   isAdmin: boolean;
   state: "loading" | "ready" | "error";
+  selectedMonth: string;
+  onSelectedMonthChange: (month: string) => void;
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -52,8 +53,7 @@ function unavailableNote(state: BusinessKpisPanelProps["state"]) {
   return state === "loading" ? "Loading current records" : "Unavailable until live records load";
 }
 
-export function BusinessKpisPanel({ leads, projects, isAdmin, state }: BusinessKpisPanelProps) {
-  const [selectedMonth, setSelectedMonth] = useState(() => monthKeyForTimestamp(Date.now()) ?? new Date().toISOString().slice(0, 7));
+export function BusinessKpisPanel({ leads, projects, isAdmin, state, selectedMonth, onSelectedMonthChange }: BusinessKpisPanelProps) {
   const kpis = useMemo(() => calculateFlooringKpis(leads, projects, selectedMonth), [leads, projects, selectedMonth]);
   const ready = state === "ready";
   const selectedMonthLabel = monthLabel(selectedMonth);
@@ -64,7 +64,7 @@ export function BusinessKpisPanel({ leads, projects, isAdmin, state }: BusinessK
   return <section className="panel business-kpis" aria-labelledby="business-kpis-title">
     <header className="business-kpis-header">
       <div><p className="eyebrow">Flooring scorecard</p><h2 id="business-kpis-title">Business KPIs</h2><span>Core outcomes plus booking, installation-cycle, and callback measures.</span></div>
-      <label htmlFor="business-kpi-month">Reporting month<input id="business-kpi-month" type="month" value={selectedMonth} onChange={(event) => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) setSelectedMonth(event.target.value); }} /></label>
+      <label htmlFor="business-kpi-month">Reporting month<input id="business-kpi-month" type="month" value={selectedMonth} onChange={(event) => { if (/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) onSelectedMonthChange(event.target.value); }} /></label>
     </header>
     <p className="business-kpis-scope"><Clock3 size={15} aria-hidden="true" />Month selection applies to booked value, product mix, revenue per square foot, estimate accuracy, completed jobs, install cycle, and callback rate. All month boundaries use the FCI business timezone ({FLOORING_KPI_TIME_ZONE}).</p>
     <div className="business-kpi-grid" aria-live="polite">

@@ -1,0 +1,1 @@
+ALTER TABLE `user_preferences` ADD `page_layouts_json` text DEFAULT '{}' NOT NULL;

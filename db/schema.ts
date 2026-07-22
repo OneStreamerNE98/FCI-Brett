@@ -163,6 +163,7 @@ export const userPreferences = sqliteTable("user_preferences", {
   displayTimezone: text("display_timezone").notNull(),
   replySignature: text("reply_signature").notNull().default(""),
   notificationPreferencesJson: text("notification_preferences_json").notNull().default('{"lead.created":false,"gmail.filing_review_needed":false,"calendar.schedule_changed":false,"project.warranty_follow_up_due":false}'),
+  pageLayoutsJson: text("page_layouts_json").notNull().default("{}"),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 

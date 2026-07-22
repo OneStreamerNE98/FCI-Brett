@@ -33,7 +33,8 @@ test("exposes the authenticated user's Administrator flag through the shared acc
   ]);
 
   assert.match(accountRoute, /isAdmin: auth\.user\.isAdmin/);
-  assert.match(app, /cachedGetJson<\{ preferences\?: \{ displayTimezone\?: unknown \}; isAdmin\?: unknown \}>\("\/api\/v1\/settings\/me"\)/);
+  assert.match(app, /cachedGetJson<[^;]+>\("\/api\/v1\/settings\/me"\)/);
+  assert.match(app, /pageLayouts\?: unknown/);
   assert.match(myAccount, /cachedGetJson[^\n]+\("\/api\/v1\/settings\/me"/);
   assert.match(myAccount, /fetch\("\/api\/v1\/settings\/me", \{[\s\S]+method: "PATCH"/);
   assert.match(cache, /if \(!options\.force && existing\?\.inFlight\) return existing\.inFlight/);

@@ -1329,6 +1329,8 @@ mode/connection readouts in the panel.
 **Effort:** small. **Cost:** $0.
 
 ### SET-35 · Per-user page layouts: Overview & Reports reorder + show/hide (medium, after SET-28 and FIX-05; FloorOpsApp queue) — OWNER PRIORITY (July 22)
+**Status:** In progress — `codex/set35-page-layouts`, July 22, 2026.
+
 **Why:** Owner requirement (July 22, 2026, scope confirmed): each user personalizes
 their own Overview and Reports pages — reorder sections and show/hide them — with a
 deliberately simple UI. One shared mechanism for both pages; per-user, riding the
