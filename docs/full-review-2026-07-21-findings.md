@@ -234,7 +234,7 @@ drive/verify.
 **Effort:** small-medium. **Cost:** $0.
 
 ### FIX-04 · Test-infrastructure repairs: CI double-run, guard sustainability, flake hygiene (P2s F-9/F-10 + e2e P3s; small-medium)
-**Status:** In review — PR #103, July 22, 2026. Source-only and undeployed.
+**Status:** Complete — PR #103, July 22, 2026. Source-only and undeployed.
 **Why:** CI wastes a full duplicate pipeline per codex/** push; the tracking guard
 breaks on routine additions; retries mask flakes; two suites gate on the wrong
 signal.
