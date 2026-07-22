@@ -16,13 +16,22 @@ import { AccessibleOverlay } from "./components/AccessibleOverlay";
 import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
 import { Avatar, Metric, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
 import { OperationsActionableList, OperationsActionableListItem } from "./components/operations/OperationsActionableList";
+import { PageLayoutEditor } from "./components/operations/PageLayoutEditor";
 import { ActiveRouteFilter } from "./features/reports/ActiveRouteFilter";
 import { BusinessKpisPanel } from "./features/reports/BusinessKpisPanel";
-import { FINANCIAL_RESTRICTION_LABEL, FLOORING_KPI_TIME_ZONE } from "./features/reports/flooring-kpis";
+import { FINANCIAL_RESTRICTION_LABEL, FLOORING_KPI_TIME_ZONE, monthKeyForTimestamp } from "./features/reports/flooring-kpis";
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
 import { JobSiteMapCard } from "./features/maps/JobSiteMapCard";
 import { normalizeJobSiteLocation, type JobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
-import { cachedGetJson } from "./lib/client-get-cache";
+import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
+import {
+  defaultPageLayouts,
+  isDefaultPageLayout,
+  normalizePageLayoutsForRead,
+  type PageLayout,
+  type PageLayoutPage,
+  type PageLayouts,
+} from "./lib/page-layouts";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "./lib/sheet-mirror-status";
 import {
   canonicalOperationsSearch,
@@ -235,6 +244,10 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [sheetSyncing, setSheetSyncing] = useState(false);
   const [displayTimezone, setDisplayTimezone] = useState("America/New_York");
   const [isAdmin, setIsAdmin] = useState(accessLabel === "Admin");
+  const [pageLayouts, setPageLayouts] = useState<PageLayouts>(() => defaultPageLayouts(accessLabel === "Admin"));
+  const [pageLayoutsReady, setPageLayoutsReady] = useState(false);
+  const [pageLayoutsError, setPageLayoutsError] = useState("");
+  const pageLayoutsLoadIdRef = useRef(0);
   const mobileNavigationRef = useRef<HTMLElement>(null);
   const mobileNavigationCloseRef = useRef<HTMLButtonElement>(null);
   const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null);
@@ -337,16 +350,53 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   }, [refreshDirectoryData]);
 
   useEffect(() => {
-    let active = true;
-    void cachedGetJson<{ preferences?: { displayTimezone?: unknown }; isAdmin?: unknown }>("/api/v1/settings/me")
+    const loadId = ++pageLayoutsLoadIdRef.current;
+    void cachedGetJson<{ preferences?: { displayTimezone?: unknown; pageLayouts?: unknown }; isAdmin?: unknown }>("/api/v1/settings/me")
       .then((data) => {
+        if (loadId !== pageLayoutsLoadIdRef.current) return;
         const timezone = data?.preferences?.displayTimezone;
-        if (active && typeof timezone === "string") setDisplayTimezone(timezone);
-        if (active && typeof data?.isAdmin === "boolean") setIsAdmin(data.isAdmin);
+        const nextIsAdmin = typeof data?.isAdmin === "boolean" ? data.isAdmin : accessLabel === "Admin";
+        if (typeof timezone === "string") setDisplayTimezone(timezone);
+        setIsAdmin(nextIsAdmin);
+        setPageLayouts(normalizePageLayoutsForRead(data?.preferences?.pageLayouts, nextIsAdmin));
+        setPageLayoutsReady(true);
       })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, []);
+      .catch(() => {
+        if (loadId === pageLayoutsLoadIdRef.current) setPageLayoutsError("Your saved layout could not be loaded. Retry before editing.");
+      });
+    return () => { pageLayoutsLoadIdRef.current += 1; };
+  }, [accessLabel]);
+
+  const retryPageLayouts = useCallback(async () => {
+    const loadId = ++pageLayoutsLoadIdRef.current;
+    setPageLayoutsReady(false);
+    setPageLayoutsError("");
+    try {
+      const data = await cachedGetJson<{ preferences?: { displayTimezone?: unknown; pageLayouts?: unknown }; isAdmin?: unknown }>("/api/v1/settings/me", { force: true });
+      if (loadId !== pageLayoutsLoadIdRef.current) return;
+      const timezone = data?.preferences?.displayTimezone;
+      const nextIsAdmin = typeof data?.isAdmin === "boolean" ? data.isAdmin : accessLabel === "Admin";
+      if (typeof timezone === "string") setDisplayTimezone(timezone);
+      setIsAdmin(nextIsAdmin);
+      setPageLayouts(normalizePageLayoutsForRead(data?.preferences?.pageLayouts, nextIsAdmin));
+      setPageLayoutsReady(true);
+    } catch {
+      if (loadId === pageLayoutsLoadIdRef.current) setPageLayoutsError("Your saved layout could not be loaded. Retry before editing.");
+    }
+  }, [accessLabel]);
+
+  const savePageLayout = useCallback(async (page: PageLayoutPage, layout: PageLayout) => {
+    const nextPageLayouts = { ...pageLayouts, [page]: layout };
+    const response = await fetch("/api/v1/settings/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pageLayouts: nextPageLayouts }),
+    });
+    const data = await response.json().catch(() => ({})) as { preferences?: { pageLayouts?: unknown }; error?: string };
+    if (!response.ok) throw new Error(data.error ?? `The ${page === "overview" ? "Overview" : "Reports"} layout could not be saved.`);
+    invalidateCachedGet("/api/v1/settings/me");
+    setPageLayouts(normalizePageLayoutsForRead(data.preferences?.pageLayouts ?? nextPageLayouts, isAdmin));
+  }, [isAdmin, pageLayouts]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 820px)");
@@ -984,14 +1034,14 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         <div className="page-wrap">
           {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
           <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData()} />
-          {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} onView={navigateToView} onProject={openProject} onLead={openLead} />}
+          {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
           {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal(true)} onAdvance={advanceLead} onLead={openLead} />}
           {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
           {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
           {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
           {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
-          {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} />}
+          {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.reports} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("reports", layout)} />}
           {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
         </div>
       </main>
@@ -1018,7 +1068,7 @@ function LiveDataBanner({ state, error, onRetry }: { state: LiveDataState; error
   return <section className="schedule-alert" role="alert"><CircleAlert size={19} /><div><strong>Live records could not be loaded</strong><span>{error}</span></div><button onClick={onRetry}>Try again</button></section>;
 }
 
-function Overview({ firstName, timezone, leads, projects, dashboard, state, onView, onProject, onLead }: { firstName: string | null; timezone: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; onView: (v: OperationsView) => void; onProject: (p: Project) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
+function Overview({ firstName, timezone, leads, projects, dashboard, state, isAdmin, layout, layoutReady, layoutError, onRetryLayout, onSaveLayout, onView, onProject, onLead }: { firstName: string | null; timezone: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; isAdmin: boolean; layout: PageLayout; layoutReady: boolean; layoutError: string; onRetryLayout: () => void; onSaveLayout: (layout: PageLayout) => Promise<void>; onView: (v: OperationsView) => void; onProject: (p: Project) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
   const [currentTime, setCurrentTime] = useState<number | null>(null);
   useEffect(() => {
     const initialClock = window.requestAnimationFrame(() => setCurrentTime(Date.now()));
@@ -1033,16 +1083,14 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, onVi
   const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
   const activeProjects = projects.filter(isActiveProject);
   const recordsReady = state === "ready";
-  return <>
-    <div className="page-heading"><div><div className="page-title-kicker"><p className="eyebrow">{dateLabel}</p><FeatureStateBadge state="Working" /></div><h1>{greeting}{firstName ? `, ${firstName}` : ""}.</h1><p>{recordsReady ? "Here’s the latest from your operations workspace." : "Connecting to your operations workspace."}</p></div><button className="soft-button" onClick={() => onView("Schedule")}><CalendarDays size={16} /> View scheduling status</button></div>
-    <section className="metrics-grid">
+  const sectionNodes = {
+    metrics: <section className="metrics-grid">
       <Metric label="Active pipeline" value={recordsReady ? money(metrics?.estimatedPipelineValue ?? 0) : "—"} note={recordsReady ? `${metrics?.activeLeads ?? activeLeads.length} open opportunities` : "Loading current totals"} trend="Current" icon={Zap} color="orange" />
       <Metric label="Active projects" value={recordsReady ? String(metrics?.activeProjects ?? activeProjects.length) : "—"} note={recordsReady ? "Projects currently in progress" : "Loading current totals"} trend="Current" icon={HardHat} color="green" />
       <Metric label="Project meetings" value={recordsReady ? String(metrics?.meetingCount ?? 0) : "—"} note={recordsReady ? "Meeting notes saved" : "Loading current totals"} trend="Current" icon={MessageSquareText} color="blue" />
       <Metric label="Filed emails" value={recordsReady ? String(metrics?.filedEmailCount ?? 0) : "—"} note={recordsReady ? "Emails filed to projects" : "Loading current totals"} trend="Current" icon={Mail} color="violet" />
-    </section>
-    <section className="dashboard-grid">
-      <div className="panel pipeline-panel">
+    </section>,
+    "lead-pipeline": <div className="panel pipeline-panel">
         <PanelHeader title="Lead pipeline" subtitle={`${activeLeads.length} active records`} action="View all" onAction={() => onView("Leads")} />
         {activeLeads.length > 0 ? <OperationsActionableList ariaLabel="Lead pipeline records" columns={PIPELINE_ACTIONABLE_COLUMNS} headerClassName="pipeline-head">
           {activeLeads.slice(0, 4).map((lead) => <OperationsActionableListItem
@@ -1058,17 +1106,29 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, onVi
             <span className="next-cell"><Clock3 size={14} aria-hidden="true" />{lead.next}</span>
           </OperationsActionableListItem>)}
         </OperationsActionableList> : state === "ready" ? <div className="empty-table">No active leads yet. Add the first opportunity to begin the live pipeline.</div> : null}
-      </div>
-      <div className="panel schedule-panel">
+      </div>,
+    scheduling: <div className="panel schedule-panel">
         <PanelHeader title="Scheduling" subtitle="Planned" action="View status" onAction={() => onView("Schedule")} />
         <div className="dashboard-inbox-empty"><CalendarDays size={20} /><div><strong>Scheduling is planned for a later milestone</strong><p>{dashboard?.readiness.scheduleReason ?? "Workers, crews, shifts, conflicts, and acknowledgements will appear here after the scheduling foundation is approved."}</p></div></div>
-      </div>
-    </section>
-    <section className="dashboard-grid lower-grid">
-      <div className="panel projects-panel"><PanelHeader title="Active projects" subtitle={`${activeProjects.length} active`} action="View projects" onAction={() => onView("Projects")} /><div className="project-cards">{activeProjects.slice(0, 6).map((project) => <button className="project-card" key={project.number} onClick={() => onProject(project)}><div className="project-card-top"><Status text={project.status} /><ChevronRight size={17} aria-hidden="true" /></div><span className="project-number">{project.number}</span><h3>{project.name}</h3><p>{project.client}</p><div className="project-meta"><span><MapPin size={13} />{project.site}</span><span>{project.value}</span></div></button>)}{activeProjects.length === 0 && state === "ready" ? <div className="empty-table">No active projects. Completed, cancelled, and archived work remains available on the Projects page.</div> : null}</div></div>
-      <div className="panel inbox-panel"><PanelHeader title="Gmail project inbox" subtitle="Google Workspace Gmail" action="Open inbox" onAction={() => onView("Inbox")} /><div className="dashboard-inbox-empty"><Mail size={20} /><div><strong>Review every message before filing</strong><p>Select the exact project and approve the copy before anything is saved to Drive.</p></div></div><button className="inbox-cta" onClick={() => onView("Inbox")}><Mail size={15} /> Open Gmail project inbox</button></div>
-    </section>
-  </>;
+      </div>,
+    "active-projects": <div className="panel projects-panel"><PanelHeader title="Active projects" subtitle={`${activeProjects.length} active`} action="View projects" onAction={() => onView("Projects")} /><div className="project-cards">{activeProjects.slice(0, 6).map((project) => <button className="project-card" key={project.number} onClick={() => onProject(project)}><div className="project-card-top"><Status text={project.status} /><ChevronRight size={17} aria-hidden="true" /></div><span className="project-number">{project.number}</span><h3>{project.name}</h3><p>{project.client}</p><div className="project-meta"><span><MapPin size={13} />{project.site}</span><span>{project.value}</span></div></button>)}{activeProjects.length === 0 && state === "ready" ? <div className="empty-table">No active projects. Completed, cancelled, and archived work remains available on the Projects page.</div> : null}</div></div>,
+    "gmail-project-inbox": <div className="panel inbox-panel"><PanelHeader title="Gmail project inbox" subtitle="Google Workspace Gmail" action="Open inbox" onAction={() => onView("Inbox")} /><div className="dashboard-inbox-empty"><Mail size={20} /><div><strong>Review every message before filing</strong><p>Select the exact project and approve the copy before anything is saved to Drive.</p></div></div><button className="inbox-cta" onClick={() => onView("Inbox")}><Mail size={15} /> Open Gmail project inbox</button></div>,
+  } as const;
+
+  return <PageLayoutEditor page="overview" layout={layout} isAdmin={isAdmin} enabled={layoutReady} loadError={layoutError} onRetry={onRetryLayout} onSave={onSaveLayout}>{({ layout: activeLayout, editing, editButton, editor, endDropZone, section }) => {
+    const visibleKeys = activeLayout.order.filter((key) => !activeLayout.hidden.includes(key) && key in sectionNodes) as Array<keyof typeof sectionNodes>;
+    const defaultSections = <>
+      {sectionNodes.metrics}
+      <section className="dashboard-grid">{sectionNodes["lead-pipeline"]}{sectionNodes.scheduling}</section>
+      <section className="dashboard-grid lower-grid">{sectionNodes["active-projects"]}{sectionNodes["gmail-project-inbox"]}</section>
+    </>;
+    const arrangedSections = <><div className="page-layout-grid page-layout-grid-overview">{visibleKeys.map((key) => <div className={key === "metrics" ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
+    return <>
+      <div className="page-heading"><div><div className="page-title-kicker"><p className="eyebrow">{dateLabel}</p><FeatureStateBadge state="Working" /></div><h1>{greeting}{firstName ? `, ${firstName}` : ""}.</h1><p>{recordsReady ? "Here’s the latest from your operations workspace." : "Connecting to your operations workspace."}</p></div><div className="title-actions"><button className="soft-button" onClick={() => onView("Schedule")}><CalendarDays size={16} /> View scheduling status</button>{editButton}</div></div>
+      {editor}
+      {!editing && isDefaultPageLayout(activeLayout, "overview", isAdmin) ? defaultSections : arrangedSections}
+    </>;
+  }}</PageLayoutEditor>;
 }
 
 function LeadsView({ leads, state, filter, onAdd, onAdvance, onLead }: { leads: Lead[]; state: LiveDataState; filter: LeadStageFilter | null; onAdd: () => void; onAdvance: (id: string) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
@@ -1421,7 +1481,8 @@ function ReportBarRow({ label, measure, width, href, accessibleName, focusId, de
   return <li>{href && accessibleName && focusId && destinationFocusKey ? <Link id={focusId} className="bar-chart-row actionable" href={href} aria-label={accessibleName} onClick={() => rememberReportReturnFocus(focusId, destinationFocusKey)}>{content}</Link> : <div className="bar-chart-row">{content}</div>}</li>;
 }
 
-function ReportsView({ leads, projects, clients, dashboard, state, isAdmin }: { leads: Lead[]; projects: Project[]; clients: Client[]; dashboard: DashboardSummary | null; state: LiveDataState; isAdmin: boolean }) {
+function ReportsView({ leads, projects, clients, dashboard, state, isAdmin, layout, layoutReady, layoutError, onRetryLayout, onSaveLayout }: { leads: Lead[]; projects: Project[]; clients: Client[]; dashboard: DashboardSummary | null; state: LiveDataState; isAdmin: boolean; layout: PageLayout; layoutReady: boolean; layoutError: string; onRetryLayout: () => void; onSaveLayout: (layout: PageLayout) => Promise<void> }) {
+  const [selectedMonth, setSelectedMonth] = useState(() => monthKeyForTimestamp(Date.now()) ?? new Date().toISOString().slice(0, 7));
   const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
   const standardStageValues = LEAD_STAGE_FILTERS.filter((filter) => filter !== "other").map((filter) => {
     const stage = LEAD_STAGE_LABELS[filter];
@@ -1442,6 +1503,7 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin }: { 
   const activeProjectCount = metrics?.activeProjects ?? projects.filter(isActiveProject).length;
 
   useEffect(() => {
+    if (!layoutReady) return;
     const currentHistoryState = window.history.state as Record<string, unknown> | null;
     const returnFocusId = typeof currentHistoryState?.[reportsReturnFocusHistoryKey] === "string"
       ? currentHistoryState[reportsReturnFocusHistoryKey]
@@ -1457,18 +1519,32 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin }: { 
       clearReportReturnFocusFromCurrentHistoryEntry();
     });
     return () => window.cancelAnimationFrame(focusFrame);
-  }, [activeLeads.length, projectStatuses.length, state]);
+  }, [activeLeads.length, layoutReady, projectStatuses.length, state]);
 
-  return <>
-    <PageTitle eyebrow="Business performance" title="Reports" text="Current totals from saved leads, clients, projects, and meeting notes." state="Working" />
-    <section className="metrics-grid"><Metric label="Pipeline value" value={state !== "ready" ? "—" : isAdmin ? money(metrics?.estimatedPipelineValue ?? 0) : FINANCIAL_RESTRICTION_LABEL} note={state !== "ready" ? "Loading current totals" : isAdmin ? `${metrics?.activeLeads ?? activeLeads.length} active leads` : "Financial totals are restricted"} icon={Zap} color="orange" /><Metric label="Active projects" value={state === "ready" ? String(activeProjectCount) : "—"} note={state === "ready" ? `${activeProjectCount} of ${projects.length} project records active` : "Loading current totals"} icon={BriefcaseBusiness} color="green" /><Metric label="Clients" value={state === "ready" ? String(metrics?.clientCount ?? clients.length) : "—"} note={state === "ready" ? "Client accounts" : "Loading current totals"} icon={Users} color="blue" /><Metric label="Project meetings" value={state === "ready" ? String(metrics?.meetingCount ?? 0) : "—"} note={state === "ready" ? "Meeting notes saved" : "Loading current totals"} icon={MessageSquareText} color="violet" /></section>
-    <BusinessKpisPanel leads={leads} projects={projects} isAdmin={isAdmin} state={state} />
-    <div className="reports-grid">
-      <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle={isAdmin ? "Estimated value" : "Lead count · financial values restricted"} />{activeLeads.length > 0 ? <ul className="bar-chart" aria-label="Pipeline stages">{stageValues.map((item) => { const href = item.count > 0 ? operationsHref("Leads", { leadStage: item.filter }) : undefined; const focusId = href ? `report-lead-${item.filter}` : undefined; const measure = isAdmin ? money(item.value) : String(item.count); return <ReportBarRow key={item.stage} label={item.stage} measure={measure} width={Math.round(((isAdmin ? item.value : item.count) / maximumStageMeasure) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `lead:${item.filter}` : undefined} accessibleName={href ? `View ${item.stage} leads — ${item.count} active ${item.count === 1 ? "lead" : "leads"}${isAdmin ? `, ${money(item.value)} estimated value` : ""}` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No active leads are available for this report.</div> : null}</section>
-      <section className="panel report-chart"><PanelHeader title="Projects by status" subtitle={`${projects.length} records`} />{projectStatuses.length > 0 ? <ul className="bar-chart" aria-label="Project lifecycle statuses">{projectStatuses.map((item) => { const lifecycle = projectLifecycleFilter(item.status); const href = lifecycle && item.count > 0 ? operationsHref("Projects", { projectLifecycle: lifecycle }) : undefined; const label = displayStatus(item.status, "Unknown"); const focusId = href ? `report-project-${lifecycle}` : undefined; return <ReportBarRow key={item.status} label={label} measure={String(item.count)} width={Math.round((item.count / maximumProjectCount) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `project:${lifecycle}` : undefined} accessibleName={href ? `View ${label} projects — ${item.count} ${item.count === 1 ? "project" : "projects"}` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No project status data is available yet.</div> : null}</section>
-    </div>
-    <section className="client-directory-banner"><div className="directory-badge"><Activity size={20} /></div><div><strong>More reports will appear as additional workflows go live</strong><span>Margin, product mix, installation-cycle timing, customer reviews, and crew utilization require source records that are not available yet.</span></div></section>
-  </>;
+  const sectionNodes = {
+    "summary-metrics": <section className="metrics-grid"><Metric label="Pipeline value" value={state !== "ready" ? "—" : isAdmin ? money(metrics?.estimatedPipelineValue ?? 0) : FINANCIAL_RESTRICTION_LABEL} note={state !== "ready" ? "Loading current totals" : isAdmin ? `${metrics?.activeLeads ?? activeLeads.length} active leads` : "Financial totals are restricted"} icon={Zap} color="orange" /><Metric label="Active projects" value={state === "ready" ? String(activeProjectCount) : "—"} note={state === "ready" ? `${activeProjectCount} of ${projects.length} project records active` : "Loading current totals"} icon={BriefcaseBusiness} color="green" /><Metric label="Clients" value={state === "ready" ? String(metrics?.clientCount ?? clients.length) : "—"} note={state === "ready" ? "Client accounts" : "Loading current totals"} icon={Users} color="blue" /><Metric label="Project meetings" value={state === "ready" ? String(metrics?.meetingCount ?? 0) : "—"} note={state === "ready" ? "Meeting notes saved" : "Loading current totals"} icon={MessageSquareText} color="violet" /></section>,
+    "business-kpis": <BusinessKpisPanel leads={leads} projects={projects} isAdmin={isAdmin} state={state} selectedMonth={selectedMonth} onSelectedMonthChange={setSelectedMonth} />,
+    "pipeline-by-stage": <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle={isAdmin ? "Estimated value" : "Lead count · financial values restricted"} />{activeLeads.length > 0 ? <ul className="bar-chart" aria-label="Pipeline stages">{stageValues.map((item) => { const href = item.count > 0 ? operationsHref("Leads", { leadStage: item.filter }) : undefined; const focusId = href ? `report-lead-${item.filter}` : undefined; const measure = isAdmin ? money(item.value) : String(item.count); return <ReportBarRow key={item.stage} label={item.stage} measure={measure} width={Math.round(((isAdmin ? item.value : item.count) / maximumStageMeasure) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `lead:${item.filter}` : undefined} accessibleName={href ? `View ${item.stage} leads — ${item.count} active ${item.count === 1 ? "lead" : "leads"}${isAdmin ? `, ${money(item.value)} estimated value` : ""}` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No active leads are available for this report.</div> : null}</section>,
+    "projects-by-status": <section className="panel report-chart"><PanelHeader title="Projects by status" subtitle={`${projects.length} records`} />{projectStatuses.length > 0 ? <ul className="bar-chart" aria-label="Project lifecycle statuses">{projectStatuses.map((item) => { const lifecycle = projectLifecycleFilter(item.status); const href = lifecycle && item.count > 0 ? operationsHref("Projects", { projectLifecycle: lifecycle }) : undefined; const label = displayStatus(item.status, "Unknown"); const focusId = href ? `report-project-${lifecycle}` : undefined; return <ReportBarRow key={item.status} label={label} measure={String(item.count)} width={Math.round((item.count / maximumProjectCount) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `project:${lifecycle}` : undefined} accessibleName={href ? `View ${label} projects — ${item.count} ${item.count === 1 ? "project" : "projects"}` : undefined} />; })}</ul> : state === "ready" ? <div className="empty-table">No project status data is available yet.</div> : null}</section>,
+    "future-reports": <section className="client-directory-banner"><div className="directory-badge"><Activity size={20} /></div><div><strong>More reports will appear as additional workflows go live</strong><span>Margin, product mix, installation-cycle timing, customer reviews, and crew utilization require source records that are not available yet.</span></div></section>,
+  } as const;
+
+  return <PageLayoutEditor page="reports" layout={layout} isAdmin={isAdmin} enabled={layoutReady} loadError={layoutError} onRetry={onRetryLayout} onSave={onSaveLayout}>{({ layout: activeLayout, editing, editButton, editor, endDropZone, section }) => {
+    const visibleKeys = activeLayout.order.filter((key) => !activeLayout.hidden.includes(key) && key in sectionNodes) as Array<keyof typeof sectionNodes>;
+    const defaultSections = <>
+      {sectionNodes["summary-metrics"]}
+      {sectionNodes["business-kpis"]}
+      <div className="reports-grid">{sectionNodes["pipeline-by-stage"]}{sectionNodes["projects-by-status"]}</div>
+      {sectionNodes["future-reports"]}
+    </>;
+    const fullWidthKeys = new Set<keyof typeof sectionNodes>(["summary-metrics", "business-kpis", "future-reports"]);
+    const arrangedSections = <><div className="page-layout-grid page-layout-grid-reports">{visibleKeys.map((key) => <div className={fullWidthKeys.has(key) ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
+    return <>
+      <PageTitle eyebrow="Business performance" title="Reports" text="Current totals from saved leads, clients, projects, and meeting notes." state="Working" action={editButton} />
+      {editor}
+      {!editing && isDefaultPageLayout(activeLayout, "reports", isAdmin) ? defaultSections : arrangedSections}
+    </>;
+  }}</PageLayoutEditor>;
 }
 
 function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, isAdmin, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; isAdmin: boolean; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
