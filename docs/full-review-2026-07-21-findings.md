@@ -181,6 +181,7 @@ the fix regresses.
 ## Wave R1 — foundations (assignable now, in this order where files overlap)
 
 ### FIX-01 · Route Gmail, Calendar, and create-time mirroring through effective config (P1s F-2/F-3/F-4 + P2 F-5; medium)
+**Status:** Complete — PR #95, July 22, 2026. Source-only and undeployed.
 **Why:** the app-saved > env precedence contract breaks on three surfaces; registry
 configuration recorded by setup is invisible to Gmail entirely, to Calendar, and to
 the create-time directory mirror.

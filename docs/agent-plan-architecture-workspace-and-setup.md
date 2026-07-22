@@ -986,7 +986,7 @@ ID and env fallback is labeled; simulation e2e; existing sheet-sync tests untouc
 **Effort:** medium.
 
 ### SET-17 · Templates: blueprint-driven ensure with seed content (medium, after SET-15; parallel with SET-16)
-**Status:** In review — draft PR #92, July 21, 2026. Source-only and undeployed.
+**Status:** Complete — PR #92, July 22, 2026. Source-only and undeployed.
 
 **Why:** Owner starter set: Doc/Sheet templates in a Templates folder, created via Drive
 upload-conversion — no new scopes, no Docs API — with the template list owner-definable.
@@ -1140,7 +1140,7 @@ viewer's own Google session provides access via Shared Drive membership). Open-i
 and Download fallbacks; a clear guidance state when the preview is blocked (no Google
 session or no access); CSP `frame-src` allowance for `https://drive.google.com` only;
 simulation mode renders a placeholder preview card. Wire from the project files list
-and (once SET-17 lands) template rows.
+and the template rows (SET-17, merged PR #92).
 **Accept:** rendered tests for viewer open/fallback/guidance states driven by mocked
 payloads; CSP change pinned by a test; no new scopes (grep); simulation e2e clicks a
 simulated file and sees the placeholder; office non-admin can view (viewing is routine
