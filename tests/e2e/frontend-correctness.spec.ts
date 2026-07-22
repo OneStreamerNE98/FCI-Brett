@@ -7,6 +7,7 @@ async function openReadyApp(page: import("@playwright/test").Page, url = "/") {
 
 test("notifications use typed persistent errors and disclosure popovers dismiss safely", async ({ page }) => {
   await openReadyApp(page);
+  await page.clock.install();
   await page.route("**/api/v1/search?*", async (route) => {
     await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "Search is temporarily unavailable." }) });
   });
@@ -17,7 +18,7 @@ test("notifications use typed persistent errors and disclosure popovers dismiss 
   const errorNotice = page.getByRole("alert").filter({ hasText: "Search is temporarily unavailable." });
   await expect(errorNotice).toHaveClass(/toast-error/);
   await expect(errorNotice.getByRole("button", { name: "Retry" })).toBeVisible();
-  await page.waitForTimeout(3_500);
+  await page.clock.fastForward(10_000);
   await expect(errorNotice).toBeVisible();
   await errorNotice.getByRole("button", { name: "Dismiss notification" }).click();
 

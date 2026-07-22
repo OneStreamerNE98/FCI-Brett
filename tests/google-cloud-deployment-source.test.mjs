@@ -137,6 +137,28 @@ test("image CI builds pull requests and only publishes approved main dispatches"
   assert.doesNotMatch(imageWorkflow, /^\s*(?:terraform\s+apply|gcloud\s+run\s+(?:deploy|jobs\s+execute))/m);
 });
 
+test("CI runs codex pull-request commits once while retaining main-push and manual coverage", () => {
+  const triggerBlock = ciWorkflow.match(/on:\s*\n([\s\S]*?)\npermissions:/)?.[1] ?? "";
+  const pushBlock = triggerBlock.match(/^  push:\s*\n([\s\S]*?)(?=^  \S)/m)?.[1] ?? "";
+  const pushBranches = [...pushBlock.matchAll(/^\s{6}-\s+"?([^"\r\n]+)"?\s*$/gm)]
+    .map((match) => match[1]);
+
+  assert.match(triggerBlock, /^  pull_request:\s*$/m);
+  assert.match(triggerBlock, /^  workflow_dispatch:\s*$/m);
+  assert.deepEqual(pushBranches, ["main"]);
+  assert.doesNotMatch(triggerBlock, /codex\/\*\*/);
+});
+
+test("CI keeps real-PostgreSQL suites enabled through TEST_POSTGRES_URL", () => {
+  const nodeTestJob = ciWorkflow.match(/^  test:\s*\n([\s\S]*?)(?=^  browser:)/m)?.[1] ?? "";
+  const postgresUrlLine = nodeTestJob.split(/\r?\n/).find((line) => line.trimStart().startsWith("TEST_POSTGRES_URL:"));
+
+  assert.match(nodeTestJob, /\n\s+- name: Build and test\s*\n\s+run: npm test\s*\n\s+env:\s*\n\s+TEST_POSTGRES_URL:/);
+  assert.ok(postgresUrlLine, "CI's npm test step omits TEST_POSTGRES_URL");
+  assert.ok(postgresUrlLine.slice(postgresUrlLine.indexOf(":") + 1).trim(), "CI's TEST_POSTGRES_URL must not be blank");
+  assert.equal(countMatches(ciWorkflow, /^\s+TEST_POSTGRES_URL:/gm), 1);
+});
+
 test("the runbook truthfully keeps execution owner-gated", () => {
   assert.doesNotMatch(migrationRunbook, /no Cloud Run Job, deployment identity, image-build/);
   assert.match(migrationRunbook, /source-only\s+and unapplied/);
