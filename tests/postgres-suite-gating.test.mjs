@@ -29,7 +29,7 @@ for (const suite of postgresSuites) {
 
     const result = spawnSync(
       process.execPath,
-      ["--test", `--test-name-pattern=${suite.testName}`, suite.file],
+      ["--experimental-strip-types", "--test", `--test-name-pattern=${suite.testName}`, suite.file],
       { cwd: repositoryRoot, encoding: "utf8", env: environment, timeout: 30_000 },
     );
     const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
