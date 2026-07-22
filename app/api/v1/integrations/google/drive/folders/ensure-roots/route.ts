@@ -117,7 +117,9 @@ export async function POST(request: NextRequest) {
         externalId: ensured.folder.id,
         parentExternalId: parentId,
         externalUrl: ensured.folder.url,
-        origin: ensured.outcome === "created" ? "created" : ensured.outcome === "adopted" ? "adopted" : existing?.origin ?? "adopted",
+        origin: existing?.externalId === ensured.folder.id
+          ? existing.origin
+          : ensured.outcome === "created" ? "created" : "adopted",
         metadata: { name: ensured.folder.name, path: root.path, management: root.management },
         createdBy: existing?.createdBy ?? auth.user.email,
         createdAt: existing?.createdAt ?? completedAt,
