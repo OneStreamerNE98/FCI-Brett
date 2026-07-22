@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGmailClient, assertWorkspaceGmailConnection } from "../../../../../lib/google-gmail";
-import { GoogleIntegrationError, assertGoogleService, getGoogleAccessToken, getGoogleRuntimeConfig, type GoogleRuntimeConfig } from "../../../../../lib/google-oauth-sites";
+import { GoogleIntegrationError, assertGoogleService, getEffectiveGoogleRuntimeSetup, getGoogleAccessToken, type GoogleRuntimeConfig } from "../../../../../lib/google-oauth-sites";
 import { WorkspaceSimulationGmailClient } from "../../../../../lib/workspace-simulation";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 
@@ -13,7 +13,7 @@ export function gmailErrorResponse(error: unknown) {
 
 export async function getWorkspaceGmailClient(): Promise<{ config: GoogleRuntimeConfig; client: GoogleGmailClient | WorkspaceSimulationGmailClient }> {
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
+  const { config } = await getEffectiveGoogleRuntimeSetup();
   assertWorkspaceGmailConnection(config);
   assertGoogleService(config, "gmail");
   if (config.simulation) return { config, client: new WorkspaceSimulationGmailClient() };

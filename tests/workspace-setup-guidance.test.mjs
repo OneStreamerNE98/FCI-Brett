@@ -63,7 +63,8 @@ test("Workspace readiness surfaces only Google Chat missing-secret names without
   assert.match(route, /import \{ readGoogleChatPublicConfig \} from "\.\.\/\.\.\/\.\.\/lib\/google-chat-notifier-sites"/);
   assert.match(route, /const \[connection, chatNotifications\] = await Promise\.all\(/);
   assert.match(route, /\.\.\.chatNotifications\.missingDetails/);
-  assert.match(route, /const credentialsPresent = google\.oauthReady && Boolean\(/);
+  assert.match(route, /const credentialsPresent = google\.connectReady && adminAllowlistPresent/);
+  assert.match(route, /const configured = google\.oauthReady && adminAllowlistPresent/);
   assert.doesNotMatch(route, /credentialsPresent\s*=.*chatNotifications/);
   assert.doesNotMatch(route, /chatNotifications\.(?:webhook|url|secretValue)/i);
 });
