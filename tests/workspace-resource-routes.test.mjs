@@ -330,6 +330,14 @@ test("OAuth callback keeps setup-needed denial when OAuth credentials are incomp
 });
 
 test("resources GET is admin-only, source-tagged, no-store, masked, and contains no secrets", async () => {
+  const { flattenWorkspaceRootFolders, seedWorkspaceBlueprint } = await vite.ssrLoadModule("/app/lib/workspace-blueprint.ts");
+  const seedBlueprint = seedWorkspaceBlueprint();
+  const setupCalendarKeys = new Set(["client-appointments", "field-schedule"]);
+  const expectedResourceCount = 1
+    + seedBlueprint.spreadsheets.length
+    + seedBlueprint.templates.length
+    + seedBlueprint.calendars.filter((calendar) => setupCalendarKeys.has(calendar.key)).length
+    + flattenWorkspaceRootFolders(seedBlueprint).length;
   const configuredSecret = "configured-client-secret-must-not-appear";
   const configuredEncryptionKey = Buffer.alloc(32, 17).toString("base64url");
   const resources = [{
@@ -390,7 +398,7 @@ test("resources GET is admin-only, source-tagged, no-store, masked, and contains
   assert.equal(body.identity.intakeMailboxMatches, true);
   assert.deepEqual(body.identity.allowedDomains, ["cherryhillfci.com"]);
   assert.equal(body.identity.mode, "workspace");
-  assert.equal(body.resources.length, 15);
+  assert.equal(body.resources.length, expectedResourceCount);
   assert.deepEqual(
     body.resources.find((resource) => resource.key === "client-directory"),
     {

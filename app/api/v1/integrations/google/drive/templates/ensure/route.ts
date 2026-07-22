@@ -119,6 +119,11 @@ export async function POST(request: NextRequest) {
         },
       };
     const folderCompletedAt = Date.now();
+    const folderOrigin = existingTemplateFolder?.externalId === ensuredFolder.folder.id
+      ? existingTemplateFolder.origin
+      : ensuredFolder.outcome === "created"
+        ? "created"
+        : "adopted";
     await upsertWorkspaceResource(env.DB, {
       id: existingTemplateFolder?.id ?? crypto.randomUUID(),
       connectionKey: config.connectionKey,
@@ -127,11 +132,7 @@ export async function POST(request: NextRequest) {
       externalId: ensuredFolder.folder.id,
       parentExternalId: parent.externalId,
       externalUrl: ensuredFolder.folder.url,
-      origin: ensuredFolder.outcome === "created"
-        ? "created"
-        : ensuredFolder.outcome === "adopted"
-          ? "adopted"
-          : existingTemplateFolder?.origin ?? "adopted",
+      origin: folderOrigin,
       metadata: {
         name: ensuredFolder.folder.name,
         path: templateFolder.path,

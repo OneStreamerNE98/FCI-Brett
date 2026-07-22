@@ -829,6 +829,10 @@ test("simulation template ensure creates the central folder, covers owner shells
   assert.equal(second.folder.outcome, "found");
   assert.deepEqual(second.counts, { found: 6, created: 0, adopted: 0 });
   assert.equal(database.state.resources.filter((row) => row.resource_type === "drive.file").length, 6);
+  assert.equal(
+    database.state.resources.find((row) => row.resource_type === "drive.folder" && row.resource_key === "templates").origin,
+    "created",
+  );
   const events = database.state.events.filter((event) => event.eventType === "setup.templates_ensured");
   assert.equal(events.length, 2);
   assert.match(events[0].detail, /site-measurement:created/u);
@@ -882,7 +886,69 @@ test("live template ensure adopts and stamps one Templates folder, then avoids r
   assert.match(database.state.events.find((event) => event.eventType === "setup.templates_ensured").detail, /folder=adopted/u);
 });
 
+test("live template ensure preserves created provenance while supplementing the registered folder identity", async () => {
+  const rootId = "app-shared-drive-123";
+  const parentFolderId = "company-admin-folder-123";
+  const templateFolderId = "created-templates-folder-123";
+  const database = fakeDatabase({
+    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprintConnectionKey: "google-workspace",
+  });
+  await workspaceEnvironment(database);
+  database.state.resources.push(
+    savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+    savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: parentFolderId, parentExternalId: rootId, origin: "created", name: "00_Company Admin" }),
+    savedResource({ id: "templates", resourceType: "drive.folder", resourceKey: "templates", externalId: templateFolderId, parentExternalId: parentFolderId, origin: "created", name: "Templates" }),
+  );
+  const provider = installTemplateProvider({ rootId, parentFolderId, templateFolderId });
+  provider.templateFolder.appProperties = { fciRootKey: "templates" };
+
+  const firstResponse = await templateEnsureRoute.POST(routeRequest("/api/v1/integrations/google/drive/templates/ensure"));
+  const first = await firstResponse.json();
+  assert.equal(firstResponse.status, 201, JSON.stringify(first));
+  assert.equal(first.folder.outcome, "adopted");
+  assert.equal(
+    database.state.resources.find((row) => row.resource_type === "drive.folder" && row.resource_key === "templates").origin,
+    "created",
+  );
+  assert.deepEqual(provider.templateFolder.appProperties, {
+    fciRootKey: "templates",
+    fciFolderKind: "templates",
+  });
+  assert.equal(provider.calls.filter((call) => call.url.pathname === `/drive/v3/files/${templateFolderId}` && call.method === "PATCH").length, 1);
+
+  const secondResponse = await templateEnsureRoute.POST(routeRequest("/api/v1/integrations/google/drive/templates/ensure"));
+  assert.equal(secondResponse.status, 200);
+  assert.equal(
+    database.state.resources.find((row) => row.resource_type === "drive.folder" && row.resource_key === "templates").origin,
+    "created",
+  );
+  assert.equal(provider.calls.filter((call) => call.url.pathname === `/drive/v3/files/${templateFolderId}` && call.method === "PATCH").length, 1);
+});
+
 test("template ensure fails closed on its folder prerequisites and exact setup lease", async (t) => {
+  await t.test("an environment fallback does not replace Shared Drive adoption", async () => {
+    const database = fakeDatabase({
+      blueprint: blueprintModule.seedWorkspaceBlueprint(),
+      blueprintConnectionKey: "google-workspace",
+    });
+    await workspaceEnvironment(database, { GOOGLE_WORKSPACE_SHARED_DRIVE_ID: "environment-shared-drive-123" });
+    let providerCalls = 0;
+    globalThis.fetch = async () => {
+      providerCalls += 1;
+      throw new Error("An unadopted Shared Drive must fail before provider work.");
+    };
+
+    const response = await templateEnsureRoute.POST(routeRequest("/api/v1/integrations/google/drive/templates/ensure"));
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "shared_drive_not_adopted");
+    assert.match(body.error, /app-managed registry/u);
+    assert.equal(database.state.leases.size, 0);
+    assert.equal(database.state.events.length, 0);
+    assert.equal(providerCalls, 0);
+  });
+
   await t.test("the blueprint must keep the central Templates folder definition", async () => {
     const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
     blueprint.drive.roots.find((folder) => folder.key === "company-admin").children = [];
@@ -944,6 +1010,54 @@ test("template ensure fails closed on its folder prerequisites and exact setup l
     assert.equal(response.status, 409);
     assert.equal(body.code, "workspace_setup_lease_conflict");
     assert.equal(database.state.resources.some((row) => row.resource_type === "drive.file"), false);
+    assert.equal(database.state.events.length, 0);
+  });
+
+  await t.test("a wrong mid-loop Google template type fails the held setup lease", async () => {
+    const rootId = "app-shared-drive-123";
+    const parentFolderId = "company-admin-folder-123";
+    const templateFolderId = "templates-folder-123";
+    const database = fakeDatabase({
+      blueprint: blueprintModule.seedWorkspaceBlueprint(),
+      blueprintConnectionKey: "google-workspace",
+    });
+    await workspaceEnvironment(database);
+    database.state.resources.push(
+      savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+      savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: parentFolderId, parentExternalId: rootId, origin: "created", name: "00_Company Admin" }),
+      savedResource({ id: "templates", resourceType: "drive.folder", resourceKey: "templates", externalId: templateFolderId, parentExternalId: parentFolderId, origin: "created", name: "Templates" }),
+    );
+    const provider = installTemplateProvider({ rootId, parentFolderId, templateFolderId });
+    provider.templateFolder.appProperties = { fciRootKey: "templates", fciFolderKind: "templates" };
+    provider.files.set("change-order", {
+      id: "wrong-type-change-order",
+      name: "Change Order",
+      mimeType: "application/pdf",
+      parents: [templateFolderId],
+      trashed: false,
+      webViewLink: "https://drive.google.test/wrong-type-change-order",
+      appProperties: { fciTemplateKey: "change-order" },
+    });
+
+    const response = await templateEnsureRoute.POST(routeRequest("/api/v1/integrations/google/drive/templates/ensure"));
+    const body = await response.json();
+    const lease = database.state.leases.get("google-workspace:setup:templates");
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "invalid_blueprint_template");
+    assert.match(body.error, /wrong Google template type/u);
+    assert.equal(provider.calls.filter((call) => call.url.pathname === "/upload/drive/v3/files" && call.method === "POST").length, 2);
+    assert.deepEqual(
+      database.state.resources.filter((row) => row.resource_type === "drive.file").map((row) => row.resource_key),
+      ["estimate-proposal", "installation-work-order"],
+    );
+    assert.equal(lease.status, "failed");
+    assert.equal(lease.errorCode, "invalid_blueprint_template");
+    assert.equal(lease.leaseExpiresAt, null);
+    assert.ok(database.state.queries.some((query) => (
+      query.kind === "run"
+      && query.sql.startsWith("UPDATE google_drive_operations SET status = 'failed'")
+      && query.values[0] === "invalid_blueprint_template"
+    )));
     assert.equal(database.state.events.length, 0);
   });
 });
