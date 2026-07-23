@@ -25,7 +25,7 @@ export const OPERATIONS_PATHS: Record<OperationsView, string> = {
 };
 
 export const SETTINGS_SECTIONS = [
-  "My account",
+  "My settings",
   "Google Workspace",
   "Calendar & appointments",
   "Inbox & file rules",
@@ -60,7 +60,7 @@ export type InboxBucket = (typeof INBOX_BUCKETS)[number];
 export type OperationsPageSearchParams = Record<string, string | string[] | undefined>;
 
 const settingsSectionSlugs: Record<SettingsSection, string> = {
-  "My account": "account",
+  "My settings": "account",
   "Google Workspace": "google-workspace",
   "Calendar & appointments": "calendar",
   "Inbox & file rules": "inbox-rules",
@@ -119,7 +119,7 @@ export function operationsPath(view: OperationsView) {
 
 export function settingsSectionFromSearch(search: string): SettingsSection {
   const value = exactSingleValue(new URLSearchParams(search), "section");
-  return settingsSectionBySlug.get(value ?? "") ?? "My account";
+  return settingsSectionBySlug.get(value ?? "") ?? "My settings";
 }
 
 export function projectStatusFromSearch(search: string): ProjectStatusFilter {
@@ -153,8 +153,8 @@ export function operationsHref(view: OperationsView, state: {
   const parameters = new URLSearchParams();
   if (view === "Leads" && state.leadStage) parameters.set("stage", state.leadStage);
   if (view === "Settings") {
-    const section = state.settingsSection ?? "My account";
-    if (section !== "My account") parameters.set("section", settingsSectionSlugs[section]);
+    const section = state.settingsSection ?? "My settings";
+    if (section !== "My settings") parameters.set("section", settingsSectionSlugs[section]);
   }
   if (view === "Projects") {
     if (state.projectLifecycle) {

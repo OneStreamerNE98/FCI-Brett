@@ -18,6 +18,8 @@ const appSurfacePaths = [
   "app/settings/components/TestingLaunchPanel.tsx",
   "app/settings/components/WorkspaceDefaultsPanel.tsx",
   "app/settings/components/WorkspaceBlueprintEditor.tsx",
+  "app/settings/components/WorkspaceDriveResourceActions.tsx",
+  "app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx",
 ];
 const readAppSurface = async () => (await Promise.all(appSurfacePaths.map(read))).join("\n");
 async function readAppComponentSource(directory = new URL("app/", root)) {
@@ -651,7 +653,9 @@ test("provides explicit Gmail and Calendar controls in simulation and Workspace 
   assert.match(calendarHold, /requireSameOrigin/);
   assert.match(calendarHold, /config\.simulation/);
   assert.match(app, /Google Workspace setup stages/);
-  assert.match(app, /Simulated Workspace Gmail/);
+  assert.match(app, /Gmail verification/);
+  assert.match(app, /Calendar verification/);
+  assert.doesNotMatch(app, /Simulated Workspace Gmail|Simulated shared calendars|Current check:|no OAuth account or Google token is connected|Google was connected\.|Connection ready|Local Workspace simulation is ready\. No Google account is connected\./);
   assert.match(app, /Add sample email/);
   assert.match(app, /Create test hold/);
   assert.match(guide, /GOOGLE_WORKSPACE_ENABLED_SERVICES=drive,gmail,calendar,sheets/);

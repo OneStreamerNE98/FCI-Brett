@@ -159,6 +159,20 @@ function workspaceResources(overrides: Partial<WorkspaceResourcesPayload> = {}):
   };
 }
 
+function completedWorkspaceResources(): WorkspaceResourcesPayload {
+  return workspaceResources({
+    resources: workspaceResources().resources.map((resource) => {
+      if (resource.resourceType === "drive.shared-drive") {
+        return { ...resource, source: "app" as const, origin: "adopted" as const, state: "Adopted" as const };
+      }
+      if (resource.resourceType === "drive.folder" || resource.resourceType === "sheets.spreadsheet" || resource.resourceType === "drive.file") {
+        return { ...resource, source: "app" as const, origin: "created" as const, state: "Created" as const };
+      }
+      return resource;
+    }),
+  });
+}
+
 async function mockConnectionHealth(page: Page, payload: ConnectionHealthPayload) {
   await page.route("**/api/v1/integrations/google/connection", async (route) => {
     if (route.request().method() === "GET") {
@@ -324,8 +338,8 @@ test("the status banner waits for every source and resolves a mixed-mode all-con
   await expect(loadingChecklist.getByText("DONE", { exact: true })).toHaveCount(6);
   await expect(loadingChecklist.getByText("MISSING", { exact: true })).toHaveCount(0);
   await expect(loadingChecklist.getByText("Drive authority:", { exact: true })).toHaveCount(0);
-  await expect(loadingChecklist.getByText("current mirror source: local simulation", { exact: false })).toBeVisible();
-  await expect(loadingChecklist.getByText("current mirror source: app-managed", { exact: false })).toHaveCount(0);
+  await expect(loadingChecklist.getByText("Sheets authority:", { exact: true })).toBeVisible();
+  await expect(loadingChecklist.getByText("current mirror source:", { exact: false })).toHaveCount(0);
 
   releaseConnection?.();
   await expect(banner.locator(".workspace-status-mode")).toHaveText("WORKSPACE");
@@ -371,8 +385,8 @@ test("mixed-mode Stage 1 rendering follows readiness simulation instead of the b
   await expect(checklist.getByText("DONE", { exact: true })).toHaveCount(6);
   await expect(checklist.getByText("MISSING", { exact: true })).toHaveCount(0);
   await expect(checklist.getByText("Drive authority:", { exact: true })).toHaveCount(0);
-  await expect(checklist.getByText("current mirror source: local simulation", { exact: false })).toBeVisible();
-  await expect(checklist.getByText("current mirror source: app-managed", { exact: false })).toHaveCount(0);
+  await expect(checklist.getByText("Sheets authority:", { exact: true })).toBeVisible();
+  await expect(checklist.getByText("current mirror source:", { exact: false })).toHaveCount(0);
 });
 
 test("stages derive one open step from endpoint state and keep completed stages manually expandable", async ({ page }) => {
@@ -507,18 +521,98 @@ test("stages derive one open step from endpoint state and keep completed stages 
   await expect(setupStage(page, 4).getByRole("heading", { name: "Ongoing upkeep", exact: true })).toBeVisible();
 });
 
-test("Stage 4 keeps normative copy, polished mirror labels, and operational upkeep routes", async ({ page }) => {
-  const completeResources = workspaceResources().resources.map((resource) => {
-    if (resource.resourceType === "drive.shared-drive") {
-      return { ...resource, source: "app" as const, origin: "adopted" as const, state: "Adopted" as const };
-    }
-    if (resource.resourceType === "drive.folder" || resource.resourceType === "sheets.spreadsheet" || resource.resourceType === "drive.file") {
-      return { ...resource, source: "app" as const, origin: "created" as const, state: "Created" as const };
-    }
-    return resource;
-  });
+test("stage anchors open completed targets and survive hash navigation history", async ({ page }) => {
   await page.unroute("**/api/v1/integrations/google/setup/resources");
-  await mockWorkspaceResources(page, workspaceResources({ resources: completeResources }));
+  await mockWorkspaceResources(page, completedWorkspaceResources());
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  const expectTargetOpen = async (number: WorkspaceStageNumber) => {
+    await expect(page).toHaveURL(new RegExp(`#workspace-stage-${number}$`));
+    const stage = setupStage(page, number);
+    await expect(stage).toHaveAttribute("id", `workspace-stage-${number}`);
+    await expect(stageToggle(page, number)).toHaveAttribute("aria-expanded", "true");
+    await expect(stage.locator(".workspace-stage-body")).toBeVisible();
+    const stageTop = await stage.evaluate((element) => element.getBoundingClientRect().top);
+    expect(stageTop).toBeGreaterThanOrEqual(85);
+    expect(stageTop).toBeLessThanOrEqual(88);
+  };
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-1");
+  await expectTargetOpen(1);
+  await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("DONE");
+
+  await page.evaluate(() => {
+    window.location.hash = "#workspace-stage-2";
+  });
+  await expectTargetOpen(2);
+  await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("DONE");
+  await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "false");
+
+  await page.goBack();
+  await expectTargetOpen(1);
+  await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "false");
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-3");
+  await expectTargetOpen(3);
+  await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-4");
+  await expectTargetOpen(4);
+  await stageToggle(page, 1).click();
+  await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "true");
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  }));
+  const stageFourAfterManualExpansion = await setupStage(page, 4).evaluate((element) => element.getBoundingClientRect().top);
+  expect(stageFourAfterManualExpansion).toBeGreaterThan(500);
+});
+
+test("Client Directory and Testing launch bounce links land on their exact setup stages", async ({ page }) => {
+  const unavailableMirror = {
+    ...unsyncedMirror(),
+    configured: false,
+    enabled: false,
+    connected: false,
+    reason: "Google Sheets setup is required for this test.",
+  };
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unavailableMirror }) });
+  });
+
+  await page.goto("/settings?section=client-directory");
+  const directoryLink = page.getByRole("link", { name: "Open Google Workspace setup", exact: true });
+  await expect(directoryLink).toHaveAttribute("href", "/settings?section=google-workspace#workspace-stage-3");
+  await directoryLink.click();
+  await expect(page).toHaveURL(/\/settings\?section=google-workspace#workspace-stage-3$/);
+  await expect(stageToggle(page, 3)).toHaveAttribute("aria-expanded", "true");
+  const directoryTargetTop = await setupStage(page, 3).evaluate((element) => element.getBoundingClientRect().top);
+  expect(directoryTargetTop).toBeGreaterThanOrEqual(85);
+  expect(directoryTargetTop).toBeLessThanOrEqual(88);
+
+  await page.goto("/settings?section=testing-launch");
+  const testingLink = page.getByRole("link", { name: "Open Google Workspace setup", exact: true });
+  await expect(testingLink).toHaveAttribute("href", "/settings?section=google-workspace#workspace-stage-4");
+  await testingLink.click();
+  await expect(page).toHaveURL(/\/settings\?section=google-workspace#workspace-stage-4$/);
+  await expect(stageToggle(page, 4)).toHaveAttribute("aria-expanded", "true");
+  const testingTargetTop = await setupStage(page, 4).evaluate((element) => element.getBoundingClientRect().top);
+  expect(testingTargetTop).toBeGreaterThanOrEqual(85);
+  expect(testingTargetTop).toBeLessThanOrEqual(88);
+});
+
+test("Stage 4 keeps normative copy, polished mirror labels, and operational upkeep routes", async ({ page }) => {
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page, completedWorkspaceResources());
   await mockConnectionHealth(page, connectedHealth());
   await page.route("**/api/v1/google-workspace", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
@@ -583,6 +677,19 @@ test("Stage 4 keeps normative copy, polished mirror labels, and operational upke
   await expect(drift.locator("button, a")).toHaveCount(1);
   await expect(drift.getByRole("button", { name: "About Drift check", exact: true })).toHaveCount(1);
   await expect(drift.getByRole("link")).toHaveCount(0);
+  await expect(verificationRow(page, "gmail").getByText("Gmail verification", { exact: true })).toBeVisible();
+  await expect(verificationRow(page, "calendar").getByText("Calendar verification", { exact: true })).toBeVisible();
+  await expect(setupStage(page, 4).getByText(/^(?:Simulated )?Workspace Gmail$|^(?:Simulated |Workspace )shared calendars$/)).toHaveCount(0);
+  const notifications = upkeepRow(page, "notifications");
+  const notificationBody = "Review the closed event-to-space map. Hosted webhook secrets stay outside the browser, application data, logs, and source control.";
+  await expect(notifications.getByText(notificationBody, { exact: true })).toHaveCount(1);
+  const notificationHint = notifications.getByRole("button", { name: "About Notification routing", exact: true });
+  const notificationHintId = await notificationHint.getAttribute("aria-describedby");
+  expect(notificationHintId).toBeTruthy();
+  await notificationHint.focus();
+  await expect(page.locator(`[id="${notificationHintId}"]`)).toHaveText("Choose which supported events can notify each approved Google Chat space. The routing page shows what is available before anything is enabled.");
+  await expect(page.locator(`[id="${notificationHintId}"]`)).not.toHaveText(notificationBody);
+  await page.keyboard.press("Escape");
 
   await page.setViewportSize({ width: 390, height: 844 });
   const stageFour = setupStage(page, 4);
@@ -615,6 +722,52 @@ test("Stage 4 keeps normative copy, polished mirror labels, and operational upke
   await expect(page).toHaveURL(/\/settings\?section=workflow-notifications$/);
   await expect(page.getByRole("heading", { level: 2, name: "Google Chat notifications", exact: true })).toBeVisible();
   await expect(page.getByText("Review the closed event-to-space map. Hosted webhook secrets stay outside the browser, application data, logs, and source control.", { exact: true })).toBeVisible();
+});
+
+test("Stage 4 disabled verification actions are described by their actual dependency", async ({ page }) => {
+  let currentReadiness = readiness({
+    storageConfigured: false,
+    driveConnected: false,
+  });
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page, completedWorkspaceResources());
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentReadiness) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-4");
+  await setStageExpanded(page, 4, true);
+
+  const gmail = verificationRow(page, "gmail");
+  const gmailReason = gmail.getByText("Blocked until the prior step is complete", { exact: true });
+  await expect(gmailReason).toHaveAttribute("id", "workspace-verification-gmail-dependency");
+  for (const name of ["Prepare FCI labels", "View inbox", "Send Workspace test"]) {
+    const control = gmail.getByRole("button", { name, exact: true });
+    await expect(control).toBeDisabled();
+    await expect(control).toHaveAttribute("aria-describedby", "workspace-verification-gmail-dependency");
+  }
+
+  const calendar = verificationRow(page, "calendar");
+  const calendarReason = calendar.getByText("Blocked until Gmail setup is complete", { exact: true });
+  await expect(calendarReason).toHaveAttribute("id", "workspace-verification-calendar-dependency");
+  for (const name of ["View upcoming events", "Create test hold"]) {
+    const control = calendar.getByRole("button", { name, exact: true });
+    await expect(control).toBeDisabled();
+    await expect(control).toHaveAttribute("aria-describedby", "workspace-verification-calendar-dependency");
+  }
+
+  currentReadiness = readiness();
+  await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+  await expect(gmail.getByText("Ready for explicit actions", { exact: true })).not.toHaveAttribute("id");
+  for (const name of ["Prepare FCI labels", "View inbox", "Send Workspace test"]) {
+    const control = gmail.getByRole("button", { name, exact: true });
+    await expect(control).toBeEnabled();
+    await expect(control).not.toHaveAttribute("aria-describedby");
+  }
 });
 
 test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async ({ page }) => {
@@ -672,18 +825,47 @@ test.describe("Workspace stage hints on touch", () => {
 
     await page.goto("/settings?section=google-workspace");
     await waitForStageShellToSettle(page);
-    await setStageExpanded(page, 1, true);
-    const hint = page.getByRole("button", { name: "About Stage 1 status", exact: true });
-    const descriptionId = await hint.getAttribute("aria-describedby");
-    expect(descriptionId).toBeTruthy();
-    const tooltip = page.locator(`[id="${descriptionId}"]`);
+    const banner = page.locator(".workspace-status-banner");
+    const [modeBox, copyBox, progressBox] = await Promise.all([
+      banner.locator(".workspace-status-mode").boundingBox(),
+      banner.locator(".workspace-status-copy").boundingBox(),
+      banner.locator(".workspace-status-progress").boundingBox(),
+    ]);
+    const modeAndCopyOverlap = Math.min(
+      (modeBox?.y ?? 0) + (modeBox?.height ?? 0),
+      (copyBox?.y ?? 0) + (copyBox?.height ?? 0),
+    ) - Math.max(modeBox?.y ?? 0, copyBox?.y ?? 0);
+    expect(modeAndCopyOverlap).toBeGreaterThan(0);
+    expect(progressBox?.y ?? 0).toBeGreaterThan((modeBox?.y ?? 0) + (modeBox?.height ?? 0) - 1);
+    expect(progressBox?.y ?? 0).toBeGreaterThan((copyBox?.y ?? 0) + (copyBox?.height ?? 0) - 1);
 
-    await hint.tap();
-    await expect(tooltip).toBeVisible();
-    await expect(hint).toHaveAttribute("aria-expanded", "true");
-    await hint.tap();
-    await expect(tooltip).toBeHidden();
-    await expect(hint).toHaveAttribute("aria-expanded", "false");
+    const stageListBox = await page.locator(".workspace-stage-list").boundingBox();
+    expect(stageListBox).not.toBeNull();
+    for (const number of [1, 2, 3, 4] as const) {
+      const stageBox = await setupStage(page, number).boundingBox();
+      expect(stageBox).not.toBeNull();
+      expect(Math.abs((stageBox?.x ?? 0) - (stageListBox?.x ?? 0)), `Stage ${number} left alignment`).toBeLessThanOrEqual(1);
+      expect(Math.abs((stageBox?.width ?? 0) - (stageListBox?.width ?? 0)), `Stage ${number} full width`).toBeLessThanOrEqual(1);
+      await setStageExpanded(page, number, true);
+      const hint = page.getByRole("button", { name: `About Stage ${number} status`, exact: true });
+      const descriptionId = await hint.getAttribute("aria-describedby");
+      expect(descriptionId).toBeTruthy();
+      const tooltip = page.locator(`[id="${descriptionId}"]`);
+      await hint.tap();
+      await expect(tooltip).toBeVisible();
+      await expect(hint).toHaveAttribute("aria-expanded", "true");
+      if (number === 1) {
+        await hint.tap();
+        await expect(tooltip).toBeHidden();
+        await expect(hint).toHaveAttribute("aria-expanded", "false");
+        await hint.tap();
+        await expect(tooltip).toBeVisible();
+      }
+      await page.keyboard.press("Escape");
+      await expect(tooltip).toBeHidden();
+      await expect(hint).toHaveAttribute("aria-expanded", "false");
+    }
+
     await setStageExpanded(page, 3, true);
     const templateHint = creationRow(page, "templates").getByRole("button", { name: "About Templates", exact: true });
     const templateDescriptionId = await templateHint.getAttribute("aria-describedby");
@@ -827,9 +1009,8 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   const domainHint = tenantChecklistRow(page, "Company domain").getByRole("button", { name: "About Company domain", exact: true });
   const domainDescriptionId = await domainHint.getAttribute("aria-describedby");
   expect(domainDescriptionId).toBeTruthy();
-  await expect(page.locator(`#${domainDescriptionId}`)).toHaveText(
-    "Verify the company domain in Google Admin, then keep only the approved Workspace domain in hosted configuration. Current check: Setup required.",
-  );
+  const domainInstruction = "Verify the company domain in Google Admin, then keep only the approved Workspace domain in hosted configuration.";
+  await expect(page.locator(`#${domainDescriptionId}`)).toHaveText(domainInstruction);
   await expect(card.getByRole("link")).toHaveCount(6);
   await expect(card.getByRole("table", { name: "Hosted Workspace configuration" })).toBeVisible();
   await expect(card.getByRole("heading", { level: 4, name: "Copy-exact setup helpers" })).toBeVisible();
@@ -847,8 +1028,10 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
     identity: { connectionAccount: null, intakeMailboxMatches: null, allowedDomains: ["cherryhillfci.com"], mode: "workspace" },
   });
   await page.getByRole("button", { name: "Check readiness" }).click();
+  await expect(page.getByText("Workspace readiness refreshed. Current status is shown above.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Workspace configuration is present.", { exact: false })).toHaveCount(0);
   await expect(tenantChecklistRow(page, "Company domain").getByText("DONE", { exact: true })).toBeVisible();
-  await expect(page.locator(`#${domainDescriptionId}`)).toContainText("Current check: Configuration present.");
+  await expect(page.locator(`#${domainDescriptionId}`)).toHaveText(domainInstruction);
   await expect(tenantChecklistRow(page, "Operations account").getByText("DONE", { exact: true })).toBeVisible();
   await expect(tenantChecklistRow(page, "OAuth web client").getByText("MISSING", { exact: true })).toBeVisible();
   await expect(tenantChecklistRow(page, "Hosted secrets").getByText("MISSING", { exact: true })).toBeVisible();
@@ -1490,6 +1673,28 @@ test("service-level Drive and Calendar locks name degraded dependencies after St
   await expect(calendarRow.getByText("Unlocks after Connect.", { exact: true })).toHaveCount(0);
 });
 
+test("first-load registry failure with no prior data hides Shared Drive adoption controls", async ({ page }) => {
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Registry unavailable for test" }) });
+  });
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-3");
+  await setStageExpanded(page, 3, true);
+  const sharedDrive = creationRow(page, "shared-drive");
+  await expect(sharedDrive).toHaveAttribute("data-workspace-creation-state", "UNAVAILABLE");
+  await expect(sharedDrive.getByRole("button", { name: "Find and adopt", exact: true })).toHaveCount(0);
+  await expect(sharedDrive.getByRole("button", { name: "Verify and adopt", exact: true })).toHaveCount(0);
+  await expect(sharedDrive.getByText("Adoption controls become available when the resource registry returns the Shared Drive row.", { exact: true })).toBeVisible();
+});
+
 test("stale Shared Drive registry data keeps adopt locked while direct verification remains available", async ({ page }) => {
   let verifyRequest: { method: string; body: string | null } | null = null;
   let resourcesShouldFail = false;
@@ -1564,7 +1769,8 @@ test("OAuth callback state is removed only after an automatic forced readiness r
   });
 
   await page.goto("/settings?section=google-workspace&google=connected");
-  await expect(page.getByText("Google was connected. Workspace readiness refreshed automatically.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Google authorization completed. Current Workspace status is shown above.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Google was connected.", { exact: false })).toHaveCount(0);
   await expect.poll(() => readinessRequests).toBeGreaterThanOrEqual(2);
   await expect(page).toHaveURL(/\/settings\?section=google-workspace$/);
 });
@@ -1912,6 +2118,9 @@ test("the status banner stays neutral when the Sheets status source errors", asy
   await expect(banner.locator(".workspace-status-progress")).toContainText("Current stage unavailable");
   await expect(banner.locator(".workspace-status-progress")).not.toContainText(/Stage [1-4] of 4/);
   await expectNeutralStageChips(page, "UNAVAILABLE");
+  await setStageExpanded(page, 4, true);
+  await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "UNAVAILABLE");
+  await expect(verificationRow(page, "sheets").getByText("UNAVAILABLE", { exact: true })).toBeVisible();
 });
 
 test("simulation labels every OAuth permission not applicable instead of claiming a grant", async ({ page }) => {
@@ -1951,6 +2160,11 @@ test("simulation labels every OAuth permission not applicable instead of claimin
   await page.goto("/settings?section=google-workspace");
   await setStageExpanded(page, 2, true);
 
+  const banner = page.locator(".workspace-status-banner");
+  await expect(banner.locator(".workspace-status-mode")).toHaveText("SIMULATION");
+  await setStageExpanded(page, 3, true);
+  await expect(setupStage(page, 3).getByText("Simulated", { exact: true })).toHaveCount(0);
+
   const stageTwo = setupStage(page, 2);
   await expect(stageTwo.getByText("Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state.", { exact: true })).toBeVisible();
   await expect(stageTwo.getByRole("button", { name: "Reset simulation data", exact: true })).toBeVisible();
@@ -1974,6 +2188,87 @@ test("simulation labels every OAuth permission not applicable instead of claimin
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test("Stage 3 maps raw simulation resource states to provenance-backed operational labels", async ({ page }) => {
+  const simulationHealth: ConnectionHealthPayload = {
+    runtimeMode: "simulation",
+    simulation: true,
+    enabledServices: ["drive", "gmail", "calendar", "sheets"],
+    connection: {
+      connected: true,
+      status: "connected",
+      account: "Local Workspace simulation",
+      services: { drive: true, gmail: true, calendar: true, sheets: true },
+      grantedServices: null,
+      requiresReauthorization: false,
+    },
+  };
+  const folderCase = (
+    key: string,
+    label: string,
+    source: "app" | "env" | "none",
+    origin: "created" | "adopted" | "env-adopted" | undefined,
+    externalId: string | undefined,
+  ): WorkspaceResourcesPayload["resources"][number] => ({
+    key,
+    resourceType: "drive.folder",
+    label,
+    name: label,
+    blueprintName: label,
+    management: "owner",
+    parentKey: null,
+    ...(externalId ? { externalId } : {}),
+    source,
+    ...(origin ? { origin } : {}),
+    state: "Simulated",
+  });
+  const matrix = [
+    { resource: folderCase("matrix-none", "No registry identity", "none", undefined, undefined), expected: "Not configured" },
+    { resource: folderCase("matrix-missing-id", "Missing external ID", "app", "created", undefined), expected: "Not configured" },
+    { resource: folderCase("matrix-created", "App-created folder", "app", "created", "created-id"), expected: "Created" },
+    { resource: folderCase("matrix-adopted", "App-adopted folder", "app", "adopted", "adopted-id"), expected: "Adopted" },
+    { resource: folderCase("matrix-env-adopted", "Environment-adopted folder", "app", "env-adopted", "env-adopted-id"), expected: "Adopted" },
+    { resource: folderCase("matrix-app-unknown", "App folder without provenance", "app", undefined, "app-id"), expected: "Found" },
+    { resource: folderCase("matrix-env", "Environment folder", "env", undefined, "environment-id"), expected: "Found" },
+  ] as const;
+  const sharedDrive = {
+    ...workspaceResources().resources.find((resource) => resource.resourceType === "drive.shared-drive")!,
+    source: "app" as const,
+    origin: "adopted" as const,
+    state: "Simulated" as const,
+  };
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page, workspaceResources({
+    resources: [sharedDrive, ...matrix.map(({ resource }) => resource)],
+    simulation: true,
+    identity: {
+      connectionAccount: "Local Workspace simulation",
+      intakeMailboxMatches: true,
+      allowedDomains: [],
+      mode: "simulation",
+    },
+  }));
+  await mockConnectionHealth(page, simulationHealth);
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness({ runtimeMode: "simulation", simulation: true })) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-3");
+  await setStageExpanded(page, 3, true);
+  await expect(page.locator(".workspace-status-mode")).toHaveText("SIMULATION");
+  const details = creationRow(page, "folder-tree").locator("details");
+  await details.locator("summary").click();
+  for (const { resource, expected } of matrix) {
+    const row = details.locator("li").filter({ has: page.getByText(resource.label, { exact: true }) });
+    await expect(row).toHaveCount(1);
+    await expect(row.locator("[data-resource-operational-state]")).toHaveAttribute("data-resource-operational-state", expected);
+    await expect(row.locator("[data-resource-operational-state]")).toHaveText(expected);
+  }
+  await expect(setupStage(page, 3).getByText("Simulated", { exact: true })).toHaveCount(0);
+});
+
 test("simulation reset removes the registry-backed resource and refreshes the creation list", async ({ page }, testInfo) => {
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await page.goto("/settings?section=google-workspace");
@@ -1983,8 +2278,11 @@ test("simulation reset removes the registry-backed resource and refreshes the cr
   const spreadsheetDetails = creationRow(page, "spreadsheets").locator("details");
   await spreadsheetDetails.locator("summary").click();
   const directoryRow = spreadsheetDetails.locator("li").filter({ hasText: "Client directory spreadsheet" });
-  if (testInfo.retry === 0) await expect(directoryRow).toContainText("App-managed");
-  await expect(directoryRow).toContainText("Simulated");
+  if (testInfo.retry === 0) {
+    await expect(directoryRow).toContainText("App-managed");
+    await expect(directoryRow).toContainText("Created");
+  }
+  await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
 
   const stageTwo = setupStage(page, 2);
   await expect(stageTwo.getByText("Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state.", { exact: true })).toBeVisible();
@@ -1992,7 +2290,7 @@ test("simulation reset removes the registry-backed resource and refreshes the cr
   await setStageExpanded(page, 3, true);
   await expect(directoryRow).toContainText("Not configured");
   await expect(directoryRow).not.toContainText("App-managed");
-  await expect(directoryRow).toContainText("Simulated");
+  await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
 });
 
 test("simulation creation journey adopts Drive, ensures roots, spreadsheets, and templates, then renames an owner folder", async ({ page }) => {

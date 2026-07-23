@@ -4,7 +4,7 @@ import { ChevronRight } from "lucide-react";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../../lib/operations-routes";
 import styles from "./SettingsAudienceNavigation.module.css";
 
-const PERSONAL_SECTION: SettingsSection = "My account";
+const PERSONAL_SECTION: SettingsSection = "My settings";
 const COMPANY_SECTIONS = SETTINGS_SECTIONS.filter((section) => section !== PERSONAL_SECTION);
 
 function SectionButton({ section, label, current, onSection }: { section: SettingsSection; label: string; current: SettingsSection; onSection: (section: SettingsSection) => void }) {

@@ -6,10 +6,11 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("Workspace setup is a four-stage endpoint-driven shell with callback refresh", async () => {
-  const [panel, panelStyles, infoHint] = await Promise.all([
+  const [panel, panelStyles, infoHint, checklist] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/settings/components/GoogleWorkspacePanel.module.css"),
     read("app/settings/components/workspace-setup-shell/WorkspaceInfoHint.tsx"),
+    read("app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx"),
   ]);
 
   assert.equal(panel.match(/<SetupStage\b/g)?.length, 4);
@@ -37,7 +38,21 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   }
 
   assert.match(panel, /className="workspace-stage-list"[^>]*role="group"[^>]*aria-label="Google Workspace setup stages"/);
-  assert.match(panel, /className=\{`workspace-setup-stage\$\{open/);
+  assert.match(panel, /const anchorId = `workspace-stage-\$\{number\}`/);
+  assert.match(panel, /window\.location\.hash === `#\$\{anchorId\}`/);
+  assert.match(panel, /window\.addEventListener\("hashchange", syncHashTarget\)/);
+  assert.match(panel, /hashTargeted\.current = targeted[\s\S]+if \(targeted\) \{[\s\S]+setOpen\(true\)[\s\S]+scheduleAnchorScroll\(\)/);
+  assert.match(panel, /const wasTargeted = hashTargeted\.current[\s\S]+else if \(wasTargeted\) \{[\s\S]+if \(!complete && firstIncomplete\) setOpen\(true\)[\s\S]+else closeStage\(\)/);
+  assert.match(panel, /bodyRef\.current\?\.contains\(document\.activeElement\)[\s\S]+toggleRef\.current\?\.focus\(\)/);
+  assert.match(panel, /if \(!hashTargeted\.current && complete && !previousComplete\.current\)/);
+  assert.match(panel, /scheduleAnchorScroll[\s\S]+scrollIntoView\(\{ block: "start" \}\)/);
+  assert.match(panel, /if \(layoutSettled\) \{[\s\S]+if \(hashTargeted\.current\) scheduleAnchorScroll\(\)[\s\S]+return;[\s\S]+new ResizeObserver/);
+  assert.match(panel, /observer\.observe\(stageList\)[\s\S]+observer\.disconnect\(\)/);
+  assert.equal(panel.match(/layoutSettled=\{!statusSourcesLoading\}/g)?.length, 4);
+  assert.match(panel, /if \(hashTargeted\.current\) scheduleAnchorScroll\(\)/);
+  assert.match(panel, /ref=\{sectionRef\}/);
+  assert.match(panel, /id=\{anchorId\}/);
+  assert.match(panel, /className=\{`workspace-setup-stage \$\{panelStyles\.stageAnchor\}\$\{open/);
   assert.match(panel, /data-workspace-stage=\{number\}/);
   assert.match(panel, /className="workspace-stage-toggle"/);
   assert.match(panel, /aria-label=\{`\$\{open \? "Collapse" : "Expand"\} Stage \$\{number\}: \$\{title\}`\}/);
@@ -58,10 +73,23 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /tone=\{stageFourStatusNeutral \? "neutral" : stageFourReady \? "ready"/);
   assert.match(panel, /panelStyles\.stageChipNeutral/);
   assert.match(panelStyles, /\.stageChipNeutral[\s\S]+background: #f0eeeb[\s\S]+color: #6c655f/);
+  assert.match(panelStyles, /\.stageAnchor[\s\S]+scroll-margin-top: 86px/);
   assert.match(panel, /workspace-status-banner/);
   assert.match(panel, /workspace-status-mode/);
   assert.match(panel, /workspace-status-progress/);
   assert.doesNotMatch(panel, /workspace-mode-card|Company Google Workspace|Sample data only · no Google account connected · nothing is sent to Google|One administrator-approved organization connection/);
+  const shellEnd = panel.indexOf("{filingMessage &&");
+  const shell = panel.slice(0, shellEnd);
+  assert.equal(shell.match(/workspace-status-mode/g)?.length, 1);
+  assert.equal(shell.match(/workspace-stage-chip/g)?.length, 1);
+  assert.doesNotMatch(
+    `${shell}\n${checklist}`,
+    /current mirror source:|Simulated Workspace Gmail|Workspace Gmail|Simulated shared calendars|Workspace shared calendars|Current check:|no OAuth account or Google token is connected|Google was connected\.|Connection ready|Local Workspace simulation is ready\. No Google account is connected\./,
+  );
+  assert.match(shell, /<strong>Gmail verification<\/strong>/);
+  assert.match(shell, /<strong>Calendar verification<\/strong>/);
+  assert.match(shell, /Google authorization completed\. Current Workspace status is shown above\./);
+  assert.match(shell, /Workspace readiness refreshed\. Current status is shown above\./);
 
   for (const endpoint of [
     "/api/v1/google-workspace",
@@ -105,7 +133,10 @@ test("Stage 4 pins normative verification and ongoing-upkeep copy without invent
   }
 
   const notificationCopy = "Review the closed event-to-space map. Hosted webhook secrets stay outside the browser, application data, logs, and source control.";
-  assert.ok(panel.includes(notificationCopy));
+  const notificationHint = "Choose which supported events can notify each approved Google Chat space. The routing page shows what is available before anything is enabled.";
+  assert.equal(panel.match(new RegExp(notificationCopy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))?.length, 1);
+  assert.ok(panel.includes(notificationHint));
+  assert.notEqual(notificationHint, notificationCopy);
   assert.ok(chatCard.includes(notificationCopy), "the existing operational notification card copy remains byte-identical");
   assert.match(panel, /href="\/settings\?section=workflow-notifications">Open notification routing<\/a>/);
 
@@ -134,11 +165,47 @@ test("Stage 4 pins normative verification and ongoing-upkeep copy without invent
   assert.match(panel, /const stageFourStatus = statusSourcesLoading[\s\S]+CHECKING[\s\S]+stageFourReady[\s\S]+READY[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE[\s\S]+\$\{stageFourCompleteCount\} OF 3 VERIFIED/);
   assert.match(panel, /const gmailVerificationPassed = gmailLabelsReady && gmailTestEmailPassed/);
   assert.match(panel, /setGmailTestEmailPassed\(true\)/);
+  assert.match(panel, /const dependencyDescriptionId = dependencyBlocked \? `workspace-verification-\$\{rowKey\}-dependency` : undefined/);
+  assert.match(panel, /typeof children === "function" \? children\(dependencyDescriptionId\) : children/);
+  assert.match(stageFourSource, /rowKey="gmail"[\s\S]+dependencyBlocked=\{!gmailActionsEnabled\}[\s\S]+id=\{dependencyDescriptionId\}[\s\S]+aria-describedby=\{dependencyDescriptionId\}/);
+  assert.match(stageFourSource, /rowKey="calendar"[\s\S]+dependencyBlocked=\{!calendarActionsEnabled\}[\s\S]+id=\{dependencyDescriptionId\}[\s\S]+aria-describedby=\{dependencyDescriptionId\}/);
   assert.match(stageFourSource, /complete=\{false\}/);
   assert.doesNotMatch(stageFourSource, /status=\{stageFourReady \? "DONE"/);
   assert.match(styles, /\.verificationGroup[\s\S]+\.ongoingGroup[\s\S]+border: 1px dashed/);
   assert.match(styles, /@media \(max-width: 560px\)[\s\S]+\.verificationBody :global\(\.workspace-actions > \*\)[\s\S]+min-height: 44px/);
   assert.match(styles, /\.verificationBody :global\(\.workspace-actions > \.administrator-action-control > button\)[\s\S]+width: 100%[\s\S]+max-width: none/);
+});
+
+test("Workspace cross-links target stage anchors while rendered personal settings use one name", async () => {
+  const [directory, testing, navigation, personal, routes] = await Promise.all([
+    read("app/settings/components/DirectorySyncPanel.tsx"),
+    read("app/settings/components/TestingLaunchPanel.tsx"),
+    read("app/settings/components/SettingsAudienceNavigation.tsx"),
+    read("app/settings/components/MySettingsPanel.tsx"),
+    read("app/lib/operations-routes.ts"),
+  ]);
+
+  assert.match(directory, /href="\/settings\?section=google-workspace#workspace-stage-3">Open Google Workspace setup<\/a>/);
+  assert.match(testing, /href="\/settings\?section=google-workspace#workspace-stage-4">Open Google Workspace setup<\/a>/);
+  assert.doesNotMatch(directory, /onClick=\{onConfigure\}/);
+  assert.doesNotMatch(testing, /onClick=\{onGoogleSetup\}/);
+  assert.match(navigation, /const PERSONAL_SECTION: SettingsSection = "My settings"/);
+  assert.match(navigation, /<SectionButton section=\{PERSONAL_SECTION\} label="My settings"/);
+  assert.doesNotMatch(navigation, /label="My account"/);
+  assert.match(personal, /<h2>My settings<\/h2>/);
+  assert.doesNotMatch(personal, /<h2>My account<\/h2>/);
+  for (const [section, slug] of [
+    ["My settings", "account"],
+    ["Google Workspace", "google-workspace"],
+    ["Calendar & appointments", "calendar"],
+    ["Inbox & file rules", "inbox-rules"],
+    ["Client Directory", "client-directory"],
+    ["Workflow & notifications", "workflow-notifications"],
+    ["Data & security", "data-security"],
+    ["Testing & launch", "testing-launch"],
+  ]) {
+    assert.match(routes, new RegExp(`"${section}": "${slug}"`));
+  }
 });
 
 test("Workspace prerequisites use a semantic metadata-only Stage 1 sequence", async () => {
@@ -287,6 +354,13 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
   assert.match(actions, /\{ key: resource\.key, name \}/);
   assert.match(panel, /fetch\("\/api\/v1\/integrations\/google\/drive\/verify", \{ method: "POST" \}\)/);
   assert.match(actions, /resourceSourceLabel[\s\S]+App-managed[\s\S]+Environment value/);
+  assert.match(actions, /function resourceOperationalState[\s\S]+resource\.source === "none" \|\| !resource\.externalId[\s\S]+resource\.origin === "created"[\s\S]+resource\.origin === "adopted" \|\| resource\.origin === "env-adopted"[\s\S]+return "Found"/);
+  assert.doesNotMatch(actions, /return "Ready"|\| "Ready"/);
+  const resourceDetailsSource = actions.slice(actions.indexOf("function ResourceDetails"), actions.indexOf("function CreationRow"));
+  assert.match(resourceDetailsSource, /const operationalState = resourceOperationalState\(resource\)/);
+  assert.match(resourceDetailsSource, /data-resource-operational-state=\{operationalState\}/);
+  assert.doesNotMatch(resourceDetailsSource, />\{resource\.state\}</);
+  assert.doesNotMatch(actionStyles, /\.resourceStateSimulated/);
   assert.match(actions, /ResourceDetails/);
   assert.match(actions, /Every action is repeat-safe and never deletes Google content\./);
 
