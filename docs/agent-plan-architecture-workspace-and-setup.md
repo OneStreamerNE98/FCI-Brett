@@ -1258,7 +1258,13 @@ frame (mutation-sensitive updates, no coverage deletions); SET-07 slug pins unch
 **Effort:** medium-large. **Cost:** $0.
 
 ### SET-30 · Stage 1 "Prepare the tenant" interior (small-medium, after SET-29)
-**Status:** In review — PR #122, July 22, 2026.
+**Status:** Complete — PR #122, July 22, 2026. Source-only and undeployed. Three
+review residuals fold into SET-31 (same file zone): gate Stage-1 simulation
+rendering on readiness simulation instead of bannerSimulation (kills the
+live-mode flicker in simulation); refresh the stale
+WorkspaceDomainChecklistCard.module.css.d.ts (add done/missing, drop removed
+keys) and remove the now-unconsumed workspaceDomainChecklistSummary export;
+give the per-stage chips a neutral pre-load state like the banner's.
 **Why:** Hosting/env guidance is interleaved mid-flow in today's steps; tenant
 preparation is Brett's outside-the-app lane and must read as one checklist
 (spec §3.2).
