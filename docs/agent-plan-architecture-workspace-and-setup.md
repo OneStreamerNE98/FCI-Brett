@@ -2088,7 +2088,7 @@ each PR.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-03 · Provider port + org-wide agentic Q&A (large, after AI-01; API/lib only — no FloorOpsApp)
-**Status:** In progress — `codex/ai03-org-agentic-qa`, July 23, 2026. Source-only and undeployed.
+**Status:** In review — PR #145, July 23, 2026. Source-only and undeployed.
 
 **Why:** the assistant answers only single-project questions from one
 pre-built evidence block; the owner needs org-wide questions answered live
