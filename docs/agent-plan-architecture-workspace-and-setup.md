@@ -417,7 +417,7 @@ database connection; KPI-04 owns the PostgreSQL columns and activation of those 
 Keep every existing guard
 (FCI TEST name rule, 16 MiB/5,000-row caps, `^fci_rehearsal_` schema, refuse production,
 exact acknowledgment). `cutoverReady` stays hardcoded false.
-**Accept:** inventory covers all 23 current tables (unit test fails on unclassified); extended
+**Accept:** inventory covers all 24 current tables (unit test fails on unclassified); extended
 fixture imports green; `cutoverReady:false`.
 
 ### BE-13 · Fail-closed schema targeting (small, no deps)
@@ -2009,6 +2009,8 @@ may not start before production-platform acceptance plus each item's listed
 gate.
 
 ### AI-01 · Tasks foundation + phone-call meeting type (medium; no deps — parallel-safe now)
+**Status:** In progress — `codex/ai01-tasks-foundation`, July 23, 2026.
+
 **Why:** "review to-dos and tell me what to get done today" has no substrate —
 no tasks table exists anywhere (only `project_meetings.action_items_json`
 strings); phone calls also need a home, and `project_meetings` already fits
@@ -2025,10 +2027,12 @@ version at merge time — open BE-07 reserves v7; v1–v6 checksums untouched),
 `app/application/task-operations.ts`, routes `GET/POST /api/v1/tasks` and
 `PATCH /api/v1/tasks/[taskId]` (office-gated, same-origin, bounded 8k bodies,
 dev rate limiter, `no-store`), activity events on create/complete. Also add
-`"phone-call"` to `PROJECT_MEETING_TYPES` in `app/domain/project-meeting.ts`
-(column is unconstrained text; unknown values already degrade to `"other"` —
-purely additive, no migration; the UI select option ships in AI-02c). No UI
-in this packet.
+`"phone-call"` to `PROJECT_MEETING_TYPES` in `app/domain/project-meeting.ts`.
+The D1 column is unconstrained text and unknown values already degrade to
+`"other"`, so this needs no D1 migration; the registered PostgreSQL v6 CHECK
+still requires the widened rule prepared in AI-01's deferred task migration,
+and rehearsal input rejects `phone-call` until that migration is registered
+after BE-07. The UI select option ships in AI-02c. No UI in this packet.
 **Files:** `db/schema.ts`, `drizzle/<next>_*.sql`, `app/domain/task.ts`,
 `app/ports/task-repository.ts`, `app/adapters/{d1,postgres,memory}/task-repository.ts`,
 PG parity schema + registry, `app/application/task-operations.ts`,

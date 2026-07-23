@@ -99,7 +99,7 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
 
 test("bounded core rehearsal inventory exactly classifies every D1 table plus R2 without a runtime D1 import", async () => {
   const schemaTables = discoverD1TableNames(d1Schema);
-  assert.equal(schemaTables.length, 23);
+  assert.equal(schemaTables.length, 24);
   assert.deepEqual(
     CORE_REHEARSAL_SOURCE_INVENTORY.map((entry) => entry.sourceCategory).sort(),
     [...schemaTables, "r2_objects"].sort(),
@@ -117,6 +117,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
       leads: "migrated",
       projects: "transformed",
       project_meetings: "migrated",
+      tasks: "blocking",
       filing_rules: "blocking",
       workspace_settings: "blocking",
       user_preferences: "blocking",
@@ -144,7 +145,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
   assert.doesNotMatch(rehearsalSource, /\$\{table\}:(?:content|identifiers):v1/);
 
   const inventory = createCoreRecordRehearsalPlan(fixture, options).sourceInventory;
-  assert.equal(inventory.length, 24);
+  assert.equal(inventory.length, 25);
   assert.deepEqual(
     Object.fromEntries(inventory.map((entry) => [entry.sourceCategory, entry.sourceCount])),
     {
@@ -156,6 +157,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
       leads: 1,
       projects: 1,
       project_meetings: 1,
+      tasks: 0,
       filing_rules: 0,
       workspace_settings: 0,
       user_preferences: 0,
@@ -328,6 +330,36 @@ test("inventory-only source counts fail closed before opening a database connect
     },
   );
   assert.equal(connected, false);
+});
+
+test("phone-call meetings fail before database access until the deferred PG constraint widens", async () => {
+  const snapshot = clone(fixture);
+  snapshot.projectMeetings[0].meetingType = "phone-call";
+  let connected = false;
+
+  await assert.rejects(
+    runCoreRecordRehearsal(
+      {
+        connect: async () => {
+          connected = true;
+          throw new Error("must not connect");
+        },
+      },
+      snapshot,
+      options,
+    ),
+    (error) => {
+      assert.ok(error instanceof CoreRecordRehearsalError);
+      assert.equal(error.code, "invalid_snapshot_value");
+      assert.match(error.message, /meetingType is unsupported/);
+      return true;
+    },
+  );
+  assert.equal(connected, false);
+  assert.match(
+    await readFile(rehearsalSourceUrl, "utf8"),
+    /Keep phone-call excluded until task-schema\.ts is registered after BE-07/,
+  );
 });
 
 test("v2 project KPI placeholders are exact-shape and fail closed until KPI-04", async () => {
@@ -520,7 +552,7 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
     providerCalls: 0,
   });
   assert.ok(Object.values(report.tables).every((table) => table.matched));
-  assert.equal(report.sourceInventory.length, 24);
+  assert.equal(report.sourceInventory.length, 25);
   assert.deepEqual(
     report.sourceInventory.map(({ sourceCategory, disposition, sourceCount }) => ({
       sourceCategory,

@@ -14,6 +14,7 @@ const productionMigrationModules = new Set([
   join(appRoot, "platform", "postgres", "admin-access-persistence-schema.ts"),
   join(appRoot, "platform", "postgres", "admin-audit-activity-schema.ts"),
   join(appRoot, "platform", "postgres", "lead-project-meeting-schema.ts"),
+  join(appRoot, "platform", "postgres", "task-schema.ts"),
 ]);
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
@@ -22,6 +23,7 @@ const workspaceResourceMigrationPrefix = "0013_";
 const workspaceBlueprintMigrationPrefix = "0015_";
 const userSettingsMigrationPrefix = "0016_";
 const pageLayoutsMigrationPrefix = "0017_";
+const tasksMigrationPrefix = "0018_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -29,7 +31,7 @@ const allowedDestructiveMigrations = new Map([
   ],
 ]);
 
-const requiredDevelopmentIndexes = [
+const integrityIndexNames = [
   "clients_code_unique_idx",
   "clients_name_idx",
   "contacts_client_idx",
@@ -39,6 +41,11 @@ const requiredDevelopmentIndexes = [
   "projects_number_unique_idx",
   "projects_client_idx",
   "records_type_idx",
+];
+const requiredDevelopmentIndexes = [
+  ...integrityIndexNames,
+  "tasks_project_status_idx",
+  "tasks_status_due_date_idx",
 ];
 
 async function sourceFiles(directory) {
@@ -189,7 +196,7 @@ test("keeps development data integrity and lookup indexes in the versioned Drizz
 
   assert.ok(files.includes(integrityIndexMigration));
   assert.doesNotMatch(integrityIndexSql, /\b(?:ALTER|DROP|DELETE|TRUNCATE)\b/i);
-  for (const indexName of requiredDevelopmentIndexes) {
+  for (const indexName of integrityIndexNames) {
     assert.match(integrityIndexSql, new RegExp("INDEX IF NOT EXISTS `" + indexName + "`"));
   }
 });
@@ -385,11 +392,89 @@ test("keeps SET-35 per-user page layouts in the current additive migration", asy
     autoincrement: false,
     default: "'{}'",
   });
-  assert.deepEqual(journal.entries.at(-1), {
+  const journalEntry = journal.entries.find(({ tag }) => tag === "0017_sleepy_natasha_romanoff");
+  assert.deepEqual(journalEntry, {
     idx: 17,
     version: "6",
-    when: journal.entries.at(-1).when,
+    when: journalEntry.when,
     tag: "0017_sleepy_natasha_romanoff",
+    breakpoints: true,
+  });
+});
+
+test("keeps AI-01 tasks in one additive migration with the closed schema and indexes", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(tasksMigrationPrefix));
+  assert.equal(migration, "0018_slow_serpent_society.sql");
+  assert.equal(files.filter((file) => file.startsWith(tasksMigrationPrefix)).length, 1);
+
+  const [migrationSql, schemaSource, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(root, "db", "schema.ts"), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0017_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0018_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+
+  assert.match(migrationSql, /^CREATE TABLE `tasks`/u);
+  for (const [column, definition] of [
+    ["id", "text PRIMARY KEY NOT NULL"],
+    ["title", "text NOT NULL"],
+    ["details", "text"],
+    ["status", "text DEFAULT 'open' NOT NULL"],
+    ["due_date", "text"],
+    ["project_id", "text"],
+    ["lead_id", "text"],
+    ["assignee_email", "text"],
+    ["source", "text DEFAULT 'manual' NOT NULL"],
+    ["source_ref", "text"],
+    ["created_by", "text NOT NULL"],
+    ["created_at", "integer NOT NULL"],
+    ["updated_at", "integer NOT NULL"],
+    ["completed_at", "integer"],
+  ]) {
+    assert.match(migrationSql, new RegExp("`" + column + "` " + definition + "(?:,|\\s)"));
+  }
+  assert.match(
+    migrationSql,
+    /CREATE INDEX `tasks_status_due_date_idx` ON `tasks` \(`status`,`due_date`\)/u,
+  );
+  assert.match(
+    migrationSql,
+    /CREATE INDEX `tasks_project_status_idx` ON `tasks` \(`project_id`,`status`\)/u,
+  );
+  assert.doesNotMatch(
+    migrationSql,
+    /\b(?:ALTER|DROP|UPDATE|INSERT|DELETE|TRUNCATE|RENAME)\b/iu,
+  );
+  assert.match(schemaSource, /export const tasks = sqliteTable\("tasks"/u);
+  assert.match(schemaSource, /index\("tasks_status_due_date_idx"\)\.on\(table\.status, table\.dueDate\)/u);
+  assert.match(schemaSource, /index\("tasks_project_status_idx"\)\.on\(table\.projectId, table\.status\)/u);
+
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.equal(Object.keys(snapshot.tables).length, Object.keys(previousSnapshot.tables).length + 1);
+  assert.ok(snapshot.tables.tasks);
+  assert.deepEqual(Object.keys(snapshot.tables.tasks.columns), [
+    "id",
+    "title",
+    "details",
+    "status",
+    "due_date",
+    "project_id",
+    "lead_id",
+    "assignee_email",
+    "source",
+    "source_ref",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "completed_at",
+  ]);
+  assert.deepEqual(journal.entries.at(-1), {
+    idx: 18,
+    version: "6",
+    when: journal.entries.at(-1).when,
+    tag: "0018_slow_serpent_society",
     breakpoints: true,
   });
 });

@@ -6,6 +6,7 @@ export const DEVELOPMENT_RATE_LIMIT_SCOPES = [
   "uploads",
   "google-sheets-sync",
   "project-drive-provisioning",
+  "tasks",
 ] as const;
 
 export type DevelopmentRateLimitScope = (typeof DEVELOPMENT_RATE_LIMIT_SCOPES)[number];

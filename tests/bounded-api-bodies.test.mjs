@@ -48,6 +48,8 @@ const [
   templateEnsureRoute,
   spreadsheetEnsureRoute,
   meetingsRoute,
+  tasksRoute,
+  taskRoute,
 ] =
   await Promise.all([
     vite.ssrLoadModule("/app/api/v1/assistant/route.ts"),
@@ -64,6 +66,8 @@ const [
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/templates/ensure/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/sheets/ensure/route.ts"),
     vite.ssrLoadModule("/app/api/v1/projects/[projectId]/meetings/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/tasks/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/tasks/[taskId]/route.ts"),
   ]);
 
 after(async () => {
@@ -111,6 +115,21 @@ const cases = [
     error: "Meeting notes are too large.",
     invoke: (request) => meetingsRoute.POST(request, {
       params: Promise.resolve({ projectId: "project-1" }),
+    }),
+  },
+  {
+    name: "task creation",
+    maximumBytes: 8_000,
+    error: "Task details are too large.",
+    invoke: (request) => tasksRoute.POST(request),
+  },
+  {
+    name: "task update",
+    method: "PATCH",
+    maximumBytes: 8_000,
+    error: "Task update is too large.",
+    invoke: (request) => taskRoute.PATCH(request, {
+      params: Promise.resolve({ taskId: "task-1" }),
     }),
   },
   {

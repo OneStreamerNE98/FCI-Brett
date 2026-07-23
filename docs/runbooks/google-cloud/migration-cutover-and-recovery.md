@@ -48,15 +48,18 @@ window, and cleanup procedure.
   reconciliation after recovery.
 
 The current format-version-2 bounded core rehearsal always reports
-`cutoverReady: false`. Its report inventories all 23 D1 tables plus R2 with a
+`cutoverReady: false`. Its report inventories all 24 D1 tables plus R2 with a
 reasoned disposition. Only clients, contacts, leads, projects, project meetings,
 and classified activity carry bounded rows and receive end-to-end hash
 reconciliation. Project rows must include explicit null `flooringCategory`,
 `squareFeet`, and `contractValue` placeholders in the hashed format-v2 shape;
 non-null KPI values remain deferred to KPI-04 and fail before database access.
-Every inventory-only category must likewise remain zero or the command fails
-before database access. Passing it is useful source evidence but is not a
-complete migration or cutover rehearsal.
+Every inventory-only category, including the additive AI-01 tasks table, must
+likewise remain zero or the command fails before database access. AI-01
+`phone-call` meetings also fail before database
+access until the deferred PostgreSQL task migration registers the widened
+meeting-type constraint after BE-07. Passing it is useful source evidence but
+is not a complete migration or cutover rehearsal.
 
 ## 2. Production go/no-go gate
 
