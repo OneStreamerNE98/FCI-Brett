@@ -58,11 +58,15 @@ test("requires and revalidates the explicitly approved Workspace connection acco
 });
 
 test("scopes dashboard Gmail archive totals to the active Google connection", async () => {
-  const dashboard = await read("app/api/v1/dashboard/route.ts");
+  const [dashboard, dashboardData] = await Promise.all([
+    read("app/api/v1/dashboard/route.ts"),
+    read("app/application/dashboard-data.ts"),
+  ]);
 
   assert.match(dashboard, /getGoogleRuntimeConfig/);
-  assert.match(dashboard, /gmail_file_archives WHERE connection_key = \? AND status = 'filed'/);
-  assert.match(dashboard, /bind\(google\.connectionKey\)/);
+  assert.match(dashboard, /dashboardData\(env\.DB, google\.connectionKey\)/);
+  assert.match(dashboardData, /gmail_file_archives WHERE connection_key = \? AND status = 'filed'/);
+  assert.match(dashboardData, /bind\(connectionKey\)/);
 });
 
 test("task reads and mutations reject non-office identities before body or database work", async () => {
