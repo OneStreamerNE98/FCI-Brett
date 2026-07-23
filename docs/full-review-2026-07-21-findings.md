@@ -406,7 +406,7 @@ R4.
 ## New FIX packets from the addendum
 
 ### FIX-10 · Single shared advisory-lock constant (P2 F-16; small; Wave R1)
-**Status:** In progress — `codex/fix10-postgres-advisory-lock`, July 22, 2026.
+**Status:** In review — PR #112, July 22, 2026. Source-only and undeployed.
 **Why:** two subsystems hard-code the same Postgres advisory-lock id independently; a
 future edit to one desyncs the pair, and sharing one id can serialize unrelated work.
 **Do:** extract `7314269172071302` to one exported constant (a shared
