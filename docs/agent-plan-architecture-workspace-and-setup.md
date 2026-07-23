@@ -2003,6 +2003,8 @@ may not start before production-platform acceptance plus each item's listed
 gate.
 
 ### AI-01 · Tasks foundation + phone-call meeting type (medium; no deps — parallel-safe now)
+**Status:** In progress — `codex/ai01-tasks-foundation`, July 23, 2026.
+
 **Why:** "review to-dos and tell me what to get done today" has no substrate —
 no tasks table exists anywhere (only `project_meetings.action_items_json`
 strings); phone calls also need a home, and `project_meetings` already fits
