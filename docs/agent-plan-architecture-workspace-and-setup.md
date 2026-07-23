@@ -1278,7 +1278,13 @@ exactly at `connectReady`; checklist behavior tests stay green.
 **Effort:** small-medium. **Cost:** $0.
 
 ### SET-31 · Stage 2 "Connect" with health as an expander (small, after SET-30)
-**Status:** In review — PR #125, July 23, 2026. Draft; source-only and undeployed.
+**Status:** Complete — PR #125, July 23, 2026. Source-only and undeployed. Review
+residuals: ~15 lines of now-dead Stage-2 global CSS (.workspace-connection card
+rules and kin) fold into the next packet holding the globals.css lock; the
+"Connection health" title inside the summary is a strong, not a heading
+(deliberate details/summary tradeoff) — revisit if screen-reader nav feedback
+warrants; mixed-mode Stage-1 rendering now follows readiness simulation by
+design with completion still fail-closed.
 
 **Why:** Connection health is connection detail, not a separate bottom card; the
 Resources/Health near-duplicate tables are a verified P2 (spec §3.3).
