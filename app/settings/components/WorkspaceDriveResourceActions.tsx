@@ -556,11 +556,13 @@ export function WorkspaceDriveResourceActions({
     : resourceStatusPending
       ? "Unlocks after Workspace resource status finishes loading."
       : undefined;
-  const sharedDriveDependency = !driveVerificationReady
+  const sharedDriveDependency = !stageReady
     ? "Unlocks after Connect."
-    : sharedDrive && !sharedDriveAdoptEnabled
-      ? resourceStatusDependency ?? (!stageReady ? "Unlocks after Connect." : undefined)
-      : undefined;
+    : !driveVerificationReady
+      ? "Unlocks after Drive is connected and Workspace storage is configured."
+      : sharedDrive && !sharedDriveAdoptEnabled
+        ? resourceStatusDependency
+        : undefined;
   const folderDependency = !foldersEnabled
     ? resourceStatusDependency
       ?? (!stageReady
@@ -592,7 +594,9 @@ export function WorkspaceDriveResourceActions({
           : !progress.foldersComplete
             ? "Unlocks after Folder tree (from your blueprint)."
             : "Unlocks after Templates.")
-    : undefined;
+    : !simulation && !calendarReady
+      ? "Unlocks after Calendar is enabled and connected."
+      : undefined;
 
   return <section className={`${styles.creationCard} workspace-setup-card`} aria-labelledby="workspace-creation-heading">
     <header className={styles.cardHeader}>

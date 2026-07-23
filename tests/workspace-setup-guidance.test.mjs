@@ -331,11 +331,12 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
   assert.match(actions, /aria-describedby=\{adoptDisabled \? describedBy : undefined\}/);
   assert.match(actions, /aria-describedby=\{verifyDisabled \? describedBy : undefined\}/);
   assert.match(actions, /registryUnavailable[\s\S]+sharedDriveState = registryUnavailable[\s\S]+UNAVAILABLE/);
-  assert.match(actions, /const sharedDriveDependency = !driveVerificationReady[\s\S]+Unlocks after Connect\.[\s\S]+sharedDrive && !sharedDriveAdoptEnabled[\s\S]+resourceStatusDependency/);
+  assert.match(actions, /const sharedDriveDependency = !stageReady[\s\S]+Unlocks after Connect\.[\s\S]+!driveVerificationReady[\s\S]+Unlocks after Drive is connected and Workspace storage is configured\.[\s\S]+sharedDrive && !sharedDriveAdoptEnabled[\s\S]+resourceStatusDependency/);
   assert.match(actions, /lockedCaption=\{sharedDriveDependency\}/);
   assert.match(actions, /const folderDependency[\s\S]+resourceStatusDependency[\s\S]+!stageReady[\s\S]+Unlocks after Connect\.[\s\S]+Unlocks after Shared Drive\./);
   assert.match(actions, /const spreadsheetDependency[\s\S]+!stageReady[\s\S]+!progress\.sharedDriveComplete[\s\S]+Unlocks after Shared Drive\.[\s\S]+Unlocks after Folder tree \(from your blueprint\)\./);
-  assert.match(actions, /const calendarDependency[\s\S]+!stageReady[\s\S]+!progress\.sharedDriveComplete[\s\S]+!progress\.foldersComplete[\s\S]+Unlocks after Templates\./);
+  assert.match(actions, /const calendarDependency[\s\S]+!stageReady[\s\S]+!progress\.sharedDriveComplete[\s\S]+!progress\.foldersComplete[\s\S]+Unlocks after Templates\.[\s\S]+!simulation && !calendarReady[\s\S]+Unlocks after Calendar is enabled and connected\./);
+  assert.match(actions, /label="Calendars"[\s\S]+lockedCaption=\{calendarDependency\}[\s\S]+aria-describedby=\{dependencyDescriptionId\}/);
   assert.match(actions, /resource\.resourceType === "drive\.shared-drive"[\s\S]+resource\.resourceType === "drive\.folder"[\s\S]+resource\.resourceType === "sheets\.spreadsheet"[\s\S]+resource\.resourceType === "drive\.file"/);
   const progressStart = actions.indexOf("export function deriveWorkspaceCreationProgress");
   const progressEnd = actions.indexOf("async function postJson", progressStart);

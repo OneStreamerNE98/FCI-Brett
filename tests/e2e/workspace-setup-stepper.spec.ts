@@ -1434,6 +1434,59 @@ test("stale complete registry rows name Connect as the actual unmet dependency",
   }
 });
 
+test("service-level Drive and Calendar locks name degraded dependencies after Stage 2 is complete", async ({ page }) => {
+  const completeResources = workspaceResources().resources.map((resource) => {
+    if (resource.resourceType === "drive.shared-drive") {
+      return { ...resource, source: "app" as const, origin: "adopted" as const, state: "Adopted" as const, externalId: resource.externalId ?? "drive-id" };
+    }
+    if (resource.resourceType === "drive.folder" || resource.resourceType === "sheets.spreadsheet" || resource.resourceType === "drive.file") {
+      return { ...resource, source: "app" as const, origin: "created" as const, state: "Created" as const, externalId: resource.externalId ?? `${resource.key}-id` };
+    }
+    return resource;
+  });
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page, workspaceResources({ resources: completeResources }));
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(readiness({
+        storageConfigured: false,
+        driveConnected: false,
+        calendarConnected: false,
+      })),
+    });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("DONE");
+  await setStageExpanded(page, 3, true);
+  await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
+
+  const sharedDriveRow = creationRow(page, "shared-drive");
+  const adoptButton = sharedDriveRow.getByRole("button", { name: "Verify and adopt" });
+  await expect(adoptButton).toBeEnabled();
+  await expect(adoptButton).not.toHaveAttribute("aria-describedby", /.+/);
+  const verifyDriveButton = sharedDriveRow.getByRole("button", { name: "Verify Shared Drive" });
+  await expect(verifyDriveButton).toBeDisabled();
+  const driveDescriptionId = await verifyDriveButton.getAttribute("aria-describedby");
+  expect(driveDescriptionId).toBeTruthy();
+  await expect(page.locator(`[id="${driveDescriptionId}"]`)).toHaveText("Unlocks after Drive is connected and Workspace storage is configured.");
+  await expect(sharedDriveRow.getByText("Unlocks after Connect.", { exact: true })).toHaveCount(0);
+
+  const calendarRow = creationRow(page, "calendars");
+  const verifyCalendarButton = calendarRow.getByRole("button", { name: "Verify calendar access" });
+  await expect(verifyCalendarButton).toBeDisabled();
+  const calendarDescriptionId = await verifyCalendarButton.getAttribute("aria-describedby");
+  expect(calendarDescriptionId).toBeTruthy();
+  await expect(page.locator(`[id="${calendarDescriptionId}"]`)).toHaveText("Unlocks after Calendar is enabled and connected.");
+  await expect(calendarRow.getByText("Unlocks after Connect.", { exact: true })).toHaveCount(0);
+});
+
 test("stale Shared Drive registry data keeps adopt locked while direct verification remains available", async ({ page }) => {
   let verifyRequest: { method: string; body: string | null } | null = null;
   let resourcesShouldFail = false;
