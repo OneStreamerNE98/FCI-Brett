@@ -284,7 +284,7 @@ PG16, `npm run db:migrate:postgres` applies v1–v6 and readiness passes; e2e de
 unchanged.
 
 ### BE-07 · Settings/preferences/filing-rules/mail-items ports + migration v7 + single calendar-ID authority (large, after BE-06)
-**Status:** In review — PR #140, July 23, 2026. Source-only and undeployed; production PostgreSQL migrations v7 and v8 remain unapplied.
+**Status:** Complete — PR #140, July 23, 2026. Source-only and undeployed; production PostgreSQL migrations v7 and v8 remain unapplied. Fable review: zero substantive findings — all eight migration checksums independently recomputed and matched, v1–v6 byte-untouched, D1 extraction byte-equivalent at every former call site, route contracts identical, saved-wins precedence pinned with env as read-only fallback (never written to storage). P3 residuals: registry-row-outranks-saved precedence nuance carried to SET-05 (surface the three-way source in its UI labels); garbled grant-policy comment in least-privilege.sql and the unpinned partial-index qualifier fold into FIX-12; PG-adapter strictness divergence (fail-closed TypeErrors vs D1 normalization) noted for BE-14's degraded-mode contract.
 
 **Why:** Four more D1-only tables with inline SQL; plus the accepted-but-unowned defect:
 saved `workspace_settings` calendar/sheet IDs are runtime-inert while env vars win
@@ -1901,9 +1901,18 @@ is a `font-size:0` + `::after` hack carrying a permanent test allowlist.
 variant="compact"` renders real text (aria/title carry the full state) and both
 `font-size:0` hacks are deleted with the test allowlist EMPTIED; collapsed-rail
 nav items ≥44 px tall; shell sweep at 1180/960/820/620/560 re-verifying the
-drawer focus trap.
+drawer focus trap. PLUS (owner addition, July 23, 2026) the mobile
+reveal-on-scroll-up topbar: at ≤820 px the topbar (search + menu button) hides
+on scroll-down and reveals on the FIRST scroll-up, iOS-Safari style — direction
+detection with a small threshold (no flicker on micro-scrolls), a passive
+rAF-throttled scroll listener, always visible at the top of the page, always
+revealed while focus is within it, and `prefers-reduced-motion` gets instant
+show/hide instead of the slide; desktop behavior unchanged.
 **Accept:** zero `font-size:0` in globals.css and an empty allowlist asserted;
-nav aria-labels unchanged; golden hashes unchanged; axe green desktop+mobile.
+nav aria-labels unchanged; golden hashes unchanged; axe green desktop+mobile;
+a mobile-viewport e2e asserts the topbar hides on scroll-down, reveals on one
+upward scroll, stays visible with focus inside it, and renders statically under
+reduced motion.
 **Effort:** small-medium. **Cost:** $0.
 
 ### DES-05 · Interactive vs static card grammar + FIX-08 absorption (medium; FloorOpsApp queue, after DES-06; GOLDEN REGEN 1 of 2)
