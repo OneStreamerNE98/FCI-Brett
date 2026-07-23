@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
@@ -20,6 +20,19 @@ const appSurfacePaths = [
   "app/settings/components/WorkspaceBlueprintEditor.tsx",
 ];
 const readAppSurface = async () => (await Promise.all(appSurfacePaths.map(read))).join("\n");
+async function readAppComponentSource(directory = new URL("app/", root)) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const chunks = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const child = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
+    if (entry.isDirectory()) {
+      chunks.push(await readAppComponentSource(child));
+    } else if (/\.[jt]sx$/i.test(entry.name)) {
+      chunks.push(await readFile(child, "utf8"));
+    }
+  }
+  return chunks.join("\n");
+}
 
 test("renders feature-gated Google Chat routing without a webhook-value field", async () => {
   const [card, defaults, css] = await Promise.all([
@@ -50,6 +63,64 @@ function containingSelector(css, declarationIndex) {
 
 function pxValue(value, unit) {
   return unit.toLowerCase() === "rem" ? value * 16 : value;
+}
+
+const allowedUndersizedControlSelectors = new Set([
+  ".access-management-project-picker input",
+  ".chat-routing-list .settings-checkbox input",
+  ".settings-checkbox input",
+  ".workspace-blueprint-weekdays input",
+]);
+
+function interactiveClassNamesFromSource(source) {
+  const classNames = new Set();
+  for (const tag of source.matchAll(/<(?:a|button|input|select|summary|textarea)\b[\s\S]*?>/gi)) {
+    const attribute = tag[0].match(
+      /\bclassName\s*=\s*(?:"([^"]*)"|'([^']*)'|\{\s*"([^"]*)"\s*\}|\{\s*'([^']*)'\s*\}|\{\s*`([^`]*)`\s*\})/,
+    );
+    const value = attribute?.slice(1).find(Boolean) ?? "";
+    for (const className of value.split(/\s+/)) {
+      if (/^[a-z_][\w-]*$/i.test(className)) {
+        classNames.add(className);
+      }
+    }
+  }
+  return classNames;
+}
+
+function selectorTargetsInteractiveControl(selector, interactiveClassNames) {
+  const finalCompound = selector.trim().split(/\s+|[>+~]/).filter(Boolean).at(-1) ?? "";
+  if (/^(?:a|button|input|select|summary|textarea)(?=[.#[:]|$)/i.test(finalCompound)) {
+    return true;
+  }
+  const finalClassNames = [...finalCompound.matchAll(/\.([a-z_][\w-]*)/gi)].map((match) => match[1]);
+  if (finalClassNames.some((className) => interactiveClassNames.has(className))) {
+    return true;
+  }
+  return /\.(?:add-card|primary-button|soft-button|icon-button|[\w-]*(?:action|button|collapse|control|cta|link|remove|tab|toggle|trigger)[\w-]*)\b/i.test(finalCompound);
+}
+
+function undersizedFixedControlDeclarations(source, interactiveClassNames) {
+  const css = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const violations = [];
+
+  for (const match of css.matchAll(/(?<![\w-])(height|min-height)\s*:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))(px|rem)(?=\s*(?:!important\s*)?[;}])/gi)) {
+    const size = pxValue(Number(match[2]), match[3]);
+    if (size >= 34) {
+      continue;
+    }
+    const selector = containingSelector(css, match.index);
+    const interactiveBranches = selector
+      .split(",")
+      .map((branch) => branch.trim())
+      .filter((branch) => selectorTargetsInteractiveControl(branch, interactiveClassNames))
+      .filter((branch) => !allowedUndersizedControlSelectors.has(branch));
+    for (const branch of interactiveBranches) {
+      violations.push(`${branch} -> ${match[0]}`);
+    }
+  }
+
+  return violations;
 }
 
 test("ships the Floor Coverings International product instead of starter content", async () => {
@@ -94,6 +165,7 @@ test("keeps the global design-token and responsive foundations canonical", async
   assert.doesNotMatch(css, /\.main-nav button|\.brand-mark/);
 
   for (const token of [
+    "--line-soft:#e6e0d8",
     "--radius-chip:6px",
     "--radius-control:8px",
     "--radius-card:10px",
@@ -108,6 +180,33 @@ test("keeps the global design-token and responsive foundations canonical", async
   ]) {
     assert.match(css, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+});
+
+test("rejects new undersized fixed interactive controls while preserving audited checkbox inputs", async () => {
+  const [css, appSource] = await Promise.all([read("app/globals.css"), readAppComponentSource()]);
+  const interactiveClassNames = interactiveClassNamesFromSource(appSource);
+  assert.ok(interactiveClassNames.has("search-shortcut"));
+  assert.ok(interactiveClassNames.has("workspace-blueprint-lock"));
+  assert.deepEqual(
+    undersizedFixedControlDeclarations(css, interactiveClassNames),
+    [],
+    `Interactive controls below 34px:\n${undersizedFixedControlDeclarations(css, interactiveClassNames).join("\n")}`,
+  );
+
+  const mutatedCss = `${css}\n.synthetic-undersized-control button{height:30px}`;
+  assert.deepEqual(
+    undersizedFixedControlDeclarations(mutatedCss, interactiveClassNames),
+    [".synthetic-undersized-control button -> height:30px"],
+  );
+
+  const classOnlyMutation = `${css}\n.synthetic-class-only-control{height:30px}`;
+  const mutatedInteractiveClassNames = interactiveClassNamesFromSource(
+    `${appSource}\n<button className="synthetic-class-only-control">Mutation</button>`,
+  );
+  assert.deepEqual(
+    undersizedFixedControlDeclarations(classOnlyMutation, mutatedInteractiveClassNames),
+    [".synthetic-class-only-control -> height:30px"],
+  );
 });
 
 test("keeps rendered typography at the audited 12px minimum", async () => {
