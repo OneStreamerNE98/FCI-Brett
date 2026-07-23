@@ -180,6 +180,15 @@ test("keeps the global design-token and responsive foundations canonical", async
   ]) {
     assert.match(css, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+
+  assert.match(
+    css,
+    /\.workspace-blueprint-footer\{[^}]*box-shadow:0 -5px 18px #3c342c12[^}]*\}/,
+  );
+  assert.match(
+    css,
+    /\.project-drawer\{[^}]*box-shadow:-15px 0 50px #231f2055[^}]*\}/,
+  );
 });
 
 test("rejects new undersized fixed interactive controls while preserving audited checkbox inputs", async () => {
@@ -199,13 +208,22 @@ test("rejects new undersized fixed interactive controls while preserving audited
     [".synthetic-undersized-control button -> height:30px"],
   );
 
-  const classOnlyMutation = `${css}\n.synthetic-class-only-control{height:30px}`;
+  const classOnlyMutation = [
+    css,
+    ".synthetic-widget{height:30px}",
+    ".search-shortcut{height:30px}",
+    ".workspace-blueprint-lock{height:30px}",
+  ].join("\n");
   const mutatedInteractiveClassNames = interactiveClassNamesFromSource(
-    `${appSource}\n<button className="synthetic-class-only-control">Mutation</button>`,
+    `${appSource}\n<button className="synthetic-widget">Mutation</button>`,
   );
   assert.deepEqual(
     undersizedFixedControlDeclarations(classOnlyMutation, mutatedInteractiveClassNames),
-    [".synthetic-class-only-control -> height:30px"],
+    [
+      ".synthetic-widget -> height:30px",
+      ".search-shortcut -> height:30px",
+      ".workspace-blueprint-lock -> height:30px",
+    ],
   );
 });
 
