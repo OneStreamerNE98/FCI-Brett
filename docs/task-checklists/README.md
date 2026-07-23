@@ -15,7 +15,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | BE-09/#51 and BE-12/#53 merged source-only | Finish the remaining migration/cutover tooling, approved calculator evidence, and owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40; KPI-02/#52, SET-10/#56, logo refresh/#57, and later merged UI source remain undeployed | KPI-03 owns the next `FloorOpsApp.tsx` slot; SET-13 is now assignable. |
+| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40; KPI-02/#52, SET-10/#56, logo refresh/#57, and later merged UI source remain undeployed | Current queue and wave order live in the [agent plan's wave text](../agent-plan-architecture-workspace-and-setup.md); Wave R1 fixes are complete and the SET-29 redesign series is active. |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
@@ -30,7 +30,7 @@ PR #66 completed TRK-02 tracking-guard hardening.
 OIDC-02 in PR #54 and OIDC-03 in PR #55 are merged. PRs #54/#55 are source-only and undeployed.
 PR #51 completed BE-09 and is merged source-only and undeployed.
 PR #53 completed BE-12 and is merged source-only and undeployed.
-PR #52 completed KPI-02 and is merged source-only and undeployed; migration 0012 is unapplied to Sites, and KPI-03 is now assignable.
+PR #52 completed KPI-02 and is merged source-only and undeployed; migration 0012 is unapplied to Sites, and KPI-03 became assignable (since completed in PR #75).
 PR #56 completed SET-10 and is merged source-only and undeployed.
 PR #57 completed the application logo asset refresh and is merged source-only and undeployed; the reviewed PR #51–#57 merge train is complete.
 No source merge authorizes live identity/provider configuration, infrastructure or migration apply, image publication, job execution, or deployment.
@@ -72,7 +72,8 @@ fix-packet status in the
 the exact current list, not this snapshot. Since that train, the dashboard-driven Workspace
 setup wave plus the flooring-KPI, rate-limiting, and Google-integration packets have merged
 source-only and undeployed; the nine-lens full-codebase review and the owner-approved
-four-stage settings redesign are published; and Wave R1 fixes are in progress. All merges
+four-stage settings redesign are published; and Wave R1 fixes are complete as of
+July 22, 2026, with the Wave R2 SET-29 redesign series active. All merges
 remain source-only and undeployed and change no owner checkbox or deployment.
 
 ## Checklists by topic
@@ -107,8 +108,8 @@ These checklists are owner-facing setup, decision, acceptance, and operations re
 
 The agent ledgers above own sequencing. OIDC-04 is complete in PRs #49/#50, and PRs #54/#55 completed the source OIDC preconditions.
 TRK-02 is complete in PR #66.
-PR #51 completed BE-09 in source; BE-10/BE-14 are now assignable. PR #52 completed KPI-02 in source; KPI-03 is now assignable.
-The reviewed PR #51–#57 merge train is complete. SET-13 is now assignable because SET-03, SET-04, and SET-10 are complete. The still-unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. No checklist item here authorizes a live provider, staging run, migration/apply, production UI composition, owner acceptance, or deployment.
+PR #51 completed BE-09 in source; BE-10 has since completed (PR #82) and BE-14 remains assignable. PR #52 completed KPI-02 in source; KPI-03 has since completed (PR #75).
+The reviewed PR #51–#57 merge train is complete. SET-13 became assignable and has since completed (PR #76). The still-unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. No checklist item here authorizes a live provider, staging run, migration/apply, production UI composition, owner acceptance, or deployment.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
 

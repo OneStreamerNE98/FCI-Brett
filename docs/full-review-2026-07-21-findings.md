@@ -325,7 +325,7 @@ fails them.
 **Sequencing recap:** R1 = FIX-01 → FIX-02 → FIX-03 → FIX-04 → FIX-05 → FIX-06 →
 FIX-10 (FIX-01/02 share `google-drive.ts` call-graph — run in order; FIX-03..06 and
 FIX-10 are parallel-safe with each other but serialize with anything touching the
-same files). R2 = SET-29…SET-34. R3 = FIX-07 → FIX-08. R4 = FIX-09 + FIX-11 + the
+same files). R2 = SET-29…SET-34. R3 = FIX-07 → FIX-08. R4 = FIX-09 + FIX-11 + FIX-12 + the
 feature queue. Engine feature packets (SET-17/18/21, SET-25, GI-04) remain
 parallel-safe throughout, subject to the same-file rule.
 
@@ -436,3 +436,25 @@ default is fail-closed.
 **Effort:** small-medium. **Cost:** $0. **Note:** production-surface hardening —
 apply behind the same acceptance gate as the rest of the Cloud Run auth foundation;
 not a dev-environment blocker, which is why it is R4 rather than R1.
+
+### FIX-12 · R4 consolidation + residual sweep (P3s F-17/F-18 + recorded residuals; medium; Wave R4, after the SET-29 series)
+**Why:** the July 22 R1 capture audit confirmed every finding is dispositioned, but
+three deferred items had prose and no owner. This packet is that owner, so nothing
+rides on memory.
+**Do:** (1) F-17 — one `withOfficeRoute` wrapper (origin → auth → schema → bounded
+body → no-store by construction) adopted incrementally across the 36 dev routes;
+the FIX-06 census tests become structural. (2) F-18 — one shared setup-action route
+helper (response/errorResponse/lease scaffolding for the four lease-guarded routes)
+and one shared settings-card fetch/state hook (built on the post-SET-29 frame — this
+is why the packet waits for R2). (3) FIX-03 residual — route project-Drive
+provisioning's `google_integration_events` through the shared constructors so
+simulation and live emit identical event types (closing the last event-parity
+divergence). (4) FIX-10 residual — widen the advisory-lock literal-uniqueness guard
+beyond `app/` (include `production-runtime/`, `scripts/`, `worker/`, `db/`) and
+cover the admin id as well as the rehearsal id.
+**Accept:** wrapper-adopted routes return byte-identical responses (golden tests on
+a sample before/after); the setup-action helper keeps all four routes' route tests
+green unchanged; provisioning event parity pinned by a both-modes equality test;
+the widened guard fails on a literal planted in `production-runtime/`; no behavior
+change anywhere.
+**Effort:** medium. **Cost:** $0.
