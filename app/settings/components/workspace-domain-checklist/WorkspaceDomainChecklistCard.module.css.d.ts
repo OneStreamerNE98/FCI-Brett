@@ -1,7 +1,5 @@
 declare const styles: Readonly<{
   card: string;
-  headerActions: string;
-  toggle: string;
   list: string;
   copy: string;
   status: string;
@@ -21,6 +19,8 @@ declare const styles: Readonly<{
   "reconnect-required": string;
   "account-mismatch": string;
   simulated: string;
+  done: string;
+  missing: string;
   link: string;
   hostedPrerequisites: string;
   hostedPrerequisitesHeading: string;

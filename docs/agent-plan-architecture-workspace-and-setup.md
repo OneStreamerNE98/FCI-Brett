@@ -1278,6 +1278,8 @@ exactly at `connectReady`; checklist behavior tests stay green.
 **Effort:** small-medium. **Cost:** $0.
 
 ### SET-31 · Stage 2 "Connect" with health as an expander (small, after SET-30)
+**Status:** In progress — `codex/set31-connect-health`, July 23, 2026.
+
 **Why:** Connection health is connection detail, not a separate bottom card; the
 Resources/Health near-duplicate tables are a verified P2 (spec §3.3).
 **Do:** Stage 2 holds the connect/reconnect/disconnect actions and, in simulation

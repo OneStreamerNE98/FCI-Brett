@@ -472,7 +472,7 @@ test("watch/queue and rotation documentation stays linked, gated, and explicit",
   assert.match(rollout, /OAuth client-secret rotation \(same client ID, no reconnect\)/);
   assert.match(rollout, /`invalid_grant` or revoked refresh-token recovery/);
   assert.match(rollout, /workspace\.connectionStatus[\s\S]*reauthorization-required/);
-  assert.match(rollout, /Disconnect Workspace[\s\S]*remains available[\s\S]*administrator[\s\S]*connection-health card[\s\S]*requires reauthorization/);
+  assert.match(rollout, /Disconnect Workspace[\s\S]*remains with the Stage 2 connection actions[\s\S]*outside[\s\S]*Connection health expander[\s\S]*requires reauthorization/);
   assert.match(operations, /#token-encryption-key-rotation-current-disconnectreconnect-procedure/);
   assert.match(operations, /#oauth-client-secret-rotation-same-client-id-no-reconnect/);
   assert.match(operations, /#invalid_grant-or-revoked-refresh-token-recovery/);

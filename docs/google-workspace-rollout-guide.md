@@ -396,19 +396,20 @@ available; do not respond by exposing the value or creating an untracked OAuth c
 1. Run **Check readiness** and capture the safe `workspace.connectionStatus` field from
    `GET /api/v1/google-workspace`; it must equal `reauthorization-required`. A definitive
    `invalid_grant` is not transient: stop automatic retries and do not log the provider
-   response or token. The administrator-only connection-health card reflects the stored
-   reauthorization state and its recorded permissions, but those details are not a live
-   provider-health check; retain the safe API status as the drill evidence.
+   response or token. The administrator-only **Connection health** expander in Stage 2
+   reflects the stored reauthorization warning and its recorded permissions, but those
+   details are not a live provider-health check; retain the safe API status as the drill
+   evidence.
 2. Confirm the intended connection account is still active, company-controlled, and the
    exact configured intake mailbox. Resolve an account suspension or ownership issue
    before reconnecting.
 3. Invoke the authorized same-origin
    `DELETE /api/v1/integrations/google/connection` connection flow. The normal
-   **Disconnect Workspace** button remains available inside the administrator
-   connection-health card when a stored connection requires reauthorization. This clears the
-   unusable local connection and attempts revocation; it is safe if Google has already
-   revoked the token. If the exact API status and deletion evidence cannot be captured,
-   mark the drill blocked rather than claiming recovery.
+   **Disconnect Workspace** button remains with the Stage 2 connection actions, outside
+   the Connection health expander, when a stored connection requires reauthorization.
+   This clears the unusable local connection and attempts revocation; it is safe if Google
+   has already revoked the token. If the exact API status and deletion evidence cannot be
+   captured, mark the drill blocked rather than claiming recovery.
 4. Select **Connect Google Workspace**, authorize that exact account again, and approve
    every currently enabled service scope.
 5. Re-run Drive, Gmail, Calendar, and Sheets independently, then repeat one bounded
