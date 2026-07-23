@@ -1299,6 +1299,8 @@ reauthorization flows keep their existing e2e coverage against the new location.
 **Effort:** small. **Cost:** $0.
 
 ### SET-32 · Stage 3 unified define-and-create surface (medium, after SET-31)
+**Status:** In progress — `codex/set32-unified-stage3`, July 23, 2026.
+
 **Why:** Blueprint editing and resource creation are one workflow ("decide what
 exists, then create it — in order") artificially split across an editor, a table,
 and per-row actions today (spec §3.4).

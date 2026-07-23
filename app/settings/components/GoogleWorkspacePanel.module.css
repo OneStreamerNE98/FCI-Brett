@@ -130,6 +130,34 @@
   overflow-wrap: anywhere;
 }
 
+.stageThreeFrame {
+  min-width: 0;
+  container: stage-three / inline-size;
+}
+
+.stageThreeUnified {
+  display: grid;
+  grid-template-columns: minmax(330px, 0.7fr) minmax(0, 1.3fr);
+  align-items: start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.stageThreeBlueprint,
+.stageThreeCreation {
+  min-width: 0;
+}
+
+.stageThreeBlueprint :global(.workspace-blueprint-card) {
+  margin: 0;
+}
+
+@container stage-three (max-width: 1000px) {
+  .stageThreeUnified {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 560px) {
   .connectionActions {
     padding: 12px;
