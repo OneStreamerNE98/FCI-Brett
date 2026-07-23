@@ -348,6 +348,9 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
   assert.match(actions, /<ResourceDetails label="folders"[\s\S]+OpenResourceAction/);
   assert.doesNotMatch(actions.slice(progressStart, progressEnd), /calendar\.calendar/);
   assert.match(panel, /const stageThreeResourcesComplete = completeWorkspaceCreationCount === 4/);
+  assert.match(panel, /const folderRenamesEnabled = stageTwoComplete[\s\S]+workspaceResourcesKnown[\s\S]+workspaceCreationProgress\.sharedDriveComplete/);
+  assert.match(stageFourSource, /rowKey="renames"[\s\S]+state=\{folderRenamesEnabled \? "AVAILABLE" : "WAITING"\}[\s\S]+enabled=\{folderRenamesEnabled\}/);
+  assert.doesNotMatch(stageFourSource, /rowKey="renames"[\s\S]+(?:state|enabled)=\{stageThreeComplete/);
   assert.match(panel, /IN PROGRESS · \$\{completeWorkspaceCreationCount\} of 4/);
   assert.match(panelStyles, /\.stageThreeFrame[\s\S]+container: stage-three \/ inline-size[\s\S]+\.stageThreeUnified[\s\S]+grid-template-columns:[\s\S]+@container stage-three \(max-width: 1000px\)[\s\S]+grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(actionStyles, /@media \(max-width: 560px\)[\s\S]+\.creationRow[\s\S]+grid-template-columns: 27px minmax\(0, 1fr\)[\s\S]+\.resourceDetails > summary[\s\S]+min-height: 44px/);

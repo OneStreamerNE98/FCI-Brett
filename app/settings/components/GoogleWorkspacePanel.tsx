@@ -779,6 +779,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const completeWorkspaceCreationCount = bannerWorkspaceCreationProgress.completedCount;
   const stageThreeResourcesComplete = completeWorkspaceCreationCount === 4;
   const stageThreeComplete = stageTwoComplete && stageThreeResourcesComplete;
+  const folderRenamesEnabled = stageTwoComplete
+    && workspaceResourcesKnown
+    && workspaceCreationProgress.sharedDriveComplete;
   const stageFourCompleteCount = [gmailVerificationPassed, calendarChecked, sheetsVerificationPassed].filter(Boolean).length;
   const stageFourReady = stageFourCompleteCount === 3;
   const stageCompletion = [stageOneComplete, stageTwoComplete, stageThreeComplete, false] as const;
@@ -1147,13 +1150,13 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                 rowKey="renames"
                 label="Renames"
                 info={FOLDER_RENAMES_INFO}
-                state={stageThreeComplete ? "AVAILABLE" : "WAITING"}
+                state={folderRenamesEnabled ? "AVAILABLE" : "WAITING"}
               >
                 <p>Use the managed rename action here instead of renaming an app-owned folder directly in Drive.</p>
                 {isAdmin && <WorkspaceFolderRenameActions
                   resources={resourceRows}
                   resourcesReady={workspaceResourcesKnown}
-                  enabled={stageThreeComplete}
+                  enabled={folderRenamesEnabled}
                   notify={notify}
                   onChanged={refreshAfterDriveSetup}
                 />}

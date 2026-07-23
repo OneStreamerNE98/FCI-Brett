@@ -1282,6 +1282,7 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   await setStageExpanded(page, 4, true);
   const renameDetails = upkeepRow(page, "renames").locator("details");
   await renameDetails.locator("summary").click();
+  await expect(upkeepRow(page, "renames")).toHaveAttribute("data-stage-four-upkeep-state", "WAITING");
   await expect(renameDetails.getByRole("button", { name: "Rename" })).toBeDisabled();
   await setStageExpanded(page, 3, true);
 
@@ -1292,7 +1293,9 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   await expect(creationRow(page, "shared-drive")).toHaveAttribute("data-workspace-creation-state", "DONE");
   await expect(creationRow(page, "folder-tree")).toHaveAttribute("data-workspace-creation-state", "CREATE");
   await expect(creationRow(page, "folder-tree").getByRole("button", { name: "Ensure root folders" })).toBeEnabled();
-  await expect(renameDetails.getByRole("button", { name: "Rename" })).toBeDisabled();
+  await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS · 1 of 4");
+  await expect(upkeepRow(page, "renames")).toHaveAttribute("data-stage-four-upkeep-state", "AVAILABLE");
+  await expect(renameDetails.getByRole("button", { name: "Rename" })).toBeEnabled();
   await expect(creationRow(page, "spreadsheets").getByRole("button", { name: "Ensure spreadsheets" })).toBeDisabled();
   await expect(creationRow(page, "templates").getByRole("button", { name: "Ensure templates" })).toBeDisabled();
   await expect(creationRow(page, "spreadsheets")).toContainText("Unlocks after Folder tree (from your blueprint).");
