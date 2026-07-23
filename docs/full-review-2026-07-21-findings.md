@@ -406,7 +406,11 @@ R4.
 ## New FIX packets from the addendum
 
 ### FIX-10 · Single shared advisory-lock constant (P2 F-16; small; Wave R1)
-**Status:** In review — PR #112, July 22, 2026. Source-only and undeployed.
+**Status:** Complete — PR #112, July 22, 2026. Source-only and undeployed. The two
+locks were confirmed independent (rehearsal try-lock guards rehearsal-vs-rehearsal
+only; admin moves to a distinct id), which also fixes the latent cross-subsystem
+blocking. Residual P3: the literal-uniqueness guard scans `app/` only and does not
+cover the new admin id — widen when the tree next grows a Postgres consumer.
 **Why:** two subsystems hard-code the same Postgres advisory-lock id independently; a
 future edit to one desyncs the pair, and sharing one id can serialize unrelated work.
 **Do:** extract `7314269172071302` to one exported constant (a shared
