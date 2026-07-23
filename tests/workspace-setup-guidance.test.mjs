@@ -23,11 +23,17 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   }
   for (const heading of [
     "Company account authorization",
-    "Prepare Gmail",
-    "Verify Calendar",
-    "Sync the Sheets mirror",
+    "Verify each service",
+    "Ongoing upkeep",
   ]) {
     assert.match(panel, new RegExp(`<h3(?: [^>]*)?>${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/h3>`));
+  }
+  for (const label of [
+    "Gmail — labels & test email",
+    "Calendar — appointments & test hold",
+    "Sheets — mirror sync",
+  ]) {
+    assert.match(panel, new RegExp(`label="${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
   }
 
   assert.match(panel, /className="workspace-stage-list"[^>]*role="group"[^>]*aria-label="Google Workspace setup stages"/);
@@ -48,7 +54,8 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /statusSourcesLoading \|\| statusSourcesUnavailable[\s\S]+panelStyles\.statusModeNeutral/);
   assert.match(panelStyles, /\.statusModeNeutral[\s\S]+background: #f0eeeb[\s\S]+color: #6c655f/);
   assert.match(panel, /const neutralStageStatus = statusSourcesLoading[\s\S]+CHECKING[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE/);
-  assert.equal(panel.match(/tone=\{neutralStageStatus \? "neutral"/g)?.length, 4);
+  assert.equal(panel.match(/tone=\{neutralStageStatus \? "neutral"/g)?.length, 3);
+  assert.match(panel, /tone=\{stageFourStatusNeutral \? "neutral" : stageFourReady \? "ready"/);
   assert.match(panel, /panelStyles\.stageChipNeutral/);
   assert.match(panelStyles, /\.stageChipNeutral[\s\S]+background: #f0eeeb[\s\S]+color: #6c655f/);
   assert.match(panel, /workspace-status-banner/);
@@ -60,6 +67,7 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
     "/api/v1/google-workspace",
     "/api/v1/integrations/google/drive/verify",
     "/api/v1/integrations/google/gmail/labels/prepare",
+    "/api/v1/integrations/google/gmail/send-test",
     "/api/v1/integrations/google/calendar/events",
     "/api/v1/integrations/google/sheets/status",
     "/api/v1/integrations/google/sheets/sync",
@@ -70,6 +78,59 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /searchParams\.get\("google"\)/);
   assert.match(panel, /invalidateCachedGet\("\/api\/v1\/google-workspace"\)[\s\S]+checkSetup\(true\)/);
   assert.doesNotMatch(panel, /Run the readiness check to refresh this panel/);
+});
+
+test("Stage 4 pins normative verification and ongoing-upkeep copy without inventing operations", async () => {
+  const [panel, styles, chatCard] = await Promise.all([
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/settings/components/GoogleWorkspacePanel.module.css"),
+    read("app/settings/components/ChatNotificationSettingsCard.tsx"),
+  ]);
+
+  for (const [label, info] of [
+    ["Gmail — labels & test email", "Creates the three FCI labels and sends one test email to yourself to confirm filing works. Nothing is ever sent to clients from here."],
+    ["Calendar — appointments & test hold", "Reads the upcoming appointments window and can create one private test hold with no invitations — confirm access without touching anyone's calendar."],
+    ["Sheets — mirror sync", "Runs one sync of the Client Directory and Project Register mirrors and reports exactly what changed."],
+  ]) {
+    assert.match(panel, new RegExp(`label="${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+    assert.ok(panel.includes(info), `exact InfoHint copy is pinned for ${label}`);
+  }
+  for (const copy of [
+    "Ongoing upkeep",
+    "Tools you'll come back to — these never block setup.",
+    "Compares your blueprint with what's actually in Drive and shows any differences before you fix them.",
+    "Rename managed folders safely — the app updates Drive and its own records together.",
+  ]) {
+    assert.ok(panel.includes(copy), `Stage 4 keeps normative copy: ${copy}`);
+  }
+
+  const notificationCopy = "Review the closed event-to-space map. Hosted webhook secrets stay outside the browser, application data, logs, and source control.";
+  assert.ok(panel.includes(notificationCopy));
+  assert.ok(chatCard.includes(notificationCopy), "the existing operational notification card copy remains byte-identical");
+  assert.match(panel, /href="\/settings\?section=workflow-notifications">Open notification routing<\/a>/);
+
+  const stageFourStart = panel.indexOf("number={4}");
+  const stageFourEnd = panel.indexOf("{filingMessage &&", stageFourStart);
+  const stageFourSource = panel.slice(stageFourStart, stageFourEnd);
+  assert.match(stageFourSource, /rowKey="drift"[\s\S]+state="PLANNED"[\s\S]+Planned for SET-18\. No reconcile action is available yet\./);
+  const driftStart = stageFourSource.indexOf('rowKey="drift"');
+  const renameStart = stageFourSource.indexOf('rowKey="renames"', driftStart);
+  assert.doesNotMatch(stageFourSource.slice(driftStart, renameStart), /<button|<a /);
+  assert.match(panel, /const \[sheetsVerificationPassed, setSheetsVerificationPassed\] = useState\(false\)/);
+  assert.match(panel, /function sheetMirrorFullySynced[\s\S]+clients\.status === "synced" && mirror\.projects\.status === "synced"/);
+  assert.ok((panel.match(/setSheetsVerificationPassed\(\(current\) => current \|\| sheetMirrorFullySynced\(mirror\)\)/g) ?? []).length >= 3);
+  assert.match(panel, /const stageFourCompleteCount = \[gmailVerificationPassed, calendarChecked, sheetsVerificationPassed\]\.filter\(Boolean\)\.length/);
+  assert.doesNotMatch(panel, /const stageFourCompleteCount = \[[^\]]*sheetsSynced/);
+  assert.match(panel, /const stageFourReady = stageFourCompleteCount === 3/);
+  assert.doesNotMatch(panel, /const stageFourReady = stageThreeComplete/);
+  assert.match(panel, /const stageFourStatus = statusSourcesLoading[\s\S]+CHECKING[\s\S]+stageFourReady[\s\S]+READY[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE[\s\S]+\$\{stageFourCompleteCount\} OF 3 VERIFIED/);
+  assert.match(panel, /const gmailVerificationPassed = gmailLabelsReady && gmailTestEmailPassed/);
+  assert.match(panel, /setGmailTestEmailPassed\(true\)/);
+  assert.match(stageFourSource, /complete=\{false\}/);
+  assert.doesNotMatch(stageFourSource, /status=\{stageFourReady \? "DONE"/);
+  assert.match(styles, /\.verificationGroup[\s\S]+\.ongoingGroup[\s\S]+border: 1px dashed/);
+  assert.match(styles, /@media \(max-width: 560px\)[\s\S]+\.verificationBody :global\(\.workspace-actions > \*\)[\s\S]+min-height: 44px/);
+  assert.match(styles, /\.verificationBody :global\(\.workspace-actions > \.administrator-action-control > button\)[\s\S]+width: 100%[\s\S]+max-width: none/);
 });
 
 test("Workspace prerequisites use a semantic metadata-only Stage 1 sequence", async () => {
@@ -192,9 +253,11 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
     "the primary creation workflow precedes the blueprint in visual, reading, and focus order",
   );
   assert.doesNotMatch(stageThreeSource, /Verify the Shared Drive[\s\S]+workspace-setup-step|workspace-resources-card|workspace-resource-table|Connected account ↔ intake mailbox/);
-  assert.match(stageFourSource, /Prepare Gmail/);
-  assert.match(stageFourSource, /Verify Calendar/);
-  assert.match(stageFourSource, /Sync the Sheets mirror/);
+  assert.match(stageFourSource, /Gmail — labels & test email/);
+  assert.match(stageFourSource, /Calendar — appointments & test hold/);
+  assert.match(stageFourSource, /Sheets — mirror sync/);
+  assert.match(stageFourSource, /WorkspaceFolderRenameActions/);
+  assert.match(stageFourSource, /href="\/settings\?section=workflow-notifications"/);
   assert.doesNotMatch(`${stageTwoSource}\n${stageThreeSource}\n${stageFourSource}`, /workspace-env-note|Drive authority:|Sheets authority:|GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED|GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID/);
 
   for (const state of ["Found", "Created", "Adopted", "Not configured", "Simulated"]) {
@@ -242,7 +305,7 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
     assert.ok(index > previousRowIndex, `${label} stays in the specified creation order`);
     previousRowIndex = index;
   }
-  for (const chip of ["FOUND — ADOPT", "VERIFY", "DONE", "AFTER DRIVE", "CREATE", "AFTER FOLDERS", "VERIFY ONLY"]) {
+  for (const chip of ["FOUND — ADOPT", "VERIFY", "DONE", "AFTER DRIVE", "CREATE", "AFTER FOLDERS", "VERIFY ONLY", "UNAVAILABLE"]) {
     assert.match(actions, new RegExp(`"${chip}"`));
   }
   assert.doesNotMatch(actions, /AFTER SPREADSHEETS|VERIFY-ONLY FOR NOW|Spreadsheets \(/);
@@ -250,14 +313,25 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
   assert.match(actions, /const spreadsheetsEnabled = foldersEnabled && progress\.foldersComplete/);
   assert.match(actions, /const templatesEnabled = foldersEnabled && progress\.foldersComplete/);
   assert.match(actions, /const calendarsEnabled = templatesEnabled && progress\.templatesComplete/);
+  assert.match(actions, /Unlocks after Workspace resource status is available\./);
   assert.match(actions, /Unlocks after Shared Drive\./);
-  assert.equal(actions.match(/Unlocks after Folder tree \(from your blueprint\)\./g)?.length, 2);
+  assert.match(actions, /Unlocks after Folder tree \(from your blueprint\)\./);
   assert.match(actions, /Unlocks after Templates\./);
+  assert.match(actions, /const dependencyDescriptionId = lockedCaption[\s\S]+id=\{dependencyDescriptionId\}[\s\S]+children\(dependencyDescriptionId\)/);
+  assert.match(actions, /aria-describedby=\{describedBy\}/);
+  assert.match(actions, /registryUnavailable[\s\S]+sharedDriveState = registryUnavailable[\s\S]+UNAVAILABLE/);
+  assert.match(actions, /const folderDependency[\s\S]+resourceStatusDependency[\s\S]+!stageReady[\s\S]+Unlocks after Connect\.[\s\S]+Unlocks after Shared Drive\./);
+  assert.match(actions, /const spreadsheetDependency[\s\S]+!stageReady[\s\S]+!progress\.sharedDriveComplete[\s\S]+Unlocks after Shared Drive\.[\s\S]+Unlocks after Folder tree \(from your blueprint\)\./);
+  assert.match(actions, /const calendarDependency[\s\S]+!stageReady[\s\S]+!progress\.sharedDriveComplete[\s\S]+!progress\.foldersComplete[\s\S]+Unlocks after Templates\./);
   assert.match(actions, /resource\.resourceType === "drive\.shared-drive"[\s\S]+resource\.resourceType === "drive\.folder"[\s\S]+resource\.resourceType === "sheets\.spreadsheet"[\s\S]+resource\.resourceType === "drive\.file"/);
   const progressStart = actions.indexOf("export function deriveWorkspaceCreationProgress");
   const progressEnd = actions.indexOf("async function postJson", progressStart);
   assert.ok(progressStart >= 0 && progressEnd > progressStart);
-  assert.match(actions, /function resourceGroupComplete[\s\S]+resources\.length > 0[\s\S]+resources\.every/);
+  assert.match(actions, /function resourceGroupComplete[\s\S]+emptyIsComplete \|\| resources\.length > 0[\s\S]+resources\.every/);
+  assert.match(actions, /resourceGroupComplete\(templates, simulation, true\)/);
+  assert.match(actions, /export function WorkspaceFolderRenameActions/);
+  assert.match(actions, /label="managed folders"[\s\S]+FolderRenameAction/);
+  assert.match(actions, /<ResourceDetails label="folders"[\s\S]+OpenResourceAction/);
   assert.doesNotMatch(actions.slice(progressStart, progressEnd), /calendar\.calendar/);
   assert.match(panel, /const stageThreeResourcesComplete = completeWorkspaceCreationCount === 4/);
   assert.match(panel, /IN PROGRESS · \$\{completeWorkspaceCreationCount\} of 4/);

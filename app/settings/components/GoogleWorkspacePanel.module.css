@@ -152,6 +152,168 @@
   margin: 0;
 }
 
+.stageFourFrame {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.verificationGroup {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: #fcfaf7;
+}
+
+.stageFourGroupHeader,
+.verificationRowHeader,
+.ongoingToolHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stageFourGroupHeader > div {
+  min-width: 0;
+}
+
+.stageFourGroupHeader h3,
+.ongoingGroupHeader h3,
+.verificationRowHeading h4,
+.ongoingToolHeading h4 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+}
+
+.stageFourGroupHeader h3,
+.ongoingGroupHeader h3 {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.verificationList,
+.ongoingList {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.verificationRow,
+.ongoingTool {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: #fff;
+}
+
+.verificationRowComplete {
+  border-color: #bad0c1;
+  background: #fbfdfb;
+}
+
+.verificationRowHeading,
+.ongoingToolHeading {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.verificationRowHeading h4,
+.ongoingToolHeading h4 {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.verificationState,
+.ongoingState {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  background: #f0eeeb;
+  color: #6c655f;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.25;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.verificationStateReady {
+  background: #eaf3ed;
+  color: #35674d;
+}
+
+.verificationBody {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.verificationBody :global(.test-service-card) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.ongoingGroup {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px dashed #d8cec1;
+  border-radius: var(--radius-card);
+  background: #f8f5ef;
+}
+
+.ongoingGroupHeader {
+  display: grid;
+  gap: 3px;
+}
+
+.ongoingGroupHeader p,
+.ongoingToolBody > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ongoingTool {
+  background: #fdfbf8;
+}
+
+.ongoingToolBody {
+  display: grid;
+  justify-items: start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.ongoingStatePlanned {
+  border: 1px dashed #cfc5b8;
+  background: transparent;
+  color: #756e67;
+}
+
+.ongoingToolBody > :global(.soft-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 @container stage-three (max-width: 1000px) {
   .stageThreeUnified {
     grid-template-columns: minmax(0, 1fr);
@@ -177,5 +339,41 @@
   .connectionHealthBody {
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .verificationGroup,
+  .ongoingGroup {
+    padding: 12px;
+  }
+
+  .stageFourGroupHeader,
+  .verificationRowHeader,
+  .ongoingToolHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .verificationState,
+  .ongoingState {
+    justify-self: start;
+    white-space: normal;
+  }
+
+  .verificationBody :global(.workspace-actions),
+  .verificationBody :global(.workspace-actions > *),
+  .ongoingToolBody > :global(.soft-button) {
+    width: 100%;
+    max-width: none;
+  }
+
+  .verificationBody :global(.workspace-actions > *),
+  .ongoingToolBody > :global(.soft-button) {
+    min-height: 44px;
+  }
+
+  .verificationBody :global(.workspace-actions > .administrator-action-control > button) {
+    width: 100%;
+    max-width: none;
+    min-height: 44px;
   }
 }
