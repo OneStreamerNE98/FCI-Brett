@@ -1137,7 +1137,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
             <div className={panelStyles.ongoingList}>
               <OngoingTool
                 rowKey="drift"
-                label="Drift check & reconcile"
+                label="Drift check"
                 info={DRIFT_CHECK_INFO}
                 state="PLANNED"
               >
@@ -1145,7 +1145,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
               </OngoingTool>
               <OngoingTool
                 rowKey="renames"
-                label="Managed folder renames"
+                label="Renames"
                 info={FOLDER_RENAMES_INFO}
                 state={stageThreeComplete ? "AVAILABLE" : "WAITING"}
               >

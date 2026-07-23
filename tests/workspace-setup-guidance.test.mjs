@@ -112,6 +112,14 @@ test("Stage 4 pins normative verification and ongoing-upkeep copy without invent
   const stageFourStart = panel.indexOf("number={4}");
   const stageFourEnd = panel.indexOf("{filingMessage &&", stageFourStart);
   const stageFourSource = panel.slice(stageFourStart, stageFourEnd);
+  for (const [rowKey, label] of [
+    ["drift", "Drift check"],
+    ["renames", "Renames"],
+    ["notifications", "Notification routing"],
+  ]) {
+    assert.match(stageFourSource, new RegExp(`rowKey="${rowKey}"[\\s\\S]+label="${label}"`));
+  }
+  assert.doesNotMatch(stageFourSource, /label="(?:Drift check & reconcile|Managed folder renames)"/);
   assert.match(stageFourSource, /rowKey="drift"[\s\S]+state="PLANNED"[\s\S]+Planned for SET-18\. No reconcile action is available yet\./);
   const driftStart = stageFourSource.indexOf('rowKey="drift"');
   const renameStart = stageFourSource.indexOf('rowKey="renames"', driftStart);
@@ -318,8 +326,13 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
   assert.match(actions, /Unlocks after Folder tree \(from your blueprint\)\./);
   assert.match(actions, /Unlocks after Templates\./);
   assert.match(actions, /const dependencyDescriptionId = lockedCaption[\s\S]+id=\{dependencyDescriptionId\}[\s\S]+children\(dependencyDescriptionId\)/);
-  assert.match(actions, /aria-describedby=\{describedBy\}/);
+  assert.match(actions, /const adoptDisabled = !adoptEnabled \|\| busy \|\| verifyWorking/);
+  assert.match(actions, /const verifyDisabled = !verifyEnabled \|\| busy \|\| verifyWorking \|\| \(!simulation && !driveReady\)/);
+  assert.match(actions, /aria-describedby=\{adoptDisabled \? describedBy : undefined\}/);
+  assert.match(actions, /aria-describedby=\{verifyDisabled \? describedBy : undefined\}/);
   assert.match(actions, /registryUnavailable[\s\S]+sharedDriveState = registryUnavailable[\s\S]+UNAVAILABLE/);
+  assert.match(actions, /const sharedDriveDependency = !driveVerificationReady[\s\S]+Unlocks after Connect\.[\s\S]+sharedDrive && !sharedDriveAdoptEnabled[\s\S]+resourceStatusDependency/);
+  assert.match(actions, /lockedCaption=\{sharedDriveDependency\}/);
   assert.match(actions, /const folderDependency[\s\S]+resourceStatusDependency[\s\S]+!stageReady[\s\S]+Unlocks after Connect\.[\s\S]+Unlocks after Shared Drive\./);
   assert.match(actions, /const spreadsheetDependency[\s\S]+!stageReady[\s\S]+!progress\.sharedDriveComplete[\s\S]+Unlocks after Shared Drive\.[\s\S]+Unlocks after Folder tree \(from your blueprint\)\./);
   assert.match(actions, /const calendarDependency[\s\S]+!stageReady[\s\S]+!progress\.sharedDriveComplete[\s\S]+!progress\.foldersComplete[\s\S]+Unlocks after Templates\./);

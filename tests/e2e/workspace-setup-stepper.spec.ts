@@ -508,6 +508,17 @@ test("stages derive one open step from endpoint state and keep completed stages 
 });
 
 test("Stage 4 keeps normative copy, polished mirror labels, and operational upkeep routes", async ({ page }) => {
+  const completeResources = workspaceResources().resources.map((resource) => {
+    if (resource.resourceType === "drive.shared-drive") {
+      return { ...resource, source: "app" as const, origin: "adopted" as const, state: "Adopted" as const };
+    }
+    if (resource.resourceType === "drive.folder" || resource.resourceType === "sheets.spreadsheet" || resource.resourceType === "drive.file") {
+      return { ...resource, source: "app" as const, origin: "created" as const, state: "Created" as const };
+    }
+    return resource;
+  });
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page, workspaceResources({ resources: completeResources }));
   await mockConnectionHealth(page, connectedHealth());
   await page.route("**/api/v1/google-workspace", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
@@ -557,21 +568,40 @@ test("Stage 4 keeps normative copy, polished mirror labels, and operational upke
 
   await expect(setupStage(page, 4).getByRole("heading", { name: "Ongoing upkeep", exact: true })).toBeVisible();
   await expect(setupStage(page, 4).getByText("Tools you'll come back to — these never block setup.", { exact: true })).toBeVisible();
+  for (const [key, label] of [
+    ["drift", "Drift check"],
+    ["renames", "Renames"],
+    ["notifications", "Notification routing"],
+  ] as const) {
+    const row = upkeepRow(page, key);
+    await expect(row.getByRole("heading", { name: label, exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: `About ${label}`, exact: true })).toHaveCount(1);
+  }
   const drift = upkeepRow(page, "drift");
   await expect(drift).toHaveAttribute("data-stage-four-upkeep-state", "PLANNED");
   await expect(drift.getByText("Planned for SET-18. No reconcile action is available yet.", { exact: true })).toBeVisible();
   await expect(drift.locator("button, a")).toHaveCount(1);
-  await expect(drift.getByRole("button", { name: "About Drift check & reconcile", exact: true })).toHaveCount(1);
+  await expect(drift.getByRole("button", { name: "About Drift check", exact: true })).toHaveCount(1);
   await expect(drift.getByRole("link")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   const stageFour = setupStage(page, 4);
+  const renameDetails = upkeepRow(page, "renames").locator("details");
+  await renameDetails.locator("summary").click();
+  await expect(renameDetails).toHaveAttribute("open", "");
+  await renameDetails.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(renameDetails.getByRole("textbox", { name: "New name for 01_Client Accounts", exact: true })).toBeVisible();
   expect(await stageFour.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  const stageFourControls = await stageFour.locator("button:visible, a:visible, summary:visible").all();
+  const stageFourBox = await stageFour.boundingBox();
+  expect(stageFourBox).not.toBeNull();
+  const stageFourControls = await stageFour.locator("button:visible, a:visible, summary:visible, input:visible, select:visible").all();
   for (const control of stageFourControls) {
     const box = await control.boundingBox();
-    expect(box?.height ?? 0, await control.getAttribute("aria-label") ?? await control.textContent() ?? "Stage 4 control").toBeGreaterThanOrEqual(44);
+    const controlName = await control.getAttribute("aria-label") ?? await control.textContent() ?? "Stage 4 control";
+    expect(box?.height ?? 0, controlName).toBeGreaterThanOrEqual(44);
+    expect(box?.x ?? 0, controlName).toBeGreaterThanOrEqual((stageFourBox?.x ?? 0) - 1);
+    expect((box?.x ?? 0) + (box?.width ?? 0), controlName).toBeLessThanOrEqual((stageFourBox?.x ?? 0) + (stageFourBox?.width ?? 0) + 1);
   }
   const wrappedActionButtons = await stageFour.locator(".workspace-actions > .administrator-action-control > button:visible").all();
   for (const button of wrappedActionButtons) {
@@ -906,6 +936,10 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   let resourcePayload = workspaceResources({ connectReady: false });
   let driveVerifyRequest: { method: string; body: string | null } | null = null;
   let driveAdoptRequest: { method: string; body: unknown } | null = null;
+  let gmailPrepareRequest: { method: string; body: string | null } | null = null;
+  let gmailSendRequest: { method: string; body: string | null } | null = null;
+  let calendarReadRequest: { method: string; body: string | null } | null = null;
+  let sheetsSyncRequest: { method: string; body: string | null } | null = null;
   let resourcesShouldFail = false;
 
   await page.unroute("**/api/v1/integrations/google/setup/resources");
@@ -947,15 +981,19 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ adopted: true, verified: true }) });
   });
   await page.route("**/api/v1/integrations/google/gmail/labels/prepare", async (route) => {
+    gmailPrepareRequest = { method: route.request().method(), body: route.request().postData() };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ prepared: true }) });
   });
   await page.route("**/api/v1/integrations/google/gmail/send-test", async (route) => {
+    gmailSendRequest = { method: route.request().method(), body: route.request().postData() };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sent: true }) });
   });
   await page.route("**/api/v1/integrations/google/calendar/events", async (route) => {
+    calendarReadRequest = { method: route.request().method(), body: route.request().postData() };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ events: [] }) });
   });
   await page.route("**/api/v1/integrations/google/sheets/sync", async (route) => {
+    sheetsSyncRequest = { method: route.request().method(), body: route.request().postData() };
     const now = Date.now();
     mirror = {
       ...mirror,
@@ -998,19 +1036,23 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
 
   await page.getByRole("button", { name: "Prepare FCI labels" }).click();
+  expect(gmailPrepareRequest).toEqual({ method: "POST", body: null });
   await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("0 OF 3 VERIFIED");
   await page.getByRole("button", { name: "Send Workspace test" }).click();
+  expect(gmailSendRequest).toEqual({ method: "POST", body: "{}" });
   await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("1 OF 3 VERIFIED");
   await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
 
   await page.getByRole("button", { name: "View upcoming events" }).click();
+  expect(calendarReadRequest).toEqual({ method: "GET", body: null });
   await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "VERIFIED");
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("2 OF 3 VERIFIED");
   await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
 
   await page.getByRole("button", { name: "Sync now" }).click();
+  expect(sheetsSyncRequest).toEqual({ method: "POST", body: null });
   await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "VERIFIED");
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
   mirror = {
@@ -1392,11 +1434,16 @@ test("stale complete registry rows name Connect as the actual unmet dependency",
   }
 });
 
-test("direct Shared Drive verification remains available when the resource registry fails", async ({ page }) => {
+test("stale Shared Drive registry data keeps adopt locked while direct verification remains available", async ({ page }) => {
   let verifyRequest: { method: string; body: string | null } | null = null;
+  let resourcesShouldFail = false;
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
-    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Registry unavailable for test" }) });
+    if (resourcesShouldFail) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Registry unavailable for test" }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(workspaceResources()) });
   });
   await mockConnectionHealth(page, connectedHealth());
   await page.route("**/api/v1/google-workspace", async (route) => {
@@ -1412,6 +1459,11 @@ test("direct Shared Drive verification remains available when the resource regis
 
   await page.goto("/settings?section=google-workspace");
   await setStageExpanded(page, 3, true);
+  await expect(creationRow(page, "shared-drive")).toHaveAttribute("data-workspace-creation-state", "FOUND — ADOPT");
+  await expect(creationRow(page, "shared-drive").getByRole("button", { name: "Verify and adopt" })).toBeEnabled();
+  resourcesShouldFail = true;
+  await page.getByRole("button", { name: "Check readiness" }).click();
+  await setStageExpanded(page, 3, true);
   await expect(creationCard(page).getByText("Workspace resource status could not be loaded. Retry before using this setup summary.", { exact: true })).toBeVisible();
   await expect(creationCard(page).getByText("Unavailable", { exact: true })).toBeVisible();
   await expect(creationCard(page).getByText("0 of 4 ready", { exact: true })).toHaveCount(0);
@@ -1420,7 +1472,11 @@ test("direct Shared Drive verification remains available when the resource regis
   await expect(creationRow(page, "shared-drive")).toHaveAttribute("data-workspace-creation-state", "UNAVAILABLE");
   await expect(creationRow(page, "shared-drive").getByText("UNAVAILABLE", { exact: true })).toBeVisible();
   await expect(creationRow(page, "shared-drive").getByText("VERIFY", { exact: true })).toHaveCount(0);
-  await expect(creationRow(page, "shared-drive").getByRole("button", { name: "Find and adopt" })).toHaveCount(0);
+  const adoptButton = creationRow(page, "shared-drive").getByRole("button", { name: "Verify and adopt" });
+  await expect(adoptButton).toBeDisabled();
+  const adoptDescriptionId = await adoptButton.getAttribute("aria-describedby");
+  expect(adoptDescriptionId).toBeTruthy();
+  await expect(page.locator(`[id="${adoptDescriptionId}"]`)).toHaveText("Unlocks after Workspace resource status is available.");
   for (const [key, buttonName] of [
     ["folder-tree", "Ensure root folders"],
     ["spreadsheets", "Ensure spreadsheets"],
@@ -1435,6 +1491,7 @@ test("direct Shared Drive verification remains available when the resource regis
   }
   const verifyButton = creationRow(page, "shared-drive").getByRole("button", { name: "Verify Shared Drive" });
   await expect(verifyButton).toBeEnabled();
+  await expect(verifyButton).not.toHaveAttribute("aria-describedby", /.+/);
   await verifyButton.click();
   expect(verifyRequest).toEqual({ method: "POST", body: null });
 });

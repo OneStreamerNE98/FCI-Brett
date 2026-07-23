@@ -190,6 +190,9 @@ function SharedDriveActions({
   const [busy, setBusy] = useState(false);
   const [candidates, setCandidates] = useState<SharedDriveCandidate[]>([]);
   const [candidateId, setCandidateId] = useState("");
+  const adoptDisabled = !adoptEnabled || busy || verifyWorking;
+  const verifyDisabled = !verifyEnabled || busy || verifyWorking || (!simulation && !driveReady);
+  const selectedDriveDisabled = !adoptEnabled || !candidateId || busy || verifyWorking;
 
   async function adopt(selectedId?: string) {
     if (!resource) return;
@@ -220,15 +223,15 @@ function SharedDriveActions({
   return <div className={styles.rowActions}>
     {resource && <span className={`${styles.restrictionsChip} ${resource.restrictions?.domainUsersOnly === true ? styles.restrictionsVerified : resource.restrictions?.domainUsersOnly === false ? styles.restrictionsWarning : ""}`}>{restrictionLabel(resource.restrictions)}</span>}
     <div className={styles.actionButtons}>
-      {resource && <AdministratorActionButton className="primary-button" isAdmin aria-describedby={describedBy} onClick={() => void adopt()} disabled={!adoptEnabled || busy || verifyWorking}>{busy ? "Checking…" : resource.externalId ? "Verify and adopt" : "Find and adopt"}</AdministratorActionButton>}
-      <AdministratorActionButton className="soft-button" isAdmin aria-describedby={describedBy} onClick={() => void onVerify()} disabled={!verifyEnabled || busy || verifyWorking || (!simulation && !driveReady)}>{verifyWorking ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton>
+      {resource && <AdministratorActionButton className="primary-button" isAdmin aria-describedby={adoptDisabled ? describedBy : undefined} onClick={() => void adopt()} disabled={adoptDisabled}>{busy ? "Checking…" : resource.externalId ? "Verify and adopt" : "Find and adopt"}</AdministratorActionButton>}
+      <AdministratorActionButton className="soft-button" isAdmin aria-describedby={verifyDisabled ? describedBy : undefined} onClick={() => void onVerify()} disabled={verifyDisabled}>{verifyWorking ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton>
       {resource?.url && <a className="soft-button" href={resource.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open</a>}
     </div>
     {!resource && <span className={styles.actionNote}>Adoption controls become available when the resource registry returns the Shared Drive row.</span>}
     {!simulation && !driveReady && verifyEnabled && <span className={styles.actionNote}>Direct verification becomes available when Drive is connected.</span>}
     {candidates.length > 0 && <div className={styles.driveCandidates} role="group" aria-label="Choose the exact Shared Drive">
-      <label>Matching Shared Drive<select value={candidateId} aria-describedby={describedBy} onChange={(event) => setCandidateId(event.target.value)}>{candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.id}</option>)}</select></label>
-      <AdministratorActionButton className="primary-button" isAdmin aria-describedby={describedBy} onClick={() => void adopt(candidateId)} disabled={!adoptEnabled || !candidateId || busy || verifyWorking}>Adopt selected drive</AdministratorActionButton>
+      <label>Matching Shared Drive<select value={candidateId} onChange={(event) => setCandidateId(event.target.value)}>{candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.id}</option>)}</select></label>
+      <AdministratorActionButton className="primary-button" isAdmin aria-describedby={selectedDriveDisabled ? describedBy : undefined} onClick={() => void adopt(candidateId)} disabled={selectedDriveDisabled}>Adopt selected drive</AdministratorActionButton>
     </div>}
   </div>;
 }
@@ -553,6 +556,11 @@ export function WorkspaceDriveResourceActions({
     : resourceStatusPending
       ? "Unlocks after Workspace resource status finishes loading."
       : undefined;
+  const sharedDriveDependency = !driveVerificationReady
+    ? "Unlocks after Connect."
+    : sharedDrive && !sharedDriveAdoptEnabled
+      ? resourceStatusDependency ?? (!stageReady ? "Unlocks after Connect." : undefined)
+      : undefined;
   const folderDependency = !foldersEnabled
     ? resourceStatusDependency
       ?? (!stageReady
@@ -609,7 +617,7 @@ export function WorkspaceDriveResourceActions({
         info={SHARED_DRIVE_INFO}
         state={sharedDriveState}
         complete={progress.sharedDriveComplete}
-        lockedCaption={!stageReady && !driveVerificationReady ? "Unlocks after Connect." : undefined}
+        lockedCaption={sharedDriveDependency}
       >
         {(dependencyDescriptionId) => <SharedDriveActions
           resource={sharedDrive}
