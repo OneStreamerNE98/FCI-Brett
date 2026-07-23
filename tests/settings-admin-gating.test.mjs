@@ -40,6 +40,28 @@ test("exposes the authenticated user's Administrator flag through the shared acc
   assert.match(cache, /if \(!options\.force && existing\?\.inFlight\) return existing\.inFlight/);
 });
 
+test("uses one reconciled Administrator flag for shell and Settings content gates", async () => {
+  const app = await read("app/FloorOpsApp.tsx");
+  const shell = app.slice(app.indexOf("export function FloorOpsApp"), app.indexOf("function Overview"));
+
+  assert.match(shell, /const \[isAdmin, setIsAdmin\] = useState\(accessLabel === "Admin"\)/);
+  assert.equal([...shell.matchAll(/accessLabel === "Admin"/g)].length, 1);
+  assert.match(shell, /useState<PageLayouts>\(\(\) => defaultPageLayouts\(isAdmin\)\)/);
+  assert.match(shell, /const nextIsAdmin = data\?\.isAdmin === true/);
+  assert.match(shell, /const failClosedCurrentUserSettings = useCallback\(\(\) => \{[\s\S]+setIsAdmin\(false\)/);
+  assert.equal([...shell.matchAll(/failClosedCurrentUserSettings\(\);/g)].length, 2);
+  assert.match(shell, /onCurrentUserSettingsLoaded=\{reconcileCurrentUserSettings\}/);
+  assert.match(shell, /\{isAdmin && <a href="\/management\/access"/);
+  assert.match(shell, /Client Directory<\/button>\{isAdmin && <><button onClick=\{openDirectorySettings\}/);
+  assert.match(shell, /\{isAdmin && <button onClick=\{openGoogleWorkspace\}><Building2 size=\{15\} \/> Google connection<\/button>\}/);
+  assert.match(shell, /<SettingsView[^>]+isAdmin=\{isAdmin\}/);
+  assert.doesNotMatch(shell, /accessLabel === "Admin" &&/);
+
+  const mySettings = await read("app/settings/components/MySettingsPanel.tsx");
+  assert.match(mySettings, /typeof data\.isAdmin !== "boolean"/);
+  assert.match(mySettings, /onSettingsLoaded\(\{[\s\S]+isAdmin: data\.isAdmin/);
+});
+
 test("keeps every existing Settings mutation gate enforced on the server", async () => {
   for (const routePath of settingsMutationRoutes) {
     const source = await read(routePath);

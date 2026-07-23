@@ -99,6 +99,10 @@ type ProjectMeeting = {
   updatedAt: number;
 };
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
+type CurrentUserSettingsPayload = {
+  preferences?: { displayTimezone?: unknown; pageLayouts?: unknown };
+  isAdmin?: unknown;
+};
 
 const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((stage) => LEAD_STAGE_LABELS[stage]);
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
@@ -243,8 +247,13 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [sheetMirror, setSheetMirror] = useState<SheetMirrorStatus | null>(null);
   const [sheetSyncing, setSheetSyncing] = useState(false);
   const [displayTimezone, setDisplayTimezone] = useState("America/New_York");
+  // The server-rendered access label and /settings/me both originate from the same
+  // office identity policy but arrive over different transports. Seed from the
+  // server prop for the first render, then let the authenticated settings response
+  // drive every shell and content gate; an unavailable response fails closed in UI.
+  // accessLabel remains server-owned display metadata, never an authorization gate.
   const [isAdmin, setIsAdmin] = useState(accessLabel === "Admin");
-  const [pageLayouts, setPageLayouts] = useState<PageLayouts>(() => defaultPageLayouts(accessLabel === "Admin"));
+  const [pageLayouts, setPageLayouts] = useState<PageLayouts>(() => defaultPageLayouts(isAdmin));
   const [pageLayoutsReady, setPageLayoutsReady] = useState(false);
   const [pageLayoutsError, setPageLayoutsError] = useState("");
   const pageLayoutsLoadIdRef = useRef(0);
@@ -264,6 +273,23 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const development = environment === "development";
   const userInitials = userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
 
+  const reconcileCurrentUserSettings = useCallback((data: CurrentUserSettingsPayload) => {
+    const nextIsAdmin = data?.isAdmin === true;
+    const timezone = data?.preferences?.displayTimezone;
+    if (typeof timezone === "string") setDisplayTimezone(timezone);
+    setIsAdmin(nextIsAdmin);
+    setPageLayouts(normalizePageLayoutsForRead(data?.preferences?.pageLayouts, nextIsAdmin));
+    setPageLayoutsReady(true);
+    setPageLayoutsError("");
+  }, []);
+
+  const failClosedCurrentUserSettings = useCallback(() => {
+    setIsAdmin(false);
+    setPageLayouts((current) => normalizePageLayoutsForRead(current, false));
+    setPageLayoutsReady(false);
+    setPageLayoutsError("Your saved layout could not be loaded. Retry before editing.");
+  }, []);
+
   useEffect(() => {
     // The Workspace panel consumes its one-time OAuth result before normal
     // route canonicalization so these two URL updates cannot race on mount.
@@ -275,8 +301,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   }, [router, search, view]);
 
   useEffect(() => {
-    if (view !== "Settings" || isAdmin || settingsArea === "My account") return;
-    router.replace(operationsHref("Settings", { settingsSection: "My account" }), { scroll: false });
+    if (view !== "Settings" || isAdmin || settingsArea === "My settings") return;
+    router.replace(operationsHref("Settings", { settingsSection: "My settings" }), { scroll: false });
   }, [isAdmin, router, settingsArea, view]);
 
   const refreshDirectoryData = useCallback(() => {
@@ -351,39 +377,29 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
 
   useEffect(() => {
     const loadId = ++pageLayoutsLoadIdRef.current;
-    void cachedGetJson<{ preferences?: { displayTimezone?: unknown; pageLayouts?: unknown }; isAdmin?: unknown }>("/api/v1/settings/me")
+    void cachedGetJson<CurrentUserSettingsPayload>("/api/v1/settings/me")
       .then((data) => {
         if (loadId !== pageLayoutsLoadIdRef.current) return;
-        const timezone = data?.preferences?.displayTimezone;
-        const nextIsAdmin = typeof data?.isAdmin === "boolean" ? data.isAdmin : accessLabel === "Admin";
-        if (typeof timezone === "string") setDisplayTimezone(timezone);
-        setIsAdmin(nextIsAdmin);
-        setPageLayouts(normalizePageLayoutsForRead(data?.preferences?.pageLayouts, nextIsAdmin));
-        setPageLayoutsReady(true);
+        reconcileCurrentUserSettings(data);
       })
       .catch(() => {
-        if (loadId === pageLayoutsLoadIdRef.current) setPageLayoutsError("Your saved layout could not be loaded. Retry before editing.");
+        if (loadId === pageLayoutsLoadIdRef.current) failClosedCurrentUserSettings();
       });
     return () => { pageLayoutsLoadIdRef.current += 1; };
-  }, [accessLabel]);
+  }, [failClosedCurrentUserSettings, reconcileCurrentUserSettings]);
 
   const retryPageLayouts = useCallback(async () => {
     const loadId = ++pageLayoutsLoadIdRef.current;
     setPageLayoutsReady(false);
     setPageLayoutsError("");
     try {
-      const data = await cachedGetJson<{ preferences?: { displayTimezone?: unknown; pageLayouts?: unknown }; isAdmin?: unknown }>("/api/v1/settings/me", { force: true });
+      const data = await cachedGetJson<CurrentUserSettingsPayload>("/api/v1/settings/me", { force: true });
       if (loadId !== pageLayoutsLoadIdRef.current) return;
-      const timezone = data?.preferences?.displayTimezone;
-      const nextIsAdmin = typeof data?.isAdmin === "boolean" ? data.isAdmin : accessLabel === "Admin";
-      if (typeof timezone === "string") setDisplayTimezone(timezone);
-      setIsAdmin(nextIsAdmin);
-      setPageLayouts(normalizePageLayoutsForRead(data?.preferences?.pageLayouts, nextIsAdmin));
-      setPageLayoutsReady(true);
+      reconcileCurrentUserSettings(data);
     } catch {
-      if (loadId === pageLayoutsLoadIdRef.current) setPageLayoutsError("Your saved layout could not be loaded. Retry before editing.");
+      if (loadId === pageLayoutsLoadIdRef.current) failClosedCurrentUserSettings();
     }
-  }, [accessLabel]);
+  }, [failClosedCurrentUserSettings, reconcileCurrentUserSettings]);
 
   const savePageLayout = useCallback(async (page: PageLayoutPage, layout: PageLayout) => {
     const nextPageLayouts = { ...pageLayouts, [page]: layout };
@@ -970,15 +986,15 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           {navItems.slice(0, 6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></Link>)}
           <p>Management</p>
           {navItems.slice(6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></Link>)}
-          {accessLabel === "Admin" && <a href="/management/access" aria-label="People & Access · In development" title="People & Access · In development"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span><FeatureStateBadge state="In development" /></a>}
+          {isAdmin && <a href="/management/access" aria-label="People & Access · In development" title="People & Access · In development"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span><FeatureStateBadge state="In development" /></a>}
         </nav>
         <div ref={workspaceMenuRef} className="sidebar-menu-wrap workspace-menu-wrap">
           <button className="workspace-card" onClick={() => { setWorkspaceMenuOpen((current) => !current); setProfileMenuOpen(false); setNotificationsOpen(false); }} aria-controls="workspace-actions-popover" aria-expanded={workspaceMenuOpen} title="Workspace actions"><div className="workspace-icon"><Building2 size={17} /></div><div><span>{development ? "Development workspace" : "Production workspace"}</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></button>
-          {workspaceMenuOpen && <div id="workspace-actions-popover" className="sidebar-popover workspace-popover"><div className="menu-heading"><strong>FCI Operations</strong><span>{development ? "Working development environment" : "Company production environment"}</span></div><button onClick={() => navigateToView("Clients")}><ContactRound size={15} /> Client Directory</button><button onClick={openDirectorySettings}><FolderTree size={15} /> Directory sync</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google Workspace</button><button onClick={openTestingChecklist}><ShieldCheck size={15} /> Testing & launch</button></div>}
+          {workspaceMenuOpen && <div id="workspace-actions-popover" className="sidebar-popover workspace-popover"><div className="menu-heading"><strong>FCI Operations</strong><span>{development ? "Working development environment" : "Company production environment"}</span></div><button onClick={() => navigateToView("Clients")}><ContactRound size={15} /> Client Directory</button>{isAdmin && <><button onClick={openDirectorySettings}><FolderTree size={15} /> Directory sync</button><button onClick={openGoogleWorkspace}><Building2 size={15} /> Google Workspace</button><button onClick={openTestingChecklist}><ShieldCheck size={15} /> Testing & launch</button></>}</div>}
         </div>
         <div ref={profileMenuRef} className="sidebar-menu-wrap profile-menu-wrap">
           <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); setNotificationsOpen(false); }} aria-controls="account-actions-popover" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>{accessLabel}</span></div><MoreHorizontal size={18} /></button>
-          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button>{accessLabel === "Admin" && <button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button>}<button onClick={() => navigateToSettings("My account")}><Settings size={15} /> My settings</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
+          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button>{isAdmin && <button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button>}<button onClick={() => navigateToSettings("My settings")}><Settings size={15} /> My settings</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
         </div>
       </aside>
 
@@ -1042,7 +1058,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
           {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.reports} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("reports", layout)} />}
-          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
+          {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
         </div>
       </main>
       {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
@@ -1547,11 +1563,11 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin, layo
   }}</PageLayoutEditor>;
 }
 
-function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, isAdmin, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; isAdmin: boolean; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
-  const visibleSection: SettingsSection = isAdmin ? section : "My account";
+function SettingsView({ notify, section, onSection, onTimezoneChange, onCurrentUserSettingsLoaded, rules, projects, userName, userEmail, isAdmin, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; onCurrentUserSettingsLoaded: (data: CurrentUserSettingsPayload) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; isAdmin: boolean; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
+  const visibleSection: SettingsSection = isAdmin ? section : "My settings";
   return <><PageTitle eyebrow="Control center" title="Settings" text={isAdmin ? "Manage your own preferences separately from Workspace and company setup." : "Manage the preferences tied to your signed-in FCI account."} state="In development" />
     <div className="settings-layout"><SettingsAudienceNavigation section={visibleSection} isAdmin={isAdmin} onSection={onSection} />
-      {visibleSection === "My account" && <MySettingsPanel notify={notify} userName={userName} userEmail={userEmail} onTimezoneChange={onTimezoneChange} />}
+      {visibleSection === "My settings" && <MySettingsPanel notify={notify} userName={userName} userEmail={userEmail} onTimezoneChange={onTimezoneChange} onSettingsLoaded={onCurrentUserSettingsLoaded} />}
       {isAdmin && visibleSection === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} isAdmin={isAdmin} />}
       {isAdmin && visibleSection === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
       {isAdmin && visibleSection === "Inbox & file rules" && <InboxRulesPanel rules={rules} onAddRule={onAddRule} onUpdateRule={onUpdateRule} onDeleteRule={onDeleteRule} />}

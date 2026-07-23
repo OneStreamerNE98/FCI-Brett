@@ -1350,6 +1350,8 @@ visually distinct from first-run verifications.
 **Effort:** small-medium. **Cost:** $0.
 
 ### SET-34 · Redesign cross-cutting sweep: anchors, naming, 390 px, duplicate-status audit (small, after SET-33)
+**Status:** In review — PR #138, July 23, 2026.
+
 **Why:** Close out spec §3.6: deep links should land on the relevant stage, the
 non-admin nav/section naming mismatch confuses users, and the single-status rule
 needs a final enforcement pass.

@@ -17,6 +17,10 @@ type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
 type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
 type LoadState = "loading" | "ready" | "error";
+type ReconciledSettingsSnapshot = {
+  preferences: { displayTimezone: string; pageLayouts: unknown };
+  isAdmin: boolean;
+};
 
 function preferencesFromPayload(value: unknown): UserSettingsPreferences | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -31,7 +35,7 @@ function preferencesFromPayload(value: unknown): UserSettingsPreferences | null 
   };
 }
 
-export function MySettingsPanel({ notify, userName, userEmail, onTimezoneChange }: { notify: Notify; userName: string; userEmail: string; onTimezoneChange: (timezone: string) => void }) {
+export function MySettingsPanel({ notify, userName, userEmail, onTimezoneChange, onSettingsLoaded }: { notify: Notify; userName: string; userEmail: string; onTimezoneChange: (timezone: string) => void; onSettingsLoaded: (snapshot: ReconciledSettingsSnapshot) => void }) {
   const [preferences, setPreferences] = useState<UserSettingsPreferences>(defaultUserSettingsPreferences);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
@@ -48,19 +52,26 @@ export function MySettingsPanel({ notify, userName, userEmail, onTimezoneChange 
     setLoadState("loading");
     setLoadError("");
     try {
-      const data = await cachedGetJson<{ preferences?: unknown }>("/api/v1/settings/me", { force });
+      const data = await cachedGetJson<{ preferences?: unknown; isAdmin?: unknown }>("/api/v1/settings/me", { force });
       if (requestId !== loadRequestRef.current) return;
       const nextPreferences = preferencesFromPayload(data.preferences);
-      if (!nextPreferences) throw new Error("The server returned no valid saved settings for this account.");
+      if (!nextPreferences || typeof data.isAdmin !== "boolean") throw new Error("The server returned no valid saved settings for this account.");
       setPreferences(nextPreferences);
       onTimezoneChange(nextPreferences.displayTimezone);
+      onSettingsLoaded({
+        preferences: {
+          displayTimezone: nextPreferences.displayTimezone,
+          pageLayouts: (data.preferences as { pageLayouts?: unknown }).pageLayouts,
+        },
+        isAdmin: data.isAdmin,
+      });
       setLoadState("ready");
     } catch (error) {
       if (requestId !== loadRequestRef.current) return;
       setLoadError(error instanceof Error ? error.message : "Your saved settings could not be loaded.");
       setLoadState("error");
     }
-  }, [onTimezoneChange]);
+  }, [onSettingsLoaded, onTimezoneChange]);
 
   useEffect(() => {
     void Promise.resolve().then(() => loadMySettings());
