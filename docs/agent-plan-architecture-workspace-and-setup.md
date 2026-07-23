@@ -1299,7 +1299,14 @@ reauthorization flows keep their existing e2e coverage against the new location.
 **Effort:** small. **Cost:** $0.
 
 ### SET-32 · Stage 3 unified define-and-create surface (medium, after SET-31)
-**Status:** In review — PR #129, `codex/set32-unified-stage3`, July 23, 2026.
+**Status:** Complete — PR #129, July 23, 2026. Source-only and undeployed. Review
+residuals fold into SET-33/SET-34 (same file zone): treat an empty owner-defined
+resource group (e.g. zero templates) as vacuously complete so Stage 3 cannot
+deadlock; give locked-row captions an aria association and name the actual unmet
+dependency in degraded states; avoid the definite "VERIFY" chip when the registry
+fetch failed; decide whether the allowed-domains list (dropped with the identity
+dl) should re-surface in the Stage-1 checklist. Guard-breadth note for FIX-12:
+the typography/control guards scan globals.css only, not module CSS.
 
 **Why:** Blueprint editing and resource creation are one workflow ("decide what
 exists, then create it — in order") artificially split across an editor, a table,
