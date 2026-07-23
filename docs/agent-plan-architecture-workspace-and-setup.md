@@ -1350,7 +1350,7 @@ visually distinct from first-run verifications.
 **Effort:** small-medium. **Cost:** $0.
 
 ### SET-34 · Redesign cross-cutting sweep: anchors, naming, 390 px, duplicate-status audit (small, after SET-33)
-**Status:** In review — PR #138, July 23, 2026.
+**Status:** Complete — PR #138, July 23, 2026. Source-only and undeployed. The redesign series (SET-29…SET-34) is closed. Fable review: full §3.6 contract verified incl. all four SET-33 residuals; the FloorOpsApp collision with FIX-07 was fused in a reviewed manual merge (isAdmin gate + My-settings rename both preserved, full suite green). P3 residuals fold into FIX-12: the hash-targeted stage re-forces open and re-scrolls on its own completion transitions (scroll hijack on the anchored stage); the mode/connection invariance test is a source-text approximation rather than a render-derived whitelist; dead props retained on TestingLaunchPanel (`onGoogleSetup` voided) and DirectorySyncPanel (`onConfigure` required but unused).
 
 **Why:** Close out spec §3.6: deep links should land on the relevant stage, the
 non-admin nav/section naming mismatch confuses users, and the single-status rule
@@ -2009,7 +2009,7 @@ may not start before production-platform acceptance plus each item's listed
 gate.
 
 ### AI-01 · Tasks foundation + phone-call meeting type (medium; no deps — parallel-safe now)
-**Status:** In progress — `codex/ai01-tasks-foundation`, July 23, 2026.
+**Status:** In progress — `codex/ai01-tasks-foundation`. PR #135 merged July 23, 2026 (source-only and undeployed; migration 0018 not applied to Sites). Fable review + revision verified: referential integrity enforced identically across d1/postgres/memory adapters (project-not-found/lead-not-found → 404 per house contract), rehearsal accept-set matches the registered v6 constraint exactly. REMAINING (assigned to the BE-07 PR): register the prepared `app/platform/postgres/task-schema.ts` as the next contiguous production version after v7, restore `phone-call` to the rehearsal accept-set (constraint then widened), update the four deferral docs, then flip this line to Complete.
 
 **Why:** "review to-dos and tell me what to get done today" has no substrate —
 no tasks table exists anywhere (only `project_meetings.action_items_json`
