@@ -1800,7 +1800,7 @@ BE-12 is complete in source in PR #53 and remains undeployed.
 KPI-02 is complete in source in PR #52 and remains undeployed. SET-10 is complete in
 source in PR #56 and remains undeployed. The application-logo refresh is complete in
 merged source in PR #57 and remains undeployed; the reviewed PR #51–#57 merge train is
-complete. KPI-03 and SET-13 are now assignable, and the Workstream E starters GI-01,
+complete. KPI-03 and SET-13 have since completed (PRs #75/#76), and the Workstream E starters GI-01,
 GI-02, and GI-05 are assignable in parallel with the SET track once their listed
 dependencies are met (GI-02 immediately). The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
 SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
@@ -1818,8 +1818,9 @@ is schedulable independently.
 
 **Merge-conflict hotspot:** `app/FloorOpsApp.tsx`. Do not run two packets that touch it
 concurrently. PR #33 (actionable lists), PR #35 (SET-01), PR #37 (SET-02), PR #41
-(KPI-01), and PR #52 (KPI-02) are merged source-only. KPI-03 now owns the next
-`FloorOpsApp.tsx` queue slot. It must preserve the extracted
+(KPI-01), and PR #52 (KPI-02) are merged source-only, and KPI-03 (#75), GI-03 (#80),
+and SET-35 (#107) have since cleared the queue. Whichever packet next takes the
+`FloorOpsApp.tsx` slot must preserve the extracted
 Settings boundary, shared actionable-list pattern, KPI-01 formulas/gating, and
 `InboxRulesPanel`'s semantic `<table>` markup, with the focused regression suites and
 `tests/e2e/accessibility-routes.spec.ts` green.
@@ -1867,13 +1868,14 @@ broad primitive/CSS consolidation tracks.
 full-codebase review and the settings redesign run in four waves so nothing is built
 twice. **R1** — full-review foundation fix packets (FIX-01…FIX-06 plus FIX-10 in
 `docs/full-review-2026-07-21-findings.md`) that touch shared primitives, config
-layering, or test infrastructure.
+layering, or test infrastructure. **R1 completed July 22, 2026 (PRs #95–#112,
+reviewed and flipped), so R2 is unblocked and active.**
 **R2** — the SET-29 → SET-34 stage-shell series (design authority:
 `docs/settings-redesign-spec.md` + approved wireframe; strictly one packet at a
 time — all six touch `GoogleWorkspacePanel.tsx`). **R3** — remaining full-review fix
 packets that touch settings UI, built on the new frame (FIX-07, FIX-08). **R4** — the
-feature queue resumes stage-native, plus FIX-09 and the production-only FIX-11
-(anonymous login-flow throttle). Settings-UI packets that would add cards to the old layout
+feature queue resumes stage-native, plus FIX-09, the production-only FIX-11
+(anonymous login-flow throttle), and the FIX-12 consolidation + residual sweep. Settings-UI packets that would add cards to the old layout
 (SET-23 viewer placement, SET-24, SET-27 card) WAIT for SET-29; engine-side packets
 (SET-17, SET-18, SET-21, SET-25, GI-04, and the FloorOpsApp queue) are unaffected
 and proceed in parallel with R1-R3.
@@ -1885,8 +1887,10 @@ IAM, billing, OAuth, or Admin-console change. The agent packets above proceed wi
 those inputs; Jason's other open decisions live in checklists 00/06/10.
 
 **FloorOpsApp single-file queue (one packet at a time):** PR #33 (actionable lists) →
-SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 → KPI-02 / PR #52 are complete in
-source. The queue is now KPI-03. Interleave other SET items only in extracted modules that do not
+SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 → KPI-02 / PR #52 → KPI-03 /
+PR #75 → GI-03 / PR #80 → SET-35 / PR #107 are complete in source. The next queue
+occupants are GI-04 and the R3 FIX-08 honesty bundle, then SET-22 UI and SET-26 UI
+per the wave text. Interleave other SET items only in extracted modules that do not
 touch `FloorOpsApp.tsx`. Workstream D's KPI packets are
 otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
 version numbers with BE-06).
