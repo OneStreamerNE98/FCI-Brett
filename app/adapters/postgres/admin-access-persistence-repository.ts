@@ -22,6 +22,7 @@ import {
 } from "../../ports/admin-access-persistence";
 import type { AuthorizationRecordScope } from "../../ports/authorization";
 import type { SecurityAuditEvent } from "../../ports/security-audit";
+import { ADMIN_ACCESS_MUTATION_LOCK_ID } from "../../platform/postgres/advisory-locks";
 import { withPostgresTransaction, type PostgresClient, type PostgresPool } from "./postgres-database";
 import {
   assertPersistenceHash,
@@ -45,9 +46,6 @@ export type PostgresAdminAccessPersistenceOptions = Readonly<{
   lockTimeoutMs?: number;
   statementTimeoutMs?: number;
 }>;
-
-/** Distinct from the session-scoped production migration lock. */
-export const ADMIN_ACCESS_MUTATION_LOCK_ID = "7314269172071302";
 
 const MAX_PROJECT_ASSIGNMENTS = 50;
 const MAX_ACCESS_USERS = 100;

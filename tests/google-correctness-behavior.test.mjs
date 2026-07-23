@@ -410,6 +410,37 @@ test("concurrent Calendar test holds reuse one private extended-property identit
   assert.equal("extendedProperties" in first.event, false);
 });
 
+test("Calendar test holds explain when a deleted hold already used the deterministic slot", async () => {
+  const configured = {
+    enabledServices: ["calendar"],
+    clientAppointmentsCalendarId: "appointments@group.calendar.google.com",
+    oauthReady: true,
+  };
+  const methods = [];
+  globalThis.fetch = async (_url, init = {}) => {
+    methods.push(init.method ?? "GET");
+    if (init.method === "POST") {
+      return Response.json({ error: "deleted event id already used" }, { status: 409 });
+    }
+    return Response.json({ items: [] });
+  };
+
+  const client = new calendarModule.GoogleCalendarClient("access-token", configured);
+  await assert.rejects(
+    client.createTestHold(new Date("2026-07-24T15:00:00.000Z")),
+    (error) => {
+      assert.equal(error.code, "calendar_event_conflict");
+      assert.equal(error.status, 409);
+      assert.equal(
+        error.message,
+        "This Calendar test-hold slot was previously used. Choose another start time and try again.",
+      );
+      return true;
+    },
+  );
+  assert.deepEqual(methods, ["GET", "POST", "GET"]);
+});
+
 test("Gmail attachment artifact identity ignores unstable attachment IDs and order", () => {
   const firstHash = "A".repeat(43);
   const secondHash = "B".repeat(43);

@@ -222,6 +222,11 @@ export class GoogleCalendarClient {
       if (error instanceof GoogleIntegrationError && error.code === "calendar_event_conflict") {
         const concurrentEvent = await findExisting();
         if (concurrentEvent) return { event: concurrentEvent, created: false } as const;
+        throw new GoogleIntegrationError(
+          "calendar_event_conflict",
+          "This Calendar test-hold slot was previously used. Choose another start time and try again.",
+          409,
+        );
       }
       throw error;
     }
