@@ -5,6 +5,36 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
+async function nestedTypeScriptFiles(directory) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const child = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
+    if (entry.isDirectory()) files.push(...await nestedTypeScriptFiles(child));
+    else if (entry.isFile() && entry.name.endsWith(".ts")) files.push(child);
+  }
+  return files;
+}
+
+function assertOpenAIAdapterBoundary(source) {
+  const fetchCallSites = source.match(/(?:\bfetch|#fetch)\s*\(/g) ?? [];
+  const exactHosts = source.match(/https:\/\/api\.openai\.com\/v1\/responses/g) ?? [];
+
+  assert.equal(
+    fetchCallSites.length,
+    1,
+    "the OpenAI adapter must keep exactly one reviewed fetch call site",
+  );
+  assert.equal(
+    exactHosts.length,
+    1,
+    "the only allowed OpenAI adapter endpoint is the exact Responses API host",
+  );
+  assert.match(
+    source,
+    /this\.\#fetch\("https:\/\/api\.openai\.com\/v1\/responses",\s*\{/,
+  );
+}
+
 test("AI-03 exposes only read-only tools and no outbound messaging path", async () => {
   const applicationFiles = (await readdir(new URL("app/application/assistant/", root)))
     .filter((name) => name.endsWith(".ts"))
@@ -37,6 +67,29 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     route.match(/NextResponse\.json/g)?.length,
     1,
     "route-owned JSON responses must all pass through noStore",
+  );
+});
+
+test("the OpenAI adapter has one exact Responses API outbound call site", async () => {
+  const adapterFiles = await nestedTypeScriptFiles(
+    new URL("app/adapters/openai/", root),
+  );
+  assert.ok(adapterFiles.length > 0, "the reviewed OpenAI adapter source must exist");
+  const source = (await Promise.all(
+    adapterFiles.map((file) => readFile(file, "utf8")),
+  )).join("\n");
+  assertOpenAIAdapterBoundary(source);
+  assert.throws(
+    () => assertOpenAIAdapterBoundary(
+      source.replace("https://api.openai.com/v1/responses", "https://example.test/v1/responses"),
+    ),
+    /exact Responses API host/,
+  );
+  assert.throws(
+    () => assertOpenAIAdapterBoundary(
+      `${source}\nfetch("https://api.openai.com/v1/responses");`,
+    ),
+    /exactly one reviewed fetch call site/,
   );
 });
 

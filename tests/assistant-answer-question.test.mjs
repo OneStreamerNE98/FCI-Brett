@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { createServer } from "vite";
@@ -12,9 +13,6 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 const {
-  ASSISTANT_EVIDENCE_CHARACTER_LIMIT,
-  ASSISTANT_PROVIDER_ROUND_LIMIT,
-  ASSISTANT_TOOL_EXECUTION_LIMIT,
   ORG_ASSISTANT_SYSTEM_PROMPT,
   PROJECT_ASSISTANT_SYSTEM_PROMPT,
   answerProjectQuestion,
@@ -57,10 +55,27 @@ class ScriptedProvider {
   }
 }
 
+test("assistant source pins the four orchestration budgets and provider timeout", async () => {
+  const orchestrationSource = await readFile(
+    new URL("../app/application/assistant/answer-question.ts", import.meta.url),
+    "utf8",
+  );
+  const adapterSource = await readFile(
+    new URL("../app/adapters/openai/responses-provider.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(orchestrationSource, /ASSISTANT_PROVIDER_ROUND_LIMIT = 4;/);
+  assert.match(orchestrationSource, /ASSISTANT_TOOL_EXECUTION_LIMIT = 6;/);
+  assert.match(orchestrationSource, /ASSISTANT_EVIDENCE_CHARACTER_LIMIT = 24_000;/);
+  assert.match(orchestrationSource, /ASSISTANT_WALL_CLOCK_MILLISECONDS = 60_000;/);
+  assert.match(adapterSource, /timeoutMilliseconds \?\? 20_000;/);
+});
+
 test("org orchestration enforces four provider rounds", async () => {
   let executions = 0;
   const provider = new ScriptedProvider(Array.from(
-    { length: ASSISTANT_PROVIDER_ROUND_LIMIT },
+    { length: 4 },
     (_, index) => ({
       kind: "tool-calls",
       calls: [{ callId: `call-${index}`, name: "read", arguments: {} }],
@@ -75,8 +90,8 @@ test("org orchestration enforces four provider rounds", async () => {
       return { evidence: [] };
     })],
   });
-  assert.equal(provider.requests.length, ASSISTANT_PROVIDER_ROUND_LIMIT);
-  assert.equal(executions, ASSISTANT_PROVIDER_ROUND_LIMIT);
+  assert.equal(provider.requests.length, 4);
+  assert.equal(executions, 4);
   assert.equal(outcome.answer, null);
   assert.equal(
     provider.requests[0].messages[0].content,
@@ -136,7 +151,7 @@ test("unknown, malformed, and failed calls consume the six-attempt budget", asyn
       }),
     ],
   });
-  assert.equal(outcome.toolExecutions, ASSISTANT_TOOL_EXECUTION_LIMIT);
+  assert.equal(outcome.toolExecutions, 6);
   assert.equal(knownExecutions, 4);
   assert.equal(failedExecutions, 1);
   assert.equal(outcome.answer.answer, "Bounded.");
@@ -151,7 +166,7 @@ test("unknown, malformed, and failed calls consume the six-attempt budget", asyn
 });
 
 test("only cap-admitted first-served evidence ids can be cited", async () => {
-  const huge = "x".repeat(ASSISTANT_EVIDENCE_CHARACTER_LIMIT * 2);
+  const huge = "x".repeat(24_000 * 2);
   const provider = new ScriptedProvider([
     {
       kind: "tool-calls",
@@ -190,7 +205,7 @@ test("only cap-admitted first-served evidence ids can be cited", async () => {
       (total, item) => total + item.id.length + item.label.length + item.detail.length,
       0,
     ),
-    ASSISTANT_EVIDENCE_CHARACTER_LIMIT,
+    24_000,
   );
   assert.equal(output.includes("evidence:dropped"), false);
 });
@@ -228,6 +243,53 @@ test("normalized evidence-id collisions preserve the first served record", async
   const output = provider.requests[1].toolOutputs[0].output;
   assert.match(output, /first detail/);
   assert.doesNotMatch(output, /second detail/);
+});
+
+test("malformed evidence candidates do not block later valid evidence", async () => {
+  const provider = new ScriptedProvider([
+    {
+      kind: "tool-calls",
+      calls: [{ callId: "mixed", name: "mixed", arguments: {} }],
+      continuation: {},
+    },
+    {
+      kind: "output",
+      value: {
+        answer: "The valid row remains available.",
+        citationIds: ["project:valid"],
+        missingEvidence: "Malformed rows were discarded.",
+      },
+    },
+  ]);
+  const outcome = await answerQuestion({
+    question: "Read the valid record",
+    provider,
+    tools: [tool("mixed", async () => ({
+      evidence: [
+        null,
+        { id: 42, label: "Malformed", detail: "Wrong id type" },
+        { id: "", label: "Empty id", detail: "Must not stop admission" },
+        { id: "project:empty-label", label: "", detail: "Must not stop admission" },
+        {
+          id: "project:valid",
+          label: "Valid project",
+          detail: "Planning",
+        },
+      ],
+    }))],
+  });
+
+  assert.deepEqual(
+    outcome.answer.citations.map((item) => item.id),
+    ["project:valid"],
+  );
+  const output = provider.requests[1].toolOutputs[0].output;
+  const served = JSON.parse(output.slice(output.indexOf("\n") + 1));
+  assert.deepEqual(served.evidence, [{
+    id: "project:valid",
+    label: "Valid project",
+    detail: "Planning",
+  }]);
 });
 
 test("hostile tool data stays data and cannot invoke an unregistered write", async () => {
@@ -307,6 +369,48 @@ test("the wall-clock race stops providers and tools that ignore abort", async ()
     /wall-clock budget exhausted/,
   );
   assert.equal(afterDeadlineExecutions, 0);
+
+  let preservationFallbackCalls = 0;
+  const preservationProvider = new ScriptedProvider([
+    {
+      kind: "tool-calls",
+      calls: [{
+        callId: "search",
+        name: "search_records",
+        arguments: { query: "Atlas" },
+      }],
+      continuation: {},
+    },
+    () => never,
+  ]);
+  const preserved = await answerQuestion({
+    question: "Preserve the admitted fallback",
+    provider: preservationProvider,
+    tools: [tool("search_records", async () => ({
+      evidence: [{
+        id: "client:atlas",
+        label: "Client · Atlas",
+        detail: "ATLAS",
+      }],
+    }))],
+    fallbackSearch: async () => {
+      preservationFallbackCalls += 1;
+      return [];
+    },
+    wallClockMilliseconds: 15,
+  });
+  assert.equal(preserved.answer, null);
+  assert.equal(preserved.toolExecutions, 1);
+  assert.equal(preserved.searchedRecords, true);
+  const admittedSearchEvidence = [{
+    id: "client:atlas",
+    label: "Client · Atlas",
+    detail: "ATLAS",
+  }];
+  assert.deepEqual(preserved.searchEvidence, admittedSearchEvidence);
+  assert.deepEqual(preserved.fallbackEvidence, admittedSearchEvidence);
+  assert.equal(preservationProvider.requests.length, 2);
+  assert.equal(preservationFallbackCalls, 0);
 });
 
 test("records-only search shares the six-work and wall-clock budgets", async () => {

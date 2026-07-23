@@ -5,6 +5,12 @@ import {
   responseOutputText,
 } from "../app/adapters/openai/responses-provider.ts";
 
+const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+
+function assertResponsesUrl(input) {
+  assert.equal(String(input), OPENAI_RESPONSES_URL);
+}
+
 const outputSchema = {
   type: "object",
   additionalProperties: false,
@@ -80,7 +86,8 @@ test("recorded tool fixture replays reasoning and function-call output for store
   ];
   const provider = new OpenAIResponsesProvider({
     apiKey: "fixture-key",
-    fetchImpl: async (_url, init) => {
+    fetchImpl: async (url, init) => {
+      assertResponsesUrl(url);
       requests.push(JSON.parse(init.body));
       return Response.json(fixtures.shift());
     },
@@ -161,7 +168,8 @@ test("project-only calls omit the tools field and preserve the explicit model", 
   const provider = new OpenAIResponsesProvider({
     apiKey: "fixture-key",
     model: "recorded-model",
-    fetchImpl: async (_url, init) => {
+    fetchImpl: async (url, init) => {
+      assertResponsesUrl(url);
       body = JSON.parse(init.body);
       return Response.json({
         output: [{
@@ -199,9 +207,12 @@ function minimalRequest(signal) {
 test("non-success and malformed provider responses fail with sanitized errors", async () => {
   const failed = new OpenAIResponsesProvider({
     apiKey: "fixture-key",
-    fetchImpl: async () => new Response("sensitive upstream details", {
-      status: 503,
-    }),
+    fetchImpl: async (url) => {
+      assertResponsesUrl(url);
+      return new Response("sensitive upstream details", {
+        status: 503,
+      });
+    },
   });
   await assert.rejects(
     failed.complete(minimalRequest(new AbortController().signal)),
@@ -214,9 +225,12 @@ test("non-success and malformed provider responses fail with sanitized errors", 
 
   const malformed = new OpenAIResponsesProvider({
     apiKey: "fixture-key",
-    fetchImpl: async () => Response.json({
-      output: [{ content: [{ type: "output_text", text: "{not json" }] }],
-    }),
+    fetchImpl: async (url) => {
+      assertResponsesUrl(url);
+      return Response.json({
+        output: [{ content: [{ type: "output_text", text: "{not json" }] }],
+      });
+    },
   });
   await assert.rejects(
     malformed.complete(minimalRequest(new AbortController().signal)),
@@ -228,7 +242,8 @@ test("caller abort and the per-call timeout dominate a fetch that ignores abort"
   let preAbortedFetches = 0;
   const preAbortedProvider = new OpenAIResponsesProvider({
     apiKey: "fixture-key",
-    fetchImpl: async () => {
+    fetchImpl: async (url) => {
+      assertResponsesUrl(url);
       preAbortedFetches += 1;
       return Response.json({});
     },
@@ -244,7 +259,10 @@ test("caller abort and the per-call timeout dominate a fetch that ignores abort"
   const never = () => new Promise(() => {});
   const callerProvider = new OpenAIResponsesProvider({
     apiKey: "fixture-key",
-    fetchImpl: never,
+    fetchImpl: (url) => {
+      assertResponsesUrl(url);
+      return never();
+    },
     timeoutMilliseconds: 10_000,
   });
   const caller = new AbortController();
@@ -254,7 +272,10 @@ test("caller abort and the per-call timeout dominate a fetch that ignores abort"
 
   const timeoutProvider = new OpenAIResponsesProvider({
     apiKey: "fixture-key",
-    fetchImpl: never,
+    fetchImpl: (url) => {
+      assertResponsesUrl(url);
+      return never();
+    },
     timeoutMilliseconds: 15,
   });
   await assert.rejects(
@@ -265,13 +286,16 @@ test("caller abort and the per-call timeout dominate a fetch that ignores abort"
   let jsonCalls = 0;
   const hangingJsonProvider = new OpenAIResponsesProvider({
     apiKey: "fixture-key",
-    fetchImpl: async () => ({
-      ok: true,
-      json() {
-        jsonCalls += 1;
-        return never();
-      },
-    }),
+    fetchImpl: async (url) => {
+      assertResponsesUrl(url);
+      return {
+        ok: true,
+        json() {
+          jsonCalls += 1;
+          return never();
+        },
+      };
+    },
     timeoutMilliseconds: 15,
   });
   await assert.rejects(

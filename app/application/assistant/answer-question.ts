@@ -45,7 +45,8 @@ function admitEvidence(
     if (allowed.has(id)) continue;
     const fixedCharacters = id.length + label.length;
     const availableDetail = remainingCharacters - used - fixedCharacters;
-    if (!id || !label || availableDetail < 1) break;
+    if (!id || !label) continue;
+    if (availableDetail < 1) break;
     const item = {
       id,
       label,
@@ -74,15 +75,23 @@ function masterAbortSignal(
   wallClockMilliseconds = ASSISTANT_WALL_CLOCK_MILLISECONDS,
 ) {
   const controller = new AbortController();
+  let wallClockExhausted = false;
   const abortFromCaller = () => controller.abort(callerSignal?.reason);
   if (callerSignal?.aborted) abortFromCaller();
   else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
   const timeout = setTimeout(
-    () => controller.abort(new Error("Assistant wall-clock budget exhausted.")),
+    () => {
+      if (controller.signal.aborted) return;
+      wallClockExhausted = true;
+      controller.abort(new Error("Assistant wall-clock budget exhausted."));
+    },
     Math.min(wallClockMilliseconds, ASSISTANT_WALL_CLOCK_MILLISECONDS),
   );
   return {
     signal: controller.signal,
+    get wallClockExhausted() {
+      return wallClockExhausted;
+    },
     dispose() {
       clearTimeout(timeout);
       callerSignal?.removeEventListener("abort", abortFromCaller);
@@ -238,7 +247,18 @@ export async function answerQuestion(input: {
       }
       return await finish(null);
     } catch (error) {
-      if (master.signal.aborted) throw error;
+      if (master.signal.aborted) {
+        if (master.wallClockExhausted && searchEvidence.length > 0) {
+          return {
+            answer: null,
+            toolExecutions,
+            searchedRecords,
+            searchEvidence,
+            fallbackEvidence: [...searchEvidence],
+          };
+        }
+        throw error;
+      }
       return await finish(null);
     }
   } finally {

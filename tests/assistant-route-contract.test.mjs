@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { createServer } from "vite";
+import {
+  DEVELOPMENT_RATE_LIMIT_MAX_REQUESTS,
+} from "../app/lib/development-request-rate-limit.ts";
 
 const TEST_EMAIL = "admincrm@cherryhillfci.com";
 const originalNodeEnvironment = process.env.NODE_ENV;
@@ -89,7 +92,32 @@ function request(body, options = {}) {
     method: "POST",
     headers,
     body: JSON.stringify(body),
+    signal: options.signal,
   });
+}
+
+async function withAllowedOfficeEmail(email, operation) {
+  const previous = cloudflareEnvironment.FCI_OFFICE_EMAILS;
+  cloudflareEnvironment.FCI_OFFICE_EMAILS = `${previous},${email}`;
+  try {
+    return await operation();
+  } finally {
+    cloudflareEnvironment.FCI_OFFICE_EMAILS = previous;
+  }
+}
+
+async function withinOneSecond(promise, message) {
+  let watchdog;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        watchdog = setTimeout(() => reject(new Error(message)), 1_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(watchdog);
+  }
 }
 
 test("origin and identity denials are no-store without database work", async () => {
@@ -110,6 +138,57 @@ test("origin and identity denials are no-store without database work", async () 
     assert.equal(response.headers.get("Cache-Control"), "no-store", name);
     assert.equal(database.prepared.length, 0, name);
   }
+});
+
+test("oversized questions return the route-level 413 contract before database work", async () => {
+  await withAllowedOfficeEmail("assistant-oversize@example.test", async () => {
+    database.prepared = [];
+    database.resolver = () => {
+      throw new Error("Oversized questions must fail before database work.");
+    };
+    const response = await assistantRoute.POST(request(
+      { question: "x".repeat(2_001) },
+      { email: "assistant-oversize@example.test" },
+    ));
+    assert.equal(response.status, 413);
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    assert.deepEqual(await response.json(), {
+      error: "question is too long or contains invalid characters",
+    });
+    assert.equal(database.prepared.length, 0);
+  });
+});
+
+test("assistant requests expose the shared route-level 429 contract", async () => {
+  await withAllowedOfficeEmail("assistant-rate-limit@example.test", async () => {
+    database.prepared = [];
+    database.resolver = () => {
+      throw new Error("Rate-limit fixtures must fail before database work.");
+    };
+    for (
+      let attempt = 0;
+      attempt < DEVELOPMENT_RATE_LIMIT_MAX_REQUESTS;
+      attempt += 1
+    ) {
+      const allowed = await assistantRoute.POST(request(
+        {},
+        { email: "assistant-rate-limit@example.test" },
+      ));
+      assert.equal(allowed.status, 400);
+    }
+    const denied = await assistantRoute.POST(request(
+      {},
+      { email: "assistant-rate-limit@example.test" },
+    ));
+    assert.equal(denied.status, 429);
+    assert.equal(denied.headers.get("Cache-Control"), "no-store");
+    assert.match(denied.headers.get("Retry-After"), /^(?:[1-9]|[1-5]\d|60)$/);
+    assert.deepEqual(await denied.json(), {
+      error: "Too many requests. Try again shortly.",
+      code: "rate_limited",
+    });
+    assert.equal(database.prepared.length, 0);
+  });
 });
 
 test("only an omitted projectId enters org-wide mode", async () => {
@@ -137,6 +216,66 @@ test("only an omitted projectId enters org-wide mode", async () => {
     missingEvidence: "This records-only fallback reports bounded exact record matches; it does not infer an answer or search full email bodies and Drive document contents.",
   });
   assert.equal(database.prepared.length, 3);
+});
+
+test("request abort reaches the live provider call and returns a safe fallback", async () => {
+  await withAllowedOfficeEmail("assistant-abort@example.test", async () => {
+    const originalFetch = globalThis.fetch;
+    const previousApiKey = cloudflareEnvironment.OPENAI_API_KEY;
+    cloudflareEnvironment.OPENAI_API_KEY = "abort-fixture-key";
+    database.prepared = [];
+    database.resolver = () => [];
+    let observedProviderAbortReason;
+    let markProviderStarted;
+    const providerStarted = new Promise((resolve) => {
+      markProviderStarted = resolve;
+    });
+    globalThis.fetch = async (url, init) => {
+      assert.equal(String(url), "https://api.openai.com/v1/responses");
+      markProviderStarted();
+      return new Promise((_resolve, reject) => {
+        const watchdog = setTimeout(
+          () => reject(new Error("Provider abort watchdog expired.")),
+          1_000,
+        );
+        const rejectForAbort = () => {
+          clearTimeout(watchdog);
+          observedProviderAbortReason = init.signal.reason;
+          reject(init.signal.reason ?? new DOMException("Aborted", "AbortError"));
+        };
+        if (init.signal.aborted) rejectForAbort();
+        else init.signal.addEventListener("abort", rejectForAbort, { once: true });
+      });
+    };
+    const controller = new AbortController();
+    const callerReason = new DOMException("Caller stopped", "AbortError");
+    try {
+      const pendingResponse = assistantRoute.POST(request(
+        { question: "find Atlas" },
+        {
+          email: "assistant-abort@example.test",
+          signal: controller.signal,
+        },
+      ));
+      await withinOneSecond(
+        providerStarted,
+        "Provider did not start within one second.",
+      );
+      controller.abort(callerReason);
+      const response = await withinOneSecond(
+        pendingResponse,
+        "Provider abort did not settle within one second.",
+      );
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("Cache-Control"), "no-store");
+      assert.equal((await response.json()).mode, "records-only");
+      assert.strictEqual(observedProviderAbortReason, callerReason);
+    } finally {
+      if (previousApiKey === undefined) delete cloudflareEnvironment.OPENAI_API_KEY;
+      else cloudflareEnvironment.OPENAI_API_KEY = previousApiKey;
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 for (const [name, projectId] of [
@@ -221,7 +360,8 @@ test("the configured OpenAI secret is sent only as authorization and never retur
   cloudflareEnvironment.OPENAI_API_KEY = sentinel;
   database.prepared = [];
   database.resolver = () => [];
-  globalThis.fetch = async (_url, init) => {
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "https://api.openai.com/v1/responses");
     assert.equal(init.headers.Authorization, `Bearer ${sentinel}`);
     assert.doesNotMatch(String(init.body), new RegExp(sentinel));
     return Response.json({

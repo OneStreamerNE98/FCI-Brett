@@ -9,16 +9,6 @@ export function searchResultEvidence(result: SearchResult): Evidence {
   };
 }
 
-export function orgWideFallback(
-  question: string,
-  results: SearchResult[],
-): AssistantResponse {
-  return orgWideFallbackFromEvidence(
-    question,
-    results.slice(0, 5).map(searchResultEvidence),
-  );
-}
-
 export function orgWideFallbackFromEvidence(
   question: string,
   evidenceInput: Evidence[],
