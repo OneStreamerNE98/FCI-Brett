@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, CalendarDays, CheckCircle2, CircleAlert, FileText, FolderOpen, Mail, ShieldCheck, X, Zap } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { CalendarDays, CheckCircle2, ChevronDown, CircleAlert, FileText, FolderOpen, Info, Mail, ShieldCheck, X } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { OperationsDataTable, OperationsDataTableCell } from "../../components/operations/OperationsDataTable";
@@ -15,6 +15,7 @@ import {
   type WorkspaceSetupResourcesPayload,
 } from "./WorkspaceDriveResourceActions";
 import { WorkspaceDomainChecklistCard } from "./workspace-domain-checklist/WorkspaceDomainChecklistCard";
+import { deriveWorkspaceDomainChecklist } from "./workspace-domain-checklist/workspace-domain-checklist";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
@@ -68,6 +69,20 @@ type ConnectionHealthPayload = {
 type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 type WorkspaceReadinessState = "idle" | "loading" | "ready" | "error";
 type WorkspaceSetupResourcesState = "idle" | "loading" | "ready" | "error";
+type WorkspaceStageNumber = 1 | 2 | 3 | 4;
+type WorkspaceStageTone = "done" | "current" | "waiting" | "ready";
+
+type SetupStageProps = Readonly<{
+  number: WorkspaceStageNumber;
+  title: string;
+  description: string;
+  status: string;
+  tone: WorkspaceStageTone;
+  complete: boolean;
+  firstIncomplete: boolean;
+  statusHint: string;
+  children: ReactNode;
+}>;
 
 const CONNECTION_SERVICE_COLUMNS = [
   { key: "service", label: "Service" },
@@ -88,6 +103,165 @@ const CONNECTION_SERVICES: readonly { key: GoogleServiceKey; label: string }[] =
   { key: "calendar", label: "Calendar" },
   { key: "sheets", label: "Sheets" },
 ];
+
+const WORKSPACE_STAGE_NAMES = [
+  "Prepare the tenant",
+  "Connect",
+  "Define & create your workspace",
+  "Verify & maintain",
+] as const;
+
+const PREPARED_CHECKLIST_STATUSES = new Set([
+  "Configuration present",
+  "Ready to connect",
+  "Connected",
+  "Account matched",
+  "Secrets present",
+  "Restricted",
+  "Simulated",
+]);
+
+function InfoHint({ label, text }: { label: string; text: string }) {
+  const descriptionId = useId();
+  const pointerInteraction = useRef({ type: "", open: false });
+  const [keyboardFocused, setKeyboardFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [tapped, setTapped] = useState(false);
+  const open = keyboardFocused || hovered || tapped;
+
+  useEffect(() => {
+    if (!open) return;
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setKeyboardFocused(false);
+      setHovered(false);
+      setTapped(false);
+    };
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => document.removeEventListener("keydown", dismissOnEscape);
+  }, [open]);
+
+  return <span
+    className={`workspace-info-hint${open ? " open" : ""}`}
+    onFocusCapture={() => {
+      if (pointerInteraction.current.type !== "touch") setKeyboardFocused(true);
+    }}
+    onBlurCapture={(event) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+      setKeyboardFocused(false);
+      setTapped(false);
+      pointerInteraction.current = { type: "", open: false };
+    }}
+    onPointerEnter={(event) => {
+      if (event.pointerType === "mouse") setHovered(true);
+    }}
+    onPointerLeave={(event) => {
+      if (event.pointerType === "mouse") setHovered(false);
+    }}
+  >
+    <button
+      type="button"
+      className="workspace-info-hint-trigger"
+      aria-label={label}
+      aria-describedby={descriptionId}
+      aria-expanded={open}
+      onPointerDown={(event) => {
+        pointerInteraction.current = { type: event.pointerType, open };
+      }}
+      onClick={(event) => {
+        if (event.detail === 0) {
+          setKeyboardFocused(true);
+          return;
+        }
+        if (pointerInteraction.current.type === "touch") setTapped(!pointerInteraction.current.open);
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        setKeyboardFocused(false);
+        setHovered(false);
+        setTapped(false);
+      }}
+    >
+      <Info size={14} aria-hidden="true" />
+    </button>
+    <span id={descriptionId} className="workspace-info-hint-tooltip" role="tooltip">{text}</span>
+  </span>;
+}
+
+function SetupStage({
+  number,
+  title,
+  description,
+  status,
+  tone,
+  complete,
+  firstIncomplete,
+  statusHint,
+  children,
+}: SetupStageProps) {
+  const bodyId = `workspace-stage-${number}-content`;
+  const headingId = `workspace-stage-${number}-heading`;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(!complete && firstIncomplete);
+  const previousComplete = useRef(complete);
+  const previousFirstIncomplete = useRef(firstIncomplete);
+
+  useEffect(() => {
+    const closeStage = () => {
+      if (bodyRef.current?.contains(document.activeElement)) toggleRef.current?.focus();
+      setOpen(false);
+    };
+    if (complete && !previousComplete.current) {
+      closeStage();
+    } else if (firstIncomplete && !previousFirstIncomplete.current) {
+      setOpen(true);
+    } else if (!firstIncomplete && previousFirstIncomplete.current && !complete) {
+      closeStage();
+    }
+    previousComplete.current = complete;
+    previousFirstIncomplete.current = firstIncomplete;
+  }, [complete, firstIncomplete]);
+
+  return <section
+    className={`workspace-setup-stage${open ? " open" : ""}${complete ? " complete" : ""}`}
+    data-workspace-stage={number}
+    aria-labelledby={headingId}
+  >
+    <header className="workspace-stage-header">
+      <h3 className="workspace-stage-heading">
+        <button
+          ref={toggleRef}
+          type="button"
+          className="workspace-stage-toggle"
+          aria-label={`${open ? "Collapse" : "Expand"} Stage ${number}: ${title}`}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <span className="workspace-stage-number" aria-hidden="true">{number}</span>
+          <span className="workspace-stage-copy">
+            <span id={headingId} className="workspace-stage-title">{title}</span>
+            <span className="workspace-stage-description">{description}</span>
+          </span>
+          <ChevronDown className="workspace-stage-chevron" size={17} aria-hidden="true" />
+        </button>
+      </h3>
+      <span className="workspace-stage-meta">
+        <span className={`workspace-stage-chip ${tone}`}>{status}</span>
+        <InfoHint label={`About Stage ${number} status`} text={statusHint} />
+      </span>
+    </header>
+    <div ref={bodyRef} id={bodyId} className="workspace-stage-body" hidden={!open}>{children}</div>
+  </section>;
+}
+
+function workspaceResourceComplete(resource: WorkspaceSetupResource, simulation: boolean) {
+  if (simulation) return resource.source === "app" && Boolean(resource.externalId);
+  return resource.state === "Created" || resource.state === "Adopted";
+}
 
 function stepStatus({ simulation, previousComplete = true, prerequisitesReady, complete }: { simulation: boolean; previousComplete?: boolean; prerequisitesReady: boolean; complete: boolean }): SetupStepStatus {
   if (simulation) return "Simulated";
@@ -541,6 +715,141 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
   const calendarActionsEnabled = simulation || (gmailStepStatus === "Complete" && calendarReady);
   const sheetsActionsEnabled = simulation || (calendarStepStatus === "Complete" && sheetsReady);
+  const statusSourcesLoading = checking
+    || workspaceReadinessState === "idle"
+    || workspaceReadinessState === "loading"
+    || connectionHealthState === "idle"
+    || connectionHealthState === "loading"
+    || workspaceResourcesState === "idle"
+    || workspaceResourcesState === "loading"
+    || sheetsWorking;
+  const allStatusSourcesAvailable = Boolean(workspace && connectionHealth && workspaceResources);
+  const statusSourcesUnavailable = workspaceReadinessState === "error"
+    || connectionHealthState === "error"
+    || workspaceResourcesState === "error"
+    || (!statusSourcesLoading && !allStatusSourcesAvailable);
+  const sourceModes = [
+    workspace?.runtimeMode,
+    connectionHealth?.runtimeMode,
+    workspaceResources?.identity.mode,
+  ].filter((mode): mode is "simulation" | "workspace" => mode === "simulation" || mode === "workspace");
+  const bannerSimulation = allStatusSourcesAvailable
+    && sourceModes.length === 3
+    && sourceModes.every((mode) => mode === "simulation");
+  const bannerWorkspace = allStatusSourcesAvailable
+    && sourceModes.length === 3
+    && sourceModes.every((mode) => mode === "workspace");
+  const modeDisagreement = sourceModes.length > 1 && new Set(sourceModes).size > 1;
+  const readinessConnectionComplete = workspace?.connectionStatus === "connected"
+    && workspace.requiresReauthorization !== true;
+  const healthConnectionComplete = connectionHealth?.connection.status === "connected"
+    && connectionHealth.connection.requiresReauthorization !== true;
+  const resourceConnectionPresent = Boolean(workspaceResources?.identity.connectionAccount);
+  const sourceAccounts = [
+    workspace?.connectionAccount,
+    connectionHealth?.connection.account,
+    workspaceResources?.identity.connectionAccount,
+  ].filter((account): account is string => Boolean(account?.trim()))
+    .map((account) => maskWorkspaceAccountForDisplay(account).trim().toLowerCase());
+  const anyConnectionClaim = readinessConnectionComplete || healthConnectionComplete || resourceConnectionPresent;
+  const accountDisagreement = anyConnectionClaim
+    && (sourceAccounts.length !== 3 || new Set(sourceAccounts).size > 1);
+  const liveConnectionComplete = bannerWorkspace
+    && !accountDisagreement
+    && readinessConnectionComplete
+    && healthConnectionComplete
+    && resourceConnectionPresent;
+  const connectionSignals = allStatusSourcesAvailable
+    ? [readinessConnectionComplete, healthConnectionComplete, resourceConnectionPresent]
+    : [];
+  const connectionDisagreement = connectionSignals.some(Boolean) && connectionSignals.some((signal) => !signal);
+  const stageOneChecklist = deriveWorkspaceDomainChecklist({
+    isAdmin,
+    simulation: bannerSimulation,
+    readinessKnown: workspaceReadinessState === "ready",
+    missingDetails,
+    resourcesKnown: workspaceResourcesState === "ready" && workspaceResources !== null,
+    connectReady: workspaceResources?.connectReady === true,
+    allowedDomainCount: workspaceResources?.identity.allowedDomains.length ?? 0,
+    intakeMailboxMatches: workspaceResources?.identity.intakeMailboxMatches ?? null,
+    hasConnectionAccount: Boolean(workspaceResources?.identity.connectionAccount),
+    connectionKnown: connectionHealthState === "ready",
+    connectionStatus: connectionHealth?.connection.status ?? null,
+    requiresReauthorization: connectionHealth?.connection.requiresReauthorization === true,
+  });
+  const stageOneCompleteCount = stageOneChecklist.filter(({ status }) => PREPARED_CHECKLIST_STATUSES.has(status)).length;
+  const stageOneComplete = workspaceResources?.connectReady === true;
+  const stageTwoComplete = bannerSimulation || liveConnectionComplete;
+  const requiredWorkspaceResources = resourceRows.filter((resource) => (
+    resource.resourceType === "drive.shared-drive"
+    || resource.resourceType === "drive.folder"
+    || resource.resourceType === "drive.file"
+    || resource.resourceType === "sheets.spreadsheet"
+    || (!resource.resourceType && resource.key === "primary")
+  ));
+  const completeWorkspaceResourceCount = requiredWorkspaceResources.filter((resource) => (
+    workspaceResourceComplete(resource, bannerSimulation)
+  )).length;
+  const stageThreeResourcesComplete = requiredWorkspaceResources.length > 0
+    && completeWorkspaceResourceCount === requiredWorkspaceResources.length;
+  const stageThreeComplete = stageTwoComplete && stageThreeResourcesComplete;
+  const stageFourCompleteCount = [gmailLabelsReady, calendarChecked, sheetsSynced].filter(Boolean).length;
+  const stageFourReady = stageThreeComplete && stageFourCompleteCount === 3;
+  const stageCompletion = [stageOneComplete, stageTwoComplete, stageThreeComplete, false] as const;
+  const currentStageNumber = (stageCompletion.findIndex((complete) => !complete) + 1) as WorkspaceStageNumber;
+  const currentStageName = WORKSPACE_STAGE_NAMES[currentStageNumber - 1];
+  const statusAgreement = statusSourcesUnavailable
+    ? "unavailable"
+    : (!bannerSimulation && !bannerWorkspace) || modeDisagreement || connectionDisagreement || accountDisagreement
+      ? "conservative"
+      : "agreed";
+  const bannerReconnectRequired = reconnectRequired || connectionHealth?.connection.requiresReauthorization === true;
+  const bannerAccount = maskWorkspaceAccountForDisplay(
+    connectionHealth?.connection.account
+      ?? workspace?.connectionAccount
+      ?? workspaceResources?.identity.connectionAccount,
+  );
+  let bannerHeadline: string;
+  let bannerNextStep: string;
+  if (statusSourcesLoading) {
+    bannerHeadline = "Checking current status…";
+    bannerNextStep = "Waiting for all setup status checks to finish.";
+  } else if (statusSourcesUnavailable) {
+    bannerHeadline = "Current Workspace status is unavailable";
+    bannerNextStep = "Next: retry Check readiness before changing setup.";
+  } else if (bannerSimulation) {
+    bannerHeadline = "Simulation ready";
+    bannerNextStep = "Everything below runs locally.";
+  } else if (currentStageNumber === 1) {
+    bannerHeadline = "Not connected to Google yet";
+    bannerNextStep = "Next: finish Stage 1, then Connect.";
+  } else if (currentStageNumber === 2) {
+    bannerHeadline = bannerReconnectRequired ? "Google permission update required" : "Ready to connect Google";
+    bannerNextStep = bannerReconnectRequired
+      ? "Next: reconnect the company account in Stage 2."
+      : "Next: connect the company account in Stage 2.";
+  } else if (currentStageNumber === 3) {
+    bannerHeadline = bannerAccount === "Not connected" ? "Google Workspace connected" : `Connected as ${bannerAccount}`;
+    bannerNextStep = "Next: create your workspace in Stage 3.";
+  } else if (stageFourReady) {
+    bannerHeadline = "Workspace setup is ready";
+    bannerNextStep = "Next: use Stage 4 for ongoing checks.";
+  } else {
+    bannerHeadline = bannerAccount === "Not connected" ? "Google Workspace connected" : `Connected as ${bannerAccount}`;
+    bannerNextStep = "Next: verify Gmail, Calendar, and Sheets in Stage 4.";
+  }
+  const stageOneStatus = stageOneComplete ? "DONE" : `IN PROGRESS · ${stageOneCompleteCount} of ${stageOneChecklist.length}`;
+  const stageTwoStatus = stageTwoComplete ? "DONE" : stageOneComplete ? "IN PROGRESS" : "WAITING ON STAGE 1";
+  const stageThreeStatus = stageThreeComplete
+    ? "DONE"
+    : stageTwoComplete
+      ? `IN PROGRESS · ${completeWorkspaceResourceCount} of ${requiredWorkspaceResources.length}`
+      : "WAITING ON STAGE 2";
+  const stageFourStatus = stageFourReady
+    ? "READY"
+    : stageThreeComplete
+      ? `IN PROGRESS · ${stageFourCompleteCount} of 3`
+      : "WAITING ON STAGE 3";
   const oauthMessage = oauthResult === "connected"
     ? "Google was connected. Workspace readiness refreshed automatically."
     : oauthResult === "authorization-cancelled"
@@ -557,36 +866,58 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
 
   return <section className="panel workspace-settings">
     <div className="settings-heading">
-      <div><p className="eyebrow">Company integration</p><h2>Google Workspace</h2><p>Complete these five steps in order. Every status comes from the current Workspace readiness or service response.</p></div>
+      <div><p className="eyebrow">Company integration</p><h2>Google Workspace</h2><p>Work through four stages in order. Every status comes from the current Workspace readiness or service response.</p></div>
       <button className="primary-button" onClick={() => void refreshWorkspaceSetup(true)} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
     </div>
-    <div className={`workspace-mode-card ${simulation ? "simulation" : "live"}`}>
-      {simulation ? <Zap size={18} /> : <Building2 size={18} />}
-      <span><strong>{simulation ? "Local Workspace simulation" : "Company Google Workspace"}</strong><small>{simulation ? "Sample data only · no Google account connected · nothing is sent to Google" : "One administrator-approved organization connection"}</small></span>
-      <b>{simulation ? "LOCAL" : connected ? "CONNECTED" : "SETUP"}</b>
+    <div className="workspace-status-banner" data-status-agreement={statusAgreement} role="status" aria-live="polite">
+      <span className="workspace-status-mode">{bannerSimulation ? "SIMULATION" : "WORKSPACE"}</span>
+      <span className="workspace-status-copy"><strong>{bannerHeadline}</strong><span>{bannerNextStep}</span></span>
+      <span className="workspace-status-progress"><strong>Stage {currentStageNumber} of 4</strong><span>{currentStageName}</span></span>
     </div>
     {!simulation && oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
-    <WorkspaceDomainChecklistCard
-      isAdmin={isAdmin}
-      simulation={simulation}
-      connected={connected}
-      readinessState={workspaceReadinessState}
-      missingDetails={missingDetails}
-      resourcesState={workspaceResourcesState}
-      resourcesAvailable={workspaceResources !== null}
-      resources={resourceRows}
-      connectReady={workspaceResources?.connectReady === true}
-      allowedDomainCount={workspaceResources?.identity.allowedDomains.length ?? 0}
-      intakeMailboxMatches={workspaceResources?.identity.intakeMailboxMatches ?? null}
-      hasConnectionAccount={Boolean(workspaceResources?.identity.connectionAccount)}
-      connectionState={connectionHealthState}
-      connectionStatus={connectionHealth?.connection.status ?? null}
-      requiresReauthorization={connectionHealth?.connection.requiresReauthorization === true}
-      sharedDriveDomainUsersOnly={sharedDriveDomainUsersOnly}
-      notify={notify}
-    />
-    <ol className="workspace-setup-steps" aria-label="Google Workspace setup steps">
-      <li className={`workspace-setup-step ${stepStatusClass(connectStepStatus)}`}>
+    <div className="workspace-stage-list" role="group" aria-label="Google Workspace setup stages">
+      <SetupStage
+        number={1}
+        title="Prepare the tenant"
+        description="One-time steps done in Google's consoles — usually your Workspace admin"
+        status={stageOneStatus}
+        tone={stageOneComplete ? "done" : "current"}
+        complete={stageOneComplete}
+        firstIncomplete={currentStageNumber === 1}
+        statusHint="This stage is complete when the required connection prerequisites are ready."
+      >
+        <WorkspaceDomainChecklistCard
+          isAdmin={isAdmin}
+          simulation={simulation}
+          connected={connected}
+          readinessState={workspaceReadinessState}
+          missingDetails={missingDetails}
+          resourcesState={workspaceResourcesState}
+          resourcesAvailable={workspaceResources !== null}
+          resources={resourceRows}
+          connectReady={workspaceResources?.connectReady === true}
+          allowedDomainCount={workspaceResources?.identity.allowedDomains.length ?? 0}
+          intakeMailboxMatches={workspaceResources?.identity.intakeMailboxMatches ?? null}
+          hasConnectionAccount={Boolean(workspaceResources?.identity.connectionAccount)}
+          connectionState={connectionHealthState}
+          connectionStatus={connectionHealth?.connection.status ?? null}
+          requiresReauthorization={connectionHealth?.connection.requiresReauthorization === true}
+          sharedDriveDomainUsersOnly={sharedDriveDomainUsersOnly}
+          notify={notify}
+        />
+      </SetupStage>
+      <SetupStage
+        number={2}
+        title="Connect"
+        description="Authorize the one company Google account"
+        status={stageTwoStatus}
+        tone={stageTwoComplete ? "done" : stageOneComplete ? "current" : "waiting"}
+        complete={stageTwoComplete}
+        firstIncomplete={currentStageNumber === 2}
+        statusHint="This stage is complete when the company account is connected; simulation is ready immediately."
+      >
+        <ol className="workspace-setup-steps" aria-label="Connect Google Workspace setup step">
+          <li className={`workspace-setup-step ${stepStatusClass(connectStepStatus)}`}>
         <header><span className="workspace-step-number">1</span><div><h3>Connect Google Workspace</h3><p>Authorize the one approved company account, or reset the isolated local simulation.</p></div><span className="workspace-step-status">{connectStepStatus}</span></header>
         <div className="workspace-step-body">
           <div className={`workspace-connection ${connected ? "ready" : ""}`}>
@@ -602,12 +933,91 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
             {!connected && <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void connectGoogleDrive()} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</AdministratorActionButton>}
           </>}</div>
         </div>
-      </li>
-      <li className={`workspace-setup-step ${stepStatusClass(driveStepStatus)}`}>
+          </li>
+        </ol>
+        {isAdmin && <section className="workspace-connection-health" aria-labelledby="workspace-connection-health-heading">
+          <header><div><p className="eyebrow">Administrator details</p><h3 id="workspace-connection-health-heading">Connection health</h3></div>{connectionHealth && <Status text={connectionHealth.simulation ? "Simulated" : connectionStatusLabel(connectionHealth.connection.status)} />}</header>
+          {connectionHealthState === "loading" && !connectionHealth && <p className="workspace-connection-health-message" role="status">Loading the saved connection details…</p>}
+          {connectionHealthError && <div className="workspace-connection-health-error" role="alert"><span>{connectionHealthError}</span><button className="soft-button" type="button" onClick={() => void loadConnectionHealth(true)}>Retry details</button></div>}
+          {connectionHealth && <>
+            <dl className="workspace-connection-health-summary">
+              <div><dt>Account</dt><dd>{maskWorkspaceAccountForDisplay(connectionHealth.connection.account)}</dd></div>
+              <div><dt>Mode</dt><dd>{connectionHealth.runtimeMode === "simulation" ? "Simulation" : "Workspace"}</dd></div>
+              <div><dt>Status</dt><dd>{connectionHealth.simulation ? "Simulated" : connectionStatusLabel(connectionHealth.connection.status)}</dd></div>
+            </dl>
+            {connectionHealth.connection.requiresReauthorization && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Reauthorization required:</strong> Disconnect this saved connection, then reconnect the exact approved account and approve every enabled service.</span></p>}
+            <OperationsDataTable className="workspace-connection-service-table" columns={CONNECTION_SERVICE_COLUMNS} labelledBy="workspace-connection-health-heading">
+              {CONNECTION_SERVICES.map((service) => {
+                const enabled = connectionHealth.enabledServices.includes(service.key);
+                const granted = connectionHealth.connection.grantedServices?.[service.key];
+                const grantLabel = connectionHealth.simulation ? "Not applicable — simulated" : granted ? "Granted" : "Not granted";
+                return <tr key={service.key}>
+                  <OperationsDataTableCell label="Service"><strong>{service.label}</strong></OperationsDataTableCell>
+                  <OperationsDataTableCell label="FCI configuration"><span className={`workspace-service-state ${enabled ? "ready" : "inactive"}`}>{enabled ? "Enabled" : "Not enabled"}</span></OperationsDataTableCell>
+                  <OperationsDataTableCell label="Recorded OAuth permission"><span className={`workspace-service-state ${granted ? "ready" : "inactive"}`}>{grantLabel}</span></OperationsDataTableCell>
+                </tr>;
+              })}
+            </OperationsDataTable>
+            <p className="workspace-connection-health-note">Recorded permission reflects the saved Google consent only. It is not a live provider-health or freshness check.</p>
+          </>}
+        </section>}
+      </SetupStage>
+      <SetupStage
+        number={3}
+        title="Define & create your workspace"
+        description="Decide what exists, then create it — in order"
+        status={stageThreeStatus}
+        tone={stageThreeComplete ? "done" : stageTwoComplete ? "current" : "waiting"}
+        complete={stageThreeComplete}
+        firstIncomplete={currentStageNumber === 3}
+        statusHint="This stage is complete when every required Drive, folder, spreadsheet, and template resource is created or adopted."
+      >
+        <ol className="workspace-setup-steps" aria-label="Shared Drive verification setup step">
+          <li className={`workspace-setup-step ${stepStatusClass(driveStepStatus)}`}>
         <header><span className="workspace-step-number">2</span><div><h3>Verify the Shared Drive</h3><p>Confirm the configured FCI Operations Shared Drive before any project folder is created.</p></div><span className="workspace-step-status">{driveStepStatus}</span></header>
         <div className="workspace-step-body"><p className="workspace-step-summary"><FolderOpen size={15} /> <span><strong>{storageName}</strong>{driveReady || simulation ? " is available for a direct verification." : " remains blocked until the connection and Drive prerequisite are ready."}</span></p><div className="workspace-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void verifyGoogleDrive()} disabled={working || (!simulation && !driveReady)}>{working ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton></div>{!simulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback. Project-folder provisioning still uses the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> gate.</p>}</div>
-      </li>
-      <li className={`workspace-setup-step ${stepStatusClass(gmailStepStatus)}`}>
+          </li>
+        </ol>
+        {isAdmin && <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />}
+        <section className="workspace-setup-card workspace-resources-card" aria-labelledby="workspace-resources-heading">
+          <header>
+            <div><p className="eyebrow">Workspace setup</p><h3 id="workspace-resources-heading">Resources</h3></div>
+            {!isAdmin ? <Status text="Administrator access" /> : workspaceResources ? <Status text={workspaceResources.simulation ? "Simulated" : workspaceResources.connectReady ? "Connection ready" : "Setup required"} /> : <Status text={workspaceResourcesState === "error" ? "Unavailable" : "Loading"} />}
+          </header>
+          <p>Adopt and verify the company Shared Drive, ensure the blueprint-defined root tree and spreadsheets, and rename owner-managed folders. Setup actions never delete Google content.</p>
+          {!isAdmin ? <p className="workspace-admin-readonly"><ShieldCheck size={15} /><span>Workspace resource status is available to Administrators. No administrator setup request is made for this Office view.</span></p> : <>
+            {workspaceResourcesState === "loading" && !workspaceResources && <p className="workspace-resources-message" role="status">Loading the Workspace resource registry…</p>}
+            {workspaceResourcesError && <div className="workspace-resources-error" role="alert"><span>{workspaceResourcesError}</span><button className="soft-button" type="button" onClick={() => void loadWorkspaceResources(true)}>Retry resources</button></div>}
+            {workspaceResources && <>
+              <dl className="workspace-resource-identity">
+                <div><dt>Connected account ↔ intake mailbox</dt><dd><span>{maskWorkspaceAccountForDisplay(workspaceResources.identity.connectionAccount)}</span><span className={`workspace-identity-state ${resourceIdentityMatch === true ? "ready" : resourceIdentityMatch === false ? "mismatch" : "unknown"}`}>{resourceIdentityMatchLabel}</span></dd></div>
+                <div><dt>Allowed domains</dt><dd>{workspaceResources.identity.allowedDomains.length ? workspaceResources.identity.allowedDomains.join(", ") : "Not configured"}</dd></div>
+                <div><dt>Mode</dt><dd>{workspaceResources.identity.mode === "simulation" ? "Simulation" : "Workspace"}</dd></div>
+              </dl>
+              {resourceRows.length > 0 ? <OperationsDataTable className="workspace-resource-table" columns={WORKSPACE_RESOURCE_COLUMNS} labelledBy="workspace-resources-heading">
+                {resourceRows.map((resource) => <tr key={`${resource.resourceType ?? "legacy"}:${resource.key}`}>
+                  <OperationsDataTableCell label="Resource"><span className="workspace-resource-name"><strong>{resource.label}</strong><small>{resource.blueprintName}</small></span></OperationsDataTableCell>
+                  <OperationsDataTableCell label="State"><span className={`workspace-resource-state ${workspaceResourceStateClass(resource.state)}`}>{resource.state}</span></OperationsDataTableCell>
+                  <OperationsDataTableCell label="Source"><span className={`workspace-resource-source ${resource.source}`}>{workspaceResourceSourceLabel(resource.source)}</span></OperationsDataTableCell>
+                  <OperationsDataTableCell label="Setup actions"><WorkspaceDriveResourceActions resource={resource} notify={notify} onChanged={refreshAfterDriveSetup} /></OperationsDataTableCell>
+                </tr>)}
+              </OperationsDataTable> : <p className="workspace-resources-message">No Workspace resource rows were returned.</p>}
+            </>}
+          </>}
+        </section>
+      </SetupStage>
+      <SetupStage
+        number={4}
+        title="Verify & maintain"
+        description="Prove each service works, then ongoing upkeep"
+        status={stageFourStatus}
+        tone={stageFourReady ? "ready" : stageThreeComplete ? "current" : "waiting"}
+        complete={false}
+        firstIncomplete={currentStageNumber === 4}
+        statusHint="This stage stays available for ongoing checks and reads Ready after Gmail, Calendar, and Sheets are verified."
+      >
+        <ol className="workspace-setup-steps" aria-label="Google service verification setup steps">
+          <li className={`workspace-setup-step ${stepStatusClass(gmailStepStatus)}`}>
         <header><span className="workspace-step-number">3</span><div><h3>Prepare Gmail</h3><p>Create or refresh the three FCI labels, then exercise the review-first inbox tools.</p></div><span className="workspace-step-status">{gmailStepStatus}</span></header>
         <div className="workspace-step-body test-service-card"><div className="test-service-heading"><Mail size={17} /><div><strong>{simulation ? "Simulated Workspace Gmail" : "Workspace Gmail"}</strong><span>{gmailActionsEnabled ? "Ready for explicit actions" : "Blocked until the prior step is complete"}</span></div></div><p>View up to 20 messages, add a sample email in simulation, and review-copy one message into the exact project. Inbox stays intact.</p><div className="workspace-actions"><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void prepareTestGmailLabels()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</AdministratorActionButton><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void refreshTestGmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</AdministratorActionButton><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void sendSelfTestEmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : simulation ? "Add sample email" : "Send Workspace test"}</AdministratorActionButton></div>{gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => openFilingReview(message)} disabled={gmailWorking || !gmailActionsEnabled}>Review & copy</AdministratorActionButton></div></article>)}</div>}</div>
       </li>
@@ -618,61 +1028,10 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       <li className={`workspace-setup-step ${stepStatusClass(sheetsStepStatus)}`}>
         <header><span className="workspace-step-number">5</span><div><h3>Sync the Sheets mirror</h3><p>Check and reconcile the generated Client Directory and Project Register.</p></div><span className="workspace-step-status">{sheetsStepStatus}</span></header>
         <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirrorStatusLabel(sheetMirror, "clients")}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirrorStatusLabel(sheetMirror, "projects")}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback{sheetMirror ? `; current mirror source: ${simulation ? "local simulation" : sheetMirror.source === "app" ? "app-managed" : sheetMirror.source === "env" ? "environment fallback" : "not configured"}` : ""}.</p></div>
-      </li>
-    </ol>
-    {isAdmin && <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />}
-    <section className="workspace-setup-card workspace-resources-card" aria-labelledby="workspace-resources-heading">
-      <header>
-        <div><p className="eyebrow">Workspace setup</p><h3 id="workspace-resources-heading">Resources</h3></div>
-        {!isAdmin ? <Status text="Administrator access" /> : workspaceResources ? <Status text={workspaceResources.simulation ? "Simulated" : workspaceResources.connectReady ? "Connection ready" : "Setup required"} /> : <Status text={workspaceResourcesState === "error" ? "Unavailable" : "Loading"} />}
-      </header>
-      <p>Adopt and verify the company Shared Drive, ensure the blueprint-defined root tree and spreadsheets, and rename owner-managed folders. Setup actions never delete Google content.</p>
-      {!isAdmin ? <p className="workspace-admin-readonly"><ShieldCheck size={15} /><span>Workspace resource status is available to Administrators. No administrator setup request is made for this Office view.</span></p> : <>
-        {workspaceResourcesState === "loading" && !workspaceResources && <p className="workspace-resources-message" role="status">Loading the Workspace resource registry…</p>}
-        {workspaceResourcesError && <div className="workspace-resources-error" role="alert"><span>{workspaceResourcesError}</span><button className="soft-button" type="button" onClick={() => void loadWorkspaceResources(true)}>Retry resources</button></div>}
-        {workspaceResources && <>
-          <dl className="workspace-resource-identity">
-            <div><dt>Connected account ↔ intake mailbox</dt><dd><span>{maskWorkspaceAccountForDisplay(workspaceResources.identity.connectionAccount)}</span><span className={`workspace-identity-state ${resourceIdentityMatch === true ? "ready" : resourceIdentityMatch === false ? "mismatch" : "unknown"}`}>{resourceIdentityMatchLabel}</span></dd></div>
-            <div><dt>Allowed domains</dt><dd>{workspaceResources.identity.allowedDomains.length ? workspaceResources.identity.allowedDomains.join(", ") : "Not configured"}</dd></div>
-            <div><dt>Mode</dt><dd>{workspaceResources.identity.mode === "simulation" ? "Simulation" : "Workspace"}</dd></div>
-          </dl>
-          {resourceRows.length > 0 ? <OperationsDataTable className="workspace-resource-table" columns={WORKSPACE_RESOURCE_COLUMNS} labelledBy="workspace-resources-heading">
-            {resourceRows.map((resource) => <tr key={`${resource.resourceType ?? "legacy"}:${resource.key}`}>
-              <OperationsDataTableCell label="Resource"><span className="workspace-resource-name"><strong>{resource.label}</strong><small>{resource.blueprintName}</small></span></OperationsDataTableCell>
-              <OperationsDataTableCell label="State"><span className={`workspace-resource-state ${workspaceResourceStateClass(resource.state)}`}>{resource.state}</span></OperationsDataTableCell>
-              <OperationsDataTableCell label="Source"><span className={`workspace-resource-source ${resource.source}`}>{workspaceResourceSourceLabel(resource.source)}</span></OperationsDataTableCell>
-              <OperationsDataTableCell label="Setup actions"><WorkspaceDriveResourceActions resource={resource} notify={notify} onChanged={refreshAfterDriveSetup} /></OperationsDataTableCell>
-            </tr>)}
-          </OperationsDataTable> : <p className="workspace-resources-message">No Workspace resource rows were returned.</p>}
-        </>}
-      </>}
-    </section>
-    {isAdmin && <section className="workspace-connection-health" aria-labelledby="workspace-connection-health-heading">
-      <header><div><p className="eyebrow">Administrator details</p><h3 id="workspace-connection-health-heading">Connection health</h3></div>{connectionHealth && <Status text={connectionHealth.simulation ? "Simulated" : connectionStatusLabel(connectionHealth.connection.status)} />}</header>
-      {connectionHealthState === "loading" && !connectionHealth && <p className="workspace-connection-health-message" role="status">Loading the saved connection details…</p>}
-      {connectionHealthError && <div className="workspace-connection-health-error" role="alert"><span>{connectionHealthError}</span><button className="soft-button" type="button" onClick={() => void loadConnectionHealth(true)}>Retry details</button></div>}
-      {connectionHealth && <>
-        <dl className="workspace-connection-health-summary">
-          <div><dt>Account</dt><dd>{maskWorkspaceAccountForDisplay(connectionHealth.connection.account)}</dd></div>
-          <div><dt>Mode</dt><dd>{connectionHealth.runtimeMode === "simulation" ? "Simulation" : "Workspace"}</dd></div>
-          <div><dt>Status</dt><dd>{connectionHealth.simulation ? "Simulated" : connectionStatusLabel(connectionHealth.connection.status)}</dd></div>
-        </dl>
-        {connectionHealth.connection.requiresReauthorization && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Reauthorization required:</strong> Disconnect this saved connection, then reconnect the exact approved account and approve every enabled service.</span></p>}
-        <OperationsDataTable className="workspace-connection-service-table" columns={CONNECTION_SERVICE_COLUMNS} labelledBy="workspace-connection-health-heading">
-          {CONNECTION_SERVICES.map((service) => {
-            const enabled = connectionHealth.enabledServices.includes(service.key);
-            const granted = connectionHealth.connection.grantedServices?.[service.key];
-            const grantLabel = connectionHealth.simulation ? "Not applicable — simulated" : granted ? "Granted" : "Not granted";
-            return <tr key={service.key}>
-              <OperationsDataTableCell label="Service"><strong>{service.label}</strong></OperationsDataTableCell>
-              <OperationsDataTableCell label="FCI configuration"><span className={`workspace-service-state ${enabled ? "ready" : "inactive"}`}>{enabled ? "Enabled" : "Not enabled"}</span></OperationsDataTableCell>
-              <OperationsDataTableCell label="Recorded OAuth permission"><span className={`workspace-service-state ${granted ? "ready" : "inactive"}`}>{grantLabel}</span></OperationsDataTableCell>
-            </tr>;
-          })}
-        </OperationsDataTable>
-        <p className="workspace-connection-health-note">Recorded permission reflects the saved Google consent only. It is not a live provider-health or freshness check.</p>
-      </>}
-    </section>}
+          </li>
+        </ol>
+      </SetupStage>
+    </div>
     {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
   </section>;
 }

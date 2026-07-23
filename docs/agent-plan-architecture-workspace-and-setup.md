@@ -1232,6 +1232,7 @@ cards; simulation e2e edits and persists a preference; SET-07 slug pins unchange
 **Effort:** medium. **Cost:** $0.
 
 ### SET-29 · Workspace settings stage shell: status banner + four collapsible stages + InfoHint (medium-large; R2 — after the full-review R1 fix packets)
+**Status:** In review — PR #115, July 22, 2026. Source-only and undeployed.
 **Why:** Owner-approved redesign (July 21, 2026): the Google Workspace section is a
 nine-piece single-column scroll that restates the same mode/connection state nine
 times from three independently loaded endpoints (full-review UI-honesty lens, P2, at

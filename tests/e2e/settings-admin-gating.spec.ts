@@ -70,6 +70,13 @@ test("Administrator identity keeps protected Settings actions available", async 
   await expect(page.locator(".administrator-action-note")).toHaveCount(0);
 
   await page.locator(".settings-nav").getByRole("button", { name: "Google Workspace", exact: true }).click();
+  await expect(page.locator(".workspace-status-copy > strong")).not.toHaveText("Checking current status…");
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  const stageTwoToggle = page.locator('.workspace-setup-stage[data-workspace-stage="2"] .workspace-stage-toggle');
+  if (await stageTwoToggle.getAttribute("aria-expanded") !== "true") await stageTwoToggle.click();
+  await expect(stageTwoToggle).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("button", { name: "Reset simulation data" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Check readiness" })).toBeEnabled();
   await expect(page.locator(".administrator-action-note")).toHaveCount(0);
@@ -114,7 +121,7 @@ test("Office identity sees My settings only and never renders company or Adminis
   for (const heading of ["Google Workspace", "Calendar & appointments", "Workflow & notifications", "Data & security", "Test & launch checklist"]) {
     await expect(page.getByRole("heading", { name: heading, exact: true })).toHaveCount(0);
   }
-  await expect(page.locator(".workspace-prerequisites, .workspace-connection-health, .workspace-blueprint-card, .administrator-action-note")).toHaveCount(0);
+  await expect(page.locator(".workspace-status-banner, .workspace-setup-stage, .workspace-prerequisites, .workspace-connection-health, .workspace-blueprint-card, .administrator-action-note")).toHaveCount(0);
   await page.getByRole("button", { name: /account actions/i }).click();
   await expect(page.locator("#account-actions-popover").getByRole("button", { name: "Google connection" })).toHaveCount(0);
   expect(connectionDetailGets).toBe(0);
