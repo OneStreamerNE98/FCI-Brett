@@ -13,7 +13,11 @@ PR #66 completed TRK-02 tracking-guard hardening.
 PRs #56/#57 are merged source-only and undeployed; the reviewed PR #51–#57 merge
 train is complete. This revision adds Workstream E (Google-native integrations,
 GI-01…GI-07), SET-23…SET-26, WS-15/WS-16, and the July 21 setup-panel review
-amendments. Deployment baseline: `adc79b8`, private Sites development version 40,
+amendments. Workstream F (dashboard design, DES-01…DES-09; design authority
+`docs/dashboard-design-spec.md`) was added July 22, 2026, and Workstream G (AI
+assistant & automation, AI-01…AI-09 with gated Tier-2 stubs; design authority
+`docs/ai-assistant-spec.md`) on July 23, 2026.
+Deployment baseline: `adc79b8`, private Sites development version 40,
 which includes PR #30. The later source changes are not deployed.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
@@ -47,7 +51,8 @@ below, which also covers the state of GitHub itself (issues/PRs).
 - An item is done only when its **Acceptance** line passes in this repo.
 - IDs: `BE-*` backend architecture & data storage · `WS-*` Google Workspace connection ·
   `SET-*` Settings/Setup UI · `TRK-*` task tracking/doc reconciliation · `KPI-*` flooring
-  KPIs & reporting · `OIDC-*` BE-04 post-merge security follow-ups (in
+  KPIs & reporting · `GI-*` Google-native integrations · `DES-*` dashboard design ·
+  `AI-*` AI assistant & automation · `OIDC-*` BE-04 post-merge security follow-ups (in
   [`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
   Dependencies are listed per item.
 
@@ -1186,7 +1191,9 @@ sheet. **Effort:** medium. **Cost:** $0.
 `fullText contains '<query>'` scoped to the project's provisioned folder (and
 `driveId`), existing `auth/drive` scope, server-side route (admin not required —
 routine work) with bounded query length and result count; results open in the SET-23
-viewer. Simulation searches the simulated registry/fixtures.
+viewer. Simulation searches the simulated registry/fixtures. Build the search as a
+reusable server-side service: AI-03 registers it as the assistant's `drive_search`
+tool once it exists (cross-reference recorded in both packets — build once).
 **Accept:** route tests (scoping to the project folder asserted in the request shape,
 bounded inputs, non-project files never returned in mocks); e2e simulated search →
 viewer open; no new scopes. **Effort:** small-medium. **Cost:** $0.
@@ -1950,7 +1957,9 @@ one optional tap at creation — never required, no third value; KPI splits in
 button with a render-invariance test. (c) make the Overview attention strip
 actionable using the spec §2 grammar. (d) "Today's meetings" Overview section
 per spec §5 — new SET-35 catalog entry, max ~5 one-line rows opening their
-project drawer, honest empty state; NOT scheduling.
+project drawer, honest empty state; NOT scheduling. Build-once with AI-04:
+whichever of DES-08(d) and the AI Today view lands second consumes the first's
+today's-meetings server query (cross-reference recorded in both packets).
 **Accept:** per sub-scope per the spec; each PR carries 1280/390 screenshots;
 (d) extends the SET-35 layout tests (catalog widen-on-read proves older saved
 layouts unaffected).
@@ -1966,6 +1975,274 @@ state and the notifications popover; update `docs/design-critique-fix-plan.md`
 disposition); reconcile all DES statuses.
 **Accept:** ledgers agree with reality; screenshots committed; guard suite
 green (empty font-size-zero allowlist + undersized-control guard).
+**Effort:** small. **Cost:** $0.
+
+# Workstream G — AI assistant & automation (AI)
+
+Owner-approved July 23, 2026. Design authority: `docs/ai-assistant-spec.md`
+(architecture decision, tool-registry bounds, safety model, canonical copy,
+triage calibration protocol, cost model, Tier-2 gates). Goal: make the
+existing office-gated assistant genuinely useful — organize email, keep
+records findable, review to-dos, produce an on-demand "today" list, and
+answer questions across projects, meetings, phone-call notes, filed-email
+records, and Drive documents — while every outbound artifact stays
+draft-first and every Gmail mutation stays review-first. Provider: OpenAI
+(existing `OPENAI_API_KEY`/`OPENAI_MODEL`, Responses API, `store:false`)
+behind a provider port. Architecture: live agentic tool-calling with bounded
+budgets (spec §2); NO vector index, NO cron/scheduled handler, NO auto-send
+anywhere in Tier 1 (repo law). House rules: `app/FloorOpsApp.tsx` is touched
+by AI-02 ONLY (one queue slot); every AI feature is an optional accelerator
+with a mandatory records-only fallback; one new table (`tasks`) in the whole
+tier; no new nav items, pages, modals, or Settings sections; golden hashes
+never regenerate in this workstream; spec §5 (untrusted-data contract,
+injection fixtures, citation re-validation, no-write tool registry) binds
+every packet. Tier 2 (AI-T2-1…AI-T2-6: scheduled digest delivery, time-based
+reminders, opt-in auto-labeling, SMS with A2P/TCPA consent ledger, pgvector
+document index, phone-provider transcript ingest) is designed in spec §8 and
+may not start before production-platform acceptance plus each item's listed
+gate.
+
+### AI-01 · Tasks foundation + phone-call meeting type (medium; no deps — parallel-safe now)
+**Why:** "review to-dos and tell me what to get done today" has no substrate —
+no tasks table exists anywhere (only `project_meetings.action_items_json`
+strings); phone calls also need a home, and `project_meetings` already fits
+(notes/transcript/summary/action items) given a new meeting type.
+**Do:** D1 migration (number at merge time; coordinate with DES-08 a-T2)
+creating `tasks`: `id, title (≤200), details (≤4000, optional), status
+('open'|'done'), due_date (optional), project_id?, lead_id?, assignee_email?,
+source ('manual'|'meeting'|'email'|'ai'), source_ref?, created_by,
+created_at, updated_at, completed_at?` with indexes on `(status, due_date)`
+and `(project_id, status)`. Follow the BE-06 pattern end to end:
+`app/domain/task.ts` (bounded text, closed enums), ports, d1 + postgres +
+memory adapters (PG parity schema appended as the next free production
+version at merge time — open BE-07 reserves v7; v1–v6 checksums untouched),
+`app/application/task-operations.ts`, routes `GET/POST /api/v1/tasks` and
+`PATCH /api/v1/tasks/[taskId]` (office-gated, same-origin, bounded 8k bodies,
+dev rate limiter, `no-store`), activity events on create/complete. Also add
+`"phone-call"` to `PROJECT_MEETING_TYPES` in `app/domain/project-meeting.ts`
+(column is unconstrained text; unknown values already degrade to `"other"` —
+purely additive, no migration; the UI select option ships in AI-02c). No UI
+in this packet.
+**Files:** `db/schema.ts`, `drizzle/<next>_*.sql`, `app/domain/task.ts`,
+`app/ports/task-repository.ts`, `app/adapters/{d1,postgres,memory}/task-repository.ts`,
+PG parity schema + registry, `app/application/task-operations.ts`,
+`app/api/v1/tasks/**`, `app/domain/project-meeting.ts`, tests.
+**Accept:** CRUD round-trips on d1 + memory adapters; PG repository unit
+tests pass; oversized bodies 413; non-office rejection asserted in the
+access-boundaries suite; `meetingType: "phone-call"` accepted by POST
+meetings and echoed in responses; existing meeting tests green; migration is
+source-only/unapplied and the PR says so; `npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+### AI-02 · Assistant & Inbox surface extraction + phone-call option (medium; the ONLY FloorOpsApp packet — one queue slot, three serial PRs a→b→c)
+**Why:** AssistantView, InboxView, and GmailReplyModal live inside
+`FloorOpsApp.tsx`; without extraction every AI UI packet would serialize
+behind the single-file queue forever. SET-01 proved the pattern.
+**Do:** (a) move `AssistantView` + `SourceDetailModal` + the citation type to
+`app/assistant/components/AssistantView.tsx` (narrow local prop types per the
+SET-01 convention); (b) move `InboxView`, `GmailReplyModal`,
+`inboxProjectSuggestion`, `inboxDate` to `app/inbox/components/`; keep
+`GmailFilingModal` imported from `GoogleWorkspacePanel.tsx` as today. Both
+zero-behavior-change: identical markup, aria-labels, copy. (c) add
+`<option value="phone-call">Phone call</option>` to the MeetingModal
+meeting-type select (defaultValue unchanged) — the only intended behavior
+change in the slot. Update pins mutation-sensitively in each PR:
+`appSurfacePaths` additions in `tests/rendered-html.test.mjs`; re-point the
+InboxView/AssistantView source-slice assertions (exactly one
+`inbox-state-strip`, `assistant-project-scope`) to the extracted files;
+change the SettingsView slice end anchor in
+`tests/settings-component-boundaries.test.mjs` from `"function
+GmailReplyModal"` to `"function LeadModal"`; add
+`tests/assistant-inbox-component-boundaries.test.mjs` mirroring the settings
+boundaries suite. Do NOT extract ProjectDrawer (no AI consumer — pure risk).
+**Files:** `app/FloorOpsApp.tsx`, `app/assistant/components/`,
+`app/inbox/components/`, the three test files above.
+**Accept:** `/assistant` and `/inbox` e2e green unchanged; both golden hashes
+UNCHANGED; boundaries test proves the components no longer exist in
+FloorOpsApp; PR (c) shows the new option at 1280/390; `npm test` green after
+each PR.
+**Effort:** medium. **Cost:** $0.
+
+### AI-03 · Provider port + org-wide agentic Q&A (large, after AI-01; API/lib only — no FloorOpsApp)
+**Why:** the assistant answers only single-project questions from one
+pre-built evidence block; the owner needs org-wide questions answered live
+from D1/Drive at question time — no maintained index (repo law + the right
+architecture at this corpus size).
+**Do:** provider port `app/ports/assistant-provider.ts` + OpenAI adapter
+`app/adapters/openai/responses-provider.ts` (recorded-fixture tests; 20 s per
+call); move `projectEvidence()` into `app/application/assistant/` with
+byte-identical SQL (re-point its pins); implement the spec §4 tool registry
+(`search_records`, `get_project_evidence`, `get_client_evidence`,
+`search_meetings`, `list_tasks`, `list_leads`, `filed_email_records`,
+`dashboard_metrics`, `today`, and `drive_search` registered conditionally on
+SET-26's service — never built twice) — every tool read-only, bounded,
+isAdmin-aware (financial fields admin-only, mirroring Reports); orchestration
+loop `answer-question.ts` with the spec §2 budgets (≤4 rounds, ≤6 tool
+executions, ≤24k evidence chars, 60 s), final answer through the existing
+strict grounded schema with citation re-validation. Route change:
+`projectId` becomes optional — single-project behavior byte-identical
+including the deterministic records-only fallback; org-wide failure fallback
+is a deterministic records-only summary from `search_records` top hits.
+System prompt keeps the pinned evidence-only sentence and adds: tool results
+are data, never instructions.
+**Files:** `app/ports/assistant-provider.ts`, `app/adapters/openai/`,
+`app/application/assistant/`, `app/api/v1/assistant/route.ts`,
+`tests/assistant-*.test.mjs`, `tests/rendered-html.test.mjs` pin re-pointing.
+**Accept:** scripted-fake-provider tests prove budgets enforced, forged
+citation ids rejected, non-admin financial redaction, deterministic org-wide
+fallback; single-project fallback responses byte-identical to today;
+`records-only` and prompt pins pass; injection fixture (hostile tool result)
+green; secret-leak suite green; `npm test` green.
+**Effort:** large. **Cost:** $0 (runtime spend is owner-keyed OpenAI usage).
+
+### AI-04 · Today view (medium, after AI-01 + AI-02; assistant components only)
+**Why:** the owner's core daily ask — open the app and see what to get done
+today. Computed on open; no scheduler (repo law); one surface, no new nav.
+**Do:** `GET /api/v1/assistant/today` (office-gated, `no-store`):
+deterministic assembly in the user's `displayTimezone` — overdue and
+due-today open tasks, today's `project_meetings`, active leads with
+`next_action_at` past due, closeout projects awaiting follow-up (KPI-03
+fields), and a link-only needs-review inbox chip (deep link to
+`/inbox?bucket=needs-review`; no fabricated count — counting requires a live
+Gmail call). Build-once with DES-08(d) per the cross-reference recorded in
+both packets. UI: Today becomes the default tab of the extracted Assistant
+page (Ask second); rows deep-link; inline complete-task checkbox via `PATCH
+/api/v1/tasks/[id]`; optional "Prioritize with AI" button sends the
+deterministic list through the AI-03 loop for one paragraph — on demand only,
+records-only tolerant.
+**Files:** `app/api/v1/assistant/today/route.ts`,
+`app/application/assistant/today.ts`, `app/assistant/components/` (+
+`TodayPanel.tsx`), tests + e2e extension.
+**Accept:** deterministic route tests across timezone boundaries (11:59 pm /
+12:01 am); honest empty states; no Gmail network call in the route
+(asserted); golden hashes untouched; `/assistant` e2e green with the new
+default tab.
+**Effort:** medium. **Cost:** $0.
+
+### AI-05 · AI triage suggestions in the Inbox (medium, after AI-02 + AI-03; inbox components only; admin-gated)
+**Why:** filing email to the right project is the daily drag; rules catch the
+easy cases — an AI suggestion with confidence + rationale catches the rest,
+suggest-only and review-first per spec §6's calibration protocol.
+**Do:** `POST /api/v1/assistant/triage` (admin + same-origin + bounded;
+matches every Gmail surface): input `{messageIds ≤20}` from the loaded list;
+server fetches each summary (from/subject/snippet — untrusted data) via the
+existing Gmail client and asks the provider with a bounded candidate list
+(project number/name/client only) for strict `{messageId, projectId|null,
+confidence high|medium|low, rationale ≤200}`; server drops unknown
+projectIds. UI in the extracted InboxView: one "Suggest with AI" button; an
+"AI suggestion" chip beside (never replacing) the rules chip; Accept opens
+the existing `GmailFilingModal` with the project preselected — the human
+still previews and confirms; the filing pipeline is untouched. Feature-gated
+by the AI-08 `triage` toggle; chip absent when the key is Missing.
+**Files:** `app/api/v1/assistant/triage/route.ts`,
+`app/application/assistant/triage.ts`, `app/inbox/components/InboxView.tsx`,
+tests + simulation e2e.
+**Accept:** the route provably never mutates Gmail (no modify/send call —
+grep-asserted); accept path lands in the existing review modal; non-admin
+403; injection fixture (hostile subject) cannot alter other messages'
+suggestions; simulation e2e suggests and files one message through review;
+`npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+### AI-06 · Reply with AI (small-medium, after AI-02 + AI-03; inbox components only; admin-gated)
+**Why:** explicit owner ask — a button on an email that generates the reply
+draft; the human triggers, edits, and sends; the AI never sends.
+**Do:** `POST /api/v1/assistant/reply-draft` (admin + same-origin + bounded):
+input `{messageId}`; server reuses the reply context plus a new bounded
+`text/plain` extraction on the Gmail client (~10k chars, untrusted), joins
+project context via the rules evaluator when the message maps to one, and
+includes the user's saved `replySignature`; provider returns a plain-text
+body (strict `{body ≤4000}`) — brief, factual, no invented commitments,
+`[...]` placeholders where records don't answer. The route returns draft text
+ONLY and never touches Gmail drafts. UI: "Draft with AI" inside the extracted
+GmailReplyModal fills the textarea (confirm before replacing non-empty
+content); the human edits and uses the existing "Save draft" (unsent Gmail
+draft, `sent:false` contract). Feature-gated by `replyDrafts`.
+**Files:** `app/lib/google-gmail.ts` (bounded extraction),
+`app/api/v1/assistant/reply-draft/route.ts`,
+`app/inbox/components/GmailReplyModal.tsx`, tests + simulation e2e.
+**Accept:** the only Gmail write remains the existing save-draft route;
+call-recording test proves the generation route never calls Gmail
+drafts/send; injection fixture (body demanding immediate send) yields a draft
+only; pinned "Sending remains a separate, deliberate action." copy unchanged;
+gate-off/key-Missing renders honest disabled state; `npm test` green.
+**Effort:** small-medium. **Cost:** $0.
+
+### AI-07 · AI task extraction, review-first (medium, after AI-01 + AI-03; two PRs a/b)
+**Why:** action items captured in meetings and phone-call notes die as
+strings; the owner wants them to become tracked to-dos — a human approving
+each, per the review-first law.
+**Do:** (a) `POST /api/v1/assistant/extract-tasks` (office-gated, bounded):
+input `{projectId, meetingId}`; the meeting's action items, summary, and
+decisions (untrusted) go through the provider port; strict-schema proposals
+(title, details, suggested due date, suggested assignee only from known
+office emails) are returned to the caller — never persisted. UI on the
+Assistant surface: a "Review proposed tasks" list — Accept creates a task via
+AI-01 (`source:'meeting'`, `source_ref: meetingId`), Dismiss discards;
+nothing auto-creates. Records-only fallback: without a key, offer the
+meeting's literal action items as one-click candidates. (b) `task.assigned`
+Chat event: widen `GOOGLE_CHAT_EVENT_CATALOG` +
+`USER_NOTIFICATION_PREFERENCE_CATALOG`, FIRST converting
+`parseStoredGoogleChatRouting` and `normalizeUserNotificationPreferences` to
+widen-on-read merges (today both are all-or-nothing and silently reset saved
+settings when the catalog grows — the SET-28 ledger note requires the merge);
+fire via the existing `deferGoogleChatTask` on task-create-with-assignee
+(event-driven — allowed now; gated off by default like every event;
+simulation logs). Update the ChatNotificationSettingsCard event pins.
+**Files:** (a) `app/api/v1/assistant/extract-tasks/route.ts`,
+`app/application/assistant/extract-tasks.ts`, `app/assistant/components/`;
+(b) `app/lib/google-chat-notifier.ts`, `app/lib/user-settings.ts`,
+`app/adapters/d1/google-chat-routing.ts`,
+`app/settings/components/ChatNotificationSettingsCard.tsx`, the tasks route
+trigger, tests.
+**Accept:** (a) no task row exists until an explicit accept (route-level
+assert); non-office assignees dropped server-side; injection fixture
+(transcript demanding bulk actions) yields bounded proposals only. (b) stored
+4-event routing and 4-key user preferences survive the widened catalogs
+byte-for-byte with the new event defaulted off (regression test);
+secret-leak suite green; `npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+### AI-08 · AI settings card + "what you can ask" help (small-medium, after AI-03 — lands before AI-05/06/07 so gates precede the gated features)
+**Why:** one honest place to see whether AI is on, which model runs, and to
+switch features off; users need to know what they can ask. No new Settings
+section (simplicity guardrail).
+**Do:** `GET/PATCH /api/v1/assistant/config` (office read; admin + same-origin
++ bounded write): `{provider:"openai", keyState:"Configured"|"Missing"
+(never values), model: name only, features: {orgQa, triage, replyDrafts,
+taskExtraction}}`; toggles persist in `workspace_settings.settings_json`
+under `aiFeatures` (widen-on-read; default on when the key is Configured).
+UI: `AiAssistantSettingsCard` rendered inside `WorkspaceDefaultsPanel`
+(workflow mode) beside the Chat card — the pinned zero-queue composition;
+non-admin read-only; canonical copy from spec §9. Help: the collapsible
+"What you can ask" panel on the Assistant page with the spec §9 copy
+verbatim.
+**Files:** `app/api/v1/assistant/config/route.ts`,
+`app/settings/components/AiAssistantSettingsCard.tsx`,
+`app/settings/components/WorkspaceDefaultsPanel.tsx`,
+`app/assistant/components/` help panel, tests (settings-admin-gating,
+secret-leak extension for `OPENAI_API_KEY`, rendered pins).
+**Accept:** responses contain Configured/Missing only (secret-leak suite
+extended); non-admin sees state but no controls; toggles round-trip; feature
+buttons honor toggles in rendered tests; the eight-section pins in
+`settings-component-boundaries.test.mjs` untouched; `npm test` green.
+**Effort:** small-medium. **Cost:** $0.
+
+### AI-09 · Guardrail tests, Tier-2 reconciliation, ledger closure (small; docs/tests only, last)
+**Why:** leave one truth — what the AI does now, what is production-gated,
+and machine-enforced outbound law.
+**Do:** new `tests/ai-outbound-guard.test.mjs`: no `app/api/v1/assistant/**`
+source contains Gmail send/draft-write or Chat webhook calls; every assistant
+route sets `no-store`; the worker still exports `fetch` only (no `scheduled`
+handler) — mutation-tested with a synthetic send call. Reconcile
+`docs/ai-assistant-spec.md` §8 Tier-2 stubs (AI-T2-1…6) against reality,
+update `docs/meeting-notes-and-otter.md` for the phone-call type, flip all AI
+statuses, and update Sequencing at a glance + the FloorOpsApp queue appendix.
+**Files:** `tests/ai-outbound-guard.test.mjs`, `docs/ai-assistant-spec.md`,
+`docs/agent-plan-architecture-workspace-and-setup.md`,
+`docs/meeting-notes-and-otter.md`.
+**Accept:** guard fails on a synthetic send-call injection; ledgers agree
+with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
 
 ---
@@ -2061,6 +2338,17 @@ feature queue resumes stage-native, plus FIX-09, the production-only FIX-11
 (SET-17, SET-18, SET-21, SET-25, GI-04, and the FloorOpsApp queue) are unaffected
 and proceed in parallel with R1-R3.
 
+**AI wave (Workstream G, approved July 23, 2026):** the backend chain
+AI-01 → AI-03 → AI-08 → AI-07a is parallel-safe immediately (no contended
+files) and runs alongside the R2/R3 settings waves and the DES series. AI-02
+takes one FloorOpsApp queue slot after DES-08; AI-04/AI-05/AI-06 follow it in
+the extracted modules (parallel-safe among themselves); AI-07b after AI-07a;
+AI-09 closes the workstream. Contended-file flags: `WorkspaceDefaultsPanel.tsx`
+= AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio =
+AI-07b; `tests/rendered-html.test.mjs` is touched additively by AI-02/07b/08 —
+serialize merges. Migration numbers are assigned at merge time (coordinate
+with open BE-07's reserved PostgreSQL v7, KPI-04, and DES-08 a-T2).
+
 **Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
 inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only
 things gating the live data connection. Jason must review that inventory before any API,
@@ -2069,9 +2357,10 @@ those inputs; Jason's other open decisions live in checklists 00/06/10.
 
 **FloorOpsApp single-file queue (one packet at a time):** PR #33 (actionable lists) →
 SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 → KPI-02 / PR #52 → KPI-03 /
-PR #75 → GI-03 / PR #80 → SET-35 / PR #107 are complete in source. The next queue
-occupants are GI-04 and the R3 FIX-08 honesty bundle, then SET-22 UI and SET-26 UI
-per the wave text. Interleave other SET items only in extracted modules that do not
+PR #75 → GI-03 / PR #80 → SET-35 / PR #107 are complete in source. The reconciled
+queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-04 →
+DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI → SET-26 UI.
+Interleave other SET items only in extracted modules that do not
 touch `FloorOpsApp.tsx`. Workstream D's KPI packets are
 otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
 version numbers with BE-06).
