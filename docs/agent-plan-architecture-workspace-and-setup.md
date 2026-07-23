@@ -1806,6 +1806,8 @@ attributes byte-identical; pinned-source tests updated mutation-sensitively in
 the same PR, never deleted.
 
 ### DES-01 · Design tokens: one :root, dead-rule excision, media consolidation (medium; holds the globals.css lock)
+**Status:** In review — PR #119, July 22, 2026.
+
 **Why:** two competing `:root` blocks with alias indirection, dead legacy
 `.main-nav button`/`.brand-mark` rules, and ~10 fragmented `820px` + 8 `560px`
 media blocks with later-block-wins contradictions; every later packet edits this

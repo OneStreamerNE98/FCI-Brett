@@ -81,6 +81,35 @@ test("ships the Floor Coverings International product instead of starter content
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
 
+test("keeps the global design-token and responsive foundations canonical", async () => {
+  const css = await read("app/globals.css");
+  const rootBlocks = css.match(/(?:^|\n)\s*:root\s*\{/g) ?? [];
+  const compactBlocks = css.match(/@media \(max-width:560px\)/g) ?? [];
+  const tabletBlocks = css.match(/@media \(max-width:820px\)/g) ?? [];
+
+  assert.equal(rootBlocks.length, 1);
+  assert.ok(tabletBlocks.length <= 3, `Expected at most three 820px blocks, found ${tabletBlocks.length}.`);
+  assert.ok(compactBlocks.length <= 2, `Expected at most two 560px blocks, found ${compactBlocks.length}.`);
+  assert.doesNotMatch(css, /var\(--(?:muted|green(?:-dark)?)\)/);
+  assert.doesNotMatch(css, /\.main-nav button|\.brand-mark/);
+
+  for (const token of [
+    "--radius-chip:6px",
+    "--radius-control:8px",
+    "--radius-card:10px",
+    "--radius-pill:999px",
+    "--control-compact:34px",
+    "--control-standard:40px",
+    "--control-page:42px",
+    "--target-min:44px",
+    "--shadow-card:0 1px 2px rgba(29,55,40,.04)",
+    "--shadow-raised:0 5px 15px rgba(29,55,40,.06)",
+    "--shadow-overlay:0 25px 70px rgba(35,31,32,.65)",
+  ]) {
+    assert.match(css, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
 test("keeps rendered typography at the audited 12px minimum", async () => {
   const css = (await read("app/globals.css")).replace(/\/\*[\s\S]*?\*\//g, "");
   const allowedZeroSelectors = new Set([
