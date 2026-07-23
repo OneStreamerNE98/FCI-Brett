@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, ChevronDown, Copy, ExternalLink, ShieldCheck } from "lucide-react";
+import type { ReactNode } from "react";
+import { CheckCircle2, Copy, ExternalLink, ShieldCheck } from "lucide-react";
 import { OperationsDataTable, OperationsDataTableCell } from "../../../components/operations/OperationsDataTable";
 import { Status } from "../../../components/operations/OperationsPrimitives";
+import { WorkspaceInfoHint } from "../workspace-setup-shell/WorkspaceInfoHint";
 import styles from "./WorkspaceDomainChecklistCard.module.css";
 import {
   deriveWorkspaceDomainChecklist,
@@ -12,8 +13,8 @@ import {
   WORKSPACE_OAUTH_REDIRECT_URI,
   WORKSPACE_TOKEN_KEY_COMMAND,
   workspaceCopyHelperState,
+  workspaceDomainChecklistDisplayStatus,
   workspaceDomainChecklistStatusClass,
-  workspaceDomainChecklistSummary,
   workspaceSharedDriveRestrictionStatus,
   type WorkspaceChecklistLoadState,
   type WorkspaceChecklistMissingDetail,
@@ -28,7 +29,6 @@ type Notify = (message: string, kind?: NotificationKind, action?: NotificationAc
 export type WorkspaceDomainChecklistCardProps = {
   isAdmin: boolean;
   simulation: boolean;
-  connected: boolean;
   readinessState: WorkspaceChecklistLoadState;
   missingDetails: readonly WorkspaceChecklistMissingDetail[];
   resourcesState: WorkspaceChecklistLoadState;
@@ -42,6 +42,7 @@ export type WorkspaceDomainChecklistCardProps = {
   connectionStatus: string | null;
   requiresReauthorization: boolean;
   sharedDriveDomainUsersOnly: boolean | null;
+  environmentNotes: ReactNode;
   notify: Notify;
 };
 
@@ -105,7 +106,6 @@ const DOMAIN_CHECKLIST_ITEMS: readonly {
 export function WorkspaceDomainChecklistCard({
   isAdmin,
   simulation,
-  connected,
   readinessState,
   missingDetails,
   resourcesState,
@@ -119,9 +119,9 @@ export function WorkspaceDomainChecklistCard({
   connectionStatus,
   requiresReauthorization,
   sharedDriveDomainUsersOnly,
+  environmentNotes,
   notify,
 }: WorkspaceDomainChecklistCardProps) {
-  const [collapsed, setCollapsed] = useState(false);
   const results = deriveWorkspaceDomainChecklist({
     isAdmin,
     simulation,
@@ -137,8 +137,6 @@ export function WorkspaceDomainChecklistCard({
     requiresReauthorization,
   });
   const statusByKey = new Map(results.map((result) => [result.key, result.status]));
-  const summary = workspaceDomainChecklistSummary(results);
-  const expanded = !connected || !collapsed;
   const displayedMissingDetails = visibleWorkspacePrerequisites(missingDetails, resources);
   const dotenvTemplate = missingWorkspaceDotenvTemplate(missingDetails, resources, simulation);
   const copyState = workspaceCopyHelperState(readinessState, resourcesState, resourcesAvailable);
@@ -158,20 +156,23 @@ export function WorkspaceDomainChecklistCard({
   return <section className={`workspace-prerequisites ${styles.card}`} aria-labelledby="workspace-domain-checklist-heading">
     <header>
       <div><p className="eyebrow">Manual tenant setup</p><h3 id="workspace-domain-checklist-heading">Domain & tenant checklist</h3></div>
-      <div className={styles.headerActions}>
-        <Status text={summary} />
-        {isAdmin && connected && <button className={`soft-button ${styles.toggle}`} type="button" aria-expanded={expanded} aria-controls="workspace-domain-checklist-content" onClick={() => setCollapsed((current) => !current)}>{expanded ? "Collapse" : "Expand"}<ChevronDown size={14} aria-hidden="true" /></button>}
-      </div>
     </header>
     <p>Use this guide for the Google Admin, Cloud Console, and hosting steps that remain manual. Confirm the correct company tenant and development project before making changes.</p>
-    {expanded && <div id="workspace-domain-checklist-content">
+    <div id="workspace-domain-checklist-content">
       {!isAdmin && <p className="workspace-admin-readonly"><ShieldCheck size={15} /><span>An Administrator completes tenant setup. This Office view is informational and makes no administrator setup request.</span></p>}
       <ol className={styles.list}>
         {DOMAIN_CHECKLIST_ITEMS.map((item) => {
           const status = statusByKey.get(item.key) ?? "Unavailable";
+          const displayStatus = workspaceDomainChecklistDisplayStatus(status);
           return <li key={item.key}>
-            <div className={styles.copy}><strong>{item.title}</strong><span>{item.instruction}</span></div>
-            <span className={`${styles.status} ${styles[workspaceDomainChecklistStatusClass(status)]}`}>{status}</span>
+            <div className={styles.copy}>
+              <strong>{item.title}</strong>
+              <WorkspaceInfoHint
+                label={`About ${item.title}`}
+                text={`${item.instruction} Current check: ${status}.`}
+              />
+            </div>
+            <span className={`${styles.status} ${styles[displayStatus === "DONE" ? "done" : "missing"]}`}>{displayStatus}</span>
             {isAdmin && item.href && <a className={`soft-button ${styles.link}`} href={item.href} target="_blank" rel="noreferrer">{item.linkLabel}<ExternalLink size={13} aria-hidden="true" /></a>}
           </li>;
         })}
@@ -201,8 +202,9 @@ export function WorkspaceDomainChecklistCard({
           <div className="workspace-copy-value"><code>{WORKSPACE_TOKEN_KEY_COMMAND}</code><button className="soft-button" type="button" onClick={() => void copySetupHelper(WORKSPACE_TOKEN_KEY_COMMAND, "Encryption-key command")}><Copy size={14} /> Copy command</button></div>
         </article>
       </div>}
+      {isAdmin && environmentNotes}
       {isAdmin && <p className={styles.restrictions}><strong>Shared Drive external sharing</strong><span className={`${styles.status} ${styles[workspaceDomainChecklistStatusClass(sharedDriveRestrictionStatus)]}`}>{sharedDriveRestrictionStatus}</span></p>}
       <p className={styles.safeguards}><ShieldCheck size={15} aria-hidden="true" /><span>{simulation ? "Use only seeded sample data; no OAuth account or Google token is connected. Keep Gmail filing review-first and project-specific, and verify both shared calendars and the Sheets mirror before staff launch." : "Keep authorization restricted to the approved Workspace domain. Keep Gmail filing review-first and project-specific; before staff launch, verify the company-owned Shared Drive and sender mailbox, both shared calendars, and the Sheets mirror."}</span></p>
-    </div>}
+    </div>
   </section>;
 }

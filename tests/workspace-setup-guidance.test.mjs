@@ -6,7 +6,11 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("Workspace setup is a four-stage endpoint-driven shell with callback refresh", async () => {
-  const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
+  const [panel, panelStyles, infoHint] = await Promise.all([
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/settings/components/GoogleWorkspacePanel.module.css"),
+    read("app/settings/components/workspace-setup-shell/WorkspaceInfoHint.tsx"),
+  ]);
 
   assert.equal(panel.match(/<SetupStage\b/g)?.length, 4);
   for (const [stage, heading] of [
@@ -35,11 +39,15 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /aria-expanded=\{open\}/);
   assert.match(panel, /aria-controls=\{bodyId\}/);
   assert.match(panel, /className="workspace-stage-body" hidden=\{!open\}/);
-  assert.match(panel, /function InfoHint/);
-  assert.match(panel, /aria-describedby=\{descriptionId\}/);
-  assert.match(panel, /role="tooltip"/);
-  assert.match(panel, /event\.key !== "Escape"/);
+  assert.match(infoHint, /export function WorkspaceInfoHint/);
+  assert.match(infoHint, /aria-describedby=\{descriptionId\}/);
+  assert.match(infoHint, /role="tooltip"/);
+  assert.match(infoHint, /event\.key !== "Escape"/);
   assert.match(panel, /Checking current status…/);
+  assert.match(panel, /statusSourcesLoading[\s\S]+CHECKING[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE/);
+  assert.match(panel, /statusSourcesLoading[\s\S]+Stage status pending[\s\S]+statusSourcesUnavailable[\s\S]+Current stage unavailable/);
+  assert.match(panel, /statusSourcesLoading \|\| statusSourcesUnavailable[\s\S]+panelStyles\.statusModeNeutral/);
+  assert.match(panelStyles, /\.statusModeNeutral[\s\S]+background: #f0eeeb[\s\S]+color: #6c655f/);
   assert.match(panel, /workspace-status-banner/);
   assert.match(panel, /workspace-status-mode/);
   assert.match(panel, /workspace-status-progress/);
@@ -59,11 +67,9 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /searchParams\.get\("google"\)/);
   assert.match(panel, /invalidateCachedGet\("\/api\/v1\/google-workspace"\)[\s\S]+checkSetup\(true\)/);
   assert.doesNotMatch(panel, /Run the readiness check to refresh this panel/);
-  assert.match(panel, /Project-folder provisioning still uses the hosted[\s\S]+GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED[\s\S]+gate/);
-  assert.match(panel, /Sheets authority:[\s\S]+ensure blueprint spreadsheets in Resources[\s\S]+GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID[\s\S]+first-boot fallback/);
 });
 
-test("Workspace prerequisites use a semantic metadata-only table", async () => {
+test("Workspace prerequisites use a semantic metadata-only Stage 1 sequence", async () => {
   const [panel, checklist, readinessRoute, oauth] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx"),
@@ -75,6 +81,17 @@ test("Workspace prerequisites use a semantic metadata-only table", async () => {
   assert.match(checklist, /Configured in the hosting environment, not this app/);
   assert.match(checklist, /Hosted environment value/);
   assert.match(checklist, /Hosted secret — never in the app or Git/);
+  const checklistRows = checklist.indexOf('<ol className={styles.list}>');
+  const prerequisites = checklist.indexOf('className={styles.hostedPrerequisites}');
+  const copyHelpers = checklist.indexOf('className="workspace-copy-helpers"');
+  const environmentNotes = checklist.indexOf("{isAdmin && environmentNotes}");
+  assert.ok(
+    checklistRows >= 0
+      && prerequisites > checklistRows
+      && copyHelpers > prerequisites
+      && environmentNotes > copyHelpers,
+    "Stage 1 renders checklist rows, hosted prerequisites, copy helpers, then relocated environment notes",
+  );
   assert.match(panel, /<WorkspaceDomainChecklistCard/);
   assert.doesNotMatch(panel, /WORKSPACE_PREREQUISITE_COLUMNS|workspace-prerequisite-table/);
   assert.match(readinessRoute, /missingDetails/);
@@ -147,6 +164,8 @@ test("Workspace resources stay endpoint-owned inside the Stage 3 shell", async (
   const stageThreeSource = panel.slice(stageThree, stageFour);
   const stageFourSource = panel.slice(stageFour, stageEnd);
   assert.match(stageOneSource, /WorkspaceDomainChecklistCard/);
+  assert.match(stageOneSource, /Drive authority:[\s\S]+GOOGLE_WORKSPACE_SHARED_DRIVE_ID[\s\S]+GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED/);
+  assert.match(stageOneSource, /Sheets authority:[\s\S]+GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID[\s\S]+first-boot fallback/);
   assert.match(stageTwoSource, /Connect Google Workspace/);
   assert.match(stageTwoSource, /workspace-connection-health/);
   assert.match(stageThreeSource, /Verify the Shared Drive/);
@@ -155,6 +174,7 @@ test("Workspace resources stay endpoint-owned inside the Stage 3 shell", async (
   assert.match(stageFourSource, /Prepare Gmail/);
   assert.match(stageFourSource, /Verify Calendar/);
   assert.match(stageFourSource, /Sync the Sheets mirror/);
+  assert.doesNotMatch(`${stageTwoSource}\n${stageThreeSource}\n${stageFourSource}`, /workspace-env-note|Drive authority:|Sheets authority:|GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED|GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID/);
 
   for (const state of ["Found", "Created", "Adopted", "Not configured", "Simulated"]) {
     assert.match(`${panel}\n${actions}`, new RegExp(`"${state}"`));
