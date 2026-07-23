@@ -234,8 +234,8 @@ cards and fire zero admin fetches.
    URI, hosted secrets, role-aligned Google Groups — one instruction sentence each,
    external console deep links, verification chips computed only from existing
    payloads (SET-04 `missingDetails` presence, connection GET, `connectReady`, and the
-   Shared Drive `restrictions` chip once SET-15 lands). Presence/absence only, never
-   values; no repo-doc links in UI copy.
+   Shared Drive `restrictions` chip from SET-15, complete in PR #84). Presence/absence
+   only, never values; no repo-doc links in UI copy.
 
 ## 4. Setup-attributes catalog
 
