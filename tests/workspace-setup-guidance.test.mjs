@@ -5,18 +5,45 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-test("Workspace setup is a five-step endpoint-driven flow with callback refresh", async () => {
+test("Workspace setup is a four-stage endpoint-driven shell with callback refresh", async () => {
   const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
 
-  for (const [step, heading] of [
-    ["1", "Connect Google Workspace"],
-    ["2", "Verify the Shared Drive"],
-    ["3", "Prepare Gmail"],
-    ["4", "Verify Calendar"],
-    ["5", "Sync the Sheets mirror"],
+  assert.equal(panel.match(/<SetupStage\b/g)?.length, 4);
+  for (const [stage, heading] of [
+    ["1", "Prepare the tenant"],
+    ["2", "Connect"],
+    ["3", "Define & create your workspace"],
+    ["4", "Verify & maintain"],
   ]) {
-    assert.match(panel, new RegExp(`<span className="workspace-step-number">${step}<\\/span><div><h3>${heading}`));
+    assert.match(panel, new RegExp(`number=\\{${stage}\\}[\\s\\S]{0,240}title="${heading.replace(/[&]/g, "\\&")}"`));
   }
+  for (const heading of [
+    "Connect Google Workspace",
+    "Verify the Shared Drive",
+    "Prepare Gmail",
+    "Verify Calendar",
+    "Sync the Sheets mirror",
+  ]) {
+    assert.match(panel, new RegExp(`<h3>${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}<\\/h3>`));
+  }
+
+  assert.match(panel, /className="workspace-stage-list"[^>]*role="group"[^>]*aria-label="Google Workspace setup stages"/);
+  assert.match(panel, /className=\{`workspace-setup-stage\$\{open/);
+  assert.match(panel, /data-workspace-stage=\{number\}/);
+  assert.match(panel, /className="workspace-stage-toggle"/);
+  assert.match(panel, /aria-label=\{`\$\{open \? "Collapse" : "Expand"\} Stage \$\{number\}: \$\{title\}`\}/);
+  assert.match(panel, /aria-expanded=\{open\}/);
+  assert.match(panel, /aria-controls=\{bodyId\}/);
+  assert.match(panel, /className="workspace-stage-body" hidden=\{!open\}/);
+  assert.match(panel, /function InfoHint/);
+  assert.match(panel, /aria-describedby=\{descriptionId\}/);
+  assert.match(panel, /role="tooltip"/);
+  assert.match(panel, /event\.key !== "Escape"/);
+  assert.match(panel, /Checking current status…/);
+  assert.match(panel, /workspace-status-banner/);
+  assert.match(panel, /workspace-status-mode/);
+  assert.match(panel, /workspace-status-progress/);
+  assert.doesNotMatch(panel, /workspace-mode-card|Company Google Workspace|Sample data only · no Google account connected · nothing is sent to Google|One administrator-approved organization connection/);
 
   for (const endpoint of [
     "/api/v1/google-workspace",
@@ -97,7 +124,7 @@ test("administrator connection health maps the bounded payload without inventing
   assert.doesNotMatch(payloadType, /lastSuccess|lastChecked|expiresAt|freshness/i);
 });
 
-test("Workspace resources are an admin-only sibling card with endpoint-owned states", async () => {
+test("Workspace resources stay endpoint-owned inside the Stage 3 shell", async () => {
   const [panel, actions] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/settings/components/WorkspaceDriveResourceActions.tsx"),
@@ -109,15 +136,25 @@ test("Workspace resources are an admin-only sibling card with endpoint-owned sta
   assert.match(panel, /const configured = simulation \|\| workspaceResources\?\.connectReady === true/);
   assert.match(panel, /disabled=\{!configured \|\| working\}/);
 
-  const stepListStart = panel.indexOf('<ol className="workspace-setup-steps"');
-  const stepListEnd = panel.indexOf("</ol>", stepListStart);
-  const blueprintCard = panel.indexOf("{isAdmin && <WorkspaceBlueprintEditor");
-  const resourcesCard = panel.indexOf('<section className="workspace-setup-card workspace-resources-card"');
-  const healthCard = panel.indexOf('{isAdmin && <section className="workspace-connection-health"');
-  assert.ok(stepListStart >= 0 && stepListEnd > stepListStart);
-  assert.ok(blueprintCard > stepListEnd && blueprintCard < resourcesCard, "Blueprint must be an admin-only sibling between the step list and Resources");
-  assert.ok(resourcesCard > stepListEnd, "Resources must be a sibling after the five-step list");
-  assert.ok(healthCard > stepListEnd, "Connection health must be a sibling, not nested in Step 1");
+  const stageOne = panel.indexOf("number={1}");
+  const stageTwo = panel.indexOf("number={2}", stageOne + 1);
+  const stageThree = panel.indexOf("number={3}", stageTwo + 1);
+  const stageFour = panel.indexOf("number={4}", stageThree + 1);
+  const stageEnd = panel.indexOf("{filingMessage &&", stageFour);
+  assert.ok(stageOne >= 0 && stageTwo > stageOne && stageThree > stageTwo && stageFour > stageThree && stageEnd > stageFour);
+  const stageOneSource = panel.slice(stageOne, stageTwo);
+  const stageTwoSource = panel.slice(stageTwo, stageThree);
+  const stageThreeSource = panel.slice(stageThree, stageFour);
+  const stageFourSource = panel.slice(stageFour, stageEnd);
+  assert.match(stageOneSource, /WorkspaceDomainChecklistCard/);
+  assert.match(stageTwoSource, /Connect Google Workspace/);
+  assert.match(stageTwoSource, /workspace-connection-health/);
+  assert.match(stageThreeSource, /Verify the Shared Drive/);
+  assert.match(stageThreeSource, /WorkspaceBlueprintEditor/);
+  assert.match(stageThreeSource, /workspace-resources-card/);
+  assert.match(stageFourSource, /Prepare Gmail/);
+  assert.match(stageFourSource, /Verify Calendar/);
+  assert.match(stageFourSource, /Sync the Sheets mirror/);
 
   for (const state of ["Found", "Created", "Adopted", "Not configured", "Simulated"]) {
     assert.match(`${panel}\n${actions}`, new RegExp(`"${state}"`));

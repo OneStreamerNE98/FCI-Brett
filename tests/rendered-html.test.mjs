@@ -499,7 +499,7 @@ test("provides explicit Gmail and Calendar controls in simulation and Workspace 
   assert.match(calendarEvents, /attendees=none/);
   assert.match(calendarHold, /requireSameOrigin/);
   assert.match(calendarHold, /config\.simulation/);
-  assert.match(app, /Google Workspace setup steps/);
+  assert.match(app, /Google Workspace setup stages/);
   assert.match(app, /Simulated Workspace Gmail/);
   assert.match(app, /Add sample email/);
   assert.match(app, /Create test hold/);
