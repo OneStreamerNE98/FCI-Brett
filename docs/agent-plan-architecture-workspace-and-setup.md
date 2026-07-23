@@ -1326,7 +1326,7 @@ pending.
 **Effort:** medium. **Cost:** $0.
 
 ### SET-33 · Stage 4 "Verify & maintain" (small-medium, after SET-32)
-**Status:** In progress — `codex/set33-verify-maintain`, July 23, 2026.
+**Status:** In review — PR #133, `codex/set33-verify-maintain`, July 23, 2026.
 
 **Why:** First-run service verifications and ongoing upkeep are different activities
 mixed together today (spec §3.5).
