@@ -133,6 +133,19 @@ presentation unification only.
 **Completes** when every required row reports created/adopted (calendar verify-only
 rows do not block completion while WS-14 is pending).
 
+#### 3.4.1 Stage 3 row copy (normative for SET-32 — labels, chips, InfoHints)
+
+| # | Row label | State chips | InfoHint (ⓘ) text |
+|---|-----------|-------------|--------------------|
+| 1 | Shared Drive | `FOUND — ADOPT` / `VERIFY` / `DONE` | "The one company drive where every project folder lives. The app never creates a second drive — it adopts the one your admin set up." |
+| 2 | Folder tree (from your blueprint) | `AFTER DRIVE` / `CREATE` / `DONE` | "Creates the top-level folders exactly as your blueprint defines them. Rename them from this screen later — never directly in Drive." |
+| 3 | Spreadsheets | `AFTER FOLDERS` / `CREATE` / `DONE` | "The Client Directory and Project Register the app keeps in sync, plus any extra sheets you defined. The app is the source of truth — the sheets are mirrors." |
+| 4 | Templates | `AFTER FOLDERS` / `CREATE` / `DONE` | "Starter documents — estimate, work order, change order, checklist, budget — placed in your Templates folder. Edit their content in Google; the app only creates them." |
+| 5 | Calendars | `VERIFY ONLY` | "Checks that the appointments calendar your admin shared is reachable. The app doesn't create calendars yet — that arrives with a later update." |
+
+Locked-row caption (when a dependency is unmet): "Unlocks after <previous row>." —
+plain words, no jargon. Every chip term above is the exact rendered text.
+
 ### 3.5 Stage 4 · Verify & maintain
 
 First-run verifications — Gmail labels + test email (Step 3), Calendar window/test
@@ -140,6 +153,24 @@ hold (Step 4), Sheets mirror sync (Step 5) — followed by the **ongoing** surfa
 clearly labeled "ongoing" rather than first-run: drift check/reconcile (SET-18 when it
 lands), renames, notification routing. This stage never shows "complete"; its chip
 reads `READY` once every service verification has passed at least once.
+
+#### 3.5.1 Stage 4 copy (normative for SET-33 — labels, sections, InfoHints)
+
+First-run verification rows:
+
+| Row label | InfoHint (ⓘ) text |
+|-----------|--------------------|
+| Gmail — labels & test email | "Creates the three FCI labels and sends one test email to yourself to confirm filing works. Nothing is ever sent to clients from here." |
+| Calendar — appointments & test hold | "Reads the upcoming appointments window and can create one private test hold with no invitations — confirm access without touching anyone's calendar." |
+| Sheets — mirror sync | "Runs one sync of the Client Directory and Project Register mirrors and reports exactly what changed." |
+
+Ongoing section: group label **"Ongoing upkeep"** with the caption "Tools you'll
+come back to — these never block setup." Rows: drift check ("Compares your
+blueprint with what's actually in Drive and shows any differences before you fix
+them."), renames ("Rename managed folders safely — the app updates Drive and its
+own records together."), notification routing (existing card copy unchanged).
+The stage chip is `READY` (never `DONE`); before all three verifications have
+passed at least once it shows `x OF 3 VERIFIED`.
 
 ### 3.6 Cross-cutting rules
 
