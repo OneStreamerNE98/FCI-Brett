@@ -417,7 +417,7 @@ database connection; KPI-04 owns the PostgreSQL columns and activation of those 
 Keep every existing guard
 (FCI TEST name rule, 16 MiB/5,000-row caps, `^fci_rehearsal_` schema, refuse production,
 exact acknowledgment). `cutoverReady` stays hardcoded false.
-**Accept:** inventory covers all 23 current tables (unit test fails on unclassified); extended
+**Accept:** inventory covers all 24 current tables (unit test fails on unclassified); extended
 fixture imports green; `cutoverReady:false`.
 
 ### BE-13 · Fail-closed schema targeting (small, no deps)

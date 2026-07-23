@@ -127,6 +127,13 @@
       "when": 1784750754758,
       "tag": "0017_sleepy_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1784822896133,
+      "tag": "0018_slow_serpent_society",
+      "breakpoints": true
     }
   ]
 }

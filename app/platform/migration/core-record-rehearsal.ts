@@ -59,6 +59,11 @@ export const CORE_REHEARSAL_SOURCE_INVENTORY = [
     reason: "Marked test project meetings map to the immutable PostgreSQL v6 project_meetings table.",
   },
   {
+    sourceCategory: "tasks",
+    disposition: "blocking",
+    reason: "Task rows require a reviewed rehearsal-format expansion before production migration.",
+  },
+  {
     sourceCategory: "filing_rules",
     disposition: "blocking",
     reason: "Production filing-rule ownership and migration semantics are not implemented.",
@@ -143,6 +148,7 @@ export const CORE_REHEARSAL_SOURCE_INVENTORY = [
 export const DEFERRED_SOURCE_CATEGORIES = [
   "records",
   "webhook_receipts",
+  "tasks",
   "filing_rules",
   "workspace_settings",
   "user_preferences",
@@ -251,7 +257,14 @@ type PreparedProjectMeeting = {
   projectId: string;
   title: string;
   meetingAt: string;
-  meetingType: "client" | "site-walk" | "internal" | "pre-install" | "closeout" | "other";
+  meetingType:
+    | "client"
+    | "site-walk"
+    | "internal"
+    | "pre-install"
+    | "closeout"
+    | "phone-call"
+    | "other";
   sourceProvider: "manual" | "otter" | "link";
   sourceUrl: string | null;
   attendees: string[];
@@ -408,6 +421,7 @@ const PROJECT_MEETING_TYPES = new Set([
   "internal",
   "pre-install",
   "closeout",
+  "phone-call",
   "other",
 ]);
 const PROJECT_MEETING_SOURCE_PROVIDERS = new Set(["manual", "otter", "link"]);

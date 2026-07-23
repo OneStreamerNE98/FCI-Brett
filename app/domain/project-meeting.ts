@@ -4,6 +4,7 @@ export const PROJECT_MEETING_TYPES = [
   "internal",
   "pre-install",
   "closeout",
+  "phone-call",
   "other",
 ] as const;
 

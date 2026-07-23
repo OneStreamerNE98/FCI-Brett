@@ -132,6 +132,27 @@ export const projectMeetings = sqliteTable("project_meetings", {
   index("project_meetings_project_date_idx").on(table.projectId, table.meetingAt),
 ]);
 
+/** Office-owned to-dos created manually or from reviewed meeting/email/AI suggestions. */
+export const tasks = sqliteTable("tasks", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  details: text("details"),
+  status: text("status").notNull().default("open"),
+  dueDate: text("due_date"),
+  projectId: text("project_id"),
+  leadId: text("lead_id"),
+  assigneeEmail: text("assignee_email"),
+  source: text("source").notNull().default("manual"),
+  sourceRef: text("source_ref"),
+  createdBy: text("created_by").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+}, (table) => [
+  index("tasks_status_due_date_idx").on(table.status, table.dueDate),
+  index("tasks_project_status_idx").on(table.projectId, table.status),
+]);
+
 export const filingRules = sqliteTable("filing_rules", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

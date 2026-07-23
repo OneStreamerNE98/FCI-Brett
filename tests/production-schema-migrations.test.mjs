@@ -13,6 +13,7 @@ import {
   runProductionSchemaMigrations,
   validateProductionMigrationRegistry,
 } from "../app/platform/postgres/production-schema-migrations.ts";
+import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts";
 
 class FakePostgresClient {
   constructor({
@@ -222,6 +223,42 @@ test("adds leads and project meetings only in immutable migration six", () => {
   assert.match(sql, /'project_meetings\.create'/);
   assert.match(sql, /'lead\.created'/);
   assert.match(sql, /'project\.meeting\.created'/);
+});
+
+test("prepares the source-only AI-01 PostgreSQL task schema for the reserved v8 slot", () => {
+  const sql = TASK_SCHEMA_STATEMENTS.join("\n");
+
+  assert.match(sql, /CREATE TABLE tasks/);
+  assert.match(sql, /title text NOT NULL/);
+  assert.match(sql, /details text/);
+  assert.match(sql, /status text NOT NULL DEFAULT 'open'/);
+  assert.match(sql, /due_date date/);
+  assert.match(sql, /project_id uuid/);
+  assert.match(sql, /lead_id uuid/);
+  assert.match(sql, /assignee_email text/);
+  assert.match(sql, /source text NOT NULL DEFAULT 'manual'/);
+  assert.match(sql, /source_ref text/);
+  assert.match(sql, /created_by text NOT NULL/);
+  assert.match(sql, /updated_by text NOT NULL/);
+  assert.match(sql, /completed_at timestamptz/);
+  assert.match(sql, /tasks_title_check CHECK/);
+  assert.match(sql, /pg_catalog\.char_length\(title\) <= 200/);
+  assert.match(sql, /tasks_details_check CHECK/);
+  assert.match(sql, /pg_catalog\.char_length\(details\) <= 4000/);
+  assert.match(sql, /tasks_status_check CHECK \(status IN \('open', 'done'\)\)/);
+  assert.match(sql, /tasks_source_check CHECK \(source IN \('manual', 'meeting', 'email', 'ai'\)\)/);
+  assert.match(sql, /tasks_project_id_fkey/);
+  assert.match(sql, /tasks_lead_id_fkey/);
+  assert.match(sql, /CREATE INDEX tasks_status_due_date_idx ON tasks \(status, due_date\)/);
+  assert.match(sql, /CREATE INDEX tasks_project_status_idx ON tasks \(project_id, status\)/);
+  assert.match(sql, /project_meetings_type_check CHECK \(meeting_type IN \([^)]*'phone-call'/);
+  assert.match(sql, /activity_events_task_id_fkey/);
+  assert.match(
+    sql,
+    /activity_events_record_check CHECK \(pg_catalog\.num_nonnulls\(client_id, project_id, lead_id, task_id\) = 1\)/,
+  );
+  assert.match(sql, /CREATE INDEX activity_events_task_id_idx/);
+  assert.doesNotMatch(sql, /\b(?:DROP TABLE|TRUNCATE|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/i);
 });
 
 test("rejects gaps, duplicate names, transaction control, and concurrent indexes", () => {

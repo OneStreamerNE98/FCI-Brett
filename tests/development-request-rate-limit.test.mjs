@@ -13,7 +13,7 @@ import {
 const root = fileURLToPath(new URL("../", import.meta.url));
 const apiRoot = join(root, "app", "api", "v1");
 
-const costRoutes = [
+const limitedRoutes = [
   {
     path: "app/api/v1/assistant/route.ts",
     scope: "assistant",
@@ -33,6 +33,16 @@ const costRoutes = [
     path: "app/api/v1/projects/[projectId]/drive/route.ts",
     scope: "project-drive-provisioning",
     firstWork: "await ensureWorkspaceSchema()",
+  },
+  {
+    path: "app/api/v1/tasks/route.ts",
+    scope: "tasks",
+    firstWork: "await parseBoundedJsonObject(request",
+  },
+  {
+    path: "app/api/v1/tasks/[taskId]/route.ts",
+    scope: "tasks",
+    firstWork: "await parseBoundedJsonObject(request",
   },
 ];
 
@@ -82,7 +92,7 @@ test("development fixed windows reset at the next 60-second boundary", () => {
   assert.equal(limiter.check("uploads", "office@example.test"), null);
 });
 
-test("development limits isolate office users and all four closed route scopes", () => {
+test("development limits isolate office users across the closed route scopes", () => {
   const limiter = createDevelopmentRequestRateLimiter({ now: () => 1_000 });
   for (let request = 1; request <= DEVELOPMENT_RATE_LIMIT_MAX_REQUESTS; request += 1) {
     assert.equal(limiter.check("assistant", "first@example.test"), null);
@@ -104,10 +114,10 @@ test("development limits normalize the authenticated office-user email", () => {
   assert.equal(limiter.check("assistant", "OFFICE.USER@EXAMPLE.TEST")?.status, 429);
 });
 
-test("exactly the four cost routes limit after office authorization and before work", async () => {
+test("every limited mutation route checks its closed scope after office authorization and before work", async () => {
   assert.deepEqual(
     [...DEVELOPMENT_RATE_LIMIT_SCOPES],
-    costRoutes.map((route) => route.scope),
+    [...new Set(limitedRoutes.map((route) => route.scope))],
   );
 
   const limitingRoutePaths = [];
@@ -117,9 +127,9 @@ test("exactly the four cost routes limit after office authorization and before w
       limitingRoutePaths.push(relative(root, file).replaceAll("\\", "/"));
     }
   }
-  assert.deepEqual(limitingRoutePaths.sort(), costRoutes.map((route) => route.path).sort());
+  assert.deepEqual(limitingRoutePaths.sort(), limitedRoutes.map((route) => route.path).sort());
 
-  for (const route of costRoutes) {
+  for (const route of limitedRoutes) {
     const source = await readFile(join(root, route.path), "utf8");
     const authorization = source.indexOf('if ("response" in auth) return auth.response');
     const limiter = source.indexOf(
