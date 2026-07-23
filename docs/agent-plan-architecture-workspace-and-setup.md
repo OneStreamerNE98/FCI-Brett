@@ -1258,7 +1258,7 @@ frame (mutation-sensitive updates, no coverage deletions); SET-07 slug pins unch
 **Effort:** medium-large. **Cost:** $0.
 
 ### SET-30 · Stage 1 "Prepare the tenant" interior (small-medium, after SET-29)
-**Status:** In progress — `codex/set30-prepare-tenant`, July 22, 2026.
+**Status:** In review — PR #122, July 22, 2026.
 **Why:** Hosting/env guidance is interleaved mid-flow in today's steps; tenant
 preparation is Brett's outside-the-app lane and must read as one checklist
 (spec §3.2).
