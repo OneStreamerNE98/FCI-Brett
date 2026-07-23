@@ -141,8 +141,8 @@ export function PageLayoutEditor({ page, layout, isAdmin, enabled, loadError, on
     ? <button ref={editButtonRef} type="button" className="soft-button" onClick={onRetry} aria-label={`Retry ${title} layout`} title={loadError}>
       <RotateCcw size={16} aria-hidden="true" /> Retry layout
     </button>
-    : <button ref={editButtonRef} type="button" className="soft-button" onClick={beginEditing} disabled={!enabled || editing} aria-label={`Edit ${title} layout`}>
-      <Settings2 size={16} aria-hidden="true" /> {enabled ? "Edit layout" : "Loading layout…"}
+    : <button ref={editButtonRef} type="button" className={`soft-button ${styles.editButton}`} onClick={beginEditing} disabled={!enabled || editing} aria-label={`Edit ${title} layout`} title={`Edit ${title} layout`}>
+      <Settings2 size={16} aria-hidden="true" />
     </button>;
 
   const editor = editing ? <section className={styles.editor} aria-label={`${title} layout editor`}>
@@ -153,17 +153,17 @@ export function PageLayoutEditor({ page, layout, isAdmin, enabled, loadError, on
         <button type="button" className="primary-button" onClick={() => void finishEditing()} disabled={saving}><Check size={15} aria-hidden="true" /> {saving ? "Saving…" : "Done"}</button>
       </div>
     </div>
-    <div className={styles.addRow} data-layout-add-section="true">
-      <div><Plus size={15} aria-hidden="true" /><strong>Add section</strong></div>
-      <div>{hiddenKeys.length > 0 ? hiddenKeys.map((key) => <button
+    {hiddenKeys.length > 0 ? <div className={styles.addRow} data-layout-add-section="true">
+      <strong>Hidden sections</strong>
+      <div>{hiddenKeys.map((key) => <button
         type="button"
         key={key}
         data-layout-add-key={key}
         ref={(node) => { if (node) addButtonRefs.current.set(key, node); else addButtonRefs.current.delete(key); }}
         onClick={() => addSection(key)}
         disabled={saving}
-      ><Plus size={14} aria-hidden="true" /> {labels.get(key)}</button>) : <span>All available sections are shown.</span>}</div>
-    </div>
+      ><Plus size={14} aria-hidden="true" /> {labels.get(key)}</button>)}</div>
+    </div> : null}
     {error && <p className={styles.error} role="alert">{error}</p>}
   </section> : null;
 

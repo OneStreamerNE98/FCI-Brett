@@ -11,7 +11,7 @@ export function PanelHeader({ title, subtitle, action, onAction }: { title: stri
 }
 
 export function PageTitle({ eyebrow, title, text, state, action }: { eyebrow: string; title: string; text: string; state?: FeatureState; action?: ReactNode }) {
-  return <div className="page-heading"><div><div className="page-title-kicker"><p className="eyebrow">{eyebrow}</p>{state && <FeatureStateBadge state={state} />}</div><h1>{title}</h1><p>{text}</p></div>{action}</div>;
+  return <div className="page-heading"><div><div className="page-title-kicker"><p className="eyebrow">{eyebrow}</p>{state && <FeatureStateBadge state={state} />}</div><h1>{title}</h1><p>{text}</p></div>{action ? <div className="title-actions">{action}</div> : null}</div>;
 }
 
 export function Avatar({ initials, color }: { initials: string; color: string }) {
