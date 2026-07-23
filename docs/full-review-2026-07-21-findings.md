@@ -283,7 +283,7 @@ synthetic destructive migration.
 ## Wave R3 — settings/UI fixes, on the NEW frame (after the SET-29 series)
 
 ### FIX-07 · Admin gating single source of truth (P2 F-13; small)
-**Status:** In review — PR #137, July 23, 2026.
+**Status:** Complete — PR #137, July 23, 2026. Source-only and undeployed. Fable review: single fail-closed `isAdmin` source verified across every nav and content gate; server authorization untouched. P3 UX residual for FIX-12: after a failed `/settings/me`, views without a layout editor or settings panel offer no visible retry affordance (recovery = navigate or reload).
 **Why:** nav and content gate on different identity transports; a stale or failed
 `/settings/me` response desyncs them.
 **Do:** one `isAdmin` source in the app shell (seed from the server prop, reconcile
