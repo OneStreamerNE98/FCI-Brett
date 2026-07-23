@@ -76,7 +76,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     EXPECTED_RUNTIME_TABLE_ACCESS
       .filter(({ privileges }) => privileges.includes("DELETE"))
       .map(({ table }) => table),
-    [],
+    ["filing_rules"],
   );
   assert.deepEqual(
     EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "audit_events")?.privileges,
@@ -163,7 +163,24 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     false,
   );
   assert.doesNotMatch(sql, /GRANT UPDATE \(id,/);
-  assert.doesNotMatch(sqlWithoutComments, /^GRANT .*DELETE.* TO fci_runtime;$/m);
+  assert.deepEqual(
+    sqlWithoutComments.match(/^GRANT .*DELETE.* TO fci_runtime;$/gm) ?? [],
+    [
+      "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fci_app.filing_rules TO fci_runtime;",
+    ],
+  );
+  for (const [table, privileges] of [
+    ["workspace_settings", ["SELECT", "INSERT", "UPDATE"]],
+    ["user_preferences", ["SELECT", "INSERT", "UPDATE"]],
+    ["filing_rules", ["SELECT", "INSERT", "UPDATE", "DELETE"]],
+    ["mail_items", ["SELECT", "INSERT", "UPDATE"]],
+    ["tasks", ["SELECT", "INSERT", "UPDATE"]],
+  ]) {
+    assert.deepEqual(
+      EXPECTED_RUNTIME_TABLE_ACCESS.find((entry) => entry.table === table)?.privileges,
+      privileges,
+    );
+  }
   assert.match(sql, /integration_credentials intentionally has no runtime table grant/);
 });
 

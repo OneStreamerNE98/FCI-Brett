@@ -368,9 +368,10 @@ test("includes migrations and preserves the supplied Floor Coverings Internation
 });
 
 test("adds a searchable, configurable inbox with draft-only Workspace replies", async () => {
-  const [app, phonePanel, searchApi, settingsApi, ruleApi, replyApi, gmail, manifest] = await Promise.all([
+  const [app, phonePanel, searchApi, settingsApi, settingsAdapter, settingsDomain, ruleApi, replyApi, gmail, manifest] = await Promise.all([
     readAppSurface(), read("app/PhoneInstallPanel.tsx"), read("app/api/v1/search/route.ts"),
-    read("app/api/v1/settings/workspace/route.ts"), read("app/api/v1/filing-rules/[ruleId]/route.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts"),
+    read("app/api/v1/settings/workspace/route.ts"), read("app/adapters/d1/workspace-settings-repository.ts"),
+    read("app/domain/workspace-settings.ts"), read("app/api/v1/filing-rules/[ruleId]/route.ts"), read("app/api/v1/integrations/google/gmail/messages/[messageId]/reply-draft/route.ts"),
     read("app/lib/google-gmail.ts"), read("public/manifest.webmanifest"),
   ]);
   assert.match(app, /Search this Gmail mailbox/);
@@ -383,8 +384,9 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
   assert.match(app, /PhoneInstallPanel/);
   assert.match(searchApi, /contacts ct JOIN clients/);
   assert.match(searchApi, /ESCAPE/);
-  assert.match(settingsApi, /workspace_settings/);
-  assert.match(settingsApi, /review-first/);
+  assert.match(settingsApi, /createD1WorkspaceSettingsRepository/);
+  assert.match(settingsAdapter, /workspace_settings/);
+  assert.match(settingsDomain, /review-first/);
   assert.match(ruleApi, /export async function PATCH/);
   assert.match(ruleApi, /export async function DELETE/);
   assert.match(replyApi, /sent: false/);
@@ -397,8 +399,10 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
 });
 
 test("keeps My settings scoped to the authenticated office user and honest about planned consumers", async () => {
-  const [schema, preferencesApi, app, mySettings, notificationCatalog, pageLayouts, layoutEditor] = await Promise.all([
-    read("db/schema.ts"), read("app/api/v1/settings/me/route.ts"), readAppSurface(),
+  const [schema, preferencesApi, preferencesAdapter, preferencesDomain, app, mySettings, notificationCatalog, pageLayouts, layoutEditor] = await Promise.all([
+    read("db/schema.ts"), read("app/api/v1/settings/me/route.ts"),
+    read("app/adapters/d1/user-preferences-repository.ts"), read("app/domain/user-preferences.ts"),
+    readAppSurface(),
     read("app/settings/components/MySettingsPanel.tsx"), read("app/lib/user-settings.ts"),
     read("app/lib/page-layouts.ts"), read("app/components/operations/PageLayoutEditor.tsx"),
   ]);
@@ -408,20 +412,21 @@ test("keeps My settings scoped to the authenticated office user and honest about
   assert.match(schema, /pageLayoutsJson: text\("page_layouts_json"\)/);
   assert.match(preferencesApi, /requireOfficeUser\(request\)/);
   assert.match(preferencesApi, /requireSameOrigin\(request\)/);
-  assert.match(preferencesApi, /WHERE user_email = \?/);
+  assert.match(preferencesAdapter, /WHERE user_email = \?/);
   assert.match(preferencesApi, /auth\.user\.email/);
-  assert.match(preferencesApi, /notification_preferences_json/);
+  assert.match(preferencesAdapter, /notification_preferences_json/);
   assert.match(preferencesApi, /normalizeUserNotificationPreferences/);
   assert.match(preferencesApi, /normalizePageLayoutsForWrite/);
-  assert.match(preferencesApi, /page_layouts_json/);
-  assert.match(preferencesApi, /PREFERENCE_KEYS[^\n]+pageLayouts/);
+  assert.match(preferencesAdapter, /page_layouts_json/);
+  assert.match(preferencesApi, /PREFERENCE_KEYS/);
+  assert.match(preferencesDomain, /pageLayouts/);
   assert.match(preferencesApi, /displayTimezone/);
   assert.match(preferencesApi, /replySignature/);
   assert.doesNotMatch(preferencesApi, /display_name|displayName/);
   assert.doesNotMatch(preferencesApi, /personalCalendarDisplay/);
   assert.doesNotMatch(app, /personalCalendarDisplay/);
-  assert.match(preferencesApi, /length > 2_000/);
-  assert.match(preferencesApi, /Intl\.DateTimeFormat/);
+  assert.match(preferencesDomain, /length > 2_000/);
+  assert.match(preferencesDomain, /Intl\.DateTimeFormat/);
   assert.match(mySettings, /data-session-profile="true"/);
   assert.match(mySettings, /data-preference-consumer="planned"/);
   assert.match(mySettings, /FeatureStateBadge state="Planned"/);
@@ -443,26 +448,29 @@ test("keeps My settings scoped to the authenticated office user and honest about
 });
 
 test("makes company shared calendars authoritative without a personal-calendar mode", async () => {
-  const [app, settingsApi, guide] = await Promise.all([
-    readAppSurface(), read("app/api/v1/settings/workspace/route.ts"), read("docs/google-workspace-organization.md"),
+  const [app, settingsApi, settingsDomain, guide] = await Promise.all([
+    readAppSurface(), read("app/api/v1/settings/workspace/route.ts"), read("app/domain/workspace-settings.ts"),
+    read("docs/google-workspace-organization.md"),
   ]);
   assert.match(app, /Plan to create two shared FCI calendars/);
   assert.match(app, /Keep company work in two shared FCI Workspace calendars/);
   assert.match(app, /one for client appointments and one for field scheduling/);
   assert.match(app, /Gmail and Calendar are separate/);
   assert.match(app, /company calendar IDs/);
-  assert.match(settingsApi, /calendarSetupMode/);
-  assert.match(settingsApi, /appointmentCalendarId/);
-  assert.doesNotMatch(settingsApi, /personalAvailabilityPolicy/);
+  assert.match(settingsApi, /normalizeWorkspacePreferences/);
+  assert.match(settingsDomain, /calendarSetupMode/);
+  assert.match(settingsDomain, /appointmentCalendarId/);
+  assert.doesNotMatch(settingsDomain, /personalAvailabilityPolicy/);
   assert.doesNotMatch(app, /personalAvailabilityPolicy/);
   assert.match(guide, /Calendar ownership/);
   assert.match(guide, /FCI • Client Appointments/);
 });
 
 test("models clients, independent projects, and review-first email filing", async () => {
-  const [app, schema, clientsApi, projectsApi, rulesApi, workspace, blueprint] = await Promise.all([
+  const [app, schema, clientsApi, projectsApi, rulesApi, rulesAdapter, workspace, blueprint] = await Promise.all([
     readAppSurface(), read("db/schema.ts"), read("app/api/v1/clients/route.ts"),
-    read("app/api/v1/projects/route.ts"), read("app/api/v1/filing-rules/route.ts"), read("app/lib/google-workspace.ts"),
+    read("app/api/v1/projects/route.ts"), read("app/api/v1/filing-rules/route.ts"),
+    read("app/adapters/d1/filing-rule-repository.ts"), read("app/lib/google-workspace.ts"),
     read("app/lib/workspace-blueprint.ts"),
   ]);
   assert.match(app, /Client Directory/);
@@ -473,7 +481,8 @@ test("models clients, independent projects, and review-first email filing", asyn
   assert.match(schema, /export const filingRules/);
   assert.match(clientsApi, /client_code/);
   assert.match(projectsApi, /client_id/);
-  assert.match(rulesApi, /approval_required/);
+  assert.match(rulesApi, /createD1FilingRuleRepository/);
+  assert.match(rulesAdapter, /approval_required/);
   assert.match(workspace, /needs-project-selection/);
   assert.match(blueprint, /FCI\/Needs Review/);
 });

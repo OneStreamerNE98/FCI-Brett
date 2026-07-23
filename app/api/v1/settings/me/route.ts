@@ -1,5 +1,16 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import type { D1Database } from "../../../../adapters/d1/d1-database";
+import { createD1UserPreferencesRepository } from "../../../../adapters/d1/user-preferences-repository";
+import {
+  normalizeUserDisplayTimezone,
+  normalizeUserReplySignature,
+  USER_PREFERENCE_KEYS,
+} from "../../../../domain/user-preferences";
+import type {
+  UserPreferencesRecord,
+  UserPreferencesRepository,
+} from "../../../../ports/user-preferences-repository";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
@@ -20,61 +31,43 @@ import {
 
 const MAX_ACCOUNT_PREFERENCES_BODY_BYTES = 8_000;
 
-const PREFERENCE_KEYS = new Set(["displayTimezone", "replySignature", "notificationPreferences", "pageLayouts"]);
+const PREFERENCE_KEYS = new Set<string>(USER_PREFERENCE_KEYS);
 
 type AccountPreferences = UserSettingsPreferences & { pageLayouts: PageLayouts };
-
-type PreferenceRow = {
-  display_timezone: string;
-  reply_signature: string;
-  notification_preferences_json: string;
-  page_layouts_json: string;
-  updated_at: number;
-};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function preferencesFromRow(row: PreferenceRow | null, isAdmin: boolean): AccountPreferences {
+function preferencesFromRow(row: UserPreferencesRecord | null, isAdmin: boolean): AccountPreferences {
   if (!row) return { ...defaultUserSettingsPreferences(), pageLayouts: defaultPageLayouts(isAdmin) };
   return {
-    displayTimezone: row.display_timezone || defaultUserSettingsPreferences().displayTimezone,
-    replySignature: row.reply_signature || "",
-    notificationPreferences: parseStoredUserNotificationPreferences(row.notification_preferences_json),
-    pageLayouts: parseStoredPageLayouts(row.page_layouts_json, isAdmin),
+    displayTimezone: row.displayTimezone || defaultUserSettingsPreferences().displayTimezone,
+    replySignature: row.replySignature || "",
+    notificationPreferences: parseStoredUserNotificationPreferences(row.notificationPreferencesJson),
+    pageLayouts: parseStoredPageLayouts(row.pageLayoutsJson, isAdmin),
   };
 }
 
-async function readPreferences(email: string, isAdmin: boolean) {
-  const row = await env.DB.prepare("SELECT display_timezone, reply_signature, notification_preferences_json, page_layouts_json, updated_at FROM user_preferences WHERE user_email = ?")
-    .bind(email)
-    .first<PreferenceRow>();
-  return { preferences: preferencesFromRow(row, isAdmin), updatedAt: row?.updated_at ?? null, storedPageLayoutsJson: row?.page_layouts_json ?? null };
-}
-
-function normalizeTimezone(value: unknown) {
-  if (typeof value !== "string") return null;
-  const candidate = value.trim();
-  if (!candidate || candidate.length > 80 || /[\u0000-\u001f\u007f]/.test(candidate)) return null;
-  try {
-    return Intl.DateTimeFormat("en-US", { timeZone: candidate }).resolvedOptions().timeZone;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeSignature(value: unknown) {
-  if (typeof value !== "string" || value.length > 2_000) return null;
-  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) return null;
-  return value.replace(/\r\n?/g, "\n");
+async function readPreferences(
+  repository: UserPreferencesRepository,
+  email: string,
+  isAdmin: boolean,
+) {
+  const row = await repository.findByEmail(email);
+  return {
+    preferences: preferencesFromRow(row, isAdmin),
+    updatedAt: row?.updatedAt ?? null,
+    storedPageLayoutsJson: row?.pageLayoutsJson ?? null,
+  };
 }
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const account = await readPreferences(auth.user.email, auth.user.isAdmin);
+  const repository = createD1UserPreferencesRepository(env.DB as unknown as D1Database);
+  const account = await readPreferences(repository, auth.user.email, auth.user.isAdmin);
   return NextResponse.json({ preferences: account.preferences, updatedAt: account.updatedAt, isAdmin: auth.user.isAdmin }, { headers: { "Cache-Control": "no-store" } });
 }
 
@@ -96,17 +89,18 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Send one or more valid account preference fields." }, { status: 400 });
   }
 
-  const current = await readPreferences(auth.user.email, auth.user.isAdmin);
+  const repository = createD1UserPreferencesRepository(env.DB as unknown as D1Database);
+  const current = await readPreferences(repository, auth.user.email, auth.user.isAdmin);
   const preferences = { ...current.preferences };
   let persistedPageLayouts = parseStoredPageLayouts(current.storedPageLayoutsJson, true);
 
   if (Object.hasOwn(body, "displayTimezone")) {
-    const timezone = normalizeTimezone(body.displayTimezone);
+    const timezone = normalizeUserDisplayTimezone(body.displayTimezone);
     if (!timezone) return NextResponse.json({ error: "displayTimezone must be a valid IANA timezone of 80 characters or fewer." }, { status: 400 });
     preferences.displayTimezone = timezone;
   }
   if (Object.hasOwn(body, "replySignature")) {
-    const signature = normalizeSignature(body.replySignature);
+    const signature = normalizeUserReplySignature(body.replySignature);
     if (signature === null) return NextResponse.json({ error: "replySignature must be text of 2,000 characters or fewer." }, { status: 400 });
     preferences.replySignature = signature;
   }
@@ -122,8 +116,13 @@ export async function PATCH(request: NextRequest) {
     preferences.pageLayouts = normalizePageLayoutsForRead(persistedPageLayouts, auth.user.isAdmin);
   }
   const now = Date.now();
-  await env.DB.prepare("INSERT INTO user_preferences (user_email, display_timezone, reply_signature, notification_preferences_json, page_layouts_json, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_email) DO UPDATE SET display_timezone = excluded.display_timezone, reply_signature = excluded.reply_signature, notification_preferences_json = excluded.notification_preferences_json, page_layouts_json = excluded.page_layouts_json, updated_at = excluded.updated_at")
-    .bind(auth.user.email, preferences.displayTimezone, preferences.replySignature, JSON.stringify(preferences.notificationPreferences), JSON.stringify(persistedPageLayouts), now)
-    .run();
+  await repository.upsert({
+    userEmail: auth.user.email,
+    displayTimezone: preferences.displayTimezone,
+    replySignature: preferences.replySignature,
+    notificationPreferencesJson: JSON.stringify(preferences.notificationPreferences),
+    pageLayoutsJson: JSON.stringify(persistedPageLayouts),
+    updatedAt: now,
+  });
   return NextResponse.json({ preferences, updatedAt: now }, { headers: { "Cache-Control": "no-store" } });
 }

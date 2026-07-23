@@ -293,6 +293,10 @@ test("composes singleton persistence repositories and request-scoped creation fa
   assert.equal(composition.repositories.identity, composition.repositories.identity);
   assert.equal(composition.repositories.integrations, composition.repositories.integrations);
   assert.equal(composition.repositories.files, composition.repositories.files);
+  assert.equal(composition.repositories.workspaceSettings, composition.repositories.workspaceSettings);
+  assert.equal(composition.repositories.userPreferences, composition.repositories.userPreferences);
+  assert.equal(composition.repositories.filingRules, composition.repositories.filingRules);
+  assert.equal(composition.repositories.mailItems, composition.repositories.mailItems);
   assert.notEqual(composition.repositories.clients(firstRequest), composition.repositories.clients(firstRequest));
   assert.notEqual(composition.repositories.clients(firstRequest), composition.repositories.clients(secondRequest));
   assert.notEqual(composition.repositories.projects(firstRequest), composition.repositories.projects(secondRequest));
@@ -336,6 +340,10 @@ test("creates and closes a runtime composition through injected pool dependencie
   assert.equal(typeof composition.repositories.identity.registerExternalIdentity, "function");
   assert.equal(typeof composition.repositories.integrations.registerConnection, "function");
   assert.equal(typeof composition.repositories.files.reserveProjectUpload, "function");
+  assert.equal(typeof composition.repositories.workspaceSettings.findById, "function");
+  assert.equal(typeof composition.repositories.userPreferences.findByEmail, "function");
+  assert.equal(typeof composition.repositories.filingRules.list, "function");
+  assert.equal(typeof composition.repositories.mailItems.upsert, "function");
   await composition.close();
   assert.deepEqual(events, ["pool.end", "connector.close"]);
 });

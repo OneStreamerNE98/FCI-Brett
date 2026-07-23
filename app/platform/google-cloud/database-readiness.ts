@@ -68,6 +68,16 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "lead_project_meetings",
       checksum: "sha256:ff32915b98da08104a94eb4946aca84d0e1c1b144cc8b90d5bc2c7b435e34f99",
     }),
+    Object.freeze({
+      version: 7,
+      name: "settings_persistence",
+      checksum: "sha256:cb468b7237bc478ebe7f35f93ccc97611c94b66fc870e61258b6762297e7d63a",
+    }),
+    Object.freeze({
+      version: 8,
+      name: "tasks",
+      checksum: "sha256:e7df1a997fabf3aab599dbeefc7629e8d987a9152b0620a1372ebc0a57074951",
+    }),
   ]);
 
 /**
@@ -122,6 +132,11 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("projects", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("leads", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("project_meetings", ["SELECT", "INSERT"]),
+    runtimeTableAccess("workspace_settings", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("user_preferences", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("filing_rules", ["SELECT", "INSERT", "UPDATE", "DELETE"]),
+    runtimeTableAccess("mail_items", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("tasks", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("activity_events", ["INSERT"]),
     runtimeTableAccess("idempotency_requests", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("outbox_events", ["SELECT", "INSERT", "UPDATE"]),

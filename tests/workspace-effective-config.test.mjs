@@ -94,6 +94,26 @@ globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = {
           assert.deepEqual(statement.values, ["google-workspace"]);
           return { results: [d1Row(compositionResource)] };
         },
+        async first() {
+          if (/FROM workspace_blueprints WHERE connection_key = \?/.test(sql)) {
+            assert.deepEqual(statement.values, ["google-workspace"]);
+            return null;
+          }
+          assert.match(sql, /FROM workspace_settings WHERE id = \?/);
+          assert.deepEqual(statement.values, ["workspace"]);
+          return {
+            id: "workspace",
+            shared_drive_id: null,
+            client_directory_sheet_id: "saved-directory-sheet-id",
+            intake_mailbox: null,
+            settings_json: JSON.stringify({
+              appointmentCalendarId: "saved-client-calendar-id",
+              fieldCalendarId: "saved-field-calendar-id",
+            }),
+            updated_by: "admin@example.test",
+            updated_at: 1_784_611_200_000,
+          };
+        },
       };
       return statement;
     },
@@ -209,6 +229,41 @@ test("base getGoogleRuntimeConfig remains pinned on a complete fixture environme
   });
 });
 
+test("saved Workspace values win over environment seeds with an honest source label", () => {
+  assert.deepEqual(
+    effective.resolveSavedWorkspaceValue(" saved-calendar-id ", "environment-calendar-id"),
+    { value: "saved-calendar-id", source: "saved" },
+  );
+  assert.deepEqual(
+    effective.resolveSavedWorkspaceValue("  ", " environment-calendar-id "),
+    { value: "environment-calendar-id", source: "env" },
+  );
+  assert.deepEqual(
+    effective.resolveSavedWorkspaceValue(null, undefined),
+    { value: undefined, source: "absent" },
+  );
+  assert.ok(Object.isFrozen(
+    effective.resolveSavedWorkspaceValue("saved-calendar-id", "environment-calendar-id"),
+  ));
+});
+
+test("persisted Workspace settings override calendar and sheet environment seeds", () => {
+  const config = oauth.getGoogleRuntimeConfig(completeEnvironment());
+  const resources = effective.resolveEffectiveWorkspaceResources(config, [], {
+    clientDirectorySheetId: "saved-directory-sheet-id",
+    clientAppointmentsCalendarId: "saved-client-calendar-id",
+    fieldScheduleCalendarId: "saved-field-calendar-id",
+  });
+  const applied = effective.applyEffectiveWorkspaceConfig(config, resources);
+
+  assert.equal(resources.clientDirectorySheet.source, "app");
+  assert.equal(resources.clientAppointmentsCalendar.source, "app");
+  assert.equal(resources.fieldScheduleCalendar.source, "app");
+  assert.equal(applied.clientDirectorySheetId, "saved-directory-sheet-id");
+  assert.equal(applied.clientAppointmentsCalendarId, "saved-client-calendar-id");
+  assert.equal(applied.fieldScheduleCalendarId, "saved-field-calendar-id");
+});
+
 test("resolver covers every app-presence by environment-presence combination for all four IDs", () => {
   for (const resourceCase of RESOURCE_CASES) {
     for (const appPresent of [false, true]) {
@@ -284,14 +339,22 @@ test("connectReady ignores only resource-ID gaps while oauthReady still requires
 
 test("simulation fixture IDs remain usable without being mislabeled as environment values", () => {
   const base = oauth.getGoogleRuntimeConfig({ NODE_ENV: "development" });
-  const resources = effective.resolveEffectiveWorkspaceResources(base, []);
+  const resources = effective.resolveEffectiveWorkspaceResources(base, [], {
+    clientDirectorySheetId: "saved-live-directory-sheet-id",
+    clientAppointmentsCalendarId: "saved-live-client-calendar-id",
+    fieldScheduleCalendarId: "saved-live-field-calendar-id",
+  });
   const applied = effective.applyEffectiveWorkspaceConfig(base, resources);
 
   assert.equal(base.simulation, true);
   assert.equal(resources.sharedDrive.source, "none");
   assert.equal(resources.sharedDrive.externalId, "workspace-simulation-drive");
+  assert.equal(resources.clientDirectorySheet.source, "none");
   assert.equal(resources.clientAppointmentsCalendar.source, "none");
   assert.equal(resources.fieldScheduleCalendar.source, "none");
+  assert.notEqual(applied.clientDirectorySheetId, "saved-live-directory-sheet-id");
+  assert.notEqual(applied.clientAppointmentsCalendarId, "saved-live-client-calendar-id");
+  assert.notEqual(applied.fieldScheduleCalendarId, "saved-live-field-calendar-id");
   assert.equal(applied.drive.rootFolderId, "workspace-simulation-drive");
   assert.equal(applied.clientAppointmentsCalendarId, "simulation-client-appointments");
   assert.equal(applied.fieldScheduleCalendarId, "simulation-field-schedule");
@@ -421,10 +484,23 @@ test("D1 registry list and upsert use the unique connector/type/key identity", a
   assert.deepEqual(queries.at(-1).values, ["google-workspace", "calendar.calendar", "client-appointments"]);
 });
 
-test("Sites composition asynchronously applies registry rows over environment values", async () => {
+test("Sites composition applies registry and saved settings over environment seeds", async () => {
   const config = await oauthSites.getEffectiveGoogleRuntimeConfig();
   assert.equal(config.drive.rootFolderId, "app-shared-drive-id");
-  assert.equal(config.clientDirectorySheetId, "environment-directory-sheet-id");
+  assert.equal(config.clientDirectorySheetId, "saved-directory-sheet-id");
+  assert.equal(config.clientAppointmentsCalendarId, "saved-client-calendar-id");
+  assert.equal(config.fieldScheduleCalendarId, "saved-field-calendar-id");
   assert.equal(config.connectReady, true);
   assert.equal(config.oauthReady, true);
+});
+
+test("Sites setup composition applies the same saved-over-environment precedence", async () => {
+  const setup = await oauthSites.getEffectiveGoogleRuntimeSetup();
+  assert.equal(setup.config.drive.rootFolderId, "app-shared-drive-id");
+  assert.equal(setup.config.clientDirectorySheetId, "saved-directory-sheet-id");
+  assert.equal(setup.config.clientAppointmentsCalendarId, "saved-client-calendar-id");
+  assert.equal(setup.config.fieldScheduleCalendarId, "saved-field-calendar-id");
+  assert.equal(setup.config.connectReady, true);
+  assert.equal(setup.config.oauthReady, true);
+  assert.equal(setup.blueprintVersion, 0);
 });

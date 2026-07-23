@@ -12,6 +12,13 @@ export type FilingRuleValues = {
 
 export type FilingRulePatchValues = Partial<Omit<FilingRuleValues, "approvalRequired">>;
 
+export type FilingRuleRecord = FilingRuleValues & Readonly<{
+  id: string;
+  created_by?: unknown;
+  created_at?: unknown;
+  updated_at?: unknown;
+}> & Readonly<Record<string, unknown>>;
+
 type ValidationResult<T> =
   | { ok: true; values: T }
   | { ok: false; error: string };
@@ -74,7 +81,7 @@ export function validateFilingRulePatch(body: Record<string, unknown>): Validati
 }
 
 /** Keep D1 column names for compatibility while exposing the camelCase API. */
-export function normalizeStoredFilingRule(row: Record<string, unknown>) {
+export function normalizeStoredFilingRule(row: Record<string, unknown>): FilingRuleRecord {
   const {
     match_summary: storedMatchSummary,
     target_category: storedTargetCategory,
@@ -83,8 +90,12 @@ export function normalizeStoredFilingRule(row: Record<string, unknown>) {
   } = row;
   return {
     ...camelCaseRow,
+    id: String(row.id ?? ""),
+    name: String(row.name ?? ""),
     enabled: Boolean(row.enabled),
+    priority: Number(row.priority),
     matchSummary: String(row.matchSummary ?? storedMatchSummary ?? ""),
+    action: String(row.action ?? "") as FilingRuleAction,
     targetCategory: String(row.targetCategory ?? storedTargetCategory ?? ""),
     approvalRequired: Boolean(row.approvalRequired ?? storedApprovalRequired),
   };

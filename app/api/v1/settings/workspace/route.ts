@@ -1,98 +1,36 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import type { D1Database } from "../../../../adapters/d1/d1-database";
+import { createD1WorkspaceSettingsRepository } from "../../../../adapters/d1/workspace-settings-repository";
+import {
+  DEFAULT_WORKSPACE_PREFERENCES,
+  normalizeWorkspacePreferences,
+  WORKSPACE_SETTINGS_ID,
+} from "../../../../domain/workspace-settings";
+import type { WorkspaceSettingsRepository } from "../../../../ports/workspace-settings-repository";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 
-const WORKSPACE_SETTINGS_ID = "workspace";
 const MAX_WORKSPACE_SETTINGS_BODY_BYTES = 8_000;
 
-export type WorkspacePreferences = {
-  timezone: string;
-  appointmentCalendarName: string;
-  fieldCalendarName: string;
-  calendarSetupMode: "create-shared" | "use-existing";
-  appointmentCalendarId: string;
-  fieldCalendarId: string;
-  calendarEditPolicy: "app-authoritative";
-  appointmentReminderHours: number;
-  crewReminderHours: number;
-  inboxReviewMode: "review-first";
-  officeNotificationEmail: string;
-};
-
-const defaults: WorkspacePreferences = {
-  timezone: "America/New_York",
-  appointmentCalendarName: "FCI • Client Appointments",
-  fieldCalendarName: "FCI • Field Schedule",
-  calendarSetupMode: "create-shared",
-  appointmentCalendarId: "",
-  fieldCalendarId: "",
-  calendarEditPolicy: "app-authoritative",
-  appointmentReminderHours: 24,
-  crewReminderHours: 24,
-  inboxReviewMode: "review-first",
-  officeNotificationEmail: "",
-};
-
-function cleanText(value: unknown, fallback: string, maximum: number) {
-  if (typeof value !== "string") return fallback;
-  const text = value.trim().replace(/[\u0000-\u001f\u007f]/g, "");
-  return text.slice(0, maximum) || fallback;
-}
-
-function cleanHours(value: unknown, fallback: number) {
-  const numeric = typeof value === "number" ? value : Number(value);
-  return Number.isInteger(numeric) && numeric >= 0 && numeric <= 168 ? numeric : fallback;
-}
-
-function cleanEmail(value: unknown) {
-  if (typeof value !== "string") return "";
-  const email = value.trim().toLowerCase();
-  return !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
-}
-
-function cleanCalendarMode(value: unknown): WorkspacePreferences["calendarSetupMode"] {
-  return value === "use-existing" ? "use-existing" : "create-shared";
-}
-
-function cleanOptionalText(value: unknown, maximum: number) {
-  if (typeof value !== "string") return "";
-  return value.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, maximum);
-}
-
-function normalizeSettings(value: unknown): WorkspacePreferences {
-  const input = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+async function readSettings(repository: WorkspaceSettingsRepository) {
+  const record = await repository.findById(WORKSPACE_SETTINGS_ID);
+  if (!record) return { settings: DEFAULT_WORKSPACE_PREFERENCES, updatedAt: null };
   return {
-    timezone: cleanText(input.timezone, defaults.timezone, 80),
-    appointmentCalendarName: cleanText(input.appointmentCalendarName, defaults.appointmentCalendarName, 120),
-    fieldCalendarName: cleanText(input.fieldCalendarName, defaults.fieldCalendarName, 120),
-    calendarSetupMode: cleanCalendarMode(input.calendarSetupMode),
-    appointmentCalendarId: cleanOptionalText(input.appointmentCalendarId, 320),
-    fieldCalendarId: cleanOptionalText(input.fieldCalendarId, 320),
-    calendarEditPolicy: "app-authoritative",
-    appointmentReminderHours: cleanHours(input.appointmentReminderHours, defaults.appointmentReminderHours),
-    crewReminderHours: cleanHours(input.crewReminderHours, defaults.crewReminderHours),
-    inboxReviewMode: "review-first",
-    officeNotificationEmail: cleanEmail(input.officeNotificationEmail),
+    settings: normalizeWorkspacePreferences(record.settings),
+    updatedAt: record.updatedAt,
   };
-}
-
-async function readSettings() {
-  const row = await env.DB.prepare("SELECT settings_json, updated_at FROM workspace_settings WHERE id = ?").bind(WORKSPACE_SETTINGS_ID).first<{ settings_json: string; updated_at: number }>();
-  if (!row) return { settings: defaults, updatedAt: null };
-  try {
-    return { settings: normalizeSettings(JSON.parse(row.settings_json)), updatedAt: row.updated_at };
-  } catch {
-    return { settings: defaults, updatedAt: row.updated_at };
-  }
 }
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  return NextResponse.json(await readSettings(), { headers: { "Cache-Control": "no-store" } });
+  const repository = createD1WorkspaceSettingsRepository(
+    env.DB as unknown as D1Database,
+  );
+  return NextResponse.json(await readSettings(repository), { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -108,10 +46,16 @@ export async function PATCH(request: NextRequest) {
     tooLargeMessage: "Settings update is too large.",
   });
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
-  const settings = normalizeSettings(parsed.body);
+  const settings = normalizeWorkspacePreferences(parsed.body);
   const now = Date.now();
-  await env.DB.prepare("INSERT INTO workspace_settings (id, shared_drive_id, client_directory_sheet_id, intake_mailbox, settings_json, updated_by, updated_at) VALUES (?, NULL, NULL, NULL, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at")
-    .bind(WORKSPACE_SETTINGS_ID, JSON.stringify(settings), auth.user.email, now)
-    .run();
+  const repository = createD1WorkspaceSettingsRepository(
+    env.DB as unknown as D1Database,
+  );
+  await repository.upsert({
+    id: WORKSPACE_SETTINGS_ID,
+    settings,
+    updatedBy: auth.user.email,
+    updatedAt: now,
+  });
   return NextResponse.json({ settings, updatedAt: now }, { headers: { "Cache-Control": "no-store" } });
 }

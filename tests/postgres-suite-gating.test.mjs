@@ -18,6 +18,10 @@ const postgresSuites = [
     file: "tests/postgres-employee-login.integration.test.mjs",
     testName: "real PostgreSQL consumes one raced invitation",
   },
+  {
+    file: "tests/postgres-settings-persistence.integration.test.mjs",
+    testName: "PostgreSQL 16 settings persistence adapters",
+  },
 ];
 
 for (const suite of postgresSuites) {

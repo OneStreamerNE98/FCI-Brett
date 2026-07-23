@@ -4,6 +4,8 @@ import { ADMIN_AUDIT_ACTIVITY_STATEMENTS } from "./admin-audit-activity-schema.t
 import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-schema.ts";
 import { LEAD_PROJECT_MEETING_STATEMENTS } from "./lead-project-meeting-schema.ts";
 import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
+import { SETTINGS_PERSISTENCE_STATEMENTS } from "./settings-persistence-schema.ts";
+import { TASK_SCHEMA_STATEMENTS } from "./task-schema.ts";
 
 export interface ProductionSchemaMigration {
   version: number;
@@ -424,6 +426,18 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "lead_project_meetings",
     checksum: "sha256:ff32915b98da08104a94eb4946aca84d0e1c1b144cc8b90d5bc2c7b435e34f99",
     statements: LEAD_PROJECT_MEETING_STATEMENTS,
+  },
+  {
+    version: 7,
+    name: "settings_persistence",
+    checksum: "sha256:cb468b7237bc478ebe7f35f93ccc97611c94b66fc870e61258b6762297e7d63a",
+    statements: SETTINGS_PERSISTENCE_STATEMENTS,
+  },
+  {
+    version: 8,
+    name: "tasks",
+    checksum: "sha256:e7df1a997fabf3aab599dbeefc7629e8d987a9152b0620a1372ebc0a57074951",
+    statements: TASK_SCHEMA_STATEMENTS,
   },
 ];
 

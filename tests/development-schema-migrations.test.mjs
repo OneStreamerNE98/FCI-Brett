@@ -14,6 +14,7 @@ const productionMigrationModules = new Set([
   join(appRoot, "platform", "postgres", "admin-access-persistence-schema.ts"),
   join(appRoot, "platform", "postgres", "admin-audit-activity-schema.ts"),
   join(appRoot, "platform", "postgres", "lead-project-meeting-schema.ts"),
+  join(appRoot, "platform", "postgres", "settings-persistence-schema.ts"),
   join(appRoot, "platform", "postgres", "task-schema.ts"),
 ]);
 const drizzleRoot = join(root, "drizzle");

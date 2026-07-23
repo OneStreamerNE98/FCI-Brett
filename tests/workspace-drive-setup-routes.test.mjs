@@ -88,7 +88,11 @@ function resourceRow(values) {
   };
 }
 
-function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-simulation" } = {}) {
+function fakeDatabase({
+  blueprint = null,
+  blueprintConnectionKey = "workspace-simulation",
+  workspaceSettings = null,
+} = {}) {
   const state = {
     resources: [],
     blueprint: blueprint ? {
@@ -113,6 +117,7 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
     project: null,
     mapping: null,
     sheetStates: [],
+    workspaceSettings,
   };
 
   const database = {
@@ -140,6 +145,10 @@ function fakeDatabase({ blueprint = null, blueprintConnectionKey = "workspace-si
         },
         async first() {
           query.kind = "first";
+          if (/FROM workspace_settings WHERE id = \?/u.test(sql)) {
+            assert.deepEqual(query.values, ["workspace"]);
+            return state.workspaceSettings;
+          }
           if (/FROM workspace_blueprints WHERE connection_key = \?/u.test(sql)) {
             return state.blueprint?.connection_key === query.values[0] ? state.blueprint : null;
           }

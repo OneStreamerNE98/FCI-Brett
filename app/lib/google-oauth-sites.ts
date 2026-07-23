@@ -1,8 +1,15 @@
 import { env } from "cloudflare:workers";
 
+import type { D1Database } from "../adapters/d1/d1-database";
 import { createD1GoogleOauthPersistence } from "../adapters/d1/google-oauth-persistence";
+import { createD1WorkspaceSettingsRepository } from "../adapters/d1/workspace-settings-repository";
 import { getWorkspaceBlueprint } from "../adapters/d1/workspace-blueprints";
 import { listWorkspaceResources } from "../adapters/d1/workspace-resources";
+import {
+  normalizeWorkspacePreferences,
+  WORKSPACE_SETTINGS_ID,
+} from "../domain/workspace-settings";
+import type { WorkspaceSettingsRecord } from "../ports/workspace-settings-repository";
 import * as oauth from "./google-oauth";
 import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "./workspace-blueprint";
 import {
@@ -30,14 +37,33 @@ export type EffectiveGoogleRuntimeSetup = Readonly<{
   blueprintVersion: number;
 }>;
 
+function savedWorkspaceRuntimeValues(
+  record: WorkspaceSettingsRecord | null,
+) {
+  const preferences = normalizeWorkspacePreferences(record?.settings);
+  return Object.freeze({
+    clientDirectorySheetId: record?.clientDirectorySheetId,
+    clientAppointmentsCalendarId: preferences.appointmentCalendarId,
+    fieldScheduleCalendarId: preferences.fieldCalendarId,
+  });
+}
+
 export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleRuntimeSetup> {
   const config = getGoogleRuntimeConfig();
-  const [savedRows, persistedBlueprint] = await Promise.all([
+  const workspaceSettings = createD1WorkspaceSettingsRepository(
+    env.DB as unknown as D1Database,
+  );
+  const [savedRows, persistedBlueprint, persistedSettings] = await Promise.all([
     listWorkspaceResources(env.DB, config.connectionKey),
     getWorkspaceBlueprint(env.DB, config.connectionKey),
+    workspaceSettings.findById(WORKSPACE_SETTINGS_ID),
   ]);
   const blueprint = persistedBlueprint?.blueprint ?? seedWorkspaceBlueprint();
-  const effectiveResources = resolveEffectiveWorkspaceResources(config, savedRows);
+  const effectiveResources = resolveEffectiveWorkspaceResources(
+    config,
+    savedRows,
+    savedWorkspaceRuntimeValues(persistedSettings),
+  );
   const effective = applyEffectiveWorkspaceConfig(config, effectiveResources);
   const namedConfig = Object.freeze({
     ...effective,
@@ -59,10 +85,20 @@ export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleR
 
 export async function getEffectiveGoogleRuntimeConfig(): Promise<EffectiveGoogleRuntimeConfig> {
   const config = getGoogleRuntimeConfig();
-  const savedRows = await listWorkspaceResources(env.DB, config.connectionKey);
+  const workspaceSettings = createD1WorkspaceSettingsRepository(
+    env.DB as unknown as D1Database,
+  );
+  const [savedRows, persistedSettings] = await Promise.all([
+    listWorkspaceResources(env.DB, config.connectionKey),
+    workspaceSettings.findById(WORKSPACE_SETTINGS_ID),
+  ]);
   return applyEffectiveWorkspaceConfig(
     config,
-    resolveEffectiveWorkspaceResources(config, savedRows),
+    resolveEffectiveWorkspaceResources(
+      config,
+      savedRows,
+      savedWorkspaceRuntimeValues(persistedSettings),
+    ),
   );
 }
 

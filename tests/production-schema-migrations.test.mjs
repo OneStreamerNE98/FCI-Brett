@@ -13,7 +13,11 @@ import {
   runProductionSchemaMigrations,
   validateProductionMigrationRegistry,
 } from "../app/platform/postgres/production-schema-migrations.ts";
+import { SETTINGS_PERSISTENCE_STATEMENTS } from "../app/platform/postgres/settings-persistence-schema.ts";
 import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts";
+
+const MIGRATION_VERSIONS = PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version);
+const CURRENT_MIGRATION_VERSION = MIGRATION_VERSIONS.at(-1);
 
 class FakePostgresClient {
   constructor({
@@ -135,6 +139,17 @@ function queryIndex(client, pattern) {
 
 test("keeps production migration declarations immutable and line-ending independent", () => {
   validateProductionMigrationRegistry(PRODUCTION_SCHEMA_MIGRATIONS);
+  assert.deepEqual(
+    PRODUCTION_SCHEMA_MIGRATIONS.slice(0, 6).map(({ checksum }) => checksum),
+    [
+      "sha256:b3aab0addffeb3e8b4efc58373f359f56489778be9d0ec16dc098ab183beb9f6",
+      "sha256:18e19555f53bc5f7f793e0fc5a2960ead8124cc67debff1db24785732bea5aea",
+      "sha256:12d02573feec218e2ed411ec55ab5d9a08e5b5f20fdbbb58103305a7ef3dcb7f",
+      "sha256:a779369e499410a161fa31a02e0ea56972648b81e7836b75c37f7fdacaad6cd3",
+      "sha256:aa5e56dc3d1c22d3a6bc5be32f48cfde9ea133cdd853ce6fa024073ebeee05d9",
+      "sha256:ff32915b98da08104a94eb4946aca84d0e1c1b144cc8b90d5bc2c7b435e34f99",
+    ],
+  );
 
   for (const migration of PRODUCTION_SCHEMA_MIGRATIONS) {
     assert.equal(calculateProductionMigrationChecksum(migration), migration.checksum);
@@ -225,7 +240,39 @@ test("adds leads and project meetings only in immutable migration six", () => {
   assert.match(sql, /'project\.meeting\.created'/);
 });
 
-test("prepares the source-only AI-01 PostgreSQL task schema for the reserved v8 slot", () => {
+test("registers settings, preference, filing-rule, and mail-item persistence as migration seven", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 7);
+  assert.ok(migration);
+  assert.equal(migration.name, "settings_persistence");
+  assert.equal(migration.statements, SETTINGS_PERSISTENCE_STATEMENTS);
+  const sql = migration.statements.join("\n");
+
+  for (const table of [
+    "workspace_settings",
+    "user_preferences",
+    "filing_rules",
+    "mail_items",
+  ]) {
+    assert.match(sql, new RegExp(`CREATE TABLE ${table}`));
+  }
+  assert.match(sql, /workspace_settings_json_check CHECK/);
+  assert.match(sql, /user_preferences_notification_preferences_json_check CHECK/);
+  assert.match(sql, /user_preferences_page_layouts_json_check CHECK/);
+  assert.match(sql, /filing_rules_action_check CHECK/);
+  assert.match(sql, /mail_items_client_id_fkey/);
+  assert.match(sql, /mail_items_suggested_project_id_fkey/);
+  assert.match(sql, /mail_items_approved_project_id_fkey/);
+  assert.match(sql, /CREATE INDEX mail_items_client_id_idx/);
+  assert.match(sql, /CREATE INDEX mail_items_suggested_project_id_idx/);
+  assert.match(sql, /CREATE INDEX mail_items_approved_project_id_idx/);
+  assert.doesNotMatch(sql, /\b(?:DROP|TRUNCATE|IF NOT EXISTS)\b/i);
+});
+
+test("registers the AI-01 PostgreSQL task schema as contiguous migration eight", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 8);
+  assert.ok(migration);
+  assert.equal(migration.name, "tasks");
+  assert.equal(migration.statements, TASK_SCHEMA_STATEMENTS);
   const sql = TASK_SCHEMA_STATEMENTS.join("\n");
 
   assert.match(sql, /CREATE TABLE tasks/);
@@ -251,6 +298,7 @@ test("prepares the source-only AI-01 PostgreSQL task schema for the reserved v8 
   assert.match(sql, /tasks_lead_id_fkey/);
   assert.match(sql, /CREATE INDEX tasks_status_due_date_idx ON tasks \(status, due_date\)/);
   assert.match(sql, /CREATE INDEX tasks_project_status_idx ON tasks \(project_id, status\)/);
+  assert.match(sql, /CREATE INDEX tasks_lead_id_idx ON tasks \(lead_id\)/);
   assert.match(sql, /project_meetings_type_check CHECK \(meeting_type IN \([^)]*'phone-call'/);
   assert.match(sql, /activity_events_task_id_fkey/);
   assert.match(
@@ -313,7 +361,10 @@ test("uses one dedicated connection, locks before history, and commits each vers
 
   const result = await runProductionSchemaMigrations(pool);
 
-  assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4, 5, 6], currentVersion: 6 });
+  assert.deepEqual(result, {
+    appliedVersions: MIGRATION_VERSIONS,
+    currentVersion: CURRENT_MIGRATION_VERSION,
+  });
   assert.equal(pool.connectCount, 1);
   assert.equal(client.released, true);
   assert.deepEqual(client.history, PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({
@@ -344,10 +395,10 @@ test("uses one dedicated connection, locks before history, and commits each vers
   );
   assert.equal(client.searchPath, '"$user", public');
 
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 6);
-  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, 6);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, 6);
-  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, 6);
+  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, MIGRATION_VERSIONS.length);
+  assert.equal(client.queries.filter(({ sql }) => sql === "COMMIT").length, MIGRATION_VERSIONS.length);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL lock_timeout/.test(sql)).length, MIGRATION_VERSIONS.length);
+  assert.equal(client.queries.filter(({ sql }) => /^SET LOCAL statement_timeout/.test(sql)).length, MIGRATION_VERSIONS.length);
 
   for (const migration of PRODUCTION_SCHEMA_MIGRATIONS) {
     const marker = client.queries.findIndex(
@@ -492,8 +543,11 @@ test("applies only the missing suffix of a known history prefix", async () => {
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result.appliedVersions, [2, 3, 4, 5, 6]);
-  assert.equal(client.queries.filter(({ sql }) => sql === "BEGIN").length, 5);
+  assert.deepEqual(result.appliedVersions, MIGRATION_VERSIONS.slice(1));
+  assert.equal(
+    client.queries.filter(({ sql }) => sql === "BEGIN").length,
+    MIGRATION_VERSIONS.length - 1,
+  );
 });
 
 test("re-reads applied history after the lock and makes a completed rerun a no-op", async () => {
@@ -506,7 +560,10 @@ test("re-reads applied history after the lock and makes a completed rerun a no-o
 
   const result = await runProductionSchemaMigrations(new FakePostgresPool(client));
 
-  assert.deepEqual(result, { appliedVersions: [], currentVersion: 6 });
+  assert.deepEqual(result, {
+    appliedVersions: [],
+    currentVersion: CURRENT_MIGRATION_VERSION,
+  });
   assert.equal(client.queries.some(({ sql }) => sql === "BEGIN"), false);
   assert.equal(client.released, true);
 });
@@ -518,7 +575,11 @@ test("fails closed on changed, unknown, or non-prefix migration history", async 
     [{ version: 2, name: PRODUCTION_SCHEMA_MIGRATIONS[1].name, checksum: PRODUCTION_SCHEMA_MIGRATIONS[1].checksum }],
     [
       ...PRODUCTION_SCHEMA_MIGRATIONS.map(({ version, name, checksum }) => ({ version, name, checksum })),
-      { version: 7, name: "future", checksum: "sha256:" + "1".repeat(64) },
+      {
+        version: CURRENT_MIGRATION_VERSION + 1,
+        name: "future",
+        checksum: "sha256:" + "1".repeat(64),
+      },
     ],
   ];
 
@@ -625,6 +686,11 @@ test("defines the bounded production persistence schema with named constraints a
       "invitation_project_assignments",
       "leads",
       "project_meetings",
+      "workspace_settings",
+      "user_preferences",
+      "filing_rules",
+      "mail_items",
+      "tasks",
     ],
   );
   assert.doesNotMatch(versionedSql, /\bIF NOT EXISTS\b/i);
@@ -633,7 +699,7 @@ test("defines the bounded production persistence schema with named constraints a
     versionedSql,
     /\b(?:DROP\s+(?:TABLE|COLUMN|SCHEMA|TYPE|VIEW|FUNCTION|INDEX|TRIGGER)|TRUNCATE)\b|CREATE INDEX CONCURRENTLY/i,
   );
-  assert.equal((versionedSql.match(/DROP CONSTRAINT/g) ?? []).length, 5);
+  assert.equal((versionedSql.match(/DROP CONSTRAINT/g) ?? []).length, 7);
 
   assert.match(versionedSql, /normalized_name_key text NOT NULL/);
   assert.match(versionedSql, /UNIQUE \(normalized_name_key\)/);
@@ -686,6 +752,12 @@ test("defines the bounded production persistence schema with named constraints a
     ["activity_events_lead_id_fkey", "activity_events_lead_id_idx"],
     ["outbox_events_lead_id_fkey", "outbox_events_lead_id_idx"],
     ["project_meetings_project_id_fkey", "project_meetings_project_id_meeting_at_idx"],
+    ["mail_items_client_id_fkey", "mail_items_client_id_idx"],
+    ["mail_items_suggested_project_id_fkey", "mail_items_suggested_project_id_idx"],
+    ["mail_items_approved_project_id_fkey", "mail_items_approved_project_id_idx"],
+    ["tasks_project_id_fkey", "tasks_project_status_idx"],
+    ["tasks_lead_id_fkey", "tasks_lead_id_idx"],
+    ["activity_events_task_id_fkey", "activity_events_task_id_idx"],
     [
       "invitation_project_assignments_project_id_fkey",
       "invitation_project_assignments_project_id_idx",

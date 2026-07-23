@@ -67,6 +67,19 @@ export type EffectiveWorkspaceResources = Readonly<
   Record<EffectiveWorkspaceResourceKey, EffectiveWorkspaceResource>
 >;
 
+export type SavedWorkspaceValueSource = "saved" | "env" | "absent";
+
+export type SavedWorkspaceValueResolution = Readonly<{
+  value: string | undefined;
+  source: SavedWorkspaceValueSource;
+}>;
+
+export type SavedWorkspaceRuntimeValues = Readonly<{
+  clientDirectorySheetId?: string | null;
+  clientAppointmentsCalendarId?: string | null;
+  fieldScheduleCalendarId?: string | null;
+}>;
+
 export type EffectiveGoogleRuntimeConfig = GoogleRuntimeConfig & Readonly<{
   connectReady: boolean;
 }>;
@@ -80,10 +93,27 @@ function normalizedId(value: string | undefined) {
   return normalized || undefined;
 }
 
+/**
+ * Resolves persisted runtime configuration before its first-boot environment
+ * fallback. SET-05 may surface this source label later; BE-07 consumes it only
+ * on the server.
+ */
+export function resolveSavedWorkspaceValue(
+  savedValue: string | null | undefined,
+  environmentValue: string | undefined,
+): SavedWorkspaceValueResolution {
+  const saved = normalizedId(savedValue ?? undefined);
+  if (saved) return Object.freeze({ value: saved, source: "saved" });
+  const environment = normalizedId(environmentValue);
+  if (environment) return Object.freeze({ value: environment, source: "env" });
+  return Object.freeze({ value: undefined, source: "absent" });
+}
+
 function resolveResource(
   spec: (typeof EFFECTIVE_WORKSPACE_RESOURCE_SPECS)[EffectiveWorkspaceResourceKey],
   environmentValue: string | undefined,
   savedRows: readonly WorkspaceResource[],
+  savedValue: string | null | undefined,
   simulation: boolean,
 ): EffectiveWorkspaceResource {
   const registry = savedRows.find((row) => (
@@ -100,14 +130,23 @@ function resolveResource(
     });
   }
 
-  const envValue = normalizedId(environmentValue);
+  const resolved = resolveSavedWorkspaceValue(
+    simulation ? undefined : savedValue,
+    simulation ? undefined : environmentValue,
+  );
+  const effectiveValue = resolved.value ?? (simulation ? normalizedId(environmentValue) : undefined);
   // Base simulation config supplies deterministic fixture IDs. Preserve those
   // IDs for parity, but do not misrepresent them as hosted environment values.
   return Object.freeze({
     resourceType: spec.resourceType,
     resourceKey: spec.resourceKey,
-    ...(envValue ? { externalId: envValue } : {}),
-    source: envValue && !simulation ? "env" as const : "none" as const,
+    ...(effectiveValue ? { externalId: effectiveValue } : {}),
+    source:
+      resolved.source === "saved"
+        ? "app" as const
+        : resolved.source === "env"
+          ? "env" as const
+          : "none" as const,
   });
 }
 
@@ -115,30 +154,35 @@ function resolveResource(
 export function resolveEffectiveWorkspaceResources(
   config: GoogleRuntimeConfig,
   savedRows: readonly WorkspaceResource[],
+  savedValues: SavedWorkspaceRuntimeValues = {},
 ): EffectiveWorkspaceResources {
   return Object.freeze({
     sharedDrive: resolveResource(
       EFFECTIVE_WORKSPACE_RESOURCE_SPECS.sharedDrive,
       config.drive.rootFolderId,
       savedRows,
+      undefined,
       config.simulation,
     ),
     clientDirectorySheet: resolveResource(
       EFFECTIVE_WORKSPACE_RESOURCE_SPECS.clientDirectorySheet,
       config.clientDirectorySheetId,
       savedRows,
+      savedValues.clientDirectorySheetId,
       config.simulation,
     ),
     clientAppointmentsCalendar: resolveResource(
       EFFECTIVE_WORKSPACE_RESOURCE_SPECS.clientAppointmentsCalendar,
       config.clientAppointmentsCalendarId,
       savedRows,
+      savedValues.clientAppointmentsCalendarId,
       config.simulation,
     ),
     fieldScheduleCalendar: resolveResource(
       EFFECTIVE_WORKSPACE_RESOURCE_SPECS.fieldScheduleCalendar,
       config.fieldScheduleCalendarId,
       savedRows,
+      savedValues.fieldScheduleCalendarId,
       config.simulation,
     ),
   });

@@ -332,33 +332,15 @@ test("inventory-only source counts fail closed before opening a database connect
   assert.equal(connected, false);
 });
 
-test("phone-call meetings fail before database access until the deferred PG constraint widens", async () => {
+test("phone-call meetings enter the PostgreSQL-facing rehearsal plan after v8 registration", async () => {
   const snapshot = clone(fixture);
   snapshot.projectMeetings[0].meetingType = "phone-call";
-  let connected = false;
+  const plan = createCoreRecordRehearsalPlan(snapshot, options);
 
-  await assert.rejects(
-    runCoreRecordRehearsal(
-      {
-        connect: async () => {
-          connected = true;
-          throw new Error("must not connect");
-        },
-      },
-      snapshot,
-      options,
-    ),
-    (error) => {
-      assert.ok(error instanceof CoreRecordRehearsalError);
-      assert.equal(error.code, "invalid_snapshot_value");
-      assert.match(error.message, /meetingType is unsupported/);
-      return true;
-    },
-  );
-  assert.equal(connected, false);
+  assert.equal(plan.rows.projectMeetings[0].meetingType, "phone-call");
   assert.match(
     await readFile(rehearsalSourceUrl, "utf8"),
-    /Keep phone-call excluded until task-schema\.ts is registered after BE-07/,
+    /PostgreSQL-facing rehearsal set matches the registered v8 constraint/,
   );
 });
 

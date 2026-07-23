@@ -23,6 +23,9 @@ import {
   createPostgresLeadRepository,
 } from "../../adapters/postgres/lead-repository";
 import {
+  createPostgresMailItemRepository,
+} from "../../adapters/postgres/mail-item-repository";
+import {
   createPostgresOutboxRepository,
 } from "../../adapters/postgres/outbox-repository";
 import type { PostgresPool } from "../../adapters/postgres/postgres-database";
@@ -35,19 +38,32 @@ import {
 import {
   createPostgresSecurityAuditRepository,
 } from "../../adapters/postgres/security-audit-repository";
+import {
+  createPostgresFilingRuleRepository,
+} from "../../adapters/postgres/filing-rule-repository";
+import {
+  createPostgresUserPreferencesRepository,
+} from "../../adapters/postgres/user-preferences-repository";
+import {
+  createPostgresWorkspaceSettingsRepository,
+} from "../../adapters/postgres/workspace-settings-repository";
 import type { PostgresCreationRequestMetadata } from "../../adapters/postgres/creation-idempotency";
 import type { AuthorizationRepository } from "../../ports/authorization";
 import type { AdminAuditReader } from "../../ports/admin-audit-reader";
 import type { AdminAccessPersistenceRepository } from "../../ports/admin-access-persistence";
 import type { ClientRepository } from "../../ports/client-repository";
 import type { FileMetadataRepository } from "../../ports/file-metadata";
+import type { FilingRuleRepository } from "../../ports/filing-rule-repository";
 import type { IdentityPersistenceRepository } from "../../ports/identity-persistence";
 import type { IntegrationMetadataRepository } from "../../ports/integration-metadata";
 import type { LeadRepository } from "../../ports/lead-repository";
+import type { MailItemRepository } from "../../ports/mail-item-repository";
 import type { OutboxRepository } from "../../ports/outbox-repository";
 import type { ProjectRepository } from "../../ports/project-repository";
 import type { ProjectMeetingRepository } from "../../ports/project-meeting-repository";
 import type { SecurityAuditRepository } from "../../ports/security-audit";
+import type { UserPreferencesRepository } from "../../ports/user-preferences-repository";
+import type { WorkspaceSettingsRepository } from "../../ports/workspace-settings-repository";
 import {
   createProductionPostgresPool,
   type ProductionPostgresPoolDependencies,
@@ -64,6 +80,10 @@ export type ProductionRepositoryFactories = Readonly<{
   identity: IdentityPersistenceRepository;
   integrations: IntegrationMetadataRepository;
   files: FileMetadataRepository;
+  workspaceSettings: WorkspaceSettingsRepository;
+  userPreferences: UserPreferencesRepository;
+  filingRules: FilingRuleRepository;
+  mailItems: MailItemRepository;
   clients(request: PostgresCreationRequestMetadata): ClientRepository;
   projects(request?: PostgresCreationRequestMetadata): ProjectRepository;
   leads(request?: PostgresCreationRequestMetadata): LeadRepository;
@@ -111,6 +131,18 @@ export function composeProductionRepositories(
   const identity = createPostgresIdentityPersistenceRepository(postgres, sharedRepositoryOptions);
   const integrations = createPostgresIntegrationMetadataRepository(postgres, sharedRepositoryOptions);
   const files = createPostgresFileMetadataRepository(postgres, sharedRepositoryOptions);
+  // These adapters carry no actor or request metadata, so one process-scoped
+  // instance is safe. Authorization still happens before repository access.
+  const workspaceSettings = createPostgresWorkspaceSettingsRepository(
+    postgres,
+    sharedRepositoryOptions,
+  );
+  const userPreferences = createPostgresUserPreferencesRepository(
+    postgres,
+    sharedRepositoryOptions,
+  );
+  const filingRules = createPostgresFilingRuleRepository(postgres, sharedRepositoryOptions);
+  const mailItems = createPostgresMailItemRepository(postgres, sharedRepositoryOptions);
   const repositories: ProductionRepositoryFactories = Object.freeze({
     outbox,
     securityAudit,
@@ -120,6 +152,10 @@ export function composeProductionRepositories(
     identity,
     integrations,
     files,
+    workspaceSettings,
+    userPreferences,
+    filingRules,
+    mailItems,
     clients(request) {
       return createPostgresClientRepository(postgres, {
         schema: config.postgres.schema,
