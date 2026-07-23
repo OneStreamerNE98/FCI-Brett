@@ -628,7 +628,7 @@ checklist-07 gates. Link from README + checklist 07.
 tables.
 
 ### WS-13 · AGENT — Document the dev→production connection boundary (small, after WS-03)
-**Status:** In review — PR #144, July 23, 2026. Source-only and undeployed.
+**Status:** Complete — PR #144, July 23, 2026. Docs-only. Opus review: zero findings — all four load-bearing claims verified against source (AES-GCM connection-scoped AAD, revoke-on-delete flow, appProperties re-derivability stamps, deferral paragraphs untouched).
 
 **Why:** No migration story exists for the stored connection; a future agent might try to
 "migrate" the token. The dev refresh token is deliberately non-portable (AES-GCM with
@@ -1936,7 +1936,7 @@ reviewed line-by-line; render-invariance for removed literals; axe green.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-06 · Layout-editor polish: icon-only Edit, honest Hidden-sections row, unified title-actions (small; FIRST DES packet in the FloorOpsApp queue; no golden regen)
-**Status:** In review — PR #143, July 23, 2026. Source-only and undeployed.
+**Status:** Complete — PR #143, July 23, 2026. Source-only and undeployed. Opus review: zero findings — aria-labels byte-identical, both golden hashes verified unchanged on both refs, the inert Add-section pseudo-button is gone (absence now guard-asserted). The FloorOpsApp queue slot passes to DES-05.
 **Why:** owner bug — the "Add section" label is an inert pseudo-button; in the
 default state the row has zero working controls; the Edit control renders in
 different heading structures on the two pages.
