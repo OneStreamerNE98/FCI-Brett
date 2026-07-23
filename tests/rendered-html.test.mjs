@@ -144,16 +144,16 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(app, /Ask FCI Assistant/);
   assert.match(css, /--cream:#f6f2ed/);
   assert.match(css, /\.sidebar \{ background:var\(--cream\); color:var\(--ink\);/);
-  assert.match(css, /\.brand \{ height:82px; padding:0; margin:0 4px 26px; overflow:hidden; background:#fff;/);
-  assert.match(css, /\.brand-full \{ display:block; width:100%; height:100%; object-fit:cover;/);
-  assert.match(css, /\.sidebar\.collapsed \.brand \.brand-compact img\{display:block\}/);
+  assert.match(css, /\.brand \{ height:82px; padding:0; margin:0 4px 26px; overflow:hidden; background:transparent; border:0;/);
+  assert.match(css, /\.brand-full \{ display:block; width:100%; height:100%; object-fit:contain;/);
+  assert.match(css, /\.sidebar\.collapsed \.brand \.brand-compact img\{display:block;width:100%;height:100%;object-fit:contain\}/);
   assert.match(css, /@media \(max-width:560px\)/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
 
 test("keeps the global design-token and responsive foundations canonical", async () => {
-  const css = await read("app/globals.css");
+  const [css, app] = await Promise.all([read("app/globals.css"), readAppComponentSource()]);
   const rootBlocks = css.match(/(?:^|\n)\s*:root\s*\{/g) ?? [];
   const compactBlocks = css.match(/@media \(max-width:560px\)/g) ?? [];
   const tabletBlocks = css.match(/@media \(max-width:820px\)/g) ?? [];
@@ -163,6 +163,9 @@ test("keeps the global design-token and responsive foundations canonical", async
   assert.ok(compactBlocks.length <= 2, `Expected at most two 560px blocks, found ${compactBlocks.length}.`);
   assert.doesNotMatch(css, /var\(--(?:muted|green(?:-dark)?)\)/);
   assert.doesNotMatch(css, /\.main-nav button|\.brand-mark/);
+  assert.doesNotMatch(css, /\.workspace-connection(?:\s*\{|\.ready|>)/);
+  assert.doesNotMatch(css, /\.workspace-connection-card-actions|\.workspace-connection-status|\.workspace-connection-health-summary/);
+  assert.doesNotMatch(app, /workspace-connection-card-actions|workspace-connection-status|workspace-connection-health-summary|className="workspace-connection"/);
 
   for (const token of [
     "--line-soft:#e6e0d8",
@@ -334,8 +337,10 @@ test("includes migrations and preserves the supplied Floor Coverings Internation
   assert.deepEqual(pngDimensions(fullLogo), { width: 1254, height: 1254 });
   assert.equal(createHash("sha256").update(appIcon).digest("hex"), "f39b41e506baee0df8515c216b680e684ce71e7bbf8f7e3256c44abddb4e27e5");
   assert.equal(createHash("sha256").update(fullLogo).digest("hex"), "051752f82c9763ca1a23460ba3b00a0e531d691b44e31aa5f7711fe6cdd4eb05");
-  assert.equal(createHash("sha256").update(appIconSvg.replaceAll("\r\n", "\n")).digest("hex"), "b510970816cefa2ca1d43b424de7de5f687910c902e95d369693d72315593050");
-  assert.equal(createHash("sha256").update(fullLogoSvg.replaceAll("\r\n", "\n")).digest("hex"), "81946ae0e8d4a5a53b639f95708ef288615c9b1082adb5b9800602b39b971506");
+  assert.equal(createHash("sha256").update(appIconSvg.replaceAll("\r\n", "\n")).digest("hex"), "1dc50373379788969e927d5d23296750a9ecb3ec2c92f09e5e4e1d166e588627");
+  assert.equal(createHash("sha256").update(fullLogoSvg.replaceAll("\r\n", "\n")).digest("hex"), "dfbbdacf35d480579a24976b5cd6c9665be8b44ed4c91b01165572cc22b01033");
+  assert.doesNotMatch(appIconSvg, /fill="#fbfbfb"/i);
+  assert.doesNotMatch(fullLogoSvg, /fill="#fdfdfd"/i);
   for (const svg of [appIconSvg, fullLogoSvg]) {
     assert.match(svg, /<svg\b/i);
     assert.match(svg, /\bwidth="1254"/i);

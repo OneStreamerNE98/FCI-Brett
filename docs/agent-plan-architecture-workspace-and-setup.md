@@ -1866,6 +1866,8 @@ axe serious/critical 0 at 1280/390.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-03 · Logo transparency + bare-brand treatment (small-medium; SVG work parallel-safe, `.brand` edit takes the globals lock)
+**Status:** In progress — `codex/des03-transparent-brand`, July 23, 2026.
+
 **Why:** the white background is baked into BOTH rendering SVGs and `.brand`
 paints its own white card; owner chose the transparent logo directly on the
 cream sidebar.
