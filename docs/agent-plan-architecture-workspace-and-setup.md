@@ -1333,6 +1333,8 @@ pending.
 **Effort:** medium. **Cost:** $0.
 
 ### SET-33 · Stage 4 "Verify & maintain" (small-medium, after SET-32)
+**Status:** In review — PR #133, `codex/set33-verify-maintain`, July 23, 2026.
+
 **Why:** First-run service verifications and ongoing upkeep are different activities
 mixed together today (spec §3.5).
 **Do:** Stage 4 holds Gmail labels + test email, Calendar window/test hold, and
