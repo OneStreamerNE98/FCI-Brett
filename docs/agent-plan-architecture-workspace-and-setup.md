@@ -1793,6 +1793,151 @@ not fail; lint and `npm test` pass; no historical review snapshot changes.
 
 ---
 
+# Workstream F — Dashboard design enhancement (DES)
+
+Owner-approved July 22, 2026. Design authority: `docs/dashboard-design-spec.md`
+(+ the sign-off mockup `docs/dashboard-design-mockup.html`). Binding simplicity
+guardrails and the interactive-vs-static affordance grammar live in the spec —
+every packet's PR includes 1280 px and 390 px screenshots. House rules: at most
+ONE in-flight packet touching `app/globals.css`; `app/FloorOpsApp.tsx` strictly
+serial; golden-hash regeneration only in DES-05 (both hashes) and DES-07
+(Reports only), isolated and diff-reviewed; e2e aria-labels and `data-layout-*`
+attributes byte-identical; pinned-source tests updated mutation-sensitively in
+the same PR, never deleted.
+
+### DES-01 · Design tokens: one :root, dead-rule excision, media consolidation (medium; holds the globals.css lock)
+**Why:** two competing `:root` blocks with alias indirection, dead legacy
+`.main-nav button`/`.brand-mark` rules, and ~10 fragmented `820px` + 8 `560px`
+media blocks with later-block-wins contradictions; every later packet edits this
+file.
+**Do:** merge the `:root` blocks; rewrite the few `var(--muted)`/`var(--green)`
+usages to canonical tokens then delete the aliases; add the spec §3 scale tokens
+valued at current dominants; delete the provably dead rules; consolidate to ≤3
+`820px` and ≤2 `560px` blocks resolving every contradiction toward today's
+winner. Zero intended visual change.
+**Accept:** both golden hashes UNCHANGED; exactly one `:root`; zero
+`var(--muted)`/`var(--green)` remaining; lint + full tests green; pinned CSS
+strings updated only if their block moved.
+**Effort:** medium. **Cost:** $0.
+
+### DES-02 · Control/radius/border/shadow normalization + undersized-control guard (medium, after DES-01)
+**Why:** radius drift 1–16 px, 11+ interactive heights, three shadow alphas, and
+green-tinted legacy borders against the warm palette; the Phase-4
+undersized-control guard is still open.
+**Do:** remap radii/heights/shadows onto the DES-01 tokens (prefer
+`min-height`; QA dense inbox rows at 390 px); normalize green-tinted borders to
+`var(--line)`/`--line-soft` (the one deliberate subtle visible change —
+before/after screenshots in the PR); add the static guard failing any NEW fixed
+interactive control under 34 px, allowlisting audited exceptions.
+**Accept:** guard fails on a synthetic 30 px control; golden hashes unchanged;
+axe serious/critical 0 at 1280/390.
+**Effort:** medium. **Cost:** $0.
+
+### DES-03 · Logo transparency + bare-brand treatment (small-medium; SVG work parallel-safe, `.brand` edit takes the globals lock)
+**Why:** the white background is baked into BOTH rendering SVGs and `.brand`
+paints its own white card; owner chose the transparent logo directly on the
+cream sidebar.
+**Do:** delete the app-icon SVG's full-canvas background path; remove the
+enhanced-logo SVG's background path with fringing QA (fallback: request a true
+transparent master and say so in the PR); `.brand` → transparent, borderless,
+`object-fit:contain` (expanded and 78 px collapsed tile); PNGs and manifest
+icons stay byte-identical; update the SVG SHA256 pins and `.brand` CSS-string
+pins in the same PR.
+**Accept:** no white halo expanded/collapsed/mobile at dpr 1 and 2; SVG
+sanitizer assertions pass; golden hashes unchanged.
+**Effort:** small-medium. **Cost:** $0.
+
+### DES-04 · Nav & shell polish: 44px toggle, honest compact badges, breakpoint sweep (small-medium, after DES-02; FloorOpsApp queue)
+**Why:** the collapse toggle is 36 px hung at `right:-13px`; the compact badge
+is a `font-size:0` + `::after` hack carrying a permanent test allowlist.
+**Do:** toggle to ≥44 px repositioned inside the rail; `FeatureStateBadge
+variant="compact"` renders real text (aria/title carry the full state) and both
+`font-size:0` hacks are deleted with the test allowlist EMPTIED; collapsed-rail
+nav items ≥44 px tall; shell sweep at 1180/960/820/620/560 re-verifying the
+drawer focus trap.
+**Accept:** zero `font-size:0` in globals.css and an empty allowlist asserted;
+nav aria-labels unchanged; golden hashes unchanged; axe green desktop+mobile.
+**Effort:** small-medium. **Cost:** $0.
+
+### DES-05 · Interactive vs static card grammar + FIX-08 absorption (medium; FloorOpsApp queue, after DES-06; GOLDEN REGEN 1 of 2)
+**Why:** interactive and static cards are pixel-identical at rest; Overview
+metrics carry false `trend="Current"` pills; FIX-08's honesty items live in the
+same cards — absorbed here so nothing is built twice.
+**Do:** extend `Metric` with optional `href` per the spec §2 grammar (chevron +
+hover-lift + cursor when linked; visibly FLAT when static). Destinations:
+Active pipeline→Leads, Active projects→Projects(Active), Filed emails→Inbox,
+Project meetings→static-flat, Reports summary analogous; non-links while not
+`ready`. Absorb FIX-08 in full: remove the trend pills; Scheduling subtitle →
+`FeatureStateBadge` via a `PanelHeader` badge slot; notifications popover
+relabeled honest navigation; error copy "Unavailable until live records load"
+(never "Loading" on error). Regenerate BOTH golden hashes once, diff reviewed to
+contain only this packet's deltas; add FIX-08's render-invariance tests. Record
+FIX-08 as superseded-by-DES-05 in the findings ledger.
+**Accept:** grammar table of spec §2 holds on every card; goldens' diff
+reviewed line-by-line; render-invariance for removed literals; axe green.
+**Effort:** medium. **Cost:** $0.
+
+### DES-06 · Layout-editor polish: icon-only Edit, honest Hidden-sections row, unified title-actions (small; FIRST DES packet in the FloorOpsApp queue; no golden regen)
+**Why:** owner bug — the "Add section" label is an inert pseudo-button; in the
+default state the row has zero working controls; the Edit control renders in
+different heading structures on the two pages.
+**Do:** per spec §6 — icon-only Edit button (aria-labels byte-identical, `title`
+tooltip, ≥44 px target; Retry variant keeps icon+text); the add row renders only
+when sections are hidden, retitled "Hidden sections" as a plain group label;
+delete the unreachable filler branch (and its copy pin if any); `PageTitle`
+wraps `action` in `.title-actions`; Overview adopts `PageTitle`.
+**Accept:** no inert pseudo-button in default edit mode; page-layouts e2e green
+with the focus flow intact; identical Edit placement on both pages at 1280/390;
+golden hashes unchanged (headings sit outside them).
+**Effort:** small. **Cost:** $0.
+
+### DES-07 · Primitive unification: KpiMetric→Metric, empty-state primitive, pill base (medium; FloorOpsApp queue after DES-04; GOLDEN REGEN 2 of 2, Reports hash only)
+**Why:** Reports keeps a private duplicate `KpiMetric`; ~7 bespoke empty-state
+classes; five-plus pill systems — the design ledger's open Phase-3 primitive
+track.
+**Do:** extend shared `Metric` with `footer`/`caption` slots and fold
+`KpiMetric` into it (`business-kpi-card` becomes a size modifier; the two
+linked KPI cards keep their footer links, cards stay flat); one
+`OperationsEmptyState` primitive migrating the bespoke empties (pinned copy
+byte-identical); one `.pill` base with variant aliases preserving rendered
+`status-*`/`feature-state-*` class names.
+**Accept:** zero duplicate metric component; Overview hash UNCHANGED (review
+assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
+**Effort:** medium. **Cost:** $0.
+
+### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
+**Why:** owner selections of July 22 — all four extras plus the meetings
+resolution of spec §5.
+**Do:** (a-T1) add "Residential" to the industry select; keep the client-row
+industry chip; add a "Clients by industry" report list reusing `ReportBarRow`
+(UI-only). (a-T2, joins the MIGRATION queue after the visual series) additive
+D1 migration (number at merge time) adding a two-value `segment`
+(commercial|residential) to projects, DEFAULTED from the client's industry with
+one optional tap at creation — never required, no third value; KPI splits in
+`flooring-kpis.ts`; widen-on-read law. (b) remove the lone topbar "Add lead"
+button with a render-invariance test. (c) make the Overview attention strip
+actionable using the spec §2 grammar. (d) "Today's meetings" Overview section
+per spec §5 — new SET-35 catalog entry, max ~5 one-line rows opening their
+project drawer, honest empty state; NOT scheduling.
+**Accept:** per sub-scope per the spec; each PR carries 1280/390 screenshots;
+(d) extends the SET-35 layout tests (catalog widen-on-read proves older saved
+layouts unaffected).
+**Effort:** small each; a-T2 small-medium. **Cost:** $0.
+
+### DES-09 · Guardrail wrap-up + ledger closure (small; tests/docs only, last)
+**Why:** close the design-critique ledger's Phase-3/4 open items this series
+executes, and leave one truth.
+**Do:** commit the approved 1280/390 reference screenshots of the durable
+routes on the post-series frame; extend the axe matrix to the editor editing
+state and the notifications popover; update `docs/design-critique-fix-plan.md`
+(Phase 3/4 closed with PR references) and the findings ledger (FIX-08
+disposition); reconcile all DES statuses.
+**Accept:** ledgers agree with reality; screenshots committed; guard suite
+green (empty font-size-zero allowlist + undersized-control guard).
+**Effort:** small. **Cost:** $0.
+
+---
+
 ## Sequencing at a glance
 
 **Start now, in parallel (no owner input needed):**

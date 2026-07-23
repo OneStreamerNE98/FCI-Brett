@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard design enhancement — affordance grammar mockup</title>
+<style>
+  :root { --ink:#2b2622; --mut:#6b625a; --line:#ded7cf; --cream:#f6f1ea; --accent:#8b5d35;
+          --shadow-card:0 1px 2px rgba(29,55,40,.04); --shadow-raised:0 5px 15px rgba(29,55,40,.06); }
+  * { box-sizing:border-box; margin:0; }
+  body { font:14px/1.5 system-ui,sans-serif; color:var(--ink); background:#faf8f5; padding:24px; max-width:900px; margin:0 auto; }
+  h1 { font-size:18px; } .note { color:var(--mut); font-size:12px; margin:4px 0 18px; }
+  h2 { font-size:14px; margin:22px 0 8px; }
+  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:16px; background:#fff; }
+  .card b { display:block; font-size:20px; margin:6px 0 2px; } .card span { font-size:12px; color:var(--mut); }
+  .card small { font-size:11px; color:var(--mut); }
+  .go { box-shadow:var(--shadow-card); cursor:pointer; position:relative; transition:all .15s; }
+  .go:hover { transform:translateY(-1px); box-shadow:var(--shadow-raised); border-color:#cfc5b8; }
+  .go::after { content:"›"; position:absolute; top:14px; right:14px; color:var(--accent); font-size:18px; font-weight:700; }
+  .flat { box-shadow:none; }
+  .sidebar-demo { background:var(--cream); border:1px solid var(--line); border-radius:10px; padding:18px; display:flex; gap:26px; align-items:center; }
+  .logo-old { background:#fff; border:1px solid #d8d0c8; border-radius:10px; padding:10px 16px; }
+  .logo-mark { font-weight:900; letter-spacing:.5px; color:#8c8075; font-size:15px; }
+  .cap { font-size:11px; color:var(--mut); margin-top:6px; text-align:center; }
+  .editbar { display:flex; align-items:center; gap:10px; }
+  .icon-btn { width:44px; height:44px; display:grid; place-items:center; border:1px solid #dce3dc; background:#fff; border-radius:8px; cursor:pointer; font-size:17px; }
+  .textbtn-old { height:39px; padding:0 12px; border:1px solid #dce3dc; background:#fff; border-radius:8px; font-size:12px; font-weight:700; }
+  .hiddenrow { border:1px dashed var(--line); border-radius:8px; padding:10px 12px; background:#fffdfa; display:flex; gap:12px; align-items:center; font-size:12px; }
+  .hiddenrow .lbl { color:var(--mut); font-weight:600; }
+  .hiddenrow button { border:1px solid #dce3dc; background:#fff; border-radius:8px; padding:6px 10px; font-size:12px; font-weight:700; cursor:pointer; }
+  .meet { border:1px solid var(--line); border-radius:10px; background:#fff; padding:14px 16px; }
+  .meet header { display:flex; justify-content:space-between; font-size:13px; font-weight:700; margin-bottom:8px; }
+  .meet li { list-style:none; display:flex; gap:10px; padding:7px 0; border-top:1px solid #f0eae2; font-size:13px; cursor:pointer; }
+  .meet li:hover { background:#faf6f0; } .meet time { color:var(--mut); font-variant-numeric:tabular-nums; }
+  .meet li::after { content:"›"; margin-left:auto; color:var(--accent); font-weight:700; }
+</style>
+</head>
+<body>
+  <h1>Dashboard enhancement — what changes, visually</h1>
+  <p class="note">Mockup for sign-off. Colors/spacing approximate the app's warm palette; exact values come from the DES-01 tokens.</p>
+
+  <h2>1 · Interactive vs static cards — the one rule users learn</h2>
+  <div class="row">
+    <div class="card go"><span>Active pipeline</span><b>$48,200</b><small>7 open opportunities</small></div>
+    <div class="card go"><span>Active projects</span><b>5</b><small>Projects in progress</small></div>
+    <div class="card flat"><span>Project meetings</span><b>12</b><small>Meeting notes saved</small></div>
+    <div class="card go"><span>Filed emails</span><b>23</b><small>Emails filed to projects</small></div>
+  </div>
+  <p class="cap">Clickable = subtle shadow, hover lift, and the ›&nbsp;chevron (same marker the Reports charts already use). Static = flat, no chevron, no hover. The false green "Current" pills are gone.</p>
+
+  <h2>2 · Logo — transparent, straight on the sidebar</h2>
+  <div class="sidebar-demo">
+    <div><div class="logo-old"><span class="logo-mark">◆ FCI</span></div><div class="cap">Before: white card on cream</div></div>
+    <div><span class="logo-mark" style="font-size:18px">◆ FLOOR COVERINGS INTERNATIONAL</span><div class="cap">After: no card, no halo — logo floats on the cream rail</div></div>
+  </div>
+
+  <h2>3 · Edit layout — icon only · Add-section row honest</h2>
+  <div class="editbar">
+    <button class="textbtn-old">⚙ Edit layout</button><span style="color:var(--mut)">→</span>
+    <button class="icon-btn" title="Edit layout" aria-label="Edit Overview layout">⚙</button>
+    <span class="cap" style="margin:0">44px target, tooltip "Edit layout"; same accessible name.</span>
+  </div>
+  <div style="height:10px"></div>
+  <div class="hiddenrow"><span class="lbl">Hidden sections</span><button>+ Gmail project inbox</button><button>+ Scheduling</button></div>
+  <p class="cap">The row appears only when something is hidden — the inert "Add section" pseudo-button and the "All available sections are shown." filler are gone.</p>
+
+  <h2>4 · "Today's meetings" — new optional Overview section</h2>
+  <div class="meet">
+    <header><span>Today's meetings</span><span style="color:var(--mut);font-weight:400">Tue, Jul 22</span></header>
+    <ul style="padding:0;margin:0">
+      <li><time>9:00</time> Site walkthrough — Hendricks LVP install</li>
+      <li><time>1:30</time> Material selection — Cameron residence</li>
+      <li><time>4:00</time> Closeout review — Maple Office fit-out</li>
+    </ul>
+  </div>
+  <p class="cap">Max ~5 one-line rows from existing project meetings; each opens its project. Hideable like any section. Honest empty state when nothing is scheduled today.</p>
+</body>
+</html>
