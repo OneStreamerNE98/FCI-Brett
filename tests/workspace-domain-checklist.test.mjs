@@ -9,7 +9,6 @@ import {
   WORKSPACE_TOKEN_KEY_COMMAND,
   workspaceCopyHelperState,
   workspaceDomainChecklistDisplayStatus,
-  workspaceDomainChecklistSummary,
   workspaceSharedDriveRestrictionStatus,
 } from "../app/settings/components/workspace-domain-checklist/workspace-domain-checklist.ts";
 
@@ -60,7 +59,6 @@ test("unconfigured tenant evidence reports only bounded setup and manual-check c
     secrets: "Setup required",
     groups: "Manual check",
   });
-  assert.equal(workspaceDomainChecklistSummary(result), "Setup required");
   assert.ok(Object.isFrozen(result));
 });
 
@@ -99,7 +97,6 @@ test("connectReady ignores resource-ID gaps without claiming manual Google work 
     secrets: "Secrets present",
     groups: "Manual check",
   });
-  assert.equal(workspaceDomainChecklistSummary(result), "Ready to connect");
   assert.ok(result.every((row) => !/verified/i.test(row.status)));
 });
 
@@ -120,7 +117,6 @@ test("connected evidence claims only the saved connection and exact account matc
   assert.equal(Object.fromEntries(result.map((row) => [row.key, row.status])).oauth, "Connected");
   assert.equal(Object.fromEntries(result.map((row) => [row.key, row.status])).apis, "Manual check");
   assert.equal(Object.fromEntries(result.map((row) => [row.key, row.status])).groups, "Manual check");
-  assert.equal(workspaceDomainChecklistSummary(result), "Connected");
 });
 
 test("current OAuth configuration gaps override a previously connected record", () => {
@@ -212,6 +208,18 @@ test("Stage 1 rows use one fail-closed DONE or MISSING presentation predicate", 
   ]) {
     assert.equal(workspaceDomainChecklistDisplayStatus(status), "MISSING");
   }
+});
+
+test("the retired checklist summary stays absent and the CSS declaration matches rendered keys", async () => {
+  const [helper, declaration] = await Promise.all([
+    readFile(new URL("../app/settings/components/workspace-domain-checklist/workspace-domain-checklist.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.module.css.d.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.doesNotMatch(helper, /workspaceDomainChecklistSummary/);
+  assert.match(declaration, /\bdone: string;/);
+  assert.match(declaration, /\bmissing: string;/);
+  assert.doesNotMatch(declaration, /\bheaderActions: string;|\btoggle: string;/);
 });
 
 test("known negative connection evidence remains visible when readiness is unavailable", () => {

@@ -211,17 +211,6 @@ export function deriveWorkspaceDomainChecklist(evidence: WorkspaceDomainChecklis
   ]);
 }
 
-export function workspaceDomainChecklistSummary(results: readonly WorkspaceDomainChecklistResult[]) {
-  const statuses = new Set(results.map((result) => result.status));
-  if (statuses.has("Administrator setup")) return "Administrator guidance";
-  if (statuses.has("Simulated")) return "Simulated";
-  if (["Setup required", "Partially configured", "Needs review", "Reconnect required", "Account mismatch"].some((status) => statuses.has(status as WorkspaceDomainChecklistStatus))) return "Setup required";
-  if (statuses.has("Unavailable")) return "Unavailable";
-  if (statuses.has("Connected") || statuses.has("Account matched")) return "Connected";
-  if (statuses.has("Ready to connect")) return "Ready to connect";
-  return "Manual checks remain";
-}
-
 export function workspaceDomainChecklistStatusClass(status: WorkspaceDomainChecklistStatus) {
   return status.toLowerCase().replaceAll(" ", "-") as WorkspaceDomainChecklistStatusClassName;
 }

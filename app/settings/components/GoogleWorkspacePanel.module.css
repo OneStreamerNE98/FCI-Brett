@@ -2,3 +2,152 @@
   background: #f0eeeb;
   color: #6c655f;
 }
+
+.stageChipNeutral {
+  background: #f0eeeb;
+  color: #6c655f;
+}
+
+.connectionActions {
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: #fcfaf7;
+}
+
+.connectionActionsHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.connectionActionsHeader > div:last-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.connectionActionsHeader h3 {
+  margin: 0;
+  font: 700 13px/1.35 var(--font-display);
+}
+
+.connectionActionsHeader p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.connectionActionButtons {
+  margin: 0;
+}
+
+.connectionHealthExpander {
+  padding: 0;
+  overflow: hidden;
+}
+
+.connectionHealthToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--target-min);
+  padding: 12px 14px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.connectionHealthToggle::-webkit-details-marker {
+  display: none;
+}
+
+.connectionHealthToggle:focus-visible {
+  outline: 2px solid #4f765e;
+  outline-offset: -3px;
+  border-radius: var(--radius-control);
+}
+
+.connectionHealthToggleCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.connectionHealthToggleCopy > strong {
+  font: 700 13px/1.35 var(--font-display);
+}
+
+.connectionHealthToggleCopy > span:last-child {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.connectionHealthChevron {
+  flex: 0 0 auto;
+  color: #6d675f;
+  transition: transform 0.16s ease;
+}
+
+.connectionHealthExpander[open] .connectionHealthChevron {
+  transform: rotate(180deg);
+}
+
+.connectionHealthBody {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.connectionHealthAccount {
+  margin: 0;
+}
+
+.connectionHealthAccount > div {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.connectionHealthAccount dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.connectionHealthAccount dd {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .connectionActions {
+    padding: 12px;
+  }
+
+  .connectionActionsHeader {
+    align-items: flex-start;
+  }
+
+  .connectionActionButtons,
+  .connectionActionButtons > * {
+    width: 100%;
+    max-width: none;
+  }
+
+  .connectionHealthToggle,
+  .connectionHealthBody {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+}

@@ -75,7 +75,7 @@ type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 type WorkspaceReadinessState = "idle" | "loading" | "ready" | "error";
 type WorkspaceSetupResourcesState = "idle" | "loading" | "ready" | "error";
 type WorkspaceStageNumber = 1 | 2 | 3 | 4;
-type WorkspaceStageTone = "done" | "current" | "waiting" | "ready";
+type WorkspaceStageTone = "done" | "current" | "waiting" | "ready" | "neutral";
 
 type SetupStageProps = Readonly<{
   number: WorkspaceStageNumber;
@@ -176,7 +176,7 @@ function SetupStage({
         </button>
       </h3>
       <span className="workspace-stage-meta">
-        <span className={`workspace-stage-chip ${tone}`}>{status}</span>
+        <span className={`workspace-stage-chip ${tone}${tone === "neutral" ? ` ${panelStyles.stageChipNeutral}` : ""}`}>{status}</span>
         <WorkspaceInfoHint label={`About Stage ${number} status`} text={statusHint} />
       </span>
     </header>
@@ -204,14 +204,6 @@ function mirrorTime(value: number | null | undefined) {
   return value ? new Date(value).toLocaleString() : "Not synced yet";
 }
 
-function connectionStatusLabel(value: string) {
-  return value
-    .split("-")
-    .filter(Boolean)
-    .map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`)
-    .join(" ");
-}
-
 function maskWorkspaceAccountForDisplay(value: string | null | undefined) {
   if (!value) return "Not connected";
   if (value === "Local Workspace simulation") return value;
@@ -236,7 +228,6 @@ function workspaceResourceStateClass(state: WorkspaceSetupResource["state"]) {
 export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: Notify; projects: Project[]; isAdmin: boolean }) {
   const [checking, setChecking] = useState(false);
   const [working, setWorking] = useState(false);
-  const [missing, setMissing] = useState<string[]>([]);
   const [missingDetails, setMissingDetails] = useState<MissingDetail[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceReadiness | null>(null);
   const [workspaceReadinessState, setWorkspaceReadinessState] = useState<WorkspaceReadinessState>("idle");
@@ -276,7 +267,6 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         cachedGetJson<{ credentialsPresent?: boolean; missing?: string[]; missingDetails?: MissingDetail[]; workspace?: WorkspaceReadiness }>("/api/v1/google-workspace", { force }),
         sheetsRequest,
       ]);
-      setMissing(data.missing ?? []);
       setMissingDetails(data.missingDetails ?? []);
       setWorkspace(data.workspace ?? null);
       setWorkspaceReadinessState("ready");
@@ -625,15 +615,12 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const calendarReady = connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
   const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
   const sheetsSynced = sheetMirror?.clients.status === "synced" && sheetMirror?.projects.status === "synced";
-  const connectStepStatus: SetupStepStatus = simulation ? "Simulated" : connectComplete ? "Complete" : !isAdmin ? "Administrator access" : configured ? "Ready" : "Blocked by prerequisites";
   const driveStepStatus = stepStatus({ simulation, previousComplete: connectComplete, prerequisitesReady: driveReady, complete: driveVerified });
   const gmailStepStatus = stepStatus({ simulation, previousComplete: driveStepStatus === "Complete", prerequisitesReady: gmailReady, complete: gmailLabelsReady });
   const calendarStepStatus = stepStatus({ simulation, previousComplete: gmailStepStatus === "Complete", prerequisitesReady: calendarReady, complete: calendarChecked });
   const sheetsStepStatus = stepStatus({ simulation, previousComplete: calendarStepStatus === "Complete", prerequisitesReady: sheetsReady, complete: sheetsSynced });
-  const selectedServices = workspace?.enabledServices?.join(", ") ?? "drive";
   const storageName = workspace?.storageName ?? "FCI Operations";
   const hasStoredConnection = !simulation && Boolean(workspace?.connectionStatus && workspace.connectionStatus !== "not-connected");
-  const maskedWorkspaceAccount = maskWorkspaceAccountForDisplay(workspace?.connectionAccount);
   const resourceRows = workspaceResources?.resources ?? [];
   const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
   const resourceIdentityMatch = workspaceResources?.identity.intakeMailboxMatches;
@@ -692,7 +679,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const connectionDisagreement = connectionSignals.some(Boolean) && connectionSignals.some((signal) => !signal);
   const stageOneChecklist = deriveWorkspaceDomainChecklist({
     isAdmin,
-    simulation: bannerSimulation,
+    simulation,
     readinessKnown: workspaceReadinessState === "ready",
     missingDetails,
     resourcesKnown: workspaceResourcesState === "ready" && workspaceResources !== null,
@@ -784,18 +771,23 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     : statusSourcesUnavailable
       ? "Retry Check readiness"
       : currentStageName;
-  const stageOneStatus = stageOneComplete ? "DONE" : `IN PROGRESS · ${stageOneCompleteCount} of ${stageOneChecklist.length}`;
-  const stageTwoStatus = stageTwoComplete ? "DONE" : stageOneComplete ? "IN PROGRESS" : "WAITING ON STAGE 1";
-  const stageThreeStatus = stageThreeComplete
+  const neutralStageStatus = statusSourcesLoading
+    ? "CHECKING"
+    : statusSourcesUnavailable
+      ? "UNAVAILABLE"
+      : null;
+  const stageOneStatus = neutralStageStatus ?? (stageOneComplete ? "DONE" : `IN PROGRESS · ${stageOneCompleteCount} of ${stageOneChecklist.length}`);
+  const stageTwoStatus = neutralStageStatus ?? (stageTwoComplete ? "DONE" : stageOneComplete ? "IN PROGRESS" : "WAITING ON STAGE 1");
+  const stageThreeStatus = neutralStageStatus ?? (stageThreeComplete
     ? "DONE"
     : stageTwoComplete
       ? `IN PROGRESS · ${completeWorkspaceResourceCount} of ${requiredWorkspaceResources.length}`
-      : "WAITING ON STAGE 2";
-  const stageFourStatus = stageFourReady
+      : "WAITING ON STAGE 2");
+  const stageFourStatus = neutralStageStatus ?? (stageFourReady
     ? "READY"
     : stageThreeComplete
       ? `IN PROGRESS · ${stageFourCompleteCount} of 3`
-      : "WAITING ON STAGE 3";
+      : "WAITING ON STAGE 3");
   const oauthMessage = oauthResult === "connected"
     ? "Google was connected. Workspace readiness refreshed automatically."
     : oauthResult === "authorization-cancelled"
@@ -827,14 +819,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         title="Prepare the tenant"
         description="One-time steps done in Google's consoles — usually your Workspace admin"
         status={stageOneStatus}
-        tone={stageOneComplete ? "done" : "current"}
+        tone={neutralStageStatus ? "neutral" : stageOneComplete ? "done" : "current"}
         complete={stageOneComplete}
         firstIncomplete={currentStageNumber === 1}
         statusHint="This stage is complete when the required connection prerequisites are ready."
       >
         <WorkspaceDomainChecklistCard
           isAdmin={isAdmin}
-          simulation={bannerSimulation}
+          simulation={simulation}
           readinessState={workspaceReadinessState}
           missingDetails={missingDetails}
           resourcesState={workspaceResourcesState}
@@ -849,8 +841,8 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           requiresReauthorization={connectionHealth?.connection.requiresReauthorization === true}
           sharedDriveDomainUsersOnly={sharedDriveDomainUsersOnly}
           environmentNotes={<>
-            {!bannerSimulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback. Project-folder provisioning still uses the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> gate.</p>}
-            <p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback{sheetMirror ? `; current mirror source: ${bannerSimulation ? "local simulation" : sheetMirror.source === "app" ? "app-managed" : sheetMirror.source === "env" ? "environment fallback" : "not configured"}` : ""}.</p>
+            {!simulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback. Project-folder provisioning still uses the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> gate.</p>}
+            <p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback{sheetMirror ? `; current mirror source: ${simulation ? "local simulation" : sheetMirror.source === "app" ? "app-managed" : sheetMirror.source === "env" ? "environment fallback" : "not configured"}` : ""}.</p>
           </>}
           notify={notify}
         />
@@ -860,63 +852,70 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         title="Connect"
         description="Authorize the one company Google account"
         status={stageTwoStatus}
-        tone={stageTwoComplete ? "done" : stageOneComplete ? "current" : "waiting"}
+        tone={neutralStageStatus ? "neutral" : stageTwoComplete ? "done" : stageOneComplete ? "current" : "waiting"}
         complete={stageTwoComplete}
         firstIncomplete={currentStageNumber === 2}
         statusHint="This stage is complete when the company account is connected; simulation is ready immediately."
       >
-        <ol className="workspace-setup-steps" aria-label="Connect Google Workspace setup step">
-          <li className={`workspace-setup-step ${stepStatusClass(connectStepStatus)}`}>
-        <header><span className="workspace-step-number">1</span><div><h3>Connect Google Workspace</h3><p>Authorize the one approved company account, or reset the isolated local simulation.</p></div><span className="workspace-step-status">{connectStepStatus}</span></header>
-        <div className="workspace-step-body">
-          <div className={`workspace-connection ${connected ? "ready" : ""}`}>
-            <div className="integration-logo google"><Mail size={20} /></div>
-            <div><strong>{simulation ? "Simulated connection ready" : connected ? "Google Workspace connected" : reconnectRequired ? "Google permission update required" : !isAdmin ? "Administrator setup only" : configured ? "Ready for authorization" : "Hosted setup required"}</strong><span>{simulation ? "Gmail, Calendar, Shared Drive, and Sheets use local sample state." : connected ? `${maskedWorkspaceAccount} is connected with ${selectedServices}.` : reconnectRequired ? "Reconnect and approve every selected service." : !isAdmin ? "An Administrator can review connection prerequisites and authorize the approved company account." : configured ? `The connection will request ${selectedServices}.` : `${missing.length} prerequisite${missing.length === 1 ? "" : "s"} still need attention.`}</span></div>
-            <div className="workspace-connection-card-actions">
-              <span className="workspace-connection-status">{simulation ? "Simulated" : connected ? "Connected" : "Not connected"}</span>
-              {hasStoredConnection && <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void disconnectGoogleDrive()} disabled={working}>{working ? "Disconnecting…" : "Disconnect Workspace"}</AdministratorActionButton>}
+        <section className={panelStyles.connectionActions} aria-labelledby="workspace-connection-actions-heading">
+          <header className={panelStyles.connectionActionsHeader}>
+            <span className="integration-logo google" aria-hidden="true"><Mail size={20} /></span>
+            <div>
+              <h3 id="workspace-connection-actions-heading">Company account authorization</h3>
+              <p>{simulation
+                ? "Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state."
+                : "Authorize the one approved company account. Reconnect to confirm enabled services again, or disconnect the saved account from FCI Operations."}</p>
             </div>
+          </header>
+          <div className={`workspace-actions ${panelStyles.connectionActionButtons}`}>
+            {simulation
+              ? <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void resetSimulation()} disabled={working}>{working ? "Resetting…" : "Reset simulation data"}</AdministratorActionButton>
+              : <>
+                {!connected && <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void connectGoogleDrive()} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</AdministratorActionButton>}
+                {hasStoredConnection && <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void disconnectGoogleDrive()} disabled={working}>{working ? "Disconnecting…" : "Disconnect Workspace"}</AdministratorActionButton>}
+              </>}
           </div>
-          {simulation && <p className="workspace-warning"><ShieldCheck size={15} /><span><strong>Safe local testing:</strong> OAuth is disabled, no refresh token exists, and all service results stay in this development environment.</span></p>}
-          <div className="workspace-actions">{simulation ? <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void resetSimulation()} disabled={working}>{working ? "Resetting…" : "Reset simulation data"}</AdministratorActionButton> : <>
-            {!connected && <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void connectGoogleDrive()} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</AdministratorActionButton>}
-          </>}</div>
-        </div>
-          </li>
-        </ol>
-        {isAdmin && <section className="workspace-connection-health" aria-labelledby="workspace-connection-health-heading">
-          <header><div><p className="eyebrow">Administrator details</p><h3 id="workspace-connection-health-heading">Connection health</h3></div>{connectionHealth && <Status text={connectionHealth.simulation ? "Simulated" : connectionStatusLabel(connectionHealth.connection.status)} />}</header>
-          {connectionHealthState === "loading" && !connectionHealth && <p className="workspace-connection-health-message" role="status">Loading the saved connection details…</p>}
-          {connectionHealthError && <div className="workspace-connection-health-error" role="alert"><span>{connectionHealthError}</span><button className="soft-button" type="button" onClick={() => void loadConnectionHealth(true)}>Retry details</button></div>}
-          {connectionHealth && <>
-            <dl className="workspace-connection-health-summary">
-              <div><dt>Account</dt><dd>{maskWorkspaceAccountForDisplay(connectionHealth.connection.account)}</dd></div>
-              <div><dt>Mode</dt><dd>{connectionHealth.runtimeMode === "simulation" ? "Simulation" : "Workspace"}</dd></div>
-              <div><dt>Status</dt><dd>{connectionHealth.simulation ? "Simulated" : connectionStatusLabel(connectionHealth.connection.status)}</dd></div>
-            </dl>
-            {connectionHealth.connection.requiresReauthorization && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Reauthorization required:</strong> Disconnect this saved connection, then reconnect the exact approved account and approve every enabled service.</span></p>}
-            <OperationsDataTable className="workspace-connection-service-table" columns={CONNECTION_SERVICE_COLUMNS} labelledBy="workspace-connection-health-heading">
-              {CONNECTION_SERVICES.map((service) => {
-                const enabled = connectionHealth.enabledServices.includes(service.key);
-                const granted = connectionHealth.connection.grantedServices?.[service.key];
-                const grantLabel = connectionHealth.simulation ? "Not applicable — simulated" : granted ? "Granted" : "Not granted";
-                return <tr key={service.key}>
-                  <OperationsDataTableCell label="Service"><strong>{service.label}</strong></OperationsDataTableCell>
-                  <OperationsDataTableCell label="FCI configuration"><span className={`workspace-service-state ${enabled ? "ready" : "inactive"}`}>{enabled ? "Enabled" : "Not enabled"}</span></OperationsDataTableCell>
-                  <OperationsDataTableCell label="Recorded OAuth permission"><span className={`workspace-service-state ${granted ? "ready" : "inactive"}`}>{grantLabel}</span></OperationsDataTableCell>
-                </tr>;
-              })}
-            </OperationsDataTable>
-            <p className="workspace-connection-health-note">Recorded permission reflects the saved Google consent only. It is not a live provider-health or freshness check.</p>
-          </>}
-        </section>}
+        </section>
+        {isAdmin && <details className={`workspace-connection-health ${panelStyles.connectionHealthExpander}`}>
+          <summary className={panelStyles.connectionHealthToggle}>
+            <span className={panelStyles.connectionHealthToggleCopy}>
+              <span className="eyebrow">Administrator details</span>
+              <strong id="workspace-connection-health-heading">Connection health</strong>
+              <span>Account and recorded service permissions</span>
+            </span>
+            <ChevronDown className={panelStyles.connectionHealthChevron} size={18} aria-hidden="true" />
+          </summary>
+          <div className={panelStyles.connectionHealthBody} aria-labelledby="workspace-connection-health-heading">
+            {connectionHealthState === "loading" && !connectionHealth && <p className="workspace-connection-health-message" role="status">Loading the saved connection details…</p>}
+            {connectionHealthError && <div className="workspace-connection-health-error" role="alert"><span>{connectionHealthError}</span><button className="soft-button" type="button" onClick={() => void loadConnectionHealth(true)}>Retry details</button></div>}
+            {connectionHealth && <>
+              <dl className={panelStyles.connectionHealthAccount}>
+                <div><dt>Account</dt><dd>{maskWorkspaceAccountForDisplay(connectionHealth.connection.account)}</dd></div>
+              </dl>
+              {connectionHealth.connection.requiresReauthorization && <p className="workspace-warning"><CircleAlert size={15} /><span><strong>Reauthorization required:</strong> Disconnect this saved connection, then reconnect the exact approved account and approve every enabled service.</span></p>}
+              <OperationsDataTable className="workspace-connection-service-table" columns={CONNECTION_SERVICE_COLUMNS} labelledBy="workspace-connection-health-heading">
+                {CONNECTION_SERVICES.map((service) => {
+                  const enabled = connectionHealth.enabledServices.includes(service.key);
+                  const granted = connectionHealth.connection.grantedServices?.[service.key];
+                  const grantLabel = connectionHealth.simulation ? "Not applicable — simulated" : granted ? "Granted" : "Not granted";
+                  return <tr key={service.key}>
+                    <OperationsDataTableCell label="Service"><strong>{service.label}</strong></OperationsDataTableCell>
+                    <OperationsDataTableCell label="FCI configuration"><span className={`workspace-service-state ${enabled ? "ready" : "inactive"}`}>{enabled ? "Enabled" : "Not enabled"}</span></OperationsDataTableCell>
+                    <OperationsDataTableCell label="Recorded OAuth permission"><span className={`workspace-service-state ${granted ? "ready" : "inactive"}`}>{grantLabel}</span></OperationsDataTableCell>
+                  </tr>;
+                })}
+              </OperationsDataTable>
+              <p className="workspace-connection-health-note">Recorded permission reflects the saved Google consent only. It is not a live provider-health or freshness check.</p>
+            </>}
+          </div>
+        </details>}
       </SetupStage>
       <SetupStage
         number={3}
         title="Define & create your workspace"
         description="Decide what exists, then create it — in order"
         status={stageThreeStatus}
-        tone={stageThreeComplete ? "done" : stageTwoComplete ? "current" : "waiting"}
+        tone={neutralStageStatus ? "neutral" : stageThreeComplete ? "done" : stageTwoComplete ? "current" : "waiting"}
         complete={stageThreeComplete}
         firstIncomplete={currentStageNumber === 3}
         statusHint="This stage is complete when every required Drive, folder, spreadsheet, and template resource is created or adopted."
@@ -960,7 +959,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         title="Verify & maintain"
         description="Prove each service works, then ongoing upkeep"
         status={stageFourStatus}
-        tone={stageFourReady ? "ready" : stageThreeComplete ? "current" : "waiting"}
+        tone={neutralStageStatus ? "neutral" : stageFourReady ? "ready" : stageThreeComplete ? "current" : "waiting"}
         complete={false}
         firstIncomplete={currentStageNumber === 4}
         statusHint="This stage stays available for ongoing checks and reads Ready after Gmail, Calendar, and Sheets are verified."
