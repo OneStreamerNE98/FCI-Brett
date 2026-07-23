@@ -70,6 +70,10 @@ test("settings never expose editable defaults after a failed load and support re
   failAccountSettings = false;
   await accountError.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("button", { name: "Save my settings" })).toBeEnabled();
+  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "People & Access · In development" })).toBeVisible();
+  await page.getByTitle("Workspace actions").click();
+  await expect(page.locator("#workspace-actions-popover").getByRole("button", { name: "Google Workspace" })).toBeVisible();
+  await page.getByTitle("Workspace actions").click();
 
   await page.getByRole("button", { name: "Calendar & appointments" }).click();
   const workspaceError = page.getByRole("alert").filter({ hasText: "Saved settings could not be loaded" });
