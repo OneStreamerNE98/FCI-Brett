@@ -1333,6 +1333,8 @@ pending.
 **Effort:** medium. **Cost:** $0.
 
 ### SET-33 · Stage 4 "Verify & maintain" (small-medium, after SET-32)
+**Status:** Complete — PR #133, July 23, 2026. Source-only and undeployed. Fable-fleet review: zero substantive findings — every verification/upkeep action byte-identical to merge-base endpoints, §3.5.1 copy byte-matched, READY latches derived only from real backend success, all three carried residuals landed with test pins. Review residuals fold into SET-34 (same file zone): thread the Stage-3 aria-describedby dependency pattern into the Stage-4 verification rows' disabled controls (reason spans at ~1080/1104 lack ids); restore an e2e pin for the empty-registry no-prior-data Shared Drive branch ("Adoption controls become available…" lost its assertion in the retarget) and add one for the Sheets row's UNAVAILABLE state; drop the duplicated notification-routing InfoHint body text.
+
 **Why:** First-run service verifications and ongoing upkeep are different activities
 mixed together today (spec §3.5).
 **Do:** Stage 4 holds Gmail labels + test email, Calendar window/test hold, and
@@ -1873,6 +1875,8 @@ axe serious/critical 0 at 1280/390.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-03 · Logo transparency + bare-brand treatment (small-medium; SVG work parallel-safe, `.brand` edit takes the globals lock)
+**Status:** Complete — PR #132, July 23, 2026. Source-only and undeployed. Opus review: zero substantive findings — SVG SHA256 pins independently recomputed and matched, the app-icon +4/-1 is benign pretty-printing plus the background removal (one path remains), every deleted Stage-2 selector grep-proven consumer-free with the live `-health`/`-service-table` classes intact. The globals.css lock passes to DES-04. Fringing QA rests on the six committed DPR screenshots; the remaining near-white fills are per-glyph interior detail and cannot produce a full-canvas halo.
+
 **Why:** the white background is baked into BOTH rendering SVGs and `.brand`
 paints its own white card; owner chose the transparent logo directly on the
 cream sidebar.

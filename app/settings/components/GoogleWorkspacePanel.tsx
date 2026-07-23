@@ -13,6 +13,7 @@ import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
 import {
   deriveWorkspaceCreationProgress,
   WorkspaceDriveResourceActions,
+  WorkspaceFolderRenameActions,
   type WorkspaceSetupResourcesPayload,
 } from "./WorkspaceDriveResourceActions";
 import { WorkspaceDomainChecklistCard } from "./workspace-domain-checklist/WorkspaceDomainChecklistCard";
@@ -89,6 +90,15 @@ type SetupStageProps = Readonly<{
   children: ReactNode;
 }>;
 
+type StageFourRowProps = Readonly<{
+  rowKey: string;
+  label: string;
+  info: string;
+  status: string;
+  complete?: boolean;
+  children: ReactNode;
+}>;
+
 const CONNECTION_SERVICE_COLUMNS = [
   { key: "service", label: "Service" },
   { key: "enabled", label: "FCI configuration" },
@@ -108,6 +118,13 @@ const WORKSPACE_STAGE_NAMES = [
   "Define & create your workspace",
   "Verify & maintain",
 ] as const;
+
+const GMAIL_VERIFICATION_INFO = "Creates the three FCI labels and sends one test email to yourself to confirm filing works. Nothing is ever sent to clients from here.";
+const CALENDAR_VERIFICATION_INFO = "Reads the upcoming appointments window and can create one private test hold with no invitations — confirm access without touching anyone's calendar.";
+const SHEETS_VERIFICATION_INFO = "Runs one sync of the Client Directory and Project Register mirrors and reports exactly what changed.";
+const DRIFT_CHECK_INFO = "Compares your blueprint with what's actually in Drive and shows any differences before you fix them.";
+const FOLDER_RENAMES_INFO = "Rename managed folders safely — the app updates Drive and its own records together.";
+const NOTIFICATION_ROUTING_COPY = "Review the closed event-to-space map. Hosted webhook secrets stay outside the browser, application data, logs, and source control.";
 
 function SetupStage({
   number,
@@ -177,6 +194,63 @@ function SetupStage({
   </section>;
 }
 
+function StageFourRow({
+  rowKey,
+  label,
+  info,
+  status,
+  complete = false,
+  children,
+}: StageFourRowProps) {
+  const headingId = `workspace-verification-${rowKey}-heading`;
+  return <article
+    className={`${panelStyles.verificationRow}${complete ? ` ${panelStyles.verificationRowComplete}` : ""}`}
+    data-stage-four-verification={rowKey}
+    data-stage-four-state={status}
+    aria-labelledby={headingId}
+  >
+    <header className={panelStyles.verificationRowHeader}>
+      <div className={panelStyles.verificationRowHeading}>
+        <h4 id={headingId}>{label}</h4>
+        <WorkspaceInfoHint label={`About ${label}`} text={info} />
+      </div>
+      <span className={`${panelStyles.verificationState}${complete ? ` ${panelStyles.verificationStateReady}` : ""}`}>{status}</span>
+    </header>
+    <div className={panelStyles.verificationBody}>{children}</div>
+  </article>;
+}
+
+function OngoingTool({
+  rowKey,
+  label,
+  info,
+  state,
+  children,
+}: {
+  rowKey: string;
+  label: string;
+  info: string;
+  state: "AVAILABLE" | "WAITING" | "PLANNED";
+  children: ReactNode;
+}) {
+  const headingId = `workspace-upkeep-${rowKey}-heading`;
+  return <article
+    className={panelStyles.ongoingTool}
+    data-stage-four-upkeep={rowKey}
+    data-stage-four-upkeep-state={state}
+    aria-labelledby={headingId}
+  >
+    <header className={panelStyles.ongoingToolHeader}>
+      <div className={panelStyles.ongoingToolHeading}>
+        <h4 id={headingId}>{label}</h4>
+        <WorkspaceInfoHint label={`About ${label}`} text={info} />
+      </div>
+      <span className={`${panelStyles.ongoingState} ${state === "PLANNED" ? panelStyles.ongoingStatePlanned : ""}`}>{state}</span>
+    </header>
+    <div className={panelStyles.ongoingToolBody}>{children}</div>
+  </article>;
+}
+
 function stepStatus({ simulation, previousComplete = true, prerequisitesReady, complete }: { simulation: boolean; previousComplete?: boolean; prerequisitesReady: boolean; complete: boolean }): SetupStepStatus {
   if (simulation) return "Simulated";
   if (!previousComplete) return "Blocked by previous step";
@@ -184,12 +258,12 @@ function stepStatus({ simulation, previousComplete = true, prerequisitesReady, c
   return complete ? "Complete" : "Ready";
 }
 
-function stepStatusClass(value: SetupStepStatus) {
-  return value.toLowerCase().replaceAll(" ", "-");
-}
-
 function mirrorTime(value: number | null | undefined) {
   return value ? new Date(value).toLocaleString() : "Not synced yet";
+}
+
+function sheetMirrorFullySynced(mirror: SheetMirrorStatus | null | undefined) {
+  return mirror?.clients.status === "synced" && mirror.projects.status === "synced";
 }
 
 function maskWorkspaceAccountForDisplay(value: string | null | undefined) {
@@ -224,7 +298,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [calendarWorking, setCalendarWorking] = useState(false);
   const [sheetsWorking, setSheetsWorking] = useState(false);
   const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
+  const [gmailTestEmailPassed, setGmailTestEmailPassed] = useState(false);
   const [calendarChecked, setCalendarChecked] = useState(false);
+  const [sheetsVerificationPassed, setSheetsVerificationPassed] = useState(false);
   const [filingMessage, setFilingMessage] = useState<WorkspaceMessage | null>(null);
   const [filingProjectId, setFilingProjectId] = useState("");
   const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
@@ -249,7 +325,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setWorkspace(data.workspace ?? null);
       setWorkspaceReadinessState("ready");
       if (sheetsResult.ok) {
-        setSheetMirror(sheetsResult.data.mirror ?? null);
+        const mirror = sheetsResult.data.mirror ?? null;
+        setSheetMirror(mirror);
+        setSheetsVerificationPassed((current) => current || sheetMirrorFullySynced(mirror));
         setSheetsStatusError(null);
       } else {
         setSheetsStatusError("Mirror status could not be loaded. Refresh this step to try again.");
@@ -257,7 +335,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       if (!data.workspace?.simulation && data.workspace?.connectionStatus !== "connected") {
         setDriveVerified(false);
         setGmailLabelsReady(false);
+        setGmailTestEmailPassed(false);
         setCalendarChecked(false);
+        setSheetsVerificationPassed(false);
       }
       notify(data.workspace?.simulation ? "Local Workspace simulation is ready. No Google account is connected." : data.credentialsPresent ? "Workspace configuration is present. Finish OAuth authorization before Google data can be accessed." : `Workspace setup still needs ${Math.max(1, data.missing?.length ?? 0)} item(s)`, data.workspace?.simulation || data.credentialsPresent ? "info" : "warning");
     } catch {
@@ -376,7 +456,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       if (!response.ok || !data.disconnected) throw new Error(data.error ?? "The Google connection could not be removed.");
       setDriveVerified(false);
       setGmailLabelsReady(false);
+      setGmailTestEmailPassed(false);
       setCalendarChecked(false);
+      setSheetsVerificationPassed(false);
       setGmailMessages([]);
       setCalendarEvents([]);
       notify("The active Google connection was removed from FCI Operations.", "success");
@@ -434,6 +516,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
+      setGmailTestEmailPassed(true);
       notify(workspace?.simulation ? "A sample email was added to the simulated Workspace inbox." : "A test email was sent only to the configured Workspace mailbox.", "success");
     } catch (error) {
       notify(error instanceof Error ? error.message : "The self-test email could not be sent.", "error");
@@ -530,7 +613,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     setSheetsWorking(true);
     try {
       const data = await cachedGetJson<{ mirror?: SheetMirrorStatus }>("/api/v1/integrations/google/sheets/status", { force: true });
-      setSheetMirror(data.mirror ?? null);
+      const mirror = data.mirror ?? null;
+      setSheetMirror(mirror);
+      setSheetsVerificationPassed((current) => current || sheetMirrorFullySynced(mirror));
       setSheetsStatusError(null);
       notify("Google Sheets mirror status was refreshed.", "info");
     } catch {
@@ -545,7 +630,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     setSheetsWorking(true);
     try {
       const data = await readApi<{ mirror?: SheetMirrorStatus }>("/api/v1/integrations/google/sheets/sync", { method: "POST" });
-      setSheetMirror(data.mirror ?? null);
+      const mirror = data.mirror ?? null;
+      setSheetMirror(mirror);
+      setSheetsVerificationPassed((current) => current || sheetMirrorFullySynced(mirror));
       setSheetsStatusError(null);
       invalidateCachedGet("/api/v1/integrations/google/sheets/status");
       notify("The Client Directory and Project Register mirror finished syncing.", "success");
@@ -563,7 +650,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setGmailMessages([]);
       setCalendarEvents([]);
       setGmailLabelsReady(true);
+      setGmailTestEmailPassed(false);
       setCalendarChecked(false);
+      setSheetsVerificationPassed(false);
       setBlueprintEditorRevision((current) => current + 1);
       notify(`Workspace simulation reset with ${data.messages} sample messages and ${data.events} calendar events.`, "success");
       invalidateCachedGet("/api/v1/google-workspace");
@@ -571,6 +660,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       invalidateCachedGet("/api/v1/integrations/google/setup/resources");
       invalidateCachedGet("/api/v1/integrations/google/sheets/status");
       await refreshWorkspaceSetup(true);
+      setSheetsVerificationPassed(false);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Workspace simulation could not be reset.", "error");
     } finally {
@@ -599,7 +689,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const gmailReady = connected && workspace?.gmailEnabled === true && workspace?.gmailConnected === true;
   const calendarReady = connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
   const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
-  const sheetsSynced = sheetMirror?.clients.status === "synced" && sheetMirror?.projects.status === "synced";
+  const gmailVerificationPassed = gmailLabelsReady && gmailTestEmailPassed;
   const driveStepStatus = stepStatus({
     simulation,
     previousComplete: connectComplete,
@@ -608,7 +698,6 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   });
   const gmailStepStatus = stepStatus({ simulation, previousComplete: driveStepStatus === "Complete", prerequisitesReady: gmailReady, complete: gmailLabelsReady });
   const calendarStepStatus = stepStatus({ simulation, previousComplete: gmailStepStatus === "Complete", prerequisitesReady: calendarReady, complete: calendarChecked });
-  const sheetsStepStatus = stepStatus({ simulation, previousComplete: calendarStepStatus === "Complete", prerequisitesReady: sheetsReady, complete: sheetsSynced });
   const hasStoredConnection = !simulation && Boolean(workspace?.connectionStatus && workspace.connectionStatus !== "not-connected");
   const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
   const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
@@ -690,8 +779,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const completeWorkspaceCreationCount = bannerWorkspaceCreationProgress.completedCount;
   const stageThreeResourcesComplete = completeWorkspaceCreationCount === 4;
   const stageThreeComplete = stageTwoComplete && stageThreeResourcesComplete;
-  const stageFourCompleteCount = [gmailLabelsReady, calendarChecked, sheetsSynced].filter(Boolean).length;
-  const stageFourReady = stageThreeComplete && stageFourCompleteCount === 3;
+  const folderRenamesEnabled = stageTwoComplete
+    && workspaceResourcesKnown
+    && workspaceCreationProgress.sharedDriveComplete;
+  const stageFourCompleteCount = [gmailVerificationPassed, calendarChecked, sheetsVerificationPassed].filter(Boolean).length;
+  const stageFourReady = stageFourCompleteCount === 3;
   const stageCompletion = [stageOneComplete, stageTwoComplete, stageThreeComplete, false] as const;
   const currentStageNumber = (stageCompletion.findIndex((complete) => !complete) + 1) as WorkspaceStageNumber;
   const currentStageName = WORKSPACE_STAGE_NAMES[currentStageNumber - 1];
@@ -764,11 +856,33 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     : stageTwoComplete
       ? `IN PROGRESS · ${completeWorkspaceCreationCount} of 4`
       : "WAITING ON STAGE 2");
-  const stageFourStatus = neutralStageStatus ?? (stageFourReady
-    ? "READY"
-    : stageThreeComplete
-      ? `IN PROGRESS · ${stageFourCompleteCount} of 3`
-      : "WAITING ON STAGE 3");
+  const stageFourStatus = statusSourcesLoading
+    ? "CHECKING"
+    : stageFourReady
+      ? "READY"
+      : statusSourcesUnavailable
+        ? "UNAVAILABLE"
+        : `${stageFourCompleteCount} OF 3 VERIFIED`;
+  const stageFourStatusNeutral = stageFourStatus === "CHECKING" || stageFourStatus === "UNAVAILABLE";
+  const gmailVerificationStatus = gmailVerificationPassed
+    ? "VERIFIED"
+    : gmailLabelsReady
+      ? "TEST EMAIL NEEDED"
+      : gmailActionsEnabled
+        ? "READY TO VERIFY"
+        : "WAITING";
+  const calendarVerificationStatus = calendarChecked
+    ? "VERIFIED"
+    : calendarActionsEnabled
+      ? "READY TO VERIFY"
+      : "WAITING";
+  const sheetsVerificationStatus = sheetsVerificationPassed
+    ? "VERIFIED"
+    : sheetsStatusError
+      ? "UNAVAILABLE"
+      : sheetsActionsEnabled
+        ? "READY TO VERIFY"
+        : "WAITING";
   const oauthMessage = oauthResult === "connected"
     ? "Google was connected. Workspace readiness refreshed automatically."
     : oauthResult === "authorization-cancelled"
@@ -937,25 +1051,128 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         title="Verify & maintain"
         description="Prove each service works, then ongoing upkeep"
         status={stageFourStatus}
-        tone={neutralStageStatus ? "neutral" : stageFourReady ? "ready" : stageThreeComplete ? "current" : "waiting"}
+        tone={stageFourStatusNeutral ? "neutral" : stageFourReady ? "ready" : stageThreeComplete ? "current" : "waiting"}
         complete={false}
         firstIncomplete={currentStageNumber === 4}
         statusHint="This stage stays available for ongoing checks and reads Ready after Gmail, Calendar, and Sheets are verified."
       >
-        <ol className="workspace-setup-steps" aria-label="Google service verification setup steps">
-          <li className={`workspace-setup-step ${stepStatusClass(gmailStepStatus)}`}>
-        <header><span className="workspace-step-number">3</span><div><h3>Prepare Gmail</h3><p>Create or refresh the three FCI labels, then exercise the review-first inbox tools.</p></div><span className="workspace-step-status">{gmailStepStatus}</span></header>
-        <div className="workspace-step-body test-service-card"><div className="test-service-heading"><Mail size={17} /><div><strong>{simulation ? "Simulated Workspace Gmail" : "Workspace Gmail"}</strong><span>{gmailActionsEnabled ? "Ready for explicit actions" : "Blocked until the prior step is complete"}</span></div></div><p>View up to 20 messages, add a sample email in simulation, and review-copy one message into the exact project. Inbox stays intact.</p><div className="workspace-actions"><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void prepareTestGmailLabels()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</AdministratorActionButton><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void refreshTestGmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</AdministratorActionButton><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void sendSelfTestEmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : simulation ? "Add sample email" : "Send Workspace test"}</AdministratorActionButton></div>{gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => openFilingReview(message)} disabled={gmailWorking || !gmailActionsEnabled}>Review & copy</AdministratorActionButton></div></article>)}</div>}</div>
-      </li>
-      <li className={`workspace-setup-step ${stepStatusClass(calendarStepStatus)}`}>
-        <header><span className="workspace-step-number">4</span><div><h3>Verify Calendar</h3><p>Read the appointments window or create one private test hold with no notifications.</p></div><span className="workspace-step-status">{calendarStepStatus}</span></header>
-        <div className="workspace-step-body test-service-card"><div className="test-service-heading"><CalendarDays size={17} /><div><strong>{simulation ? "Simulated shared calendars" : "Workspace shared calendars"}</strong><span>{calendarActionsEnabled ? "Ready for appointment testing" : "Blocked until Gmail setup is complete"}</span></div></div><p>View a seven-day appointments window or create one 30-minute hold. Simulation stores it locally; live mode uses the configured company calendar.</p><div className="workspace-actions"><AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void refreshTestCalendar()} disabled={!calendarActionsEnabled || calendarWorking}>{calendarWorking ? "Loading…" : "View upcoming events"}</AdministratorActionButton><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void createTestCalendarHold()} disabled={!calendarActionsEnabled || calendarWorking}>{calendarWorking ? "Creating…" : "Create test hold"}</AdministratorActionButton></div>{calendarEvents.length > 0 && <div className="test-service-list">{calendarEvents.map((event) => <article key={event.id}><div><strong>{event.title}</strong><span>{new Date(event.start).toLocaleString()} – {new Date(event.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></div>{event.url && <button className="soft-button" onClick={() => window.open(event.url, "_blank", "noopener,noreferrer")}>Open</button>}</article>)}</div>}</div>
-      </li>
-      <li className={`workspace-setup-step ${stepStatusClass(sheetsStepStatus)}`}>
-        <header><span className="workspace-step-number">5</span><div><h3>Sync the Sheets mirror</h3><p>Check and reconcile the generated Client Directory and Project Register.</p></div><span className="workspace-step-status">{sheetsStepStatus}</span></header>
-        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirrorStatusLabel(sheetMirror, "clients")}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirrorStatusLabel(sheetMirror, "projects")}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div></div>
-          </li>
-        </ol>
+        <div className={panelStyles.stageFourFrame}>
+          <section className={panelStyles.verificationGroup} aria-labelledby="workspace-first-run-verification-heading">
+            <header className={panelStyles.stageFourGroupHeader}>
+              <div>
+                <p className="eyebrow">First-run checks</p>
+                <h3 id="workspace-first-run-verification-heading">Verify each service</h3>
+              </div>
+            </header>
+            <div className={panelStyles.verificationList}>
+              <StageFourRow
+                rowKey="gmail"
+                label="Gmail — labels & test email"
+                info={GMAIL_VERIFICATION_INFO}
+                status={gmailVerificationStatus}
+                complete={gmailVerificationPassed}
+              >
+                <div className="test-service-card">
+                  <div className="test-service-heading">
+                    <Mail size={17} />
+                    <div>
+                      <strong>{simulation ? "Simulated Workspace Gmail" : "Workspace Gmail"}</strong>
+                      <span>{gmailActionsEnabled ? "Ready for explicit actions" : "Blocked until the prior step is complete"}</span>
+                    </div>
+                  </div>
+                  <p>View up to 20 messages, add a sample email in simulation, and review-copy one message into the exact project. Inbox stays intact.</p>
+                  <div className="workspace-actions">
+                    <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void prepareTestGmailLabels()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : gmailLabelsReady ? "Refresh FCI labels" : "Prepare FCI labels"}</AdministratorActionButton>
+                    <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void refreshTestGmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Loading…" : "View inbox"}</AdministratorActionButton>
+                    <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void sendSelfTestEmail()} disabled={!gmailActionsEnabled || gmailWorking}>{gmailWorking ? "Working…" : simulation ? "Add sample email" : "Send Workspace test"}</AdministratorActionButton>
+                  </div>
+                  {gmailMessages.length > 0 && <div className="test-service-list">{gmailMessages.map((message) => <article key={message.id}><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span><p>{message.snippet}</p></div><div className="gmail-message-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => openFilingReview(message)} disabled={gmailWorking || !gmailActionsEnabled}>Review & copy</AdministratorActionButton></div></article>)}</div>}
+                </div>
+              </StageFourRow>
+              <StageFourRow
+                rowKey="calendar"
+                label="Calendar — appointments & test hold"
+                info={CALENDAR_VERIFICATION_INFO}
+                status={calendarVerificationStatus}
+                complete={calendarChecked}
+              >
+                <div className="test-service-card">
+                  <div className="test-service-heading">
+                    <CalendarDays size={17} />
+                    <div>
+                      <strong>{simulation ? "Simulated shared calendars" : "Workspace shared calendars"}</strong>
+                      <span>{calendarActionsEnabled ? "Ready for appointment testing" : "Blocked until Gmail setup is complete"}</span>
+                    </div>
+                  </div>
+                  <p>View a seven-day appointments window or create one 30-minute hold. Simulation stores it locally; live mode uses the configured company calendar.</p>
+                  <div className="workspace-actions">
+                    <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void refreshTestCalendar()} disabled={!calendarActionsEnabled || calendarWorking}>{calendarWorking ? "Loading…" : "View upcoming events"}</AdministratorActionButton>
+                    <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void createTestCalendarHold()} disabled={!calendarActionsEnabled || calendarWorking}>{calendarWorking ? "Creating…" : "Create test hold"}</AdministratorActionButton>
+                  </div>
+                  {calendarEvents.length > 0 && <div className="test-service-list">{calendarEvents.map((event) => <article key={event.id}><div><strong>{event.title}</strong><span>{new Date(event.start).toLocaleString()} – {new Date(event.end).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></div>{event.url && <button className="soft-button" onClick={() => window.open(event.url, "_blank", "noopener,noreferrer")}>Open</button>}</article>)}</div>}
+                </div>
+              </StageFourRow>
+              <StageFourRow
+                rowKey="sheets"
+                label="Sheets — mirror sync"
+                info={SHEETS_VERIFICATION_INFO}
+                status={sheetsVerificationStatus}
+                complete={sheetsVerificationPassed}
+              >
+                <div className="workspace-sheet-summary">
+                  <article><span>Client Directory</span><strong>{sheetMirrorStatusLabel(sheetMirror, "clients")}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article>
+                  <article><span>Project Register</span><strong>{sheetMirrorStatusLabel(sheetMirror, "projects")}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article>
+                </div>
+                {(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}
+                <div className="workspace-actions">
+                  <button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button>
+                  <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>
+                  {sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}
+                </div>
+              </StageFourRow>
+            </div>
+          </section>
+          <section className={panelStyles.ongoingGroup} aria-labelledby="workspace-ongoing-upkeep-heading">
+            <header className={panelStyles.ongoingGroupHeader}>
+              <h3 id="workspace-ongoing-upkeep-heading">Ongoing upkeep</h3>
+              <p>{"Tools you'll come back to — these never block setup."}</p>
+            </header>
+            <div className={panelStyles.ongoingList}>
+              <OngoingTool
+                rowKey="drift"
+                label="Drift check"
+                info={DRIFT_CHECK_INFO}
+                state="PLANNED"
+              >
+                <p>Planned for SET-18. No reconcile action is available yet.</p>
+              </OngoingTool>
+              <OngoingTool
+                rowKey="renames"
+                label="Renames"
+                info={FOLDER_RENAMES_INFO}
+                state={folderRenamesEnabled ? "AVAILABLE" : "WAITING"}
+              >
+                <p>Use the managed rename action here instead of renaming an app-owned folder directly in Drive.</p>
+                {isAdmin && <WorkspaceFolderRenameActions
+                  resources={resourceRows}
+                  resourcesReady={workspaceResourcesKnown}
+                  enabled={folderRenamesEnabled}
+                  notify={notify}
+                  onChanged={refreshAfterDriveSetup}
+                />}
+              </OngoingTool>
+              <OngoingTool
+                rowKey="notifications"
+                label="Notification routing"
+                info={NOTIFICATION_ROUTING_COPY}
+                state="AVAILABLE"
+              >
+                <p>{NOTIFICATION_ROUTING_COPY}</p>
+                <a className="soft-button" href="/settings?section=workflow-notifications">Open notification routing</a>
+              </OngoingTool>
+            </div>
+          </section>
+        </div>
       </SetupStage>
     </div>
     {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}

@@ -75,10 +75,10 @@ type CreationRowProps = Readonly<{
   rowKey: string;
   label: string;
   info: string;
-  state: "FOUND — ADOPT" | "VERIFY" | "DONE" | "AFTER DRIVE" | "CREATE" | "AFTER FOLDERS" | "VERIFY ONLY";
+  state: "FOUND — ADOPT" | "VERIFY" | "DONE" | "AFTER DRIVE" | "CREATE" | "AFTER FOLDERS" | "VERIFY ONLY" | "UNAVAILABLE";
   complete?: boolean;
   lockedCaption?: string;
-  children: ReactNode;
+  children: ReactNode | ((dependencyDescriptionId: string | undefined) => ReactNode);
 }>;
 
 const SHARED_DRIVE_INFO = "The one company drive where every project folder lives. The app never creates a second drive — it adopts the one your admin set up.";
@@ -96,8 +96,12 @@ export function workspaceResourceComplete(resource: WorkspaceSetupResource, simu
   return resource.state === "Created" || resource.state === "Adopted";
 }
 
-function resourceGroupComplete(resources: readonly WorkspaceSetupResource[], simulation: boolean) {
-  return resources.length > 0
+function resourceGroupComplete(
+  resources: readonly WorkspaceSetupResource[],
+  simulation: boolean,
+  emptyIsComplete = false,
+) {
+  return (emptyIsComplete || resources.length > 0)
     && resources.every((resource) => workspaceResourceComplete(resource, simulation));
 }
 
@@ -114,7 +118,7 @@ export function deriveWorkspaceCreationProgress(
     && resourceGroupComplete(sharedDrives, simulation);
   const foldersComplete = resourcesReady && resourceGroupComplete(folders, simulation);
   const spreadsheetsComplete = resourcesReady && resourceGroupComplete(spreadsheets, simulation);
-  const templatesComplete = resourcesReady && resourceGroupComplete(templates, simulation);
+  const templatesComplete = resourcesReady && resourceGroupComplete(templates, simulation, true);
   return {
     sharedDriveComplete,
     foldersComplete,
@@ -169,6 +173,7 @@ function SharedDriveActions({
   notify,
   onVerify,
   onChanged,
+  describedBy,
 }: {
   resource?: WorkspaceSetupResource;
   adoptEnabled: boolean;
@@ -180,10 +185,14 @@ function SharedDriveActions({
   notify: Notify;
   onVerify: () => Promise<void> | void;
   onChanged: (change: WorkspaceDriveChange) => Promise<void> | void;
+  describedBy?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [candidates, setCandidates] = useState<SharedDriveCandidate[]>([]);
   const [candidateId, setCandidateId] = useState("");
+  const adoptDisabled = !adoptEnabled || busy || verifyWorking;
+  const verifyDisabled = !verifyEnabled || busy || verifyWorking || (!simulation && !driveReady);
+  const selectedDriveDisabled = !adoptEnabled || !candidateId || busy || verifyWorking;
 
   async function adopt(selectedId?: string) {
     if (!resource) return;
@@ -214,15 +223,15 @@ function SharedDriveActions({
   return <div className={styles.rowActions}>
     {resource && <span className={`${styles.restrictionsChip} ${resource.restrictions?.domainUsersOnly === true ? styles.restrictionsVerified : resource.restrictions?.domainUsersOnly === false ? styles.restrictionsWarning : ""}`}>{restrictionLabel(resource.restrictions)}</span>}
     <div className={styles.actionButtons}>
-      {resource && <AdministratorActionButton className="primary-button" isAdmin onClick={() => void adopt()} disabled={!adoptEnabled || busy || verifyWorking}>{busy ? "Checking…" : resource.externalId ? "Verify and adopt" : "Find and adopt"}</AdministratorActionButton>}
-      <AdministratorActionButton className="soft-button" isAdmin onClick={() => void onVerify()} disabled={!verifyEnabled || busy || verifyWorking || (!simulation && !driveReady)}>{verifyWorking ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton>
+      {resource && <AdministratorActionButton className="primary-button" isAdmin aria-describedby={adoptDisabled ? describedBy : undefined} onClick={() => void adopt()} disabled={adoptDisabled}>{busy ? "Checking…" : resource.externalId ? "Verify and adopt" : "Find and adopt"}</AdministratorActionButton>}
+      <AdministratorActionButton className="soft-button" isAdmin aria-describedby={verifyDisabled ? describedBy : undefined} onClick={() => void onVerify()} disabled={verifyDisabled}>{verifyWorking ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton>
       {resource?.url && <a className="soft-button" href={resource.url} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open</a>}
     </div>
     {!resource && <span className={styles.actionNote}>Adoption controls become available when the resource registry returns the Shared Drive row.</span>}
     {!simulation && !driveReady && verifyEnabled && <span className={styles.actionNote}>Direct verification becomes available when Drive is connected.</span>}
     {candidates.length > 0 && <div className={styles.driveCandidates} role="group" aria-label="Choose the exact Shared Drive">
       <label>Matching Shared Drive<select value={candidateId} onChange={(event) => setCandidateId(event.target.value)}>{candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.id}</option>)}</select></label>
-      <AdministratorActionButton className="primary-button" isAdmin onClick={() => void adopt(candidateId)} disabled={!adoptEnabled || !candidateId || busy || verifyWorking}>Adopt selected drive</AdministratorActionButton>
+      <AdministratorActionButton className="primary-button" isAdmin aria-describedby={selectedDriveDisabled ? describedBy : undefined} onClick={() => void adopt(candidateId)} disabled={selectedDriveDisabled}>Adopt selected drive</AdministratorActionButton>
     </div>}
   </div>;
 }
@@ -231,10 +240,12 @@ function EnsureFoldersAction({
   enabled,
   notify,
   onChanged,
+  describedBy,
 }: {
   enabled: boolean;
   notify: Notify;
   onChanged: (change: WorkspaceDriveChange) => Promise<void> | void;
+  describedBy?: string;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -257,7 +268,7 @@ function EnsureFoldersAction({
   }
 
   return <div className={styles.actionButtons}>
-    <AdministratorActionButton className="primary-button" isAdmin onClick={() => void ensureRoots()} disabled={!enabled || busy}>{busy ? "Ensuring…" : "Ensure root folders"}</AdministratorActionButton>
+    <AdministratorActionButton className="primary-button" isAdmin aria-describedby={describedBy} onClick={() => void ensureRoots()} disabled={!enabled || busy}>{busy ? "Ensuring…" : "Ensure root folders"}</AdministratorActionButton>
   </div>;
 }
 
@@ -317,10 +328,12 @@ function EnsureSpreadsheetsAction({
   enabled,
   notify,
   onChanged,
+  describedBy,
 }: {
   enabled: boolean;
   notify: Notify;
   onChanged: (change: WorkspaceDriveChange) => Promise<void> | void;
+  describedBy?: string;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -343,7 +356,7 @@ function EnsureSpreadsheetsAction({
   }
 
   return <div className={styles.actionButtons}>
-    <AdministratorActionButton className="primary-button" isAdmin onClick={() => void ensureSpreadsheets()} disabled={!enabled || busy}>{busy ? "Ensuring…" : "Ensure spreadsheets"}</AdministratorActionButton>
+    <AdministratorActionButton className="primary-button" isAdmin aria-describedby={describedBy} onClick={() => void ensureSpreadsheets()} disabled={!enabled || busy}>{busy ? "Ensuring…" : "Ensure spreadsheets"}</AdministratorActionButton>
   </div>;
 }
 
@@ -351,10 +364,12 @@ function EnsureTemplatesAction({
   enabled,
   notify,
   onChanged,
+  describedBy,
 }: {
   enabled: boolean;
   notify: Notify;
   onChanged: (change: WorkspaceDriveChange) => Promise<void> | void;
+  describedBy?: string;
 }) {
   const [busy, setBusy] = useState(false);
 
@@ -377,7 +392,7 @@ function EnsureTemplatesAction({
   }
 
   return <div className={styles.actionButtons}>
-    <AdministratorActionButton className="primary-button" isAdmin onClick={() => void ensureTemplates()} disabled={!enabled || busy}>{busy ? "Ensuring…" : "Ensure templates"}</AdministratorActionButton>
+    <AdministratorActionButton className="primary-button" isAdmin aria-describedby={describedBy} onClick={() => void ensureTemplates()} disabled={!enabled || busy}>{busy ? "Ensuring…" : "Ensure templates"}</AdministratorActionButton>
   </div>;
 }
 
@@ -428,6 +443,9 @@ function CreationRow({
   lockedCaption,
   children,
 }: CreationRowProps) {
+  const dependencyDescriptionId = lockedCaption
+    ? `workspace-creation-${rowKey}-dependency`
+    : undefined;
   return <li
     className={`${styles.creationRow}${complete ? ` ${styles.creationRowComplete}` : ""}${lockedCaption ? ` ${styles.creationRowLocked}` : ""}`}
     data-workspace-creation-row={rowKey}
@@ -442,10 +460,37 @@ function CreationRow({
         </div>
         <span className={`${styles.stateChip}${complete ? ` ${styles.stateChipDone}` : ""}`}>{state}</span>
       </header>
-      {lockedCaption && <p className={styles.unlockCaption}>{lockedCaption}</p>}
-      {children}
+      {lockedCaption && <p id={dependencyDescriptionId} className={styles.unlockCaption}>{lockedCaption}</p>}
+      {typeof children === "function" ? children(dependencyDescriptionId) : children}
     </div>
   </li>;
+}
+
+export function WorkspaceFolderRenameActions({
+  resources,
+  resourcesReady,
+  enabled,
+  notify,
+  onChanged,
+}: {
+  resources: readonly WorkspaceSetupResource[];
+  resourcesReady: boolean;
+  enabled: boolean;
+  notify: Notify;
+  onChanged: (change: WorkspaceDriveChange) => Promise<void> | void;
+}) {
+  const folders = resources.filter((resource) => resource.resourceType === "drive.folder");
+  return <ResourceDetails
+    label="managed folders"
+    resources={folders}
+    available={resourcesReady}
+    renderAction={(resource) => <FolderRenameAction
+      resource={resource}
+      enabled={enabled}
+      notify={notify}
+      onChanged={onChanged}
+    />}
+  />;
 }
 
 export function WorkspaceDriveResourceActions({
@@ -497,11 +542,61 @@ export function WorkspaceDriveResourceActions({
   const spreadsheetsEnabled = foldersEnabled && progress.foldersComplete;
   const templatesEnabled = foldersEnabled && progress.foldersComplete;
   const calendarsEnabled = templatesEnabled && progress.templatesComplete;
-  const sharedDriveState = progress.sharedDriveComplete
+  const registryUnavailable = !resourcesReady && Boolean(resourcesError);
+  const resourceStatusPending = !resourcesReady && !registryUnavailable;
+  const sharedDriveState = registryUnavailable
+    ? "UNAVAILABLE"
+    : progress.sharedDriveComplete
     ? "DONE"
     : sharedDrive?.source === "env" || sharedDrive?.state === "Found"
       ? "FOUND — ADOPT"
       : "VERIFY";
+  const resourceStatusDependency = registryUnavailable
+    ? "Unlocks after Workspace resource status is available."
+    : resourceStatusPending
+      ? "Unlocks after Workspace resource status finishes loading."
+      : undefined;
+  const sharedDriveDependency = !stageReady
+    ? "Unlocks after Connect."
+    : !driveVerificationReady
+      ? "Unlocks after Drive is connected and Workspace storage is configured."
+      : sharedDrive && !sharedDriveAdoptEnabled
+        ? resourceStatusDependency
+        : undefined;
+  const folderDependency = !foldersEnabled
+    ? resourceStatusDependency
+      ?? (!stageReady
+        ? "Unlocks after Connect."
+        : "Unlocks after Shared Drive.")
+    : undefined;
+  const spreadsheetDependency = !spreadsheetsEnabled
+    ? resourceStatusDependency
+      ?? (!stageReady
+        ? "Unlocks after Connect."
+        : !progress.sharedDriveComplete
+          ? "Unlocks after Shared Drive."
+          : "Unlocks after Folder tree (from your blueprint).")
+    : undefined;
+  const templateDependency = !templatesEnabled
+    ? resourceStatusDependency
+      ?? (!stageReady
+        ? "Unlocks after Connect."
+        : !progress.sharedDriveComplete
+          ? "Unlocks after Shared Drive."
+          : "Unlocks after Folder tree (from your blueprint).")
+    : undefined;
+  const calendarDependency = !calendarsEnabled
+    ? resourceStatusDependency
+      ?? (!stageReady
+        ? "Unlocks after Connect."
+        : !progress.sharedDriveComplete
+          ? "Unlocks after Shared Drive."
+          : !progress.foldersComplete
+            ? "Unlocks after Folder tree (from your blueprint)."
+            : "Unlocks after Templates.")
+    : !simulation && !calendarReady
+      ? "Unlocks after Calendar is enabled and connected."
+      : undefined;
 
   return <section className={`${styles.creationCard} workspace-setup-card`} aria-labelledby="workspace-creation-heading">
     <header className={styles.cardHeader}>
@@ -526,9 +621,9 @@ export function WorkspaceDriveResourceActions({
         info={SHARED_DRIVE_INFO}
         state={sharedDriveState}
         complete={progress.sharedDriveComplete}
-        lockedCaption={!stageReady && !driveVerificationReady ? "Unlocks after Connect." : undefined}
+        lockedCaption={sharedDriveDependency}
       >
-        <SharedDriveActions
+        {(dependencyDescriptionId) => <SharedDriveActions
           resource={sharedDrive}
           adoptEnabled={sharedDriveAdoptEnabled}
           verifyEnabled={driveVerificationReady}
@@ -539,7 +634,8 @@ export function WorkspaceDriveResourceActions({
           notify={notify}
           onVerify={onVerifyDrive}
           onChanged={onChanged}
-        />
+          describedBy={dependencyDescriptionId}
+        />}
       </CreationRow>
       <CreationRow
         order={2}
@@ -548,10 +644,12 @@ export function WorkspaceDriveResourceActions({
         info={FOLDER_TREE_INFO}
         state={progress.foldersComplete ? "DONE" : foldersEnabled ? "CREATE" : "AFTER DRIVE"}
         complete={progress.foldersComplete}
-        lockedCaption={!foldersEnabled ? "Unlocks after Shared Drive." : undefined}
+        lockedCaption={folderDependency}
       >
-        <EnsureFoldersAction enabled={foldersEnabled} notify={notify} onChanged={onChanged} />
-        <ResourceDetails label="folders" resources={folders} available={resourcesReady} renderAction={(resource) => <FolderRenameAction resource={resource} enabled={foldersEnabled} notify={notify} onChanged={onChanged} />} />
+        {(dependencyDescriptionId) => <>
+          <EnsureFoldersAction enabled={foldersEnabled} notify={notify} onChanged={onChanged} describedBy={dependencyDescriptionId} />
+          <ResourceDetails label="folders" resources={folders} available={resourcesReady} renderAction={(resource) => <OpenResourceAction resource={resource} />} />
+        </>}
       </CreationRow>
       <CreationRow
         order={3}
@@ -560,10 +658,12 @@ export function WorkspaceDriveResourceActions({
         info={SPREADSHEETS_INFO}
         state={progress.spreadsheetsComplete ? "DONE" : spreadsheetsEnabled ? "CREATE" : "AFTER FOLDERS"}
         complete={progress.spreadsheetsComplete}
-        lockedCaption={!spreadsheetsEnabled ? "Unlocks after Folder tree (from your blueprint)." : undefined}
+        lockedCaption={spreadsheetDependency}
       >
-        <EnsureSpreadsheetsAction enabled={spreadsheetsEnabled} notify={notify} onChanged={onChanged} />
-        <ResourceDetails label="spreadsheets" resources={spreadsheets} available={resourcesReady} renderAction={(resource) => <OpenResourceAction resource={resource} />} />
+        {(dependencyDescriptionId) => <>
+          <EnsureSpreadsheetsAction enabled={spreadsheetsEnabled} notify={notify} onChanged={onChanged} describedBy={dependencyDescriptionId} />
+          <ResourceDetails label="spreadsheets" resources={spreadsheets} available={resourcesReady} renderAction={(resource) => <OpenResourceAction resource={resource} />} />
+        </>}
       </CreationRow>
       <CreationRow
         order={4}
@@ -572,10 +672,12 @@ export function WorkspaceDriveResourceActions({
         info={TEMPLATES_INFO}
         state={progress.templatesComplete ? "DONE" : templatesEnabled ? "CREATE" : "AFTER FOLDERS"}
         complete={progress.templatesComplete}
-        lockedCaption={!templatesEnabled ? "Unlocks after Folder tree (from your blueprint)." : undefined}
+        lockedCaption={templateDependency}
       >
-        <EnsureTemplatesAction enabled={templatesEnabled} notify={notify} onChanged={onChanged} />
-        <ResourceDetails label="templates" resources={templates} available={resourcesReady} renderAction={(resource) => <OpenResourceAction resource={resource} />} />
+        {(dependencyDescriptionId) => <>
+          <EnsureTemplatesAction enabled={templatesEnabled} notify={notify} onChanged={onChanged} describedBy={dependencyDescriptionId} />
+          <ResourceDetails label="templates" resources={templates} available={resourcesReady} renderAction={(resource) => <OpenResourceAction resource={resource} />} />
+        </>}
       </CreationRow>
       <CreationRow
         order={5}
@@ -583,13 +685,15 @@ export function WorkspaceDriveResourceActions({
         label="Calendars"
         info={CALENDARS_INFO}
         state="VERIFY ONLY"
-        lockedCaption={!calendarsEnabled ? "Unlocks after Templates." : undefined}
+        lockedCaption={calendarDependency}
       >
-        <div className={styles.actionButtons}>
-          <AdministratorActionButton className="soft-button" isAdmin onClick={() => void onVerifyCalendar()} disabled={!calendarsEnabled || calendarWorking || (!simulation && !calendarReady)}>{calendarWorking ? "Verifying…" : "Verify calendar access"}</AdministratorActionButton>
-        </div>
-        {!simulation && !calendarReady && calendarsEnabled && <span className={styles.actionNote}>Calendar verification becomes available when the configured service is connected.</span>}
-        <ResourceDetails label="calendars" resources={calendars} available={resourcesReady} renderAction={(resource) => <OpenResourceAction resource={resource} />} />
+        {(dependencyDescriptionId) => <>
+          <div className={styles.actionButtons}>
+            <AdministratorActionButton className="soft-button" isAdmin aria-describedby={dependencyDescriptionId} onClick={() => void onVerifyCalendar()} disabled={!calendarsEnabled || calendarWorking || (!simulation && !calendarReady)}>{calendarWorking ? "Verifying…" : "Verify calendar access"}</AdministratorActionButton>
+          </div>
+          {!simulation && !calendarReady && calendarsEnabled && <span className={styles.actionNote}>Calendar verification becomes available when the configured service is connected.</span>}
+          <ResourceDetails label="calendars" resources={calendars} available={resourcesReady} renderAction={(resource) => <OpenResourceAction resource={resource} />} />
+        </>}
       </CreationRow>
     </ol>
   </section>;
