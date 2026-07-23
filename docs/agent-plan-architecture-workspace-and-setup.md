@@ -1839,7 +1839,7 @@ strings updated only if their block moved.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-02 · Control/radius/border/shadow normalization + undersized-control guard (medium, after DES-01)
-**Status:** In progress — `codex/des02-control-normalization`, July 23, 2026.
+**Status:** In review — PR #126, July 23, 2026. Source-only and undeployed.
 
 **Why:** radius drift 1–16 px, 11+ interactive heights, three shadow alphas, and
 green-tinted legacy borders against the warm palette; the Phase-4
