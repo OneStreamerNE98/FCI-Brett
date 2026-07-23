@@ -404,7 +404,11 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
   }
 
   const audit = read("docs/complete-product-and-google-cloud-architecture-audit.md");
-  assertIncludesTokens(paragraphContaining(audit, "migrations 1–6"), ["source", "none", "Cloud SQL"], "Production migration paragraph");
+  assertIncludesTokens(
+    paragraphContaining(audit, "Production PostgreSQL migrations"),
+    ["source", "none", "Cloud SQL"],
+    "Production migration paragraph",
+  );
 
   const design = read("docs/design-critique-fix-plan.md");
   const actionableEvidence = section(

@@ -284,6 +284,8 @@ PG16, `npm run db:migrate:postgres` applies v1–v6 and readiness passes; e2e de
 unchanged.
 
 ### BE-07 · Settings/preferences/filing-rules/mail-items ports + migration v7 + single calendar-ID authority (large, after BE-06)
+**Status:** In progress — `codex/be07-settings-persistence`, July 23, 2026.
+
 **Why:** Four more D1-only tables with inline SQL; plus the accepted-but-unowned defect:
 saved `workspace_settings` calendar/sheet IDs are runtime-inert while env vars win
 (`app/lib/google-oauth.ts:193–194, 231–232`).

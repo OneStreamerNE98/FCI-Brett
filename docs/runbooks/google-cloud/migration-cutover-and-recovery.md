@@ -55,11 +55,13 @@ reconciliation. Project rows must include explicit null `flooringCategory`,
 `squareFeet`, and `contractValue` placeholders in the hashed format-v2 shape;
 non-null KPI values remain deferred to KPI-04 and fail before database access.
 Every inventory-only category, including the additive AI-01 tasks table, must
-likewise remain zero or the command fails before database access. AI-01
-`phone-call` meetings also fail before database
-access until the deferred PostgreSQL task migration registers the widened
-meeting-type constraint after BE-07. Passing it is useful source evidence but
-is not a complete migration or cutover rehearsal.
+likewise remain zero or the command fails before database access. Registered
+production migration v7 now defines the four BE-07 settings, preferences,
+filing-rules, and mail-items tables, and contiguous v8 defines tasks plus the
+widened meeting-type constraint. The snapshot still carries no rows for those
+inventory-only categories, while `phone-call` meetings now pass validation and
+rehearse against the registered v8 constraint. Passing it is useful source
+evidence but is not a complete migration or cutover rehearsal.
 
 ## 2. Production go/no-go gate
 

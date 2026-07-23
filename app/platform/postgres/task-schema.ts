@@ -70,6 +70,7 @@ CREATE TABLE tasks (
   `.trim(),
   "CREATE INDEX tasks_status_due_date_idx ON tasks (status, due_date)",
   "CREATE INDEX tasks_project_status_idx ON tasks (project_id, status)",
+  "CREATE INDEX tasks_lead_id_idx ON tasks (lead_id) WHERE lead_id IS NOT NULL",
   "ALTER TABLE project_meetings DROP CONSTRAINT project_meetings_type_check",
   "ALTER TABLE project_meetings ADD CONSTRAINT project_meetings_type_check CHECK (meeting_type IN ('client', 'site-walk', 'internal', 'pre-install', 'closeout', 'phone-call', 'other'))",
   "ALTER TABLE activity_events ADD COLUMN task_id uuid",

@@ -13,6 +13,8 @@ import {
 } from "../app/platform/postgres/production-schema-migrations.ts";
 
 const postgresTestUrl = process.env.TEST_POSTGRES_URL?.trim();
+const MIGRATION_VERSIONS = PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version);
+const CURRENT_MIGRATION_VERSION = MIGRATION_VERSIONS.at(-1);
 
 async function expectPostgresError(promise, code, constraint) {
   await assert.rejects(promise, (error) => {
@@ -50,16 +52,22 @@ test(
       ]);
       assert.deepEqual(
         concurrentResults.flatMap(({ appliedVersions }) => appliedVersions).sort(),
-        [1, 2, 3, 4, 5, 6],
+        MIGRATION_VERSIONS,
       );
-      assert.deepEqual(concurrentResults.map(({ currentVersion }) => currentVersion), [6, 6]);
+      assert.deepEqual(
+        concurrentResults.map(({ currentVersion }) => currentVersion),
+        [CURRENT_MIGRATION_VERSION, CURRENT_MIGRATION_VERSION],
+      );
 
       const rerun = await runProductionSchemaMigrations(
         pool,
         PRODUCTION_SCHEMA_MIGRATIONS,
         migrationOptions,
       );
-      assert.deepEqual(rerun, { appliedVersions: [], currentVersion: 6 });
+      assert.deepEqual(rerun, {
+        appliedVersions: [],
+        currentVersion: CURRENT_MIGRATION_VERSION,
+      });
 
       const history = await pool.query(
         `SELECT version, name, checksum
@@ -95,6 +103,7 @@ test(
           "file_links",
           "file_versions",
           "files",
+          "filing_rules",
           "idempotency_requests",
           "integration_connection_scopes",
           "integration_connections",
@@ -106,6 +115,7 @@ test(
           "invitation_project_assignments",
           "invitations",
           "leads",
+          "mail_items",
           "outbox_events",
           "production_schema_migrations",
           "project_meetings",
@@ -115,8 +125,11 @@ test(
           "roles",
           "sessions",
           "storage_objects",
+          "tasks",
+          "user_preferences",
           "user_roles",
           "users",
+          "workspace_settings",
         ],
       );
 
@@ -687,7 +700,7 @@ test(
       assert.deepEqual(missingForeignKeyIndexes.rows, []);
 
       const rollbackProbe = {
-        version: 7,
+        version: CURRENT_MIGRATION_VERSION + 1,
         name: "rollback_probe",
         checksum: "",
         statements: [
@@ -702,7 +715,9 @@ test(
           [...PRODUCTION_SCHEMA_MIGRATIONS, rollbackProbe],
           migrationOptions,
         ),
-        /migration 7 \(rollback_probe\) did not complete cleanly/,
+        new RegExp(
+          `migration ${CURRENT_MIGRATION_VERSION + 1} \\(rollback_probe\\) did not complete cleanly`,
+        ),
       );
       const rollbackState = await pool.query(
         `SELECT to_regclass('${schema}.rollback_probe') AS relation,
@@ -710,7 +725,7 @@ test(
                  FROM ${schema}.production_schema_migrations) AS migration_count`,
       );
       assert.equal(rollbackState.rows[0].relation, null);
-      assert.equal(rollbackState.rows[0].migration_count, 6);
+      assert.equal(rollbackState.rows[0].migration_count, MIGRATION_VERSIONS.length);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();
@@ -748,7 +763,10 @@ test(
         PRODUCTION_SCHEMA_MIGRATIONS,
         { schema },
       );
-      assert.deepEqual(result, { appliedVersions: [1, 2, 3, 4, 5, 6], currentVersion: 6 });
+      assert.deepEqual(result, {
+        appliedVersions: MIGRATION_VERSIONS,
+        currentVersion: CURRENT_MIGRATION_VERSION,
+      });
 
       const targetHistory = await pool.query(
         `SELECT count(*)::integer AS count FROM ${schema}.production_schema_migrations`,
@@ -756,7 +774,7 @@ test(
       const temporaryHistory = await pool.query(
         "SELECT count(*)::integer AS count FROM pg_temp.production_schema_migrations",
       );
-      assert.equal(targetHistory.rows[0].count, 6);
+      assert.equal(targetHistory.rows[0].count, MIGRATION_VERSIONS.length);
       assert.equal(temporaryHistory.rows[0].count, 0);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);

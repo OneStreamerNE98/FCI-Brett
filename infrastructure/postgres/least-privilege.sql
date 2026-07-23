@@ -109,14 +109,21 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA fci_app FROM fci_rehearsal_importer;
 -- instead of table-wide access to identity/security fields. Invitation
 -- revocation, session revocation, role reassignment, and project-membership
 -- lifecycle changes are likewise limited to their reviewed columns. No
--- runtime table receives DELETE, TRUNCATE, REFERENCES, TRIGGER, or grant
--- options.
+-- Runtime DELETE is limited to filing_rules because removing a user-authored
+-- rule is an explicit repository operation. No other runtime table receives
+-- DELETE, and no runtime table receives TRUNCATE, REFERENCES, TRIGGER, or
+-- grant options.
 GRANT USAGE ON SCHEMA fci_app TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.clients TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.contacts TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.projects TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.leads TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.project_meetings TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.workspace_settings TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.user_preferences TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fci_app.filing_rules TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.mail_items TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.tasks TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.activity_events TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.idempotency_requests TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.outbox_events TO fci_runtime;
