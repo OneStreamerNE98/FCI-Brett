@@ -284,7 +284,7 @@ PG16, `npm run db:migrate:postgres` applies v1–v6 and readiness passes; e2e de
 unchanged.
 
 ### BE-07 · Settings/preferences/filing-rules/mail-items ports + migration v7 + single calendar-ID authority (large, after BE-06)
-**Status:** In progress — `codex/be07-settings-persistence`, July 23, 2026.
+**Status:** In review — PR #140, July 23, 2026. Source-only and undeployed; production PostgreSQL migrations v7 and v8 remain unapplied.
 
 **Why:** Four more D1-only tables with inline SQL; plus the accepted-but-unowned defect:
 saved `workspace_settings` calendar/sheet IDs are runtime-inert while env vars win
@@ -2011,7 +2011,7 @@ may not start before production-platform acceptance plus each item's listed
 gate.
 
 ### AI-01 · Tasks foundation + phone-call meeting type (medium; no deps — parallel-safe now)
-**Status:** In progress — `codex/ai01-tasks-foundation`. PR #135 merged July 23, 2026 (source-only and undeployed; migration 0018 not applied to Sites). Fable review + revision verified: referential integrity enforced identically across d1/postgres/memory adapters (project-not-found/lead-not-found → 404 per house contract), rehearsal accept-set matches the registered v6 constraint exactly. REMAINING (assigned to the BE-07 PR): register the prepared `app/platform/postgres/task-schema.ts` as the next contiguous production version after v7, restore `phone-call` to the rehearsal accept-set (constraint then widened), update the four deferral docs, then flip this line to Complete.
+**Status:** Complete — PR #135 + PR #140, July 23, 2026. Source-only and undeployed; migration 0018 not applied to Sites.
 
 **Why:** "review to-dos and tell me what to get done today" has no substrate —
 no tasks table exists anywhere (only `project_meetings.action_items_json`

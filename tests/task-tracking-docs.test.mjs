@@ -110,7 +110,7 @@ function assertPacketDocumentStructure(path, markdown) {
     assert.doesNotMatch(statusLine, /^Status:/, `${path}:${index + 2} must use the bold Status marker`);
     assert.match(
       statusLine,
-      /^\*\*Status:\*\* (?:Complete — PR #\d+|In review — PR #\d+|In progress — `(?:codex|claude)\/[^`]+`|Blocked — .+|Resolved in PR #\d+)(?:[,.]|$)/,
+      /^\*\*Status:\*\* (?:Complete — PR #\d+(?: \+ PR #\d+)*|In review — PR #\d+|In progress — `(?:codex|claude)\/[^`]+`|Blocked — .+|Resolved in PR #\d+)(?:[,.]|$)/,
       `${path}:${index + 2} has an invalid status-line shape`,
     );
   }
@@ -122,7 +122,7 @@ function assertCompleteStatus(markdown, packetId, pr) {
   const status = packetStatus(markdown, packetId);
   assert.match(
     status,
-    new RegExp(`^Complete — PR #${pr}, [A-Z][a-z]+ \\d{1,2}, \\d{4}\\.`),
+    new RegExp(`^Complete — PR #${pr}(?: \\+ PR #\\d+)*, [A-Z][a-z]+ \\d{1,2}, \\d{4}\\.`),
     `${packetId} does not record merged PR #${pr}`,
   );
   assertMergedStatusHasNoReviewTerms(packetId, status);
@@ -279,7 +279,7 @@ test("known merged packets map to their PRs and cannot regress to review-only wo
     ["SET-01", 35], ["SET-02", 37], ["SET-03", 44], ["SET-04", 44], ["SET-10", 56],
     ["SET-13", 76], ["SET-14", 81], ["SET-15", 84], ["SET-16", 88], ["SET-17", 92],
     ["SET-19", 83], ["SET-28", 87], ["GI-02", 79], ["GI-03", 80], ["KPI-01", 41],
-    ["KPI-02", 52], ["KPI-03", 75], ["TRK-01", 32], ["TRK-02", 66],
+    ["KPI-02", 52], ["KPI-03", 75], ["TRK-01", 32], ["TRK-02", 66], ["AI-01", 135],
   ]);
   const mergedOidcPackets = new Map([
     ["OIDC-01", 48], ["OIDC-02", 54], ["OIDC-03", 55], ["OIDC-04", 49],
@@ -289,6 +289,7 @@ test("known merged packets map to their PRs and cannot regress to review-only wo
   ]);
 
   for (const [packet, pr] of mergedPlanPackets) assertCompleteStatus(plan, packet, pr);
+  assert.match(packetStatus(plan, "AI-01"), /\+ PR #140,/);
   for (const [packet, pr] of mergedOidcPackets) assertCompleteStatus(oidc, packet, pr);
   for (const [packet, pr] of mergedFixPackets) assertCompleteStatus(findings, packet, pr);
 
