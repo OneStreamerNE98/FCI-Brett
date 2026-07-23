@@ -23,7 +23,6 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   }
   for (const heading of [
     "Company account authorization",
-    "Verify the Shared Drive",
     "Prepare Gmail",
     "Verify Calendar",
     "Sync the Sheets mirror",
@@ -152,10 +151,12 @@ test("administrator connection health is a bounded Stage 2 expander without dupl
   assert.doesNotMatch(healthSource, /Disconnect Workspace|Reconnect Google Workspace|Reset simulation data/);
 });
 
-test("Workspace resources stay endpoint-owned inside the Stage 3 shell", async () => {
-  const [panel, actions] = await Promise.all([
+test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 surface", async () => {
+  const [panel, actions, actionStyles, panelStyles] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/settings/components/WorkspaceDriveResourceActions.tsx"),
+    read("app/settings/components/WorkspaceDriveResourceActions.module.css"),
+    read("app/settings/components/GoogleWorkspacePanel.module.css"),
   ]);
 
   assert.match(panel, /if \(!isAdmin\) return;[\s\S]+cachedGetJson<WorkspaceSetupResourcesPayload>\("\/api\/v1\/integrations\/google\/setup\/resources"/);
@@ -183,9 +184,14 @@ test("Workspace resources stay endpoint-owned inside the Stage 3 shell", async (
   assert.match(stageTwoSource, /Simulation runs locally, and nothing is sent to Google/);
   assert.match(stageTwoSource, /<details className=\{`workspace-connection-health/);
   assert.doesNotMatch(stageTwoSource, /<section className="workspace-connection-health"|workspace-connection-status|Simulated connection ready|Google Workspace connected/);
-  assert.match(stageThreeSource, /Verify the Shared Drive/);
-  assert.match(stageThreeSource, /WorkspaceBlueprintEditor/);
-  assert.match(stageThreeSource, /workspace-resources-card/);
+  assert.match(stageThreeSource, /panelStyles\.stageThreeUnified/);
+  assert.match(stageThreeSource, /data-stage-three-pane="creation"[\s\S]+WorkspaceDriveResourceActions/);
+  assert.match(stageThreeSource, /data-stage-three-pane="blueprint"[\s\S]+WorkspaceBlueprintEditor/);
+  assert.ok(
+    stageThreeSource.indexOf('data-stage-three-pane="creation"') < stageThreeSource.indexOf('data-stage-three-pane="blueprint"'),
+    "the primary creation workflow precedes the blueprint in visual, reading, and focus order",
+  );
+  assert.doesNotMatch(stageThreeSource, /Verify the Shared Drive[\s\S]+workspace-setup-step|workspace-resources-card|workspace-resource-table|Connected account ↔ intake mailbox/);
   assert.match(stageFourSource, /Prepare Gmail/);
   assert.match(stageFourSource, /Verify Calendar/);
   assert.match(stageFourSource, /Sync the Sheets mirror/);
@@ -194,18 +200,74 @@ test("Workspace resources stay endpoint-owned inside the Stage 3 shell", async (
   for (const state of ["Found", "Created", "Adopted", "Not configured", "Simulated"]) {
     assert.match(`${panel}\n${actions}`, new RegExp(`"${state}"`));
   }
-  assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/shared-drive\/adopt/);
-  assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/folders\/ensure-roots/);
-  assert.match(actions, /\/api\/v1\/integrations\/google\/drive\/folders\/rename/);
-  assert.match(actions, /\/api\/v1\/integrations\/google\/sheets\/ensure/);
-  assert.match(panel, /workspaceResourceSourceLabel[\s\S]+App-managed[\s\S]+Environment value/);
-  assert.match(panel, /workspace-resource-state/);
-  assert.match(panel, /workspace-resource-source/);
+  for (const [endpoint, source] of [
+    ["/api/v1/integrations/google/drive/shared-drive/adopt", actions],
+    ["/api/v1/integrations/google/drive/folders/ensure-roots", actions],
+    ["/api/v1/integrations/google/drive/folders/rename", actions],
+    ["/api/v1/integrations/google/sheets/ensure", actions],
+    ["/api/v1/integrations/google/drive/templates/ensure", actions],
+    ["/api/v1/integrations/google/drive/verify", panel],
+    ["/api/v1/integrations/google/calendar/events", panel],
+  ]) {
+    assert.match(source, new RegExp(endpoint.replaceAll("/", "\\/")));
+  }
+  assert.match(actions, /method: "POST",[\s\S]+headers: \{ "Content-Type": "application\/json" \},[\s\S]+body: JSON\.stringify\(body\)/);
+  assert.match(actions, /selectedId \? \{ driveId: selectedId \} : \{\}/);
+  assert.match(actions, /\{ key: resource\.key, name \}/);
+  assert.match(panel, /fetch\("\/api\/v1\/integrations\/google\/drive\/verify", \{ method: "POST" \}\)/);
+  assert.match(actions, /resourceSourceLabel[\s\S]+App-managed[\s\S]+Environment value/);
+  assert.match(actions, /ResourceDetails/);
+  assert.match(actions, /Every action is repeat-safe and never deletes Google content\./);
 
-  const resourceTableStart = panel.indexOf('<OperationsDataTable className="workspace-resource-table"');
-  const resourceTableEnd = panel.indexOf("</OperationsDataTable>", resourceTableStart);
-  assert.ok(resourceTableStart >= 0 && resourceTableEnd > resourceTableStart);
-  assert.doesNotMatch(panel.slice(resourceTableStart, resourceTableEnd), /<button|AdministratorActionButton/);
+  for (const [label, info] of [
+    ["Shared Drive", "The one company drive where every project folder lives. The app never creates a second drive — it adopts the one your admin set up."],
+    ["Folder tree (from your blueprint)", "Creates the top-level folders exactly as your blueprint defines them. Rename them from this screen later — never directly in Drive."],
+    ["Spreadsheets", "The Client Directory and Project Register the app keeps in sync, plus any extra sheets you defined. The app is the source of truth — the sheets are mirrors."],
+    ["Templates", "Starter documents — estimate, work order, change order, checklist, budget — placed in your Templates folder. Edit their content in Google; the app only creates them."],
+    ["Calendars", "Checks that the appointments calendar your admin shared is reachable. The app doesn't create calendars yet — that arrives with a later update."],
+  ]) {
+    assert.match(actions, new RegExp(`label="${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+    assert.ok(actions.includes(info), `exact InfoHint copy is pinned for ${label}`);
+  }
+  const rowLabels = [
+    'label="Shared Drive"',
+    'label="Folder tree (from your blueprint)"',
+    'label="Spreadsheets"',
+    'label="Templates"',
+    'label="Calendars"',
+  ];
+  let previousRowIndex = -1;
+  for (const label of rowLabels) {
+    const index = actions.indexOf(label);
+    assert.ok(index > previousRowIndex, `${label} stays in the specified creation order`);
+    previousRowIndex = index;
+  }
+  for (const chip of ["FOUND — ADOPT", "VERIFY", "DONE", "AFTER DRIVE", "CREATE", "AFTER FOLDERS", "VERIFY ONLY"]) {
+    assert.match(actions, new RegExp(`"${chip}"`));
+  }
+  assert.doesNotMatch(actions, /AFTER SPREADSHEETS|VERIFY-ONLY FOR NOW|Spreadsheets \(/);
+  assert.match(actions, /const foldersEnabled = sharedDriveAdoptEnabled && progress\.sharedDriveComplete/);
+  assert.match(actions, /const spreadsheetsEnabled = foldersEnabled && progress\.foldersComplete/);
+  assert.match(actions, /const templatesEnabled = foldersEnabled && progress\.foldersComplete/);
+  assert.match(actions, /const calendarsEnabled = templatesEnabled && progress\.templatesComplete/);
+  assert.match(actions, /Unlocks after Shared Drive\./);
+  assert.equal(actions.match(/Unlocks after Folder tree \(from your blueprint\)\./g)?.length, 2);
+  assert.match(actions, /Unlocks after Templates\./);
+  assert.match(actions, /resource\.resourceType === "drive\.shared-drive"[\s\S]+resource\.resourceType === "drive\.folder"[\s\S]+resource\.resourceType === "sheets\.spreadsheet"[\s\S]+resource\.resourceType === "drive\.file"/);
+  const progressStart = actions.indexOf("export function deriveWorkspaceCreationProgress");
+  const progressEnd = actions.indexOf("async function postJson", progressStart);
+  assert.ok(progressStart >= 0 && progressEnd > progressStart);
+  assert.match(actions, /function resourceGroupComplete[\s\S]+resources\.length > 0[\s\S]+resources\.every/);
+  assert.doesNotMatch(actions.slice(progressStart, progressEnd), /calendar\.calendar/);
+  assert.match(panel, /const stageThreeResourcesComplete = completeWorkspaceCreationCount === 4/);
+  assert.match(panel, /IN PROGRESS · \$\{completeWorkspaceCreationCount\} of 4/);
+  assert.match(panelStyles, /\.stageThreeFrame[\s\S]+container: stage-three \/ inline-size[\s\S]+\.stageThreeUnified[\s\S]+grid-template-columns:[\s\S]+@container stage-three \(max-width: 1000px\)[\s\S]+grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(actionStyles, /@media \(max-width: 560px\)[\s\S]+\.creationRow[\s\S]+grid-template-columns: 27px minmax\(0, 1fr\)[\s\S]+\.resourceDetails > summary[\s\S]+min-height: 44px/);
+  assert.doesNotMatch(actionStyles, /font-size:\s*(?:10|11)px/);
+  assert.match(actionStyles, /var\(--control-compact\)/);
+  assert.match(actionStyles, /var\(--radius-(?:control|card|chip|pill)\)/);
+  assert.match(actionStyles, /var\(--line\)/);
+  assert.doesNotMatch(actionStyles, /(?:min-height:\s*34px|border-radius:\s*999px|var\(--line-soft\))/);
 });
 
 test("Workspace setup masks accounts and exposes copy-exact safe helpers", async () => {
@@ -216,14 +278,14 @@ test("Workspace setup masks accounts and exposes copy-exact safe helpers", async
   ]);
 
   assert.match(panel, /function maskWorkspaceAccountForDisplay/);
-  assert.match(panel, /maskWorkspaceAccountForDisplay\(workspaceResources\.identity\.connectionAccount\)/);
+  assert.match(panel, /\.map\(\(account\) => maskWorkspaceAccountForDisplay\(account\)/);
   assert.match(panel, /maskWorkspaceAccountForDisplay\(connectionHealth\.connection\.account\)/);
   assert.doesNotMatch(panel, /workspace\?\.connectionAccount \?\?/);
   assert.doesNotMatch(panel, /<dd>\{connectionHealth\.connection\.account/);
 
-  assert.match(panel, /Connected account ↔ intake mailbox/);
-  assert.match(panel, /workspaceResources\.identity\.allowedDomains/);
-  assert.match(panel, /workspaceResources\.identity\.mode/);
+  assert.doesNotMatch(panel, /Connected account ↔ intake mailbox|workspace-resource-identity/);
+  assert.match(panel, /allowedDomainCount: workspaceResources\?\.identity\.allowedDomains\.length/);
+  assert.match(panel, /sourceModes = \[[\s\S]+workspaceResources\?\.identity\.mode/);
   assert.match(helper, /https:\/\/groundwork-flooring-ops\.jaggerisagoodboy\.chatgpt\.site\/api\/v1\/integrations\/google\/callback/);
   assert.match(helper, /openssl rand -base64 32/);
   assert.match(checklist, /Missing hosted keys/);
@@ -266,7 +328,7 @@ test("Workspace blueprint is a structured admin editor and the legacy static car
     read("app/globals.css"),
   ]);
 
-  assert.match(panel, /isAdmin && <WorkspaceBlueprintEditor notify=\{notify\} refreshKey=\{blueprintEditorRevision\}/);
+  assert.match(panel, /<WorkspaceBlueprintEditor notify=\{notify\} refreshKey=\{blueprintEditorRevision\}/);
   assert.match(panel, /setBlueprintEditorRevision\(\(current\) => current \+ 1\)/);
   assert.doesNotMatch(panel, /DRIVE_BLUEPRINT|className="drive-blueprint"|project-folder-list/);
   assert.doesNotMatch(css, /\.drive-blueprint|\.project-folder-list/);

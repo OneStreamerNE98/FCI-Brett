@@ -11,8 +11,8 @@ import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-
 import panelStyles from "./GoogleWorkspacePanel.module.css";
 import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
 import {
+  deriveWorkspaceCreationProgress,
   WorkspaceDriveResourceActions,
-  type WorkspaceSetupResource,
   type WorkspaceSetupResourcesPayload,
 } from "./WorkspaceDriveResourceActions";
 import { WorkspaceDomainChecklistCard } from "./workspace-domain-checklist/WorkspaceDomainChecklistCard";
@@ -93,13 +93,6 @@ const CONNECTION_SERVICE_COLUMNS = [
   { key: "service", label: "Service" },
   { key: "enabled", label: "FCI configuration" },
   { key: "granted", label: "Recorded OAuth permission" },
-] as const;
-
-const WORKSPACE_RESOURCE_COLUMNS = [
-  { key: "resource", label: "Resource" },
-  { key: "state", label: "State" },
-  { key: "source", label: "Source" },
-  { key: "actions", label: "Setup actions" },
 ] as const;
 
 const CONNECTION_SERVICES: readonly { key: GoogleServiceKey; label: string }[] = [
@@ -184,11 +177,6 @@ function SetupStage({
   </section>;
 }
 
-function workspaceResourceComplete(resource: WorkspaceSetupResource, simulation: boolean) {
-  if (simulation) return resource.source === "app" && Boolean(resource.externalId);
-  return resource.state === "Created" || resource.state === "Adopted";
-}
-
 function stepStatus({ simulation, previousComplete = true, prerequisitesReady, complete }: { simulation: boolean; previousComplete?: boolean; prerequisitesReady: boolean; complete: boolean }): SetupStepStatus {
   if (simulation) return "Simulated";
   if (!previousComplete) return "Blocked by previous step";
@@ -213,16 +201,6 @@ function maskWorkspaceAccountForDisplay(value: string | null | undefined) {
   const domain = value.slice(separator + 1);
   if (local.includes("•")) return `${local}@${domain}`;
   return `${local.slice(0, Math.min(2, local.length))}•••@${domain}`;
-}
-
-function workspaceResourceSourceLabel(source: WorkspaceSetupResource["source"]) {
-  if (source === "app") return "App-managed";
-  if (source === "env") return "Environment value";
-  return "—";
-}
-
-function workspaceResourceStateClass(state: WorkspaceSetupResource["state"]) {
-  return state.toLowerCase().replaceAll(" ", "-");
 }
 
 export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: Notify; projects: Project[]; isAdmin: boolean }) {
@@ -601,6 +579,13 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   }
 
   const simulation = workspace?.simulation === true;
+  const resourceRows = workspaceResources?.resources ?? [];
+  const workspaceResourcesKnown = workspaceResources !== null && workspaceResourcesState !== "error";
+  const workspaceCreationProgress = deriveWorkspaceCreationProgress(
+    resourceRows,
+    simulation,
+    workspaceResourcesKnown,
+  );
   const configured = simulation || workspaceResources?.connectReady === true;
   const connected = workspace?.connectionStatus === "connected";
   const reconnectRequired = workspace?.requiresReauthorization === true;
@@ -615,16 +600,17 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const calendarReady = connected && workspace?.calendarEnabled === true && workspace?.calendarConnected === true;
   const sheetsReady = connected && workspace?.sheetsEnabled === true && workspace?.sheetsConnected === true && workspace?.clientDirectorySheetConfigured === true;
   const sheetsSynced = sheetMirror?.clients.status === "synced" && sheetMirror?.projects.status === "synced";
-  const driveStepStatus = stepStatus({ simulation, previousComplete: connectComplete, prerequisitesReady: driveReady, complete: driveVerified });
+  const driveStepStatus = stepStatus({
+    simulation,
+    previousComplete: connectComplete,
+    prerequisitesReady: driveReady,
+    complete: driveVerified || workspaceCreationProgress.sharedDriveComplete,
+  });
   const gmailStepStatus = stepStatus({ simulation, previousComplete: driveStepStatus === "Complete", prerequisitesReady: gmailReady, complete: gmailLabelsReady });
   const calendarStepStatus = stepStatus({ simulation, previousComplete: gmailStepStatus === "Complete", prerequisitesReady: calendarReady, complete: calendarChecked });
   const sheetsStepStatus = stepStatus({ simulation, previousComplete: calendarStepStatus === "Complete", prerequisitesReady: sheetsReady, complete: sheetsSynced });
-  const storageName = workspace?.storageName ?? "FCI Operations";
   const hasStoredConnection = !simulation && Boolean(workspace?.connectionStatus && workspace.connectionStatus !== "not-connected");
-  const resourceRows = workspaceResources?.resources ?? [];
   const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
-  const resourceIdentityMatch = workspaceResources?.identity.intakeMailboxMatches;
-  const resourceIdentityMatchLabel = resourceIdentityMatch === true ? "Matches" : resourceIdentityMatch === false ? "Does not match" : "Not verified";
   const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
   const calendarActionsEnabled = simulation || (gmailStepStatus === "Complete" && calendarReady);
   const sheetsActionsEnabled = simulation || (calendarStepStatus === "Complete" && sheetsReady);
@@ -696,18 +682,13 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   )).length;
   const stageOneComplete = workspaceResources?.connectReady === true;
   const stageTwoComplete = bannerSimulation || liveConnectionComplete;
-  const requiredWorkspaceResources = resourceRows.filter((resource) => (
-    resource.resourceType === "drive.shared-drive"
-    || resource.resourceType === "drive.folder"
-    || resource.resourceType === "drive.file"
-    || resource.resourceType === "sheets.spreadsheet"
-    || (!resource.resourceType && resource.key === "primary")
-  ));
-  const completeWorkspaceResourceCount = requiredWorkspaceResources.filter((resource) => (
-    workspaceResourceComplete(resource, bannerSimulation)
-  )).length;
-  const stageThreeResourcesComplete = requiredWorkspaceResources.length > 0
-    && completeWorkspaceResourceCount === requiredWorkspaceResources.length;
+  const bannerWorkspaceCreationProgress = deriveWorkspaceCreationProgress(
+    resourceRows,
+    bannerSimulation,
+    workspaceResourcesKnown,
+  );
+  const completeWorkspaceCreationCount = bannerWorkspaceCreationProgress.completedCount;
+  const stageThreeResourcesComplete = completeWorkspaceCreationCount === 4;
   const stageThreeComplete = stageTwoComplete && stageThreeResourcesComplete;
   const stageFourCompleteCount = [gmailLabelsReady, calendarChecked, sheetsSynced].filter(Boolean).length;
   const stageFourReady = stageThreeComplete && stageFourCompleteCount === 3;
@@ -781,7 +762,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const stageThreeStatus = neutralStageStatus ?? (stageThreeComplete
     ? "DONE"
     : stageTwoComplete
-      ? `IN PROGRESS · ${completeWorkspaceResourceCount} of ${requiredWorkspaceResources.length}`
+      ? `IN PROGRESS · ${completeWorkspaceCreationCount} of 4`
       : "WAITING ON STAGE 2");
   const stageFourStatus = neutralStageStatus ?? (stageFourReady
     ? "READY"
@@ -920,39 +901,36 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         firstIncomplete={currentStageNumber === 3}
         statusHint="This stage is complete when every required Drive, folder, spreadsheet, and template resource is created or adopted."
       >
-        <ol className="workspace-setup-steps" aria-label="Shared Drive verification setup step">
-          <li className={`workspace-setup-step ${stepStatusClass(driveStepStatus)}`}>
-        <header><span className="workspace-step-number">2</span><div><h3>Verify the Shared Drive</h3><p>Confirm the configured FCI Operations Shared Drive before any project folder is created.</p></div><span className="workspace-step-status">{driveStepStatus}</span></header>
-        <div className="workspace-step-body"><p className="workspace-step-summary"><FolderOpen size={15} /> <span><strong>{storageName}</strong>{driveReady || simulation ? " is available for a direct verification." : " remains blocked until the connection and Drive prerequisite are ready."}</span></p><div className="workspace-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void verifyGoogleDrive()} disabled={working || (!simulation && !driveReady)}>{working ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton></div></div>
-          </li>
-        </ol>
-        {isAdmin && <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />}
-        <section className="workspace-setup-card workspace-resources-card" aria-labelledby="workspace-resources-heading">
-          <header>
-            <div><p className="eyebrow">Workspace setup</p><h3 id="workspace-resources-heading">Resources</h3></div>
-            {!isAdmin ? <Status text="Administrator access" /> : workspaceResources ? <Status text={workspaceResources.simulation ? "Simulated" : workspaceResources.connectReady ? "Connection ready" : "Setup required"} /> : <Status text={workspaceResourcesState === "error" ? "Unavailable" : "Loading"} />}
-          </header>
-          <p>Adopt and verify the company Shared Drive, ensure the blueprint-defined root tree and spreadsheets, and rename owner-managed folders. Setup actions never delete Google content.</p>
-          {!isAdmin ? <p className="workspace-admin-readonly"><ShieldCheck size={15} /><span>Workspace resource status is available to Administrators. No administrator setup request is made for this Office view.</span></p> : <>
-            {workspaceResourcesState === "loading" && !workspaceResources && <p className="workspace-resources-message" role="status">Loading the Workspace resource registry…</p>}
-            {workspaceResourcesError && <div className="workspace-resources-error" role="alert"><span>{workspaceResourcesError}</span><button className="soft-button" type="button" onClick={() => void loadWorkspaceResources(true)}>Retry resources</button></div>}
-            {workspaceResources && <>
-              <dl className="workspace-resource-identity">
-                <div><dt>Connected account ↔ intake mailbox</dt><dd><span>{maskWorkspaceAccountForDisplay(workspaceResources.identity.connectionAccount)}</span><span className={`workspace-identity-state ${resourceIdentityMatch === true ? "ready" : resourceIdentityMatch === false ? "mismatch" : "unknown"}`}>{resourceIdentityMatchLabel}</span></dd></div>
-                <div><dt>Allowed domains</dt><dd>{workspaceResources.identity.allowedDomains.length ? workspaceResources.identity.allowedDomains.join(", ") : "Not configured"}</dd></div>
-                <div><dt>Mode</dt><dd>{workspaceResources.identity.mode === "simulation" ? "Simulation" : "Workspace"}</dd></div>
-              </dl>
-              {resourceRows.length > 0 ? <OperationsDataTable className="workspace-resource-table" columns={WORKSPACE_RESOURCE_COLUMNS} labelledBy="workspace-resources-heading">
-                {resourceRows.map((resource) => <tr key={`${resource.resourceType ?? "legacy"}:${resource.key}`}>
-                  <OperationsDataTableCell label="Resource"><span className="workspace-resource-name"><strong>{resource.label}</strong><small>{resource.blueprintName}</small></span></OperationsDataTableCell>
-                  <OperationsDataTableCell label="State"><span className={`workspace-resource-state ${workspaceResourceStateClass(resource.state)}`}>{resource.state}</span></OperationsDataTableCell>
-                  <OperationsDataTableCell label="Source"><span className={`workspace-resource-source ${resource.source}`}>{workspaceResourceSourceLabel(resource.source)}</span></OperationsDataTableCell>
-                  <OperationsDataTableCell label="Setup actions"><WorkspaceDriveResourceActions resource={resource} notify={notify} onChanged={refreshAfterDriveSetup} /></OperationsDataTableCell>
-                </tr>)}
-              </OperationsDataTable> : <p className="workspace-resources-message">No Workspace resource rows were returned.</p>}
-            </>}
-          </>}
-        </section>
+        {isAdmin ? <div className={panelStyles.stageThreeFrame}>
+          <div className={panelStyles.stageThreeUnified}>
+            <div className={panelStyles.stageThreeCreation} data-stage-three-pane="creation">
+              <WorkspaceDriveResourceActions
+                resources={resourceRows}
+                simulation={simulation}
+                resourcesReady={workspaceResourcesKnown}
+                resourcesLoading={workspaceResourcesState === "idle" || workspaceResourcesState === "loading"}
+                resourcesError={workspaceResourcesError}
+                stageReady={stageTwoComplete}
+                driveReady={driveReady}
+                driveVerificationReady={simulation || driveReady}
+                driveVerified={driveVerified}
+                driveWorking={working}
+                calendarReady={calendarReady}
+                calendarWorking={calendarWorking}
+                notify={notify}
+                onRetryResources={() => loadWorkspaceResources(true)}
+                onVerifyDrive={verifyGoogleDrive}
+                onVerifyCalendar={refreshTestCalendar}
+                onChanged={refreshAfterDriveSetup}
+              />
+            </div>
+            <div className={panelStyles.stageThreeBlueprint} data-stage-three-pane="blueprint">
+              <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />
+            </div>
+          </div>
+        </div> : <section className="workspace-setup-card">
+          <p className="workspace-admin-readonly"><ShieldCheck size={15} /><span>Workspace definition and creation are available to Administrators. No administrator setup request is made for this Office view.</span></p>
+        </section>}
       </SetupStage>
       <SetupStage
         number={4}
