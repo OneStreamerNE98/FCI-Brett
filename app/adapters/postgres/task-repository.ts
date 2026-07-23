@@ -49,6 +49,8 @@ const TASK_IDENTIFIER_CONSTRAINTS = [
   "tasks_pkey",
   "activity_events_pkey",
 ] as const;
+const TASK_PROJECT_REFERENCE_CONSTRAINTS = ["tasks_project_id_fkey"] as const;
+const TASK_LEAD_REFERENCE_CONSTRAINTS = ["tasks_lead_id_fkey"] as const;
 
 function requiredText(value: unknown, label: string) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is invalid`);
@@ -172,6 +174,16 @@ function postgresConstraint(error: unknown, code: string, constraints: readonly 
   const record = error as { code?: unknown; constraint?: unknown };
   return record.code === code && typeof record.constraint === "string"
     && constraints.includes(record.constraint);
+}
+
+function taskReferenceFailure(error: unknown) {
+  if (postgresConstraint(error, "23503", TASK_PROJECT_REFERENCE_CONSTRAINTS)) {
+    return "project-not-found" as const;
+  }
+  if (postgresConstraint(error, "23503", TASK_LEAD_REFERENCE_CONSTRAINTS)) {
+    return "lead-not-found" as const;
+  }
+  return null;
 }
 
 function taskParameters(task: TaskRow, updatedBy: string) {
@@ -306,6 +318,8 @@ LIMIT ${limit}`,
           },
         );
       } catch (error) {
+        const referenceFailure = taskReferenceFailure(error);
+        if (referenceFailure) return { outcome: referenceFailure };
         if (postgresConstraint(error, "23505", TASK_IDENTIFIER_CONSTRAINTS)) {
           return { outcome: "identifier-collision" };
         }
@@ -315,45 +329,51 @@ LIMIT ${limit}`,
 
     async update(intent) {
       assertUpdateIntent(intent);
-      return withPostgresTransaction(
-        pool,
-        { schema: options.schema },
-        async (client) => {
-          const task = intent.task;
-          const updated = await client.query<TaskDatabaseRow>(
-            `UPDATE tasks SET
-               title = $1, details = $2, status = $3, due_date = $4::date,
-               project_id = $5, lead_id = $6, assignee_email = $7,
-               updated_by = $8, updated_at = $9, completed_at = $10,
-               version = version + 1
-             WHERE id = $11
-             RETURNING id::text AS id, title, details, status,
-               due_date::text AS due_date, project_id::text AS project_id,
-               lead_id::text AS lead_id, assignee_email, source, source_ref,
-               created_by, created_at, updated_at, completed_at,
-               version::text AS version`,
-            [
-              task.title,
-              task.details,
-              task.status,
-              task.due_date,
-              task.project_id,
-              task.lead_id,
-              task.assignee_email,
-              intent.updatedBy,
-              new Date(task.updated_at),
-              task.completed_at === null ? null : new Date(task.completed_at),
-              task.id,
-            ],
-          );
-          if (updated.rowCount === 0) return { outcome: "task-not-found" as const };
-          if (updated.rowCount !== 1 || !updated.rows[0]) {
-            throw new Error("PostgreSQL task update returned an invalid result");
-          }
-          if (intent.activity) await insertActivity(client, intent.activity, "task-update");
-          return { outcome: "updated" as const, value: taskRowFromPostgres(updated.rows[0]) };
-        },
-      );
+      try {
+        return await withPostgresTransaction(
+          pool,
+          { schema: options.schema },
+          async (client) => {
+            const task = intent.task;
+            const updated = await client.query<TaskDatabaseRow>(
+              `UPDATE tasks SET
+                 title = $1, details = $2, status = $3, due_date = $4::date,
+                 project_id = $5, lead_id = $6, assignee_email = $7,
+                 updated_by = $8, updated_at = $9, completed_at = $10,
+                 version = version + 1
+               WHERE id = $11
+               RETURNING id::text AS id, title, details, status,
+                 due_date::text AS due_date, project_id::text AS project_id,
+                 lead_id::text AS lead_id, assignee_email, source, source_ref,
+                 created_by, created_at, updated_at, completed_at,
+                 version::text AS version`,
+              [
+                task.title,
+                task.details,
+                task.status,
+                task.due_date,
+                task.project_id,
+                task.lead_id,
+                task.assignee_email,
+                intent.updatedBy,
+                new Date(task.updated_at),
+                task.completed_at === null ? null : new Date(task.completed_at),
+                task.id,
+              ],
+            );
+            if (updated.rowCount === 0) return { outcome: "task-not-found" as const };
+            if (updated.rowCount !== 1 || !updated.rows[0]) {
+              throw new Error("PostgreSQL task update returned an invalid result");
+            }
+            if (intent.activity) await insertActivity(client, intent.activity, "task-update");
+            return { outcome: "updated" as const, value: taskRowFromPostgres(updated.rows[0]) };
+          },
+        );
+      } catch (error) {
+        const referenceFailure = taskReferenceFailure(error);
+        if (referenceFailure) return { outcome: referenceFailure };
+        throw error;
+      }
     },
   };
 }

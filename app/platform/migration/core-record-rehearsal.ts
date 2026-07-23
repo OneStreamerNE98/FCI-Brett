@@ -263,7 +263,6 @@ type PreparedProjectMeeting = {
     | "internal"
     | "pre-install"
     | "closeout"
-    | "phone-call"
     | "other";
   sourceProvider: "manual" | "otter" | "link";
   sourceUrl: string | null;
@@ -415,13 +414,14 @@ const PROJECT_STATUSES = new Set([
   "archived",
 ]);
 const LEAD_STATUSES = new Set(["active", "converted", "lost", "archived"]);
+// This is the PostgreSQL-facing rehearsal set, not the wider D1 domain set.
+// Keep phone-call excluded until task-schema.ts is registered after BE-07.
 const PROJECT_MEETING_TYPES = new Set([
   "client",
   "site-walk",
   "internal",
   "pre-install",
   "closeout",
-  "phone-call",
   "other",
 ]);
 const PROJECT_MEETING_SOURCE_PROVIDERS = new Set(["manual", "otter", "link"]);

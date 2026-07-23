@@ -16,7 +16,12 @@ export type ListTasksResult =
 export type CreateTaskResult =
   | {
       ok: false;
-      kind: "forbidden" | "invalid" | "identifier-collision";
+      kind:
+        | "forbidden"
+        | "invalid"
+        | "identifier-collision"
+        | "project-not-found"
+        | "lead-not-found";
       message: string;
     }
   | { ok: true; value: ReturnType<typeof taskResponse> };
@@ -24,7 +29,12 @@ export type CreateTaskResult =
 export type UpdateTaskResult =
   | {
       ok: false;
-      kind: "forbidden" | "invalid" | "task-not-found";
+      kind:
+        | "forbidden"
+        | "invalid"
+        | "task-not-found"
+        | "project-not-found"
+        | "lead-not-found";
       message: string;
     }
   | { ok: true; value: ReturnType<typeof taskResponse> };
@@ -115,6 +125,12 @@ export async function createTask(
       message: "A task identifier collision occurred. Retry the request.",
     };
   }
+  if (result.outcome === "project-not-found") {
+    return { ok: false, kind: result.outcome, message: "Project not found." };
+  }
+  if (result.outcome === "lead-not-found") {
+    return { ok: false, kind: result.outcome, message: "Lead not found." };
+  }
   return { ok: true, value: taskResponse(result.value) };
 }
 
@@ -176,6 +192,12 @@ export async function updateTask(
   });
   if (result.outcome === "task-not-found") {
     return { ok: false, kind: result.outcome, message: "Task not found." };
+  }
+  if (result.outcome === "project-not-found") {
+    return { ok: false, kind: result.outcome, message: "Project not found." };
+  }
+  if (result.outcome === "lead-not-found") {
+    return { ok: false, kind: result.outcome, message: "Lead not found." };
   }
   return { ok: true, value: taskResponse(result.value) };
 }

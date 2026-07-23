@@ -332,6 +332,36 @@ test("inventory-only source counts fail closed before opening a database connect
   assert.equal(connected, false);
 });
 
+test("phone-call meetings fail before database access until the deferred PG constraint widens", async () => {
+  const snapshot = clone(fixture);
+  snapshot.projectMeetings[0].meetingType = "phone-call";
+  let connected = false;
+
+  await assert.rejects(
+    runCoreRecordRehearsal(
+      {
+        connect: async () => {
+          connected = true;
+          throw new Error("must not connect");
+        },
+      },
+      snapshot,
+      options,
+    ),
+    (error) => {
+      assert.ok(error instanceof CoreRecordRehearsalError);
+      assert.equal(error.code, "invalid_snapshot_value");
+      assert.match(error.message, /meetingType is unsupported/);
+      return true;
+    },
+  );
+  assert.equal(connected, false);
+  assert.match(
+    await readFile(rehearsalSourceUrl, "utf8"),
+    /Keep phone-call excluded until task-schema\.ts is registered after BE-07/,
+  );
+});
+
 test("v2 project KPI placeholders are exact-shape and fail closed until KPI-04", async () => {
   for (const field of ["flooringCategory", "squareFeet", "contractValue"]) {
     const missing = clone(fixture);

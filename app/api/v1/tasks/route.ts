@@ -61,7 +61,13 @@ export async function POST(request: NextRequest) {
     },
   );
   if (!result.ok) {
-    const status = result.kind === "forbidden" ? 403 : result.kind === "invalid" ? 400 : 409;
+    const status = result.kind === "forbidden"
+      ? 403
+      : result.kind === "invalid"
+        ? 400
+        : result.kind === "project-not-found" || result.kind === "lead-not-found"
+          ? 404
+          : 409;
     return json({ error: result.message }, status);
   }
   return json({ task: result.value }, 201);

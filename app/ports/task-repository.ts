@@ -16,7 +16,9 @@ export type TaskCreationIntent = {
 
 export type TaskCreationRepositoryResult =
   | { outcome: "created"; value: TaskRow }
-  | { outcome: "identifier-collision" };
+  | { outcome: "identifier-collision" }
+  | { outcome: "project-not-found" }
+  | { outcome: "lead-not-found" };
 
 export type TaskUpdateIntent = {
   task: TaskRow;
@@ -26,7 +28,9 @@ export type TaskUpdateIntent = {
 
 export type TaskUpdateRepositoryResult =
   | { outcome: "updated"; value: TaskRow }
-  | { outcome: "task-not-found" };
+  | { outcome: "task-not-found" }
+  | { outcome: "project-not-found" }
+  | { outcome: "lead-not-found" };
 
 export interface TaskRepository {
   list(filters: TaskListFilters): Promise<TaskRow[]>;

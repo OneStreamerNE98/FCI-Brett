@@ -65,7 +65,7 @@ test("scopes dashboard Gmail archive totals to the active Google connection", as
   assert.match(dashboard, /bind\(google\.connectionKey\)/);
 });
 
-test("task mutations reject non-office identities before body or database work", async () => {
+test("task reads and mutations reject non-office identities before body or database work", async () => {
   const previousEnvironment = globalThis.__FCI_TEST_CLOUDFLARE_ENV__;
   globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = {
     FCI_OFFICE_EMAILS: "office@example.test",
@@ -106,12 +106,19 @@ test("task mutations reject non-office identities before body or database work",
       body: JSON.stringify({ title: "Must not be accepted" }),
     });
     Object.defineProperty(request, "nextUrl", { value: url });
-    const response = await tasksRoute.POST(request);
-
-    assert.equal(response.status, 403);
-    assert.deepEqual(await response.json(), {
-      error: "Your account is not allowed to access this workspace.",
+    const mutationResponse = await tasksRoute.POST(request);
+    const readRequest = new Request(url, {
+      headers: { "oai-authenticated-user-email": "outsider@example.test" },
     });
+    Object.defineProperty(readRequest, "nextUrl", { value: url });
+    const readResponse = await tasksRoute.GET(readRequest);
+
+    for (const response of [mutationResponse, readResponse]) {
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), {
+        error: "Your account is not allowed to access this workspace.",
+      });
+    }
   } finally {
     await vite.close();
     if (previousEnvironment === undefined) delete globalThis.__FCI_TEST_CLOUDFLARE_ENV__;

@@ -50,7 +50,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (!result.ok) {
     const status = result.kind === "forbidden"
       ? 403
-      : result.kind === "task-not-found"
+      : (
+          result.kind === "task-not-found"
+          || result.kind === "project-not-found"
+          || result.kind === "lead-not-found"
+        )
         ? 404
         : 400;
     return json({ error: result.message }, status);

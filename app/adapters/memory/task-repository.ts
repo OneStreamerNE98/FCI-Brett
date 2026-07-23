@@ -5,6 +5,11 @@ import type {
   TaskUpdateIntent,
 } from "../../ports/task-repository";
 
+type MemoryTaskRepositoryOptions = {
+  projectIds?: Iterable<string>;
+  leadIds?: Iterable<string>;
+};
+
 function snapshot(row: TaskRow): TaskRow {
   return { ...row };
 }
@@ -35,6 +40,13 @@ function compareTasks(left: TaskRow, right: TaskRow) {
 export class MemoryTaskRepository implements TaskRepository {
   readonly #tasks = new Map<string, TaskRow>();
   readonly #activities: TaskCreationIntent["activities"] = [];
+  readonly #projectIds: Set<string>;
+  readonly #leadIds: Set<string>;
+
+  constructor(options: MemoryTaskRepositoryOptions = {}) {
+    this.#projectIds = new Set(options.projectIds ?? []);
+    this.#leadIds = new Set(options.leadIds ?? []);
+  }
 
   activityIntents() {
     return this.#activities.map(snapshotActivity);
@@ -54,6 +66,12 @@ export class MemoryTaskRepository implements TaskRepository {
   }
 
   async create(intent: TaskCreationIntent) {
+    if (intent.task.project_id && !this.#projectIds.has(intent.task.project_id)) {
+      return { outcome: "project-not-found" as const };
+    }
+    if (intent.task.lead_id && !this.#leadIds.has(intent.task.lead_id)) {
+      return { outcome: "lead-not-found" as const };
+    }
     if (this.#tasks.has(intent.task.id)) return { outcome: "identifier-collision" as const };
     this.#tasks.set(intent.task.id, snapshot(intent.task));
     this.#activities.push(...intent.activities.map(snapshotActivity));
@@ -62,6 +80,12 @@ export class MemoryTaskRepository implements TaskRepository {
 
   async update(intent: TaskUpdateIntent) {
     if (!this.#tasks.has(intent.task.id)) return { outcome: "task-not-found" as const };
+    if (intent.task.project_id && !this.#projectIds.has(intent.task.project_id)) {
+      return { outcome: "project-not-found" as const };
+    }
+    if (intent.task.lead_id && !this.#leadIds.has(intent.task.lead_id)) {
+      return { outcome: "lead-not-found" as const };
+    }
     this.#tasks.set(intent.task.id, snapshot(intent.task));
     if (intent.activity) this.#activities.push(snapshotActivity(intent.activity));
     return { outcome: "updated" as const, value: snapshot(intent.task) };

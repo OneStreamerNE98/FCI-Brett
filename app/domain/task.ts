@@ -100,7 +100,8 @@ function hasOnlyKeys(body: Record<string, unknown>, allowed: ReadonlySet<string>
 }
 
 function singleLineText(value: unknown, maximum: number, required = true) {
-  if (typeof value !== "string") return required ? undefined : null;
+  if (value === undefined || value === null) return required ? undefined : null;
+  if (typeof value !== "string") return undefined;
   const cleaned = value.replace(/\s+/g, " ").trim();
   if (!cleaned) return required ? undefined : null;
   if (cleaned.length > maximum || /[\u0000-\u001f\u007f]/.test(cleaned)) return undefined;
