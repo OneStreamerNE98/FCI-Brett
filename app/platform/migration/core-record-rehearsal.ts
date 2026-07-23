@@ -6,13 +6,13 @@ import {
   productionSchemaHistoryMatches,
   type ProductionMigrationHistoryRow,
 } from "../google-cloud/database-readiness.ts";
+import { CORE_REHEARSAL_ADVISORY_LOCK_ID } from "../postgres/advisory-locks.ts";
 
 export const CORE_REHEARSAL_ACKNOWLEDGMENT =
   "FCI TEST — DO NOT USE — I ACKNOWLEDGE THIS NON-PRODUCTION CORE REHEARSAL";
 export const CORE_REHEARSAL_SCHEMA_PREFIX = "fci_rehearsal_";
 export const CORE_REHEARSAL_SCHEMA_PATTERN = /^fci_rehearsal_[a-z0-9_]{1,49}$/;
 export const CORE_REHEARSAL_IMPORTER_ROLE = "fci_rehearsal_importer";
-export const CORE_REHEARSAL_ADVISORY_LOCK_ID = "7314269172071302";
 export const CORE_REHEARSAL_TEST_MARKER = "FCI TEST — DO NOT USE";
 export const CORE_REHEARSAL_SOURCE_SYSTEM = "d1-development-test-export";
 export const CORE_REHEARSAL_MAX_ROWS = 5_000;

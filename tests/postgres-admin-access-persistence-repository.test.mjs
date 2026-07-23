@@ -20,10 +20,9 @@ const vite = await createServer({
 const adminAccessModule = await vite.ssrLoadModule(
   "/app/adapters/postgres/admin-access-persistence-repository.ts",
 );
-const {
-  ADMIN_ACCESS_MUTATION_LOCK_ID,
-  createPostgresAdminAccessPersistenceRepository,
-} = adminAccessModule;
+const advisoryLocksModule = await vite.ssrLoadModule("/app/platform/postgres/advisory-locks.ts");
+const { ADMIN_ACCESS_MUTATION_LOCK_ID } = advisoryLocksModule;
+const { createPostgresAdminAccessPersistenceRepository } = adminAccessModule;
 
 after(async () => {
   await vite.close();
