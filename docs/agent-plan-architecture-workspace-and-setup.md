@@ -628,6 +628,8 @@ checklist-07 gates. Link from README + checklist 07.
 tables.
 
 ### WS-13 · AGENT — Document the dev→production connection boundary (small, after WS-03)
+**Status:** In review — PR #144, July 23, 2026. Source-only and undeployed.
+
 **Why:** No migration story exists for the stored connection; a future agent might try to
 "migrate" the token. The dev refresh token is deliberately non-portable (AES-GCM with
 connection-scoped AAD).

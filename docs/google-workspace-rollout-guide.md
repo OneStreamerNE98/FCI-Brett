@@ -302,6 +302,47 @@ Keep folder provisioning `false` until Drive verification passes. Saving source 
 
 Settings → Google Workspace reports missing prerequisites in a semantic table with the business label, exact environment key, and either **Hosted environment value** or **Hosted secret — never in the app or Git**. The table reports presence or absence only; it never returns a configured value or secret. It also reports the cross-field requirement **Google Workspace intake mailbox matching the single approved connection account**, not merely the two individual variables.
 
+## Production connection is a new connection
+
+The Sites development data connection is never promoted into production. Its refresh
+token is deliberately non-portable: the Sites connector encrypts it with AES-GCM using
+development-only key material and connection-scoped additional authenticated data
+(`google-connection:<connectionKey>:refresh`). The ciphertext can be decrypted only with
+the matching key version and context. Never export the refresh token, copy its
+ciphertext, reuse the development encryption key, or migrate the `google_connections`
+row into Cloud SQL.
+
+When production cutover is separately approved:
+
+1. Freeze development connector writes and keep the current development encryption key
+   available only long enough to disconnect safely.
+2. Use **Settings → Google Workspace → Disconnect Workspace** (the authorized
+   `DELETE /api/v1/integrations/google/connection` flow). It deletes the development
+   connection and attempts Google revocation. Confirm the grant is revoked in the
+   connection account's Google security controls; if the API revocation could not be
+   confirmed, revoke it there manually before continuing.
+3. Do not export any development OAuth attempt, token, ciphertext, or encryption key.
+   Create the production data-connector OAuth client in the separate production Google
+   Cloud project with only the exact production callback.
+4. Generate a fresh 32-byte production token-encryption key and deliver it through
+   Secret Manager. Do not copy the Sites key or its version label into production.
+5. After the Cloud Run connector routes, credential-specific grants, and provider
+   adapters pass their activation gates, start a new authorization on Cloud Run and
+   complete fresh consent as the exact approved company connection account. Re-run
+   Drive, Gmail, Calendar, and Sheets verification independently.
+
+Connection-independent business records follow the reviewed database migration path.
+Connection-scoped Google state follows an explicit reconciliation path instead of a raw
+D1 copy: `drive_folder_mappings` and `gmail_file_archives` are re-derived from the stable
+FCI `appProperties` already stamped on Drive folders and archive artifacts;
+`google_oauth_attempts` and `google_sheet_sync_state` are discarded, and production
+starts with a new OAuth attempt and a full verified Sheets sync. The authoritative
+table-by-table treatment and the still-intentional Cloud Run `503 feature_unavailable`
+boundary are documented in the
+[Google Cloud runtime foundation](google-cloud-runtime-foundation.md#production-google-connector-boundary-and-cutover-state).
+This procedure documents a future cutover gate; it does not authorize production
+configuration, consent, data migration, or deployment now.
+
 ## Part 11: connect and verify Google Workspace
 
 1. Deploy the runtime values.

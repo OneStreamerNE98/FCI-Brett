@@ -18,6 +18,13 @@ The accepted [Workspace-first, cost-controlled rollout](../architecture-decision
 
 The source-only [Google Workspace watch, queue, and sync-state design](../google-workspace-watch-and-queue-design.md) now records the future Gmail polling and Calendar HTTPS-channel decisions and supplies provider-neutral local contract fakes. It activates nothing; every unchecked infrastructure, persistence, reliability, and drill gate below remains open.
 
+Production connector cutover must follow
+[Production connection is a new connection](../google-workspace-rollout-guide.md#production-connection-is-a-new-connection)
+and the
+[production Google connector boundary and cutover-state table](../google-cloud-runtime-foundation.md#production-google-connector-boundary-and-cutover-state).
+The development token is never exported; these source-only procedures do not authorize
+production consent, Secret Manager changes, migration, provider activation, or deployment.
+
 ## Accepted rollout guardrails
 
 - [x] Reuse existing Google Workspace for company identity and collaboration while keeping Cloud SQL as the operational system of record.

@@ -36,6 +36,52 @@ The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-f
   projects, project meetings, and explicitly classified client/project/lead activity
   events.
 
+## Production Google connector boundary and cutover state
+
+BE-08 closed two source-architecture gaps without activating the production connector:
+
+- the Drive, Gmail, Calendar, Sheets, and OAuth cores compile for Cloud Run through
+  injected fetch, clock, secret-store, and persistence dependencies rather than
+  `cloudflare:workers`; and
+- the production OAuth persistence seam targets the platform-neutral version-3
+  integration metadata boundary, with one-shot OAuth attempts, exact stored key-version
+  selection, AES-GCM additional authenticated data, current-version writes, and
+  version-fenced re-encryption.
+
+Those source capabilities are deliberately not composed into the Cloud Run employee
+router. No production connector start/callback route, connector-specific database
+grants, Secret Manager key delivery, or live Google provider adapter is active. The
+authorization-gated file, Gmail, and Calendar routes therefore continue to return
+`503 feature_unavailable`. That response means the production provider is not composed;
+it is an intentional fail-closed platform boundary, not evidence of a transient Google
+outage and not a stub to bypass before Gate C passes.
+
+The production Google data connection is established by fresh consent, never by
+migrating the Sites credential. The development refresh token is AES-GCM ciphertext
+bound to its development key version and connection-scoped additional authenticated data
+(`google-connection:<connectionKey>:refresh`). Cutover deletes and revokes that
+development connection, creates a separate production data-connector OAuth client,
+generates a new Secret Manager encryption key, and starts a new OAuth attempt on Cloud
+Run only after the connector activation gates pass.
+
+Treat connection-scoped D1 state as follows:
+
+| Development state | Production cutover treatment |
+| --- | --- |
+| `google_connections` refresh-token ciphertext | Never export or copy. Delete through the authorized connection `DELETE` flow, confirm Google revocation, and obtain fresh production consent. |
+| `drive_folder_mappings` | Re-derive by scanning the adopted Shared Drive for the stable `fciClientId`, `fciProjectId`, and `fciFolderKind` app properties, then validate each CRM identifier and Drive containment before writing production mappings. |
+| `gmail_file_archives` and `gmail_file_archive_artifacts` | Re-derive archive identity and artifact relationships from Drive files stamped with `fciArchiveId`, `fciArtifactKey`, `fciArchiveKind`, `fciProjectId`, and `fciGmailMessageId`; reconcile against migrated project identifiers before accepting the rebuilt records. |
+| `google_oauth_attempts` | Discard. Attempts are short-lived, browser-bound, one-shot state; production starts a new attempt. |
+| `google_sheet_sync_state` | Discard. Production performs a full verified first sync and writes new success/error timestamps; development sync status is not production evidence. |
+
+The folder/archive recovery path is a reconciliation operation against company-owned
+Drive identity, not permission to copy development credential material or silently drop
+unmatched rows. Any mismatch is blocking evidence for the cutover report. The operator
+sequence is in
+[Production connection is a new connection](google-workspace-rollout-guide.md#production-connection-is-a-new-connection).
+Nothing in this section composes a provider, applies a grant or migration, changes
+Secret Manager, performs consent, or deploys Cloud Run.
+
 ## Employee API contract
 
 The production Cloud Run boundary and controlled Sites development boundary deliberately
