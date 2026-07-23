@@ -8,6 +8,7 @@ import {
   WORKSPACE_OAUTH_REDIRECT_URI,
   WORKSPACE_TOKEN_KEY_COMMAND,
   workspaceCopyHelperState,
+  workspaceDomainChecklistDisplayStatus,
   workspaceDomainChecklistSummary,
   workspaceSharedDriveRestrictionStatus,
 } from "../app/settings/components/workspace-domain-checklist/workspace-domain-checklist.ts";
@@ -186,6 +187,33 @@ test("unknown payload state never turns an empty array into a configured claim",
   assert.equal(result.groups, "Manual check");
 });
 
+test("Stage 1 rows use one fail-closed DONE or MISSING presentation predicate", () => {
+  for (const status of [
+    "Simulated",
+    "Configuration present",
+    "Ready to connect",
+    "Connected",
+    "Account matched",
+    "Secrets present",
+    "Restricted",
+  ]) {
+    assert.equal(workspaceDomainChecklistDisplayStatus(status), "DONE");
+  }
+  for (const status of [
+    "Administrator setup",
+    "Unavailable",
+    "Setup required",
+    "Partially configured",
+    "Needs review",
+    "Reconnect required",
+    "Account mismatch",
+    "Not verified",
+    "Manual check",
+  ]) {
+    assert.equal(workspaceDomainChecklistDisplayStatus(status), "MISSING");
+  }
+});
+
 test("known negative connection evidence remains visible when readiness is unavailable", () => {
   const mismatch = statuses(evidence({
     readinessKnown: false,
@@ -254,6 +282,9 @@ test("the extracted card is route-free, admin-aware, and contains no decorative 
   assert.match(component, /!isAdmin && <p className="workspace-admin-readonly"/);
   assert.match(component, /isAdmin && item\.href/);
   assert.match(component, /isAdmin && <div className="workspace-copy-helpers"/);
+  assert.match(component, /workspaceDomainChecklistDisplayStatus\(status\)/);
+  assert.match(component, /label=\{`About \$\{item\.title\}`\}/);
+  assert.match(component, /\{displayStatus\}/);
   assert.match(component, /Shared Drive external sharing/);
   assert.match(component, /sharedDriveDomainUsersOnly/);
   assert.doesNotMatch(component, /\bfetch\s*\(|cachedGetJson|process\.env|import\.meta\.env|<input\b|type="checkbox"/);

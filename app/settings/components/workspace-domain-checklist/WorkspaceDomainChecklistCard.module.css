@@ -2,30 +2,6 @@
   margin-bottom: 18px;
 }
 
-.headerActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  height: 30px;
-}
-
-.toggle svg {
-  transition: transform 0.18s ease;
-}
-
-.toggle[aria-expanded="false"] svg {
-  transform: rotate(-90deg);
-}
-
 .list {
   display: grid;
   gap: 8px;
@@ -35,6 +11,7 @@
 }
 
 .list li {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
@@ -46,19 +23,16 @@
 }
 
 .copy {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
 .copy strong {
   font-size: 12px;
-}
-
-.copy span {
-  color: var(--text-muted);
-  font-size: 12px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .status {
@@ -109,6 +83,16 @@
 .not-verified {
   background: #f0eeeb;
   color: #6c655f;
+}
+
+.done {
+  background: #edf4ef;
+  color: #35674d;
+}
+
+.missing {
+  background: #f7ede2;
+  color: #805b38;
 }
 
 .link {
@@ -185,15 +169,12 @@
     flex-direction: column;
   }
 
-  .headerActions {
-    justify-content: flex-start;
-  }
-
   .list li {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .link {
+    grid-column: 1 / -1;
     width: 100%;
   }
 

@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { CalendarDays, CheckCircle2, ChevronDown, CircleAlert, FileText, FolderOpen, Info, Mail, ShieldCheck, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { CalendarDays, CheckCircle2, ChevronDown, CircleAlert, FileText, FolderOpen, Mail, ShieldCheck, X } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { OperationsDataTable, OperationsDataTableCell } from "../../components/operations/OperationsDataTable";
 import { Status } from "../../components/operations/OperationsPrimitives";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
+import panelStyles from "./GoogleWorkspacePanel.module.css";
 import { WorkspaceBlueprintEditor } from "./WorkspaceBlueprintEditor";
 import {
   WorkspaceDriveResourceActions,
@@ -15,7 +16,11 @@ import {
   type WorkspaceSetupResourcesPayload,
 } from "./WorkspaceDriveResourceActions";
 import { WorkspaceDomainChecklistCard } from "./workspace-domain-checklist/WorkspaceDomainChecklistCard";
-import { deriveWorkspaceDomainChecklist } from "./workspace-domain-checklist/workspace-domain-checklist";
+import {
+  deriveWorkspaceDomainChecklist,
+  workspaceDomainChecklistDisplayStatus,
+} from "./workspace-domain-checklist/workspace-domain-checklist";
+import { WorkspaceInfoHint } from "./workspace-setup-shell/WorkspaceInfoHint";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
@@ -111,85 +116,6 @@ const WORKSPACE_STAGE_NAMES = [
   "Verify & maintain",
 ] as const;
 
-const PREPARED_CHECKLIST_STATUSES = new Set([
-  "Configuration present",
-  "Ready to connect",
-  "Connected",
-  "Account matched",
-  "Secrets present",
-  "Restricted",
-  "Simulated",
-]);
-
-function InfoHint({ label, text }: { label: string; text: string }) {
-  const descriptionId = useId();
-  const pointerInteraction = useRef({ type: "", open: false });
-  const [keyboardFocused, setKeyboardFocused] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [tapped, setTapped] = useState(false);
-  const open = keyboardFocused || hovered || tapped;
-
-  useEffect(() => {
-    if (!open) return;
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setKeyboardFocused(false);
-      setHovered(false);
-      setTapped(false);
-    };
-    document.addEventListener("keydown", dismissOnEscape);
-    return () => document.removeEventListener("keydown", dismissOnEscape);
-  }, [open]);
-
-  return <span
-    className={`workspace-info-hint${open ? " open" : ""}`}
-    onFocusCapture={() => {
-      if (pointerInteraction.current.type !== "touch") setKeyboardFocused(true);
-    }}
-    onBlurCapture={(event) => {
-      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-      setKeyboardFocused(false);
-      setTapped(false);
-      pointerInteraction.current = { type: "", open: false };
-    }}
-    onPointerEnter={(event) => {
-      if (event.pointerType === "mouse") setHovered(true);
-    }}
-    onPointerLeave={(event) => {
-      if (event.pointerType === "mouse") setHovered(false);
-    }}
-  >
-    <button
-      type="button"
-      className="workspace-info-hint-trigger"
-      aria-label={label}
-      aria-describedby={descriptionId}
-      aria-expanded={open}
-      onPointerDown={(event) => {
-        pointerInteraction.current = { type: event.pointerType, open };
-      }}
-      onClick={(event) => {
-        if (event.detail === 0) {
-          setKeyboardFocused(true);
-          return;
-        }
-        if (pointerInteraction.current.type === "touch") setTapped(!pointerInteraction.current.open);
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        event.preventDefault();
-        event.stopPropagation();
-        setKeyboardFocused(false);
-        setHovered(false);
-        setTapped(false);
-      }}
-    >
-      <Info size={14} aria-hidden="true" />
-    </button>
-    <span id={descriptionId} className="workspace-info-hint-tooltip" role="tooltip">{text}</span>
-  </span>;
-}
-
 function SetupStage({
   number,
   title,
@@ -251,7 +177,7 @@ function SetupStage({
       </h3>
       <span className="workspace-stage-meta">
         <span className={`workspace-stage-chip ${tone}`}>{status}</span>
-        <InfoHint label={`About Stage ${number} status`} text={statusHint} />
+        <WorkspaceInfoHint label={`About Stage ${number} status`} text={statusHint} />
       </span>
     </header>
     <div ref={bodyRef} id={bodyId} className="workspace-stage-body" hidden={!open}>{children}</div>
@@ -727,6 +653,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const statusSourcesUnavailable = workspaceReadinessState === "error"
     || connectionHealthState === "error"
     || workspaceResourcesState === "error"
+    || sheetsStatusError !== null
     || (!statusSourcesLoading && !allStatusSourcesAvailable);
   const sourceModes = [
     workspace?.runtimeMode,
@@ -777,7 +704,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     connectionStatus: connectionHealth?.connection.status ?? null,
     requiresReauthorization: connectionHealth?.connection.requiresReauthorization === true,
   });
-  const stageOneCompleteCount = stageOneChecklist.filter(({ status }) => PREPARED_CHECKLIST_STATUSES.has(status)).length;
+  const stageOneCompleteCount = stageOneChecklist.filter(({ status }) => (
+    workspaceDomainChecklistDisplayStatus(status) === "DONE"
+  )).length;
   const stageOneComplete = workspaceResources?.connectReady === true;
   const stageTwoComplete = bannerSimulation || liveConnectionComplete;
   const requiredWorkspaceResources = resourceRows.filter((resource) => (
@@ -838,6 +767,23 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     bannerHeadline = bannerAccount === "Not connected" ? "Google Workspace connected" : `Connected as ${bannerAccount}`;
     bannerNextStep = "Next: verify Gmail, Calendar, and Sheets in Stage 4.";
   }
+  const bannerModeLabel = statusSourcesLoading
+    ? "CHECKING"
+    : statusSourcesUnavailable
+      ? "UNAVAILABLE"
+      : bannerSimulation
+        ? "SIMULATION"
+        : "WORKSPACE";
+  const bannerProgressLabel = statusSourcesLoading
+    ? "Stage status pending"
+    : statusSourcesUnavailable
+      ? "Current stage unavailable"
+      : `Stage ${currentStageNumber} of 4`;
+  const bannerProgressDetail = statusSourcesLoading
+    ? "Waiting for all status sources"
+    : statusSourcesUnavailable
+      ? "Retry Check readiness"
+      : currentStageName;
   const stageOneStatus = stageOneComplete ? "DONE" : `IN PROGRESS · ${stageOneCompleteCount} of ${stageOneChecklist.length}`;
   const stageTwoStatus = stageTwoComplete ? "DONE" : stageOneComplete ? "IN PROGRESS" : "WAITING ON STAGE 1";
   const stageThreeStatus = stageThreeComplete
@@ -870,9 +816,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       <button className="primary-button" onClick={() => void refreshWorkspaceSetup(true)} disabled={checking}>{checking ? "Checking…" : "Check readiness"}</button>
     </div>
     <div className="workspace-status-banner" data-status-agreement={statusAgreement} role="status" aria-live="polite">
-      <span className="workspace-status-mode">{bannerSimulation ? "SIMULATION" : "WORKSPACE"}</span>
+      <span className={`workspace-status-mode${statusSourcesLoading || statusSourcesUnavailable ? ` ${panelStyles.statusModeNeutral}` : ""}`}>{bannerModeLabel}</span>
       <span className="workspace-status-copy"><strong>{bannerHeadline}</strong><span>{bannerNextStep}</span></span>
-      <span className="workspace-status-progress"><strong>Stage {currentStageNumber} of 4</strong><span>{currentStageName}</span></span>
+      <span className="workspace-status-progress"><strong>{bannerProgressLabel}</strong><span>{bannerProgressDetail}</span></span>
     </div>
     {!simulation && oauthMessage && <p className={oauthResult === "connected" ? "workspace-warning" : "workspace-missing"}>{oauthMessage}</p>}
     <div className="workspace-stage-list" role="group" aria-label="Google Workspace setup stages">
@@ -888,8 +834,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       >
         <WorkspaceDomainChecklistCard
           isAdmin={isAdmin}
-          simulation={simulation}
-          connected={connected}
+          simulation={bannerSimulation}
           readinessState={workspaceReadinessState}
           missingDetails={missingDetails}
           resourcesState={workspaceResourcesState}
@@ -903,6 +848,10 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           connectionStatus={connectionHealth?.connection.status ?? null}
           requiresReauthorization={connectionHealth?.connection.requiresReauthorization === true}
           sharedDriveDomainUsersOnly={sharedDriveDomainUsersOnly}
+          environmentNotes={<>
+            {!bannerSimulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback. Project-folder provisioning still uses the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> gate.</p>}
+            <p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback{sheetMirror ? `; current mirror source: ${bannerSimulation ? "local simulation" : sheetMirror.source === "app" ? "app-managed" : sheetMirror.source === "env" ? "environment fallback" : "not configured"}` : ""}.</p>
+          </>}
           notify={notify}
         />
       </SetupStage>
@@ -975,7 +924,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         <ol className="workspace-setup-steps" aria-label="Shared Drive verification setup step">
           <li className={`workspace-setup-step ${stepStatusClass(driveStepStatus)}`}>
         <header><span className="workspace-step-number">2</span><div><h3>Verify the Shared Drive</h3><p>Confirm the configured FCI Operations Shared Drive before any project folder is created.</p></div><span className="workspace-step-status">{driveStepStatus}</span></header>
-        <div className="workspace-step-body"><p className="workspace-step-summary"><FolderOpen size={15} /> <span><strong>{storageName}</strong>{driveReady || simulation ? " is available for a direct verification." : " remains blocked until the connection and Drive prerequisite are ready."}</span></p><div className="workspace-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void verifyGoogleDrive()} disabled={working || (!simulation && !driveReady)}>{working ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton></div>{!simulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback. Project-folder provisioning still uses the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> gate.</p>}</div>
+        <div className="workspace-step-body"><p className="workspace-step-summary"><FolderOpen size={15} /> <span><strong>{storageName}</strong>{driveReady || simulation ? " is available for a direct verification." : " remains blocked until the connection and Drive prerequisite are ready."}</span></p><div className="workspace-actions"><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void verifyGoogleDrive()} disabled={working || (!simulation && !driveReady)}>{working ? "Verifying…" : driveVerified ? "Verify Shared Drive again" : "Verify Shared Drive"}</AdministratorActionButton></div></div>
           </li>
         </ol>
         {isAdmin && <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />}
@@ -1027,7 +976,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       </li>
       <li className={`workspace-setup-step ${stepStatusClass(sheetsStepStatus)}`}>
         <header><span className="workspace-step-number">5</span><div><h3>Sync the Sheets mirror</h3><p>Check and reconcile the generated Client Directory and Project Register.</p></div><span className="workspace-step-status">{sheetsStepStatus}</span></header>
-        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirrorStatusLabel(sheetMirror, "clients")}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirrorStatusLabel(sheetMirror, "projects")}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div><p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback{sheetMirror ? `; current mirror source: ${simulation ? "local simulation" : sheetMirror.source === "app" ? "app-managed" : sheetMirror.source === "env" ? "environment fallback" : "not configured"}` : ""}.</p></div>
+        <div className="workspace-step-body"><div className="workspace-sheet-summary"><article><span>Client Directory</span><strong>{sheetMirrorStatusLabel(sheetMirror, "clients")}</strong><small>{mirrorTime(sheetMirror?.clients.lastSyncedAt)}</small></article><article><span>Project Register</span><strong>{sheetMirrorStatusLabel(sheetMirror, "projects")}</strong><small>{mirrorTime(sheetMirror?.projects.lastSyncedAt)}</small></article></div>{(sheetsStatusError || sheetMirror?.reason) && <p className="workspace-missing">{sheetsStatusError ?? sheetMirror?.reason}</p>}<div className="workspace-actions"><button className="soft-button" onClick={() => void refreshSheetsStatus()} disabled={sheetsWorking}>{sheetsWorking ? "Refreshing…" : "Refresh mirror status"}</button><AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void syncGoogleSheets()} disabled={sheetsWorking || !sheetsActionsEnabled}>{sheetsWorking ? "Syncing…" : "Sync now"}</AdministratorActionButton>{sheetMirror?.spreadsheetUrl && <a className="soft-button" href={sheetMirror.spreadsheetUrl} target="_blank" rel="noreferrer">Open spreadsheet</a>}</div></div>
           </li>
         </ol>
       </SetupStage>

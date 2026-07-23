@@ -54,6 +54,8 @@ export type WorkspaceDomainChecklistStatusClassName =
   | "not-verified"
   | "manual-check";
 
+export type WorkspaceDomainChecklistDisplayStatus = "DONE" | "MISSING";
+
 export type WorkspaceDomainChecklistEvidence = {
   isAdmin: boolean;
   simulation: boolean;
@@ -109,6 +111,15 @@ const ACCOUNT_MATCH_ENV = "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_
 const OAUTH_ENVS = ["GOOGLE_WORKSPACE_CLIENT_ID", "GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI"] as const;
 const SECRET_ENVS = ["GOOGLE_WORKSPACE_CLIENT_SECRET", "GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY"] as const;
 const ENVIRONMENT_KEY_PATTERN = /[A-Z][A-Z0-9_]+/g;
+const DONE_CHECKLIST_STATUSES = new Set<WorkspaceDomainChecklistStatus>([
+  "Simulated",
+  "Configuration present",
+  "Ready to connect",
+  "Connected",
+  "Account matched",
+  "Secrets present",
+  "Restricted",
+]);
 
 function environmentKeys(details: readonly WorkspaceChecklistMissingDetail[]) {
   const keys = new Set<string>();
@@ -213,6 +224,12 @@ export function workspaceDomainChecklistSummary(results: readonly WorkspaceDomai
 
 export function workspaceDomainChecklistStatusClass(status: WorkspaceDomainChecklistStatus) {
   return status.toLowerCase().replaceAll(" ", "-") as WorkspaceDomainChecklistStatusClassName;
+}
+
+export function workspaceDomainChecklistDisplayStatus(
+  status: WorkspaceDomainChecklistStatus,
+): WorkspaceDomainChecklistDisplayStatus {
+  return DONE_CHECKLIST_STATUSES.has(status) ? "DONE" : "MISSING";
 }
 
 export function workspaceSharedDriveRestrictionStatus(domainUsersOnly: boolean | null) {

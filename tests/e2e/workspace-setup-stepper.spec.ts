@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
 
+const e2eOrigin = process.env.FCI_E2E_ORIGIN ?? "http://localhost:4173";
+
 type MirrorStatus = {
   configured: boolean;
   enabled: boolean;
@@ -284,6 +286,10 @@ test("the status banner waits for every source and resolves a mixed-mode all-con
   const banner = page.locator(".workspace-status-banner");
   await expect(banner).toHaveCount(1);
   await expect(banner).toContainText("Checking current status…");
+  await expect(banner.locator(".workspace-status-mode")).toHaveText("CHECKING");
+  await expect(banner.locator(".workspace-status-mode")).not.toHaveText(/SIMULATION|WORKSPACE/);
+  await expect(banner.locator(".workspace-status-progress")).toContainText("Stage status pending");
+  await expect(banner.locator(".workspace-status-progress")).not.toContainText(/Stage [1-4] of 4/);
   await expect(page.locator(".workspace-mode-card")).toHaveCount(0);
 
   releaseConnection?.();
@@ -301,6 +307,36 @@ test("the status banner waits for every source and resolves a mixed-mode all-con
   await expect(page.getByText("Company Google Workspace", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Sample data only · no Google account connected · nothing is sent to Google", { exact: true })).toHaveCount(0);
   await expect(page.getByText("One administrator-approved organization connection", { exact: true })).toHaveCount(0);
+});
+
+test("mixed-mode Stage 1 rows, count, and environment notes share the conservative mode", async ({ page }) => {
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page, workspaceResources({ connectReady: false }));
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(readiness({ runtimeMode: "simulation", simulation: true })),
+    });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await waitForStageShellToSettle(page);
+
+  const banner = page.locator(".workspace-status-banner");
+  await expect(banner.locator(".workspace-status-mode")).toHaveText("WORKSPACE");
+  await expect(banner).toHaveAttribute("data-status-agreement", "conservative");
+  await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS · 4 of 6");
+  const checklist = setupStage(page, 1).locator(".workspace-prerequisites");
+  await expect(checklist.getByText("DONE", { exact: true })).toHaveCount(4);
+  await expect(checklist.getByText("MISSING", { exact: true })).toHaveCount(2);
+  await expect(checklist.getByText("Drive authority:", { exact: true })).toBeVisible();
+  await expect(checklist.getByText("current mirror source: app-managed", { exact: false })).toBeVisible();
+  await expect(checklist.getByText("current mirror source: local simulation", { exact: false })).toHaveCount(0);
 });
 
 test("stages derive one open step from endpoint state and keep completed stages manually expandable", async ({ page }) => {
@@ -358,7 +394,7 @@ test("stages derive one open step from endpoint state and keep completed stages 
   await expect(page.locator(".workspace-setup-stage")).toHaveCount(4);
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "true");
   for (const number of [2, 3, 4] as const) await expect(stageToggle(page, number)).toHaveAttribute("aria-expanded", "false");
-  await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText(/^IN PROGRESS · \d+ of \d+$/);
+  await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS · 3 of 6");
   await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("WAITING ON STAGE 1");
 
   currentReadiness = readiness({
@@ -370,7 +406,7 @@ test("stages derive one open step from endpoint state and keep completed stages 
     sheetsConnected: false,
   });
   currentResources = workspaceResources({
-    connectReady: true,
+    connectReady: false,
     resources: incompleteResourceRows,
     identity: {
       connectionAccount: "operations@cherryhillfci.com",
@@ -379,6 +415,12 @@ test("stages derive one open step from endpoint state and keep completed stages 
       mode: "workspace",
     },
   });
+  await page.getByRole("button", { name: "Check readiness" }).click();
+  await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS · 4 of 6");
+  await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "true");
+  await expect(stageToggle(page, 2)).toHaveAttribute("aria-expanded", "false");
+
+  currentResources = { ...currentResources, connectReady: true };
   await page.getByRole("button", { name: "Check readiness" }).click();
   await expect(setupStage(page, 1).locator(".workspace-stage-chip")).toHaveText("DONE");
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "false");
@@ -480,6 +522,7 @@ test.describe("Workspace stage hints on touch", () => {
 
     await page.goto("/settings?section=google-workspace");
     await waitForStageShellToSettle(page);
+    await setStageExpanded(page, 1, true);
     const hint = page.getByRole("button", { name: "About Stage 1 status", exact: true });
     const descriptionId = await hint.getAttribute("aria-describedby");
     expect(descriptionId).toBeTruthy();
@@ -491,6 +534,21 @@ test.describe("Workspace stage hints on touch", () => {
     await hint.tap();
     await expect(tooltip).toBeHidden();
     await expect(hint).toHaveAttribute("aria-expanded", "false");
+    const visibleHintTargets = await page.locator(".workspace-info-hint-trigger:visible").evaluateAll((triggers) => (
+      triggers.map((trigger) => {
+        const rect = trigger.getBoundingClientRect();
+        return {
+          label: trigger.getAttribute("aria-label"),
+          width: rect.width,
+          height: rect.height,
+        };
+      })
+    ));
+    expect(visibleHintTargets.length).toBeGreaterThanOrEqual(10);
+    for (const target of visibleHintTargets) {
+      expect(target.width, `${target.label} width`).toBeGreaterThanOrEqual(44);
+      expect(target.height, `${target.label} height`).toBeGreaterThanOrEqual(44);
+    }
     const stageOverflow = await page.locator(".workspace-stage-list").evaluate((element) => {
       const listRect = element.getBoundingClientRect();
       const overflowing = Array.from(element.querySelectorAll<HTMLElement>("*"))
@@ -581,18 +639,23 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   const card = page.locator(".workspace-prerequisites");
   await expect(card.getByRole("heading", { level: 3, name: "Domain & tenant checklist", exact: true })).toBeVisible();
   await expect(card.getByRole("listitem")).toHaveCount(6);
-  await expect(tenantChecklistRow(page, "Company domain")).toContainText("Setup required");
-  await expect(tenantChecklistRow(page, "Operations account")).toContainText("Setup required");
-  await expect(tenantChecklistRow(page, "Workspace APIs")).toContainText("Manual check");
-  await expect(tenantChecklistRow(page, "OAuth web client")).toContainText("Setup required");
-  await expect(tenantChecklistRow(page, "Hosted secrets")).toContainText("Setup required");
-  await expect(tenantChecklistRow(page, "Role-aligned Google Groups")).toContainText("Manual check");
+  for (const title of ["Company domain", "Operations account", "Workspace APIs", "OAuth web client", "Hosted secrets", "Role-aligned Google Groups"]) {
+    const row = tenantChecklistRow(page, title);
+    await expect(row.locator(".workspace-info-hint-trigger")).toHaveCount(1);
+    await expect(row.getByText("MISSING", { exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: `About ${title}`, exact: true })).toHaveAttribute("aria-describedby", /.+/);
+  }
+  const domainHint = tenantChecklistRow(page, "Company domain").getByRole("button", { name: "About Company domain", exact: true });
+  const domainDescriptionId = await domainHint.getAttribute("aria-describedby");
+  expect(domainDescriptionId).toBeTruthy();
+  await expect(page.locator(`#${domainDescriptionId}`)).toHaveText(
+    "Verify the company domain in Google Admin, then keep only the approved Workspace domain in hosted configuration. Current check: Setup required.",
+  );
   await expect(card.getByRole("link")).toHaveCount(6);
   await expect(card.getByRole("table", { name: "Hosted Workspace configuration" })).toBeVisible();
   await expect(card.getByRole("heading", { level: 4, name: "Copy-exact setup helpers" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 4, name: "Copy-exact setup helpers" })).toHaveCount(1);
   await expect(card.locator('input[type="checkbox"]')).toHaveCount(0);
-  await expect(card.getByRole("button", { name: "Collapse" })).toHaveCount(0);
 
   currentReadiness = readiness({ connectionStatus: "not-connected", connectionAccount: null });
   currentReadiness.missingDetails = [
@@ -605,10 +668,11 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
     identity: { connectionAccount: null, intakeMailboxMatches: null, allowedDomains: ["cherryhillfci.com"], mode: "workspace" },
   });
   await page.getByRole("button", { name: "Check readiness" }).click();
-  await expect(tenantChecklistRow(page, "Company domain")).toContainText("Configuration present");
-  await expect(tenantChecklistRow(page, "Operations account")).toContainText("Configuration present");
-  await expect(tenantChecklistRow(page, "OAuth web client")).toContainText("Partially configured");
-  await expect(tenantChecklistRow(page, "Hosted secrets")).toContainText("Partially configured");
+  await expect(tenantChecklistRow(page, "Company domain").getByText("DONE", { exact: true })).toBeVisible();
+  await expect(page.locator(`#${domainDescriptionId}`)).toContainText("Current check: Configuration present.");
+  await expect(tenantChecklistRow(page, "Operations account").getByText("DONE", { exact: true })).toBeVisible();
+  await expect(tenantChecklistRow(page, "OAuth web client").getByText("MISSING", { exact: true })).toBeVisible();
+  await expect(tenantChecklistRow(page, "Hosted secrets").getByText("MISSING", { exact: true })).toBeVisible();
 
   const appManagedResources = workspaceResources().resources.map((resource) => ({
     ...resource,
@@ -646,9 +710,9 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   await page.getByRole("button", { name: "Check readiness" }).click();
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "false");
   await setStageExpanded(page, 1, true);
-  await expect(tenantChecklistRow(page, "Operations account")).toContainText("Ready to connect");
-  await expect(tenantChecklistRow(page, "OAuth web client")).toContainText("Ready to connect");
-  await expect(tenantChecklistRow(page, "Hosted secrets")).toContainText("Secrets present");
+  await expect(tenantChecklistRow(page, "Operations account").getByText("DONE", { exact: true })).toBeVisible();
+  await expect(tenantChecklistRow(page, "OAuth web client").getByText("DONE", { exact: true })).toBeVisible();
+  await expect(tenantChecklistRow(page, "Hosted secrets").getByText("DONE", { exact: true })).toBeVisible();
   await expect(card.getByText("All required hosted values are present.", { exact: true })).toBeVisible();
   await expect(card.getByText("Restricted", { exact: true })).toBeVisible();
 
@@ -663,12 +727,12 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   currentHealth = connectedHealth();
   await page.getByRole("button", { name: "Check readiness" }).click();
   await expect(stageToggle(page, 1)).toHaveAttribute("aria-expanded", "true");
-  await expect(tenantChecklistRow(page, "Operations account")).toContainText("Account matched");
-  await expect(tenantChecklistRow(page, "OAuth web client")).toContainText("Connected");
-  await expect(card.getByRole("button", { name: "Collapse" })).toBeVisible();
-  await card.getByRole("button", { name: "Collapse" }).click();
-  await expect(card.getByRole("listitem")).toHaveCount(0);
-  await card.getByRole("button", { name: "Expand" }).click();
+  await expect(tenantChecklistRow(page, "Operations account").getByText("DONE", { exact: true })).toBeVisible();
+  await expect(tenantChecklistRow(page, "OAuth web client").getByText("DONE", { exact: true })).toBeVisible();
+  await expect(card.getByRole("button", { name: /^(Collapse|Expand)$/ })).toHaveCount(0);
+  await setStageExpanded(page, 1, false);
+  await expect(card).toBeHidden();
+  await setStageExpanded(page, 1, true);
   await expect(card.getByRole("listitem")).toHaveCount(6);
 });
 
@@ -781,7 +845,7 @@ test("OAuth callback state is removed only after an automatic forced readiness r
 });
 
 test("administrator connection health exhaustively maps account, mode, status, enabled services, and recorded grants", async ({ page }) => {
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://localhost:4173" });
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: e2eOrigin });
   const health: ConnectionHealthPayload = {
     runtimeMode: "workspace",
     simulation: false,
@@ -862,7 +926,15 @@ test("administrator connection health exhaustively maps account, mode, status, e
   await expect(resourcesCard.getByRole("button", { name: "Adopt first" })).toBeDisabled();
 
   await setStageExpanded(page, 1, true);
-  const tenantChecklist = page.locator(".workspace-prerequisites");
+  const stageOne = setupStage(page, 1);
+  const tenantChecklist = stageOne.locator(".workspace-prerequisites");
+  await expect(stageOne.locator(".workspace-env-note")).toHaveCount(2);
+  await expect(stageOne.getByText("Drive authority:", { exact: true })).toBeVisible();
+  await expect(stageOne.getByText("Sheets authority:", { exact: true })).toBeVisible();
+  for (const stageNumber of [2, 3, 4] as const) {
+    await expect(setupStage(page, stageNumber).locator(".workspace-copy-helpers")).toHaveCount(0);
+    await expect(setupStage(page, stageNumber).locator(".workspace-env-note")).toHaveCount(0);
+  }
   await tenantChecklist.getByRole("button", { name: "Copy URI" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback");
   await tenantChecklist.getByRole("button", { name: "Copy missing-key template" }).click();
@@ -1063,10 +1135,35 @@ test("copy helpers do not claim configuration is complete when readiness is unav
   await page.goto("/settings?section=google-workspace");
   await setStageExpanded(page, 1, true);
 
+  const banner = page.locator(".workspace-status-banner");
+  await expect(banner.locator(".workspace-status-mode")).toHaveText("UNAVAILABLE");
+  await expect(banner.locator(".workspace-status-mode")).not.toHaveText(/SIMULATION|WORKSPACE/);
+  await expect(banner.locator(".workspace-status-progress")).toContainText("Current stage unavailable");
+  await expect(banner.locator(".workspace-status-progress")).not.toContainText(/Stage [1-4] of 4/);
   const tenantChecklist = page.locator(".workspace-prerequisites");
   await expect(tenantChecklist.getByText("Missing-key status is unavailable. Retry the readiness and Resources checks before copying configuration.", { exact: true })).toBeVisible();
   await expect(tenantChecklist.getByText("No hosted configuration keys are currently missing.", { exact: true })).toHaveCount(0);
   await expect(tenantChecklist.getByRole("button", { name: "Copy missing-key template" })).toHaveCount(0);
+});
+
+test("the status banner stays neutral when the Sheets status source errors", async ({ page }) => {
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await mockWorkspaceResources(page);
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "unavailable" }) });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+
+  const banner = page.locator(".workspace-status-banner");
+  await expect(banner.locator(".workspace-status-mode")).toHaveText("UNAVAILABLE");
+  await expect(banner.locator(".workspace-status-mode")).not.toHaveText(/SIMULATION|WORKSPACE/);
+  await expect(banner.locator(".workspace-status-progress")).toContainText("Current stage unavailable");
+  await expect(banner.locator(".workspace-status-progress")).not.toContainText(/Stage [1-4] of 4/);
 });
 
 test("simulation labels every OAuth permission not applicable instead of claiming a grant", async ({ page }) => {
