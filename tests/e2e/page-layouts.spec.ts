@@ -133,6 +133,8 @@ test("keyboard-only Overview reorder and hide persist, while Reset restores byte
   await page.goto("/");
   const editLayout = page.getByRole("button", { name: "Edit Overview layout" });
   await expect(editLayout).toBeEnabled();
+  await expect(editLayout).toHaveAttribute("title", "Edit Overview layout");
+  await expect(editLayout).toHaveText("");
   const originalPreferences = await readStoredPreferences(page);
 
   try {
@@ -154,6 +156,9 @@ test("keyboard-only Overview reorder and hide persist, while Reset restores byte
     await page.keyboard.press("Enter");
     const editor = page.getByRole("region", { name: "Overview layout editor" });
     await expect(editor).toBeVisible();
+    await expect(editor.locator('[data-layout-add-section="true"]')).toHaveCount(0);
+    await expect(editor.getByText("Hidden sections", { exact: true })).toHaveCount(0);
+    await expect(editor.getByText("Add section", { exact: true })).toHaveCount(0);
 
     const moveSchedulingUp = page.getByRole("button", { name: "Move Scheduling up" });
     await moveSchedulingUp.focus();
@@ -165,8 +170,10 @@ test("keyboard-only Overview reorder and hide persist, while Reset restores byte
     const addInbox = editor.locator('[data-layout-add-section="true"]').getByRole("button", { name: /Gmail project inbox/u });
     await expect(addInbox).toBeVisible();
     await expect(addInbox).toBeFocused();
+    await expect(editor.getByText("Hidden sections", { exact: true })).toBeVisible();
     await page.keyboard.press("Enter");
     await expect(addInbox).toHaveCount(0);
+    await expect(editor.getByText("Hidden sections", { exact: true })).toHaveCount(0);
     await expect(page.locator('[data-layout-section="gmail-project-inbox"]')).toBeVisible();
     await expect(page.getByRole("button", { name: "Hide Gmail project inbox" })).toBeFocused();
     await page.keyboard.press("Enter");
@@ -307,6 +314,39 @@ test("Office layout controls expose only viewable parent panels and remain acces
   }
 });
 
+test("Overview and Reports share the icon-only Edit placement at desktop and mobile", async ({ page }) => {
+  await mockLegacySectionRecords(page);
+
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    const overviewEdit = page.getByRole("button", { name: "Edit Overview layout" });
+    await expect(overviewEdit).toBeEnabled();
+    await expect(overviewEdit).toHaveAttribute("title", "Edit Overview layout");
+    await expect(overviewEdit).toHaveText("");
+    await expect(overviewEdit.locator("xpath=..")).toHaveClass(/title-actions/u);
+    const overviewBox = await overviewEdit.boundingBox();
+    expect(overviewBox).not.toBeNull();
+    expect(overviewBox?.width).toBeGreaterThanOrEqual(44);
+    expect(overviewBox?.height).toBeGreaterThanOrEqual(44);
+
+    await page.goto("/reports");
+    const reportsEdit = page.getByRole("button", { name: "Edit Reports layout" });
+    await expect(reportsEdit).toBeEnabled();
+    await expect(reportsEdit).toHaveAttribute("title", "Edit Reports layout");
+    await expect(reportsEdit).toHaveText("");
+    await expect(reportsEdit.locator("xpath=..")).toHaveClass(/title-actions/u);
+    const reportsBox = await reportsEdit.boundingBox();
+    expect(reportsBox).not.toBeNull();
+    expect(reportsBox?.width).toBeGreaterThanOrEqual(44);
+    expect(reportsBox?.height).toBeGreaterThanOrEqual(44);
+
+    const overviewRightEdge = (overviewBox?.x ?? 0) + (overviewBox?.width ?? 0);
+    const reportsRightEdge = (reportsBox?.x ?? 0) + (reportsBox?.width ?? 0);
+    expect(Math.abs(overviewRightEdge - reportsRightEdge)).toBeLessThanOrEqual(1);
+  }
+});
+
 test("a failed settings read offers an explicit retry before layout editing", async ({ page }) => {
   let settingsReads = 0;
   await page.route("**/api/v1/settings/me", async (requestRoute) => {
@@ -319,6 +359,7 @@ test("a failed settings read offers an explicit retry before layout editing", as
   await page.goto("/");
   const retry = page.getByRole("button", { name: "Retry Overview layout" });
   await expect(retry).toBeVisible();
+  await expect(retry).toContainText("Retry layout");
   await retry.click();
   await expect(page.getByRole("button", { name: "Edit Overview layout" })).toBeEnabled();
 });

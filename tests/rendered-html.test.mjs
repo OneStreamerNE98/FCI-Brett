@@ -442,9 +442,30 @@ test("keeps My settings scoped to the authenticated office user and honest about
   assert.match(layoutEditor, /Move up/);
   assert.match(layoutEditor, /Move down/);
   assert.match(layoutEditor, /Reset to default/);
-  assert.match(layoutEditor, /Add section/);
+  assert.match(layoutEditor, /Hidden sections/);
+  assert.doesNotMatch(layoutEditor, /Add section|All available sections are shown\./);
   assert.match(app, /<PageLayoutEditor page="overview"/);
   assert.match(app, /<PageLayoutEditor page="reports"/);
+});
+
+test("keeps layout editing icon-only, conditional, and aligned through PageTitle", async () => {
+  const [layoutEditor, layoutStyles, pageTitle, floorOps] = await Promise.all([
+    read("app/components/operations/PageLayoutEditor.tsx"),
+    read("app/components/operations/PageLayoutEditor.module.css"),
+    read("app/components/operations/OperationsPrimitives.tsx"),
+    read("app/FloorOpsApp.tsx"),
+  ]);
+  assert.match(layoutEditor, /aria-label=\{`Edit \$\{title\} layout`\}/);
+  assert.match(layoutEditor, /title=\{`Edit \$\{title\} layout`\}/);
+  assert.match(layoutEditor, /<Settings2 size=\{16\} aria-hidden="true" \/>\s*<\/button>/);
+  assert.doesNotMatch(layoutEditor, /Loading layout…|>Edit layout</);
+  assert.match(layoutEditor, /hiddenKeys\.length > 0 \? <div className=\{styles\.addRow\}/);
+  assert.match(layoutEditor, /<strong>Hidden sections<\/strong>/);
+  assert.match(layoutEditor, /<RotateCcw size=\{16\} aria-hidden="true" \/> Retry layout/);
+  assert.match(layoutStyles, /:global\(\.title-actions\) > button\.editButton \{[\s\S]*?min-height: var\(--target-min\);/);
+  assert.match(pageTitle, /action \? <div className="title-actions">\{action\}<\/div> : null/);
+  assert.match(floorOps, /<PageTitle eyebrow=\{dateLabel\}/);
+  assert.doesNotMatch(floorOps, /<div className="page-heading">/);
 });
 
 test("makes company shared calendars authoritative without a personal-calendar mode", async () => {

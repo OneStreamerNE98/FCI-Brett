@@ -1934,6 +1934,7 @@ reviewed line-by-line; render-invariance for removed literals; axe green.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-06 · Layout-editor polish: icon-only Edit, honest Hidden-sections row, unified title-actions (small; FIRST DES packet in the FloorOpsApp queue; no golden regen)
+**Status:** In review — PR #143, July 23, 2026. Source-only and undeployed.
 **Why:** owner bug — the "Add section" label is an inert pseudo-button; in the
 default state the row has zero working controls; the Edit control renders in
 different heading structures on the two pages.

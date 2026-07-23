@@ -8,6 +8,15 @@
   background: #f3f8f4;
 }
 
+:global(.title-actions) > button.editButton {
+  flex: 0 0 var(--target-min);
+  width: var(--target-min);
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  margin-left: auto;
+  padding: 0;
+}
+
 .editorHeading,
 .editorActions,
 .addRow,
