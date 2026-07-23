@@ -832,8 +832,8 @@ unconfigured state dead-ends at a panel with no sheet-ID field (it's env-only).
 into a shared callable); on unconfigured, name the env var and link to SET-04's
 prerequisites table instead of the dead-end button; Sync now stays admin-gated; show
 lastSyncedAt/lastError exactly as returned — no derived freshness claims.
-Once SET-16 lands, the unconfigured state points to the Workspace-setup spreadsheets
-action instead of naming the env var (env stays documented as fallback).
+With SET-16 complete (PR #88), the unconfigured state points to the Workspace-setup
+spreadsheets action instead of naming the env var (env stays documented as fallback).
 **Accept:** refresh works without reload; failures show the notice and never block CRM
 data; unconfigured state names `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID`.
 
