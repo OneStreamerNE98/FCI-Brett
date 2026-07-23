@@ -169,7 +169,7 @@ export function WorkspaceDomainChecklistCard({
               <strong>{item.title}</strong>
               <WorkspaceInfoHint
                 label={`About ${item.title}`}
-                text={`${item.instruction} Current check: ${status}.`}
+                text={item.instruction}
               />
             </div>
             <span className={`${styles.status} ${styles[displayStatus === "DONE" ? "done" : "missing"]}`}>{displayStatus}</span>
@@ -178,7 +178,7 @@ export function WorkspaceDomainChecklistCard({
         })}
       </ol>
       {!simulation && isAdmin && <section className={styles.hostedPrerequisites} aria-labelledby="workspace-prerequisites-heading">
-        <div className={styles.hostedPrerequisitesHeading}><div><h4 id="workspace-prerequisites-heading">Hosted Workspace configuration</h4><p>Configured in the hosting environment, not this app. Only presence or absence is shown; configured values and secrets are never returned.</p></div><Status text={readinessState === "error" ? "Unavailable" : readinessState !== "ready" ? "Loading" : displayedMissingDetails.length ? connectReady ? "Connection ready" : "Setup required" : "Complete"} /></div>
+        <div className={styles.hostedPrerequisitesHeading}><div><h4 id="workspace-prerequisites-heading">Hosted Workspace configuration</h4><p>Configured in the hosting environment, not this app. Only presence or absence is shown; configured values and secrets are never returned.</p></div><Status text={readinessState === "error" ? "Unavailable" : readinessState !== "ready" ? "Loading" : displayedMissingDetails.length ? connectReady ? "Ready" : "Setup required" : "Complete"} /></div>
         {readinessState === "error" ? <p className="workspace-resources-message" role="alert">Hosted configuration presence is unavailable. Retry the readiness check before treating a missing row as complete.</p> : readinessState !== "ready" ? <p className="workspace-resources-message" role="status">Loading hosted configuration presence…</p> : displayedMissingDetails.length > 0 ? <OperationsDataTable className="workspace-prerequisite-table" columns={WORKSPACE_PREREQUISITE_COLUMNS} labelledBy="workspace-prerequisites-heading">
           {displayedMissingDetails.map((detail) => <tr key={`${detail.label}-${detail.envVar}`}>
             <OperationsDataTableCell label="Requirement"><strong>{detail.label}</strong></OperationsDataTableCell>
@@ -204,7 +204,7 @@ export function WorkspaceDomainChecklistCard({
       </div>}
       {isAdmin && environmentNotes}
       {isAdmin && <p className={styles.restrictions}><strong>Shared Drive external sharing</strong><span className={`${styles.status} ${styles[workspaceDomainChecklistStatusClass(sharedDriveRestrictionStatus)]}`}>{sharedDriveRestrictionStatus}</span></p>}
-      <p className={styles.safeguards}><ShieldCheck size={15} aria-hidden="true" /><span>{simulation ? "Use only seeded sample data; no OAuth account or Google token is connected. Keep Gmail filing review-first and project-specific, and verify both shared calendars and the Sheets mirror before staff launch." : "Keep authorization restricted to the approved Workspace domain. Keep Gmail filing review-first and project-specific; before staff launch, verify the company-owned Shared Drive and sender mailbox, both shared calendars, and the Sheets mirror."}</span></p>
+      <p className={styles.safeguards}><ShieldCheck size={15} aria-hidden="true" /><span>{simulation ? "Use only seeded sample data. Keep Gmail filing review-first and project-specific, and verify both shared calendars and the Sheets mirror before staff launch." : "Keep authorization restricted to the approved Workspace domain. Keep Gmail filing review-first and project-specific; before staff launch, verify the company-owned Shared Drive and sender mailbox, both shared calendars, and the Sheets mirror."}</span></p>
     </div>
   </section>;
 }

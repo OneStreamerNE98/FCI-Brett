@@ -275,8 +275,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   }, [router, search, view]);
 
   useEffect(() => {
-    if (view !== "Settings" || isAdmin || settingsArea === "My account") return;
-    router.replace(operationsHref("Settings", { settingsSection: "My account" }), { scroll: false });
+    if (view !== "Settings" || isAdmin || settingsArea === "My settings") return;
+    router.replace(operationsHref("Settings", { settingsSection: "My settings" }), { scroll: false });
   }, [isAdmin, router, settingsArea, view]);
 
   const refreshDirectoryData = useCallback(() => {
@@ -978,7 +978,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         </div>
         <div ref={profileMenuRef} className="sidebar-menu-wrap profile-menu-wrap">
           <button className="profile" onClick={() => { setProfileMenuOpen((current) => !current); setWorkspaceMenuOpen(false); setNotificationsOpen(false); }} aria-controls="account-actions-popover" aria-expanded={profileMenuOpen} aria-label={`${userName} account actions`} title="Account actions"><div className="avatar">{userInitials}</div><div><strong>{userName}</strong><span>{accessLabel}</span></div><MoreHorizontal size={18} /></button>
-          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button>{accessLabel === "Admin" && <button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button>}<button onClick={() => navigateToSettings("My account")}><Settings size={15} /> My settings</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
+          {profileMenuOpen && <div id="account-actions-popover" className="sidebar-popover profile-popover"><div className="menu-heading"><strong>{userName}</strong><span>{userEmail} · {accessLabel}</span></div><button onClick={() => void copySignedInEmail()}><Clipboard size={15} /> Copy signed-in email</button>{accessLabel === "Admin" && <button onClick={openGoogleWorkspace}><Building2 size={15} /> Google connection</button>}<button onClick={() => navigateToSettings("My settings")}><Settings size={15} /> My settings</button><button onClick={toggleSidebar}><ChevronsLeft size={15} /> {sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}</button><a href={signOutHref}><LogOut size={15} /> Sign out</a></div>}
         </div>
       </aside>
 
@@ -1548,10 +1548,10 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin, layo
 }
 
 function SettingsView({ notify, section, onSection, onTimezoneChange, rules, projects, userName, userEmail, isAdmin, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; isAdmin: boolean; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
-  const visibleSection: SettingsSection = isAdmin ? section : "My account";
+  const visibleSection: SettingsSection = isAdmin ? section : "My settings";
   return <><PageTitle eyebrow="Control center" title="Settings" text={isAdmin ? "Manage your own preferences separately from Workspace and company setup." : "Manage the preferences tied to your signed-in FCI account."} state="In development" />
     <div className="settings-layout"><SettingsAudienceNavigation section={visibleSection} isAdmin={isAdmin} onSection={onSection} />
-      {visibleSection === "My account" && <MySettingsPanel notify={notify} userName={userName} userEmail={userEmail} onTimezoneChange={onTimezoneChange} />}
+      {visibleSection === "My settings" && <MySettingsPanel notify={notify} userName={userName} userEmail={userEmail} onTimezoneChange={onTimezoneChange} />}
       {isAdmin && visibleSection === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} isAdmin={isAdmin} />}
       {isAdmin && visibleSection === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
       {isAdmin && visibleSection === "Inbox & file rules" && <InboxRulesPanel rules={rules} onAddRule={onAddRule} onUpdateRule={onUpdateRule} onDeleteRule={onDeleteRule} />}

@@ -155,10 +155,18 @@ function resourceSourceLabel(source: WorkspaceSetupResource["source"]) {
   return "Not configured";
 }
 
-function resourceStateTone(resource: WorkspaceSetupResource) {
-  if (resource.state === "Created" || resource.state === "Adopted") return styles.resourceStateDone;
-  if (resource.state === "Found") return styles.resourceStateFound;
-  if (resource.state === "Simulated") return styles.resourceStateSimulated;
+type WorkspaceResourceOperationalState = Exclude<WorkspaceResourceState, "Simulated">;
+
+function resourceOperationalState(resource: WorkspaceSetupResource): WorkspaceResourceOperationalState {
+  if (resource.source === "none" || !resource.externalId) return "Not configured";
+  if (resource.origin === "created") return "Created";
+  if (resource.origin === "adopted" || resource.origin === "env-adopted") return "Adopted";
+  return "Found";
+}
+
+function resourceStateTone(state: WorkspaceResourceOperationalState) {
+  if (state === "Created" || state === "Adopted") return styles.resourceStateDone;
+  if (state === "Found") return styles.resourceStateFound;
   return styles.resourceStateNeutral;
 }
 
@@ -418,17 +426,20 @@ function ResourceDetails({
   return <details className={styles.resourceDetails}>
     <summary><span>Review {label}</span><span>{resources.length}</span><ChevronDown size={15} aria-hidden="true" /></summary>
     <ul>
-      {resources.map((resource) => <li key={`${resource.resourceType ?? "legacy"}:${resource.key}`}>
-        <div className={styles.resourceCopy}>
-          <strong>{resource.label}</strong>
-          <small>{resource.blueprintName}</small>
-          <span className={styles.resourceMeta}>
-            <span className={`${styles.resourceState} ${resourceStateTone(resource)}`}>{resource.state}</span>
-            <span>{resourceSourceLabel(resource.source)}</span>
-          </span>
-        </div>
-        <div className={styles.resourceItemActions}>{renderAction(resource)}</div>
-      </li>)}
+      {resources.map((resource) => {
+        const operationalState = resourceOperationalState(resource);
+        return <li key={`${resource.resourceType ?? "legacy"}:${resource.key}`}>
+          <div className={styles.resourceCopy}>
+            <strong>{resource.label}</strong>
+            <small>{resource.blueprintName}</small>
+            <span className={styles.resourceMeta}>
+              <span data-resource-operational-state={operationalState} className={`${styles.resourceState} ${resourceStateTone(operationalState)}`}>{operationalState}</span>
+              <span>{resourceSourceLabel(resource.source)}</span>
+            </span>
+          </div>
+          <div className={styles.resourceItemActions}>{renderAction(resource)}</div>
+        </li>;
+      })}
     </ul>
   </details>;
 }

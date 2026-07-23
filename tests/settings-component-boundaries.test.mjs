@@ -47,7 +47,7 @@ test("keeps SettingsView as an eight-section, two-audience dispatcher without pa
   );
 
   const branches = [
-    ["My account", "MySettingsPanel"],
+    ["My settings", "MySettingsPanel"],
     ["Google Workspace", "GoogleWorkspacePanel"],
     ["Calendar & appointments", "WorkspaceDefaultsPanel"],
     ["Inbox & file rules", "InboxRulesPanel"],
@@ -67,7 +67,7 @@ test("keeps SettingsView as an eight-section, two-audience dispatcher without pa
 
   assert.match(settingsView, /visibleSection === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar"/);
   assert.match(settingsView, /visibleSection === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow"/);
-  assert.match(settingsView, /const visibleSection: SettingsSection = isAdmin \? section : "My account"/);
+  assert.match(settingsView, /const visibleSection: SettingsSection = isAdmin \? section : "My settings"/);
   for (const section of SETTINGS_SECTIONS.slice(1)) {
     assert.match(settingsView, new RegExp(`isAdmin && visibleSection === "${section.replace(/[&]/g, "\\&")}"`));
   }

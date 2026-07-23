@@ -1,3 +1,7 @@
+.stageAnchor {
+  scroll-margin-top: 86px;
+}
+
 .statusModeNeutral {
   background: #f0eeeb;
   color: #6c655f;
