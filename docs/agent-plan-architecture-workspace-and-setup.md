@@ -816,7 +816,7 @@ target `/settings?section=google-workspace`).
 deep-link string; slugs unchanged.
 
 ### SET-08 · Persist the launch checklists (medium, after SET-01+02)
-**Status:** In progress — `codex/set08-launch-checklist`, July 24, 2026. Source-only and undeployed. Guide impact: updating `docs/settings-guide.md` with the persisted development-checklist contract.
+**Status:** In review — PR #169, July 24, 2026. Source-only and undeployed. Guide impact: updated `docs/settings-guide.md` with the persisted development-checklist contract.
 
 **Why:** The 4 safeguard checkboxes are unbound inputs storing nothing; Testing & launch
 is a static list that looks trackable. Persisting is accepted tracked work.
