@@ -78,6 +78,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "tasks",
       checksum: "sha256:e7df1a997fabf3aab599dbeefc7629e8d987a9152b0620a1372ebc0a57074951",
     }),
+    Object.freeze({
+      version: 9,
+      name: "flooring_kpi_fields",
+      checksum: "sha256:c3f3dc194ce5a92aabc172db7bc136d886a6f2900136cdf53fb30720f5d711d1",
+    }),
   ]);
 
 /**
@@ -129,7 +134,7 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
   Object.freeze([
     runtimeTableAccess("clients", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("contacts", ["SELECT", "INSERT"]),
-    runtimeTableAccess("projects", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("projects", ["SELECT", "INSERT"]),
     runtimeTableAccess("leads", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("project_meetings", ["SELECT", "INSERT"]),
     runtimeTableAccess("workspace_settings", ["SELECT", "INSERT", "UPDATE"]),
@@ -179,11 +184,21 @@ function runtimeColumnUpdateAccess(
 }
 
 /**
- * Exact column-only UPDATE grants for identity and administration state. The
+ * Exact column-only UPDATE grants for reviewed runtime mutation surfaces. The
  * corresponding tables deliberately have no table-wide UPDATE privilege.
  */
 export const EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS: readonly ExpectedRuntimeColumnUpdateAccess[] =
   Object.freeze([
+    runtimeColumnUpdateAccess("projects", [
+      "project_manager",
+      "installation_started_at",
+      "installation_completed_at",
+      "had_callback",
+      "callback_note",
+      "updated_by",
+      "updated_at",
+      "version",
+    ]),
     runtimeColumnUpdateAccess("users", [
       "status",
       "disabled_at",

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { ADMIN_AUDIT_ACTIVITY_STATEMENTS } from "./admin-audit-activity-schema.ts";
 import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-schema.ts";
+import { FLOORING_KPI_SCHEMA_STATEMENTS } from "./flooring-kpi-schema.ts";
 import { LEAD_PROJECT_MEETING_STATEMENTS } from "./lead-project-meeting-schema.ts";
 import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "./settings-persistence-schema.ts";
@@ -438,6 +439,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "tasks",
     checksum: "sha256:e7df1a997fabf3aab599dbeefc7629e8d987a9152b0620a1372ebc0a57074951",
     statements: TASK_SCHEMA_STATEMENTS,
+  },
+  {
+    version: 9,
+    name: "flooring_kpi_fields",
+    checksum: "sha256:c3f3dc194ce5a92aabc172db7bc136d886a6f2900136cdf53fb30720f5d711d1",
+    statements: FLOORING_KPI_SCHEMA_STATEMENTS,
   },
 ];
 

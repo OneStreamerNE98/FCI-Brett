@@ -51,14 +51,16 @@ The current format-version-2 bounded core rehearsal always reports
 `cutoverReady: false`. Its report inventories all 24 D1 tables plus R2 with a
 reasoned disposition. Only clients, contacts, leads, projects, project meetings,
 and classified activity carry bounded rows and receive end-to-end hash
-reconciliation. Project rows must include explicit null `flooringCategory`,
-`squareFeet`, and `contractValue` placeholders in the hashed format-v2 shape;
-non-null KPI values remain deferred to KPI-04 and fail before database access.
+reconciliation. Project rows must include `flooringCategory`, `squareFeet`, and
+`contractValue` in the hashed format-v2 shape. Registered production migration
+v9 and the rehearsal importer now validate, import, read back, and hash nullable
+or non-null values for those three keys.
 Every inventory-only category, including the additive AI-01 tasks table, must
 likewise remain zero or the command fails before database access. Registered
 production migration v7 now defines the four BE-07 settings, preferences,
-filing-rules, and mail-items tables, and contiguous v8 defines tasks plus the
-widened meeting-type constraint. The snapshot still carries no rows for those
+filing-rules, and mail-items tables, contiguous v8 defines tasks plus the
+widened meeting-type constraint, and contiguous v9 adds all seven project KPI
+columns. The snapshot still carries no rows for those
 inventory-only categories, while `phone-call` meetings now pass validation and
 rehearse against the registered v8 constraint. Passing it is useful source
 evidence but is not a complete migration or cutover rehearsal.

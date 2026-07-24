@@ -116,7 +116,11 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA fci_app FROM fci_rehearsal_importer;
 GRANT USAGE ON SCHEMA fci_app TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.clients TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.contacts TO fci_runtime;
-GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.projects TO fci_runtime;
+GRANT SELECT, INSERT ON TABLE fci_app.projects TO fci_runtime;
+-- The current project adapter mutates only manager/audit/version fields plus
+-- the KPI-03 installation and callback fields added by migration v9. KPI-02
+-- category/area/value inputs are creation-only, so they receive no UPDATE.
+GRANT UPDATE (project_manager, installation_started_at, installation_completed_at, had_callback, callback_note, updated_by, updated_at, version) ON TABLE fci_app.projects TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.leads TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.project_meetings TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.workspace_settings TO fci_runtime;

@@ -97,6 +97,9 @@ function projectIntent({
   name,
   projectManagerId,
   estimatedValue,
+  flooringCategory = null,
+  squareFeet = null,
+  contractValue = null,
   createdAt,
   id = randomUUID(),
   activityId = randomUUID(),
@@ -112,6 +115,9 @@ function projectIntent({
       site: "FCI TEST — DO NOT USE Site",
       projectManagerId,
       estimatedValue,
+      flooringCategory,
+      squareFeet,
+      contractValue,
       createdBy: actorId,
       createdAt,
       updatedAt: createdAt,
@@ -671,6 +677,9 @@ test(
         name: "FCI TEST — DO NOT USE Maximum Value Project",
         projectManagerId: actorA,
         estimatedValue: Number.MAX_SAFE_INTEGER,
+        flooringCategory: "luxury-vinyl",
+        squareFeet: 3_200,
+        contractValue: 175_000,
         createdAt: projectCreatedAt,
       });
       const projectRequest = creationRequest({
@@ -689,6 +698,9 @@ test(
       const projectState = await oneRow(
         pool,
         `SELECT p.estimated_value::text AS estimated_value,
+                p.flooring_category,
+                p.square_feet::text AS square_feet,
+                p.contract_value::text AS contract_value,
                 p.version::text AS version,
                 (SELECT count(*)::integer FROM ${schema}.activity_events WHERE project_id = p.id) AS activities,
                 (SELECT count(*)::integer FROM ${schema}.outbox_events WHERE project_id = p.id) AS outbox_events,
@@ -699,6 +711,9 @@ test(
       );
       assert.deepEqual(projectState, {
         estimated_value: MAX_SAFE_INTEGER_TEXT,
+        flooring_category: "luxury-vinyl",
+        square_feet: "3200",
+        contract_value: "175000",
         version: "1",
         activities: 1,
         outbox_events: 1,
@@ -774,6 +789,78 @@ test(
         [missingManagerActivityId],
       );
       assert.equal(missingManagerActivity.total, 0);
+
+      const installationStartedAt = projectCreatedAt + 3_000;
+      const installationCompletedAt = installationStartedAt + 86_400_000;
+      const installationUpdatedAt = installationCompletedAt + 1_000;
+      const installationActivityId = randomUUID();
+      const projectOperations = createPostgresProjectRepository(pool, { schema });
+      assert.deepEqual(
+        await projectOperations.recordInstallationDates({
+          projectId: acceptedProjectIntent.project.id,
+          installationStartedAt,
+          installationCompletedAt,
+          updatedAt: installationUpdatedAt,
+          activity: {
+            id: installationActivityId,
+            recordId: acceptedProjectIntent.project.id,
+            action: "Installation dates recorded",
+            actor: actorA,
+            detail: "FCI TEST — DO NOT USE — Installation dates recorded",
+            createdAt: installationUpdatedAt,
+          },
+        }),
+        { outcome: "updated" },
+      );
+      const callbackUpdatedAt = installationUpdatedAt + 1_000;
+      const callbackActivityId = randomUUID();
+      assert.deepEqual(
+        await projectOperations.recordFollowUpResult({
+          projectId: acceptedProjectIntent.project.id,
+          hadCallback: true,
+          callbackNote: "FCI TEST — DO NOT USE — Callback resolved",
+          updatedAt: callbackUpdatedAt,
+          activity: {
+            id: callbackActivityId,
+            recordId: acceptedProjectIntent.project.id,
+            action: "Follow-up result recorded",
+            actor: actorA,
+            detail: "FCI TEST — DO NOT USE — Follow-up result recorded",
+            createdAt: callbackUpdatedAt,
+          },
+        }),
+        { outcome: "updated" },
+      );
+      const operationsState = await oneRow(
+        pool,
+        `SELECT
+           ((EXTRACT(epoch FROM installation_started_at) * 1000)::bigint)::text
+             AS installation_started_at,
+           ((EXTRACT(epoch FROM installation_completed_at) * 1000)::bigint)::text
+             AS installation_completed_at,
+           had_callback,
+           callback_note,
+           updated_by,
+           version::text AS version,
+           (SELECT count(*)::integer FROM ${schema}.activity_events
+             WHERE id IN ($2, $3)) AS activities
+         FROM ${schema}.projects
+         WHERE id = $1`,
+        [
+          acceptedProjectIntent.project.id,
+          installationActivityId,
+          callbackActivityId,
+        ],
+      );
+      assert.deepEqual(operationsState, {
+        installation_started_at: String(installationStartedAt),
+        installation_completed_at: String(installationCompletedAt),
+        had_callback: true,
+        callback_note: "FCI TEST — DO NOT USE — Callback resolved",
+        updated_by: actorA,
+        version: "9007199254740994",
+        activities: 2,
+      });
 
       await pool.query(`DELETE FROM ${schema}.outbox_events`);
       const outboxCreatedAt = Date.now() - 120_000;

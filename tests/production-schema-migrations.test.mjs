@@ -13,6 +13,11 @@ import {
   runProductionSchemaMigrations,
   validateProductionMigrationRegistry,
 } from "../app/platform/postgres/production-schema-migrations.ts";
+import { FLOORING_CATEGORIES } from "../app/domain/project-creation.ts";
+import {
+  FLOORING_KPI_SCHEMA_STATEMENTS,
+  PRODUCTION_FLOORING_CATEGORIES,
+} from "../app/platform/postgres/flooring-kpi-schema.ts";
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "../app/platform/postgres/settings-persistence-schema.ts";
 import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts";
 
@@ -140,7 +145,7 @@ function queryIndex(client, pattern) {
 test("keeps production migration declarations immutable and line-ending independent", () => {
   validateProductionMigrationRegistry(PRODUCTION_SCHEMA_MIGRATIONS);
   assert.deepEqual(
-    PRODUCTION_SCHEMA_MIGRATIONS.slice(0, 6).map(({ checksum }) => checksum),
+    PRODUCTION_SCHEMA_MIGRATIONS.slice(0, 8).map(({ checksum }) => checksum),
     [
       "sha256:b3aab0addffeb3e8b4efc58373f359f56489778be9d0ec16dc098ab183beb9f6",
       "sha256:18e19555f53bc5f7f793e0fc5a2960ead8124cc67debff1db24785732bea5aea",
@@ -148,6 +153,8 @@ test("keeps production migration declarations immutable and line-ending independ
       "sha256:a779369e499410a161fa31a02e0ea56972648b81e7836b75c37f7fdacaad6cd3",
       "sha256:aa5e56dc3d1c22d3a6bc5be32f48cfde9ea133cdd853ce6fa024073ebeee05d9",
       "sha256:ff32915b98da08104a94eb4946aca84d0e1c1b144cc8b90d5bc2c7b435e34f99",
+      "sha256:cb468b7237bc478ebe7f35f93ccc97611c94b66fc870e61258b6762297e7d63a",
+      "sha256:e7df1a997fabf3aab599dbeefc7629e8d987a9152b0620a1372ebc0a57074951",
     ],
   );
 
@@ -307,6 +314,54 @@ test("registers the AI-01 PostgreSQL task schema as contiguous migration eight",
   );
   assert.match(sql, /CREATE INDEX activity_events_task_id_idx/);
   assert.doesNotMatch(sql, /\b(?:DROP TABLE|TRUNCATE|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/i);
+});
+
+test("registers flooring KPI parity as contiguous migration nine with domain checks", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 9);
+  assert.ok(migration);
+  assert.equal(migration.name, "flooring_kpi_fields");
+  assert.equal(migration.statements, FLOORING_KPI_SCHEMA_STATEMENTS);
+  assert.deepEqual([...PRODUCTION_FLOORING_CATEGORIES], [...FLOORING_CATEGORIES]);
+  const sql = migration.statements.join("\n");
+
+  for (const [column, type] of [
+    ["flooring_category", "text"],
+    ["square_feet", "numeric"],
+    ["contract_value", "numeric"],
+    ["installation_started_at", "timestamptz"],
+    ["installation_completed_at", "timestamptz"],
+    ["callback_note", "text"],
+  ]) {
+    assert.match(sql, new RegExp(`ALTER TABLE projects ADD COLUMN ${column} ${type}`));
+  }
+  assert.match(
+    sql,
+    /ALTER TABLE projects ADD COLUMN had_callback boolean NOT NULL DEFAULT false/,
+  );
+  assert.match(
+    sql,
+    /projects_flooring_category_check CHECK[\s\S]*flooring_category IN \('hardwood', 'carpet', 'luxury-vinyl', 'tile-stone', 'laminate', 'specialty', 'mixed'\)/,
+  );
+  assert.match(
+    sql,
+    /projects_square_feet_check CHECK[\s\S]*square_feet > 0[\s\S]*square_feet = pg_catalog\.trunc\(square_feet\)[\s\S]*square_feet <= 9007199254740991/,
+  );
+  assert.match(
+    sql,
+    /projects_contract_value_check CHECK[\s\S]*contract_value >= 0[\s\S]*contract_value = pg_catalog\.trunc\(contract_value\)[\s\S]*contract_value <= 9007199254740991/,
+  );
+  assert.match(
+    sql,
+    /projects_installation_dates_check CHECK[\s\S]*installation_completed_at >= installation_started_at/,
+  );
+  assert.match(
+    sql,
+    /projects_callback_note_check CHECK[\s\S]*pg_catalog\.char_length\(callback_note\) <= 1000/,
+  );
+  assert.doesNotMatch(
+    sql,
+    /\b(?:DROP|TRUNCATE|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/i,
+  );
 });
 
 test("rejects gaps, duplicate names, transaction control, and concurrent indexes", () => {

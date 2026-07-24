@@ -1,6 +1,10 @@
+import { FLOORING_CATEGORIES } from "../../domain/project-creation";
 import type {
   AcceptedProjectCreation,
   ProjectCreationIntent,
+  ProjectFollowUpResultIntent,
+  ProjectInstallationDatesIntent,
+  ProjectOperationsRepository,
   ProjectRepository,
 } from "../../ports/project-repository";
 import {
@@ -21,6 +25,8 @@ import {
   parsePostgresTimestamp,
   parsePostgresUuid,
 } from "./postgres-values";
+
+const CALLBACK_NOTE_MAX_LENGTH = 1_000;
 
 type ProjectInsertRow = Record<string, unknown> & {
   id: unknown;
@@ -56,6 +62,9 @@ function projectCreationFingerprintInput(intent: ProjectCreationIntent) {
     site: intent.project.site?.trim() || null,
     projectManagerId: intent.project.projectManagerId,
     estimatedValue: intent.project.estimatedValue,
+    flooringCategory: intent.project.flooringCategory,
+    squareFeet: intent.project.squareFeet,
+    contractValue: intent.project.contractValue,
   };
 }
 
@@ -94,6 +103,49 @@ function assertProjectIntent(intent: ProjectCreationIntent) {
   ) {
     throw new TypeError("PostgreSQL project estimated value must be a non-negative safe whole number");
   }
+  if (
+    intent.project.flooringCategory !== null &&
+    !FLOORING_CATEGORIES.includes(
+      intent.project.flooringCategory as (typeof FLOORING_CATEGORIES)[number],
+    )
+  ) {
+    throw new TypeError("PostgreSQL project flooring category must be supported");
+  }
+  if (
+    intent.project.squareFeet !== null &&
+    (!Number.isSafeInteger(intent.project.squareFeet) || intent.project.squareFeet <= 0)
+  ) {
+    throw new TypeError("PostgreSQL project square feet must be a positive safe whole number");
+  }
+  if (
+    intent.project.contractValue !== null &&
+    (!Number.isSafeInteger(intent.project.contractValue) || intent.project.contractValue < 0)
+  ) {
+    throw new TypeError("PostgreSQL project contract value must be a non-negative safe whole number");
+  }
+}
+
+function assertSafeEpochMilliseconds(value: number, label: string) {
+  if (!Number.isSafeInteger(value) || value < 0 || !Number.isFinite(new Date(value).getTime())) {
+    throw new TypeError(`${label} must be a valid safe epoch millisecond`);
+  }
+}
+
+function assertProjectOperationActivity(
+  intent: ProjectInstallationDatesIntent | ProjectFollowUpResultIntent,
+  label: string,
+) {
+  assertUuid(intent.activity.id, `PostgreSQL ${label} activity ID`);
+  if (intent.activity.recordId !== intent.projectId || intent.activity.actor.trim() === "") {
+    throw new TypeError(
+      `PostgreSQL ${label} evidence must reference the updated project and actor`,
+    );
+  }
+  assertSafeEpochMilliseconds(intent.updatedAt, `PostgreSQL ${label} updated timestamp`);
+  assertSafeEpochMilliseconds(
+    intent.activity.createdAt,
+    `PostgreSQL ${label} activity timestamp`,
+  );
 }
 
 function acceptedProject(value: unknown): AcceptedProjectCreation {
@@ -145,7 +197,7 @@ function projectFromRow(row: ProjectInsertRow): AcceptedProjectCreation {
 export function createPostgresProjectRepository(
   pool: PostgresPool,
   options: PostgresProjectRepositoryOptions = {},
-): ProjectRepository {
+): ProjectRepository & ProjectOperationsRepository {
   return {
     async create(intent) {
       assertProjectIntent(intent);
@@ -217,9 +269,11 @@ export function createPostgresProjectRepository(
         const inserted = await client.query<ProjectInsertRow>(
           `INSERT INTO projects (
              id, project_number, client_id, name, status, site, project_manager,
-             estimated_value, created_by, updated_by, created_at, updated_at, version
+             estimated_value, flooring_category, square_feet, contract_value,
+             created_by, updated_by, created_at, updated_at, version
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, 1)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+             $12, $12, $13, $14, 1)
            RETURNING id::text AS id, project_number, project_manager,
                      estimated_value::text AS estimated_value, created_at,
                      version::text AS version`,
@@ -232,6 +286,9 @@ export function createPostgresProjectRepository(
             intent.project.site?.trim() || null,
             intent.project.projectManagerId,
             intent.project.estimatedValue,
+            intent.project.flooringCategory,
+            intent.project.squareFeet,
+            intent.project.contractValue,
             intent.project.createdBy,
             new Date(intent.project.createdAt),
             new Date(intent.project.updatedAt),
@@ -318,6 +375,113 @@ export function createPostgresProjectRepository(
             intent.activity.action,
             intent.activity.actor,
             `project-manager:${intent.activity.id}`,
+            JSON.stringify({ message: intent.activity.detail }),
+            new Date(intent.activity.createdAt),
+          ],
+        );
+        return { outcome: "updated" as const };
+      });
+    },
+
+    async recordInstallationDates(intent) {
+      if (!isPostgresUuid(intent.projectId)) return { outcome: "project-not-found" };
+      assertProjectOperationActivity(intent, "installation-date");
+      assertSafeEpochMilliseconds(
+        intent.installationStartedAt,
+        "PostgreSQL installation start",
+      );
+      assertSafeEpochMilliseconds(
+        intent.installationCompletedAt,
+        "PostgreSQL installation completion",
+      );
+      if (intent.installationCompletedAt < intent.installationStartedAt) {
+        throw new TypeError(
+          "PostgreSQL installation completion must be on or after installation start",
+        );
+      }
+
+      return withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
+        const updated = await client.query<Record<string, unknown> & { version: unknown }>(
+          `UPDATE projects
+           SET installation_started_at = $1, installation_completed_at = $2,
+               updated_by = $3, updated_at = $4, version = version + 1
+           WHERE id = $5
+           RETURNING version::text AS version`,
+          [
+            new Date(intent.installationStartedAt),
+            new Date(intent.installationCompletedAt),
+            intent.activity.actor,
+            new Date(intent.updatedAt),
+            intent.projectId,
+          ],
+        );
+        if (updated.rowCount !== 1) return { outcome: "project-not-found" as const };
+        parsePostgresPositiveBigint(
+          updated.rows[0]?.version,
+          "PostgreSQL installation-date project version",
+        );
+        await client.query(
+          `INSERT INTO activity_events (
+             id, project_id, action, actor_id, correlation_id, result, detail, occurred_at
+           ) VALUES ($1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7)`,
+          [
+            intent.activity.id,
+            intent.projectId,
+            intent.activity.action,
+            intent.activity.actor,
+            `project-installation:${intent.activity.id}`,
+            JSON.stringify({ message: intent.activity.detail }),
+            new Date(intent.activity.createdAt),
+          ],
+        );
+        return { outcome: "updated" as const };
+      });
+    },
+
+    async recordFollowUpResult(intent) {
+      if (!isPostgresUuid(intent.projectId)) return { outcome: "project-not-found" };
+      assertProjectOperationActivity(intent, "follow-up");
+      if (
+        intent.callbackNote !== null &&
+        (
+          intent.callbackNote.length > CALLBACK_NOTE_MAX_LENGTH ||
+          /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(intent.callbackNote) ||
+          intent.callbackNote.trim() === ""
+        )
+      ) {
+        throw new TypeError("PostgreSQL callback note must be bounded valid text or null");
+      }
+
+      return withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
+        const updated = await client.query<Record<string, unknown> & { version: unknown }>(
+          `UPDATE projects
+           SET had_callback = $1, callback_note = $2, updated_by = $3,
+               updated_at = $4, version = version + 1
+           WHERE id = $5
+           RETURNING version::text AS version`,
+          [
+            intent.hadCallback,
+            intent.callbackNote,
+            intent.activity.actor,
+            new Date(intent.updatedAt),
+            intent.projectId,
+          ],
+        );
+        if (updated.rowCount !== 1) return { outcome: "project-not-found" as const };
+        parsePostgresPositiveBigint(
+          updated.rows[0]?.version,
+          "PostgreSQL follow-up project version",
+        );
+        await client.query(
+          `INSERT INTO activity_events (
+             id, project_id, action, actor_id, correlation_id, result, detail, occurred_at
+           ) VALUES ($1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7)`,
+          [
+            intent.activity.id,
+            intent.projectId,
+            intent.activity.action,
+            intent.activity.actor,
+            `project-follow-up:${intent.activity.id}`,
             JSON.stringify({ message: intent.activity.detail }),
             new Date(intent.activity.createdAt),
           ],
