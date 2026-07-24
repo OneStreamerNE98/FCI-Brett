@@ -48,13 +48,16 @@ formatting has no single home (2 identical `Intl.NumberFormat` consts + a
 `money()` wrapper + 4 inline strings). → NFIX-03.
 
 #### N6-3 · ~10 dead CSS families in globals.css (P3, verified; folded into FIX-17)
-~30 rule lines of removed-dashboard-mock remnants (`.timeline*`,
-`.calendar-board*`, `.day-cell`, `.crew-label`, `.shift-block`, `.draft-shift*`,
-`.mail-list*`, `.health-donut`, `.recent-activity`, `.next-actions`,
-`.prompt-chips`, `.add-card`, `.panel-header-subtitle*`, `.google-ready/-pending`
-and neighbors) with zero className references. Same fix-shape as FIX-17's
-orphaned-stepper item — **folded into FIX-17** (dated amendment) rather than a
-new packet.
+Removed-dashboard-mock remnants (`.timeline*`, `.calendar-board*`, `.day-cell`,
+`.crew-label`, `.shift-block`, `.draft-shift*`, `.mail-list*`, `.health-donut`,
+`.recent-activity`, `.next-actions`, `.prompt-chips`, `.add-card`,
+`.google-ready/-pending` and neighbors) with zero className references. Same
+fix-shape as FIX-17's orphaned-stepper item — **folded into FIX-17** (dated
+amendment) rather than a new packet. **Correction (July 24, 2026, automated
+review):** the originally-listed `.panel-header-subtitle*` family is LIVE
+(emitted dynamically by `OperationsPrimitives.tsx` PanelHeader) and was removed
+from the deletion scope; FIX-17 requires per-selector grep-proof so any other
+mis-classification fails loud at implementation.
 
 #### N6-4 · Dead exports (P3)
 Four legacy alias/parser exports in `adapters/postgres/postgres-values.ts` and
@@ -155,13 +158,20 @@ untouched; guide impact stated per the currency rule.
 abort on the first transient 429; calendar hides its rate-limit signal as 503.
 **Do:** thread `AbortSignal.timeout(~20s)` through the shared fetchers of the
 four data clients and the OAuth token request (matching the chat-notifier/OIDC
-precedent); add ONE bounded, jittered retry on 429/503 inside the shared
-`request()` helpers before surfacing (keep honest failure for persistent
-throttling); surface calendar 429 as 429 `calendar_rate_limited` like its
-siblings.
+precedent); add ONE bounded, jittered retry on 429/503 **restricted to
+idempotent operations only** (amended July 24, 2026 per automated review: an
+ambiguous 503 can arrive AFTER Google commits a mutation, so a blanket retry
+inside `request()` would replay non-idempotent POSTs — Sheets `:append`
+recreates the exact duplicate-row hazard NFIX-01 fixes, Gmail draft/test-message
+creation duplicates drafts). Implement as per-call opt-in (e.g. an
+`idempotent: true` flag set on GETs and find-before-create ensures), never a
+blanket `request()` retry; surface calendar 429 as 429 `calendar_rate_limited`
+like its siblings.
 **Accept:** timeout tests per client (hung-fetch fake → bounded failure, no
-unbounded await); retry test proving exactly one bounded retry then honest
-surfacing; calendar 429 mapping test; no behavior change on success paths.
+unbounded await); retry test proving exactly one bounded retry on an
+opted-in idempotent call AND a test proving a non-idempotent call (append/
+draft-create) is NEVER retried on 503; calendar 429 mapping test; no behavior
+change on success paths.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-03 · Server hygiene sweep: response-helper and formatter consolidation, dead-export removal (small)

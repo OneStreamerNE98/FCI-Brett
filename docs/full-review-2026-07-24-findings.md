@@ -465,14 +465,17 @@ named packets):**
   `workspace-setup-guidance.test.mjs` to assert `.workspace-setup-step*` /
   `.workspace-resource-*` absence so the dead block cannot regrow (mind the live
   neighbor `.workspace-resources-message`). **Amended July 24, 2026 (nightly
-  N6-3):** the same sweep also deletes the ~10 dead removed-dashboard-mock
-  families (~30 rule lines: `.timeline*`, `.calendar-board*`, `.day-cell`,
-  `.crew-label`, `.shift-block`, `.draft-shift*`, `.mail-list*`,
-  `.health-donut`, `.recent-activity`, `.next-actions`, `.prompt-chips`,
-  `.add-card`, `.panel-header-subtitle*`, `.google-ready/-pending` and
-  neighbors), each with zero className references — grep-proof in the PR;
-  exclude the dynamically-constructed `status-*`/`toast-*`/`feature-state-*`/
-  `job-site-map-card-*` families.
+  N6-3):** the same sweep also deletes the dead removed-dashboard-mock
+  families (`.timeline*`, `.calendar-board*`, `.day-cell`, `.crew-label`,
+  `.shift-block`, `.draft-shift*`, `.mail-list*`, `.health-donut`,
+  `.recent-activity`, `.next-actions`, `.prompt-chips`, `.add-card`,
+  `.google-ready/-pending` and neighbors), each with zero className
+  references — grep-proof required in the PR for EVERY deleted selector.
+  **Corrected same day per automated review:** `.panel-header-subtitle*` is
+  LIVE — `OperationsPrimitives.tsx` PanelHeader emits `panel-header-subtitle`
+  plus the dynamic `panel-header-subtitle-${subtitleKind}` variant — it is
+  excluded from deletion, alongside the other dynamically-constructed
+  `status-*`/`toast-*`/`feature-state-*`/`job-site-map-card-*` families.
 - **Inbox header stacking:** stop the two header actions wrapping vertically under
   the long subtitle (`globals.css:127 .title-actions`) — restore the horizontal
   action-row grammar used on Clients/Projects/Overview.
