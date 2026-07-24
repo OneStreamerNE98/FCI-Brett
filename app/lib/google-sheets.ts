@@ -10,6 +10,7 @@ const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
 const CLIENT_DIRECTORY_TAB = "Client Directory";
 const PROJECT_REGISTER_TAB = "Project Register";
+const SHEET_SYNC_STALE_AFTER_MS = 5 * 60 * 1_000;
 export const GOOGLE_IMPORT_CLIENTS_TAB = "Clients Import";
 export const GOOGLE_IMPORT_PROJECTS_TAB = "Projects Import";
 const CLIENT_HEADERS = [
@@ -71,6 +72,11 @@ export type GoogleSheetSyncResult = {
   completedAt: number;
 };
 
+export type GoogleSheetSyncLease = Readonly<{
+  operationKey: string;
+  leaseExpiresAt: number;
+}>;
+
 export interface GoogleSheetsPersistence {
   loadClientRows(connectionKey: string): Promise<ClientMirrorRow[]>;
   loadProjectRows(connectionKey: string): Promise<ProjectMirrorRow[]>;
@@ -92,6 +98,13 @@ export type GoogleSheetsOperationsDependencies = Readonly<{
   fetch: GoogleFetch;
   now: () => number;
   getAccessToken(config: GoogleRuntimeConfig, service: "sheets"): Promise<string>;
+  acquireSyncLease(input: Readonly<{
+    connectionKey: string;
+    actor: string;
+    now: number;
+  }>): Promise<GoogleSheetSyncLease | null>;
+  completeSyncLease(lease: GoogleSheetSyncLease, now: number): Promise<void>;
+  failSyncLease(lease: GoogleSheetSyncLease, errorCode: string, now: number): Promise<void>;
   writeIntegrationEvent(
     config: GoogleRuntimeConfig,
     eventType: string,
@@ -167,13 +180,6 @@ export class GoogleSheetsClient {
     return this.request<ValuesResponse>(`/values/${encodeURIComponent(sheetRange)}?majorDimension=ROWS`);
   }
 
-  update(sheetRange: string, values: string[][]) {
-    return this.request<Record<string, unknown>>(`/values/${encodeURIComponent(sheetRange)}?valueInputOption=RAW`, {
-      method: "PUT",
-      body: JSON.stringify({ majorDimension: "ROWS", values }),
-    });
-  }
-
   append(sheetRange: string, values: string[][]) {
     return this.request<Record<string, unknown>>(`/values/${encodeURIComponent(sheetRange)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
       method: "POST",
@@ -186,10 +192,6 @@ export class GoogleSheetsClient {
       method: "POST",
       body: JSON.stringify({ valueInputOption: "RAW", data }),
     });
-  }
-
-  clear(sheetRange: string) {
-    return this.request<Record<string, unknown>>(`/values/${encodeURIComponent(sheetRange)}:clear`, { method: "POST", body: "{}" });
   }
 
   batchUpdate(requests: Record<string, unknown>[]) {
@@ -249,6 +251,7 @@ async function ensureHeaders(client: GoogleSheetsClient, clientSheet: SheetPrope
 export async function prepareGoogleDirectorySpreadsheet(client: GoogleSheetsClient) {
   const { clientSheet, projectSheet } = await ensureSheetTabs(client);
   await ensureHeaders(client, clientSheet, projectSheet);
+  return { clientSheet, projectSheet };
 }
 
 /**
@@ -321,9 +324,23 @@ async function syncClientDirectory(client: GoogleSheetsClient, rows: ClientMirro
   return { inserted: additions.length, updated, total: rows.length };
 }
 
-async function syncProjectRegister(client: GoogleSheetsClient, rows: ProjectMirrorRow[]) {
-  await client.clear(range(PROJECT_REGISTER_TAB, "A2:L"));
-  if (rows.length) await client.update(range(PROJECT_REGISTER_TAB, `A2:L${rows.length + 1}`), rows.map(projectCells));
+async function syncProjectRegister(client: GoogleSheetsClient, projectSheet: SheetProperties, rows: ProjectMirrorRow[]) {
+  await client.batchUpdate([{
+    updateCells: {
+      range: {
+        sheetId: projectSheet.sheetId,
+        startRowIndex: 1,
+        startColumnIndex: 0,
+        endColumnIndex: PROJECT_HEADERS.length,
+      },
+      rows: rows.map((row) => ({
+        values: projectCells(row).map((value) => ({
+          userEnteredValue: { stringValue: value },
+        })),
+      })),
+      fields: "userEnteredValue",
+    },
+  }]);
   return { total: rows.length };
 }
 
@@ -363,11 +380,27 @@ export async function syncGoogleDirectory(
   const spreadsheetId = config.simulation
     ? config.clientDirectorySheetId ?? "workspace-simulation-directory-sheet"
     : config.clientDirectorySheetId!;
-  await Promise.all([
+  const lease = config.simulation
+    ? null
+    : await dependencies.acquireSyncLease({
+      connectionKey: config.connectionKey,
+      actor,
+      now: dependencies.now(),
+    });
+  if (!config.simulation && !lease) {
+    throw new GoogleIntegrationError(
+      "sheets_sync_in_progress",
+      "A Google Sheets directory sync is already in progress. Try again shortly.",
+      409,
+    );
+  }
+  const markSyncing = () => Promise.all([
     updateSyncState(config, "clients", { status: "syncing", actor }, dependencies),
     updateSyncState(config, "projects", { status: "syncing", actor }, dependencies),
   ]);
+  if (config.simulation) await markSyncing();
   try {
+    if (!config.simulation) await markSyncing();
     if (config.simulation) {
       const [clients, projects] = await Promise.all([
         dependencies.persistence.loadClientRows(config.connectionKey),
@@ -394,13 +427,13 @@ export async function syncGoogleDirectory(
     }
     const accessToken = await dependencies.getAccessToken(config, "sheets");
     const client = new GoogleSheetsClient(accessToken, spreadsheetId, dependencies.fetch);
-    await prepareGoogleDirectorySpreadsheet(client);
+    const { projectSheet } = await prepareGoogleDirectorySpreadsheet(client);
     const [clients, projects] = await Promise.all([
       dependencies.persistence.loadClientRows(config.connectionKey),
       dependencies.persistence.loadProjectRows(config.connectionKey),
     ]);
     const clientResult = await syncClientDirectory(client, clients);
-    const projectResult = await syncProjectRegister(client, projects);
+    const projectResult = await syncProjectRegister(client, projectSheet, projects);
     const completedAt = dependencies.now();
     await Promise.all([
       updateSyncState(config, "clients", { status: "synced", syncedAt: completedAt, actor }, dependencies),
@@ -418,14 +451,47 @@ export async function syncGoogleDirectory(
       integrationEvent.entityId,
       integrationEvent.detail,
     );
+    // The sync has fully succeeded here: the sheet is written, both entity states are
+    // 'synced', and the synced integration event is audited. Releasing the lease is the
+    // last step, and it must be fault-isolated: a transient completeSyncLease failure must
+    // NOT re-enter the failure path and record a genuinely successful sync as a durable
+    // failure (recovery only self-heals 'syncing', never 'failed'). The 5-minute lease TTL
+    // already reclaims an unreleased lease, so we swallow the error and still return success.
+    try {
+      await dependencies.completeSyncLease(lease!, dependencies.now());
+    } catch (releaseError) {
+      const releaseDetail = errorDetails(releaseError);
+      try {
+        await dependencies.writeIntegrationEvent(config, "sheets.directory.lease_release_failed", actor, "google-sheet", spreadsheetId, releaseDetail.code);
+      } catch {
+        // Best-effort audit only; the sync already succeeded and must not be reported as failed.
+      }
+    }
     return { clients: clientResult, projects: projectResult, spreadsheetUrl: sheetUrl(spreadsheetId), completedAt };
   } catch (error) {
     const detail = errorDetails(error);
-    await Promise.all([
-      updateSyncState(config, "clients", { status: "failed", error: detail, actor }, dependencies),
-      updateSyncState(config, "projects", { status: "failed", error: detail, actor }, dependencies),
-    ]);
-    await dependencies.writeIntegrationEvent(config, "sheets.directory.failed", actor, "google-sheet", spreadsheetId, detail.code);
+    try {
+      // Best-effort failure bookkeeping. If any of these writes throw transiently, that
+      // must never replace the original sync error the caller needs to see, so swallow it
+      // and let the unconditional `throw error` below propagate the genuine failure.
+      try {
+        await Promise.all([
+          updateSyncState(config, "clients", { status: "failed", error: detail, actor }, dependencies),
+          updateSyncState(config, "projects", { status: "failed", error: detail, actor }, dependencies),
+        ]);
+        await dependencies.writeIntegrationEvent(config, "sheets.directory.failed", actor, "google-sheet", spreadsheetId, detail.code);
+      } catch {
+        // Swallow bookkeeping failures; the original error is re-thrown unconditionally below.
+      }
+    } finally {
+      // Best-effort as well: a transient failSyncLease rejection must not replace the
+      // original sync error the caller needs; the 5-minute TTL reclaims the lease anyway.
+      try {
+        if (lease) await dependencies.failSyncLease(lease, detail.code, dependencies.now());
+      } catch {
+        // Swallowed; `throw error` below propagates the genuine failure.
+      }
+    }
     throw error;
   }
 }
@@ -448,13 +514,22 @@ export async function trySyncGoogleDirectory(
 export async function getGoogleSheetMirrorStatus(
   config: GoogleRuntimeConfig,
   connection: { services: { sheets: boolean } },
-  dependencies: Pick<GoogleSheetsOperationsDependencies, "persistence">,
+  dependencies: Pick<GoogleSheetsOperationsDependencies, "persistence" | "now">,
   source: "app" | "env" | "none" = config.simulation ? "none" : config.clientDirectorySheetId ? "env" : "none",
 ): Promise<SheetMirrorStatus> {
   const states = await dependencies.persistence.getSyncStates(config.connectionKey);
   const byType = new Map(states.map((state) => [state.entity_type, state]));
   const clients = byType.get("clients");
   const projects = byType.get("projects");
+  const now = dependencies.now();
+  const recoveredStatus = (state: MirrorStateRow | undefined) => (
+    !config.simulation
+    && state?.status === "syncing"
+    && typeof state.last_attempt_at === "number"
+    && now - state.last_attempt_at >= SHEET_SYNC_STALE_AFTER_MS
+      ? "pending"
+      : state?.status ?? "not-synced"
+  );
   const configured = config.simulation || Boolean(config.clientDirectorySheetId) && !config.clientDirectorySheetIdInvalid;
   const enabled = config.sheetsEnabled;
   const connected = connection.services.sheets;
@@ -471,8 +546,8 @@ export async function getGoogleSheetMirrorStatus(
     connected,
     spreadsheetUrl: config.simulation ? null : configured ? sheetUrl(config.clientDirectorySheetId!) : null,
     spreadsheetName: config.simulation ? "Simulated Client Directory" : configured ? "Client Directory" : null,
-    clients: { status: clients?.status ?? "not-synced", lastSyncedAt: clients?.last_synced_at ?? null, lastError: clients?.last_error_message ?? null },
-    projects: { status: projects?.status ?? "not-synced", lastSyncedAt: projects?.last_synced_at ?? null, lastError: projects?.last_error_message ?? null },
+    clients: { status: recoveredStatus(clients), lastSyncedAt: clients?.last_synced_at ?? null, lastError: clients?.last_error_message ?? null },
+    projects: { status: recoveredStatus(projects), lastSyncedAt: projects?.last_synced_at ?? null, lastError: projects?.last_error_message ?? null },
     lastSyncedAt,
     reason,
     source,

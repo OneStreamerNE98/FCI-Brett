@@ -2,6 +2,11 @@ import { env } from "cloudflare:workers";
 
 import { createD1GoogleSheetsPersistence } from "../adapters/d1/google-sheets-persistence";
 import {
+  acquireWorkspaceSetupLease,
+  completeWorkspaceSetupLease,
+  failWorkspaceSetupLease,
+} from "../adapters/d1/workspace-setup-leases";
+import {
   getGoogleSheetMirrorStatus as getGoogleSheetMirrorStatusCore,
   syncGoogleDirectory as syncGoogleDirectoryCore,
   trySyncGoogleDirectory as trySyncGoogleDirectoryCore,
@@ -19,6 +24,18 @@ const dependencies = Object.freeze({
   fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init),
   now: Date.now,
   getAccessToken: getGoogleAccessToken,
+  acquireSyncLease: ({ connectionKey, actor, now }: Readonly<{ connectionKey: string; actor: string; now: number }>) => (
+    acquireWorkspaceSetupLease(env.DB, {
+      id: crypto.randomUUID(),
+      connectionKey,
+      action: "sheets-directory-sync",
+      scopeKey: "sheets-directory-sync",
+      actor,
+      now,
+    })
+  ),
+  completeSyncLease: completeWorkspaceSetupLease.bind(null, env.DB),
+  failSyncLease: failWorkspaceSetupLease.bind(null, env.DB),
   writeIntegrationEvent: writeGoogleIntegrationEvent,
 });
 

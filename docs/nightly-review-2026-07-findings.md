@@ -133,7 +133,7 @@ sim-only branches skipped by repo law.
 ## Packets
 
 ### NFIX-01 · Sheets mirror sync robustness: lease, write order, status recovery (small-medium)
-**Status:** Blocked — awaiting owner dispatch; Codex paste ready (zone clear of open lanes).
+**Status:** In review — PR #184, July 24, 2026. Source-only and undeployed. Guide impact: `docs/settings-guide.md` updated.
 
 **Why:** N8-1/N8-3/N8-4 — the mirror sync is the one unleased live mutation
 family: concurrent syncs duplicate rows and wedge all future syncing; the
