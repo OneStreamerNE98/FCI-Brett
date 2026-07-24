@@ -98,7 +98,7 @@ test(
          )`,
         [new Date(NOW)],
       );
-      await workspaceSettings.upsert({
+      await workspaceSettings.mergeSettings({
         id: "workspace",
         settings: {
           appointmentCalendarId: "calendar-1",
@@ -119,6 +119,52 @@ test(
         updatedBy: "admin@example.test",
         updatedAt: NOW + 1_000,
       });
+      await Promise.all([
+        workspaceSettings.mergeSettings({
+          id: "workspace",
+          settings: {
+            aiFeatures: {
+              orgQa: false,
+              futureFeature: "preserved",
+            },
+          },
+          updatedBy: "assistant-admin@example.test",
+          updatedAt: NOW + 1_100,
+        }),
+        workspaceSettings.mergeSettings({
+          id: "workspace",
+          settings: {
+            launchChecklist: {
+              "test-records-only": {
+                checked: true,
+                actorEmail: "launch-admin@example.test",
+                checkedAt: NOW + 1_200,
+              },
+            },
+          },
+          updatedBy: "launch-admin@example.test",
+          updatedAt: NOW + 1_200,
+        }),
+      ]);
+      assert.deepEqual(
+        (await workspaceSettings.findById("workspace")).settings,
+        {
+          appointmentCalendarId: "calendar-1",
+          fieldCalendarId: "calendar-2",
+          aiFeatures: {
+            orgQa: false,
+            futureFeature: "preserved",
+          },
+          launchChecklist: {
+            "test-records-only": {
+              checked: true,
+              actorEmail: "launch-admin@example.test",
+              checkedAt: NOW + 1_200,
+            },
+          },
+        },
+        "racing PostgreSQL saves to different top-level keys must both survive",
+      );
 
       const firstPreferences = {
         userEmail: "first@example.test",

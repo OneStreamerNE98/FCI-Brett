@@ -66,10 +66,15 @@ function fakeDatabase(initialSettings) {
           if (!/^INSERT INTO workspace_settings/u.test(sql)) {
             throw new Error(`Unexpected run query: ${sql}`);
           }
+          const currentSettings = row ? JSON.parse(row.settings_json) : {};
+          const settingsPatch = JSON.parse(query.values[1]);
           row = {
             ...(row ?? {}),
             id: query.values[0],
-            settings_json: query.values[1],
+            settings_json: JSON.stringify({
+              ...currentSettings,
+              ...settingsPatch,
+            }),
             updated_by: query.values[2],
             updated_at: query.values[3],
           };

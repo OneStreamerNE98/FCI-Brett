@@ -64,8 +64,16 @@ function fakeDatabase(initialRows = {}) {
         async run() {
           query.operation = "run";
           if (/^INSERT INTO workspace_settings/u.test(sql)) {
+            const current = rows.get(query.values[0]);
+            const currentSettings = current?.settings_json
+              ? JSON.parse(current.settings_json)
+              : {};
+            const settingsPatch = JSON.parse(query.values[1]);
             rows.set(query.values[0], {
-              settings_json: query.values[1],
+              settings_json: JSON.stringify({
+                ...currentSettings,
+                ...settingsPatch,
+              }),
               updated_by: query.values[2],
               updated_at: query.values[3],
             });

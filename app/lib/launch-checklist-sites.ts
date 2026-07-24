@@ -34,9 +34,9 @@ export async function saveSitesLaunchChecklist(
     actorEmail,
     now,
   );
-  await repository.upsert({
+  await repository.mergeSettings({
     id: WORKSPACE_SETTINGS_ID,
-    settings,
+    settings: { launchChecklist: settings.launchChecklist },
     updatedBy: actorEmail,
     updatedAt: now,
   });

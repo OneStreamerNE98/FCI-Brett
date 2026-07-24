@@ -74,9 +74,9 @@ export async function saveSitesAssistantFeatures(
     record?.settings ?? {},
     { ...currentFeatures, ...update },
   );
-  await repository.upsert({
+  await repository.mergeSettings({
     id: WORKSPACE_SETTINGS_ID,
-    settings,
+    settings: { aiFeatures: settings.aiFeatures },
     updatedBy: actor,
     updatedAt: now,
   });

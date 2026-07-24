@@ -49,7 +49,7 @@ export async function saveGoogleChatRouting(
   const repository = createD1WorkspaceSettingsRepository(
     database as unknown as D1Database,
   );
-  await repository.upsert({
+  await repository.mergeSettings({
     id: GOOGLE_CHAT_ROUTING_SETTINGS_ID,
     settings: stored,
     updatedBy: actor,

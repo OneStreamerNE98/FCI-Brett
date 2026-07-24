@@ -1,4 +1,7 @@
-import { parseWorkspaceSettingsDocument } from "../../domain/workspace-settings";
+import {
+  parseWorkspaceSettingsDocument,
+  prepareWorkspaceSettingsMerge,
+} from "../../domain/workspace-settings";
 import type {
   WorkspaceSettingsRecord,
   WorkspaceSettingsRepository,
@@ -45,16 +48,39 @@ export function createD1WorkspaceSettingsRepository(
       return row ? recordFromD1(row, id) : null;
     },
 
-    async upsert(input) {
+    async mergeSettings(input) {
+      const merge = prepareWorkspaceSettingsMerge(input.settings);
+      const storedDocument = `
+        CASE
+          WHEN json_valid(workspace_settings.settings_json)
+            THEN CASE
+              WHEN json_type(workspace_settings.settings_json) = 'object'
+                THEN workspace_settings.settings_json
+              ELSE '{}'
+            END
+          ELSE '{}'
+        END
+      `.trim();
+      const mergeBase = merge.keys.length > 0
+        ? `json_remove(${storedDocument}, ${merge.keys.map(() => "?").join(", ")})`
+        : storedDocument;
       await database
         .prepare(
-          "INSERT INTO workspace_settings (id, shared_drive_id, client_directory_sheet_id, intake_mailbox, settings_json, updated_by, updated_at) VALUES (?, NULL, NULL, NULL, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+          `INSERT INTO workspace_settings (
+             id, shared_drive_id, client_directory_sheet_id, intake_mailbox,
+             settings_json, updated_by, updated_at
+           ) VALUES (?, NULL, NULL, NULL, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             settings_json = json_patch(${mergeBase}, excluded.settings_json),
+             updated_by = excluded.updated_by,
+             updated_at = excluded.updated_at`,
         )
         .bind(
           input.id,
-          JSON.stringify(input.settings),
+          merge.serialized,
           input.updatedBy,
           input.updatedAt,
+          ...merge.keys.map((key) => `$."${key}"`),
         )
         .run();
     },

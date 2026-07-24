@@ -93,7 +93,7 @@ function dataQuery(pool, pattern) {
   return query;
 }
 
-test("PostgreSQL Workspace settings preserve scalar resource IDs on document upsert", async () => {
+test("PostgreSQL Workspace settings atomically merge owned keys and preserve scalar resource IDs", async () => {
   const readPool = new RecordingPostgresPool(({ sql }) => {
     assert.match(sql, /FROM workspace_settings[\s\S]*WHERE id = \$1/);
     return result([{
@@ -128,7 +128,7 @@ test("PostgreSQL Workspace settings preserve scalar resource IDs on document ups
   const writer = createPostgresWorkspaceSettingsRepository(writePool, {
     schema: "settings_test",
   });
-  await writer.upsert({
+  await writer.mergeSettings({
     id: "workspace",
     settings: { appointmentCalendarId: "calendar-2" },
     updatedBy: "admin@example.test",
@@ -141,8 +141,14 @@ test("PostgreSQL Workspace settings preserve scalar resource IDs on document ups
     JSON.stringify({ appointmentCalendarId: "calendar-2" }),
     "admin@example.test",
     new Date(UPDATED_AT),
+    ["appointmentCalendarId"],
   ]);
   const conflictUpdate = upsert.sql.split("DO UPDATE SET")[1];
+  assert.match(
+    conflictUpdate,
+    /workspace_settings\.settings_json - \$5::text\[\][\s\S]*\|\| EXCLUDED\.settings_json/u,
+  );
+  assert.doesNotMatch(conflictUpdate, /settings_json = EXCLUDED\.settings_json/u);
   assert.doesNotMatch(
     conflictUpdate,
     /shared_drive_id|client_directory_sheet_id|intake_mailbox/,

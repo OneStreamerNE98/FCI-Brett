@@ -111,3 +111,60 @@ export function parseWorkspaceSettingsDocument(value: unknown): Readonly<Record<
     return Object.freeze({});
   }
 }
+
+const WORKSPACE_SETTINGS_MERGE_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/u;
+const MAX_WORKSPACE_SETTINGS_MERGE_KEYS = 64;
+const MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES = 64_000;
+const OMIT_MERGE_VALUE = Symbol("omit-workspace-settings-merge-value");
+
+function stripMergeNulls(value: unknown): unknown | typeof OMIT_MERGE_VALUE {
+  if (value === null) return OMIT_MERGE_VALUE;
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      const normalized = stripMergeNulls(item);
+      return normalized === OMIT_MERGE_VALUE ? null : normalized;
+    });
+  }
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => {
+      const normalized = stripMergeNulls(item);
+      return normalized === OMIT_MERGE_VALUE ? [] : [[key, normalized]];
+    }),
+  );
+}
+
+/**
+ * Produces the one database-ready document patch used by both D1 and
+ * PostgreSQL. The key list includes explicit nulls so a future caller can
+ * delete a top-level key, while the serialized merge-patch document omits
+ * null object members consistently on both databases.
+ */
+export function prepareWorkspaceSettingsMerge(value: unknown) {
+  if (!isRecord(value)) {
+    throw new TypeError("Workspace settings merge must be an object");
+  }
+  const keys = Object.keys(value);
+  if (keys.length > MAX_WORKSPACE_SETTINGS_MERGE_KEYS) {
+    throw new TypeError(
+      `Workspace settings merge must contain at most ${MAX_WORKSPACE_SETTINGS_MERGE_KEYS} top-level keys`,
+    );
+  }
+  if (keys.some((key) => !WORKSPACE_SETTINGS_MERGE_KEY.test(key))) {
+    throw new TypeError("Workspace settings merge contains an invalid top-level key");
+  }
+  const normalized = stripMergeNulls(value);
+  if (!isRecord(normalized)) {
+    throw new TypeError("Workspace settings merge must normalize to an object");
+  }
+  const serialized = JSON.stringify(normalized);
+  if (new TextEncoder().encode(serialized).byteLength > MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES) {
+    throw new TypeError(
+      `Workspace settings document must be at most ${MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES} UTF-8 bytes`,
+    );
+  }
+  return Object.freeze({
+    keys: Object.freeze([...keys]),
+    serialized,
+  });
+}
