@@ -34,13 +34,14 @@ Project creation locks the parent client and meeting creation locks the parent p
 - Client uniqueness uses the documented application key: Unicode NFKC normalization, outer trim, Unicode-whitespace collapse to one ASCII space, and lowercase.
 - PostgreSQL `bigint` versions are validated and returned as canonical decimal strings, including values above JavaScript's safe-integer ceiling.
 - The constrained project `numeric` value is converted to a JavaScript number only after proving it is nonnegative, whole, and no greater than `Number.MAX_SAFE_INTEGER`.
+- Project creation persists flooring category, square feet, and contract value with the same nullable safe-value semantics as D1; those fields also participate in the idempotency fingerprint.
 - `timestamptz` parameters are bound as `Date` values, and returned timestamps must be timezone-aware.
 - JSONB response, activity, and outbox values are restricted to JSON objects.
 - Lead values reuse the development validator, retain `L-YYYY-XXXXXXXX` identifiers, and store update activity in the same transaction as the row version change.
 - Meeting evidence retains the bounded type/source/link/text/list rules; PostgreSQL stores attendee and action-item lists as JSONB arrays while adapters preserve the existing API row contract.
 - Only normalized client-name conflicts map to `duplicate`. Generated identifier collisions use a safe retryable outcome, and unrelated constraint failures remain errors. Missing or malformed project client IDs map to a replayable `client-not-found` without leaking a PostgreSQL cast failure.
 
-The existing project-manager repository operation now updates `updated_by`, increments the PostgreSQL version, and appends its activity evidence in the same short transaction.
+The project-manager, installation-date, and callback-result repository operations update `updated_by`, increment the PostgreSQL version, and append activity evidence in the same short transaction. All three use the same `updated` / `project-not-found` outcome contract as the D1 adapter.
 
 ## Worker-safe outbox repository
 
@@ -64,7 +65,7 @@ Fast tests run without PostgreSQL and cover:
 - canonical fingerprints, atomic-claim SQL, replay, key conflicts, and response completion;
 - transaction begin/commit/rollback/discard behavior, local timeouts, effective-schema verification, and `pg_temp` shadow protection;
 - Unicode client keys plus bigint, numeric, timestamp, UUID, schema, and JSON parsing;
-- client/project/lead/meeting transaction order, success/failure replay truthfulness, generated-identifier collision mapping, locked missing parents, lead updates, and manager audit behavior;
+- client/project/lead/meeting transaction order, success/failure replay truthfulness, generated-identifier collision mapping, locked missing parents, lead updates, manager audit behavior, and all seven D1/PostgreSQL project-KPI mappings;
 - outbox claim ordering, version fencing, safe provider-error evidence, distinct dead-letter IDs, retry/dead-letter/recovery SQL, and rollback when dead-letter activity fails.
 - portable client/project HTTP status and error-body mapping for accepted, validation, authorization, replay-conflict, duplicate/not-found, and retryable identifier outcomes.
 

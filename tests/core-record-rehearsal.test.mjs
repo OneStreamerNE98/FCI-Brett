@@ -69,7 +69,7 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
       squareFeet: plan.rows.projects[0].squareFeet,
       contractValue: plan.rows.projects[0].contractValue,
     },
-    { flooringCategory: null, squareFeet: null, contractValue: null },
+    { flooringCategory: "hardwood", squareFeet: 2400, contractValue: 132500 },
   );
   assert.equal(plan.rows.projectMeetings[0].id, fixture.projectMeetings[0].id);
   assert.deepEqual(plan.rows.activityEvents.map((row) => row.id), fixture.activityEvents.map((row) => row.id));
@@ -84,8 +84,8 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
   );
   assert.equal(
     plan.sourceEvidence.projects.contentSha256,
-    "sha256:71728be9177caf503dfd5d1bc8dd67126da642431019aa1cbbc72d0f0ca78fd4",
-    "the format-v2 project evidence includes the three required null KPI-04 placeholders",
+    "sha256:a63e7da9dcb1aff0955068da265ee297d89d05e8e86af5ae0823431b6312ee6f",
+    "the format-v2 project evidence includes the three registered KPI-04 values",
   );
 
   const serializedEvidence = JSON.stringify(plan.sourceEvidence);
@@ -344,7 +344,7 @@ test("phone-call meetings enter the PostgreSQL-facing rehearsal plan after v8 re
   );
 });
 
-test("v2 project KPI placeholders are exact-shape and fail closed until KPI-04", async () => {
+test("v2 project KPI fields are exact-shape and fail closed on invalid values", async () => {
   for (const field of ["flooringCategory", "squareFeet", "contractValue"]) {
     const missing = clone(fixture);
     delete missing.projects[0][field];
@@ -355,9 +355,11 @@ test("v2 project KPI placeholders are exact-shape and fail closed until KPI-04",
   }
 
   for (const [field, value] of [
-    ["flooringCategory", "carpet"],
-    ["squareFeet", 1200],
-    ["contractValue", 50000],
+    ["flooringCategory", "vinyl"],
+    ["squareFeet", 0],
+    ["squareFeet", 1.5],
+    ["contractValue", -1],
+    ["contractValue", 1.5],
   ]) {
     const snapshot = clone(fixture);
     snapshot.projects[0][field] = value;
@@ -375,8 +377,7 @@ test("v2 project KPI placeholders are exact-shape and fail closed until KPI-04",
       ),
       (error) => {
         assert.ok(error instanceof CoreRecordRehearsalError);
-        assert.equal(error.code, "kpi04_fields_deferred");
-        assert.match(error.message, /deferred to KPI-04/);
+        assert.equal(error.code, "invalid_snapshot_value");
         return true;
       },
     );
@@ -419,6 +420,9 @@ function destinationRows(source = fixture) {
       site: row.site,
       projectManager: row.projectManager,
       estimatedValue: row.estimatedValue === null ? null : String(row.estimatedValue),
+      flooringCategory: row.flooringCategory,
+      squareFeet: row.squareFeet === null ? null : String(row.squareFeet),
+      contractValue: row.contractValue === null ? null : String(row.contractValue),
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
       createdAt: new Date(row.createdAt),
@@ -551,6 +555,10 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
   assert.match(sql, /BEGIN[\s\S]*COMMIT/);
   assert.match(sql, /INSERT INTO leads/);
   assert.match(sql, /INSERT INTO project_meetings/);
+  assert.match(
+    sql,
+    /INSERT INTO projects \(id, project_number, client_id, name, status, site, project_manager, estimated_value, flooring_category, square_feet, contract_value,/,
+  );
   assert.match(sql, /INSERT INTO activity_events \(id, client_id, project_id, lead_id,/);
   assert.match(sql, /COALESCE\(client_id, project_id, lead_id\)::text/);
   assert.match(sql, /count\(\*\)::text FROM leads/);
@@ -563,6 +571,16 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
   assert.ok(
     client.queries.findIndex((query) => query.sql.includes("set_config('search_path'")) <
       client.queries.findIndex((query) => query.sql.startsWith("INSERT INTO clients")),
+  );
+  const projectInsert = client.queries.find((query) => query.sql.startsWith("INSERT INTO projects"));
+  assert.ok(projectInsert);
+  assert.deepEqual(
+    projectInsert.values.slice(8, 11),
+    [
+      fixture.projects[0].flooringCategory,
+      fixture.projects[0].squareFeet,
+      fixture.projects[0].contractValue,
+    ],
   );
 
   const serializedReport = JSON.stringify(report);

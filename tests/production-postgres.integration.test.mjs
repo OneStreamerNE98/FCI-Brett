@@ -251,17 +251,86 @@ test(
       await pool.query(
         `INSERT INTO ${schema}.projects (
            id, project_number, client_id, name, status, estimated_value,
-           created_by, updated_by
+           flooring_category, square_feet, contract_value,
+           installation_started_at, installation_completed_at,
+           had_callback, callback_note, created_by, updated_by
          ) VALUES ($1, 'CF-2026-ABCD1234', $2, 'Test Project', 'planning',
-           9007199254740991, 'actor-1', 'actor-1')`,
+           9007199254740991, 'hardwood', 2400, 132500,
+           '2026-07-10T12:00:00.000Z', '2026-07-12T12:00:00.000Z',
+           true, 'FCI TEST — DO NOT USE — Callback complete', 'actor-1', 'actor-1')`,
         [projectId, clientId],
       );
-      const estimatedValue = await pool.query(
-        `SELECT estimated_value::text AS estimated_value
+      const projectKpiValues = await pool.query(
+        `SELECT estimated_value::text AS estimated_value, flooring_category,
+                square_feet::text AS square_feet,
+                contract_value::text AS contract_value,
+                installation_started_at, installation_completed_at,
+                had_callback, callback_note
          FROM ${schema}.projects WHERE id = $1`,
         [projectId],
       );
-      assert.equal(estimatedValue.rows[0].estimated_value, "9007199254740991");
+      assert.deepEqual(projectKpiValues.rows, [{
+        estimated_value: "9007199254740991",
+        flooring_category: "hardwood",
+        square_feet: "2400",
+        contract_value: "132500",
+        installation_started_at: new Date("2026-07-10T12:00:00.000Z"),
+        installation_completed_at: new Date("2026-07-12T12:00:00.000Z"),
+        had_callback: true,
+        callback_note: "FCI TEST — DO NOT USE — Callback complete",
+      }]);
+
+      await expectPostgresError(
+        pool.query(
+          `UPDATE ${schema}.projects SET flooring_category = 'vinyl' WHERE id = $1`,
+          [projectId],
+        ),
+        "23514",
+        "projects_flooring_category_check",
+      );
+      for (const invalidSquareFeet of ["0", "-1", "1.5", "9007199254740992"]) {
+        await expectPostgresError(
+          pool.query(
+            `UPDATE ${schema}.projects SET square_feet = $2 WHERE id = $1`,
+            [projectId, invalidSquareFeet],
+          ),
+          "23514",
+          "projects_square_feet_check",
+        );
+      }
+      for (const invalidContractValue of ["-1", "1.5", "9007199254740992"]) {
+        await expectPostgresError(
+          pool.query(
+            `UPDATE ${schema}.projects SET contract_value = $2 WHERE id = $1`,
+            [projectId, invalidContractValue],
+          ),
+          "23514",
+          "projects_contract_value_check",
+        );
+      }
+      for (const [startedAt, completedAt] of [
+        [null, "2026-07-12T12:00:00.000Z"],
+        ["2026-07-13T12:00:00.000Z", "2026-07-12T12:00:00.000Z"],
+      ]) {
+        await expectPostgresError(
+          pool.query(
+            `UPDATE ${schema}.projects
+             SET installation_started_at = $2, installation_completed_at = $3
+             WHERE id = $1`,
+            [projectId, startedAt, completedAt],
+          ),
+          "23514",
+          "projects_installation_dates_check",
+        );
+      }
+      await expectPostgresError(
+        pool.query(
+          `UPDATE ${schema}.projects SET callback_note = '   ' WHERE id = $1`,
+          [projectId],
+        ),
+        "23514",
+        "projects_callback_note_check",
+      );
 
       const leadId = randomUUID();
       await pool.query(

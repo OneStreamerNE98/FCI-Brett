@@ -90,6 +90,31 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "project_meetings")?.privileges,
     ["SELECT", "INSERT"],
   );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "projects")?.privileges,
+    ["SELECT", "INSERT"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(({ table }) => table === "projects")?.columns,
+    [
+      "project_manager",
+      "installation_started_at",
+      "installation_completed_at",
+      "had_callback",
+      "callback_note",
+      "updated_by",
+      "updated_at",
+      "version",
+    ],
+  );
+  assert.match(
+    sql,
+    /GRANT UPDATE \(project_manager, installation_started_at, installation_completed_at, had_callback, callback_note, updated_by, updated_at, version\) ON TABLE fci_app\.projects TO fci_runtime;/,
+  );
+  assert.doesNotMatch(
+    sql,
+    /GRANT SELECT, INSERT, UPDATE ON TABLE fci_app\.projects TO fci_runtime;/,
+  );
   for (const deniedTable of [
     "production_schema_migrations",
     "integration_credentials",

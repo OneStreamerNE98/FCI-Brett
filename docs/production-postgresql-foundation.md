@@ -8,7 +8,7 @@ Status: Implemented and tested in source. Not provisioned, applied, or deployed.
 
 The production PostgreSQL foundation is deliberately separate from the current D1 development environment. It defines the first production data model and migration safety controls without changing API routes, D1 migration versions 1–3, the hosted development environment, Google Workspace, or any live data.
 
-This document describes the schema and migration-runner boundary through immutable migration v6. The source-only [PostgreSQL repository slice](production-postgresql-repositories.md) implements client/project/lead/project-meeting adapters, application idempotency, and worker-safe outbox state transitions. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) composes those adapters around a bounded private Cloud SQL pool, provides separate service/migration/rehearsal entry points, and defines least-privilege source policy. The full application runtime, a live outbox worker, provisioned Cloud resources/secrets, and complete development-data migration remain later assignments.
+This document describes the schema and migration-runner boundary through immutable migration v9. The source-only [PostgreSQL repository slice](production-postgresql-repositories.md) implements client/project/lead/project-meeting adapters, application idempotency, and worker-safe outbox state transitions. The [Google Cloud runtime foundation](google-cloud-runtime-foundation.md) composes those adapters around a bounded private Cloud SQL pool, provides separate service/migration/rehearsal entry points, and defines least-privilege source policy. The full application runtime, a live outbox worker, provisioned Cloud resources/secrets, and complete development-data migration remain later assignments.
 
 ## Core model
 
@@ -19,7 +19,7 @@ The record and delivery migrations create these production tables; the generic p
 | `production_schema_migrations` | Immutable version, name, checksum, and application time for each applied migration. |
 | `clients` | Unique client code and normalized client-name key, constrained state, audit actors/timestamps, and optimistic-concurrency version. |
 | `contacts` | Client-owned contacts with a real foreign key and at most one primary contact per client. |
-| `projects` | Client-owned projects with unique project numbers, constrained state, whole-number nonnegative estimated value, and a version field. |
+| `projects` | Client-owned projects with unique project numbers, constrained state, whole-number nonnegative estimated/contract values, flooring category and area, installation dates, callback result/note, and a version field. KPI columns are added by migration v9. |
 | `leads` | Independent flooring leads with `L-YYYY-XXXXXXXX` identifiers, bounded contact/project/action fields, constrained status/value, audit actors/timestamps, and a version field. Added by migration v6. |
 | `project_meetings` | Project-owned meeting evidence with bounded type/source/link/text/list fields and a required evidence invariant. Added by migration v6. |
 | `activity_events` | Append-only client-, project-, or lead-scoped business activity evidence with actor, correlation ID, result, optional reason, structured detail, and occurrence time. It is not the general security-audit store. |
@@ -31,6 +31,12 @@ A future general append-only `audit_events` model must cover authentication fail
 Every relationship in this bounded model uses a named foreign key and has an index on its referencing column. Identifiers supplied by the application use PostgreSQL `uuid`; actor identifiers remain text until the user/identity schema is approved. Time values use `timestamptz`, structured payloads use `jsonb`, and all table/check/foreign-key/unique identifiers are explicit lowercase snake case.
 
 `projects.estimated_value` is exact PostgreSQL `numeric` with a database check that rejects fractions, negative values, and values above JavaScript’s safe-integer ceiling. `version` fields use `bigint`; the repository adapter validates and returns them as canonical decimal strings rather than silently coercing an out-of-range value to JavaScript `number`.
+
+Migration v9 uses the same safe whole-number boundary for `square_feet` and
+`contract_value`, pins the seven-value flooring-category catalog, requires
+positive square feet and nonnegative contract value, prevents installation
+completion before start, and bounds callback notes. The source is registered
+and checksummed but has not been applied to any database.
 
 The repository produces `clients.normalized_name_key` with this exact application-side algorithm before inserting: `name.normalize("NFKC").trim().replace(/\s+/gu, " ").toLowerCase()`. In words: Unicode NFKC normalization, trim outer whitespace, collapse internal Unicode whitespace to one ASCII space, then apply JavaScript's locale-independent lowercase conversion. The function is centralized and tested with composed/decomposed Unicode plus whitespace variants. The database enforces a trimmed lowercase, nonempty, unique key, but PostgreSQL `lower()` alone is not a complete Unicode normalization algorithm.
 
@@ -75,7 +81,7 @@ The restore and cutover procedure must be rehearsed with test data before produc
 
 Fast unit tests run without PostgreSQL and cover registry validation, LF-normalized checksums, advisory-lock ordering, post-lock history reads, atomic version markers, rollback, unlock/release behavior, bounded table scope, named constraints, and foreign-key index declarations.
 
-The GitHub workflow starts a PostgreSQL 16 service with test-only credentials and runs the integration suites against isolated random schemas. Foundation coverage applies all versions concurrently from empty state, verifies no-op reruns, checks rollback of a failed version, exercises foreign keys/status/value/JSON/idempotency constraints, verifies the partial outbox index, and checks for missing foreign-key indexes. Repository coverage exercises concurrent idempotent replay, atomic rollback, Unicode uniqueness, exact numeric/version handling, audited project assignment, disjoint outbox claims, fenced transitions, dead-letter evidence, and lease recovery. When `TEST_POSTGRES_URL` is present, connection or migration failure fails the suite; it cannot silently skip. Local `npm test` remains usable when that variable is absent.
+The GitHub workflow starts a PostgreSQL 16 service with test-only credentials and runs the integration suites against isolated random schemas. Foundation coverage applies all versions concurrently from empty state, verifies no-op reruns, checks rollback of a failed version, exercises foreign keys/status/value/JSON/idempotency and flooring-KPI constraints, verifies the partial outbox index, and checks for missing foreign-key indexes. Repository coverage exercises concurrent idempotent replay, atomic rollback, Unicode uniqueness, exact numeric/version handling, audited project assignment and KPI operations, disjoint outbox claims, fenced transitions, dead-letter evidence, and lease recovery. When `TEST_POSTGRES_URL` is present, connection or migration failure fails the suite; it cannot silently skip. Local `npm test` remains usable when that variable is absent.
 
 Never point `TEST_POSTGRES_URL` at a shared, staging, or production database. The integration test creates and drops its own schema.
 

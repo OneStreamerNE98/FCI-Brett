@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 
 import { normalizeClientNameKey } from "../../domain/client-name-key.ts";
 import {
+  FLOORING_CATEGORIES,
+  type FlooringCategory,
+} from "../../domain/project-creation.ts";
+import {
   EXPECTED_PRODUCTION_SCHEMA_HISTORY,
   productionSchemaHistoryMatches,
   type ProductionMigrationHistoryRow,
@@ -219,9 +223,9 @@ type PreparedProject = {
   site: string | null;
   projectManager: string | null;
   estimatedValue: number | null;
-  flooringCategory: null;
-  squareFeet: null;
-  contractValue: null;
+  flooringCategory: FlooringCategory | null;
+  squareFeet: number | null;
+  contractValue: number | null;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -413,6 +417,7 @@ const PROJECT_STATUSES = new Set([
   "cancelled",
   "archived",
 ]);
+const FLOORING_CATEGORY_SET = new Set<string>(FLOORING_CATEGORIES);
 const LEAD_STATUSES = new Set(["active", "converted", "lost", "archived"]);
 // This PostgreSQL-facing rehearsal set matches the registered v8 constraint.
 const PROJECT_MEETING_TYPES = new Set([
@@ -738,9 +743,26 @@ function nonnegativeSafeInteger(value: unknown, label: string): number {
   return value;
 }
 
+function nullablePositiveSafeInteger(value: unknown, label: string): number | null {
+  if (value === null) return null;
+  const integer = nonnegativeSafeInteger(value, label);
+  if (integer === 0) {
+    fail("invalid_snapshot_value", `${label} must be a positive safe integer`);
+  }
+  return integer;
+}
+
 function nullableEstimatedValue(value: unknown, label: string): number | null {
   if (value === null) return null;
   return nonnegativeSafeInteger(value, label);
+}
+
+function databasePositiveSafeInteger(value: unknown, label: string): number | null {
+  const integer = databaseEstimatedValue(value, label);
+  if (integer === 0) {
+    fail("invalid_destination_value", `${label} must be a positive safe integer`);
+  }
+  return integer;
 }
 
 function databaseEstimatedValue(value: unknown, label: string): number | null {
@@ -1066,14 +1088,17 @@ function prepareSnapshot(value: unknown): {
     if (row.driveFolderId !== null || row.driveUrl !== null) {
       fail("unsupported_legacy_drive_data", `projects[${index}] contains deferred legacy Drive fields`);
     }
-    if (
-      row.flooringCategory !== null ||
-      row.squareFeet !== null ||
-      row.contractValue !== null
-    ) {
+    const flooringCategory = row.flooringCategory === null
+      ? null
+      : productionText(
+          row.flooringCategory,
+          `projects[${index}].flooringCategory`,
+          32,
+        ) as FlooringCategory;
+    if (flooringCategory !== null && !FLOORING_CATEGORY_SET.has(flooringCategory)) {
       fail(
-        "kpi04_fields_deferred",
-        `projects[${index}] flooringCategory, squareFeet, and contractValue are deferred to KPI-04 and must be null in snapshot format 2`,
+        "invalid_snapshot_value",
+        `projects[${index}].flooringCategory is unsupported`,
       );
     }
     const createdAt = canonicalTimestamp(row.createdAt, `projects[${index}].createdAt`);
@@ -1088,9 +1113,15 @@ function prepareSnapshot(value: unknown): {
       site: nullableText(row.site, `projects[${index}].site`),
       projectManager: nullableText(row.projectManager, `projects[${index}].projectManager`),
       estimatedValue: nullableEstimatedValue(row.estimatedValue, `projects[${index}].estimatedValue`),
-      flooringCategory: null,
-      squareFeet: null,
-      contractValue: null,
+      flooringCategory,
+      squareFeet: nullablePositiveSafeInteger(
+        row.squareFeet,
+        `projects[${index}].squareFeet`,
+      ),
+      contractValue: nullableEstimatedValue(
+        row.contractValue,
+        `projects[${index}].contractValue`,
+      ),
       createdBy: requiredText(row.createdBy, `projects[${index}].createdBy`),
       updatedBy: requiredText(row.updatedBy, `projects[${index}].updatedBy`),
       createdAt,
@@ -1442,6 +1473,9 @@ async function insertPreparedRows(
       "site",
       "project_manager",
       "estimated_value",
+      "flooring_category",
+      "square_feet",
+      "contract_value",
       "created_by",
       "updated_by",
       "created_at",
@@ -1457,6 +1491,9 @@ async function insertPreparedRows(
       row.site,
       row.projectManager,
       row.estimatedValue,
+      row.flooringCategory,
+      row.squareFeet,
+      row.contractValue,
       row.createdBy,
       row.updatedBy,
       row.createdAt,
@@ -1635,7 +1672,10 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
   const projects = await client.query(
     `SELECT id::text AS "id", project_number AS "projectNumber", client_id::text AS "clientId",
             name, status, site, project_manager AS "projectManager",
-            estimated_value::text AS "estimatedValue", created_by AS "createdBy",
+            estimated_value::text AS "estimatedValue",
+            flooring_category AS "flooringCategory",
+            square_feet::text AS "squareFeet",
+            contract_value::text AS "contractValue", created_by AS "createdBy",
             updated_by AS "updatedBy", created_at AS "createdAt", updated_at AS "updatedAt",
             version::text AS "version"
      FROM projects ORDER BY id`,
@@ -1697,9 +1737,15 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
       driveFolderId: null,
       driveUrl: null,
       estimatedValue: databaseEstimatedValue(row.estimatedValue, "destination project estimatedValue"),
-      flooringCategory: null,
-      squareFeet: null,
-      contractValue: null,
+      flooringCategory: row.flooringCategory,
+      squareFeet: databasePositiveSafeInteger(
+        row.squareFeet,
+        "destination project squareFeet",
+      ),
+      contractValue: databaseEstimatedValue(
+        row.contractValue,
+        "destination project contractValue",
+      ),
       createdAt: databaseTimestamp(row.createdAt, "destination project createdAt"),
       updatedAt: databaseTimestamp(row.updatedAt, "destination project updatedAt"),
     })),

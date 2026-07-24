@@ -270,6 +270,20 @@ test(
         providerCalls: 0,
       });
 
+      const projectKpiReadback = await client.query(
+        `SELECT flooring_category AS "flooringCategory",
+                square_feet::text AS "squareFeet",
+                contract_value::text AS "contractValue"
+         FROM ${schema}.projects
+         WHERE id = $1`,
+        [fixture.projects[0].id],
+      );
+      assert.deepEqual(projectKpiReadback.rows, [{
+        flooringCategory: fixture.projects[0].flooringCategory,
+        squareFeet: String(fixture.projects[0].squareFeet),
+        contractValue: String(fixture.projects[0].contractValue),
+      }]);
+
       const activityReferences = await client.query(
         `SELECT id::text,
                 client_id::text AS "clientId",

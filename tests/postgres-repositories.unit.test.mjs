@@ -36,6 +36,8 @@ const CLIENT_ACTIVITY_ID = "33333333-3333-4333-8333-333333333333";
 const PROJECT_ID = "44444444-4444-4444-8444-444444444444";
 const PROJECT_ACTIVITY_ID = "55555555-5555-4555-8555-555555555555";
 const ASSIGNMENT_ACTIVITY_ID = "66666666-6666-4666-8666-666666666666";
+const INSTALLATION_ACTIVITY_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const FOLLOW_UP_ACTIVITY_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 
 function result(rows = [], rowCount = null) {
   return { rows, rowCount };
@@ -205,6 +207,9 @@ function projectIntent() {
       site: "  Test site  ",
       projectManagerId: "manager@example.test",
       estimatedValue: 125_000,
+      flooringCategory: "tile-stone",
+      squareFeet: 2_500,
+      contractValue: 130_000,
       createdBy: "actor@example.test",
       createdAt: CREATED_AT,
       updatedAt: UPDATED_AT,
@@ -229,6 +234,23 @@ test("project fingerprints canonicalize equivalent uppercase UUIDs", () => {
     calculatePostgresProjectCreationFingerprint(lower),
     calculatePostgresProjectCreationFingerprint(upper),
   );
+});
+
+test("project fingerprints bind every creation-time flooring KPI field", () => {
+  const baseline = projectIntent();
+  for (const [field, value] of [
+    ["flooringCategory", "carpet"],
+    ["squareFeet", 2_501],
+    ["contractValue", 130_001],
+  ]) {
+    const changed = structuredClone(baseline);
+    changed.project[field] = value;
+    assert.notEqual(
+      calculatePostgresProjectCreationFingerprint(changed),
+      calculatePostgresProjectCreationFingerprint(baseline),
+      `${field} must participate in the PostgreSQL idempotency fingerprint`,
+    );
+  }
 });
 
 function acceptedClientRow() {
@@ -571,7 +593,15 @@ test("project creation safely parses numeric and bigint values before storing it
       ),
     }),
     step(/SELECT id::text AS id[\s\S]*FOR KEY SHARE/, result([{ id: CLIENT_ID }], 1)),
-    step(/INSERT INTO projects[\s\S]*VALUES \(\$1, \$2, \$3[\s\S]*estimated_value::text/, result([acceptedProjectRow()], 1)),
+    step(
+      /INSERT INTO projects[\s\S]*flooring_category, square_feet, contract_value[\s\S]*VALUES \(\$1, \$2, \$3[\s\S]*estimated_value::text/,
+      result([acceptedProjectRow()], 1),
+      {
+        inspect: ({ values }) => {
+          assert.deepEqual(values.slice(8, 11), ["tile-stone", 2_500, 130_000]);
+        },
+      },
+    ),
     step(/INSERT INTO activity_events/, result([], 1)),
     step(/INSERT INTO outbox_events/, result([], 1)),
     step(/UPDATE idempotency_requests[\s\S]*status = 'completed'/, result([{ version: "2" }], 1)),
@@ -659,4 +689,151 @@ test("assignManager updates the project and activity in one transaction while in
   assert.equal(unusedPool.connectCount, 0);
   assert.deepEqual(unusedClient.queries, []);
   assert.deepEqual(unusedClient.releaseCalls, []);
+});
+
+test("installation dates update PostgreSQL with the D1 outcome contract and append activity atomically", async () => {
+  const installationStartedAt = CREATED_AT + 10_000;
+  const installationCompletedAt = installationStartedAt + 86_400_000;
+  const updatedAt = installationCompletedAt + 1_000;
+  const client = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(
+      /UPDATE projects[\s\S]*installation_started_at = \$1, installation_completed_at = \$2[\s\S]*updated_by = \$3[\s\S]*version = version \+ 1[\s\S]*RETURNING version::text/,
+      result([{ version: "2" }], 1),
+      {
+        inspect: ({ values }) => {
+          assert.deepEqual(values, [
+            new Date(installationStartedAt),
+            new Date(installationCompletedAt),
+            "actor@example.test",
+            new Date(updatedAt),
+            PROJECT_ID,
+          ]);
+        },
+      },
+    ),
+    step(/INSERT INTO activity_events/, result([], 1), {
+      inspect: ({ values }) => {
+        assert.equal(values[4], `project-installation:${INSTALLATION_ACTIVITY_ID}`);
+      },
+    }),
+    step(/^COMMIT$/),
+  ]);
+  const repository = createPostgresProjectRepository(
+    new ScriptedPostgresPool(client),
+    { schema: "repository_test" },
+  );
+  const intent = {
+    projectId: PROJECT_ID,
+    installationStartedAt,
+    installationCompletedAt,
+    updatedAt,
+    activity: {
+      id: INSTALLATION_ACTIVITY_ID,
+      recordId: PROJECT_ID,
+      action: "Installation dates recorded",
+      actor: "actor@example.test",
+      detail: "Installation dates recorded for parity",
+      createdAt: updatedAt,
+    },
+  };
+
+  assert.deepEqual(
+    await repository.recordInstallationDates(intent),
+    { outcome: "updated" },
+  );
+  assert.deepEqual(queryKinds(client).slice(-3), [
+    "update project",
+    "insert activity",
+    "COMMIT",
+  ]);
+  client.assertComplete();
+
+  const missingClient = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/UPDATE projects[\s\S]*installation_started_at = \$1/, result([], 0)),
+    step(/^COMMIT$/),
+  ]);
+  const missingRepository = createPostgresProjectRepository(
+    new ScriptedPostgresPool(missingClient),
+    { schema: "repository_test" },
+  );
+  assert.deepEqual(
+    await missingRepository.recordInstallationDates(intent),
+    { outcome: "project-not-found" },
+  );
+  assert.equal(queryKinds(missingClient).includes("insert activity"), false);
+  missingClient.assertComplete();
+});
+
+test("follow-up results update PostgreSQL with boolean/text parity and append activity atomically", async () => {
+  const updatedAt = CREATED_AT + 90_000_000;
+  const client = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(
+      /UPDATE projects[\s\S]*had_callback = \$1, callback_note = \$2[\s\S]*updated_by = \$3[\s\S]*version = version \+ 1[\s\S]*RETURNING version::text/,
+      result([{ version: "3" }], 1),
+      {
+        inspect: ({ values }) => {
+          assert.deepEqual(values, [
+            true,
+            "FCI TEST — DO NOT USE — Callback complete",
+            "actor@example.test",
+            new Date(updatedAt),
+            PROJECT_ID,
+          ]);
+        },
+      },
+    ),
+    step(/INSERT INTO activity_events/, result([], 1), {
+      inspect: ({ values }) => {
+        assert.equal(values[4], `project-follow-up:${FOLLOW_UP_ACTIVITY_ID}`);
+      },
+    }),
+    step(/^COMMIT$/),
+  ]);
+  const repository = createPostgresProjectRepository(
+    new ScriptedPostgresPool(client),
+    { schema: "repository_test" },
+  );
+  const intent = {
+    projectId: PROJECT_ID,
+    hadCallback: true,
+    callbackNote: "FCI TEST — DO NOT USE — Callback complete",
+    updatedAt,
+    activity: {
+      id: FOLLOW_UP_ACTIVITY_ID,
+      recordId: PROJECT_ID,
+      action: "Follow-up result recorded",
+      actor: "actor@example.test",
+      detail: "Follow-up result recorded for parity",
+      createdAt: updatedAt,
+    },
+  };
+
+  assert.deepEqual(
+    await repository.recordFollowUpResult(intent),
+    { outcome: "updated" },
+  );
+  assert.deepEqual(queryKinds(client).slice(-3), [
+    "update project",
+    "insert activity",
+    "COMMIT",
+  ]);
+  client.assertComplete();
+
+  const unusedClient = new ScriptedPostgresClient([]);
+  const unusedPool = new ScriptedPostgresPool(unusedClient);
+  const invalidRepository = createPostgresProjectRepository(unusedPool, {
+    schema: "repository_test",
+  });
+  assert.deepEqual(
+    await invalidRepository.recordFollowUpResult({
+      ...intent,
+      projectId: "not-a-uuid",
+      activity: { ...intent.activity, recordId: "not-a-uuid" },
+    }),
+    { outcome: "project-not-found" },
+  );
+  assert.equal(unusedPool.connectCount, 0);
 });

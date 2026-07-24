@@ -39,7 +39,7 @@ Migration `0012_green_magneto.sql` is now in `main` through merged PR #52. It ad
 - `square_feet` (`integer`) stores a server-validated positive whole number; and
 - `contract_value` (`integer`) stores a server-validated non-negative whole-dollar sold price. The development API accepts and returns this financial field only for Administrators.
 
-All three columns are nullable so existing project rows remain valid. The migration has no backfill, index, constraint, data rewrite, drop, delete, or truncate operation. PostgreSQL parity is intentionally deferred to KPI-04; this D1 migration does not alter or apply any production migration.
+All three columns are nullable so existing project rows remain valid. The migration has no backfill, index, constraint, data rewrite, drop, delete, or truncate operation. KPI-04 now provides source-only PostgreSQL migration v9 and rehearsal parity for these fields; neither D1 migration 0012 nor production migration v9 has been applied by that source work.
 
 PR #52 is merged source-only and undeployed. Its merge did not apply migration `0012` to the hosted D1 database. A contributor may apply it only to the fixed placeholder local database with `npm run db:migrate:local`. The hosted migration remains behind a separate owner-approved Sites deployment: back up the controlled development database, deploy the reviewed merged source, verify that Sites recorded the pending migration successfully, and smoke-test project creation and the new optional fields. Until that deployment completes, the live development site must be treated as not having these columns.
 
@@ -68,7 +68,7 @@ Migration `0014_strange_anita_blake.sql` is now in `main` through merged PR #75.
 
 Migration 0014 contains four additive `ALTER TABLE ... ADD` statements only. It has no `UPDATE` or other backfill statement, index, table rebuild, data rewrite, drop, delete, or truncate operation. SQLite supplies the new `had_callback = false` default to existing rows; as a result, storage alone cannot distinguish an untouched legacy project from an explicitly recorded “No”. Reports therefore describe callback rate as callback occurrence across completed jobs, not as proof that every follow-up result was captured. Date order and note bounds are enforced by the audited server action rather than by rewriting existing rows.
 
-This migration does not add scheduling, crews, shifts, recognized revenue, or a follow-up-completed field. Its installation dates are the canonical seed that future Scheduling work must consume rather than duplicate. PostgreSQL and rehearsal parity remain deferred to KPI-04; migration 0014 neither changes nor applies a production migration.
+This migration does not add scheduling, crews, shifts, recognized revenue, or a follow-up-completed field. Its installation dates are the canonical seed that future Scheduling work must consume rather than duplicate. KPI-04 now provides source-only PostgreSQL migration v9, database constraints, and project-repository parity for these operational fields; migration 0014 and production migration v9 remain unapplied.
 
 Migration 0014 is source-only, merged through PR #75, undeployed, and unapplied to the hosted development D1 database. Migrations 0012 and 0013 are also still unapplied there. Migration 0015 below is likewise source-only; its section records the current pending sequence and smoke-test boundary.
 
