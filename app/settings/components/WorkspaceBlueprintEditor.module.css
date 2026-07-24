@@ -1,0 +1,16 @@
+.hintedField {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.hintLabelRow {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.hintLabelRow label {
+  min-width: 0;
+}

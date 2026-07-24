@@ -148,6 +148,9 @@ export function AccessibleOverlay({
       if (overlayStack[overlayStack.length - 1] !== token) return;
 
       if (event.key === "Escape") {
+        const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const openInfoHint = activeElement?.closest(".info-hint.open");
+        if (openInfoHint && panel.contains(openInfoHint)) return;
         event.preventDefault();
         event.stopPropagation();
         if (!busyRef.current) onCloseRef.current();

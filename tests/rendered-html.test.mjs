@@ -582,7 +582,7 @@ test("labels planned reminders and inert custom rules without disturbing active 
     ["crew-reminder-hours", "Crew reminder hours", "crewReminderHours"],
     ["office-notification-email", "Office notification email", "officeNotificationEmail"],
   ]) {
-    assert.match(defaults, new RegExp(`<PlannedSettingField id="${id}" label="${label}">[\\s\\S]*?value=\\{settings\\.${key}\\}`, "u"));
+    assert.match(defaults, new RegExp(`<PlannedSettingField id="${id}" label="${label}"[^>]*>[\\s\\S]*?value=\\{settings\\.${key}\\}`, "u"));
   }
   assert.doesNotMatch(
     defaults,

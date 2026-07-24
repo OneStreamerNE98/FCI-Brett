@@ -2490,6 +2490,8 @@ stepper tooltip assertions stay green with mutation-sensitive updates only where
 class names change.
 
 ### HINT-02-A · Adoption, extracted modules (small, after HINT-01)
+**Status:** In progress — `codex/hint02a-hint-adoption`, July 24, 2026. Source-only and undeployed. Guide impact: none.
+
 **Do:** the recommended-tier hints in `WorkspaceBlueprintEditor` (closes the
 settings-redesign-spec §4.1 mandate) and `InboxRulesPanel`'s RuleModal; the three
 WorkspaceDefaultsPanel reminder-hours hints WAIT for AI-08's merge (contended

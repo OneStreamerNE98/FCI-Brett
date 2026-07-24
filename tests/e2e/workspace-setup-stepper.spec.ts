@@ -843,8 +843,9 @@ test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async
 
   const describedIds = await page.locator(".info-hint-trigger").evaluateAll((triggers) => triggers.map((trigger) => trigger.getAttribute("aria-describedby")));
   // Four stage headers + six tenant rows + five creation rows + three
-  // verification rows + three ongoing rows are all mounted in this state.
-  expect(describedIds).toHaveLength(21);
+  // verification rows + three ongoing rows + two blueprint naming fields
+  // are all mounted in this state.
+  expect(describedIds).toHaveLength(23);
   expect(describedIds.every(Boolean)).toBe(true);
   expect(new Set(describedIds).size).toBe(describedIds.length);
   const tooltipText = await page.locator(".info-hint-tooltip").allTextContents();
@@ -2942,4 +2943,54 @@ test("simulation creation journey adopts Drive, ensures roots, spreadsheets, and
   await clientRow.getByRole("button", { name: "Save name" }).click();
   await expect(folderDetails.locator("li").filter({ hasText: "01_Custom Clients" })).toBeVisible();
   await expect(page.locator(".workspace-blueprint-card").getByLabel("01_Custom Clients folder name", { exact: true })).toBeVisible();
+});
+
+test("HINT-02-A blueprint naming hints keep audited copy, anchors, and keyboard dismissal", async ({ page }) => {
+  await mockWorkspaceBlueprint(page);
+  await mockWorkspaceResources(page, workspaceResources());
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-3");
+  await setStageExpanded(page, 3, true);
+  const editor = page.locator(".workspace-blueprint-card");
+  const expected = [
+    {
+      label: "About client folder pattern",
+      text: "A naming template. The tokens listed below are replaced with real client values when the folder is later created.",
+    },
+    {
+      label: "About project folder pattern",
+      text: "A naming template. The required tokens below are replaced with real project values when setup later creates the folder.",
+    },
+  ] as const;
+  const descriptionIds: string[] = [];
+
+  for (const hint of expected) {
+    const trigger = editor.getByRole("button", { name: hint.label, exact: true });
+    const descriptionId = await trigger.getAttribute("aria-describedby");
+    expect(descriptionId).toBeTruthy();
+    descriptionIds.push(descriptionId!);
+    const tooltip = page.locator(`[id="${descriptionId}"]`);
+    await expect(tooltip).toHaveAttribute("role", "tooltip");
+    await expect(tooltip).toHaveText(hint.text);
+    await expect(tooltip).toBeHidden();
+    await trigger.focus();
+    await expect(trigger).toBeFocused();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(tooltip).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(tooltip).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  }
+
+  expect(new Set(descriptionIds).size).toBe(descriptionIds.length);
+  await expect(editor.getByRole("textbox", { name: "Client folder pattern", exact: true })).toBeVisible();
+  await expect(editor.getByRole("textbox", { name: "Project folder pattern", exact: true })).toBeVisible();
 });
