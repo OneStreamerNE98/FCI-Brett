@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
 
@@ -288,6 +289,18 @@ function creationCard(page: Page) {
   return setupStage(page, 3).locator('section[aria-labelledby="workspace-creation-heading"]');
 }
 
+type StageThreeSubsectionKey = "creation" | "blueprint";
+
+function stageThreeSubsection(page: Page, key: StageThreeSubsectionKey) {
+  return setupStage(page, 3).locator(`[data-stage-three-subsection="${key}"]`);
+}
+
+function stageThreeSubsectionToggle(page: Page, key: StageThreeSubsectionKey) {
+  return stageThreeSubsection(page, key).getByRole("button", {
+    name: new RegExp(`^(?:Expand|Collapse) ${key === "creation" ? "Workspace creation" : "Blueprint"}$`),
+  });
+}
+
 function creationRow(page: Page, key: "shared-drive" | "folder-tree" | "spreadsheets" | "templates" | "calendars") {
   return creationCard(page).locator(`[data-workspace-creation-row="${key}"]`);
 }
@@ -316,6 +329,31 @@ async function setStageExpanded(page: Page, number: WorkspaceStageNumber, expand
   const body = setupStage(page, number).locator(".workspace-stage-body");
   if (expanded) await expect(body).toBeVisible();
   else await expect(body).toBeHidden();
+}
+
+async function setStageThreeSubsectionExpanded(page: Page, key: StageThreeSubsectionKey, expanded: boolean) {
+  await setStageExpanded(page, 3, true);
+  const toggle = stageThreeSubsectionToggle(page, key);
+  await expect(toggle).toBeVisible();
+  if (await toggle.getAttribute("aria-expanded") !== String(expanded)) await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", String(expanded));
+  const bodyId = await toggle.getAttribute("aria-controls");
+  expect(bodyId).toBeTruthy();
+  const body = page.locator(`[id="${bodyId}"]`);
+  await expect(body).toHaveCount(1);
+  if (expanded) await expect(body).toBeVisible();
+  else await expect(body).toBeHidden();
+}
+
+async function mockReadyWorkspaceForStageThree(page: Page) {
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+  await mockStageFourVerificationStatus(page);
 }
 
 function tenantChecklistRow(page: Page, title: string) {
@@ -1987,6 +2025,255 @@ test.describe("FIX-18 Stage 3 status reconciliation", () => {
   });
 });
 
+test.describe("SET-38 Stage 3 subsection disclosures", () => {
+  test("waits for every subsection status before opening only the first incomplete subsection", async ({ page }) => {
+    let releaseResources: (() => void) | undefined;
+    let releaseBlueprint: (() => void) | undefined;
+    const resourcesGate = new Promise<void>((resolve) => { releaseResources = resolve; });
+    const blueprintGate = new Promise<void>((resolve) => { releaseBlueprint = resolve; });
+
+    await page.unroute("**/api/v1/integrations/google/setup/resources");
+    await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
+      await resourcesGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(workspaceResources()),
+      });
+    });
+    await page.unroute("**/api/v1/integrations/google/setup/blueprint");
+    await page.route("**/api/v1/integrations/google/setup/blueprint", async (route) => {
+      await blueprintGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ blueprint: seedWorkspaceBlueprint(), version: 0, seeded: true }),
+      });
+    });
+    await mockReadyWorkspaceForStageThree(page);
+
+    await page.goto("/settings?section=google-workspace#workspace-stage-3");
+    const creationToggle = stageThreeSubsectionToggle(page, "creation");
+    const blueprintToggle = stageThreeSubsectionToggle(page, "blueprint");
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(stageThreeSubsection(page, "creation").getByText("Loading", { exact: true })).toBeVisible();
+    await expect(stageThreeSubsection(page, "blueprint").getByText("Loading", { exact: true })).toBeVisible();
+
+    releaseResources?.();
+    await expect(stageThreeSubsection(page, "creation").getByText("0 of 4 ready", { exact: true })).toBeVisible();
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "false");
+
+    releaseBlueprint?.();
+    await expect(stageThreeSubsection(page, "blueprint").getByText("Seed defaults · version 0", { exact: true })).toBeVisible();
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("preserves a manual subsection choice made before status requests settle", async ({ page }) => {
+    let releaseResources: (() => void) | undefined;
+    let releaseBlueprint: (() => void) | undefined;
+    const resourcesGate = new Promise<void>((resolve) => { releaseResources = resolve; });
+    const blueprintGate = new Promise<void>((resolve) => { releaseBlueprint = resolve; });
+
+    await page.unroute("**/api/v1/integrations/google/setup/resources");
+    await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
+      await resourcesGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(workspaceResources()),
+      });
+    });
+    await page.unroute("**/api/v1/integrations/google/setup/blueprint");
+    await page.route("**/api/v1/integrations/google/setup/blueprint", async (route) => {
+      await blueprintGate;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ blueprint: seedWorkspaceBlueprint(), version: 0, seeded: true }),
+      });
+    });
+    await mockReadyWorkspaceForStageThree(page);
+
+    await page.goto("/settings?section=google-workspace#workspace-stage-3");
+    const creationToggle = stageThreeSubsectionToggle(page, "creation");
+    const blueprintToggle = stageThreeSubsectionToggle(page, "blueprint");
+    await expect(stageThreeSubsection(page, "creation").getByText("Loading", { exact: true })).toBeVisible();
+    await expect(stageThreeSubsection(page, "blueprint").getByText("Loading", { exact: true })).toBeVisible();
+    await blueprintToggle.click();
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
+
+    releaseResources?.();
+    releaseBlueprint?.();
+    await expect(stageThreeSubsection(page, "creation").getByText("0 of 4 ready", { exact: true })).toBeVisible();
+    await expect(stageThreeSubsection(page, "blueprint").getByText("Seed defaults · version 0", { exact: true })).toBeVisible();
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("keeps all complete subsections collapsed with their status visible", async ({ page }) => {
+    await page.unroute("**/api/v1/integrations/google/setup/resources");
+    await mockWorkspaceResources(page, completedWorkspaceResources());
+    await mockReadyWorkspaceForStageThree(page);
+
+    await page.goto("/settings?section=google-workspace#workspace-stage-3");
+    await setStageExpanded(page, 3, true);
+
+    await expect(stageThreeSubsectionToggle(page, "creation")).toHaveAttribute("aria-expanded", "false");
+    await expect(stageThreeSubsectionToggle(page, "blueprint")).toHaveAttribute("aria-expanded", "false");
+    await expect(stageThreeSubsection(page, "creation").getByText("4 of 4 ready", { exact: true })).toBeVisible();
+    await expect(stageThreeSubsection(page, "blueprint").getByText("Seed defaults · version 0", { exact: true })).toBeVisible();
+    await expect(page.locator("#workspace-stage-3-creation-content")).toBeHidden();
+    await expect(page.locator("#workspace-stage-3-blueprint-content")).toBeHidden();
+  });
+
+  test("opens Blueprint when it is the first incomplete subsection and reports the failed status honestly", async ({ page }) => {
+    await page.unroute("**/api/v1/integrations/google/setup/resources");
+    await mockWorkspaceResources(page, completedWorkspaceResources());
+    await page.unroute("**/api/v1/integrations/google/setup/blueprint");
+    await page.route("**/api/v1/integrations/google/setup/blueprint", async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "FCI TEST blueprint unavailable" }),
+      });
+    });
+    await mockReadyWorkspaceForStageThree(page);
+
+    await page.goto("/settings?section=google-workspace#workspace-stage-3");
+    await expect(stageThreeSubsection(page, "creation").getByText("4 of 4 ready", { exact: true })).toBeVisible();
+    await expect(stageThreeSubsection(page, "blueprint").getByText("Unavailable", { exact: true })).toBeVisible();
+    await expect(stageThreeSubsectionToggle(page, "creation")).toHaveAttribute("aria-expanded", "false");
+    await expect(stageThreeSubsectionToggle(page, "blueprint")).toHaveAttribute("aria-expanded", "true");
+    await expect(stageThreeSubsection(page, "blueprint").getByRole("alert")).toContainText("FCI TEST blueprint unavailable");
+  });
+
+  test("reports a failed Blueprint refresh as unavailable while retaining the stale draft for recovery", async ({ page }) => {
+    let blueprintGetCount = 0;
+    await page.unroute("**/api/v1/integrations/google/setup/blueprint");
+    await page.route("**/api/v1/integrations/google/setup/blueprint", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      blueprintGetCount += 1;
+      if (blueprintGetCount === 1) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ blueprint: seedWorkspaceBlueprint(), version: 0, seeded: true }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "FCI TEST blueprint refresh unavailable" }),
+      });
+    });
+    const simulationHealth: ConnectionHealthPayload = {
+      ...connectedHealth(),
+      runtimeMode: "simulation",
+      simulation: true,
+      connection: { ...connectedHealth().connection, account: "Local Workspace simulation", grantedServices: null },
+    };
+    await mockConnectionHealth(page, simulationHealth);
+    await page.route("**/api/v1/google-workspace", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(readiness({ runtimeMode: "simulation", simulation: true })),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+    });
+    await mockStageFourVerificationStatus(page);
+    await page.route("**/api/v1/integrations/google/simulation/reset", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ reset: true, messages: 2, events: 0 }),
+      });
+    });
+
+    await page.goto("/settings?section=google-workspace#workspace-stage-3");
+    const blueprintSubsection = stageThreeSubsection(page, "blueprint");
+    const blueprintToggle = stageThreeSubsectionToggle(page, "blueprint");
+    await expect(blueprintSubsection.getByText("Seed defaults · version 0", { exact: true })).toBeVisible();
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "false");
+
+    await setStageExpanded(page, 2, true);
+    await setupStage(page, 2).getByRole("button", { name: "Reset simulation data", exact: true }).click();
+    await setStageExpanded(page, 3, true);
+    await expect(blueprintSubsection.getByText("Unavailable", { exact: true })).toBeVisible();
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "false");
+
+    await blueprintToggle.click();
+    await expect(blueprintSubsection.getByRole("alert")).toContainText("FCI TEST blueprint refresh unavailable");
+    await expect(blueprintSubsection.getByLabel("Business display name")).toHaveValue(seedWorkspaceBlueprint().business.displayName);
+  });
+
+  test("supports independent keyboard toggles, focus recovery, and session-only manual overrides", async ({ page }) => {
+    await mockReadyWorkspaceForStageThree(page);
+    await page.goto("/settings?section=google-workspace#workspace-stage-3");
+
+    const creationToggle = stageThreeSubsectionToggle(page, "creation");
+    const blueprintToggle = stageThreeSubsectionToggle(page, "blueprint");
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(stageThreeSubsection(page, "creation").getByRole("heading", { level: 3, name: "Workspace creation", exact: true })).toBeVisible();
+    await expect(stageThreeSubsection(page, "blueprint").getByRole("heading", { level: 3, name: "Blueprint", exact: true })).toBeVisible();
+
+    await creationToggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#workspace-stage-3-creation-content")).toBeHidden();
+
+    await blueprintToggle.focus();
+    await page.keyboard.press("Space");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#workspace-stage-3-blueprint-content")).toBeVisible();
+    await expect(blueprintToggle).toHaveAttribute("aria-controls", "workspace-stage-3-blueprint-content");
+
+    const blueprintName = stageThreeSubsection(page, "blueprint").getByRole("textbox", { name: "Business display name" });
+    await blueprintName.focus();
+    await page.evaluate(() => {
+      document.querySelector<HTMLButtonElement>('[data-stage-three-subsection="blueprint"] button[aria-controls="workspace-stage-3-blueprint-content"]')?.click();
+    });
+    await expect(blueprintToggle).toBeFocused();
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "false");
+
+    await page.keyboard.press("Space");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
+    await page.getByRole("button", { name: "Check readiness" }).click();
+    await expect(stageThreeSubsection(page, "creation").getByText("0 of 4 ready", { exact: true })).toBeVisible();
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("has no serious or critical accessibility violations at desktop and 390px", async ({ page }) => {
+    await mockReadyWorkspaceForStageThree(page);
+
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/settings?section=google-workspace#workspace-stage-3");
+      await setStageThreeSubsectionExpanded(page, "creation", true);
+      await setStageThreeSubsectionExpanded(page, "blueprint", true);
+
+      const results = await new AxeBuilder({ page })
+        .include('[data-workspace-stage="3"]')
+        .analyze();
+      const seriousOrCritical = results.violations.filter(({ impact }) => impact === "serious" || impact === "critical");
+      expect(seriousOrCritical, `${viewport.width}px Stage 3 axe violations`).toEqual([]);
+      expect(await setupStage(page, 3).evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    }
+  });
+});
+
 test("stale complete registry rows name Connect as the actual unmet dependency", async ({ page }) => {
   const completeResources = workspaceResources().resources.map((resource) => {
     if (resource.resourceType === "drive.shared-drive") {
@@ -2038,7 +2325,7 @@ test("stale complete registry rows name Connect as the actual unmet dependency",
   });
 
   await page.goto("/settings?section=google-workspace");
-  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "creation", true);
   await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("WAITING ON STAGE 2");
   for (const [key, buttonName] of [
     ["shared-drive", "Verify and adopt"],
@@ -2085,7 +2372,7 @@ test("service-level Drive and Calendar locks name degraded dependencies after St
 
   await page.goto("/settings?section=google-workspace");
   await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("DONE");
-  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "creation", true);
   await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
 
   const sharedDriveRow = creationRow(page, "shared-drive");
@@ -2335,7 +2622,7 @@ test("administrator edits and saves a structured Workspace blueprint while syste
   });
 
   await page.goto("/settings?section=google-workspace");
-  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "blueprint", true);
   await setStageExpanded(page, 2, true);
 
   const blueprintCard = page.locator(".workspace-blueprint-card");
@@ -2393,7 +2680,7 @@ test("a stale blueprint save preserves the local draft and requires loading the 
   });
 
   await page.goto("/settings?section=google-workspace");
-  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "blueprint", true);
   const blueprintCard = page.locator(".workspace-blueprint-card");
   const clientFolder = blueprintCard.locator(".workspace-blueprint-folder-row").filter({ hasText: "client-accounts" }).getByRole("textbox");
   await clientFolder.fill("01_Local Draft");
@@ -2434,7 +2721,7 @@ test("blueprint save failures preserve the draft for retry and discard clears no
 
   await page.goto("/settings?section=google-workspace");
   await setStageExpanded(page, 2, true);
-  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "blueprint", true);
   const blueprintCard = page.locator(".workspace-blueprint-card");
   const clientFolder = blueprintCard.locator(".workspace-blueprint-folder-row").filter({ hasText: "client-accounts" }).getByRole("textbox");
   await clientFolder.fill("01_Retry Clients");
@@ -2486,7 +2773,7 @@ test("simulation reset reloads the seed blueprint after deleting the saved simul
 
   await page.goto("/settings?section=google-workspace");
   await setStageExpanded(page, 2, true);
-  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "blueprint", true);
   const blueprintCard = page.locator(".workspace-blueprint-card");
   await expect(blueprintCard.getByLabel("01_Custom Simulation Clients folder name", { exact: true })).toBeVisible();
   const stageTwo = setupStage(page, 2);
@@ -2942,6 +3229,7 @@ test("simulation creation journey adopts Drive, ensures roots, spreadsheets, and
   await clientRow.getByRole("textbox", { name: "New name for 01_Client Accounts" }).fill("01_Custom Clients");
   await clientRow.getByRole("button", { name: "Save name" }).click();
   await expect(folderDetails.locator("li").filter({ hasText: "01_Custom Clients" })).toBeVisible();
+  await setStageThreeSubsectionExpanded(page, "blueprint", true);
   await expect(page.locator(".workspace-blueprint-card").getByLabel("01_Custom Clients folder name", { exact: true })).toBeVisible();
 });
 
@@ -2957,7 +3245,7 @@ test("HINT-02-A blueprint naming hints keep audited copy, anchors, and keyboard 
   });
 
   await page.goto("/settings?section=google-workspace#workspace-stage-3");
-  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "blueprint", true);
   const editor = page.locator(".workspace-blueprint-card");
   const expected = [
     {

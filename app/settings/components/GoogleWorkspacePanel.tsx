@@ -92,6 +92,23 @@ type SetupStageProps = Readonly<{
   children: ReactNode;
 }>;
 
+type StageThreeSubsectionKey = "creation" | "blueprint";
+type StageThreeSubsectionStatus = Readonly<{
+  label: string;
+  complete: boolean;
+  settled: boolean;
+}>;
+type StageThreeSubsectionProps = Readonly<{
+  subsectionKey: StageThreeSubsectionKey;
+  eyebrow: string;
+  title: string;
+  headingId: string;
+  status: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}>;
+
 type StageFourRowProps = Readonly<{
   rowKey: string;
   label: string;
@@ -244,6 +261,53 @@ function SetupStage({
   </section>;
 }
 
+function StageThreeSubsection({
+  subsectionKey,
+  eyebrow,
+  title,
+  headingId,
+  status,
+  open,
+  onToggle,
+  children,
+}: StageThreeSubsectionProps) {
+  const bodyId = `workspace-stage-3-${subsectionKey}-content`;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const toggleSubsection = () => {
+    if (open && bodyRef.current?.contains(document.activeElement)) toggleRef.current?.focus();
+    onToggle();
+  };
+
+  return <section
+    className={`${panelStyles.stageThreeSubsection}${subsectionKey === "blueprint" ? " workspace-blueprint-card" : ""}${open ? ` ${panelStyles.stageThreeSubsectionOpen}` : ""}`}
+    data-stage-three-subsection={subsectionKey}
+    aria-labelledby={headingId}
+  >
+    <header className={panelStyles.stageThreeSubsectionHeader}>
+      <h3 className={panelStyles.stageThreeSubsectionHeading} aria-label={title}>
+        <button
+          ref={toggleRef}
+          type="button"
+          className={panelStyles.stageThreeSubsectionToggle}
+          aria-label={`${open ? "Collapse" : "Expand"} ${title}`}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={toggleSubsection}
+        >
+          <span className={panelStyles.stageThreeSubsectionCopy}>
+            <span className="eyebrow">{eyebrow}</span>
+            <span id={headingId} className={panelStyles.stageThreeSubsectionTitle}>{title}</span>
+          </span>
+          <ChevronDown className={panelStyles.stageThreeSubsectionChevron} size={17} aria-hidden="true" />
+        </button>
+      </h3>
+      <span className={panelStyles.stageThreeSubsectionStatus}>{status}</span>
+    </header>
+    <div ref={bodyRef} id={bodyId} className={panelStyles.stageThreeSubsectionBody} hidden={!open}>{children}</div>
+  </section>;
+}
+
 function StageFourRow({
   rowKey,
   label,
@@ -389,7 +453,72 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [filingSubmitting, setFilingSubmitting] = useState(false);
   const [oauthResult, setOauthResult] = useState<string | null>(null);
   const [blueprintEditorRevision, setBlueprintEditorRevision] = useState(0);
+  const [stageThreeSubsectionOpen, setStageThreeSubsectionOpen] = useState<Record<StageThreeSubsectionKey, boolean>>({
+    creation: false,
+    blueprint: false,
+  });
+  const [stageThreeCreationStatus, setStageThreeCreationStatus] = useState<StageThreeSubsectionStatus>({
+    label: "Loading",
+    complete: false,
+    settled: false,
+  });
+  const [stageThreeBlueprintStatus, setStageThreeBlueprintStatus] = useState<StageThreeSubsectionStatus>({
+    label: "Loading",
+    complete: false,
+    settled: false,
+  });
   const readinessChecked = useRef(false);
+  const stageThreeSubsectionsInitialized = useRef(false);
+
+  const updateStageThreeCreationStatus = useCallback((next: StageThreeSubsectionStatus) => {
+    setStageThreeCreationStatus((current) => (
+      current.label === next.label && current.complete === next.complete && current.settled === next.settled
+        ? current
+        : next
+    ));
+  }, []);
+
+  const updateStageThreeBlueprintStatus = useCallback((next: StageThreeSubsectionStatus) => {
+    setStageThreeBlueprintStatus((current) => (
+      current.label === next.label && current.complete === next.complete && current.settled === next.settled
+        ? current
+        : next
+    ));
+  }, []);
+
+  const toggleStageThreeSubsection = useCallback((subsectionKey: StageThreeSubsectionKey) => {
+    stageThreeSubsectionsInitialized.current = true;
+    setStageThreeSubsectionOpen((current) => ({
+      ...current,
+      [subsectionKey]: !current[subsectionKey],
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (
+      !isAdmin
+      || stageThreeSubsectionsInitialized.current
+      || !stageThreeCreationStatus.settled
+      || !stageThreeBlueprintStatus.settled
+    ) return;
+
+    stageThreeSubsectionsInitialized.current = true;
+    const firstIncomplete = !stageThreeCreationStatus.complete
+      ? "creation"
+      : !stageThreeBlueprintStatus.complete
+        ? "blueprint"
+        : null;
+    setStageThreeSubsectionOpen({
+      creation: firstIncomplete === "creation",
+      blueprint: firstIncomplete === "blueprint",
+    });
+  }, [
+    isAdmin,
+    stageThreeBlueprintStatus.complete,
+    stageThreeBlueprintStatus.settled,
+    stageThreeCreationStatus.complete,
+    stageThreeCreationStatus.settled,
+  ]);
 
   const checkSetup = useCallback(async (force = false) => {
     setChecking(true);
@@ -1149,28 +1278,55 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         {isAdmin ? <div className={panelStyles.stageThreeFrame}>
           <div className={panelStyles.stageThreeUnified}>
             <div className={panelStyles.stageThreeCreation} data-stage-three-pane="creation">
-              <WorkspaceDriveResourceActions
-                resources={resourceRows}
-                simulation={simulation}
-                resourcesReady={workspaceResourcesKnown}
-                resourcesLoading={workspaceResourcesState === "idle" || workspaceResourcesState === "loading"}
-                resourcesError={workspaceResourcesError}
-                stageReady={stageTwoComplete}
-                driveReady={driveReady}
-                driveVerificationReady={simulation || driveReady}
-                driveVerified={driveVerified}
-                driveWorking={working}
-                calendarReady={calendarReady}
-                calendarWorking={calendarWorking}
-                notify={notify}
-                onRetryResources={() => loadWorkspaceResources(true)}
-                onVerifyDrive={verifyGoogleDrive}
-                onVerifyCalendar={refreshTestCalendar}
-                onChanged={refreshAfterDriveSetup}
-              />
+              <StageThreeSubsection
+                subsectionKey="creation"
+                eyebrow="Create in order"
+                title="Workspace creation"
+                headingId="workspace-creation-heading"
+                status={stageThreeCreationStatus.label}
+                open={stageThreeSubsectionOpen.creation}
+                onToggle={() => toggleStageThreeSubsection("creation")}
+              >
+                <WorkspaceDriveResourceActions
+                  resources={resourceRows}
+                  simulation={simulation}
+                  resourcesReady={workspaceResourcesKnown}
+                  resourcesLoading={workspaceResourcesState === "idle" || workspaceResourcesState === "loading"}
+                  resourcesError={workspaceResourcesError}
+                  stageReady={stageTwoComplete}
+                  driveReady={driveReady}
+                  driveVerificationReady={simulation || driveReady}
+                  driveVerified={driveVerified}
+                  driveWorking={working}
+                  calendarReady={calendarReady}
+                  calendarWorking={calendarWorking}
+                  notify={notify}
+                  onRetryResources={() => loadWorkspaceResources(true)}
+                  onVerifyDrive={verifyGoogleDrive}
+                  onVerifyCalendar={refreshTestCalendar}
+                  onChanged={refreshAfterDriveSetup}
+                  embedded
+                  onStatusChange={updateStageThreeCreationStatus}
+                />
+              </StageThreeSubsection>
             </div>
             <div className={panelStyles.stageThreeBlueprint} data-stage-three-pane="blueprint">
-              <WorkspaceBlueprintEditor notify={notify} refreshKey={blueprintEditorRevision} />
+              <StageThreeSubsection
+                subsectionKey="blueprint"
+                eyebrow="Workspace setup"
+                title="Blueprint"
+                headingId="workspace-blueprint-heading"
+                status={stageThreeBlueprintStatus.label}
+                open={stageThreeSubsectionOpen.blueprint}
+                onToggle={() => toggleStageThreeSubsection("blueprint")}
+              >
+                <WorkspaceBlueprintEditor
+                  notify={notify}
+                  refreshKey={blueprintEditorRevision}
+                  embedded
+                  onStatusChange={updateStageThreeBlueprintStatus}
+                />
+              </StageThreeSubsection>
             </div>
           </div>
         </div> : <section className="workspace-setup-card">
@@ -1331,4 +1487,3 @@ export function GmailFilingModal({ message, projects, projectId, preview, loadin
   const alreadyFiled = preview?.existing?.filed === true;
   return <AccessibleOverlay ariaLabel="File email to one project" contentClassName="modal gmail-filing-modal" onClose={onClose} busy={loading || submitting}><header><div><p className="eyebrow">Review-approved Gmail filing</p><h2>File to one project</h2></div><button onClick={onClose} aria-label="Close" disabled={loading || submitting}><X size={20} /></button></header><div className="modal-detail"><div className="filing-message-summary"><Mail size={17} /><div><strong>{message.subject || "(No subject)"}</strong><span>{message.from || "Unknown sender"}{message.date ? ` · ${new Date(message.date).toLocaleString()}` : ""}</span></div></div><label className="filing-project-select">Exact independent project<select data-overlay-initial-focus value={projectId} onChange={(event) => onProject(event.target.value)} disabled={loading || submitting}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name} · {project.client}</option>)}</select></label>{selectedProject && <p className={selectedProject.driveFolderId ? "filing-workspace-ready" : "filing-workspace-pending"}>{selectedProject.driveFolderId ? <><CheckCircle2 size={14} /> Managed Drive workspace detected for this project.</> : <><CircleAlert size={14} /> This project needs its managed Drive workspace before email can be filed. The review will not create a folder.</>}</p>}<p className="form-help"><ShieldCheck size={14} /> The original email becomes an <b>.eml</b> in <b>05_Correspondence / Email Archive</b>. Attachments go to <b>05_Correspondence / Email Attachments</b>. Your Gmail Inbox label is retained.</p>{preview && <div className="filing-preview"><div className="filing-preview-heading"><div><FolderOpen size={16} /><strong>{preview.project.number} — {preview.project.name}</strong><span>{preview.project.client}</span></div>{alreadyFiled && <Status text="Filed" />}</div>{alreadyFiled ? <p className="filing-existing">This email was already filed to this project. No second copy will be made.</p> : <><dl><div><dt>Email archive</dt><dd>{preview.destinations.emailArchive}</dd></div><div><dt>Attachments</dt><dd>{preview.destinations.attachments}</dd></div></dl><div className="filing-attachments"><strong>{attachmentLabel} attachment{attachmentLabel === 1 ? "" : "s"}</strong>{preview.message.attachments.length ? <ul>{preview.message.attachments.map((attachment, index) => <li key={`${attachment.filename}-${index}`}><FileText size={13} /><span>{attachment.filename}</span><small>{attachment.mimeType} · {formatBytes(attachment.byteSize)}</small></li>)}</ul> : <p>No separate attachments were found. The original email will still be copied as an .eml file.</p>}</div><p className="filing-confirmation"><ShieldCheck size={14} /> Nothing has been copied yet. Select <b>Copy email to project</b> to complete this one approved filing.</p></>}</div>}</div><footer className="modal-footer"><button className="soft-button" onClick={onClose} disabled={loading || submitting}>Cancel</button>{preview ? <button className="primary-button" onClick={onConfirm} disabled={loading || submitting || alreadyFiled}>{submitting ? "Copying…" : alreadyFiled ? "Already filed" : `Copy email + ${attachmentLabel} attachment${attachmentLabel === 1 ? "" : "s"}`}</button> : <button className="primary-button" onClick={onPreview} disabled={!projectId || loading || submitting}>{loading ? "Reviewing…" : "Review destination"}</button>}</footer></AccessibleOverlay>;
 }
-

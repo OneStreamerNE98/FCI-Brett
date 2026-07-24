@@ -357,6 +357,8 @@ Administrators also get a small **Connection health** expander showing the conne
 
 Here you adopt the manually created **FCI Operations** Shared Drive, let the app verify its sharing restrictions, create the standard folder tree, and ensure the blueprint spreadsheets — all from buttons in the Resources area, in order. You do **not** hand-build the project folders; the app creates them to a fixed blueprint so filing always lands in the right place. Owner-named folders can be renamed later from the same area; system filing folders stay locked on purpose.
 
+**Updated July 24, 2026.** Stage 3 keeps **Workspace creation** and **Blueprint** in separate disclosure rows. Their status stays visible while collapsed; the first row that still needs work opens automatically on initial load, and both stay collapsed when setup is complete. Expanding or collapsing either row changes presentation for the current session only.
+
 ### Stage 4 — "Verify & maintain"
 *On-screen subtitle: "Prove each service works, then ongoing upkeep."*
 
