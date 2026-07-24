@@ -133,7 +133,7 @@ sim-only branches skipped by repo law.
 ## Packets
 
 ### NFIX-01 · Sheets mirror sync robustness: lease, write order, status recovery (small-medium)
-**Status:** In review — PR #184, July 24, 2026. Source-only and undeployed. Guide impact: `docs/settings-guide.md` updated.
+**Status:** Complete — PR #184, July 24, 2026. Source-only and undeployed. Opus fleet + two review fixes: the sync serializes behind the existing 5-minute connection-scoped lease (overlapping syncs 409 honestly), the Project Register replaces via one atomic open-range updateCells (never observably empty, stale rows cleared), over-age live 'syncing' recovers as 'pending' on reads; the fixes fault-isolated BOTH lease bookkeeping paths so a transient release/fail rejection can neither record a real success as failure nor mask the original sync error. Residual: a >TTL-hung request could still let a successor overlap — closed structurally by NFIX-02's timeouts (amendment below). Guide impact: `docs/settings-guide.md` updated.
 
 **Why:** N8-1/N8-3/N8-4 — the mirror sync is the one unleased live mutation
 family: concurrent syncs duplicate rows and wedge all future syncing; the
@@ -166,7 +166,12 @@ recreates the exact duplicate-row hazard NFIX-01 fixes, Gmail draft/test-message
 creation duplicates drafts). Implement as per-call opt-in (e.g. an
 `idempotent: true` flag set on GETs and find-before-create ensures), never a
 blanket `request()` retry; surface calendar 429 as 429 `calendar_rate_limited`
-like its siblings.
+like its siblings. **Amended July 24, 2026 (from the NFIX-01 review):** the
+~20s timeouts also structurally close the directory-sync lease-outlive window —
+a bounded ~10-request sync completes or fails in a fraction of the 5-minute
+lease TTL, so a hung call can no longer let a successor sync overlap a zombie;
+if these timeouts are ever loosened past the TTL, add an ownership recheck
+before the sync's final writes.
 **Accept:** timeout tests per client (hung-fetch fake → bounded failure, no
 unbounded await); retry test proving exactly one bounded retry on an
 opted-in idempotent call AND a test proving a non-idempotent call (append/
