@@ -19,6 +19,51 @@ for (const section of settingsSections) {
     });
     page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.stack ?? error.message}`));
 
+    if (section.navigation === "Testing & launch") {
+      await page.route("**/api/v1/settings/employee-login-readiness", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          headers: { "Cache-Control": "no-store" },
+          body: JSON.stringify({
+            employeeLogin: {
+              configuration: {
+                state: "unconfigured",
+                configuredCount: 0,
+                totalCount: 4,
+                requirements: [
+                  { name: "FCI_EMPLOYEE_OIDC_CLIENT_ID", configured: false },
+                  { name: "FCI_EMPLOYEE_OIDC_CLIENT_SECRET or FCI_EMPLOYEE_OIDC_CLIENT_SECRET_FILE", configured: false },
+                  { name: "FCI_EMPLOYEE_OIDC_REDIRECT_URI", configured: false },
+                  { name: "FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN", configured: false },
+                ],
+              },
+              activationGate: {
+                state: "owner-approval-required",
+                active: false,
+              },
+            },
+          }),
+        });
+      });
+      await page.route("**/api/v1/admin/access", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          headers: { "Cache-Control": "no-store" },
+          body: JSON.stringify({
+            data: {
+              summary: {
+                activePeopleCount: 0,
+                activeAdministratorCount: 0,
+                pendingInvitationCount: 0,
+              },
+            },
+          }),
+        });
+      });
+    }
+
     for (const viewport of [
       { width: 1280, height: 720 },
       { width: 390, height: 844 },
