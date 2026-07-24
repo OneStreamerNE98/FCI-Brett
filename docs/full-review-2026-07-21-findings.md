@@ -296,6 +296,7 @@ green).
 **Effort:** small. **Cost:** $0.
 
 ### FIX-08 · FloorOpsApp honesty polish bundle (P3s; small)
+**Status:** Superseded — absorbed into DES-05.
 **Why:** three small dishonesty patterns styled as data.
 **Do:** Planned state uses `FeatureStateBadge` everywhere (Overview Scheduling
 subtitle); remove or make honest the constant "Working" meetings stat, the static
