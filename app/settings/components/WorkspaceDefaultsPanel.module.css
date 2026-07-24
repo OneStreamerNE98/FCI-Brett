@@ -16,6 +16,17 @@
   font-weight: 800;
 }
 
+.plannedFieldLabel {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.plannedFieldLabel label {
+  min-width: 0;
+}
+
 .plannedField > small {
   color: var(--text-muted);
   font-size: 12px;

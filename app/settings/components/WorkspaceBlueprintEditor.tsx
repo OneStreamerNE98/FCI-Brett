@@ -5,6 +5,7 @@ import { LockKeyhole, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
+import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 import {
   flattenWorkspaceBlueprintFolders,
   flattenWorkspaceRootFolders,
@@ -15,6 +16,7 @@ import {
   type WorkspaceBlueprintCalendar,
   type WorkspaceBlueprintFolder,
 } from "../../lib/workspace-blueprint";
+import styles from "./WorkspaceBlueprintEditor.module.css";
 
 type Mutable<T> = T extends readonly (infer Item)[]
   ? Mutable<Item>[]
@@ -47,6 +49,8 @@ const SYSTEM_FOLDER_REASON = "Used by email filing or safe intake. Renaming or r
 const SYSTEM_SHEET_REASON = "The Client Directory tabs and headers are maintained by the application.";
 const SYSTEM_LABEL_REASON = "Review-first Gmail filing depends on this exact FCI label.";
 const SYSTEM_CALENDAR_REASON = "The runtime uses this stable calendar key. Its display defaults remain editable.";
+const CLIENT_FOLDER_PATTERN_HINT = "A naming template. The tokens listed below are replaced with real client values when the folder is later created.";
+const PROJECT_FOLDER_PATTERN_HINT = "A naming template. The required tokens below are replaced with real project values when setup later creates the folder.";
 
 function cloneBlueprint(value: WorkspaceBlueprint | BlueprintDraft): BlueprintDraft {
   return structuredClone(value) as BlueprintDraft;
@@ -266,8 +270,28 @@ export function WorkspaceBlueprintEditor({ notify, refreshKey = 0 }: { notify: N
         <div className="workspace-blueprint-field-grid">
           <label>Business display name<input value={draft.business.displayName} onChange={(event) => updateDraft((next) => { next.business.displayName = event.target.value; })} /></label>
           <label>Shared Drive name<input value={draft.drive.sharedDriveName} onChange={(event) => updateDraft((next) => { next.drive.sharedDriveName = event.target.value; })} /></label>
-          <label>Client folder pattern<input value={draft.naming.clientFolderPattern} onChange={(event) => updateDraft((next) => { next.naming.clientFolderPattern = event.target.value; })} /></label>
-          <label>Project folder pattern<input value={draft.naming.projectFolderPattern} onChange={(event) => updateDraft((next) => { next.naming.projectFolderPattern = event.target.value; })} /></label>
+          <div className={styles.hintedField}>
+            <div className={styles.hintLabelRow}>
+              <label htmlFor="workspace-client-folder-pattern">Client folder pattern</label>
+              <WorkspaceInfoHint
+                label="About client folder pattern"
+                text={CLIENT_FOLDER_PATTERN_HINT}
+                anchor="auto"
+              />
+            </div>
+            <input id="workspace-client-folder-pattern" value={draft.naming.clientFolderPattern} onChange={(event) => updateDraft((next) => { next.naming.clientFolderPattern = event.target.value; })} />
+          </div>
+          <div className={styles.hintedField}>
+            <div className={styles.hintLabelRow}>
+              <label htmlFor="workspace-project-folder-pattern">Project folder pattern</label>
+              <WorkspaceInfoHint
+                label="About project folder pattern"
+                text={PROJECT_FOLDER_PATTERN_HINT}
+                anchor="right"
+              />
+            </div>
+            <input id="workspace-project-folder-pattern" value={draft.naming.projectFolderPattern} onChange={(event) => updateDraft((next) => { next.naming.projectFolderPattern = event.target.value; })} />
+          </div>
         </div>
         <p className="workspace-blueprint-token-legend">
           <strong>Allowed naming tokens</strong>

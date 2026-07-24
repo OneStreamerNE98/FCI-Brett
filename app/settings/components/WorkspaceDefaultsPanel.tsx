@@ -4,6 +4,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 import { Building2, CalendarDays, Check, Mail, ShieldCheck } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
+import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { AiAssistantSettingsCard } from "./AiAssistantSettingsCard";
 import { ChatNotificationSettingsCard } from "./ChatNotificationSettingsCard";
@@ -44,12 +45,30 @@ const defaultWorkspacePreferences: WorkspacePreferenceValues = {
 };
 
 const PLANNED_AUTOMATION_COPY = "Saved for the upcoming reminder worker — nothing sends yet";
+const APPOINTMENT_REMINDER_HINT = "How many hours ahead a reminder is planned to go out. Saved now; reminder sending is not built yet.";
+const CLIENT_REMINDER_HINT = "Hours before a client appointment a reminder is planned to send. Saved as a default; sending is not built yet.";
+const CREW_REMINDER_HINT = "Hours before a scheduled field day a crew reminder is planned to send. Saved as a default; sending is not built yet.";
 
-function PlannedSettingField({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+function PlannedSettingField({
+  id,
+  label,
+  hint,
+  hintAnchor = "right",
+  children,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  hintAnchor?: "left" | "right" | "auto";
+  children: ReactNode;
+}) {
   const descriptionId = `${id}-planned-note`;
   return <div className={styles.plannedField} data-setting-consumer="planned">
     <div className={styles.plannedFieldHeader}>
-      <label htmlFor={id}>{label}</label>
+      <div className={styles.plannedFieldLabel}>
+        <label htmlFor={id}>{label}</label>
+        {hint && <WorkspaceInfoHint label={`About ${label.toLowerCase()}`} text={hint} anchor={hintAnchor} />}
+      </div>
       <FeatureStateBadge state="Planned" />
     </div>
     {children}
@@ -163,7 +182,7 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
           <label>Field schedule calendar ID<input value={settings.fieldCalendarId} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /></label>
         </div>}
         <div className="form-row">
-          <PlannedSettingField id="appointment-reminder-hours" label="Appointment reminder hours">
+          <PlannedSettingField id="appointment-reminder-hours" label="Appointment reminder hours" hint={APPOINTMENT_REMINDER_HINT} hintAnchor="auto">
             <input id="appointment-reminder-hours" aria-describedby="appointment-reminder-hours-planned-note" type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} />
           </PlannedSettingField>
           <label>Scheduling source<input value="FCI Operations + shared Workspace calendars" readOnly /></label>
@@ -189,10 +208,10 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
       </div>
       <form onSubmit={save}>
         <div className="form-row">
-          <PlannedSettingField id="client-reminder-hours" label="Client reminder hours">
+          <PlannedSettingField id="client-reminder-hours" label="Client reminder hours" hint={CLIENT_REMINDER_HINT} hintAnchor="auto">
             <input id="client-reminder-hours" aria-describedby="client-reminder-hours-planned-note" type="number" min="0" max="168" value={settings.clientReminderHours} onChange={(event) => setSettings((current) => ({ ...current, clientReminderHours: Number(event.target.value) || 0 }))} />
           </PlannedSettingField>
-          <PlannedSettingField id="crew-reminder-hours" label="Crew reminder hours">
+          <PlannedSettingField id="crew-reminder-hours" label="Crew reminder hours" hint={CREW_REMINDER_HINT} hintAnchor="right">
             <input id="crew-reminder-hours" aria-describedby="crew-reminder-hours-planned-note" type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} />
           </PlannedSettingField>
         </div>
@@ -205,4 +224,3 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
     </section>
   </WorkflowSettingsStack>;
 }
-

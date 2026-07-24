@@ -5,7 +5,9 @@ import { Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { OperationsDataTable, OperationsDataTableCell } from "../../components/operations/OperationsDataTable";
 import { Status } from "../../components/operations/OperationsPrimitives";
+import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 import { getFilingRuleMatcher, type FilingRuleDraft } from "../../lib/google-workspace";
+import styles from "./InboxRulesPanel.module.css";
 
 const INBOX_RULE_COLUMNS = [
   { key: "priority", label: "Priority" },
@@ -16,6 +18,8 @@ const INBOX_RULE_COLUMNS = [
 ] as const;
 
 const CUSTOM_RULE_REVIEW_TOOLTIP = "Custom rules are saved for review but do not drive inbox suggestions until a supported matcher is added.";
+const RULE_MATCH_HINT = "Describe the email in plain words. This is saved as a review-first note; automatic matching is not applied yet.";
+const RULE_ACTION_HINT = "Suggest proposes a project, Send to review holds it for a person, Ignore skips it. Filing always needs approval.";
 
 export function InboxRulesPanel({ rules, onAddRule, onUpdateRule, onDeleteRule }: { rules: FilingRuleDraft[]; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void> }) {
   return <section aria-labelledby="inbox-rules-heading" className="panel rule-settings">
@@ -39,6 +43,30 @@ export function InboxRulesPanel({ rules, onAddRule, onUpdateRule, onDeleteRule }
 export function RuleModal({ onClose, onSave }: { onClose: () => void; onSave: (rule: FilingRuleDraft) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); try { await onSave({ name: String(form.get("name")), enabled: true, priority: Number(form.get("priority")), matchSummary: String(form.get("matchSummary")), action: String(form.get("action")) as FilingRuleDraft["action"], targetCategory: String(form.get("targetCategory")), approvalRequired: true }); } finally { setSaving(false); } }
-  return <AccessibleOverlay ariaLabel="Add an email filing rule" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Gmail intake</p><h2>Add an email filing rule</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Rule name<input data-overlay-initial-focus name="name" required placeholder="e.g. Estimator bid invitations" /></label><div className="form-row"><label>Priority<input name="priority" type="number" min="1" defaultValue="10" required /></label><label>Action<select name="action"><option value="suggest">Suggest a project</option><option value="review">Send to review</option><option value="ignore">Ignore</option></select></label></div><label>When this matches<textarea name="matchSummary" required placeholder="Example: sender is estimator@builder.com and subject contains BID" /></label><label>Default Drive destination<input name="targetCategory" required defaultValue="05_Correspondence / Email Archive" /></label><p className="form-help"><ShieldCheck size={14} /> New rules always require review before Gmail labels, email archives, or attachments are changed.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add rule"}</button></footer></form></AccessibleOverlay>;
+  return <AccessibleOverlay ariaLabel="Add an email filing rule" contentClassName="modal" onClose={onClose} busy={saving}>
+    <header><div><p className="eyebrow">Gmail intake</p><h2>Add an email filing rule</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header>
+    <form onSubmit={submit}>
+      <label>Rule name<input data-overlay-initial-focus name="name" required placeholder="e.g. Estimator bid invitations" /></label>
+      <div className="form-row">
+        <label>Priority<input name="priority" type="number" min="1" defaultValue="10" required /></label>
+        <div className={styles.hintedField}>
+          <div className={styles.hintLabelRow}>
+            <label htmlFor="filing-rule-action">Action</label>
+            <WorkspaceInfoHint label="About rule action" text={RULE_ACTION_HINT} anchor="right" />
+          </div>
+          <select id="filing-rule-action" name="action"><option value="suggest">Suggest a project</option><option value="review">Send to review</option><option value="ignore">Ignore</option></select>
+        </div>
+      </div>
+      <div className={styles.hintedField}>
+        <div className={styles.hintLabelRow}>
+          <label htmlFor="filing-rule-match-summary">When this matches</label>
+          <WorkspaceInfoHint label="About when this matches" text={RULE_MATCH_HINT} anchor="auto" />
+        </div>
+        <textarea id="filing-rule-match-summary" name="matchSummary" required placeholder="Example: sender is estimator@builder.com and subject contains BID" />
+      </div>
+      <label>Default Drive destination<input name="targetCategory" required defaultValue="05_Correspondence / Email Archive" /></label>
+      <p className="form-help"><ShieldCheck size={14} /> New rules always require review before Gmail labels, email archives, or attachments are changed.</p>
+      <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add rule"}</button></footer>
+    </form>
+  </AccessibleOverlay>;
 }
-

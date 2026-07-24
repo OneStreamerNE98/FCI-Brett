@@ -148,6 +148,7 @@ export function AccessibleOverlay({
       if (overlayStack[overlayStack.length - 1] !== token) return;
 
       if (event.key === "Escape") {
+        if (panel.querySelector(".info-hint.open")) return;
         event.preventDefault();
         event.stopPropagation();
         if (!busyRef.current) onCloseRef.current();
