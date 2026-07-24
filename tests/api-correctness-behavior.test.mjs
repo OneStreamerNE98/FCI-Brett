@@ -281,6 +281,7 @@ test("the eight repaired data routes route every local JSON response through no-
 test("remaining client, project, filing-rule, and settings writes use their bounded parser caps", async () => {
   const routes = [
     ["app/api/v1/assistant/route.ts", /maximumBytes: 9_000/],
+    ["app/api/v1/assistant/config/route.ts", /MAX_ASSISTANT_CONFIG_BODY_BYTES = 8_000/],
     ["app/api/v1/clients/route.ts", /MAX_CLIENT_BODY_BYTES = 64_000/],
     ["app/api/v1/projects/route.ts", /MAX_PROJECT_BODY_BYTES = 64_000/],
     ["app/api/v1/filing-rules/[ruleId]/route.ts", /MAX_RULE_BODY_BYTES = 8_000/],
@@ -293,7 +294,7 @@ test("remaining client, project, filing-rule, and settings writes use their boun
     const source = await read(path);
     assert.match(source, cap, path);
     assert.match(source, /parseBoundedJsonObject\(request,/, path);
-    assert.match(source, /if \(!parsed\.ok\) return (?:NextResponse\.json|noStore)/, path);
+    assert.match(source, /if \(!parsed\.ok\) return (?:NextResponse\.json|noStore|json)/, path);
     assert.doesNotMatch(source, /request\.json\(\)/, path);
   }
 });

@@ -7,6 +7,8 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 const appSurfacePaths = [
   "app/FloorOpsApp.tsx",
+  "app/assistant/components/AssistantHelpPanel.tsx",
+  "app/settings/components/AiAssistantSettingsCard.tsx",
   "app/settings/components/ChatNotificationSettingsCard.tsx",
   "app/settings/components/DataSecurityPanel.tsx",
   "app/settings/components/DirectorySyncPanel.tsx",

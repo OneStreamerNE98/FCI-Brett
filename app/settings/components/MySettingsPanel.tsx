@@ -10,6 +10,7 @@ import {
   USER_NOTIFICATION_PREFERENCE_CATALOG,
   type UserSettingsPreferences,
 } from "../../lib/user-settings";
+import { AiAssistantSettingsCard } from "./AiAssistantSettingsCard";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 import styles from "./MySettingsPanel.module.css";
 
@@ -35,7 +36,7 @@ function preferencesFromPayload(value: unknown): UserSettingsPreferences | null 
   };
 }
 
-export function MySettingsPanel({ notify, userName, userEmail, onTimezoneChange, onSettingsLoaded }: { notify: Notify; userName: string; userEmail: string; onTimezoneChange: (timezone: string) => void; onSettingsLoaded: (snapshot: ReconciledSettingsSnapshot) => void }) {
+export function MySettingsPanel({ notify, userName, userEmail, isAdmin, onTimezoneChange, onSettingsLoaded }: { notify: Notify; userName: string; userEmail: string; isAdmin: boolean; onTimezoneChange: (timezone: string) => void; onSettingsLoaded: (snapshot: ReconciledSettingsSnapshot) => void }) {
   const [preferences, setPreferences] = useState<UserSettingsPreferences>(defaultUserSettingsPreferences);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
@@ -102,7 +103,7 @@ export function MySettingsPanel({ notify, userName, userEmail, onTimezoneChange,
     }
   }
 
-  return <section className="panel settings-form-panel" data-settings-audience="personal">
+  const personalSettings = <section className="panel settings-form-panel" data-settings-audience="personal">
     <div className="settings-heading"><div><p className="eyebrow">Your signed-in account</p><h2>My settings</h2><p>Review the identity supplied by your current session and keep your own defaults separate from company setup.</p></div></div>
     <div className="account-identity" data-session-profile="true"><div className="avatar">{accountTitle.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC"}</div><div><strong>{accountTitle}</strong><span>{accountSubtitle}</span></div></div>
     {loadState !== "ready" ? <SettingsDataNotice state={loadState} error={loadError} onRetry={() => void loadMySettings(true)} /> : <form onSubmit={save}>
@@ -121,4 +122,10 @@ export function MySettingsPanel({ notify, userName, userEmail, onTimezoneChange,
       <footer><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : <><Check size={15} /> Save my settings</>}</button></footer>
     </form>}
   </section>;
+  return isAdmin
+    ? personalSettings
+    : <div className="settings-panel-stack">
+        {personalSettings}
+        <AiAssistantSettingsCard notify={notify} isAdmin={false} />
+      </div>;
 }

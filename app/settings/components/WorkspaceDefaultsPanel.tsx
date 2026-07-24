@@ -4,6 +4,7 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 import { Building2, CalendarDays, Check, Mail, ShieldCheck } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
+import { AiAssistantSettingsCard } from "./AiAssistantSettingsCard";
 import { ChatNotificationSettingsCard } from "./ChatNotificationSettingsCard";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 
@@ -41,6 +42,7 @@ const defaultWorkspacePreferences: WorkspacePreferenceValues = {
 function WorkflowSettingsStack({ children, notify, isAdmin }: { children: ReactNode; notify: Notify; isAdmin: boolean }) {
   return <div className="settings-panel-stack">
     {children}
+    <AiAssistantSettingsCard notify={notify} isAdmin={isAdmin} />
     <ChatNotificationSettingsCard notify={notify} isAdmin={isAdmin} />
   </div>;
 }

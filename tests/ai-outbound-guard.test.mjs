@@ -42,6 +42,9 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
   const guardedFiles = [
     ...applicationFiles,
     "app/api/v1/assistant/route.ts",
+    "app/api/v1/assistant/config/route.ts",
+    "app/domain/assistant-config.ts",
+    "app/lib/assistant-config-sites.ts",
     "app/ports/assistant-provider.ts",
   ];
   const sources = await Promise.all(guardedFiles.map(read));

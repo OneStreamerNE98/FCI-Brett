@@ -414,6 +414,11 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
         timezone: "America/Chicago",
         appointmentCalendarId: "client-calendar",
         fieldCalendarId: "field-calendar",
+        futureWorkspaceSetting: { retained: true },
+        aiFeatures: {
+          orgQa: false,
+          futureFeature: "preserved",
+        },
       }),
       updated_by: ADMIN_EMAIL,
       updated_at: 40,
@@ -450,6 +455,12 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
   const write = database.statements.at(-1);
   assert.match(write.sql, /^INSERT INTO workspace_settings/u);
   assert.doesNotMatch(write.sql, /client_directory_sheet_id = excluded/u);
+  const storedSettings = JSON.parse(write.values[1]);
+  assert.deepEqual(storedSettings.futureWorkspaceSetting, { retained: true });
+  assert.deepEqual(storedSettings.aiFeatures, {
+    orgQa: false,
+    futureFeature: "preserved",
+  });
 });
 
 test("filing-rule routes preserve built-in merging and mutation response semantics through the repository", async () => {

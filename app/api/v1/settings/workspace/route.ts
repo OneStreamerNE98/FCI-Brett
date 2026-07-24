@@ -51,9 +51,16 @@ export async function PATCH(request: NextRequest) {
   const repository = createD1WorkspaceSettingsRepository(
     env.DB as unknown as D1Database,
   );
+  const current = await repository.findById(WORKSPACE_SETTINGS_ID);
+  // This route owns only the normalized Workspace preference keys. Preserve
+  // sibling documents such as aiFeatures when an Administrator saves defaults.
+  const persistedSettings = {
+    ...current?.settings,
+    ...settings,
+  };
   await repository.upsert({
     id: WORKSPACE_SETTINGS_ID,
-    settings,
+    settings: persistedSettings,
     updatedBy: auth.user.email,
     updatedAt: now,
   });
