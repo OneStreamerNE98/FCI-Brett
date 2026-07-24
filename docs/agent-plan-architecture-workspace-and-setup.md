@@ -2389,6 +2389,8 @@ gate-off/key-Missing renders honest disabled state; `npm test` green.
 **Effort:** small-medium. **Cost:** $0.
 
 ### AI-07 · AI task extraction, review-first (medium, after AI-01 + AI-03; two PRs a/b)
+**Status:** In progress — `codex/ai07a-task-extraction`, July 24, 2026 (sub-PR a). Source-only and undeployed. Sub-PR b remains blocked until this sub-PR and BE-15/PR #181 are both merged.
+
 **Why:** action items captured in meetings and phone-call notes die as
 strings; the owner wants them to become tracked to-dos — a human approving
 each, per the review-first law.
