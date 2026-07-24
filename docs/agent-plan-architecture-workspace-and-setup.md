@@ -439,7 +439,7 @@ Align both docs.
 **Accept:** fail-closed config tests; dev-stage unchanged; docs agree.
 
 ### BE-14 · Degraded-mode contract + outbox drain entrypoint (medium, after BE-08/09/11)
-**Status:** In review — PR #178, July 24, 2026. Draft; source-only and undeployed. Provider actions remain uncomposed, the outbox-drain dispatcher registry remains empty, and the Terraform Job definition remains disabled by default.
+**Status:** Complete — PR #178, July 24, 2026. Source-only and undeployed. Fable fleet + executed delta verification: typed feature_unavailable/provider_degraded split derived strictly from composition state; the 202 queued ack is Symbol-gated and, per the hardening revision, canonicalized (descriptor-safe, extra fields rejected); drain loop bounded and version-fenced with an empty registry proven a pure no-op; Terraform Job count-gated behind deploy_outbox_drain_job=false with a dedicated narrower drain SA and no scheduler. Provider actions remain uncomposed and nothing activates by default. Open seam items recorded for the future dispatcher-activation packet: per-provider event-key dedupe must be proven at composition, port attemptCount post-increment semantics need documenting, sparse files-array normalization admits a null element, batchSize is deliberately locked to 1.
 
 **Why:** The cutover go/no-go gate requires defining behavior when Google is down; the
 runbook states no degraded mode exists. The outbox machinery (claim/complete/retry/
@@ -2075,7 +2075,7 @@ assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
-**Status:** In review — PR #179, July 24, 2026 (sub-scope a-T2). Sub-scopes b (PR #167), d (PR #170), and a-T1 (PR #174, incl. the Unspecified-industry honesty review fix) are merged. Sub-scope c remains IN SCOPE but deferred — the current source has no truthful live attention-strip signal (the removed demo strip used fabricated counts) — so the packet cannot complete until c ships against a real signal or the owner explicitly descopes it. Source-only and undeployed. Guide impact: none.
+**Status:** Blocked — sub-scope c only, deferred by owner decision (July 24, 2026) until the AI wave lands a truthful attention signal (revisit after AI-02/AI-04). Every other sub-scope is merged: b (PR #167), d (PR #170), a-T1 (PR #174, incl. the Unspecified-industry honesty review fix), and a-T2 (PR #179 — migration 0019 nullable projects.segment, closed two-value catalog, industry-derived default with widen-on-read, KPI segment splits computed but deliberately rendered nowhere pending a non-golden display slot). Source-only and undeployed; migration 0019 unapplied to Sites. Guide impact: none.
 
 **Why:** owner selections of July 22 — all four extras plus the meetings
 resolution of spec §5.
@@ -2492,7 +2492,7 @@ stepper tooltip assertions stay green with mutation-sensitive updates only where
 class names change.
 
 ### HINT-02-A · Adoption, extracted modules (small, after HINT-01)
-**Status:** In review — PR #177, July 24, 2026. Source-only and undeployed. Guide impact: none.
+**Status:** Complete — PR #177, July 24, 2026. Source-only and undeployed. Opus fleet clean: all seven recommended-tier hints byte-verbatim from the audit table with correct anchors, AI-08 composition pins undisturbed, usage census honestly 21→23. Review fix (6a4d209) made the AccessibleOverlay Escape guard panel-scoped so hover-opened tooltips consume Escape before the modal closes, e2e-proven both paths. Guide impact: none.
 
 **Do:** the recommended-tier hints in `WorkspaceBlueprintEditor` (closes the
 settings-redesign-spec §4.1 mandate) and `InboxRulesPanel`'s RuleModal; the three

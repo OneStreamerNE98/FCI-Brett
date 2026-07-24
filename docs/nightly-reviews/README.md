@@ -31,6 +31,27 @@ review-and-merge loop.
 | 9 | Performance (numbers required) | pending | — | — | — |
 | 10 | Accessibility + maintenance + synthesis | pending | — | — | — |
 
+## Running nights together (owner-approved July 24, 2026)
+
+Some nights may run in the same session when the owner opts in at kickoff; the
+orchestrator offers the compatible options with every "run night N". The rules:
+
+- **Nights 6 and 8 are pure-static** (no dev server, no captures): each pairs
+  with any other night, including each other.
+- **Night 7** (mostly static, small live-repro tail) pairs with any scan night
+  or with 6/8.
+- **Scan nights 1, 2, and 5** each pair with one static night; 1+2 together is
+  allowed with scan phases staged back-to-back rather than concurrent.
+- **Night 3 requires nights 1 AND 2 complete first** (it consumes their scan
+  data) and pairs with 6/8 only.
+- **Night 4** pairs with a static night only (not 1/2).
+- **Night 9 pairs only with 6/8** — its render-timing numbers need a quiet
+  server and CPU during measurement.
+- **Night 10 runs solo and last** — it synthesizes every prior night.
+- **Mechanics:** co-run nights share ONE kickoff (single board check, single
+  dedup-index refresh) and ONE combined publication (both night pages + ledger
+  appends in a single docs PR).
+
 An Apple design-language study (APL-0: mockup-first, three directions with
 research-backed risk sheets) runs alongside the program; its outcome gates any
 APL packet series, sequenced after the DES queue completes.

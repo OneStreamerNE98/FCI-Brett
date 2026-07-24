@@ -440,6 +440,11 @@ named packets):**
 - ROUTED → **BE-15**: the cross-cutting settings-blob write fence (raised
   independently by the SET-08 persistence lens and the automated review) — filed
   as BE-15 in the agent plan, July 24, 2026.
+- IN SCOPE — **project-segment selector un-tap (added July 24, 2026, from the
+  a-T2 review):** once a segment radio is tapped in the creation modal there is
+  no way back to "derive from client industry" short of cancelling; add a clear
+  affordance (third "Derived" choice or a clear control) without making the
+  field required.
 **Do:**
 - **LaunchChecklistCard unknown-read honesty (July 24, 2026):** add an
   indeterminate branch for the attestation rows — while the checklist read is in
