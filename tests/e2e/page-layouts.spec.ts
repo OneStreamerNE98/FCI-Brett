@@ -1,11 +1,11 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { createHash } from "node:crypto";
 
-// Pre-SET-35 section markup captured from origin/main with the deterministic
-// record fixtures below, so earlier specs cannot change these signatures.
-const OVERVIEW_LEGACY_SECTIONS_SHA256 = "4b986d4991865fb3be4192888bf8dd44e64ef6c4aa7f43ec0f8b2028a7e1fa13";
-const REPORTS_LEGACY_SECTIONS_SHA256 = "f82508fa7313a8521acef8bfa0c8466256fe761bc6ee58158d6431acecb8d78e";
+// The default pre-SET-35 groupings below now pin the owner-approved DES-05
+// markup grammar: whole-card metric links, flat static cards, and honest labels.
+const OVERVIEW_LEGACY_SECTIONS_SHA256 = "ba8255dba5b118c91ec0d1a478c4aede9303238f0ca9c9708bea2d4b890f018b";
+const REPORTS_LEGACY_SECTIONS_SHA256 = "f4805cd8754e13172a04db55acaadba82f9f0d40d53ea586341faccecac4b757";
 
 const legacyRecordFixtures = {
   leads: { leads: [] },
@@ -125,6 +125,64 @@ function legacyDigest(markup: string) {
 
 async function waitForLiveRecords(page: Page) {
   await expect(page.getByText("Loading live records", { exact: true })).toHaveCount(0);
+}
+
+type MetricCardExpectation = {
+  label: string;
+  href?: string;
+};
+
+const metricCardExpectations = {
+  overview: [
+    { label: "Active pipeline", href: "/leads" },
+    { label: "Active projects", href: "/projects" },
+    { label: "Project meetings" },
+    { label: "Filed emails", href: "/inbox" },
+  ],
+  reports: [
+    { label: "Pipeline value", href: "/leads" },
+    { label: "Active projects", href: "/projects" },
+    { label: "Clients", href: "/clients" },
+    { label: "Project meetings" },
+  ],
+} satisfies Record<"overview" | "reports", MetricCardExpectation[]>;
+
+function summaryMetricGrid(page: Page) {
+  return page.locator(".metrics-grid");
+}
+
+function summaryMetricCard(page: Page, label: string) {
+  return summaryMetricGrid(page).locator(":scope > .metric-card").filter({ hasText: label });
+}
+
+async function metricCardStyles(card: Locator) {
+  return card.evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      borderStyle: style.borderStyle,
+      boxShadow: style.boxShadow,
+      cursor: style.cursor,
+      transform: style.transform,
+    };
+  });
+}
+
+async function assertNoHorizontalOverflow(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+}
+
+async function assertNoSeriousAxeViolations(page: Page) {
+  const results = await new AxeBuilder({ page }).include("main").analyze();
+  expect(results.violations.filter(({ impact }) => impact === "serious" || impact === "critical")).toEqual([]);
+}
+
+async function fulfillDashboardAfter(gate: Promise<void>, route: Route) {
+  await gate;
+  await route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(legacyRecordFixtures.dashboard),
+  });
 }
 
 test("keyboard-only Overview reorder and hide persist, while Reset restores byte-identical default sections", async ({ page }) => {
@@ -278,6 +336,210 @@ test("Reports supports native drag, hide persistence, and reset to its legacy de
     expect(await reportsLegacyMarkup(page)).toBe(defaultMarkup);
   } finally {
     await restoreStoredPreferences(page, originalPreferences).catch(() => undefined);
+  }
+});
+
+test("ready Overview and Reports metrics follow the linked-versus-static card grammar at desktop and mobile", async ({ page }) => {
+  test.skip(process.env.FCI_E2E_EXTERNAL_SERVER === "true", "The deterministic card census temporarily restores the isolated local user's layouts.");
+  await mockLegacySectionRecords(page);
+  await page.goto("/");
+  const originalPreferences = await readStoredPreferences(page);
+
+  try {
+    await restoreStoredPreferences(page, {
+      ...originalPreferences,
+      pageLayouts: {
+        overview: { order: ["metrics", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
+        reports: { order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "future-reports"], hidden: [] },
+      },
+    });
+
+    for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+
+      for (const surface of [
+        { key: "overview" as const, path: "/", editLabel: "Edit Overview layout" },
+        { key: "reports" as const, path: "/reports", editLabel: "Edit Reports layout" },
+      ]) {
+        await page.goto(surface.path);
+        await waitForLiveRecords(page);
+        await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
+
+        const grid = summaryMetricGrid(page);
+        await expect(grid).toHaveCount(1);
+        await expect(grid.locator(":scope > .metric-card")).toHaveCount(4);
+        await expect(grid.getByText("Current", { exact: true })).toHaveCount(0);
+        await page.mouse.move(0, 0);
+        await expect.poll(() => grid.locator(".metric-card-link").evaluateAll((cards) => cards.every((card) => window.getComputedStyle(card).transform === "none"))).toBe(true);
+        const restingStyles = new Map<string, Awaited<ReturnType<typeof metricCardStyles>>>();
+
+        for (const expectation of metricCardExpectations[surface.key]) {
+          const card = summaryMetricCard(page, expectation.label);
+          await expect(card).toHaveCount(1);
+          const styles = await metricCardStyles(card);
+          restingStyles.set(expectation.label, styles);
+          expect(styles.borderStyle).toBe("solid");
+          expect(styles.transform).toBe("none");
+          await expect(card.locator("a, button")).toHaveCount(0);
+
+          if (expectation.href) {
+            expect(await card.evaluate((element) => element.tagName)).toBe("A");
+            await expect(card).toHaveAttribute("href", expectation.href);
+            await expect(card.locator(".metric-card-chevron")).toHaveCount(1);
+            await expect(card.locator(".metric-card-chevron")).toHaveAttribute("aria-hidden", "true");
+            expect(styles.cursor).toBe("pointer");
+            expect(styles.boxShadow).not.toBe("none");
+          } else {
+            expect(await card.evaluate((element) => element.tagName)).toBe("ARTICLE");
+            expect(await card.getAttribute("href")).toBeNull();
+            await expect(card.locator(".metric-card-chevron")).toHaveCount(0);
+            expect(await card.evaluate((element) => (element as HTMLElement).tabIndex)).toBe(-1);
+            expect(styles.cursor).toBe("default");
+            expect(styles.boxShadow).toBe("none");
+          }
+        }
+
+        const interactiveCards = metricCardExpectations[surface.key].filter((expectation) => expectation.href);
+        const hoverCard = summaryMetricCard(page, interactiveCards[0].label);
+        const hoverResting = restingStyles.get(interactiveCards[0].label);
+        expect(hoverResting).toBeDefined();
+        await hoverCard.hover();
+        await expect.poll(async () => {
+          const styles = await metricCardStyles(hoverCard);
+          return {
+            lifted: styles.transform !== "none",
+            shadowChanged: styles.boxShadow !== hoverResting?.boxShadow,
+          };
+        }).toEqual({ lifted: true, shadowChanged: true });
+
+        const staticCard = summaryMetricCard(page, "Project meetings");
+        const staticResting = restingStyles.get("Project meetings");
+        expect(staticResting).toBeDefined();
+        await staticCard.hover();
+        await expect.poll(() => metricCardStyles(staticCard)).toEqual(staticResting);
+
+        const editLayout = page.getByRole("button", { name: surface.editLabel });
+        await editLayout.focus();
+        await expect(editLayout).toBeFocused();
+        for (const expectation of interactiveCards) {
+          await page.keyboard.press("Tab");
+          const card = summaryMetricCard(page, expectation.label);
+          await expect(card).toBeFocused();
+          await expect.poll(() => card.evaluate((element) => {
+            const style = window.getComputedStyle(element);
+            return {
+              outlineStyle: style.outlineStyle,
+              outlineWidth: style.outlineWidth,
+            };
+          })).toEqual({ outlineStyle: "solid", outlineWidth: "3px" });
+          const resting = restingStyles.get(expectation.label);
+          await expect.poll(async () => {
+            const styles = await metricCardStyles(card);
+            return {
+              lifted: styles.transform !== "none",
+              shadowChanged: styles.boxShadow !== resting?.boxShadow,
+            };
+          }).toEqual({ lifted: true, shadowChanged: true });
+        }
+
+        if (surface.key === "overview") {
+          const scheduling = page.locator(".schedule-panel");
+          await expect(scheduling.locator(".panel-header .feature-state-planned")).toHaveText("Planned");
+          await expect(scheduling.locator(".panel-header-subtitle")).toHaveCount(0);
+
+          const gmailSource = page.locator(".inbox-panel .panel-header-subtitle-source");
+          await expect(gmailSource).toHaveText("Google Workspace Gmail");
+          const sourceLine = await gmailSource.evaluate((element) => {
+            const style = window.getComputedStyle(element);
+            return {
+              clientHeight: element.clientHeight,
+              overflow: style.overflow,
+              scrollHeight: element.scrollHeight,
+              textOverflow: style.textOverflow,
+              whiteSpace: style.whiteSpace,
+            };
+          });
+          expect(sourceLine.whiteSpace).toBe("nowrap");
+          expect(sourceLine.overflow).toBe("hidden");
+          expect(sourceLine.textOverflow).toBe("ellipsis");
+          expect(sourceLine.scrollHeight).toBeLessThanOrEqual(sourceLine.clientHeight + 1);
+        } else {
+          const businessKpiGrammar = await page.locator(".business-kpi-card").evaluateAll((cards) => cards.map((card) => {
+            const style = window.getComputedStyle(card);
+            return {
+              cursor: style.cursor,
+              markerCount: card.querySelectorAll(".metric-card-chevron").length,
+              shadow: style.boxShadow,
+              tagName: card.tagName,
+              transform: style.transform,
+            };
+          }));
+          expect(businessKpiGrammar.length).toBeGreaterThan(0);
+          for (const card of businessKpiGrammar) {
+            expect(card).toEqual({
+              cursor: "default",
+              markerCount: 0,
+              shadow: "none",
+              tagName: "ARTICLE",
+              transform: "none",
+            });
+          }
+        }
+
+        await assertNoHorizontalOverflow(page);
+        await assertNoSeriousAxeViolations(page);
+      }
+    }
+  } finally {
+    await restoreStoredPreferences(page, originalPreferences).catch(() => undefined);
+  }
+});
+
+test("Overview and Reports keep metrics non-linked and distinguish loading from unavailable records", async ({ page }) => {
+  await mockLegacySectionRecords(page);
+  const dashboardPattern = "**/api/v1/dashboard";
+
+  for (const path of ["/", "/reports"]) {
+    let releaseDashboard!: () => void;
+    const dashboardGate = new Promise<void>((resolve) => {
+      releaseDashboard = resolve;
+    });
+    const loadingDashboard = (route: Route) => fulfillDashboardAfter(dashboardGate, route);
+    await page.route(dashboardPattern, loadingDashboard);
+
+    try {
+      await page.goto(path);
+      await expect(page.getByText("Loading live records", { exact: true })).toBeVisible();
+      const loadingGrid = summaryMetricGrid(page);
+      await expect(loadingGrid.getByText("Loading current totals", { exact: true })).toHaveCount(4);
+      await expect(loadingGrid.getByText("Unavailable until live records load", { exact: true })).toHaveCount(0);
+      await expect(loadingGrid.getByRole("link")).toHaveCount(0);
+    } finally {
+      releaseDashboard();
+    }
+
+    await waitForLiveRecords(page);
+    await page.unroute(dashboardPattern, loadingDashboard);
+
+    const unavailableDashboard = async (route: Route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Forced DES-05 records failure." }),
+      });
+    };
+    await page.route(dashboardPattern, unavailableDashboard);
+
+    try {
+      await page.goto(path);
+      await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toBeVisible();
+      const unavailableGrid = summaryMetricGrid(page);
+      await expect(unavailableGrid.getByText("Unavailable until live records load", { exact: true })).toHaveCount(4);
+      await expect(unavailableGrid.getByText("Loading current totals", { exact: true })).toHaveCount(0);
+      await expect(unavailableGrid.getByRole("link")).toHaveCount(0);
+    } finally {
+      await page.unroute(dashboardPattern, unavailableDashboard);
+    }
   }
 });
 

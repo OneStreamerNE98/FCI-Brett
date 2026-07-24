@@ -110,7 +110,7 @@ function assertPacketDocumentStructure(path, markdown) {
     assert.doesNotMatch(statusLine, /^Status:/, `${path}:${index + 2} must use the bold Status marker`);
     assert.match(
       statusLine,
-      /^\*\*Status:\*\* (?:Complete — PR #\d+(?: \+ PR #\d+)*|In review — PR #\d+|In progress — `(?:codex|claude)\/[^`]+`|Blocked — .+|Resolved in PR #\d+)(?:[,.]|$)/,
+      /^\*\*Status:\*\* (?:Complete — PR #\d+(?: \+ PR #\d+)*|In review — PR #\d+|In progress — `(?:codex|claude)\/[^`]+`|Blocked — .+|Resolved in PR #\d+|Superseded — absorbed into [A-Z]+-\d+)(?:[,.]|$)/,
       `${path}:${index + 2} has an invalid status-line shape`,
     );
   }

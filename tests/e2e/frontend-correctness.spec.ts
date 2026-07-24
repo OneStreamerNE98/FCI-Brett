@@ -5,7 +5,7 @@ async function openReadyApp(page: import("@playwright/test").Page, url = "/") {
   await expect(page.getByText("Here’s the latest from your operations workspace.", { exact: true })).toBeVisible();
 }
 
-test("notifications use typed persistent errors and disclosure popovers dismiss safely", async ({ page }) => {
+test("notifications use typed persistent errors and navigation disclosure popovers dismiss safely", async ({ page }) => {
   await openReadyApp(page);
   await page.clock.install();
   await page.route("**/api/v1/search?*", async (route) => {
@@ -26,10 +26,18 @@ test("notifications use typed persistent errors and disclosure popovers dismiss 
   await search.press("Enter");
   await expect(page.getByRole("status").filter({ hasText: "Enter at least two characters" })).toHaveClass(/toast-warning/);
 
-  await page.getByRole("button", { name: "Notifications" }).click();
-  await expect(page.locator("#notifications-popover")).toBeVisible();
+  const workspaceNavigationTrigger = page.getByRole("button", { name: "Workspace navigation" });
+  await expect(workspaceNavigationTrigger).toHaveAttribute("title", "Workspace navigation");
+  await workspaceNavigationTrigger.click();
+  const workspaceNavigation = page.locator("#notifications-popover");
+  await expect(workspaceNavigation).toBeVisible();
+  await expect(workspaceNavigation.getByText("Workspace navigation", { exact: true })).toBeVisible();
+  await expect(workspaceNavigation.getByRole("button", { name: "Open the Gmail project inbox" })).toBeVisible();
+  await expect(workspaceNavigation.getByRole("button", { name: "View scheduling status" })).toBeVisible();
+  await expect(workspaceNavigation.getByText("Notifications", { exact: true })).toHaveCount(0);
+  await expect(workspaceNavigation.getByText("Schedule alerts will appear after scheduling is connected", { exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(page.locator("#notifications-popover")).toHaveCount(0);
+  await expect(workspaceNavigation).toHaveCount(0);
 
   await page.getByTitle("Workspace actions").click();
   await expect(page.locator("#workspace-actions-popover")).toBeVisible();

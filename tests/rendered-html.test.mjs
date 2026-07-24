@@ -752,6 +752,71 @@ test("labels unfinished features without presenting placeholder controls", async
   assert.doesNotMatch(app, /ProjectUpdateDraft|ProjectUpdateModal|projectUpdate|Project update composer opened|Send update/);
 });
 
+test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitive", async () => {
+  const [app, primitives, css, findings] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/components/operations/OperationsPrimitives.tsx"),
+    read("app/globals.css"),
+    read("docs/full-review-2026-07-21-findings.md"),
+  ]);
+  const overview = app.slice(app.indexOf("function Overview"), app.indexOf("function LeadsView"));
+  const reports = app.slice(app.indexOf("function ReportsView"), app.indexOf("function SettingsView"));
+  const metricCall = (source, label) => {
+    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const call = source.match(new RegExp(`<Metric label="${escapedLabel}"[^>]*\\/>`))?.[0];
+    assert.ok(call, `Missing Metric call for ${label}`);
+    return call;
+  };
+
+  assert.match(primitives, /href\?: string/);
+  assert.match(primitives, /if \(href\) \{[\s\S]*return <Link className="metric-card metric-card-link" href=\{href\}>\{content\}<ChevronRight className="metric-card-chevron" size=\{16\} aria-hidden="true" \/><\/Link>;/);
+  assert.match(primitives, /return <article className="metric-card metric-card-static">\{content\}<\/article>;/);
+  const metricContent = primitives.slice(primitives.indexOf("const content ="), primitives.indexOf("if (href)"));
+  assert.doesNotMatch(metricContent, /<(?:a|button|Link)\b/);
+  assert.doesNotMatch(primitives, /\btrend\b/);
+
+  assert.match(metricCall(overview, "Active pipeline"), /href=\{recordsReady \? operationsHref\("Leads"\) : undefined\}/);
+  assert.match(metricCall(overview, "Active projects"), /href=\{recordsReady \? operationsHref\("Projects", \{ projectStatus: "Active" \}\) : undefined\}/);
+  assert.doesNotMatch(metricCall(overview, "Project meetings"), /\bhref=/);
+  assert.match(metricCall(overview, "Filed emails"), /href=\{recordsReady \? operationsHref\("Inbox"\) : undefined\}/);
+  assert.match(metricCall(reports, "Pipeline value"), /href=\{recordsReady \? operationsHref\("Leads"\) : undefined\}/);
+  assert.match(metricCall(reports, "Active projects"), /href=\{recordsReady \? operationsHref\("Projects", \{ projectStatus: "Active" \}\) : undefined\}/);
+  assert.match(metricCall(reports, "Clients"), /href=\{recordsReady \? operationsHref\("Clients"\) : undefined\}/);
+  assert.doesNotMatch(metricCall(reports, "Project meetings"), /\bhref=/);
+  assert.equal([...overview.matchAll(/pendingMetricNote/g)].length, 5);
+  assert.equal([...reports.matchAll(/pendingMetricNote/g)].length, 5);
+  assert.doesNotMatch(overview, /trend="Current"|>Current</);
+  assert.doesNotMatch(css, /\.metric-top small/);
+
+  assert.match(app, /function unavailableMetricNote\(state: LiveDataState\) \{\s+return state === "error" \? "Unavailable until live records load" : "Loading current totals";\s+\}/);
+  assert.match(overview, /<PanelHeader title="Scheduling" badge="Planned" action="View status"/);
+  assert.doesNotMatch(overview, /<PanelHeader title="Scheduling" subtitle="Planned"/);
+  assert.match(overview, /<PanelHeader title="Gmail project inbox" subtitle="Google Workspace Gmail" subtitleKind="source"/);
+  assert.doesNotMatch(app, /<span>Meetings<\/span><strong>Working<\/strong>/);
+
+  assert.match(app, /aria-label="Workspace navigation" title="Workspace navigation"/);
+  assert.match(app, /<Navigation size=\{19\} aria-hidden="true" \/>/);
+  assert.match(app, /<strong>Workspace navigation<\/strong>/);
+  assert.match(app, /<button onClick=\{\(\) => navigateToView\("Inbox"\)\}>Open the Gmail project inbox<\/button>/);
+  assert.match(app, /<button onClick=\{\(\) => navigateToView\("Schedule"\)\}>View scheduling status<\/button>/);
+  assert.doesNotMatch(app, /aria-label="Notifications"|<strong>Notifications<\/strong>|Schedule alerts will appear after scheduling is connected/);
+
+  assert.match(primitives, /subtitleKind\?: "status" \| "source"; badge\?: FeatureState/);
+  assert.match(primitives, /className=\{`panel-header-subtitle panel-header-subtitle-\$\{subtitleKind\}`\}/);
+  assert.match(primitives, /\{badge && <FeatureStateBadge state=\{badge\} \/>\}/);
+  assert.match(css, /\.metric-card\{[^}]*box-shadow:none[^}]*text-decoration:none\}/);
+  assert.match(css, /\.metric-card-static\{cursor:default\}/);
+  assert.match(css, /\.metric-card-link\{[^}]*box-shadow:var\(--shadow-card\)[^}]*cursor:pointer[^}]*transition:/);
+  assert.match(css, /\.metric-card-link:hover,.metric-card-link:focus-visible\{[^}]*box-shadow:var\(--shadow-raised\)[^}]*transform:translateY\(-1px\)/);
+  assert.match(css, /\.metric-card-chevron\{[^}]*color:#8b5d35/);
+  assert.doesNotMatch(css, /\.metric-card-static:(?:hover|focus-visible)/);
+  assert.match(css, /\.panel-header-subtitle\{[^}]*overflow:hidden[^}]*text-overflow:ellipsis[^}]*white-space:nowrap/);
+  assert.match(css, /\.panel-header-subtitle-status\{[^}]*background:#f3f5f2/);
+  assert.match(css, /\.panel-header-subtitle-source\{[^}]*background:transparent/);
+
+  assert.match(findings, /### FIX-08 · FloorOpsApp honesty polish bundle \(P3s; small\)\s+\*\*Status:\*\* Superseded — absorbed into DES-05\./);
+});
+
 test("uses authorized project-manager identities and exposes the narrow admin correction", async () => {
   const app = await readAppSurface();
 
@@ -779,7 +844,7 @@ test("keeps mobile project status, schedule truth, site, and value visible with 
   assert.match(css, /\.project-row-details\{grid-column:1\/4;grid-row:2;display:grid!important/);
   assert.match(css, /\.project-row-value\{grid-column:1\/4;grid-row:3;display:flex!important/);
   assert.doesNotMatch(css, /projects-table-row>span:nth-child\(3\),\.projects-table-row>strong:nth-child\(4\)\{display:none\}/);
-  assert.match(css, /\.metric-top span,.metric-top small,.metric-card p,.panel-header span/);
+  assert.match(css, /\.metric-top span,.metric-card p,.panel-header-subtitle,.panel-header button/);
   assert.match(css, /\.projects-table-row strong,.projects-table-row small\{font-size:12px\}/);
   assert.match(css, /color:#655f59/);
 });
