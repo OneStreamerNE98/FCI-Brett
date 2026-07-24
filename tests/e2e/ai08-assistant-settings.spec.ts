@@ -17,6 +17,7 @@ const configuredConfig = {
   unsafeSecret: secretSentinel,
 };
 const missingKeyCopy = "Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.";
+const footerCopy = "The assistant reads saved records and drafts text. It never sends email, never files messages, and never creates records without your confirmation.";
 const introCopy = "Answers come only from saved records and Drive files. Every answer cites its sources. The assistant never sends anything.";
 const exampleQuestions = [
   "Which projects have open callbacks?",
@@ -99,6 +100,9 @@ test("Administrator sees four controls and saves only the closed AI feature payl
   ]) {
     await expect(card.getByRole("checkbox", { name: label })).toBeVisible();
   }
+  await expect(card.getByText("In development", { exact: true })).toHaveCount(1);
+  await expect(card.getByText("Planned", { exact: true })).toHaveCount(3);
+  await expect(card.getByText(footerCopy, { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(secretSentinel);
 
   await card.getByRole("checkbox", { name: "Inbox filing suggestions" }).uncheck();
@@ -145,6 +149,9 @@ test("Office identity is redirected to My settings and receives read-only AI sta
   const states = card.getByLabel("AI feature states").locator("strong");
   await expect(states).toHaveCount(4);
   await expect(states).toHaveText(["On", "On", "Off", "On"]);
+  await expect(card.getByText("In development", { exact: true })).toHaveCount(1);
+  await expect(card.getByText("Planned", { exact: true })).toHaveCount(3);
+  await expect(card.getByText(footerCopy, { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(secretSentinel);
   expect(patchRequests).toBe(0);
 
@@ -180,6 +187,7 @@ test("Missing-key state uses the canonical honest copy and disables every contro
 
 test("What you can ask is a keyboard and touch-native collapsed disclosure", async ({ page }) => {
   await page.goto("/assistant");
+  await expect(page.getByLabel("Ask FCI Assistant")).toBeEnabled();
   const help = page.getByRole("region", { name: "Assistant help" });
   const details = help.locator("details");
   const summary = help.locator("summary");
