@@ -37,7 +37,7 @@ Some nights may run in the same session when the owner opts in at kickoff; the
 orchestrator offers the compatible options with every "run night N". The rules:
 
 - **Nights 6 and 8 are pure-static** (no dev server, no captures): each pairs
-  with any other night, including each other.
+  with any other night except Night 10, including each other.
 - **Night 7** (mostly static, small live-repro tail) pairs with any scan night
   or with 6/8.
 - **Scan nights 1, 2, and 5** each pair with one static night; 1+2 together is

@@ -428,7 +428,7 @@ overview surfaces. Bundling them into one bounded sweep avoids a swarm of one-li
 PRs while keeping each honest.
 
 **Additional residuals (added July 24, 2026, from the HINT-01 / SET-08 / DES-08d
-review cycle; updated same day so every item has an executable owner — the two
+review cycle; updated same day so every item has an executable owner — the three
 in-scope items appear in the Do/Accept lists below, the other two are routed to
 named packets):**
 - IN SCOPE — **LaunchChecklistCard unknown-read honesty** (see the Do item below).
@@ -456,6 +456,10 @@ named packets):**
   client can actually render, or surface an unavailable note when the join drops
   rows), and bound or re-label the "Today + next up" total so the section heading
   and the unbounded upcoming count agree.
+- **Project-segment selector reset (July 24, 2026, from the a-T2 review):** give
+  the creation modal's segment control a way back to "derive from client
+  industry" after a tap — a clear control or an explicit "Derived" choice —
+  without making the field required or adding a third stored value.
 - **Orphaned old-stepper CSS (the substantive item):** delete `app/globals.css`
   L533–546, L606–639, L676–680, L728–734, L879; extend the globals guard in
   `workspace-setup-guidance.test.mjs` to assert `.workspace-setup-step*` /
@@ -492,7 +496,9 @@ calendar window and folder-existence validation; each accepted-as-is item record
 with a one-line rationale; a test proves the launch-checklist attestation rows
 never claim "Not attested" while the read is failing or in flight; a test proves
 the Today's-meetings overflow line stays truthful when a rendered row is dropped
-client-side.
+client-side; a test proves the segment selector can return to the derived state
+after a tap while the stored catalog stays two-value and the field stays
+optional.
 **Dedup:** none of these are owned by an open packet in their filed form; the two
 note-only items are explicitly routed to DES-05 and DES-08d and are listed for
 visibility, not action. New.

@@ -2588,8 +2588,9 @@ screens (GI-03/GI-04) and first-run data import (SET-25) jump the queue.** The
 SET-26 UI, and the setup track prioritizes SET-14 → SET-15 → SET-16 → SET-25, with
 SET-27 and SET-28 following their listed dependencies. WS-15 (Maps billing/keys) is
 the owner step that unblocks GI-03/GI-04 — do it early.
-BE-10/BE-14 are assignable because PR #51 merged, and KPI-03 is assignable because PR #52
-merged. SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. The
+BE-10 was assignable because PR #51 merged and has since completed (PR #82); BE-14 has
+since completed too (PR #178, July 24, 2026). KPI-03 was assignable because PR #52
+merged and has since completed (PR #75). SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. The
 unclaimed parallel-safe tracks are
 BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
 broad primitive/CSS consolidation tracks.
@@ -2613,9 +2614,12 @@ and proceed in parallel with R1-R3.
 **AI wave (Workstream G, approved July 23, 2026):** the backend chain
 AI-01 → AI-03 → AI-08 → AI-07a is parallel-safe immediately (no contended
 files) and runs alongside the R2/R3 settings waves and the DES series. AI-02
-takes one FloorOpsApp queue slot after DES-08; AI-04/AI-05/AI-06 follow it in
-the extracted modules (parallel-safe among themselves); AI-07b after AI-07a;
-AI-09 closes the workstream. Contended-file flags: `WorkspaceDefaultsPanel.tsx`
+takes one FloorOpsApp queue slot after DES-08's VISUAL series — RELEASED
+July 24, 2026: sub-scopes b/d/a-T1/a-T2 are merged, so AI-02 is dispatchable
+now; DES-08's remaining sub-scope c is owner-deferred and explicitly waits
+for AI-02/AI-04's truthful attention signal, not the reverse (no cycle).
+AI-04/AI-05/AI-06 follow AI-02 in the extracted modules (parallel-safe among
+themselves); AI-07b after AI-07a; AI-09 closes the workstream. Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio =
 AI-07b; `tests/rendered-html.test.mjs` is touched additively by AI-02/07b/08 —
 serialize merges. DES-10 (brand refinement, not priority) takes the globals

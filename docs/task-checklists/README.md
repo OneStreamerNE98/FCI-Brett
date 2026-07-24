@@ -111,7 +111,7 @@ These checklists are owner-facing setup, decision, acceptance, and operations re
 
 The agent ledgers above own sequencing. OIDC-04 is complete in PRs #49/#50, and PRs #54/#55 completed the source OIDC preconditions.
 TRK-02 is complete in PR #66.
-PR #51 completed BE-09 in source; BE-10 has since completed (PR #82) and BE-14 remains assignable. PR #52 completed KPI-02 in source; KPI-03 has since completed (PR #75).
+PR #51 completed BE-09 in source; BE-10 has since completed (PR #82) and BE-14 has since completed (PR #178, July 24, 2026). PR #52 completed KPI-02 in source; KPI-03 has since completed (PR #75).
 The reviewed PR #51–#57 merge train is complete. SET-13 became assignable and has since completed (PR #76). The still-unclaimed independent packets are coordinated BE-07+SET-05, SET-11, SET-09+WS-10, and WS-13. No checklist item here authorizes a live provider, staging run, migration/apply, production UI composition, owner acceptance, or deployment.
 
 Build `codex/admin-field-links` only when the field-assignment workflow is scheduled. See the [Administration and Access plan](../administration-and-access-plan.md).
