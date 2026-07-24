@@ -2073,7 +2073,7 @@ assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
-**Status:** In review — PR #174, July 24, 2026. Sub-scope a-T1 only; b (PR #167) and d (PR #170) are merged, c stays deferred, and a-T2 remains in the MIGRATION queue. Source-only and undeployed. Guide impact: none.
+**Status:** Blocked — awaiting the MIGRATION-queue dispatch of sub-scope a-T2 AND resolution of the deferred sub-scope c (updated July 24, 2026). Sub-scopes b (PR #167), d (PR #170), and a-T1 (PR #174, incl. the Unspecified-industry honesty review fix) are merged. Sub-scope c remains IN SCOPE but deferred — the current source has no truthful live attention-strip signal (the removed demo strip used fabricated counts) — so the packet cannot complete until c ships against a real signal or the owner explicitly descopes it. Source-only and undeployed. Guide impact: none.
 
 **Why:** owner selections of July 22 — all four extras plus the meetings
 resolution of spec §5.
