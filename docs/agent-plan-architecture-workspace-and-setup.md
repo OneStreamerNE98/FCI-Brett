@@ -2615,15 +2615,15 @@ feature queue resumes stage-native, plus FIX-09, the production-only FIX-11
 (SET-17, SET-18, SET-21, SET-25, GI-04, and the FloorOpsApp queue) are unaffected
 and proceed in parallel with R1-R3.
 
-**AI wave (Workstream G, approved July 23, 2026):** the backend chain
-AI-01 → AI-03 → AI-08 → AI-07a is parallel-safe immediately (no contended
-files) and runs alongside the R2/R3 settings waves and the DES series. AI-02
-takes one FloorOpsApp queue slot after DES-08's VISUAL series — RELEASED
-July 24, 2026: sub-scopes b/d/a-T1/a-T2 are merged, so AI-02 is dispatchable
-now; DES-08's remaining sub-scope c is owner-deferred and explicitly waits
-for AI-02/AI-04's truthful attention signal, not the reverse (no cycle).
-AI-04/AI-05/AI-06 follow AI-02 in the extracted modules (parallel-safe among
-themselves); AI-07b after AI-07a; AI-09 closes the workstream. Contended-file flags: `WorkspaceDefaultsPanel.tsx`
+**AI wave (Workstream G, approved July 23, 2026; order updated July 24,
+2026):** the backend chain AI-01 → AI-03 → AI-08 → AI-07a is fully MERGED
+(AI-07a in PR #185); **AI-07b is the ACTIVE claim**
+(`codex/ai07b-task-assigned-event`, dispatched July 24 — do not re-claim the
+merged sub-PRs). AI-02 holds the FloorOpsApp queue slot mid-series (a merged,
+b in review, c remains). AI-04/AI-05/AI-06 follow AI-02 in the extracted modules
+(parallel-safe among themselves); AI-09 closes the workstream. DES-08's
+remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
+attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio =
 AI-07b; `tests/rendered-html.test.mjs` is touched additively by AI-02/07b/08 —
 serialize merges. DES-10 (brand refinement, not priority) takes the globals
