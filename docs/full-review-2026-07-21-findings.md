@@ -438,6 +438,11 @@ default is fail-closed.
 apply behind the same acceptance gate as the rest of the Cloud Run auth foundation;
 not a dev-environment blocker, which is why it is R4 rather than R1.
 
+> **Wave R5 (July 23–24, 2026):** the holistic post-wave review's findings and
+> packets (FIX-13…FIX-19, with FIX-14/FIX-16 folded into SET-06 by owner
+> decision) live in
+> [`docs/full-review-2026-07-24-findings.md`](full-review-2026-07-24-findings.md).
+
 ### FIX-12 · R4 consolidation + residual sweep (P3s F-17/F-18 + recorded residuals; medium; Wave R4, after the SET-29 series)
 **Why:** the July 22 R1 capture audit confirmed every finding is dispositioned, but
 three deferred items had prose and no owner. This packet is that owner, so nothing
