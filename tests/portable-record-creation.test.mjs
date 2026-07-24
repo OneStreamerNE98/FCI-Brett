@@ -12,7 +12,7 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 
-const [clientApplication, projectApplication, projectOperationApplication, authorizationModule, clientDomain, projectDomain, projectOperationDomain, mirrorAdapterModule] = await Promise.all([
+const [clientApplication, projectApplication, projectOperationApplication, authorizationModule, clientDomain, projectDomain, projectOperationDomain, mirrorAdapterModule, d1ProjectAdapterModule] = await Promise.all([
   vite.ssrLoadModule("/app/application/create-client.ts"),
   vite.ssrLoadModule("/app/application/create-project.ts"),
   vite.ssrLoadModule("/app/application/record-project-operation.ts"),
@@ -21,6 +21,7 @@ const [clientApplication, projectApplication, projectOperationApplication, autho
   vite.ssrLoadModule("/app/domain/project-creation.ts"),
   vite.ssrLoadModule("/app/domain/project-operations.ts"),
   vite.ssrLoadModule("/app/adapters/google/directory-mirror.ts"),
+  vite.ssrLoadModule("/app/adapters/d1/project-repository.ts"),
 ]);
 
 after(async () => {
@@ -35,6 +36,7 @@ const { normalizeClientCreation } = clientDomain;
 const { normalizeProjectCreation, normalizeProjectManagerAssignment, normalizeProjectManagerId, PROJECT_MANAGER_IDENTITY_ERROR } = projectDomain;
 const { CALLBACK_NOTE_MAX_LENGTH, normalizeProjectOperation } = projectOperationDomain;
 const { createDirectoryMirror } = mirrorAdapterModule;
+const { createD1ProjectRepository } = d1ProjectAdapterModule;
 
 function sequence(values) {
   let index = 0;
@@ -76,6 +78,8 @@ test("portable domain validation preserves the client and project API messages",
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", squareFeet: 12.5 }), { ok: false, message: "square feet must be a positive whole number" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", contractValue: -1 }), { ok: false, message: "contract value must be a non-negative whole number" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", contractValue: "100" }), { ok: false, message: "Project details must be valid JSON." });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", segment: 42 }), { ok: false, message: "Project details must be valid JSON." });
+  assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", segment: "mixed" }), { ok: false, message: "project segment is invalid" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManager: "Morgan" }), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManagerId: "manager@example.test", projectManager: "other@example.test" }), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });
   assert.deepEqual(normalizeProjectManagerId("  Manager@CherryHillFCI.com  "), { ok: true, value: "manager@cherryhillfci.com" });
@@ -106,6 +110,7 @@ test("portable domain validation preserves the client and project API messages",
       flooringCategory: null,
       squareFeet: null,
       contractValue: null,
+      segment: null,
     },
   });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManager: "  MANAGER@Example.Test " }), {
@@ -120,6 +125,7 @@ test("portable domain validation preserves the client and project API messages",
       flooringCategory: null,
       squareFeet: null,
       contractValue: null,
+      segment: null,
     },
   });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "KPI fields", flooringCategory: " LUXURY-VINYL ", squareFeet: 2_500, contractValue: 0 }), {
@@ -134,6 +140,7 @@ test("portable domain validation preserves the client and project API messages",
       flooringCategory: "luxury-vinyl",
       squareFeet: 2_500,
       contractValue: 0,
+      segment: null,
     },
   });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Explicit nulls", estimatedValue: null, squareFeet: null, contractValue: null }), {
@@ -148,6 +155,7 @@ test("portable domain validation preserves the client and project API messages",
       flooringCategory: null,
       squareFeet: null,
       contractValue: null,
+      segment: null,
     },
   });
 });
@@ -266,6 +274,7 @@ test("project creation sends one atomic project and activity intent before mirro
       flooringCategory: "tile-stone",
       squareFeet: 5_000,
       contractValue: 130000,
+      segment: " Residential ",
     },
     authorized(CREATION_CAPABILITIES.createProject, "development-user@cherryhillfci.com"),
     {
@@ -303,6 +312,7 @@ test("project creation sends one atomic project and activity intent before mirro
       flooringCategory: "tile-stone",
       squareFeet: 5000,
       contractValue: 130000,
+      segment: "residential",
       createdBy: "development-user@cherryhillfci.com",
       createdAt: Date.UTC(2026, 6, 13, 12),
       updatedAt: Date.UTC(2026, 6, 13, 12),
@@ -327,6 +337,59 @@ test("project creation sends one atomic project and activity intent before mirro
       sheetSync: { status: "not-configured", message: "The Google Sheet mirror is not configured yet." },
     },
   });
+});
+
+test("the D1 adapter closes a direct third segment value behind its two-value SQL case", async () => {
+  const prepared = [];
+  const database = {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          const statement = { sql, values };
+          prepared.push(statement);
+          return statement;
+        },
+      };
+    },
+    async batch() {
+      return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+    },
+  };
+  const repository = createD1ProjectRepository(database);
+  const outcome = await repository.create({
+    project: {
+      id: "project-direct-segment",
+      projectNumber: "CF-2026-DIRECT",
+      clientId: "client-1",
+      name: "Direct segment boundary",
+      status: "planning",
+      site: null,
+      projectManagerId: "manager@example.test",
+      estimatedValue: null,
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
+      segment: "mixed",
+      createdBy: "manager@example.test",
+      createdAt: 1,
+      updatedAt: 1,
+    },
+    activity: {
+      id: "activity-direct-segment",
+      recordId: "project-direct-segment",
+      action: "Project created",
+      actor: "manager@example.test",
+      detail: "Direct segment boundary",
+      createdAt: 1,
+    },
+  });
+
+  assert.deepEqual(outcome, { outcome: "created" });
+  assert.match(
+    prepared[0].sql,
+    /CASE WHEN \? = 'residential' THEN 'residential' WHEN \? = 'commercial' THEN 'commercial' WHEN LOWER\(TRIM\(COALESCE\(c\.industry, ''\)\)\) = 'residential' THEN 'residential' ELSE 'commercial' END/u,
+  );
+  assert.deepEqual(prepared[0].values.slice(11, 13), ["mixed", "mixed"]);
 });
 
 test("project creation rejects an unlisted manager and defaults an omitted manager to the authorized actor", async () => {

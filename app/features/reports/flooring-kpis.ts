@@ -1,4 +1,5 @@
 import { FLOORING_OPERATIONS_TIME_ZONE } from "../../domain/project-operations.ts";
+import { PROJECT_SEGMENTS, resolveProjectSegment, type ProjectSegment } from "../../domain/project-segment.ts";
 
 export const FLOORING_KPI_TIME_ZONE = FLOORING_OPERATIONS_TIME_ZONE;
 export const FINANCIAL_RESTRICTION_LABEL = "Administrator only";
@@ -25,6 +26,8 @@ export type FlooringKpiProject = Readonly<{
   flooringCategory: string | null;
   squareFeet: number | null;
   contractValue: number | null;
+  segment?: string | null;
+  clientIndustry?: string | null;
   installationStartedAt?: number | null;
   installationCompletedAt?: number | null;
   hadCallback?: boolean | null;
@@ -44,6 +47,35 @@ export type FlooringKpiSourceWinRate = Readonly<{
   won: number;
   decided: number;
   rate: number;
+}>;
+
+export type FlooringKpiProjectMetrics = Readonly<{
+  bookedJobCount: number;
+  bookedValue: number | null;
+  averageJobValue: number | null;
+  averageJobValueCount: number;
+  backlogCount: number;
+  backlogValue: number | null;
+  backlogValueCount: number;
+  jobsCompleted: number;
+  averageInstallCycleDays: number | null;
+  installCycleJobCount: number;
+  callbackRate: number | null;
+  callbackJobCount: number;
+  callbackCompletedJobCount: number;
+  productMix: FlooringKpiProductMix[];
+  flooringCategoryCaptureCount: number;
+  revenuePerSquareFoot: number | null;
+  revenuePerSquareFootJobCount: number;
+  squareFeetCaptureCount: number;
+  estimateAccuracy: number | null;
+  estimateAccuracyJobCount: number;
+  contractValueCaptureCount: number;
+}>;
+
+export type FlooringKpiSegmentSplit = FlooringKpiProjectMetrics & Readonly<{
+  segment: ProjectSegment;
+  projectCount: number;
 }>;
 
 export type FlooringKpiResult = Readonly<{
@@ -75,6 +107,7 @@ export type FlooringKpiResult = Readonly<{
   estimateAccuracy: number | null;
   estimateAccuracyJobCount: number;
   contractValueCaptureCount: number;
+  segmentSplits: FlooringKpiSegmentSplit[];
 }>;
 
 function normalizedStatus(value: string) {
@@ -142,41 +175,14 @@ function effectiveProjectCompletionTimestamp(project: FlooringKpiProject) {
   return reportableTimestamp(project.installationCompletedAt) ?? reportableTimestamp(project.updatedAt);
 }
 
-export function calculateFlooringKpis(
-  leads: readonly FlooringKpiLead[],
+function calculateProjectKpis(
   projects: readonly FlooringKpiProject[],
   selectedMonth: string,
-  timeZone = FLOORING_KPI_TIME_ZONE,
-): FlooringKpiResult {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selectedMonth)) {
-    throw new RangeError("selectedMonth must use YYYY-MM format.");
-  }
-
-  const decidedLeads = leads.filter((lead) => {
-    const status = normalizedStatus(lead.status);
-    return status === "converted" || status === "lost";
-  });
-  const convertedLeads = decidedLeads.filter((lead) => normalizedStatus(lead.status) === "converted");
-  const sourceGroups = new Map<string, { won: number; decided: number }>();
-
-  for (const lead of decidedLeads) {
-    const source = lead.source.trim() || "Unspecified";
-    const group = sourceGroups.get(source) ?? { won: 0, decided: 0 };
-    group.decided += 1;
-    if (normalizedStatus(lead.status) === "converted") group.won += 1;
-    sourceGroups.set(source, group);
-  }
-
+  timeZone: string,
+): FlooringKpiProjectMetrics {
   const bookedProjects = projects.filter((project) => timestampFallsInMonth(project.createdAt, selectedMonth, timeZone));
   const bookedValues = bookedProjects.map(preferredProjectValue).filter((value): value is number => value !== null);
   const projectValues = projects.map(preferredProjectValue).filter((value): value is number => value !== null);
-  const salesCycleDays = convertedLeads.flatMap((lead) => {
-    const createdAt = reportableTimestamp(lead.createdAt);
-    const convertedAt = reportableTimestamp(lead.updatedAt);
-    return createdAt !== null && convertedAt !== null && convertedAt >= createdAt
-      ? [(convertedAt - createdAt) / MILLISECONDS_PER_DAY]
-      : [];
-  });
   const backlogProjects = projects.filter((project) => backlogStatuses.has(normalizedStatus(project.status)));
   const backlogValues = backlogProjects.map((project) => reportableAmount(project.estimatedValue)).filter((value): value is number => value !== null);
   const completedProjects = projects.filter((project) => normalizedStatus(project.status) === "completed" && timestampFallsInMonth(effectiveProjectCompletionTimestamp(project), selectedMonth, timeZone));
@@ -225,19 +231,10 @@ export function calculateFlooringKpis(
   });
 
   return {
-    selectedMonth,
-    wonLeads: convertedLeads.length,
-    decidedLeads: decidedLeads.length,
-    winRate: decidedLeads.length > 0 ? convertedLeads.length / decidedLeads.length : null,
-    winRateBySource: [...sourceGroups.entries()]
-      .map(([source, result]) => ({ source, ...result, rate: result.won / result.decided }))
-      .sort((left, right) => left.source.localeCompare(right.source)),
     bookedJobCount: bookedProjects.length,
     bookedValue: bookedProjects.length === 0 ? 0 : bookedValues.length > 0 ? bookedValues.reduce((total, value) => total + value, 0) : null,
     averageJobValue: average(projectValues),
     averageJobValueCount: projectValues.length,
-    averageSalesCycleDays: average(salesCycleDays),
-    salesCycleLeadCount: salesCycleDays.length,
     backlogCount: backlogProjects.length,
     backlogValue: backlogProjects.length === 0 ? 0 : backlogValues.length > 0 ? backlogValues.reduce((total, value) => total + value, 0) : null,
     backlogValueCount: backlogValues.length,
@@ -255,5 +252,62 @@ export function calculateFlooringKpis(
     estimateAccuracy: average(estimateAccuracyValues),
     estimateAccuracyJobCount: estimateAccuracyValues.length,
     contractValueCaptureCount,
+  };
+}
+
+export function calculateFlooringKpis(
+  leads: readonly FlooringKpiLead[],
+  projects: readonly FlooringKpiProject[],
+  selectedMonth: string,
+  timeZone = FLOORING_KPI_TIME_ZONE,
+): FlooringKpiResult {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(selectedMonth)) {
+    throw new RangeError("selectedMonth must use YYYY-MM format.");
+  }
+
+  const decidedLeads = leads.filter((lead) => {
+    const status = normalizedStatus(lead.status);
+    return status === "converted" || status === "lost";
+  });
+  const convertedLeads = decidedLeads.filter((lead) => normalizedStatus(lead.status) === "converted");
+  const sourceGroups = new Map<string, { won: number; decided: number }>();
+
+  for (const lead of decidedLeads) {
+    const source = lead.source.trim() || "Unspecified";
+    const group = sourceGroups.get(source) ?? { won: 0, decided: 0 };
+    group.decided += 1;
+    if (normalizedStatus(lead.status) === "converted") group.won += 1;
+    sourceGroups.set(source, group);
+  }
+
+  const salesCycleDays = convertedLeads.flatMap((lead) => {
+    const createdAt = reportableTimestamp(lead.createdAt);
+    const convertedAt = reportableTimestamp(lead.updatedAt);
+    return createdAt !== null && convertedAt !== null && convertedAt >= createdAt
+      ? [(convertedAt - createdAt) / MILLISECONDS_PER_DAY]
+      : [];
+  });
+  const projectMetrics = calculateProjectKpis(projects, selectedMonth, timeZone);
+  const segmentSplits = PROJECT_SEGMENTS.map((segment) => {
+    const segmentProjects = projects.filter((project) => resolveProjectSegment(project.segment, project.clientIndustry) === segment);
+    return {
+      segment,
+      projectCount: segmentProjects.length,
+      ...calculateProjectKpis(segmentProjects, selectedMonth, timeZone),
+    };
+  });
+
+  return {
+    selectedMonth,
+    wonLeads: convertedLeads.length,
+    decidedLeads: decidedLeads.length,
+    winRate: decidedLeads.length > 0 ? convertedLeads.length / decidedLeads.length : null,
+    winRateBySource: [...sourceGroups.entries()]
+      .map(([source, result]) => ({ source, ...result, rate: result.won / result.decided }))
+      .sort((left, right) => left.source.localeCompare(right.source)),
+    averageSalesCycleDays: average(salesCycleDays),
+    salesCycleLeadCount: salesCycleDays.length,
+    ...projectMetrics,
+    segmentSplits,
   };
 }

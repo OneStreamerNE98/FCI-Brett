@@ -25,6 +25,7 @@ const workspaceBlueprintMigrationPrefix = "0015_";
 const userSettingsMigrationPrefix = "0016_";
 const pageLayoutsMigrationPrefix = "0017_";
 const tasksMigrationPrefix = "0018_";
+const projectSegmentMigrationPrefix = "0019_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -471,11 +472,51 @@ test("keeps AI-01 tasks in one additive migration with the closed schema and ind
     "updated_at",
     "completed_at",
   ]);
-  assert.deepEqual(journal.entries.at(-1), {
+  const journalEntry = journal.entries.find(({ tag }) => tag === "0018_slow_serpent_society");
+  assert.deepEqual(journalEntry, {
     idx: 18,
     version: "6",
-    when: journal.entries.at(-1).when,
+    when: journalEntry.when,
     tag: "0018_slow_serpent_society",
+    breakpoints: true,
+  });
+});
+
+test("keeps DES-08 a-T2 project segments in one nullable additive migration", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(projectSegmentMigrationPrefix));
+  assert.equal(migration, "0019_demonic_lady_vermin.sql");
+  assert.equal(files.filter((file) => file.startsWith(projectSegmentMigrationPrefix)).length, 1);
+
+  const [migrationSql, schemaSource, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(root, "db", "schema.ts"), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0018_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0019_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+
+  assert.match(migrationSql, /^ALTER TABLE `projects` ADD `segment` text;\s*$/u);
+  assert.doesNotMatch(migrationSql, /\b(?:DROP|UPDATE|INSERT|DELETE|TRUNCATE|RENAME)\b/iu);
+  assert.match(schemaSource, /segment: text\("segment"\)/u);
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.deepEqual(Object.keys(snapshot.tables).sort(), Object.keys(previousSnapshot.tables).sort());
+  assert.deepEqual(snapshot.tables.projects.columns.segment, {
+    name: "segment",
+    type: "text",
+    primaryKey: false,
+    notNull: false,
+    autoincrement: false,
+  });
+  const unchangedProjectColumns = Object.fromEntries(
+    Object.entries(snapshot.tables.projects.columns).filter(([column]) => column !== "segment"),
+  );
+  assert.deepEqual(unchangedProjectColumns, previousSnapshot.tables.projects.columns);
+  assert.deepEqual(journal.entries.at(-1), {
+    idx: 19,
+    version: "6",
+    when: journal.entries.at(-1).when,
+    tag: "0019_demonic_lady_vermin",
     breakpoints: true,
   });
 });

@@ -1,4 +1,5 @@
 import type { ProjectStatus } from "../domain/project-creation";
+import type { ProjectSegment } from "../domain/project-segment";
 
 export type ProjectCreationIntent = {
   project: {
@@ -13,6 +14,7 @@ export type ProjectCreationIntent = {
     flooringCategory: string | null;
     squareFeet: number | null;
     contractValue: number | null;
+    segment: ProjectSegment | null;
     createdBy: string;
     createdAt: number;
     updatedAt: number;

@@ -969,13 +969,14 @@ test("core writes deny missing capabilities before body parsing or repository wo
   }
 });
 
-test("production project creation rejects KPI-only fields before repository work", async () => {
+test("production project creation rejects D1-only project fields before repository work", async () => {
   const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
   try {
     for (const [field, value] of [
       ["flooringCategory", "hardwood"],
       ["squareFeet", 1_200],
       ["contractValue", 25_000],
+      ["segment", "residential"],
     ]) {
       const response = await running.request("/api/v1/projects", {
         method: "POST",

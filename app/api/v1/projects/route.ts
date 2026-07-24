@@ -7,6 +7,7 @@ import { creationAuthorizationFor, CREATION_CAPABILITIES } from "../../../applic
 import { assignProjectManager, createProject } from "../../../application/create-project";
 import { recordProjectOperation } from "../../../application/record-project-operation";
 import { normalizeProjectManagerId } from "../../../domain/project-creation";
+import { resolveProjectSegment } from "../../../domain/project-segment";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { projectCreationHttpResult } from "../../../lib/creation-http-result";
@@ -31,17 +32,19 @@ export async function GET(request: NextRequest) {
   const clientId = request.nextUrl.searchParams.get("clientId");
   // Resolve links only from the active provider. Simulation and the company
   // Shared Drive keep independent mappings for the same project.
-  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.installation_started_at, p.installation_completed_at, p.had_callback, p.callback_note, p.created_by, p.created_at, p.updated_at, c.name AS client_name, c.client_code, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
+  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.segment, p.installation_started_at, p.installation_completed_at, p.had_callback, p.callback_note, p.created_by, p.created_at, p.updated_at, c.name AS client_name, c.client_code, c.industry AS client_industry, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
   const statement = env.DB.prepare(query);
   const result = clientId ? await statement.bind(config.connectionKey, clientId).all() : await statement.bind(config.connectionKey).all();
   const projects = result.results.map((row: unknown) => {
     const record = row as Record<string, unknown>;
     const projectManagerId = authorizedProjectManagerId(record.project_manager, auth.user.email);
+    const { client_industry: clientIndustry, ...publicRecord } = record;
     return {
-      ...record,
+      ...publicRecord,
       project_manager: projectManagerId,
       project_manager_id: projectManagerId,
       contract_value: auth.user.isAdmin ? record.contract_value : null,
+      segment: resolveProjectSegment(record.segment, clientIndustry),
     };
   });
   return NextResponse.json({ projects }, { headers: { "Cache-Control": "no-store" } });
