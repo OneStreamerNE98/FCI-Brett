@@ -1,4 +1,7 @@
+import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import type { D1Database } from "../../../../../../adapters/d1/d1-database";
+import { readGoogleIntegrationVerification } from "../../../../../../adapters/d1/google-integration-verification";
 import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
 import { listWorkspaceCalendarEvents } from "../../../../../../lib/google-calendar-sites";
 import { calendarEventsListedIntegrationEvent } from "../../../../../../lib/google-integration-events";
@@ -27,6 +30,14 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const verificationOnly = new URL(request.url).searchParams.get("verification") === "status";
+    if (verificationOnly) {
+      const verification = await readGoogleIntegrationVerification(
+        env.DB as unknown as D1Database,
+        config.connectionKey,
+      );
+      return noStore({ events: [], verificationPassed: verification.calendarChecked });
+    }
     if (config.simulation) {
       const result = await listSimulationCalendarEvents();
       const event = calendarEventsListedIntegrationEvent(
