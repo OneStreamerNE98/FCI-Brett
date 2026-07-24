@@ -8,6 +8,11 @@ import {
   calendarEventsListedIntegrationEvent,
   calendarHoldCreatedIntegrationEvent,
 } from "./google-integration-events";
+import {
+  fetchGoogleProvider,
+  type GoogleFetchPolicy,
+  type GoogleFetchResilienceDependencies,
+} from "./google-fetch-resilience";
 
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const UPCOMING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -57,6 +62,7 @@ export type CalendarEventSummary = {
 export type GoogleCalendarClientDependencies = Readonly<{
   fetch: GoogleFetch;
   now: () => Date;
+  resilience?: GoogleFetchResilienceDependencies;
 }>;
 
 export type GoogleCalendarOperationsDependencies = GoogleCalendarClientDependencies & Readonly<{
@@ -120,11 +126,15 @@ export class GoogleCalendarClient {
     return requireWorkspaceCalendarId(this.config);
   }
 
-  private async request<T>(path: string, init: RequestInit = {}) {
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    policy: GoogleFetchPolicy = {},
+  ) {
     this.workspaceCalendarId();
     let response: Response;
     try {
-      response = await this.dependencies.fetch(`${CALENDAR_API}/${path}`, {
+      response = await fetchGoogleProvider(this.dependencies.fetch, `${CALENDAR_API}/${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -132,7 +142,7 @@ export class GoogleCalendarClient {
           ...(init.body ? { "Content-Type": "application/json" } : {}),
           ...init.headers,
         },
-      });
+      }, policy, this.dependencies.resilience);
     } catch {
       throw new GoogleIntegrationError("calendar_unavailable", "Google Calendar is temporarily unavailable. Try again.", 503);
     }
@@ -149,7 +159,7 @@ export class GoogleCalendarClient {
         throw new GoogleIntegrationError("calendar_not_found", "The configured Workspace calendar could not be found.", 404);
       }
       if (response.status === 429) {
-        throw new GoogleIntegrationError("calendar_rate_limited", "Google Calendar is busy. Try again shortly.", 503);
+        throw new GoogleIntegrationError("calendar_rate_limited", "Google Calendar is busy. Try again shortly.", 429);
       }
       if (response.status === 409) {
         throw new GoogleIntegrationError("calendar_event_conflict", "The Calendar event already exists.", 409);
@@ -172,7 +182,11 @@ export class GoogleCalendarClient {
       fields: "items(id,summary,status,htmlLink,start,end)",
     });
     const calendarId = encodeURIComponent(this.workspaceCalendarId());
-    const result = await this.request<{ items?: CalendarApiEvent[] }>(`calendars/${calendarId}/events?${query.toString()}`);
+    const result = await this.request<{ items?: CalendarApiEvent[] }>(
+      `calendars/${calendarId}/events?${query.toString()}`,
+      {},
+      { idempotent: true },
+    );
     return {
       window: { start: timeMin, end: timeMax },
       events: (result.items ?? []).map(safeEvent).filter((event): event is CalendarEventSummary => event !== null),
@@ -192,6 +206,8 @@ export class GoogleCalendarClient {
       });
       const existing = await this.request<{ items?: CalendarApiEvent[] }>(
         `calendars/${calendarId}/events?${lookup.toString()}`,
+        {},
+        { idempotent: true },
       );
       return existing.items?.map(safeEvent).find((event) => event !== null) ?? null;
     };
@@ -217,7 +233,7 @@ export class GoogleCalendarClient {
             private: { [CALENDAR_TEST_HOLD_DEDUP_PROPERTY]: dedupKey },
           },
         }),
-      });
+      }, { idempotent: true });
     } catch (error) {
       if (error instanceof GoogleIntegrationError && error.code === "calendar_event_conflict") {
         const concurrentEvent = await findExisting();

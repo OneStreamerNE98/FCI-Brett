@@ -3,6 +3,11 @@ import {
   type GoogleFetch,
   type GoogleRuntimeConfig,
 } from "./google-oauth";
+import {
+  fetchGoogleProvider,
+  type GoogleFetchPolicy,
+  type GoogleFetchResilienceDependencies,
+} from "./google-fetch-resilience";
 import { sheetsDirectorySyncedIntegrationEvent } from "./google-integration-events";
 import type { SheetMirrorStatus } from "./sheet-mirror-status";
 
@@ -146,12 +151,17 @@ export class GoogleSheetsClient {
     private readonly accessToken: string,
     private readonly spreadsheetId: string,
     private readonly fetcher: GoogleFetch = DEFAULT_GOOGLE_FETCH,
+    private readonly resilience: GoogleFetchResilienceDependencies = {},
   ) {}
 
-  private async request<T>(path: string, init: RequestInit = {}) {
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    policy: GoogleFetchPolicy = {},
+  ) {
     let response: Response;
     try {
-      response = await this.fetcher(`${SHEETS_API}/${encodeURIComponent(this.spreadsheetId)}${path}`, {
+      response = await fetchGoogleProvider(this.fetcher, `${SHEETS_API}/${encodeURIComponent(this.spreadsheetId)}${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -159,7 +169,7 @@ export class GoogleSheetsClient {
           ...(init.body ? { "Content-Type": "application/json" } : {}),
           ...init.headers,
         },
-      });
+      }, policy, this.resilience);
     } catch {
       throw new GoogleIntegrationError("sheets_unavailable", "Google Sheets is temporarily unavailable. Try again.", 503);
     }
@@ -173,11 +183,19 @@ export class GoogleSheetsClient {
   }
 
   metadata() {
-    return this.request<SpreadsheetMetadata>("?fields=sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))");
+    return this.request<SpreadsheetMetadata>(
+      "?fields=sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))",
+      {},
+      { idempotent: true },
+    );
   }
 
   values(sheetRange: string) {
-    return this.request<ValuesResponse>(`/values/${encodeURIComponent(sheetRange)}?majorDimension=ROWS`);
+    return this.request<ValuesResponse>(
+      `/values/${encodeURIComponent(sheetRange)}?majorDimension=ROWS`,
+      {},
+      { idempotent: true },
+    );
   }
 
   append(sheetRange: string, values: string[][]) {
@@ -191,11 +209,18 @@ export class GoogleSheetsClient {
     return this.request<Record<string, unknown>>("/values:batchUpdate", {
       method: "POST",
       body: JSON.stringify({ valueInputOption: "RAW", data }),
-    });
+    }, { idempotent: true });
   }
 
-  batchUpdate(requests: Record<string, unknown>[]) {
-    return this.request<Record<string, unknown>>(":batchUpdate", { method: "POST", body: JSON.stringify({ requests }) });
+  batchUpdate(
+    requests: Record<string, unknown>[],
+    policy: GoogleFetchPolicy = {},
+  ) {
+    return this.request<Record<string, unknown>>(
+      ":batchUpdate",
+      { method: "POST", body: JSON.stringify({ requests }) },
+      policy,
+    );
   }
 }
 
@@ -244,7 +269,7 @@ async function ensureHeaders(client: GoogleSheetsClient, clientSheet: SheetPrope
     { updateSheetProperties: { properties: { sheetId: projectSheet.sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } },
     { updateDimensionProperties: { range: { sheetId: clientSheet.sheetId, dimension: "COLUMNS", startIndex: 10, endIndex: 11 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
     { updateDimensionProperties: { range: { sheetId: projectSheet.sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: 1 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
-  ]);
+  ], { idempotent: true });
 }
 
 /** Prepares only the application-owned mirror schema; it never synchronizes rows. */
@@ -340,7 +365,7 @@ async function syncProjectRegister(client: GoogleSheetsClient, projectSheet: She
       })),
       fields: "userEnteredValue",
     },
-  }]);
+  }], { idempotent: true });
   return { total: rows.length };
 }
 

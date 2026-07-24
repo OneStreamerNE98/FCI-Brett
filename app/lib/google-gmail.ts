@@ -1,4 +1,9 @@
 import { GoogleIntegrationError, type GoogleFetch, type GoogleRuntimeConfig } from "./google-oauth";
+import {
+  fetchGoogleProvider,
+  type GoogleFetchPolicy,
+  type GoogleFetchResilienceDependencies,
+} from "./google-fetch-resilience";
 import { seedWorkspaceBlueprint } from "./workspace-blueprint";
 
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -491,12 +496,17 @@ export class GoogleGmailClient {
   constructor(
     private readonly accessToken: string,
     private readonly fetcher: GoogleFetch = DEFAULT_GOOGLE_FETCH,
+    private readonly resilience: GoogleFetchResilienceDependencies = {},
   ) {}
 
-  private async request<T>(path: string, init: RequestInit = {}) {
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    policy: GoogleFetchPolicy = {},
+  ) {
     let response: Response;
     try {
-      response = await this.fetcher(`${GMAIL_API}/${path}`, {
+      response = await fetchGoogleProvider(this.fetcher, `${GMAIL_API}/${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -504,7 +514,7 @@ export class GoogleGmailClient {
           ...(init.body ? { "Content-Type": "application/json" } : {}),
           ...init.headers,
         },
-      });
+      }, policy, this.resilience);
     } catch {
       throw new GoogleIntegrationError("gmail_unavailable", "Gmail is temporarily unavailable. Try again.", 503);
     }
@@ -530,7 +540,11 @@ export class GoogleGmailClient {
   }
 
   async listLabels() {
-    const response = await this.request<{ labels?: GmailLabel[] }>("labels");
+    const response = await this.request<{ labels?: GmailLabel[] }>(
+      "labels",
+      {},
+      { idempotent: true },
+    );
     return (response.labels ?? [])
       .filter((label): label is GmailLabel => Boolean(label.id && label.name))
       .map((label): GmailLabel => ({ id: label.id, name: label.name, ...(label.type ? { type: label.type } : {}) }));
@@ -581,7 +595,11 @@ export class GoogleGmailClient {
   async listMessages(input: { labelId: string; search?: string }) {
     const parameters = new URLSearchParams({ maxResults: String(MAX_MESSAGE_RESULTS), labelIds: input.labelId });
     if (input.search) parameters.set("q", input.search);
-    const response = await this.request<{ messages?: Array<Pick<GmailMessage, "id" | "threadId">> }>(`messages?${parameters.toString()}`);
+    const response = await this.request<{ messages?: Array<Pick<GmailMessage, "id" | "threadId">> }>(
+      `messages?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     const references = (response.messages ?? []).slice(0, MAX_MESSAGE_RESULTS);
     const messages = await Promise.all(references.map((reference) => this.getMessageMetadata(reference.id)));
     return messages;
@@ -590,14 +608,22 @@ export class GoogleGmailClient {
   private async getMessageMetadata(messageId: string) {
     const parameters = new URLSearchParams({ format: "metadata" });
     for (const headerName of ["From", "To", "Subject", "Date"]) parameters.append("metadataHeaders", headerName);
-    const message = await this.request<GmailMessage>(`messages/${encodeURIComponent(validateGmailMessageId(messageId))}?${parameters.toString()}`);
+    const message = await this.request<GmailMessage>(
+      `messages/${encodeURIComponent(validateGmailMessageId(messageId))}?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     return mapMessage(message);
   }
 
   private async getFullMessage(messageId: string) {
     const safeMessageId = validateGmailMessageId(messageId);
     const parameters = new URLSearchParams({ format: "full" });
-    const message = await this.request<GmailMessage>(`messages/${encodeURIComponent(safeMessageId)}?${parameters.toString()}`);
+    const message = await this.request<GmailMessage>(
+      `messages/${encodeURIComponent(safeMessageId)}?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     if (message.id !== safeMessageId) {
       throw archiveResponseError("Gmail returned an unexpected message while preparing the archive.");
     }
@@ -609,7 +635,11 @@ export class GoogleGmailClient {
     const safeMessageId = validateGmailMessageId(messageId);
     const limits = resolveArchiveLimits(options);
     const parameters = new URLSearchParams({ format: "raw" });
-    const message = await this.request<GmailMessage>(`messages/${encodeURIComponent(safeMessageId)}?${parameters.toString()}`);
+    const message = await this.request<GmailMessage>(
+      `messages/${encodeURIComponent(safeMessageId)}?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     if (message.id !== safeMessageId) {
       throw archiveResponseError("Gmail returned an unexpected message while retrieving the RFC 822 archive.");
     }
@@ -625,7 +655,11 @@ export class GoogleGmailClient {
     if (!candidate.attachmentId || candidate.attachmentId.length > 1_024 || /[\u0000-\u001f\u007f]/.test(candidate.attachmentId)) {
       throw archiveResponseError("Gmail returned an attachment without a valid identifier.");
     }
-    const response = await this.request<{ data?: string }>(`messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(candidate.attachmentId)}`);
+    const response = await this.request<{ data?: string }>(
+      `messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(candidate.attachmentId)}`,
+      {},
+      { idempotent: true },
+    );
     return decodeGmailBase64Url(response.data, maximumBytes, `attachment ${candidate.filename}`);
   }
 
@@ -736,7 +770,7 @@ export class GoogleGmailClient {
       method: "POST",
       // This deliberately does not remove INBOX or any other label: filing is a visible, reversible label action.
       body: JSON.stringify({ addLabelIds: [labels.filed.id] }),
-    });
+    }, { idempotent: true });
     return { id: response.id, threadId: response.threadId ?? null, labelIds: response.labelIds ?? [], label: { id: labels.filed.id, name: labels.filed.name } };
   }
 

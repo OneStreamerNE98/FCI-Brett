@@ -1,4 +1,9 @@
 import { GoogleIntegrationError, type GoogleFetch, type GoogleRuntimeConfig } from "./google-oauth";
+import {
+  fetchGoogleProvider,
+  type GoogleFetchPolicy,
+  type GoogleFetchResilienceDependencies,
+} from "./google-fetch-resilience";
 import type { WorkspaceBlueprint, WorkspaceBlueprintFolder } from "./workspace-blueprint";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
@@ -247,6 +252,7 @@ export class GoogleDriveClient {
     private readonly accessToken: string,
     private readonly config: GoogleRuntimeConfig,
     private readonly fetcher: GoogleFetch = DEFAULT_GOOGLE_FETCH,
+    private readonly resilience: GoogleFetchResilienceDependencies = {},
   ) {}
 
   /**
@@ -282,10 +288,14 @@ export class GoogleDriveClient {
     return root;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}) {
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    policy: GoogleFetchPolicy = {},
+  ) {
     let response: Response;
     try {
-      response = await this.fetcher(`${DRIVE_API}/${path}`, {
+      response = await fetchGoogleProvider(this.fetcher, `${DRIVE_API}/${path}`, {
         ...init,
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -293,7 +303,7 @@ export class GoogleDriveClient {
           ...(init.body ? { "Content-Type": "application/json" } : {}),
           ...init.headers,
         },
-      });
+      }, policy, this.resilience);
     } catch {
       throw new GoogleIntegrationError("drive_unavailable", "Google Drive is temporarily unavailable. Try again.", 503);
     }
@@ -302,6 +312,7 @@ export class GoogleDriveClient {
       if (response.status === 401) throw new GoogleIntegrationError("drive_reauthorization_required", "Google authorization needs to be reconnected.", 409);
       if (response.status === 403) throw new GoogleIntegrationError("drive_permission_denied", "The approved Google account cannot access the configured workspace folder.", 403);
       if (response.status === 404) throw new GoogleIntegrationError("drive_not_found", "The configured workspace folder could not be found.", 404);
+      if (response.status === 429) throw new GoogleIntegrationError("drive_rate_limited", "Google Drive is temporarily rate-limited. Try again shortly.", 429);
       throw new GoogleIntegrationError("drive_request_failed", "Google Drive could not complete that operation. Try again.", 503);
     }
     return data as T;
@@ -311,7 +322,7 @@ export class GoogleDriveClient {
     let response: Response;
     try {
       const uploadBody = Uint8Array.from(body).buffer;
-      response = await this.fetcher(`${DRIVE_UPLOAD_API}/${path}`, {
+      response = await fetchGoogleProvider(this.fetcher, `${DRIVE_UPLOAD_API}/${path}`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
@@ -319,7 +330,7 @@ export class GoogleDriveClient {
           "Content-Type": contentType,
         },
         body: new Blob([uploadBody], { type: contentType }),
-      });
+      }, {}, this.resilience);
     } catch {
       throw new GoogleIntegrationError("drive_unavailable", "Google Drive is temporarily unavailable. Try again.", 503);
     }
@@ -335,7 +346,11 @@ export class GoogleDriveClient {
 
   private async getFolder(fileId: string) {
     const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
-    return this.request<DriveFile>(`files/${encodeURIComponent(fileId)}?${parameters.toString()}`);
+    return this.request<DriveFile>(
+      `files/${encodeURIComponent(fileId)}?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
   }
 
   /** Reads one Shared Drive and its safe, read-only sharing restriction flags. */
@@ -344,7 +359,11 @@ export class GoogleDriveClient {
     const parameters = new URLSearchParams({
       fields: "id,name,restrictions(adminManagedRestrictions,copyRequiresWriterPermission,domainUsersOnly,driveMembersOnly,sharingFoldersRequiresOrganizerPermission)",
     });
-    const result = await this.request<SharedDriveRecord>(`drives/${encodeURIComponent(normalized)}?${parameters.toString()}`);
+    const result = await this.request<SharedDriveRecord>(
+      `drives/${encodeURIComponent(normalized)}?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     if (result.id !== normalized || !result.name) {
       throw new GoogleIntegrationError("invalid_shared_drive", "Google returned an invalid Shared Drive record.", 503);
     }
@@ -363,7 +382,11 @@ export class GoogleDriveClient {
         fields: "nextPageToken,drives(id,name,restrictions(adminManagedRestrictions,copyRequiresWriterPermission,domainUsersOnly,driveMembersOnly,sharingFoldersRequiresOrganizerPermission))",
       });
       if (pageToken) parameters.set("pageToken", pageToken);
-      const result = await this.request<{ drives?: SharedDriveRecord[]; nextPageToken?: string }>(`drives?${parameters.toString()}`);
+      const result = await this.request<{ drives?: SharedDriveRecord[]; nextPageToken?: string }>(
+        `drives?${parameters.toString()}`,
+        {},
+        { idempotent: true },
+      );
       matches.push(...(result.drives ?? [])
         .filter((record) => record.id && record.name === normalized)
         .map(sharedDrive));
@@ -406,7 +429,11 @@ export class GoogleDriveClient {
       fields: "files(id,name,mimeType,parents,trashed,webViewLink,appProperties)",
       pageSize: "10",
     }));
-    const response = await this.request<{ files?: DriveFile[] }>(`files?${parameters.toString()}`);
+    const response = await this.request<{ files?: DriveFile[] }>(
+      `files?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     return response.files ?? [];
   }
 
@@ -417,7 +444,11 @@ export class GoogleDriveClient {
       fields: "files(id,name,mimeType,parents,trashed,webViewLink,appProperties)",
       pageSize: "10",
     }));
-    const response = await this.request<{ files?: DriveFile[] }>(`files?${parameters.toString()}`);
+    const response = await this.request<{ files?: DriveFile[] }>(
+      `files?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     return response.files ?? [];
   }
 
@@ -443,7 +474,7 @@ export class GoogleDriveClient {
     const updated = await this.request<DriveFile>(`files/${encodeURIComponent(file.id)}?${parameters.toString()}`, {
       method: "PATCH",
       body: JSON.stringify({ appProperties }),
-    });
+    }, { idempotent: true });
     if (updated.mimeType !== FOLDER_MIME_TYPE || updated.trashed) {
       throw new GoogleIntegrationError("invalid_drive_folder", "Google returned an invalid folder after applying its setup identity.", 503);
     }
@@ -594,7 +625,7 @@ export class GoogleDriveClient {
     const renamed = await this.request<DriveFile>(`files/${encodeURIComponent(folderId)}?${parameters.toString()}`, {
       method: "PATCH",
       body: JSON.stringify({ name: normalized }),
-    });
+    }, { idempotent: true });
     if (renamed.id !== folderId || renamed.name !== normalized || renamed.mimeType !== FOLDER_MIME_TYPE || renamed.trashed) {
       throw new GoogleIntegrationError("drive_rename_invalid_response", "Google Drive did not confirm the requested folder name.", 503);
     }
@@ -650,7 +681,11 @@ export class GoogleDriveClient {
       fields: "files(id,name,mimeType,parents,trashed,webViewLink,appProperties,md5Checksum,size)",
       pageSize: "3",
     }));
-    const response = await this.request<{ files?: DriveFile[] }>(`files?${parameters.toString()}`);
+    const response = await this.request<{ files?: DriveFile[] }>(
+      `files?${parameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     const matches = response.files ?? [];
     if (matches.length > 1) {
       throw new GoogleIntegrationError("duplicate_drive_file", "More than one managed Google Drive file has the same source identity.", 409);
@@ -677,7 +712,11 @@ export class GoogleDriveClient {
       fields: "files(id,name,mimeType,parents,trashed,webViewLink,appProperties)",
       pageSize: "3",
     }));
-    const listed = await this.request<{ files?: DriveFile[] }>(`files?${listParameters.toString()}`);
+    const listed = await this.request<{ files?: DriveFile[] }>(
+      `files?${listParameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
     const matches = listed.files ?? [];
     if (matches.length > 1) {
       throw new GoogleIntegrationError("duplicate_drive_file", `More than one spreadsheet has the blueprint identity ${key}.`, 409);

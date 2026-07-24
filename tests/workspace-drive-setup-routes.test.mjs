@@ -411,7 +411,7 @@ function installRenameProvider({ folderId, rootId, initialName, failCompensation
     if ((init.method ?? "GET") === "PATCH") {
       const name = JSON.parse(String(init.body)).name;
       patchNames.push(name);
-      if (failCompensation && patchNames.length === 2) {
+      if (failCompensation && name === initialName) {
         return Response.json({ error: { message: "simulated compensation failure" } }, { status: 503 });
       }
       currentName = name;
@@ -1558,7 +1558,11 @@ test("live rename reports and audits a failed compensation after blueprint CAS l
 
   assert.equal(response.status, 503);
   assert.equal(body.code, "drive_rename_compensation_failed");
-  assert.deepEqual(provider.patchNames, ["01_Custom Clients", "01_Manual Provider Drift"]);
+  assert.deepEqual(provider.patchNames, [
+    "01_Custom Clients",
+    "01_Manual Provider Drift",
+    "01_Manual Provider Drift",
+  ]);
   assert.equal(provider.currentName(), "01_Custom Clients");
   assert.equal(database.state.events.some((event) => event.eventType === "setup.folder_renamed"), false);
   assert.equal(database.state.events.filter((event) => event.eventType === "setup.folder_rename_compensation_failed").length, 1);
