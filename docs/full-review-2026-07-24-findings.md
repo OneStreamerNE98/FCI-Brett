@@ -331,7 +331,7 @@ review-first). All acceptance criteria are mutation-sensitive: a test must fail 
 the fix regresses. New packets carry no status line until started.
 
 ### FIX-13 · Stage-4 verification durability (P2 H-2; small-medium)
-**Status:** In progress — `codex/fix13-stage4-durability`, July 23, 2026. Guide impact: none.
+**Status:** In review — PR #156, July 23, 2026. Guide impact: none. Source-only and undeployed.
 
 **Why:** Stage-4 READY is backed by ephemeral component state for Gmail and
 Calendar, so a reload or in-app navigation silently reverts a launch-verification
