@@ -2293,7 +2293,7 @@ secret-leak suite green; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-08 · AI settings card + "what you can ask" help (small-medium, after AI-03 — lands before AI-05/06/07 so gates precede the gated features)
-**Status:** In progress — `codex/ai08-assistant-settings`, July 23, 2026.
+**Status:** In review — PR #152, July 23, 2026. Source-only and undeployed; no hosted configuration, Google configuration, migration, or live data changed.
 
 **Why:** one honest place to see whether AI is on, which model runs, and to
 switch features off; users need to know what they can ask. No new Settings
