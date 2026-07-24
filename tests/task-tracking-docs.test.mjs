@@ -223,6 +223,7 @@ test("packet headings, status markers, and stale-reference detection stay struct
     "docs/be04-oidc-review-and-followups.md",
     "docs/full-review-2026-07-21-findings.md",
     "docs/full-review-2026-07-24-findings.md",
+    "docs/nightly-review-2026-07-findings.md",
   ]) {
     assertPacketDocumentStructure(path, read(path));
   }
