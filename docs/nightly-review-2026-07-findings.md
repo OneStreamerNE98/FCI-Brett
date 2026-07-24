@@ -152,7 +152,7 @@ untouched; guide impact stated per the currency rule.
 **Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-02 · Google client resilience: timeouts, bounded retry, honest 429 (small)
-**Status:** Blocked — awaiting owner dispatch; Codex paste ready (zone clear of open lanes).
+**Status:** In progress — `codex/nfix02-google-client-resilience`, July 24, 2026. Source-only and undeployed.
 
 **Why:** N8-2/N8-5/N8-6 — no data-client fetch carries a timeout; burst paths
 abort on the first transient 429; calendar hides its rate-limit signal as 503.
