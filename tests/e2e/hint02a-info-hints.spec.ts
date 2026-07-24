@@ -152,4 +152,67 @@ test.describe("RuleModal audited hints at 390px", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
   });
+
+  test("a hover-opened hint consumes the first Escape while focus sits on another field", async ({ page }) => {
+    await page.goto("/settings?section=inbox-rules");
+    await expect(page.getByText("Loading live records", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Add rule", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Add an email filing rule", exact: true });
+    await expect(dialog).toBeVisible();
+
+    const ruleName = dialog.getByRole("textbox", { name: "Rule name" });
+    const trigger = dialog.getByRole("button", { name: "About when this matches", exact: true });
+    const descriptionId = await trigger.getAttribute("aria-describedby");
+    expect(descriptionId).toBeTruthy();
+    const tooltip = page.locator(`[id="${descriptionId}"]`);
+
+    // Open the hint by hovering only — focus stays on the unrelated Rule name field, never the trigger.
+    await ruleName.focus();
+    await expect(ruleName).toBeFocused();
+    await trigger.hover();
+    await expect(tooltip).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(ruleName).toBeFocused();
+
+    // The first Escape must dismiss only the hover-opened tooltip; the dialog must survive.
+    await page.keyboard.press("Escape");
+    await expect(tooltip).toBeHidden();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(dialog).toBeVisible();
+
+    // A second Escape, with no hint open, closes the dialog.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test("two consecutive Escapes on one focused trigger dismiss the tooltip then the dialog", async ({ page }) => {
+    await page.goto("/settings?section=inbox-rules");
+    await expect(page.getByText("Loading live records", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Add rule", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Add an email filing rule", exact: true });
+    await expect(dialog).toBeVisible();
+
+    const trigger = dialog.getByRole("button", { name: "About rule action", exact: true });
+    const descriptionId = await trigger.getAttribute("aria-describedby");
+    expect(descriptionId).toBeTruthy();
+    const tooltip = page.locator(`[id="${descriptionId}"]`);
+
+    await trigger.focus();
+    await expect(trigger).toBeFocused();
+    await expect(tooltip).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    // First Escape closes the tooltip; focus stays on the trigger and the dialog remains open.
+    await page.keyboard.press("Escape");
+    await expect(tooltip).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(dialog).toBeVisible();
+
+    // Second Escape on the same still-focused trigger closes the dialog.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+  });
 });

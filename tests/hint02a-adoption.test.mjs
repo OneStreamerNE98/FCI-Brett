@@ -117,10 +117,10 @@ test("HINT-02-A mounts only the seven recommended hints with verbatim audited co
   assert.match(defaults, /<PlannedSettingField id="office-notification-email" label="Office notification email">/u);
 });
 
-test("an open RuleModal hint consumes Escape before the overlay closes", async () => {
+test("an open panel-scoped hint consumes Escape before the overlay closes", async () => {
   const overlay = await read("app/components/AccessibleOverlay.tsx");
   assert.match(
     overlay,
-    /const openInfoHint = activeElement\?\.closest\("\.info-hint\.open"\);[\s\S]{0,120}if \(openInfoHint && panel\.contains\(openInfoHint\)\) return;[\s\S]{0,120}event\.preventDefault\(\);/u,
+    /if \(event\.key === "Escape"\) \{\s*if \(panel\.querySelector\("\.info-hint\.open"\)\) return;\s*event\.preventDefault\(\);/u,
   );
 });
