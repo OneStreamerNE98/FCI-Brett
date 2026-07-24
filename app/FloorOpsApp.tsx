@@ -7,11 +7,12 @@ import {
   Activity, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, ExternalLink, FolderOpen, FolderTree, HardHat,
   Inbox, Info, LayoutDashboard, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal, Navigation,
-  ListFilter, LogOut, Plus, RefreshCw, Reply, Search, Settings, ShieldCheck, Sparkles, Users, X, Zap,
+  LogOut, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Users, X, Zap,
 } from "lucide-react";
 import type { AppEnvironment } from "./lib/app-environment";
 import { AssistantView } from "./assistant/components/AssistantView";
-import { DEFAULT_FILING_RULES, evaluateInboxFilingRules, type FilingRuleDraft } from "./lib/google-workspace";
+import { InboxView } from "./inbox/components/InboxView";
+import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
 import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
@@ -59,7 +60,7 @@ import {
 } from "./lib/operations-routes";
 import { DataSecurityPanel } from "./settings/components/DataSecurityPanel";
 import { DirectorySyncPanel } from "./settings/components/DirectorySyncPanel";
-import { GmailFilingModal, GoogleWorkspacePanel, type GmailFilingPreview, type WorkspaceMessage } from "./settings/components/GoogleWorkspacePanel";
+import { GoogleWorkspacePanel } from "./settings/components/GoogleWorkspacePanel";
 import { InboxRulesPanel, RuleModal } from "./settings/components/InboxRulesPanel";
 import { MySettingsPanel } from "./settings/components/MySettingsPanel";
 import { SettingsAudienceNavigation } from "./settings/components/SettingsAudienceNavigation";
@@ -1383,229 +1384,6 @@ function ScheduleView({ dashboard, onSettings }: { dashboard: DashboardSummary |
   </>;
 }
 
-type GmailWorkspaceStatus = {
-  connectionStatus?: string;
-  connectionAccount?: string | null;
-  gmailConnected?: boolean;
-  gmailEnabled?: boolean;
-  requiresReauthorization?: boolean;
-  runtimeMode?: "simulation" | "workspace";
-  simulation?: boolean;
-};
-
-const inboxBucketLabels: Record<InboxBucket, string> = {
-  inbox: "Inbox",
-  intake: "FCI/Intake",
-  "needs-review": "FCI/Needs Review",
-  filed: "FCI/Filed",
-};
-
-function inboxDate(value: string | null) {
-  if (!value) return "Date unavailable";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
-
-type InboxProjectSuggestion = { kind: "project" | "needs-review" | "intake" | "ignored"; text: string; reason: string };
-
-function inboxProjectSuggestion(message: WorkspaceMessage, projects: Project[], clients: Client[], rules: FilingRuleDraft[]): InboxProjectSuggestion {
-  const decision = evaluateInboxFilingRules({ message, projects, clients, rules });
-  if (decision.kind === "project" && decision.project) return { kind: "project", text: `Suggested by ${decision.ruleName}: ${decision.project.number} — review before filing`, reason: decision.reason };
-  if (decision.kind === "needs-review") return { kind: "needs-review", text: `Needs review${decision.ruleName ? ` by ${decision.ruleName}` : ""}: choose the exact independent project`, reason: decision.reason };
-  if (decision.kind === "ignored") return { kind: "ignored", text: `No routing by ${decision.ruleName}: Gmail stays unchanged`, reason: decision.reason };
-  return { kind: "intake", text: "FCI/Intake: no enabled built-in rule matched; choose a project before filing", reason: decision.reason };
-}
-
-function InboxView({ notify, bucket, onBucket, onRules, projects, clients, rules, onGoogleSetup }: { notify: Notify; bucket: InboxBucket; onBucket: (bucket: InboxBucket) => void; onRules: () => void; projects: Project[]; clients: Client[]; rules: FilingRuleDraft[]; onGoogleSetup: () => void }) {
-  const [workspace, setWorkspace] = useState<GmailWorkspaceStatus | null>(null);
-  const [messages, setMessages] = useState<WorkspaceMessage[]>([]);
-  const [loadedBucket, setLoadedBucket] = useState<InboxBucket | null>(null);
-  const [search, setSearch] = useState("");
-  const [checking, setChecking] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [labelReady, setLabelReady] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [filingMessage, setFilingMessage] = useState<WorkspaceMessage | null>(null);
-  const [filingProjectId, setFilingProjectId] = useState("");
-  const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
-  const [filingLoading, setFilingLoading] = useState(false);
-  const [filingSubmitting, setFilingSubmitting] = useState(false);
-  const [replyMessage, setReplyMessage] = useState<WorkspaceMessage | null>(null);
-  const [replyBody, setReplyBody] = useState("");
-  const [replySaving, setReplySaving] = useState(false);
-  const [replySignature, setReplySignature] = useState("");
-
-  function checkGmailConnection(force = false) {
-    const request = cachedGetJson<{ workspace?: GmailWorkspaceStatus }>("/api/v1/google-workspace", { force });
-    void Promise.resolve().then(() => setChecking(true));
-    return request.then((data) => {
-      setWorkspace(data.workspace ?? null);
-      setError(null);
-    }).catch((connectionError) => {
-      setWorkspace(null);
-      setError(connectionError instanceof Error ? connectionError.message : "Google Workspace status could not be checked.");
-    }).finally(() => {
-      setChecking(false);
-    });
-  }
-
-  useEffect(() => {
-    void checkGmailConnection();
-  }, []);
-
-  useEffect(() => {
-    void cachedGetJson<{ preferences?: { replySignature?: unknown } }>("/api/v1/settings/me")
-      .then((data) => setReplySignature(typeof data?.preferences?.replySignature === "string" ? data.preferences.replySignature.slice(0, 2_000) : ""))
-      .catch(() => undefined);
-  }, []);
-
-  const gmailReady = workspace?.connectionStatus === "connected" && workspace.gmailEnabled === true && workspace.gmailConnected === true;
-  const visibleMessages = loadedBucket === bucket ? messages : [];
-
-  async function loadMessages() {
-    setLoading(true);
-    setError(null);
-    try {
-      const parameters = new URLSearchParams({ label: bucket });
-      if (search.trim()) parameters.set("q", search.trim());
-      const response = await fetch(`/api/v1/integrations/google/gmail/messages?${parameters.toString()}`);
-      const data = await response.json().catch(() => ({})) as { messages?: WorkspaceMessage[]; labelReady?: boolean; error?: string };
-      if (!response.ok) throw new Error(data.error ?? "Your Gmail messages could not be loaded.");
-      setMessages(data.messages ?? []);
-      setLoadedBucket(bucket);
-      setLabelReady(Boolean(data.labelReady));
-      notify(`Loaded ${data.messages?.length ?? 0} message${(data.messages?.length ?? 0) === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`, "info");
-    } catch (loadError) {
-      setMessages([]);
-      setLoadedBucket(bucket);
-      setError(loadError instanceof Error ? loadError.message : "Your Gmail messages could not be loaded.");
-      await checkGmailConnection(true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function prepareLabels() {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/v1/integrations/google/gmail/labels/prepare", { method: "POST" });
-      const data = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(data.error ?? "FCI Gmail labels could not be prepared.");
-      setLabelReady(true);
-      notify("FCI Gmail labels are ready. No messages were moved or archived.", "success");
-      await loadMessages();
-    } catch (prepareError) {
-      const message = prepareError instanceof Error ? prepareError.message : "FCI Gmail labels could not be prepared.";
-      setError(message);
-      notify(message, "error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function openFilingReview(message: WorkspaceMessage) {
-    setFilingMessage(message);
-    setFilingProjectId("");
-    setFilingPreview(null);
-  }
-
-  function closeFilingReview() {
-    if (filingLoading || filingSubmitting) return;
-    setFilingMessage(null);
-    setFilingProjectId("");
-    setFilingPreview(null);
-  }
-
-  async function previewGmailFiling() {
-    if (!filingMessage || !filingProjectId) {
-      notify("Choose the exact independent project before reviewing this email filing.", "warning");
-      return;
-    }
-    setFilingLoading(true);
-    try {
-      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file?projectId=${encodeURIComponent(filingProjectId)}`);
-      const data = await response.json().catch(() => ({})) as GmailFilingPreview & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? "The Gmail filing preview could not be loaded.");
-      setFilingPreview(data);
-      notify(`Review the Drive filing for ${data.project.number}. Nothing has been copied yet.`, "info");
-    } catch (previewError) {
-      setFilingPreview(null);
-      notify(previewError instanceof Error ? previewError.message : "The Gmail filing preview could not be loaded.", "error");
-    } finally {
-      setFilingLoading(false);
-    }
-  }
-
-  async function confirmGmailFiling() {
-    if (!filingMessage || !filingProjectId || !filingPreview) return;
-    setFilingSubmitting(true);
-    try {
-      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(filingMessage.id)}/file`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: filingProjectId }) });
-      const data = await response.json().catch(() => ({})) as { filed?: boolean; alreadyFiled?: boolean; archive?: { attachmentCount?: number }; error?: string };
-      if (!response.ok) throw new Error(data.error ?? "The Gmail filing could not be completed.");
-      notify(data.alreadyFiled ? "This email was already filed to the selected project. Your inbox was left intact." : `Email and ${data.archive?.attachmentCount ?? filingPreview.message.attachmentCount} attachment(s) were copied to the selected project. FCI/Filed was added; Inbox remains intact.`, data.alreadyFiled ? "info" : "success");
-      setFilingMessage(null);
-      setFilingProjectId("");
-      setFilingPreview(null);
-      await loadMessages();
-    } catch (filingError) {
-      notify(filingError instanceof Error ? filingError.message : "The Gmail filing could not be completed.", "error");
-    } finally {
-      setFilingSubmitting(false);
-    }
-  }
-
-  function openReplyComposer(message: WorkspaceMessage) {
-    setReplyMessage(message);
-    setReplyBody(replySignature ? `\n\n${replySignature}` : "");
-  }
-
-  function closeReplyComposer() {
-    if (replySaving) return;
-    setReplyMessage(null);
-    setReplyBody("");
-  }
-
-  async function saveReplyDraft() {
-    if (!replyMessage || !replyBody.trim()) {
-      notify("Write a reply before saving a Gmail draft.", "warning");
-      return;
-    }
-    setReplySaving(true);
-    try {
-      const response = await fetch(`/api/v1/integrations/google/gmail/messages/${encodeURIComponent(replyMessage.id)}/reply-draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: replyBody }) });
-      const data = await response.json().catch(() => ({})) as { draftSaved?: boolean; recipient?: string; error?: string };
-      if (!response.ok || !data.draftSaved) throw new Error(data.error ?? "Gmail draft could not be saved.");
-      notify(`Reply draft saved in Gmail for ${data.recipient ?? "the original sender"}. It was not sent.`, "success");
-      setReplyMessage(null);
-      setReplyBody("");
-    } catch (replyError) {
-      notify(replyError instanceof Error ? replyError.message : "Gmail draft could not be saved.", "error");
-    } finally {
-      setReplySaving(false);
-    }
-  }
-
-  const connectionText = workspace?.simulation ? "Local Workspace simulation is ready" : gmailReady ? `Connected Workspace Gmail: ${workspace?.connectionAccount ?? "company mailbox"}` : workspace?.requiresReauthorization ? "Google Workspace needs to be reconnected to approve Gmail access." : "Connect the company Google Workspace account to load messages.";
-  return <>
-    <PageTitle eyebrow="Gmail intake" title="Gmail project inbox" text="Search the company Gmail mailbox—or safe simulated messages—then review and copy each message to one independent project." state={gmailReady ? "In development" : "Setup required"} action={<><button className="soft-button" onClick={onRules}><ListFilter size={15} /> Inbox & file rules</button>{gmailReady ? <button className="soft-button" onClick={() => void loadMessages()} disabled={loading}>{loading ? "Loading…" : <><RefreshCw size={15} /> Refresh</>}</button> : <button className="primary-button" onClick={onGoogleSetup}><Building2 size={15} /> Google setup</button>}</>} />
-    <section className={`inbox-connection inbox-state-strip ${gmailReady ? "ready" : ""}`}><Mail size={18} /><div className="inbox-state-copy"><strong>{gmailReady ? connectionText : "Workspace Gmail connection required"}</strong><span>{workspace?.simulation ? "Sample messages only. No Google account is connected and nothing is sent to Google." : gmailReady ? "Messages load only after your direct action; filing remains review-first and keeps Inbox." : connectionText}</span><span className="inbox-safety-copy"><ShieldCheck size={14} />Suggestions only: {rules.filter((rule) => rule.enabled).length} enabled rules can recommend a destination, but you must choose the exact project and approve every copy.</span></div><div className="inbox-state-actions"><button className="soft-button" onClick={() => void checkGmailConnection(true)} disabled={checking}>{checking ? "Checking…" : "Check connection"}</button><button className="soft-button" onClick={onRules}>Manage rules</button></div></section>
-    {error && <p className="workspace-missing">{error}</p>}
-    <div className="inbox-layout">
-      <section className="panel message-list">
-        <header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => onBucket(event.target.value as InboxBucket)} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI/Intake</option><option value="needs-review">FCI/Needs Review</option><option value="filed">FCI/Filed</option></select></label><label>Search this Gmail mailbox<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label><small className="gmail-search-help">Use Gmail search terms such as <b>from:</b>, <b>subject:</b>, or a project number.</small></div><div className="workspace-actions">{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
-        {!gmailReady ? <OperationsEmptyState variant="inbox"><Mail size={25} /><h2>Connect Workspace Gmail to see the company inbox</h2><p>Until Workspace is available, switch the local app to Workspace simulation to test the full inbox workflow with sample data.</p><button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button></OperationsEmptyState> : visibleMessages.length === 0 ? <OperationsEmptyState variant="inbox"><Inbox size={25} /><h2>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h2><p>Choose a mailbox, optionally enter a Gmail search, and use the Load messages button above. The view is limited to 20 message summaries.</p></OperationsEmptyState> : visibleMessages.map((message, index) => {
-          const suggestion = inboxProjectSuggestion(message, projects, clients, rules);
-          return <article className="message-row live-message-row" key={message.id}><div className={`sender-dot s${index % 4}`}>{(message.from ?? "?").split(/[\s@<]+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div><div className="message-copy"><strong>{message.from ?? "Unknown sender"}</strong><h3>{message.subject ?? "(No subject)"}</h3><p>{message.snippet || "No preview available."}</p><div className={`inbox-project-suggestion ${suggestion.kind}`} title={suggestion.reason} aria-label={`${suggestion.text}. ${suggestion.reason}`}><ShieldCheck size={13} /> {suggestion.text}</div></div><div className="message-actions"><span>{inboxDate(message.date)}</span><small>{message.to ? `To: ${message.to}` : workspace?.simulation ? "Simulated Workspace mailbox" : "Company Workspace mailbox"}</small><button className="primary-button" onClick={() => openFilingReview(message)}><FolderOpen size={14} /> Review & copy</button><button className="soft-button" onClick={() => openReplyComposer(message)}><Reply size={14} /> Draft reply</button></div></article>;
-        })}
-      </section>
-      <aside className="panel inbox-summary"><div className="summary-icon"><Mail size={20} /></div><h2>Inbox status</h2><p>{gmailReady ? `Showing ${visibleMessages.length} loaded message${visibleMessages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.` : "Workspace Gmail is not connected yet."}</p><dl className="inbox-status-list"><div><dt>Provider</dt><dd>{workspace?.simulation ? "Local Workspace simulation" : workspace?.connectionAccount ?? "Not connected"}</dd></div><div><dt>Message limit</dt><dd>20 summaries</dd></div><div><dt>Filing protection</dt><dd>Exact project required</dd></div></dl><hr /><h3>Keep it organized</h3><ul className="inbox-organization"><li>Use only FCI/Intake, FCI/Needs Review, and FCI/Filed labels.</li><li>Use project numbers for the safest match.</li><li>Store the permanent email and attachments in that project’s Shared Drive folder.</li></ul><small>{workspace?.simulation ? "Simulation mode · no Google access" : "Google Workspace mode"}</small><small>Inbox is retained after filing</small></aside>
-    </div>
-    {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
-    {replyMessage && <GmailReplyModal message={replyMessage} body={replyBody} saving={replySaving} onBody={setReplyBody} onSave={saveReplyDraft} onClose={closeReplyComposer} />}
-  </>;
-}
-
 function ReportBarRow({ label, measure, width, href, accessibleName, focusId, destinationFocusKey }: { label: string; measure: string; width: number; href?: string; accessibleName?: string; focusId?: string; destinationFocusKey?: string }) {
   const content = <><span className="bar-chart-label">{label}</span><span className="bar-chart-track" aria-hidden="true"><i style={{ width: `${width}%` }} /></span><strong>{measure}</strong>{href ? <ChevronRight className="bar-chart-chevron" size={16} aria-hidden="true" /> : <span className="bar-chart-spacer" aria-hidden="true" />}</>;
   return <li>{href && accessibleName && focusId && destinationFocusKey ? <Link id={focusId} className="bar-chart-row actionable" href={href} aria-label={accessibleName} onClick={() => rememberReportReturnFocus(focusId, destinationFocusKey)}>{content}</Link> : <div className="bar-chart-row">{content}</div>}</li>;
@@ -1696,10 +1474,6 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, onCurrentU
       {isAdmin && visibleSection === "Data & security" && <DataSecurityPanel />}
       {isAdmin && visibleSection === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
     </div></>;
-}
-
-function GmailReplyModal({ message, body, saving, onBody, onSave, onClose }: { message: WorkspaceMessage; body: string; saving: boolean; onBody: (value: string) => void; onSave: () => void; onClose: () => void }) {
-  return <AccessibleOverlay ariaLabel="Save a Gmail reply draft" contentClassName="modal gmail-reply-modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Workspace Gmail draft</p><h2>Save a reply draft</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={(event) => { event.preventDefault(); onSave(); }}><div className="modal-detail"><div className="filing-message-summary"><Mail size={17} /><div><strong>{message.subject || "(No subject)"}</strong><span>Reply target: {message.from || "original sender"}</span></div></div><label>Reply message<textarea data-overlay-initial-focus value={body} onChange={(event) => onBody(event.target.value)} placeholder="Write your reply…" maxLength={6000} required disabled={saving} /></label><p className="form-help"><ShieldCheck size={14} /> Live mode saves an unsent draft in the original Workspace Gmail thread. Simulation stores a local draft only. Sending remains a separate, deliberate action.</p></div><footer className="modal-footer"><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || !body.trim()}>{saving ? "Saving…" : <><Reply size={16} /> Save draft</>}</button></footer></form></AccessibleOverlay>;
 }
 
 function LeadModal({ onClose, onSave }: { onClose: () => void; onSave: (l: Lead) => Promise<void> }) { const [saving, setSaving] = useState(false); async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setSaving(true); const form = new FormData(e.currentTarget); const company = String(form.get("company")); const estimatedValue = Number(form.get("value") ?? 0); try { await onSave({ id: "", number: "", company, contact: String(form.get("contact")), project: String(form.get("project")), value: money(estimatedValue), estimatedValue, stage: "New inquiry", source: String(form.get("source")), next: String(form.get("notes")), site: String(form.get("site")), status: "active", initials: recordInitials(company), color: "sage" }); } finally { setSaving(false); } }

@@ -41,7 +41,7 @@ test("keeps the Settings component modules explicit and outside FloorOpsApp", as
 test("keeps SettingsView as an eight-section, two-audience dispatcher without panel behavior", async () => {
   const app = await read("app/FloorOpsApp.tsx");
   const navigation = await read("app/settings/components/SettingsAudienceNavigation.tsx");
-  const settingsView = app.slice(app.indexOf("function SettingsView"), app.indexOf("function GmailReplyModal"));
+  const settingsView = app.slice(app.indexOf("function SettingsView"), app.indexOf("function LeadModal"));
   assert.ok(settingsView.startsWith("function SettingsView"));
   assert.deepEqual(
     [...settingsView.matchAll(/visibleSection === "([^"]+)"/g)].map((match) => match[1]),

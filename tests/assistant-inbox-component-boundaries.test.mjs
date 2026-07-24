@@ -9,6 +9,10 @@ const expectedAssistantComponents = new Map([
   ["AssistantHelpPanel.tsx", ["AssistantHelpPanel"]],
   ["AssistantView.tsx", ["AssistantView"]],
 ]);
+const expectedInboxComponents = new Map([
+  ["GmailReplyModal.tsx", ["GmailReplyModal"]],
+  ["InboxView.tsx", ["InboxView"]],
+]);
 
 test("keeps the Assistant component modules explicit and outside FloorOpsApp", async () => {
   const directoryUrl = new URL("app/assistant/components/", root);
@@ -39,4 +43,39 @@ test("keeps Assistant-only evidence details and a narrow project contract in Ass
   assert.match(app, /import \{ AssistantView \} from "\.\/assistant\/components\/AssistantView";/);
   assert.match(app, /<AssistantView projects=\{projectItems\} \/>/);
   assert.doesNotMatch(app, /\btype AssistantCitation\b|function AssistantView\b|function SourceDetailModal\b/);
+});
+
+test("keeps the Inbox component modules explicit and outside FloorOpsApp", async () => {
+  const directoryUrl = new URL("app/inbox/components/", root);
+  const files = (await readdir(directoryUrl)).filter((file) => file.endsWith(".tsx")).sort();
+  assert.deepEqual(files, [...expectedInboxComponents.keys()].sort());
+
+  const app = await read("app/FloorOpsApp.tsx");
+  for (const [file, exports] of expectedInboxComponents) {
+    const source = await read(`app/inbox/components/${file}`);
+    for (const exportedName of exports) {
+      assert.match(source, new RegExp(`export function ${exportedName}\\b`), `${file} must export ${exportedName}`);
+      assert.doesNotMatch(app, new RegExp(`function ${exportedName}\\b`), `${exportedName} must not be defined in FloorOpsApp`);
+    }
+  }
+});
+
+test("keeps Inbox-only helpers, reply UI, and a narrow record contract in the extracted modules", async () => {
+  const [app, inbox, reply] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/inbox/components/InboxView.tsx"),
+    read("app/inbox/components/GmailReplyModal.tsx"),
+  ]);
+
+  assert.match(inbox, /function inboxDate\(/);
+  assert.match(inbox, /function inboxProjectSuggestion\(/);
+  assert.match(inbox, /type InboxProject = \{/);
+  assert.doesNotMatch(inbox, /FloorOpsApp|type Project\b/);
+  assert.match(inbox, /GmailFilingModal,[\s\S]*from "\.\.\/\.\.\/settings\/components\/GoogleWorkspacePanel";/);
+  assert.match(inbox, /import \{ GmailReplyModal \} from "\.\/GmailReplyModal";/);
+
+  assert.match(reply, /export function GmailReplyModal\(/);
+  assert.match(app, /import \{ InboxView \} from "\.\/inbox\/components\/InboxView";/);
+  assert.match(app, /<InboxView notify=\{notify\}/);
+  assert.doesNotMatch(app, /function InboxView\b|function GmailReplyModal\b|function inboxProjectSuggestion\b|function inboxDate\b/);
 });
