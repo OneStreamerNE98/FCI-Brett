@@ -6,6 +6,7 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 const settingsMutationRoutes = [
+  "app/api/v1/assistant/config/route.ts",
   "app/api/v1/settings/workspace/route.ts",
   "app/api/v1/integrations/google/chat/config/route.ts",
   "app/api/v1/integrations/google/simulation/reset/route.ts",

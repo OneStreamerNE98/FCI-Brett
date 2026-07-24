@@ -17,6 +17,10 @@ import {
   normalizeSearchQuery,
   searchRecords,
 } from "../../../application/search-records";
+import {
+  assistantRuntimeConfiguration,
+  readSitesAssistantConfiguration,
+} from "../../../lib/assistant-config-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
@@ -40,11 +44,14 @@ function noStoreResponse(response: Response) {
 }
 
 function provider() {
+  const runtime = assistantRuntimeConfiguration(
+    env as unknown as Record<string, string | undefined>,
+  );
   const apiKey = runtimeValue("OPENAI_API_KEY");
-  return apiKey
+  return runtime.keyConfigured && apiKey
     ? new OpenAIResponsesProvider({
         apiKey,
-        model: runtimeValue("OPENAI_MODEL") ?? "gpt-5.4",
+        model: runtime.model,
       })
     : null;
 }
@@ -143,6 +150,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const assistantConfiguration = await readSitesAssistantConfiguration(
+    env.DB,
+    env as unknown as Record<string, string | undefined>,
+  );
+  if (!assistantConfiguration.features.orgQa) {
+    const fallbackEvidence = await boundedFallbackSearch({
+      search: () => fallbackSearchEvidence(question),
+      signal: request.signal,
+    }).catch(() => []);
+    const fallback = orgWideFallbackFromEvidence(question, fallbackEvidence);
+    const disabledCause = assistantConfiguration.keyState === "Missing"
+      ? "Organization-wide answers are unavailable because the OpenAI API key is missing."
+      : "Organization-wide answers are turned off in AI settings.";
+    return noStore({
+      ...fallback,
+      missingEvidence: `${disabledCause} ${fallback.missingEvidence}`,
+    });
+  }
   const tools = createAssistantToolRegistry({
     database: env.DB,
     connectionKey: google.connectionKey,

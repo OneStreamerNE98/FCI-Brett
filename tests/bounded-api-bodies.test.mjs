@@ -35,6 +35,7 @@ const vite = await createServer({
 
 const [
   assistantRoute,
+  assistantConfigRoute,
   clientsRoute,
   projectsRoute,
   filingRuleRoute,
@@ -53,6 +54,7 @@ const [
 ] =
   await Promise.all([
     vite.ssrLoadModule("/app/api/v1/assistant/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/assistant/config/route.ts"),
     vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
     vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
     vite.ssrLoadModule("/app/api/v1/filing-rules/[ruleId]/route.ts"),
@@ -96,6 +98,13 @@ const cases = [
     maximumBytes: 9_000,
     error: "Question request is too large.",
     invoke: (request) => assistantRoute.POST(request),
+  },
+  {
+    name: "AI feature settings update",
+    method: "PATCH",
+    maximumBytes: 8_000,
+    error: "AI feature settings update is too large.",
+    invoke: (request) => assistantConfigRoute.PATCH(request),
   },
   {
     name: "client creation",

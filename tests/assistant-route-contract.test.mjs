@@ -213,9 +213,120 @@ test("only an omitted projectId enters org-wide mode", async () => {
       label: "Client · Atlas",
       detail: "ATLAS",
     }],
-    missingEvidence: "This records-only fallback reports bounded exact record matches; it does not infer an answer or search full email bodies and Drive document contents.",
+    missingEvidence: "Organization-wide answers are unavailable because the OpenAI API key is missing. This records-only fallback reports bounded exact record matches; it does not infer an answer or search full email bodies and Drive document contents.",
   });
-  assert.equal(database.prepared.length, 3);
+  assert.equal(database.prepared.length, 4);
+});
+
+test("a configured provider honors a saved disabled org-wide setting without calling it", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousApiKey = cloudflareEnvironment.OPENAI_API_KEY;
+  cloudflareEnvironment.OPENAI_API_KEY = "disabled-org-qa-key";
+  database.prepared = [];
+  database.resolver = (kind, sql) => {
+    if (
+      kind === "first"
+      && sql.startsWith("SELECT id, shared_drive_id")
+    ) {
+      return {
+        id: "workspace",
+        settings_json: JSON.stringify({
+          aiFeatures: {
+            orgQa: false,
+            triage: true,
+            replyDrafts: true,
+            taskExtraction: true,
+          },
+        }),
+        updated_by: TEST_EMAIL,
+        updated_at: 1,
+      };
+    }
+    if (
+      kind === "all"
+      && sql.startsWith("SELECT id, client_code, name FROM clients")
+    ) {
+      return [{ id: "client-atlas", client_code: "ATLAS", name: "Atlas" }];
+    }
+    return [];
+  };
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("Disabled organization-wide answers must not call OpenAI.");
+  };
+  try {
+    const response = await assistantRoute.POST(request({ question: "find Atlas" }));
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      mode: "records-only",
+      answer: "The saved records search found 1 likely match for “find Atlas”: Atlas.",
+      citations: [{
+        id: "client:client-atlas",
+        label: "Client · Atlas",
+        detail: "ATLAS",
+      }],
+      missingEvidence: "Organization-wide answers are turned off in AI settings. This records-only fallback reports bounded exact record matches; it does not infer an answer or search full email bodies and Drive document contents.",
+    });
+    assert.equal(providerCalls, 0);
+    assert.equal(
+      database.prepared.filter((sql) => sql.includes("FROM workspace_settings")).length,
+      1,
+    );
+  } finally {
+    if (previousApiKey === undefined) delete cloudflareEnvironment.OPENAI_API_KEY;
+    else cloudflareEnvironment.OPENAI_API_KEY = previousApiKey;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a configured provider defaults org-wide answers on when aiFeatures is absent", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousApiKey = cloudflareEnvironment.OPENAI_API_KEY;
+  cloudflareEnvironment.OPENAI_API_KEY = "default-on-org-qa-key";
+  database.prepared = [];
+  database.resolver = (kind, sql) => {
+    if (
+      kind === "first"
+      && sql.startsWith("SELECT id, shared_drive_id")
+    ) {
+      return {
+        id: "workspace",
+        settings_json: JSON.stringify({ futureSetting: "preserved" }),
+        updated_by: TEST_EMAIL,
+        updated_at: 1,
+      };
+    }
+    return [];
+  };
+  let providerCalls = 0;
+  globalThis.fetch = async (url) => {
+    assert.equal(String(url), "https://api.openai.com/v1/responses");
+    providerCalls += 1;
+    return Response.json({
+      output: [{
+        content: [{
+          type: "output_text",
+          text: JSON.stringify({
+            answer: "No saved evidence was found.",
+            citationIds: [],
+            missingEvidence: "No matching saved records were found.",
+          }),
+        }],
+      }],
+    });
+  };
+  try {
+    const response = await assistantRoute.POST(request({
+      question: "find a saved record",
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(providerCalls, 1);
+  } finally {
+    if (previousApiKey === undefined) delete cloudflareEnvironment.OPENAI_API_KEY;
+    else cloudflareEnvironment.OPENAI_API_KEY = previousApiKey;
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("request abort reaches the live provider call and returns a safe fallback", async () => {
@@ -314,6 +425,8 @@ test("project not-found is a no-store route-owned response", async () => {
 });
 
 test("valid projectId retains the legacy deterministic fallback payload", async () => {
+  const previousApiKey = cloudflareEnvironment.OPENAI_API_KEY;
+  delete cloudflareEnvironment.OPENAI_API_KEY;
   database.prepared = [];
   database.resolver = (kind, sql) => {
     if (kind === "first" && sql.startsWith("SELECT p.id, p.project_number")) {
@@ -352,18 +465,78 @@ test("valid projectId retains the legacy deterministic fallback payload", async 
     }],
     missingEvidence: "Phase history, dated shifts, and completion progress are not available in the current project record.",
   });
+  if (previousApiKey !== undefined) {
+    cloudflareEnvironment.OPENAI_API_KEY = previousApiKey;
+  }
+});
+
+test("a valid projectId never consults org-wide settings even when orgQa is disabled", async () => {
+  const previousApiKey = cloudflareEnvironment.OPENAI_API_KEY;
+  delete cloudflareEnvironment.OPENAI_API_KEY;
+  database.prepared = [];
+  database.resolver = (kind, sql) => {
+    if (sql.includes("workspace_settings")) {
+      throw new Error("Project-scoped questions must not read org-wide settings.");
+    }
+    if (kind === "first" && sql.startsWith("SELECT p.id, p.project_number")) {
+      return {
+        id: "project-1",
+        project_number: "P-100",
+        name: "Lobby",
+        status: "planning",
+        site: "100 Main Street",
+        project_manager: "Alex",
+        estimated_value: 100000,
+        client_id: "client-1",
+        client_name: "Atlas",
+        client_code: "ATLAS",
+      };
+    }
+    if (kind === "first" && sql.startsWith("SELECT COUNT(*) AS total")) {
+      return { total: 0 };
+    }
+    if (kind === "all") return [];
+    return null;
+  };
+  try {
+    const response = await assistantRoute.POST(request({
+      question: "What is the current status?",
+      projectId: "project-1",
+    }));
+    assert.deepEqual(await response.json(), {
+      mode: "records-only",
+      answer: "P-100 — Lobby is currently planning. The recorded site is 100 Main Street. The project manager is Alex.",
+      citations: [{
+        id: "project:project-1",
+        label: "Project record · P-100",
+        detail: "Lobby · Atlas · planning · 100 Main Street · Project manager: Alex · Estimated value: $100,000",
+      }],
+      missingEvidence: "Phase history, dated shifts, and completion progress are not available in the current project record.",
+    });
+    assert.equal(
+      database.prepared.some((sql) => sql.includes("workspace_settings")),
+      false,
+    );
+  } finally {
+    if (previousApiKey !== undefined) {
+      cloudflareEnvironment.OPENAI_API_KEY = previousApiKey;
+    }
+  }
 });
 
 test("the configured OpenAI secret is sent only as authorization and never returned", async () => {
   const sentinel = "sk-secret-leak-sentinel";
   const originalFetch = globalThis.fetch;
+  const previousModel = cloudflareEnvironment.OPENAI_MODEL;
   cloudflareEnvironment.OPENAI_API_KEY = sentinel;
+  cloudflareEnvironment.OPENAI_MODEL = "  gpt-shared-config-model  ";
   database.prepared = [];
   database.resolver = () => [];
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url), "https://api.openai.com/v1/responses");
     assert.equal(init.headers.Authorization, `Bearer ${sentinel}`);
     assert.doesNotMatch(String(init.body), new RegExp(sentinel));
+    assert.equal(JSON.parse(init.body).model, "gpt-shared-config-model");
     return Response.json({
       output: [{
         content: [{
@@ -385,6 +558,8 @@ test("the configured OpenAI secret is sent only as authorization and never retur
     assert.doesNotMatch(await response.text(), new RegExp(sentinel));
   } finally {
     delete cloudflareEnvironment.OPENAI_API_KEY;
+    if (previousModel === undefined) delete cloudflareEnvironment.OPENAI_MODEL;
+    else cloudflareEnvironment.OPENAI_MODEL = previousModel;
     globalThis.fetch = originalFetch;
   }
 });

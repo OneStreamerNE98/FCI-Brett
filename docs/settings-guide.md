@@ -47,7 +47,7 @@ The left side of the screen is the main navigation. On a phone, tap the menu but
 - **Projects** — active and finished jobs, each managed on its own.
 - **Schedule** — crews and field scheduling (a planned future page).
 - **Inbox** — the Gmail project inbox for reviewing and filing emails.
-- **AI Assistant** — ask questions about one project's saved records.
+- **AI Assistant** — ask questions about one selected project's saved records.
 - **Reports** — current totals and flooring performance numbers.
 - **Settings** — your personal preferences, and (for admins) company setup.
 
@@ -169,6 +169,8 @@ Open **Settings → My settings** to manage the preferences tied to your own sig
 
 Click **Save my settings** to keep your changes.
 
+If you are an office user rather than an administrator, **My settings** also shows a read-only **AI assistant** card. It displays the provider, whether the company API key is **Configured** or **Missing**, the model name, and whether each assistant feature is On or Off. It never displays the key itself. Administrators manage those company-wide switches in **Settings → Workflow & notifications**.
+
 **Reordering and hiding sections (page layouts).** On the **Overview** and **Reports** pages you can arrange the layout for yourself. Click the gear (**Edit layout**) button in the page header, then:
 
 - **Move up** / **Move down** — or drag — to reorder sections.
@@ -250,7 +252,9 @@ Your personal defaults, tied to your own login. Two settings here are **working 
 
 Below those is **My notification preferences**. Those checkboxes are **saved but planned** — they are stored for a future personal-alert feature. Ticking them does not change any alert today, because notifications currently run at the company level only. That is the honest state, and the panel says so.
 
-*This is the only section a non-administrator sees. Administrators use the company sections below for anything organization-wide.*
+Office users also see the company **AI assistant** card here in a read-only form. It shows only whether the key is **Configured** or **Missing**, the model name, and the four feature states, but no control for changing them. Administrators use the company sections below for organization-wide settings.
+
+*My settings is the only Settings section a non-administrator sees.*
 
 ### 2. Google Workspace
 
@@ -282,7 +286,7 @@ One column is deliberately yours to edit: **Account Notes**. Everything else on 
 Simple office defaults — client and crew reminder hours, and an office notification email — plus two things worth knowing:
 
 - **Google Chat notification routing.** You can review which four event types are allowed to notify which approved Google Chat space, and switch each on individually. It is off by default. Webhook addresses are secrets that live in the hosting environment and never appear in the app or the browser.
-- **The AI assistant card** (planned, packet AI-08) will live here. Today the assistant already works from a company key set in the hosting environment; the in-Settings card that shows its status and toggles is planned. See "The AI assistant setup" below.
+- **The AI assistant card.** Administrators see the provider (**OpenAI**), the company API-key state (**Configured** or **Missing**), and the configured model name — never the key value. Four switches control **Organization-wide answers**, **Inbox filing suggestions**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured. Organization-wide answers are marked **In development** because the server gate is wired but the current Assistant screen still asks for one selected project; the other three switches are visibly **Planned** until their later AI consumers ship. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
 
 > [SCREENSHOT 7 — see Screenshot index]
 
@@ -395,10 +399,22 @@ Keep this straight in your head: the **app login** (who may open the app) is del
 
 **Do I need a ChatGPT account? No.** Nobody on your team ever links a personal ChatGPT or OpenAI account, and nobody logs into OpenAI. The assistant runs on **one company OpenAI API key** that the administrator (in practice, the developer) sets once in the hosting environment's settings — not in the app, not in the code, not in email. Every user simply shares that one company key behind the scenes.
 
-Because it is a secret, the app never shows the key itself. It shows only whether it is **Configured** or **Missing**. When it is Missing, the app disables the AI buttons and says plainly to add the company key to the hosting environment — it never fakes a ready state. (The Settings card that displays this and its toggles is the planned AI-08 card in **Workflow & notifications**; the assistant itself already answers questions today when the key is configured.)
+Because it is a secret, the app never shows the key itself. The **AI assistant** Settings card shows only whether it is **Configured** or **Missing**, together with **OpenAI** as the provider and the model name. Administrators find the editable card in **Settings → Workflow & notifications**; office users see the same information and feature states read-only in **My settings**. When the key is Missing, the feature controls are unavailable and the app says plainly to add the company key to the hosting environment — it never fakes a ready state.
+
+The four company-wide feature switches are **Organization-wide answers**, **Inbox filing suggestions**, **Reply drafting**, and **Task extraction from meetings**. They are on by default when the key is Configured. The organization-wide server gate works now, but its row stays **In development** until the Assistant page exposes the broader Ask flow. The later Inbox, drafting, and task-extraction packets consume their saved switches, so those three rows stay marked **Planned**; storing a switch does not make an unfinished feature operational.
+
+On the **AI Assistant** page, **What you can ask** starts collapsed so it does not crowd the question workspace. Expand it for five examples:
+
+- **Which projects have open callbacks?**
+- **What did we decide in the last Hendricks meeting?**
+- **What tasks are overdue?**
+- **Show installation dates for active commercial projects.**
+- **Find the change order document for project 2026-014.**
+
+The help also explains that answers come only from saved records and Drive files, every answer cites its sources, and the assistant never sends anything. Email bodies become searchable only after they are filed as Drive copies; phone calls are saved as meetings.
 
 What the assistant does and does not do, so you can set expectations:
-- It is **read-only**. It answers questions about a single project only from that project's actual saved records, and every answer shows its sources for you to open and check.
+- It is **read-only**. The current screen answers about one selected project, and every grounded answer shows its sources for you to open and check. The broader organization-wide route is wired behind its saved feature switch, but the page does not expose that Ask flow yet.
 - It will tell you when evidence is missing rather than guess.
 - It never sends email, changes records, or takes any action on its own.
 
@@ -469,7 +485,7 @@ Consolidated list of every screenshot placeholder, with whether an existing capt
 | 4 | Part 1 · Inbox | Gmail project inbox: a message with its suggested-project chip, **Review & copy** and **Draft reply** buttons, and the mailbox-bucket selector | `inbox-1280.png` / `inbox-390.png` can likely serve; confirm the suggested-project chip is visible, else **fresh**. |
 | 5 | Part 2 · Settings nav | Settings left navigation: the "For you" group with My settings, and the "Workspace & company setup" group listing the seven company sections | Partial: `settings-1280.png` shows Settings. **Needs fresh** if it does not show the admin nav with all sections. |
 | 6 | Part 2 · Client Directory | Client Directory & Project Register panel: the two mirror cards with last-synced times and the **Sync now** button | **Needs fresh.** No baseline of this sub-panel. |
-| 7 | Part 2 · Workflow & notifications | Reminder-hour fields, the office notification email, and the Google Chat notification-routing card | **Needs fresh.** No baseline of this sub-panel. |
+| 7 | Part 2 · Workflow & notifications | Reminder-hour fields, the office notification email, the AI assistant status and feature switches, and the Google Chat notification-routing card | **Needs fresh.** No baseline of this sub-panel. |
 | 8 | Part 2 · Data & security | The four safeguards listed with their icons | **Needs fresh.** No baseline of this sub-panel. |
 | 9 | Part 2 · Google Workspace banner | Status banner reading "Simulation ready" with the SIMULATION tag and "Stage 1 of 4", above the four collapsible stage cards | **Needs fresh.** No baseline of the Google Workspace panel. |
 | 10 | Part 2 · Stage 2 Connect | Stage 2 expanded: the "Company account authorization" card with **Connect Google Workspace** and the admin **Connection health** expander | **Needs fresh.** |

@@ -7,6 +7,7 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
 const expectedComponents = new Map([
+  ["AiAssistantSettingsCard.tsx", ["AiAssistantSettingsCard"]],
   ["ChatNotificationSettingsCard.tsx", ["ChatNotificationSettingsCard"]],
   ["DataSecurityPanel.tsx", ["DataSecurityPanel"]],
   ["DirectorySyncPanel.tsx", ["DirectorySyncPanel"]],
