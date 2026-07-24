@@ -14,7 +14,13 @@ const featureStateCompactLabels: Record<FeatureState, string> = {
   Planned: "Planned",
 };
 
-export function FeatureStateBadge({ state }: { state: FeatureState }) {
+export function FeatureStateBadge({ state, variant = "default" }: { state: FeatureState; variant?: "default" | "compact" }) {
   const className = state.toLowerCase().replaceAll(" ", "-");
-  return <span className={`feature-state feature-state-${className}`} data-compact-label={featureStateCompactLabels[state]} title={featureStateDescriptions[state]}>{state}</span>;
+  const compact = variant === "compact";
+  return <span
+    className={`feature-state feature-state-${className}${compact ? " feature-state-compact" : ""}`}
+    data-compact-label={compact ? undefined : featureStateCompactLabels[state]}
+    aria-label={compact ? state : undefined}
+    title={compact ? `${state}: ${featureStateDescriptions[state]}` : featureStateDescriptions[state]}
+  >{compact ? featureStateCompactLabels[state] : state}</span>;
 }

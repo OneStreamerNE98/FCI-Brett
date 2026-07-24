@@ -236,10 +236,7 @@ test("rejects new undersized fixed interactive controls while preserving audited
 
 test("keeps rendered typography at the audited 12px minimum", async () => {
   const css = (await read("app/globals.css")).replace(/\/\*[\s\S]*?\*\//g, "");
-  const allowedZeroSelectors = new Set([
-    ".main-nav>a>.feature-state",
-    ".sidebar:not(.collapsed) .main-nav>a>.feature-state",
-  ]);
+  const allowedZeroSelectors = new Set();
   const violations = [];
 
   for (const match of css.matchAll(/\bfont-size\s*:\s*(-?(?:\d+(?:\.\d*)?|\.\d+))(px|rem)?(?=\s*(?:!important\s*)?[;}])/gi)) {
@@ -260,7 +257,41 @@ test("keeps rendered typography at the audited 12px minimum", async () => {
     }
   }
 
+  assert.equal(allowedZeroSelectors.size, 0, "The zero-size typography allowlist must stay empty.");
   assert.deepEqual(violations, [], `Typography below 12px:\n${violations.join("\n")}`);
+});
+
+test("DES-04 keeps shell controls honest, reachable, and responsive", async () => {
+  const [css, shell, badge] = await Promise.all([
+    read("app/globals.css"),
+    read("app/FloorOpsApp.tsx"),
+    read("app/components/FeatureStateBadge.tsx"),
+  ]);
+
+  assert.doesNotMatch(css, /\bfont-size\s*:\s*0\b/);
+  assert.doesNotMatch(css, /\bright\s*:\s*-13px\b/);
+  assert.match(css, /\.sidebar-collapse\{[^}]*width:var\(--target-min\);min-height:var\(--target-min\)/);
+  assert.match(css, /\.sidebar\.collapsed \.main-nav>a\{[^}]*min-height:var\(--target-min\)/);
+  assert.match(css, /\.sidebar\.collapsed \.sidebar-collapse\{position:static/);
+  assert.match(css, /\.topbar \{[^}]*gap:14px/);
+  assert.match(css, /\.topbar\.topbar-hidden\{[^}]*translateY/);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)/);
+  assert.match(css, /\.topbar\{transition:none!important\}/);
+  assert.match(css, /@media \(max-width:390px\)\{[\s\S]*?\.workspace-blueprint-folder-row>code\{[^}]*grid-column:1\/-1[^}]*overflow-wrap:normal[^}]*word-break:normal/);
+
+  assert.match(shell, /const MOBILE_TOPBAR_SCROLL_THRESHOLD = 8;/);
+  assert.match(shell, /window\.addEventListener\("scroll", handleScroll, \{ passive: true \}\)/);
+  assert.match(shell, /window\.requestAnimationFrame\(applyScrollDirection\)/);
+  assert.match(shell, /topbar\?\.addEventListener\("focusin", handleFocusIn\)/);
+  assert.equal(shell.match(/aria-label=\{`\$\{label\} · \$\{state\}`\}/g)?.length, 2);
+  assert.match(shell, /aria-label="People & Access · In development"/);
+  assert.equal(shell.match(/<FeatureStateBadge state=\{state\} variant="compact" \/>/g)?.length, 2);
+  assert.match(shell, /<FeatureStateBadge state="In development" variant="compact" \/>/);
+
+  assert.match(badge, /\{compact \? featureStateCompactLabels\[state\] : state\}/);
+  assert.match(badge, /data-compact-label=\{compact \? undefined : featureStateCompactLabels\[state\]\}/);
+  assert.match(badge, /aria-label=\{compact \? state : undefined\}/);
+  assert.match(badge, /title=\{compact \? `\$\{state\}: \$\{featureStateDescriptions\[state\]\}` : featureStateDescriptions\[state\]\}/);
 });
 
 test("keeps the design-critique interaction contracts in the rendered app", async () => {
