@@ -2365,7 +2365,7 @@ Google Workspace setup-flow hints are grandfathered outside the budget);
 label-fix beats hint.
 
 ### HINT-01 · InfoHint generalization (small-medium; takes the globals.css lock briefly, in a free window after DES-04/05/07)
-**Status:** In progress — `codex/hint01-infohint-generalization`, July 24, 2026. Guide impact: none (shared primitive relocation and anchoring only; no user-facing guidance content changes).
+**Status:** In review — PR #168, July 24, 2026. Source-only and undeployed. Guide impact: none (shared primitive relocation and anchoring only; no user-facing guidance content changes).
 
 **Why:** `WorkspaceInfoHint` is styled by global `.workspace-info-hint*` classes
 named for the setup surface and its tooltip anchors bottom-right (`right:0`),
