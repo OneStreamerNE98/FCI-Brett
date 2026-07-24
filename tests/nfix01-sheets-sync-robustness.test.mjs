@@ -273,7 +273,7 @@ test("two overlapping live directory syncs for one connection cannot double-appe
   assert.equal(leases.held.size, 0);
 });
 
-test("an injected Project Register replacement failure leaves the prior rows visible", async () => {
+test("an injected Project Register replacement failure stays atomic after the one idempotent retry", async () => {
   const provider = sheetProvider({ failProjectReplacement: true });
   const before = provider.snapshot().projectRows;
   const store = persistence({ projects: [projectRow()] });
@@ -291,7 +291,7 @@ test("an injected Project Register replacement failure leaves the prior rows vis
   const after = provider.snapshot();
   assert.deepEqual(after.projectRows, before);
   assert.equal(after.clearCalls, 0);
-  assert.equal(after.atomicReplacementAttempts, 1);
+  assert.equal(after.atomicReplacementAttempts, 2);
   assert.equal(leases.completions.length, 0);
   assert.deepEqual(leases.failures.map(({ errorCode }) => errorCode), ["sheets_request_failed"]);
 });

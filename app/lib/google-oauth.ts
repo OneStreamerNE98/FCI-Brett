@@ -1,4 +1,8 @@
 import { GoogleIntegrationError } from "./google-integration-error";
+import {
+  fetchGoogleProvider,
+  type GoogleFetchResilienceDependencies,
+} from "./google-fetch-resilience";
 import { resolveDriveWorkspace } from "./google-workspace";
 
 export { GoogleIntegrationError } from "./google-integration-error";
@@ -102,6 +106,7 @@ export type GoogleOauthDependencies = Readonly<{
   persistence: GoogleOauthPersistence;
   secrets: GoogleSecretStore;
   fetch: GoogleFetch;
+  resilience?: GoogleFetchResilienceDependencies;
   now: () => number;
   randomUUID: () => string;
   randomBytes?: (byteLength: number) => Uint8Array;
@@ -559,14 +564,15 @@ async function tokenRequest(
   body: URLSearchParams,
   purpose: GoogleTokenRequestPurpose,
   fetcher: GoogleFetch,
+  resilience: GoogleFetchResilienceDependencies = {},
 ) {
   let response: Response;
   try {
-    response = await fetcher(GOOGLE_TOKEN_URL, {
+    response = await fetchGoogleProvider(fetcher, GOOGLE_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
-    });
+    }, {}, resilience);
   } catch {
     throw new GoogleIntegrationError("token_service_unavailable", "Google authorization is temporarily unavailable. Try again.", 503);
   }
@@ -602,6 +608,7 @@ export async function exchangeGoogleAuthorizationCode(
   code: string,
   verifier: string,
   fetcher: GoogleFetch,
+  resilience: GoogleFetchResilienceDependencies = {},
 ) {
   if (!config.clientId || !config.clientSecret || !config.redirectUri) {
     throw new GoogleIntegrationError("configuration_required", "Google Drive setup is incomplete.", 503);
@@ -614,11 +621,26 @@ export async function exchangeGoogleAuthorizationCode(
     grant_type: "authorization_code",
     code_verifier: verifier,
   });
-  return tokenSet(await tokenRequest(body, "authorization-code", fetcher));
+  return tokenSet(await tokenRequest(body, "authorization-code", fetcher, resilience));
 }
 
-export async function fetchGoogleUserProfile(accessToken: string, fetcher: GoogleFetch) {
-  const response = await fetcher(GOOGLE_USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
+export async function fetchGoogleUserProfile(
+  accessToken: string,
+  fetcher: GoogleFetch,
+  resilience: GoogleFetchResilienceDependencies = {},
+) {
+  let response: Response;
+  try {
+    response = await fetchGoogleProvider(
+      fetcher,
+      GOOGLE_USERINFO_URL,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+      { idempotent: true },
+      resilience,
+    );
+  } catch {
+    throw new GoogleIntegrationError("google_identity_unavailable", "Google account identity could not be verified.", 409);
+  }
   const data = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok || !data || typeof data.sub !== "string" || typeof data.email !== "string") {
     throw new GoogleIntegrationError("google_identity_unavailable", "Google account identity could not be verified.", 409);
@@ -719,11 +741,11 @@ export async function disconnectGoogleConnection(
         dependencies.secrets,
         `google-connection:${config.connectionKey}:refresh`,
       );
-      const response = await dependencies.fetch(GOOGLE_REVOCATION_URL, {
+      const response = await fetchGoogleProvider(dependencies.fetch, GOOGLE_REVOCATION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token: refreshToken }),
-      });
+      }, {}, dependencies.resilience);
       revocationRequested = response.ok;
     } catch {
       // The local disconnect still proceeds, ensuring this app no longer retains a usable token.
@@ -799,7 +821,7 @@ export async function getGoogleAccessToken(
       client_secret: config.clientSecret ?? "",
       refresh_token: refreshToken,
       grant_type: "refresh_token",
-    }), "refresh-token", dependencies.fetch);
+    }), "refresh-token", dependencies.fetch, dependencies.resilience);
     await dependencies.persistence.markConnectionRefreshSucceeded(connection.id, dependencies.now());
     return String(data.access_token);
   } catch (error) {
@@ -856,8 +878,9 @@ export function createGoogleOauthOperations(
     consumeOauthAttempt: (state: string, browserNonce: string, requesterEmail: string) =>
       consumeGoogleOauthAttempt(config, state, browserNonce, requesterEmail, dependencies),
     exchangeAuthorizationCode: (code: string, verifier: string) =>
-      exchangeGoogleAuthorizationCode(config, code, verifier, dependencies.fetch),
-    fetchUserProfile: (accessToken: string) => fetchGoogleUserProfile(accessToken, dependencies.fetch),
+      exchangeGoogleAuthorizationCode(config, code, verifier, dependencies.fetch, dependencies.resilience),
+    fetchUserProfile: (accessToken: string) =>
+      fetchGoogleUserProfile(accessToken, dependencies.fetch, dependencies.resilience),
     connectionStatus: () => getGoogleConnectionStatus(config, dependencies),
     disconnect: () => disconnectGoogleConnection(config, dependencies),
     saveConnection: (tokens: GoogleTokenSet, profile: GoogleUserProfile, actor: string) =>
