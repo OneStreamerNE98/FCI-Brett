@@ -1614,7 +1614,7 @@ suites pass.
 **Deps:** KPI-02. Effort: medium.
 
 ### KPI-04 · PostgreSQL parity and rehearsal coverage for KPI fields (small, after KPI-02/03 + BE-06)
-**Status:** In progress — `codex/kpi04-postgres-parity`, July 24, 2026. Source-only and unapplied.
+**Status:** In review — PR #164, July 24, 2026. Source-only and unapplied; production PostgreSQL migration v9 has not been applied.
 
 **Why:** Guardrail: the D1 dev schema and the production PostgreSQL boundary must not
 drift. The postgres `projects` table (migration v1) predates the KPI columns.
