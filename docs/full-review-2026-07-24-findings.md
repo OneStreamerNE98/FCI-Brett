@@ -462,7 +462,7 @@ visibility, not action. New.
 **Effort:** small-medium. **Cost:** $0.
 
 ### FIX-18 · Stage-3 row status reconciliation (P2 H-1; small-medium)
-**Status:** In review — PR #154, July 23, 2026. Guide impact: none. Source-only and undeployed.
+**Status:** Complete — PR #154, July 23, 2026. Source-only and undeployed. Opus review: zero findings — locked-wins precedence enforced at both the derivation layer (downstream groups AND with upstream completion) and the render layer (DONE only when unlocked, removed from the state union); the H-1 repro is a mutation-sensitive e2e that fails on pre-fix code; stage completion strictly tightened, zero-template vacuous rule intact.
 
 > Beyond the orchestrator's enumerated FIX-13..17 set — proposed here because H-1 is
 > a verified P2 (found by three lenses) with no existing owner and must have a
