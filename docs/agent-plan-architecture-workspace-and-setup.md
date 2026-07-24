@@ -2088,7 +2088,7 @@ each PR.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-03 · Provider port + org-wide agentic Q&A (large, after AI-01; API/lib only — no FloorOpsApp)
-**Status:** In review — PR #145, July 23, 2026. Source-only and undeployed.
+**Status:** Complete — PR #145, July 23, 2026 (including the reviewed revision commit). Source-only and undeployed; runtime AI answers require the owner's `OPENAI_API_KEY` in hosted settings (records-only fallback until then). Fable two-lens review + revision verify: budgets enforced in code with literal law pins, citation re-validation and injection fixtures proven, outbound-host/one-fetch guard mutation-tested, single-project behavior byte-identical, AI-09's outbound guard pulled forward. Residuals for AI-09's reconcile: single-project evidence includes financial values for all office users (legacy byte-identity) while every org-wide tool redacts for non-admin — align there; two informational P3s recorded in the review log (post-timeout abort semantics blur; 429 test imports the shared limit constant).
 
 **Why:** the assistant answers only single-project questions from one
 pre-built evidence block; the owner needs org-wide questions answered live
