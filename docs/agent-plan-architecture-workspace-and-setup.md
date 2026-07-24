@@ -58,6 +58,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
 
 ## Global guardrails (include in every packet)
 
+0. **Guide currency (added July 23, 2026).** Any packet touching `app/settings/**`
+   or the FloorOpsApp settings surfaces must update `docs/settings-guide.md` or
+   state "Guide impact: none" in its Status line on completion.
 1. **Secrets never touch the repo or an agent.** OAuth client secrets, token-encryption
    keys, and passwords go only into ChatGPT Sites runtime environment settings marked as
    secrets (development) or Secret Manager (production). Items that need them are OWNER
@@ -774,13 +777,29 @@ probe with the current `calendar.events` scope; adopt-by-ID into the SET-13 regi
 After SET-13.
 **Accept:** route tests for all three states; panel strings correct; docs updated.
 
-### SET-06 · Truthful labels for persisted-but-inert settings and review-first rules (small, after SET-01)
+### SET-06 · Truthful labels for persisted-but-inert settings and review-first rules (small, after SET-01; AMENDED July 23, 2026 — absorbs holistic-review FIX-14 + FIX-16)
 **Why:** Reminder hours and office-notification email save but nothing consumes them;
-custom filing rules are forced review-first, admitted only in a footnote.
+custom filing rules are forced review-first, admitted only in a footnote. The July
+23–24 holistic review (docs/full-review-2026-07-24-findings.md) confirmed two
+adjacent defects in the same truthful-labels territory, folded in here by owner
+decision: (H-3) "Appointment reminder hours" and "Client reminder hours" both bind
+to the SAME stored value (`settings.appointmentReminderHours` at
+WorkspaceDefaultsPanel.tsx:146 and :170) — editing one silently changes the other;
+(H-7) custom filing rules are inert (`getFilingRuleMatcher` returns null for
+non-built-ins) yet render with active-looking Action badges, priority rank, and
+"Enabled".
 **Do:** "Planned" FeatureStateBadge + one sentence ("Saved for the upcoming reminder
 worker — nothing sends yet") on the inert fields (still editable/persisted); per-rule
 "Review-first" pill on custom rules with tooltip; drop the now-duplicate footnote.
-**Accept:** labels render; saves unchanged; rendered tests updated.
+PLUS (H-3) split the shared reminder-hours state so Client reminder hours binds its
+own persisted field (additive settings key, widen-on-read; migrate nothing — the
+current single value seeds the appointment field only), with a regression test
+proving the two fields save independently; PLUS (H-7) render custom rules with an
+honest inert state ("Saved — not yet applied" chip in place of the active Action
+badge) until a real matcher consumes them.
+**Accept:** labels render; saves unchanged; rendered tests updated; the two
+reminder-hours fields round-trip independently (regression test); a custom rule's
+row visibly communicates it is not driving suggestions (pinned copy).
 
 ### SET-07 · Settings IA consistency: per-section badges, one deep-link label, nav/heading alignment (small, after SET-01)
 **Do:** Add `featureState` to SETTINGS_SECTIONS entries and render per-section badges
@@ -1432,6 +1451,22 @@ from a non-admin's rendered settings (render-invariance); displayed values match
 the configured environment exactly incl. multi-value lists and the unset
 fail-closed state; grep-guard that the new endpoint contains no write/mutation
 handler; no-store asserted; the People & Access note text pinned.
+
+### SET-37 · Settings & daily-use guide (docs-only; owner-approved July 23, 2026)
+**Status:** Complete — PR #150, July 23, 2026. Docs-only; the guide is a living
+document under the currency rule below.
+**Why:** no user manual existed; the owner wants a non-technical design &
+reference document for administrators AND end users, anchored on Settings.
+**Do:** publish `docs/settings-guide.md` — Part 1 "Using the app (everyone)" and
+Part 2 "Administering the app", written from source truth (on-screen strings
+verified), with a currency banner, glossary, and screenshot index (placeholders
+fill as captures are curated). Repo doc now; one "Open the guide" link card in
+Settings later as a small packet; no in-app viewer. CURRENCY RULE (added to
+Global guardrails): any packet touching `app/settings/**` or the FloorOpsApp
+settings surfaces must update the guide or state "Guide impact: none" in its
+Status line.
+**Accept:** guide published; truth pass against source (corrections logged);
+tracking guard green.
 **Effort:** small. **Cost:** $0. **Sequencing:** touches `DataSecurityPanel.tsx` +
 one small route — independent of the FloorOpsApp queue and the SET-29 series;
 assignable anytime.
@@ -2297,6 +2332,50 @@ statuses, and update Sequencing at a glance + the FloorOpsApp queue appendix.
 **Accept:** guard fails on a synthetic send-call injection; ledgers agree
 with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
+
+# Workstream H — In-app guidance (HINT)
+
+Owner-approved July 23, 2026 (forms-only decision). Design authority:
+`docs/infohint-audit-2026-07-24.md` — the curated table is normative: build ONLY
+recommended-tier rows (12 total: 9 now, 3 sequenced after AI-08); optional rows
+need a fresh owner opt-in; rejected rows stay rejected. Copy ships verbatim from
+the audit table with mutation-sensitive pins (the SET-29..34 pinning pattern).
+Budget law: ≤20 hints app-wide; label-fix beats hint.
+
+### HINT-01 · InfoHint generalization (small-medium; takes the globals.css lock briefly, in a free window after DES-04/05/07)
+**Why:** `WorkspaceInfoHint` is styled by global `.workspace-info-hint*` classes
+named for the setup surface and its tooltip anchors bottom-right (`right:0`),
+which clips on full-width/left-column form fields — 7 of the 12 recommended
+placements need anchoring flexibility.
+**Do:** move/rename the `.workspace-info-hint*` styles to a shared or
+module-scoped form; add left/right/auto tooltip anchoring; relocate the component
+to a shared components path.
+**Accept:** the 22 existing Settings→Google Workspace usages render
+byte-identically; `tests/workspace-setup-guidance.test.mjs` pins and the e2e
+stepper tooltip assertions stay green with mutation-sensitive updates only where
+class names change.
+
+### HINT-02-A · Adoption, extracted modules (small, after HINT-01)
+**Do:** the recommended-tier hints in `WorkspaceBlueprintEditor` (closes the
+settings-redesign-spec §4.1 mandate) and `InboxRulesPanel`'s RuleModal; the three
+WorkspaceDefaultsPanel reminder-hours hints WAIT for AI-08's merge (contended
+file) and for SET-06's wiring fix (their copy must describe the fixed behavior).
+**Accept:** audit-table copy verbatim, pinned; tooltip a11y (focus/Escape) per
+the existing e2e pattern.
+
+### HINT-02-B · Adoption, FloorOpsApp modals (small; ONE FloorOpsApp queue slot at the tail, after AI-02)
+**Do:** the recommended-tier hints in LeadModal, ClientModal, NewProjectModal,
+and FollowUpResultModal per the audit table — written against post-DES-05/07
+component names.
+**Accept:** audit-table copy verbatim, pinned; golden hashes unchanged (modals
+sit outside the hashed containers); axe green.
+
+### HINT-03 · Pinning + closure (small, last)
+**Do:** one representative e2e tooltip-semantics assertion per new surface
+family; verify the ≤20 budget holds; flip Workstream H statuses; reconcile the
+audit doc.
+**Accept:** every shipped hint copy-pinned mutation-sensitively; ledger and
+audit agree.
 
 ---
 
