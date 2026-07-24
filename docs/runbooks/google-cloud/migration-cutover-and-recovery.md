@@ -17,7 +17,10 @@ build/manual-approved image-publish workflow. The workflow publishes an
 immutable image candidate only; it cannot apply Terraform, deploy a service, or execute a Job.
 The outbox-drain definition is unscheduled and its shipped
 dispatcher registry is empty, so even a manual source execution is inert and
-claims no row. These definitions are source-only and unapplied.
+claims no row. Its separately gated service account can connect to Cloud SQL,
+write logs, and read only the pinned runtime database password; it cannot read
+the web runtime's session, employee-OIDC, Workspace OAuth, or token-key secrets.
+These definitions are source-only and unapplied.
 Every execution step remains blocked until the owner separately approves the protected GitHub
 environment and Workload Identity pool, exact image digest and Terraform plan,
 database principals and pinned secret versions, test-only rehearsal snapshot,
@@ -97,9 +100,17 @@ queue work.
 
 The fourth image entrypoint, `run-outbox-drain.mjs`, implements one bounded
 lease-recovery/claim/dispatch/complete-or-retry pass with version fencing and
-terminal dead lettering. Its nonempty registry law requires a dispatcher for
-every claimable event type, preventing a partial worker from leasing work it
-cannot handle. BE-14 deliberately registers none. No Cloud Scheduler trigger,
+terminal dead lettering. It claims one event immediately before dispatch so
+later work does not age behind a slow provider call. Its nonempty registry law
+requires a dispatcher for every claimable event type and an explicit
+replay-safe `eventKey` idempotency declaration, preventing a partial worker from
+leasing work it cannot handle. A later activation packet must prove each
+provider mutation deduplicates by that key and finishes inside the reviewed
+lease; version fencing alone cannot make an external side effect exactly once.
+Retry/dead-letter evidence uses a closed server-owned failure catalog; raw
+provider exception messages, tokens, and caller-selected codes are never
+persisted.
+BE-14 deliberately registers none. No Cloud Scheduler trigger,
 Cloud Tasks queue, Google provider adapter, Workspace job migration, Terraform
 apply, Job execution, or live configuration is authorized by this contract.
 

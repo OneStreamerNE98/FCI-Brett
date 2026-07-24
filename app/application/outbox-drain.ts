@@ -6,7 +6,9 @@ import {
 } from "../ports/outbox-repository.ts";
 
 export const OUTBOX_DRAIN_DEFAULTS = Object.freeze({
-  batchSize: 25,
+  // Claim immediately before one dispatch so later events do not spend their
+  // lease waiting behind a slow provider call.
+  batchSize: 1,
   maxBatches: 20,
   leaseDurationMs: 60_000,
   retryDelayMs: 30_000,
@@ -16,6 +18,11 @@ export const OUTBOX_DRAIN_DEFAULTS = Object.freeze({
 export type OutboxEventDispatcher = (
   event: ClaimedOutboxEvent,
 ) => Promise<void>;
+
+export type EventKeyIdempotentDispatcher = Readonly<{
+  idempotency: "event-key";
+  dispatch: OutboxEventDispatcher;
+}>;
 
 export type OutboxDispatcherRegistry = Readonly<{
   isEmpty: boolean;
@@ -41,21 +48,62 @@ export type OutboxDrainResult = Readonly<{
   staleTransitions: number;
 }>;
 
+export const OUTBOX_DISPATCH_FAILURE_CLASSIFICATIONS = Object.freeze({
+  providerTemporarilyUnavailable: Object.freeze({
+    code: "provider_temporarily_unavailable",
+    message: "The provider operation can be retried safely.",
+    retryable: true,
+  }),
+  providerRequestRejected: Object.freeze({
+    code: "provider_request_rejected",
+    message: "The provider rejected the durable operation.",
+    retryable: false,
+  }),
+  providerReauthorizationRequired: Object.freeze({
+    code: "provider_reauthorization_required",
+    message: "The provider connection requires reauthorization.",
+    retryable: false,
+  }),
+});
+
+export type OutboxDispatchFailureClassification =
+  keyof typeof OUTBOX_DISPATCH_FAILURE_CLASSIFICATIONS;
+
 export class OutboxDispatchFailure extends Error {
-  readonly code: string;
+  readonly classification: OutboxDispatchFailureClassification;
   readonly retryable: boolean;
   readonly retryDelayMs: number | null;
 
   constructor(input: Readonly<{
-    code: string;
-    message: string;
-    retryable: boolean;
+    classification: OutboxDispatchFailureClassification;
     retryDelayMs?: number;
   }>) {
-    super(input.message);
+    if (
+      !Object.hasOwn(
+        OUTBOX_DISPATCH_FAILURE_CLASSIFICATIONS,
+        input.classification,
+      )
+    ) {
+      throw new TypeError("Outbox dispatcher failure classification is not recognized");
+    }
+    const evidence = OUTBOX_DISPATCH_FAILURE_CLASSIFICATIONS[input.classification];
+    if (
+      input.retryDelayMs !== undefined
+      && (
+        !evidence.retryable
+        || !Number.isSafeInteger(input.retryDelayMs)
+        || input.retryDelayMs < 0
+        || input.retryDelayMs > 7 * 24 * 60 * 60 * 1_000
+      )
+    ) {
+      throw new TypeError(
+        "Retryable outbox failure delay must be an integer from 0 to 604800000",
+      );
+    }
+    super(evidence.message);
     this.name = "OutboxDispatchFailure";
-    this.code = input.code;
-    this.retryable = input.retryable;
+    this.classification = input.classification;
+    this.retryable = evidence.retryable;
     this.retryDelayMs = input.retryDelayMs ?? null;
   }
 }
@@ -78,7 +126,7 @@ function drainOptions(options: OutboxDrainOptions) {
       options.batchSize ?? OUTBOX_DRAIN_DEFAULTS.batchSize,
       "Outbox drain batch size",
       1,
-      100,
+      1,
     ),
     maxBatches: boundedInteger(
       options.maxBatches ?? OUTBOX_DRAIN_DEFAULTS.maxBatches,
@@ -125,17 +173,43 @@ function emptyResult(): OutboxDrainResult {
  * This prevents a partially composed worker from leasing unsupported work.
  */
 export function createOutboxDispatcherRegistry(
-  dispatchers: Partial<Record<OutboxEventType, OutboxEventDispatcher>>,
+  dispatchers: Partial<Record<OutboxEventType, EventKeyIdempotentDispatcher>>,
 ): OutboxDispatcherRegistry {
-  const configured = OUTBOX_EVENT_TYPES.filter(
-    (eventType) => typeof dispatchers[eventType] === "function",
-  );
+  if (
+    Reflect.ownKeys(dispatchers).some(
+      (eventType) => (
+        typeof eventType !== "string"
+        || !OUTBOX_EVENT_TYPES.includes(eventType as OutboxEventType)
+      ),
+    )
+  ) {
+    throw new TypeError("The outbox dispatcher registry contains an unknown event type");
+  }
+  const configured = OUTBOX_EVENT_TYPES.filter((eventType) => {
+    const dispatcher = dispatchers[eventType];
+    if (dispatcher === undefined) return false;
+    if (
+      !dispatcher
+      || dispatcher.idempotency !== "event-key"
+      || typeof dispatcher.dispatch !== "function"
+    ) {
+      throw new TypeError(
+        "Outbox dispatchers must declare event-key idempotency before activation",
+      );
+    }
+    return true;
+  });
   if (configured.length > 0 && configured.length !== OUTBOX_EVENT_TYPES.length) {
     throw new TypeError(
       "An active outbox dispatcher registry must cover every claimable event type",
     );
   }
-  const handlers = Object.freeze({ ...dispatchers });
+  const handlers = Object.freeze(Object.fromEntries(
+    configured.map((eventType) => [
+      eventType,
+      dispatchers[eventType]!.dispatch,
+    ]),
+  )) as Readonly<Partial<Record<OutboxEventType, OutboxEventDispatcher>>>;
   return Object.freeze({
     isEmpty: configured.length === 0,
     async dispatch(event: ClaimedOutboxEvent) {
@@ -143,6 +217,9 @@ export function createOutboxDispatcherRegistry(
       if (!handler) {
         throw new Error("The outbox dispatcher registry is inert");
       }
+      // Provider side effects must deduplicate on this stable eventKey. The
+      // repository version fence protects database transitions, but cannot
+      // make an already-started external side effect exactly once.
       await handler(event);
     },
   });
@@ -156,12 +233,38 @@ export const NOOP_OUTBOX_DISPATCHER_REGISTRY =
   createOutboxDispatcherRegistry({});
 
 function dispatchFailure(error: unknown, defaultRetryDelayMs: number) {
-  if (error instanceof OutboxDispatchFailure) {
+  if (
+    error instanceof OutboxDispatchFailure
+    && Object.hasOwn(
+      OUTBOX_DISPATCH_FAILURE_CLASSIFICATIONS,
+      error.classification,
+    )
+  ) {
+    const evidence = OUTBOX_DISPATCH_FAILURE_CLASSIFICATIONS[
+      error.classification
+    ];
+    if (!evidence) {
+      return {
+        errorCode: "dispatcher_failed",
+        errorMessage: "The outbox dispatcher failed without safe provider detail.",
+        retryable: true,
+        retryDelayMs: defaultRetryDelayMs,
+      };
+    }
+    const retryDelayMs = (
+      evidence.retryable
+      && Number.isSafeInteger(error.retryDelayMs)
+      && error.retryDelayMs !== null
+      && error.retryDelayMs >= 0
+      && error.retryDelayMs <= 7 * 24 * 60 * 60 * 1_000
+    )
+      ? error.retryDelayMs
+      : defaultRetryDelayMs;
     return {
-      errorCode: error.code,
-      errorMessage: error.message,
-      retryable: error.retryable,
-      retryDelayMs: error.retryDelayMs ?? defaultRetryDelayMs,
+      errorCode: evidence.code,
+      errorMessage: evidence.message,
+      retryable: evidence.retryable,
+      retryDelayMs,
     };
   }
   return {

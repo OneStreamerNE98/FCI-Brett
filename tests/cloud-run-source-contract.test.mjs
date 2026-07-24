@@ -343,11 +343,11 @@ test("active outbox drain closes its max-one pool after a bounded pass", async (
   assert.deepEqual(repositoryCalls, [
     {
       method: "recover",
-      input: { batchSize: 25, retryDelayMs: 30_000, maxAttempts: 5 },
+      input: { batchSize: 1, retryDelayMs: 30_000, maxAttempts: 5 },
     },
     {
       method: "claim",
-      input: { batchSize: 25, leaseDurationMs: 60_000 },
+      input: { batchSize: 1, leaseDurationMs: 60_000 },
     },
   ]);
   assert.equal(closeCalls, 1);

@@ -58,9 +58,13 @@ import {
   type EmployeeOidcClient,
 } from "./employee-oidc.ts";
 import {
+  isProviderActionRouteKind,
   isProviderActionQueued,
+  normalizeProviderActionQueued,
+  normalizeProviderActionSuccess,
   ProviderDegradedError,
   type ProviderActionQueued,
+  type ProviderActionSuccessByRoute,
 } from "./provider-action-contract.ts";
 import { RequestRateLimitExceeded } from "./request-rate-limit.ts";
 
@@ -112,7 +116,23 @@ export type EmployeeRouteTestActions = Readonly<{
   createCalendarEvent?: (input: EmployeeRouteActionInput) => Promise<unknown>;
 }>;
 
-export type EmployeeRouteProviderActions = EmployeeRouteTestActions;
+export type EmployeeRouteProviderActions = Readonly<{
+  listFiles?: (
+    input: EmployeeRouteActionInput,
+  ) => Promise<ProviderActionSuccessByRoute["files"]>;
+  uploadFile?: (
+    input: EmployeeRouteActionInput,
+  ) => Promise<ProviderActionSuccessByRoute["files_upload"]>;
+  shareFile?: (
+    input: EmployeeRouteActionInput,
+  ) => Promise<ProviderActionSuccessByRoute["files_share"]>;
+  fileGmailMessage?: (
+    input: EmployeeRouteActionInput,
+  ) => Promise<ProviderActionSuccessByRoute["gmail_file"]>;
+  createCalendarEvent?: (
+    input: EmployeeRouteActionInput,
+  ) => Promise<ProviderActionSuccessByRoute["calendar_create"]>;
+}>;
 
 export type EmployeeRouteDeferredActions = Readonly<{
   /**
@@ -1828,8 +1848,9 @@ export function createEmployeeRequestRouter(
           ) {
             try {
               const queued = await enqueue(actionInput);
-              if (!isProviderActionQueued(queued)) throw error;
-              return deferredProviderAction(queued);
+              const normalizedQueued = normalizeProviderActionQueued(queued);
+              if (!normalizedQueued) throw error;
+              return deferredProviderAction(normalizedQueued);
             } catch {
               // Preserve the classified provider failure. A queue write that did
               // not durably commit must never be acknowledged as accepted.
@@ -1906,7 +1927,14 @@ export function createEmployeeRequestRouter(
         );
         return;
       }
-      jsonResponse(request, response, 200, { data: result.value });
+      if (!isProviderActionRouteKind(matched.kind)) {
+        throw new HttpFailure(404, "not_found");
+      }
+      const publicResult = normalizeProviderActionSuccess(
+        matched.kind,
+        result.value,
+      );
+      jsonResponse(request, response, 200, { data: publicResult });
     } catch (error) {
       if (response.headersSent) {
         response.destroy();

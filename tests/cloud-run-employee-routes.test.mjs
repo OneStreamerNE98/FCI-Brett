@@ -264,12 +264,37 @@ function projectForScope(scope, source) {
 function recordedActions(calls) {
   const action = (name) => async (input) => {
     calls.push({ name, input });
-    return {
-      action: name,
-      projectId: input.projectId,
-      fileId: input.fileId,
-      body: input.body,
-    };
+    if (name === "listFiles") {
+      return {
+        outcome: "listed",
+        files: [{
+          id: "provider-file-1",
+          name: "FCI TEST — DO NOT USE.pdf",
+          mimeType: "application/pdf",
+          byteSize: 1_024,
+          webUrl: "https://drive.google.com/open?id=provider-file-1",
+        }],
+      };
+    }
+    if (name === "uploadFile") {
+      return {
+        outcome: "uploaded",
+        file: {
+          id: "provider-file-2",
+          name: "FCI TEST — DO NOT USE.pdf",
+          mimeType: "application/pdf",
+          byteSize: 2_048,
+          webUrl: "https://drive.google.com/open?id=provider-file-2",
+        },
+      };
+    }
+    if (name === "shareFile") {
+      return { outcome: "shared", fileId: input.fileId };
+    }
+    if (name === "fileGmailMessage") {
+      return { outcome: "filed", operationId: "gmail-filing-1" };
+    }
+    return { outcome: "created", operationId: "calendar-event-1" };
   };
   return {
     listFiles: action("listFiles"),
@@ -1669,14 +1694,14 @@ test("authorized project file and provider routes receive only server-derived co
   });
   try {
     const cases = [
-      ["GET", `/api/v1/projects/${PROJECT_A}/files`, undefined, "listFiles"],
-      ["POST", `/api/v1/projects/${PROJECT_A}/files`, { filename: "test.pdf" }, "uploadFile"],
-      ["POST", `/api/v1/projects/${PROJECT_A}/files/${FILE_ID}/share`, { recipient: "test@example.test" }, "shareFile"],
-      ["POST", `/api/v1/projects/${PROJECT_A}/gmail/file`, { messageId: "message-1" }, "fileGmailMessage"],
-      ["POST", `/api/v1/projects/${PROJECT_A}/calendar/events`, { title: "FCI TEST — DO NOT USE" }, "createCalendarEvent"],
+      ["GET", `/api/v1/projects/${PROJECT_A}/files`, undefined, "listFiles", "listed"],
+      ["POST", `/api/v1/projects/${PROJECT_A}/files`, { filename: "test.pdf" }, "uploadFile", "uploaded"],
+      ["POST", `/api/v1/projects/${PROJECT_A}/files/${FILE_ID}/share`, { recipient: "test@example.test" }, "shareFile", "shared"],
+      ["POST", `/api/v1/projects/${PROJECT_A}/gmail/file`, { messageId: "message-1" }, "fileGmailMessage", "filed"],
+      ["POST", `/api/v1/projects/${PROJECT_A}/calendar/events`, { title: "FCI TEST — DO NOT USE" }, "createCalendarEvent", "created"],
     ];
 
-    for (const [method, path, payload, action] of cases) {
+    for (const [method, path, payload, action, outcome] of cases) {
       const response = await running.request(path, {
         method,
         ...(method === "POST"
@@ -1685,8 +1710,8 @@ test("authorized project file and provider routes receive only server-derived co
       });
       assert.equal(response.status, 200, action);
       const body = await json(response);
-      assert.equal(body.data.action, action);
-      assert.equal(body.data.projectId, PROJECT_A);
+      assert.equal(body.data.outcome, outcome);
+      assert.doesNotMatch(JSON.stringify(body.data), /context|projectId|body/);
     }
 
     assert.deepEqual(running.actionCalls.map(({ name }) => name), cases.map((entry) => entry[3]));
@@ -1700,6 +1725,75 @@ test("authorized project file and provider routes receive only server-derived co
       assert.equal(JSON.stringify(input).includes(CSRF_CREDENTIAL), false);
     }
     assert.equal(running.actionCalls[2].input.fileId, FILE_ID);
+  } finally {
+    await running.close();
+  }
+});
+
+test("every provider success route rejects raw or secret-bearing response fields before serialization", async () => {
+  const providerSecret = "test-only-provider-success-access-token";
+  const running = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    providerActions: {
+      async listFiles() {
+        return { outcome: "listed", files: [], accessToken: providerSecret };
+      },
+      async uploadFile() {
+        return {
+          outcome: "uploaded",
+          file: {
+            id: "provider-file-2",
+            name: "FCI TEST — DO NOT USE.pdf",
+            mimeType: "application/pdf",
+            byteSize: 2_048,
+            webUrl: null,
+          },
+          rawGoogleResponse: providerSecret,
+        };
+      },
+      async shareFile() {
+        return { outcome: "shared", fileId: FILE_ID, credentials: providerSecret };
+      },
+      async fileGmailMessage() {
+        return {
+          outcome: "filed",
+          operationId: "gmail-filing-1",
+          refreshToken: providerSecret,
+        };
+      },
+      async createCalendarEvent() {
+        return {
+          outcome: "created",
+          operationId: "calendar-event-1",
+          authorization: providerSecret,
+        };
+      },
+    },
+  });
+  try {
+    const cases = [
+      ["GET", `/api/v1/projects/${PROJECT_A}/files`, undefined],
+      ["POST", `/api/v1/projects/${PROJECT_A}/files`, { filename: "test.pdf" }],
+      ["POST", `/api/v1/projects/${PROJECT_A}/files/${FILE_ID}/share`, { recipient: "test@example.test" }],
+      ["POST", `/api/v1/projects/${PROJECT_A}/gmail/file`, { messageId: "message-1" }],
+      ["POST", `/api/v1/projects/${PROJECT_A}/calendar/events`, { title: "FCI TEST — DO NOT USE" }],
+    ];
+
+    for (const [method, path, payload] of cases) {
+      const response = await running.request(path, {
+        method,
+        ...(method === "POST"
+          ? { sameOrigin: true, csrf: true, json: payload }
+          : {}),
+      });
+      assert.equal(response.status, 503, path);
+      const responseText = await response.text();
+      assert.deepEqual(JSON.parse(responseText), {
+        error: "provider_degraded",
+        retryable: false,
+      });
+      assert.doesNotMatch(responseText, new RegExp(providerSecret));
+    }
   } finally {
     await running.close();
   }
@@ -1834,11 +1928,17 @@ test("retryable Gmail degradation acknowledges only a durably queued operation",
 });
 
 test("Gmail never acknowledges a missing or malformed durable queue write", async () => {
+  const queueSecret = "test-only-queue-refresh-token";
   for (const [label, enqueueGmailFiling] of [
     ["write failure", async () => {
       throw new Error("test-only queue unavailable");
     }],
     ["malformed result", async () => ({ outcome: "queued", operationId: "" })],
+    ["expanded secret-bearing result", async () => ({
+      outcome: "queued",
+      operationId: "must-not-be-acknowledged",
+      refreshToken: queueSecret,
+    })],
   ]) {
     const running = await startHarness({
       role: AUTHORIZATION_ROLES.administrator,
@@ -1864,10 +1964,12 @@ test("Gmail never acknowledges a missing or malformed durable queue write", asyn
       );
       assert.equal(response.status, 503, label);
       assert.equal(response.headers.get("retry-after"), "19", label);
-      assert.deepEqual(await json(response), {
+      const responseText = await response.text();
+      assert.deepEqual(JSON.parse(responseText), {
         error: "provider_degraded",
         retryable: true,
       }, label);
+      assert.doesNotMatch(responseText, new RegExp(queueSecret), label);
     } finally {
       await running.close();
     }

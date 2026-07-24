@@ -28,10 +28,11 @@ The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-f
 - Secret Manager-friendly password-file support. The password is non-enumerable in the in-memory configuration object and is never included in operational events.
 - One bounded `pg.Pool` per service instance, with copied query parameters, statement/lock/idle-transaction timeouts, connection lifetime limits, redacted idle-client error evidence, and ordered pool-then-connector shutdown.
 - Runtime composition for the completed PostgreSQL adapters. Client, project, lead, and project-meeting creation repositories are created per request so actor/idempotency metadata is not retained between requests; the outbox repository can be process-scoped.
-- A bounded outbox-drain application loop that recovers expired leases, claims a
-  small batch, dispatches outside the claim transaction, and version-fences
-  completion, retry, and dead-letter transitions. A nonempty dispatcher
-  registry must cover every claimable event type.
+- A bounded outbox-drain application loop that recovers expired leases, claims
+  one event immediately before dispatch, and version-fences completion, retry,
+  and dead-letter transitions. A nonempty dispatcher registry must cover every
+  claimable event type and every handler must declare replay-safe
+  `eventKey` idempotency before activation.
 - A fourth `run-outbox-drain.mjs` entrypoint with an empty shipped dispatcher
   registry. It returns without loading configuration or claiming rows until a
   later reviewed packet composes the complete dispatcher set.
@@ -67,7 +68,10 @@ boundary, not evidence of a transient Google outage and not a stub to bypass bef
 Gate C passes. Once a provider is composed, a classified outage instead returns
 `provider_degraded` with explicit retryability. Only an explicitly allowed durable
 queue commit may return `202 queued`; a failed queue write remains degraded rather than
-claiming acceptance.
+claiming acceptance. Provider success objects cross a separate closed,
+route-specific public-DTO boundary; extra fields, raw Google response objects,
+unsafe URLs, accessors, and unbounded values fail closed rather than reaching
+the JSON response.
 
 The production Google data connection is established by fresh consent, never by
 migrating the Sites credential. The development refresh token is AES-GCM ciphertext
@@ -192,7 +196,11 @@ For a future Cloud Run Job, use the exact reviewed service image and override on
 its command. A job exits `0` only after its bounded command completes and exits
 nonzero on failure; it does not start an HTTP server. The source-only outbox-drain
 Job flag defaults to false, creates no schedule or execution, and its shipped
-registry remains inert even if someone runs the built command locally.
+registry remains inert even if someone runs the built command locally. Its
+flag-gated service account is separate from the web runtime identity: it has
+only Cloud SQL client/log-writer roles and access to the pinned runtime
+database password, not session, employee-OIDC, Workspace OAuth, or token-key
+secrets.
 
 ## Pool and scaling budget
 

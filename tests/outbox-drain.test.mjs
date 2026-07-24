@@ -36,7 +36,10 @@ function claimedEvent(overrides = {}) {
 
 function completeRegistry(dispatch) {
   return createOutboxDispatcherRegistry(
-    Object.fromEntries(OUTBOX_EVENT_TYPES.map((eventType) => [eventType, dispatch])),
+    Object.fromEntries(OUTBOX_EVENT_TYPES.map((eventType) => [
+      eventType,
+      { idempotency: "event-key", dispatch },
+    ])),
   );
 }
 
@@ -123,9 +126,21 @@ test("an empty dispatcher registry is inert and never touches the outbox reposit
 test("an active registry must cover every claimable event type", () => {
   assert.throws(
     () => createOutboxDispatcherRegistry({
-      "client.created": async () => {},
+      "client.created": {
+        idempotency: "event-key",
+        dispatch: async () => {},
+      },
     }),
     /must cover every claimable event type/,
+  );
+  assert.throws(
+    () => createOutboxDispatcherRegistry(
+      Object.fromEntries(OUTBOX_EVENT_TYPES.map((eventType) => [
+        eventType,
+        async () => {},
+      ])),
+    ),
+    /must declare event-key idempotency/,
   );
   assert.equal(
     completeRegistry(async () => {}).isEmpty,
@@ -157,7 +172,7 @@ test("the drain recovers leases, claims a bounded batch, dispatches, and complet
       dispatched.push(event);
     }),
     {
-      batchSize: 7,
+      batchSize: 1,
       leaseDurationMs: 45_000,
       retryDelayMs: 12_000,
       maxAttempts: 6,
@@ -165,15 +180,16 @@ test("the drain recovers leases, claims a bounded batch, dispatches, and complet
   );
 
   assert.deepEqual(fake.calls.recover, [{
-    batchSize: 7,
+    batchSize: 1,
     retryDelayMs: 12_000,
     maxAttempts: 6,
   }]);
   assert.deepEqual(fake.calls.claim, [
-    { batchSize: 7, leaseDurationMs: 45_000 },
-    { batchSize: 7, leaseDurationMs: 45_000 },
+    { batchSize: 1, leaseDurationMs: 45_000 },
+    { batchSize: 1, leaseDurationMs: 45_000 },
   ]);
   assert.deepEqual(dispatched, [claimedEvent()]);
+  assert.equal(dispatched[0].eventKey, "client.created:test");
   assert.deepEqual(fake.calls.complete, [{
     eventId: EVENT_ID,
     expectedVersion: EVENT_VERSION,
@@ -189,6 +205,27 @@ test("the drain recovers leases, claims a bounded batch, dispatches, and complet
     deadLettered: 0,
     staleTransitions: 0,
   });
+});
+
+test("the drain enforces one immediately dispatched lease per claim", async () => {
+  const fake = fakeRepository();
+  await drainOutbox(
+    fake.repository,
+    completeRegistry(async () => {}),
+  );
+
+  assert.deepEqual(fake.calls.claim[0], {
+    batchSize: 1,
+    leaseDurationMs: 60_000,
+  });
+  await assert.rejects(
+    drainOutbox(
+      fake.repository,
+      completeRegistry(async () => {}),
+      { batchSize: 2 },
+    ),
+    /must be an integer from 1 to 1/,
+  );
 });
 
 test("the drain iterates until empty but stops at the configured batch ceiling", async () => {
@@ -233,9 +270,7 @@ test("retryable dispatcher failures schedule a bounded retry with safe evidence"
     fake.repository,
     completeRegistry(async () => {
       throw new OutboxDispatchFailure({
-        code: "google_temporarily_unavailable",
-        message: "The provider can be retried safely.",
-        retryable: true,
+        classification: "providerTemporarilyUnavailable",
         retryDelayMs: 17_000,
       });
     }),
@@ -248,8 +283,8 @@ test("retryable dispatcher failures schedule a bounded retry with safe evidence"
     expectedVersion: EVENT_VERSION,
     retryDelayMs: 17_000,
     maxAttempts: 5,
-    errorCode: "google_temporarily_unavailable",
-    errorMessage: "The provider can be retried safely.",
+    errorCode: "provider_temporarily_unavailable",
+    errorMessage: "The provider operation can be retried safely.",
   }]);
   assert.equal(result.scheduledForRetry, 1);
   assert.equal(result.deadLettered, 0);
@@ -261,9 +296,7 @@ test("non-retryable dispatcher failures dead-letter at the claimed attempt", asy
     fake.repository,
     completeRegistry(async () => {
       throw new OutboxDispatchFailure({
-        code: "provider_request_invalid",
-        message: "The provider rejected the durable payload.",
-        retryable: false,
+        classification: "providerRequestRejected",
       });
     }),
     { maxAttempts: 9, retryDelayMs: 42_000 },
@@ -274,8 +307,8 @@ test("non-retryable dispatcher failures dead-letter at the claimed attempt", asy
     expectedVersion: EVENT_VERSION,
     retryDelayMs: 42_000,
     maxAttempts: 2,
-    errorCode: "provider_request_invalid",
-    errorMessage: "The provider rejected the durable payload.",
+    errorCode: "provider_request_rejected",
+    errorMessage: "The provider rejected the durable operation.",
   }]);
   assert.equal(result.scheduledForRetry, 0);
   assert.equal(result.deadLettered, 1);
@@ -302,6 +335,46 @@ test("unknown dispatcher errors persist generic evidence instead of exception de
   assert.doesNotMatch(JSON.stringify(fake.calls), /access token secret/);
 });
 
+test("classified dispatcher failures persist only server-owned evidence", async () => {
+  const providerSecret = "test-only-refresh-token-secret";
+  const classified = new OutboxDispatchFailure({
+    classification: "providerTemporarilyUnavailable",
+    retryDelayMs: 9_000,
+  });
+  classified.message = providerSecret;
+  classified.cause = new Error(providerSecret);
+
+  const fake = fakeRepository();
+  await drainOutbox(
+    fake.repository,
+    completeRegistry(async () => {
+      throw classified;
+    }),
+  );
+
+  assert.deepEqual(fake.calls.fail[0], {
+    eventId: EVENT_ID,
+    expectedVersion: EVENT_VERSION,
+    retryDelayMs: 9_000,
+    maxAttempts: 5,
+    errorCode: "provider_temporarily_unavailable",
+    errorMessage: "The provider operation can be retried safely.",
+  });
+  assert.doesNotMatch(JSON.stringify(fake.calls), /refresh-token-secret/);
+
+  assert.throws(
+    () => new OutboxDispatchFailure({ classification: "__proto__" }),
+    /classification is not recognized/,
+  );
+  assert.throws(
+    () => new OutboxDispatchFailure({
+      classification: "providerRequestRejected",
+      retryDelayMs: 1,
+    }),
+    /Retryable outbox failure delay/,
+  );
+});
+
 test("stale completion and retry transitions are fenced and never counted as delivery", async () => {
   const first = claimedEvent();
   const second = claimedEvent({
@@ -322,9 +395,7 @@ test("stale completion and retry transitions are fenced and never counted as del
     completeRegistry(async (event) => {
       if (event.id === second.id) {
         throw new OutboxDispatchFailure({
-          code: "retryable_test",
-          message: "Retry later.",
-          retryable: true,
+          classification: "providerTemporarilyUnavailable",
         });
       }
     }),
@@ -339,8 +410,8 @@ test("stale completion and retry transitions are fenced and never counted as del
     expectedVersion: "12",
     retryDelayMs: 30_000,
     maxAttempts: 5,
-    errorCode: "retryable_test",
-    errorMessage: "Retry later.",
+    errorCode: "provider_temporarily_unavailable",
+    errorMessage: "The provider operation can be retried safely.",
   });
   assert.deepEqual(result, {
     active: true,

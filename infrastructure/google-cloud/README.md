@@ -93,8 +93,10 @@ defines:
   zero-retry migrations, a staging-only bounded core rehearsal, and one
   unscheduled outbox-drain pass. All use the same approved immutable
   service-image digest; migration/rehearsal retain their dedicated database
-  identities, while the drain uses the least-privilege runtime identity and
-  pinned runtime database secret. The rehearsal mounts one approved test-data
+  identities, while the drain has its own flag-gated identity with only Cloud
+  SQL client/log-writer roles and access to the pinned runtime database secret.
+  It cannot read the web session, employee-OIDC, Workspace OAuth, or token-key
+  secrets. The rehearsal mounts one approved test-data
   bucket read-only and requires an `fci_rehearsal_` schema; the drain has no
   active dispatcher in BE-14;
 - email notification channels, a project-scoped budget alert, Cloud SQL CPU,

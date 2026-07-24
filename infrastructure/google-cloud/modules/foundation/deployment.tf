@@ -449,6 +449,43 @@ resource "google_cloud_run_v2_job" "rehearsal" {
   ]
 }
 
+# BE-14 keeps the drain identity separate from the web runtime. The Job may
+# read only its pinned PostgreSQL credential; future connector secrets require
+# a separately reviewed dispatcher-composition packet.
+resource "google_service_account" "outbox_drain" {
+  count = local.outbox_drain_job_enabled ? 1 : 0
+
+  project      = var.owner_inputs.project_id
+  account_id   = "${local.name}-outbox"
+  display_name = "FCI Operations ${var.deployment_stage} outbox drain"
+  description  = "Dedicated outbox-drain identity; no web-session, employee-OIDC, Workspace OAuth, deployment, or job-execution authority."
+
+  depends_on = [
+    google_project_service.core,
+    terraform_data.deployment_gate,
+  ]
+}
+
+resource "google_project_iam_member" "outbox_drain" {
+  for_each = local.outbox_drain_job_enabled ? toset([
+    "roles/cloudsql.client",
+    "roles/logging.logWriter",
+  ]) : toset([])
+
+  project = var.owner_inputs.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.outbox_drain[0].email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "outbox_drain_postgres" {
+  count = local.outbox_drain_job_enabled ? 1 : 0
+
+  project   = var.owner_inputs.project_id
+  secret_id = google_secret_manager_secret.core["postgres-runtime-password"].secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.outbox_drain[0].email}"
+}
+
 # Source-only and unscheduled. BE-14 ships an empty dispatcher registry, so
 # even an owner-approved manual execution exits without claiming outbox rows.
 resource "google_cloud_run_v2_job" "outbox_drain" {
@@ -466,7 +503,7 @@ resource "google_cloud_run_v2_job" "outbox_drain" {
     parallelism = 1
 
     template {
-      service_account       = google_service_account.runtime[0].email
+      service_account       = google_service_account.outbox_drain[0].email
       timeout               = "300s"
       max_retries           = 0
       execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
@@ -570,8 +607,8 @@ resource "google_cloud_run_v2_job" "outbox_drain" {
   }
 
   depends_on = [
-    google_project_iam_member.core_identities,
-    google_secret_manager_secret_iam_member.runtime,
+    google_project_iam_member.outbox_drain,
+    google_secret_manager_secret_iam_member.outbox_drain_postgres,
     google_service_networking_connection.private_vpc,
     terraform_data.deployment_gate,
   ]

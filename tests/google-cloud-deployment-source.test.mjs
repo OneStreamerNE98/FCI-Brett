@@ -127,6 +127,58 @@ test("migration, rehearsal, and inert outbox-drain Jobs are bounded definitions,
   assert.doesNotMatch(deploymentDefinitions, /google_cloud_scheduler_job|jobs\.run/);
 });
 
+test("the outbox drain uses one flag-gated least-privilege identity", () => {
+  const identityDefinitions = deploymentDefinitions.match(
+    /resource "google_service_account" "outbox_drain"[\s\S]*?(?=# Source-only and unscheduled)/,
+  )?.[0] ?? "";
+  const jobDefinition = deploymentDefinitions.match(
+    /resource "google_cloud_run_v2_job" "outbox_drain"[\s\S]*$/,
+  )?.[0] ?? "";
+  const projectRoleDefinition = identityDefinitions.match(
+    /resource "google_project_iam_member" "outbox_drain"[\s\S]*?(?=\nresource )/,
+  )?.[0] ?? "";
+
+  assert.match(
+    identityDefinitions,
+    /resource "google_service_account" "outbox_drain"[\s\S]*?count\s*=\s*local\.outbox_drain_job_enabled\s*\?\s*1\s*:\s*0/,
+  );
+  assert.deepEqual(
+    [...projectRoleDefinition.matchAll(/"roles\/([^"]+)"/g)]
+      .map((match) => match[1])
+      .sort(),
+    ["cloudsql.client", "logging.logWriter"],
+  );
+  assert.doesNotMatch(projectRoleDefinition, /monitoring\.metricWriter/);
+  assert.equal(
+    countMatches(identityDefinitions, /roles\/secretmanager\.secretAccessor/g),
+    1,
+  );
+  assert.match(
+    identityDefinitions,
+    /google_secret_manager_secret\.core\["postgres-runtime-password"\]\.secret_id/,
+  );
+  assert.doesNotMatch(
+    identityDefinitions,
+    /session-secret|employee-oidc|workspace-oauth|workspace-token/,
+  );
+  assert.match(
+    jobDefinition,
+    /service_account\s*=\s*google_service_account\.outbox_drain\[0\]\.email/,
+  );
+  assert.doesNotMatch(
+    jobDefinition,
+    /service_account\s*=\s*google_service_account\.runtime\[0\]\.email/,
+  );
+  assert.match(
+    jobDefinition,
+    /google_secret_manager_secret_iam_member\.outbox_drain_postgres/,
+  );
+  assert.doesNotMatch(
+    jobDefinition,
+    /google_secret_manager_secret_iam_member\.runtime/,
+  );
+});
+
 test("image CI builds pull requests and only publishes approved main dispatches", () => {
   const triggerBlock = imageWorkflow.match(/on:\s*\n([\s\S]*?)\npermissions:/)?.[1] ?? "";
   assert.match(triggerBlock, /pull_request:/);

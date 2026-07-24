@@ -303,6 +303,15 @@ test("Cloud Run client graph is Cloudflare-free and provider routes remain uncom
     router,
     /503,[\s\S]*?\{ error: "feature_unavailable", retryable: false \}/,
   );
+  const providerActions = router.match(
+    /export type EmployeeRouteProviderActions = Readonly<\{([\s\S]*?)\n\}>;/,
+  )?.[1] ?? "";
+  assert.doesNotMatch(
+    router,
+    /export type EmployeeRouteProviderActions = EmployeeRouteTestActions/,
+  );
+  assert.doesNotMatch(providerActions, /Promise<unknown>/);
+  assert.match(router, /normalizeProviderActionSuccess\(\s*matched\.kind,/);
   assert.doesNotMatch(router, /createProductionGoogleOauth|google-workspace-oauth/);
   assert.doesNotMatch(composition, /createProductionGoogleOauth|google-workspace-oauth/);
 });
