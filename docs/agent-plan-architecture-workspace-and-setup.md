@@ -1505,7 +1505,7 @@ tracking guard green.
 **Effort:** small (drafting complete at publication). **Cost:** $0.
 
 ### SET-38 · Stage 3 declutter: collapsible subsections + border cleanup (owner enhancement, July 24, 2026; NOT prioritized)
-**Status:** In review — PR #190, July 24, 2026. Draft; source-only and undeployed. Guide impact: `docs/settings-guide.md` now documents the Stage 3 disclosure behavior.
+**Status:** Complete — PR #190, July 24, 2026. Source-only and undeployed. Opus fleet clean: the subsections byte-reuse the stage-shell aria contract, content proven byte-invariant, the deterministic initial-state rule implemented with manual-choices-win semantics, session-only. Two review fixes recorded: the pre-existing DES-04 chip e2e re-pointed to expand the blueprint subsection first, and the disclosure init gated on the latest status request (workspaceResourcesLoadIdRef) so an OAuth-callback double-load cannot initialize from a stale completion — proven by an out-of-order e2e. Guide impact: `docs/settings-guide.md` documents the Stage 3 disclosure behavior.
 
 **Why:** owner feedback (July 24, 2026): the Settings → Google Workspace →
 Stage 3 "Define & create your workspace" area is visually congested, and the
@@ -2244,7 +2244,7 @@ source-only/unapplied and the PR says so; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-02 · Assistant & Inbox surface extraction + phone-call option (medium; the ONLY FloorOpsApp packet — one queue slot, three serial PRs a→b→c)
-**Status:** In review — PR #187, July 24, 2026 (sub-PR b): InboxView, GmailReplyModal, inboxProjectSuggestion, and inboxDate are extracted with byte-identical executable bodies, copy, markup, and ARIA behavior; sub-PR a is merged (PR #182), and sub-PR c (phone-call option) follows only after this PR merges. The FloorOpsApp queue slot stays owned by this series until c merges. Source-only and undeployed. Guide impact: none.
+**Status:** In progress — `codex/ai02c-phone-call-option`, updated July 24, 2026: the serial claim advances to sub-PR c (phone-call meeting option — the packet's only behavior change; continuation nudge with the owner). Sub-PRs a (PR #182) and b (PR #187) are merged, both fleet-clean byte-identical extractions. The FloorOpsApp queue slot stays owned by this series until c merges. Source-only and undeployed. Guide impact: none.
 
 **Why:** AssistantView, InboxView, and GmailReplyModal live inside
 `FloorOpsApp.tsx`; without extraction every AI UI packet would serialize
@@ -2620,7 +2620,7 @@ and proceed in parallel with R1-R3.
 (AI-07a in PR #185); **AI-07b is the ACTIVE claim**
 (`codex/ai07b-task-assigned-event`, dispatched July 24 — do not re-claim the
 merged sub-PRs). AI-02 holds the FloorOpsApp queue slot mid-series (a merged,
-b in review, c remains). AI-04/AI-05/AI-06 follow AI-02 in the extracted modules
+a and b merged, c active). AI-04/AI-05/AI-06 follow AI-02 in the extracted modules
 (parallel-safe among themselves); AI-09 closes the workstream. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`

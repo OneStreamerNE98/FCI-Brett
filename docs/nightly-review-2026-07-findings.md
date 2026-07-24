@@ -152,7 +152,7 @@ untouched; guide impact stated per the currency rule.
 **Effort:** small-medium. **Cost:** $0.
 
 ### NFIX-02 · Google client resilience: timeouts, bounded retry, honest 429 (small)
-**Status:** In review — PR #189, July 24, 2026. Source-only and undeployed. Guide impact: none.
+**Status:** Complete — PR #189, July 24, 2026. Source-only and undeployed. Opus fleet verified: one shared google-fetch-resilience policy with a genuine 20-second OVERALL deadline (retry shares, never doubles, the budget) threaded through all four data clients plus the OAuth token/revocation/userinfo paths with a static no-bypass guard test; retries are per-call idempotent opt-in only (every opted-in site audited — the lone marked create, Calendar insert, is deliberately replay-safe via deterministic event id + 409-recover); Sheets append, Gmail draft/test-message, Drive creates, and OAuth grants are never auto-replayed; calendar 429 surfaces as 429. The directory-sync lease-outlive window is structurally closed (worst-case sync ≪ the 5-minute TTL). Residual P3s: Retry-After ignored on 429; the pre-existing userinfo 409 timeout mapping kept for flow consistency. Guide impact: none.
 
 **Why:** N8-2/N8-5/N8-6 — no data-client fetch carries a timeout; burst paths
 abort on the first transient 429; calendar hides its rate-limit signal as 503.
