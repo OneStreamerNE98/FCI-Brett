@@ -2244,6 +2244,8 @@ source-only/unapplied and the PR says so; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-02 · Assistant & Inbox surface extraction + phone-call option (medium; the ONLY FloorOpsApp packet — one queue slot, three serial PRs a→b→c)
+**Status:** In review — PR #182, July 24, 2026 (sub-PR a). Source-only and undeployed. Sub-PRs b and c remain serially gated on the prior sub-PR merge.
+
 **Why:** AssistantView, InboxView, and GmailReplyModal live inside
 `FloorOpsApp.tsx`; without extraction every AI UI packet would serialize
 behind the single-file queue forever. SET-01 proved the pattern.
