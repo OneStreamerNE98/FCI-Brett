@@ -9,7 +9,17 @@ const existingIndustryOptions = [
   "Other commercial",
 ] as const;
 
-const clients = [
+type MockClientRow = {
+  id: string;
+  client_code: string;
+  name: string;
+  status: string;
+  industry: string | null;
+  primary_contact_name: string;
+  primary_contact_email: string;
+};
+
+const clients: MockClientRow[] = [
   {
     id: "des08a1-client-001",
     client_code: "RES-001",
@@ -226,4 +236,29 @@ test("Clients by industry never presents an unknown or failed client count as ze
   await expect(section.getByText("Client industry data is unavailable until live records load.", { exact: true })).toBeVisible();
   await expect(section.getByText("0 client accounts", { exact: true })).toHaveCount(0);
   await expect(section.getByRole("list", { name: "Clients by industry" })).toHaveCount(0);
+});
+
+test("buckets a null-industry client under Unspecified while its row chip still reads Commercial", async ({ page }) => {
+  const clientsWithUnspecified: MockClientRow[] = [
+    ...clients,
+    {
+      id: "des08a1-client-004",
+      client_code: "UNSPEC-001",
+      name: "FCI TEST — Unspecified Industry",
+      status: "active",
+      industry: null,
+      primary_contact_name: "Test Contact",
+      primary_contact_email: "unspecified@example.test",
+    },
+  ];
+  await mockIndustryRecords(page, clientsWithUnspecified);
+
+  await page.goto("/reports");
+  const section = page.getByRole("heading", { name: "Clients by industry" }).locator("xpath=ancestor::section[1]");
+  const unspecifiedRow = section.getByRole("list", { name: "Clients by industry" }).locator("li").filter({ hasText: "Unspecified" });
+  await expect(unspecifiedRow).toHaveCount(1);
+  await expect(unspecifiedRow.locator("strong")).toHaveText("1");
+
+  await page.goto("/clients");
+  await expect(page.getByText("UNSPEC-001 · Commercial", { exact: true })).toBeVisible();
 });

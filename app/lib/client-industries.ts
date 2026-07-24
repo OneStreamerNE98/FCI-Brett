@@ -23,16 +23,16 @@ const canonicalIndustryLabels = new Map(
   CLIENT_INDUSTRY_OPTIONS.map((industry) => [industry.toLowerCase(), industry]),
 );
 
-function displayIndustry(value: string) {
-  const trimmed = value.trim();
+function displayIndustry(value: string | null | undefined) {
+  const trimmed = value?.trim();
   if (!trimmed) return "Unspecified";
   return canonicalIndustryLabels.get(trimmed.toLowerCase()) ?? trimmed;
 }
 
-export function summarizeClientsByIndustry(clients: readonly { industry: string }[]): ClientIndustryCount[] {
+export function summarizeClientsByIndustry(clients: readonly { industryRaw?: string | null }[]): ClientIndustryCount[] {
   const counts = new Map<string, ClientIndustryCount>();
   for (const client of clients) {
-    const industry = displayIndustry(client.industry);
+    const industry = displayIndustry(client.industryRaw);
     const key = industry.toLowerCase();
     const current = counts.get(key);
     if (current) current.count += 1;
@@ -44,7 +44,7 @@ export function summarizeClientsByIndustry(clients: readonly { industry: string 
 }
 
 export function clientIndustryReportState(
-  clients: readonly { industry: string }[],
+  clients: readonly { industryRaw?: string | null }[],
   state: "loading" | "ready" | "error",
 ): ClientIndustryReportState {
   if (state === "error") {
