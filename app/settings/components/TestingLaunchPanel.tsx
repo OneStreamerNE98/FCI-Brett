@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { readAdminAccessOverview } from "../../lib/admin-access-client";
+import { LaunchChecklistCard } from "./LaunchChecklistCard";
 
 const EMPLOYEE_LOGIN_REQUIREMENT_NAMES = [
   "FCI_EMPLOYEE_OIDC_CLIENT_ID",
@@ -158,21 +159,7 @@ export function TestingLaunchPanel({ onGoogleSetup }: { onGoogleSetup: () => voi
         : "Setup required";
 
   return <div className="settings-panel-stack">
-    <section className="panel test-launch">
-      <div className="settings-heading">
-        <div><p className="eyebrow">Development verification</p><h2>Test & launch checklist</h2><p>Use this working development copy to verify durable workflows before the Google Cloud production environment is opened to staff.</p></div>
-        <a className="primary-button" href="/settings?section=google-workspace#workspace-stage-4">Open Google Workspace setup</a>
-      </div>
-      <ol className="test-checklist">
-        <li><strong>Environment boundary:</strong> this Sites deployment is the working development copy. Production will run on Cloud Run and Cloud SQL PostgreSQL.</li>
-        <li><strong>Clients and projects:</strong> add a test client, create two independent projects, create their folders, refresh, and verify the relationships persist.</li>
-        <li><strong>Meetings:</strong> save an Otter-linked summary with decisions and action items, reload it, and ask the assistant about the meeting.</li>
-        <li><strong>Inbox:</strong> connect the approved test Workspace mailbox, prepare labels, save a reply draft, and review-file one message to the exact project.</li>
-        <li><strong>Calendar:</strong> verify connected calendar readiness. Shift, crew, conflict, publishing, and acknowledgement tests remain blocked until those durable models exist.</li>
-        <li><strong>AI:</strong> ask a project question and open every cited source. Configure OpenAI separately before evaluating generated answers.</li>
-        <li><strong>Production readiness:</strong> verify Google Cloud deployment, Workspace OIDC, backups, audit access, Shared Drive, mailbox, Sheet, calendars, OAuth client, and allowed domain before staff launch.</li>
-      </ol>
-    </section>
+    <LaunchChecklistCard />
 
     <section className="panel settings-form-panel" aria-labelledby="employee-login-readiness-heading">
       <div className="settings-heading">

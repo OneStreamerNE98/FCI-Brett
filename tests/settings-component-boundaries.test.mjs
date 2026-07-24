@@ -13,6 +13,7 @@ const expectedComponents = new Map([
   ["DirectorySyncPanel.tsx", ["DirectorySyncPanel"]],
   ["GoogleWorkspacePanel.tsx", ["GoogleWorkspacePanel", "GmailFilingModal"]],
   ["InboxRulesPanel.tsx", ["InboxRulesPanel", "RuleModal"]],
+  ["LaunchChecklistCard.tsx", ["LaunchChecklistCard"]],
   ["MySettingsPanel.tsx", ["MySettingsPanel"]],
   ["SettingsAudienceNavigation.tsx", ["SettingsAudienceNavigation"]],
   ["SettingsDataNotice.tsx", ["SettingsDataNotice"]],

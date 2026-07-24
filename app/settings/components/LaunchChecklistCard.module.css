@@ -1,0 +1,222 @@
+.card {
+  min-width: 0;
+}
+
+.developmentBoundary {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 0 18px;
+  padding: 12px;
+  border: 1px solid #ead8c5;
+  border-radius: var(--radius-control);
+  background: #fff9f1;
+  color: #7b6250;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.developmentBoundary svg {
+  flex: 0 0 auto;
+}
+
+.group {
+  display: grid;
+  gap: 10px;
+  padding-top: 17px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.group + .group {
+  margin-top: 18px;
+}
+
+.groupHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.groupHeading h3,
+.groupHeading p {
+  margin: 0;
+}
+
+.groupHeading h3 {
+  color: var(--ink);
+  font: 700 13px var(--font-display);
+}
+
+.groupHeading p {
+  max-width: 610px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.groupCount,
+.readOnly {
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: #f0ece7;
+  color: #6e655e;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rows {
+  display: grid;
+  gap: 8px;
+}
+
+.liveRow,
+.attestationRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 54px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: #fcfbf9;
+}
+
+.liveRow > :global(.status),
+.attestationRow > :global(.status) {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.attestationRow {
+  cursor: pointer;
+}
+
+.attestationRow:has(input:disabled) {
+  cursor: default;
+}
+
+.attestationRow input {
+  width: 18px;
+  min-height: 18px;
+  margin: 1px 0 0;
+  flex: 0 0 auto;
+}
+
+.verifiedIcon,
+.simulatedIcon,
+.pendingIcon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.verifiedIcon {
+  color: #397056;
+}
+
+.simulatedIcon {
+  color: #405f8a;
+}
+
+.pendingIcon {
+  color: #8a613d;
+}
+
+/* Honest "Simulated" pill for the local development simulation, matching the
+   app's existing simulated status tone. The child combinator keeps it above the
+   global .status base without touching the locked globals.css. */
+.liveRow > .simulatedPill {
+  background: #e9eef7;
+  color: #405f8a;
+}
+
+.simulationNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #d5deec;
+  border-radius: var(--radius-control);
+  background: #f2f5fb;
+  color: #405f8a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.simulationNote svg {
+  flex: 0 0 auto;
+}
+
+.rowCopy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 3px;
+}
+
+.rowCopy strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.rowCopy small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.auditLine {
+  color: #4d725d !important;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 11px 12px;
+  border: 1px solid #ebc9c5;
+  border-radius: var(--radius-control);
+  background: #fff7f6;
+  color: #9a4239;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.error svg {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 560px) {
+  .groupHeading,
+  .liveRow,
+  .attestationRow {
+    align-items: stretch;
+  }
+
+  .groupHeading {
+    display: grid;
+  }
+
+  .groupCount,
+  .readOnly {
+    width: max-content;
+  }
+
+  .liveRow,
+  .attestationRow {
+    flex-wrap: wrap;
+  }
+
+  .liveRow > :global(.status),
+  .attestationRow > :global(.status) {
+    margin-left: 28px;
+  }
+}

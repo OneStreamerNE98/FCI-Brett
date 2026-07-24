@@ -288,6 +288,8 @@ test("remaining client, project, filing-rule, and settings writes use their boun
     ["app/api/v1/projects/[projectId]/meetings/route.ts", /maximumBytes: 180_000/],
     ["app/api/v1/settings/me/route.ts", /MAX_ACCOUNT_PREFERENCES_BODY_BYTES = 8_000/],
     ["app/api/v1/settings/workspace/route.ts", /MAX_WORKSPACE_SETTINGS_BODY_BYTES = 8_000/],
+    // SET-08 keeps its small exact-item mutation in the shared bounded-body census.
+    ["app/api/v1/settings/launch-checklist/route.ts", /MAX_LAUNCH_CHECKLIST_BODY_BYTES = 4_000/],
   ];
 
   for (const [path, cap] of routes) {
