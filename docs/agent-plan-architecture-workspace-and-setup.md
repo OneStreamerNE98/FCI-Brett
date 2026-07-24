@@ -1175,7 +1175,7 @@ simulated file and sees the placeholder; office non-admin can view (viewing is r
 work). **Effort:** medium. **Cost:** $0.
 
 ### SET-24 · Employee-login readiness card + read-only policy cards (small, after SET-13; activates fully when login goes live)
-**Status:** In review — PR #158, July 24, 2026. Source-only and undeployed; the Settings guide now documents the employee-login readiness, role, and session-policy cards.
+**Status:** Complete — PR #158, July 24, 2026. Source-only and undeployed. Opus review clean (base + revision delta; the delta verifier ran the unit suite live, 8/8): presence-not-values proven, session-policy copy verified TRUE against the actual auth constants, invitation count reuses the existing admin-access read. P3 residuals to FIX-12: the bespoke runtime-env Proxy should share one env-presence helper with SET-36's route; the panel passes a hardcoded secureSessionReady=true to readAdminAccessOverview (honest-unavailable on failure, but inconsistent with AdminAccessPage's derived gate).
 
 **Why:** The second OAuth client (employee login) has no setup surface — its config,
 invitation state, and activation gate live in docs and the access page; and the fixed
@@ -1431,7 +1431,7 @@ in the single-file queue AFTER FIX-05 (shared sheet-status label mapper) merges;
 parallel-safe with the SET-29 series (no GoogleWorkspacePanel overlap).
 
 ### SET-36 · Read-only "Who has access" card in Data & security (small, independent)
-**Status:** In review — PR #157, July 23, 2026. Guide updated; source-only and undeployed.
+**Status:** Complete — PR #157, July 23, 2026. Source-only and undeployed. Opus review clean: display-only proven (mutation-absence grep-guarded), env allowlist exactly the three identifier keys, render-invariance for non-admins incl. zero requests. P3 residual to FIX-17: the display domain-parse skips the gate's leading-@/lowercase normalization (a lone "@" value would suppress the fail-closed warning while the gate denies everyone).
 
 **Why:** Owner request (July 22, 2026): the development gate's office/admin allowlists
 live only in hosted configuration, so nothing inside the app shows who is currently
@@ -1937,7 +1937,7 @@ sanitizer assertions pass; golden hashes unchanged.
 **Effort:** small-medium. **Cost:** $0.
 
 ### DES-04 · Nav & shell polish: 44px toggle, honest compact badges, breakpoint sweep (small-medium, after DES-02; FloorOpsApp queue)
-**Status:** In review — PR #159, July 24, 2026. Source-only and undeployed; FIX-19 is folded here; both golden hashes remain unchanged.
+**Status:** Complete — PR #159, July 24, 2026. Source-only and undeployed. Opus review: ZERO findings — the reveal-on-scroll-up topbar implements all four always-visible conditions with passive rAF mechanics and full e2e pins; compact badges render real text with the allowlist emptied and guard tightened; topbar gap landed; the folded FIX-19 blueprint-chip fix is present (wraps only at "-"); both golden hashes byte-identical. The FloorOpsApp queue and the globals lock pass to DES-07.
 
 **Why:** the collapse toggle is 36 px hung at `right:-13px`; the compact badge
 is a `font-size:0` + `::after` hack carrying a permanent test allowlist.

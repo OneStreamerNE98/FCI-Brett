@@ -331,7 +331,7 @@ review-first). All acceptance criteria are mutation-sensitive: a test must fail 
 the fix regresses. New packets carry no status line until started.
 
 ### FIX-13 · Stage-4 verification durability (P2 H-2; small-medium)
-**Status:** In review — PR #156, July 23, 2026. Guide impact: none. Source-only and undeployed.
+**Status:** Complete — PR #156, July 24, 2026. Guide impact: none. Source-only and undeployed. Opus review clean after the CI-failure bounce: the new adapter projects durable latches from existing google_integration_events rows scoped to the latest oauth.connected (reconnect resets; simulation reset clears); the CI-fix commit was verified a net STRENGTHENING (restored merge-base status ordering + kept the new unavailable guard), not a loosening; the reload/navigate e2e is genuine and strong. P3 residuals: reconnect-threshold covered at SQL-string level only (a behavioral reconnect-clears test would harden it); pre-existing READY-over-statusSources ordering noted for awareness.
 
 **Why:** Stage-4 READY is backed by ephemeral component state for Gmail and
 Calendar, so a reload or in-app navigation silently reverts a launch-verification
@@ -492,6 +492,7 @@ Not in the dedup index. New.
 **Effort:** small-medium. **Cost:** $0.
 
 ### FIX-19 · Blueprint-editor mobile folder-key layout (P2 H-4; small)
+**Status:** Superseded — absorbed into DES-04. Shipped in PR #159 (July 24, 2026): the 390px folder-key chip spans its own grid row and wraps only at "-" separators.
 > Beyond the enumerated FIX-13..17 set — proposed for the same reason as FIX-18: a
 > verified P2 with no existing owner. See Open Questions.
 
