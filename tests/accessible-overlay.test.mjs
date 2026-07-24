@@ -21,15 +21,16 @@ test("wraps focus at both overlay boundaries and recovers focus from outside", (
 });
 
 test("provides one nested-overlay-aware accessible interaction foundation", async () => {
-  const [overlay, app, assistantView, inboxRules, googleWorkspace, css] = await Promise.all([
+  const [overlay, app, assistantView, gmailReplyModal, inboxRules, googleWorkspace, css] = await Promise.all([
     read("app/components/AccessibleOverlay.tsx"),
     read("app/FloorOpsApp.tsx"),
     read("app/assistant/components/AssistantView.tsx"),
+    read("app/inbox/components/GmailReplyModal.tsx"),
     read("app/settings/components/InboxRulesPanel.tsx"),
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/globals.css"),
   ]);
-  const overlayConsumers = [app, assistantView, inboxRules, googleWorkspace].join("\n");
+  const overlayConsumers = [app, assistantView, gmailReplyModal, inboxRules, googleWorkspace].join("\n");
 
   assert.match(overlay, /role="dialog"/);
   assert.match(overlay, /aria-label=\{ariaLabel\}/);
