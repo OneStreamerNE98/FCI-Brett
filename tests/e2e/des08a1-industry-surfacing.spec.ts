@@ -199,3 +199,31 @@ test("Clients by industry has an honest empty state", async ({ page }) => {
   await expect(section.getByText("No client industry data is available yet.", { exact: true })).toBeVisible();
   await expect(section.getByRole("list", { name: "Clients by industry" })).toHaveCount(0);
 });
+
+test("Clients by industry never presents an unknown or failed client count as zero", async ({ page }) => {
+  await mockIndustryRecords(page);
+  let releaseClients!: () => void;
+  const clientsGate = new Promise<void>((resolve) => {
+    releaseClients = resolve;
+  });
+  await page.route("**/api/v1/clients", async (route) => {
+    await clientsGate;
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Clients unavailable" }),
+    });
+  });
+
+  await page.goto("/reports");
+  const section = page.getByRole("heading", { name: "Clients by industry" }).locator("xpath=ancestor::section[1]");
+  await expect(section.getByText("Checking live records", { exact: true })).toBeVisible();
+  await expect(section.getByText("0 client accounts", { exact: true })).toHaveCount(0);
+  await expect(section.getByRole("list", { name: "Clients by industry" })).toHaveCount(0);
+
+  releaseClients();
+  await expect(section.getByText("Unavailable", { exact: true })).toBeVisible();
+  await expect(section.getByText("Client industry data is unavailable until live records load.", { exact: true })).toBeVisible();
+  await expect(section.getByText("0 client accounts", { exact: true })).toHaveCount(0);
+  await expect(section.getByRole("list", { name: "Clients by industry" })).toHaveCount(0);
+});

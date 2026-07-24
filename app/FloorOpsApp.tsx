@@ -25,7 +25,7 @@ import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocu
 import { JobSiteMapCard } from "./features/maps/JobSiteMapCard";
 import { normalizeJobSiteLocation, type JobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
 import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
-import { CLIENT_INDUSTRY_OPTIONS, summarizeClientsByIndustry } from "./lib/client-industries";
+import { CLIENT_INDUSTRY_OPTIONS, clientIndustryReportState } from "./lib/client-industries";
 import {
   defaultPageLayouts,
   isDefaultPageLayout,
@@ -1659,8 +1659,8 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin, layo
     return (leftIndex < 0 ? Number.MAX_SAFE_INTEGER : leftIndex) - (rightIndex < 0 ? Number.MAX_SAFE_INTEGER : rightIndex) || left.status.localeCompare(right.status);
   });
   const maximumProjectCount = Math.max(1, ...projectStatuses.map((item) => item.count));
-  const clientIndustries = summarizeClientsByIndustry(clients);
-  const maximumClientIndustryCount = Math.max(1, ...clientIndustries.map((item) => item.count));
+  const clientIndustryReport = clientIndustryReportState(clients, state);
+  const maximumClientIndustryCount = Math.max(1, ...clientIndustryReport.rows.map((item) => item.count));
   const metrics = dashboard?.metrics;
   const activeProjectCount = metrics?.activeProjects ?? projects.filter(isActiveProject).length;
 
@@ -1690,7 +1690,7 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin, layo
     "business-kpis": <BusinessKpisPanel leads={leads} projects={projects} isAdmin={isAdmin} state={state} selectedMonth={selectedMonth} onSelectedMonthChange={setSelectedMonth} />,
     "pipeline-by-stage": <section className="panel report-chart"><PanelHeader title="Pipeline by stage" subtitle={isAdmin ? "Estimated value" : "Lead count · financial values restricted"} />{activeLeads.length > 0 ? <ul className="bar-chart" aria-label="Pipeline stages">{stageValues.map((item) => { const href = item.count > 0 ? operationsHref("Leads", { leadStage: item.filter }) : undefined; const focusId = href ? `report-lead-${item.filter}` : undefined; const measure = isAdmin ? money(item.value) : String(item.count); return <ReportBarRow key={item.stage} label={item.stage} measure={measure} width={Math.round(((isAdmin ? item.value : item.count) / maximumStageMeasure) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `lead:${item.filter}` : undefined} accessibleName={href ? `View ${item.stage} leads — ${item.count} active ${item.count === 1 ? "lead" : "leads"}${isAdmin ? `, ${money(item.value)} estimated value` : ""}` : undefined} />; })}</ul> : state === "ready" ? <OperationsEmptyState variant="table">No active leads are available for this report.</OperationsEmptyState> : null}</section>,
     "projects-by-status": <section className="panel report-chart"><PanelHeader title="Projects by status" subtitle={`${projects.length} records`} />{projectStatuses.length > 0 ? <ul className="bar-chart" aria-label="Project lifecycle statuses">{projectStatuses.map((item) => { const lifecycle = projectLifecycleFilter(item.status); const href = lifecycle && item.count > 0 ? operationsHref("Projects", { projectLifecycle: lifecycle }) : undefined; const label = displayStatus(item.status, "Unknown"); const focusId = href ? `report-project-${lifecycle}` : undefined; return <ReportBarRow key={item.status} label={label} measure={String(item.count)} width={Math.round((item.count / maximumProjectCount) * 100)} href={href} focusId={focusId} destinationFocusKey={href ? `project:${lifecycle}` : undefined} accessibleName={href ? `View ${label} projects — ${item.count} ${item.count === 1 ? "project" : "projects"}` : undefined} />; })}</ul> : state === "ready" ? <OperationsEmptyState variant="table">No project status data is available yet.</OperationsEmptyState> : null}</section>,
-    "clients-by-industry": <section className="panel report-chart"><PanelHeader title="Clients by industry" subtitle={`${clients.length} client ${clients.length === 1 ? "account" : "accounts"}`} />{clientIndustries.length > 0 ? <ul className="bar-chart" aria-label="Clients by industry">{clientIndustries.map((item) => <ReportBarRow key={item.industry} label={item.industry} measure={String(item.count)} width={Math.round((item.count / maximumClientIndustryCount) * 100)} />)}</ul> : state === "ready" ? <OperationsEmptyState variant="table">No client industry data is available yet.</OperationsEmptyState> : state === "error" ? <OperationsEmptyState variant="table">Client industry data is unavailable until live records load.</OperationsEmptyState> : null}</section>,
+    "clients-by-industry": <section className="panel report-chart"><PanelHeader title="Clients by industry" subtitle={clientIndustryReport.subtitle} />{clientIndustryReport.rows.length > 0 ? <ul className="bar-chart" aria-label="Clients by industry">{clientIndustryReport.rows.map((item) => <ReportBarRow key={item.industry} label={item.industry} measure={String(item.count)} width={Math.round((item.count / maximumClientIndustryCount) * 100)} />)}</ul> : clientIndustryReport.emptyMessage ? <OperationsEmptyState variant="table">{clientIndustryReport.emptyMessage}</OperationsEmptyState> : null}</section>,
     "future-reports": <section className="client-directory-banner"><div className="directory-badge"><Activity size={20} /></div><div><strong>More reports will appear as additional workflows go live</strong><span>Margin, product mix, installation-cycle timing, customer reviews, and crew utilization require source records that are not available yet.</span></div></section>,
   } as const;
 
