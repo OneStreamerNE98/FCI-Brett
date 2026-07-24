@@ -280,6 +280,44 @@ test("SET-08 requires every partial Calendar and mirror readiness predicate", as
   }
 });
 
+test("SET-08 labels a simulated environment honestly instead of Verified", async ({ page }) => {
+  await mockLaunchSurface(page);
+  await page.unroute("**/api/v1/google-workspace");
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Cache-Control": "no-store" },
+      body: JSON.stringify({
+        connected: true,
+        workspace: {
+          connectionStatus: "connected",
+          calendarEnabled: true,
+          calendarConnected: true,
+          simulation: true,
+        },
+      }),
+    });
+  });
+  await page.goto("/settings?section=testing-launch");
+
+  const card = page.getByRole("region", { name: "Test & launch checklist" });
+  await expect(card).toBeVisible();
+  const verifiedRows = card.locator('[data-checklist-kind="verified"]');
+  await expect(verifiedRows).toHaveCount(3);
+  // All three live rows (workspace, calendar, and the app-global mirror) render
+  // the honest Simulated state, never a real Google connection.
+  await expect(verifiedRows.getByText("Simulated", { exact: true })).toHaveCount(3);
+  await expect(card.getByText("Verified", { exact: true })).toHaveCount(0);
+  await expect(card.getByText("3 of 3 verified", { exact: true })).toHaveCount(0);
+  await expect(card.getByText(
+    "Simulated environment — live verification runs against a real Workspace connection.",
+    { exact: true },
+  )).toBeVisible();
+  // The persisted Administrator attestations are untouched by simulation mode.
+  await expect(card.getByRole("checkbox")).toHaveCount(4);
+});
+
 test("SET-08 renders a canAttest:false response read-only without mutation traffic", async ({ page }) => {
   const { mutationBodies } = await mockLaunchSurface(page, false);
   await page.goto("/settings?section=testing-launch");

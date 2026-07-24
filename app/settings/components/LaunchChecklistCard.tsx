@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleAlert,
   CircleDashed,
+  FlaskConical,
   ShieldCheck,
 } from "lucide-react";
 import {
@@ -19,7 +20,7 @@ const LAUNCH_CHECKLIST_PATH = "/api/v1/settings/launch-checklist";
 const WORKSPACE_STATUS_PATH = "/api/v1/google-workspace";
 const SHEET_STATUS_PATH = "/api/v1/integrations/google/sheets/status";
 
-type VerificationState = "checking" | "verified" | "needed" | "unavailable";
+type VerificationState = "checking" | "verified" | "simulated" | "needed" | "unavailable";
 
 type LaunchChecklistResponse = Readonly<{
   launchChecklist: LaunchChecklist;
@@ -29,6 +30,7 @@ type LaunchChecklistResponse = Readonly<{
 type WorkspaceVerification = Readonly<{
   workspace: boolean;
   calendar: boolean;
+  simulation: boolean;
 }>;
 
 type VerificationSnapshot = Readonly<{
@@ -41,6 +43,15 @@ const CHECKING_VERIFICATIONS: VerificationSnapshot = Object.freeze({
   workspace: "checking",
   calendar: "checking",
   mirror: "checking",
+});
+
+// Simulation mode is app-global: when the Workspace endpoint reports it, every
+// live row is simulated (the mirror status is simulated too), so none may claim
+// a real Google connection.
+const SIMULATED_VERIFICATIONS: VerificationSnapshot = Object.freeze({
+  workspace: "simulated",
+  calendar: "simulated",
+  mirror: "simulated",
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -78,6 +89,10 @@ function parseWorkspaceVerification(value: unknown): WorkspaceVerification | nul
     calendar: workspace
       && value.workspace.calendarEnabled
       && value.workspace.calendarConnected,
+    // Strict: only an explicit boolean true is simulation. An absent or
+    // non-boolean field means a real connection, so existing callers that omit
+    // it keep their live Verified/Needs-verification behavior unchanged.
+    simulation: value.workspace.simulation === true,
   });
 }
 
@@ -114,6 +129,7 @@ async function getJson(path: string, signal: AbortSignal) {
 
 function stateLabel(state: VerificationState) {
   if (state === "verified") return "Verified";
+  if (state === "simulated") return "Simulated";
   if (state === "needed") return "Needs verification";
   if (state === "unavailable") return "Unavailable";
   return "Checking";
@@ -126,27 +142,32 @@ function checkedAtLabel(value: number) {
 function LiveVerificationRow({
   label,
   description,
+  simulatedDescription,
   state,
 }: {
   label: string;
   description: string;
+  simulatedDescription: string;
   state: VerificationState;
 }) {
   const verified = state === "verified";
+  const simulated = state === "simulated";
   return <div className={styles.liveRow} data-checklist-kind="verified">
-    <span className={verified ? styles.verifiedIcon : styles.pendingIcon}>
+    <span className={verified ? styles.verifiedIcon : simulated ? styles.simulatedIcon : styles.pendingIcon}>
       {verified
         ? <CheckCircle2 size={18} aria-hidden="true" />
-        : state === "unavailable"
-          ? <CircleAlert size={18} aria-hidden="true" />
-          : <CircleDashed size={18} aria-hidden="true" />}
+        : simulated
+          ? <FlaskConical size={18} aria-hidden="true" />
+          : state === "unavailable"
+            ? <CircleAlert size={18} aria-hidden="true" />
+            : <CircleDashed size={18} aria-hidden="true" />}
     </span>
     <span className={styles.rowCopy}>
       <strong>{label}</strong>
-      <small>{description}</small>
+      <small>{simulated ? simulatedDescription : description}</small>
     </span>
     <span
-      className={`status ${verified ? "status-connected" : "status-inactive"}`}
+      className={`status ${verified ? "status-connected" : simulated ? styles.simulatedPill : "status-inactive"}`}
       aria-label={`${label}: ${stateLabel(state)}`}
     >
       {stateLabel(state)}
@@ -195,6 +216,10 @@ export function LaunchChecklistCard() {
       } else {
         setChecklistError("Saved attestations are unavailable. Nothing was changed.");
       }
+      if (workspaceResult.status === "fulfilled" && workspaceResult.value.simulation) {
+        setVerifications(SIMULATED_VERIFICATIONS);
+        return;
+      }
       setVerifications({
         workspace: workspaceResult.status === "fulfilled"
           ? workspaceResult.value.workspace ? "verified" : "needed"
@@ -238,6 +263,9 @@ export function LaunchChecklistCard() {
     }
   }
 
+  const simulatedEnvironment = Object.values(verifications).every((state) => state === "simulated");
+  const verifiedCount = Object.values(verifications).filter((state) => state === "verified").length;
+
   return <section className={`panel test-launch ${styles.card}`} aria-labelledby="launch-checklist-heading">
     <div className="settings-heading">
       <div>
@@ -256,24 +284,29 @@ export function LaunchChecklistCard() {
     <div className={styles.group}>
       <div className={styles.groupHeading}>
         <div><h3>Verified from live status</h3><p>These rows are computed from existing connection and mirror endpoints. They never render a checkbox.</p></div>
-        <span className={styles.groupCount}>{
-          Object.values(verifications).filter((state) => state === "verified").length
-        } of 3 verified</span>
+        <span className={styles.groupCount}>{simulatedEnvironment ? "Simulated" : `${verifiedCount} of 3 verified`}</span>
       </div>
+      {simulatedEnvironment && <p className={styles.simulationNote}>
+        <FlaskConical size={16} aria-hidden="true" />
+        <span>Simulated environment — live verification runs against a real Workspace connection.</span>
+      </p>}
       <div className={styles.rows}>
         <LiveVerificationRow
           label="Workspace connected"
           description="The saved Workspace connection currently reports connected."
+          simulatedDescription="Local Workspace simulation is active. No Google account is connected."
           state={verifications.workspace}
         />
         <LiveVerificationRow
           label="Calendar access verified"
           description="Calendar is enabled and present on the current Workspace connection."
+          simulatedDescription="Calendar runs in the local Workspace simulation, not a live Google connection."
           state={verifications.calendar}
         />
         <LiveVerificationRow
           label="Client Directory mirror synced"
           description="Both client and project mirror states currently report synced."
+          simulatedDescription="The Client Directory mirror runs in the local simulation. No data is sent to Google."
           state={verifications.mirror}
         />
       </div>

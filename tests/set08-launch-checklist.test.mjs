@@ -396,3 +396,22 @@ test("SET-08 renders computed VERIFIED rows without checkboxes and persisted ATT
   assert.match(routeSource, /parseBoundedJsonObject/u);
   assert.match(routeSource, /auth\.user\.email[\s\S]+Date\.now\(\)/u);
 });
+
+test("SET-08 labels the local simulation honestly instead of a live Google connection", async () => {
+  const card = await read("app/settings/components/LaunchChecklistCard.tsx");
+  // Strict detection: only an explicit boolean true is simulation, so callers
+  // that omit the field keep their live Verified/Needs-verification behavior.
+  assert.match(card, /simulation: value\.workspace\.simulation === true/u);
+  // Simulation is app-global: all three live rows (mirror included) flip together.
+  assert.match(
+    card,
+    /SIMULATED_VERIFICATIONS[\s\S]*workspace: "simulated"[\s\S]*calendar: "simulated"[\s\S]*mirror: "simulated"/u,
+  );
+  assert.match(card, /if \(state === "simulated"\) return "Simulated";/u);
+  // The summary must not count simulated rows as verified.
+  assert.match(card, /simulatedEnvironment \? "Simulated" : `\$\{verifiedCount\} of 3 verified`/u);
+  assert.match(
+    card,
+    /Simulated environment — live verification runs against a real Workspace connection\./u,
+  );
+});

@@ -108,6 +108,7 @@
 }
 
 .verifiedIcon,
+.simulatedIcon,
 .pendingIcon {
   display: grid;
   flex: 0 0 auto;
@@ -119,8 +120,38 @@
   color: #397056;
 }
 
+.simulatedIcon {
+  color: #405f8a;
+}
+
 .pendingIcon {
   color: #8a613d;
+}
+
+/* Honest "Simulated" pill for the local development simulation, matching the
+   app's existing simulated status tone. The child combinator keeps it above the
+   global .status base without touching the locked globals.css. */
+.liveRow > .simulatedPill {
+  background: #e9eef7;
+  color: #405f8a;
+}
+
+.simulationNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #d5deec;
+  border-radius: var(--radius-control);
+  background: #f2f5fb;
+  color: #405f8a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.simulationNote svg {
+  flex: 0 0 auto;
 }
 
 .rowCopy {
