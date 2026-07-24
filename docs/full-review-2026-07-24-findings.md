@@ -462,7 +462,7 @@ visibility, not action. New.
 **Effort:** small-medium. **Cost:** $0.
 
 ### FIX-18 · Stage-3 row status reconciliation (P2 H-1; small-medium)
-**Status:** In progress — `codex/fix18-stage3-reconciliation`, July 23, 2026. Guide impact: none.
+**Status:** In review — PR #154, July 23, 2026. Guide impact: none. Source-only and undeployed.
 
 > Beyond the orchestrator's enumerated FIX-13..17 set — proposed here because H-1 is
 > a verified P2 (found by three lenses) with no existing owner and must have a
