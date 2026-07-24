@@ -3,21 +3,28 @@
 Status: Source-only procedure and evidence template. No staging migration,
 production cutover, rollback, or forward-fix has been executed.
 
+BE-14 degraded-mode contract updated: July 24, 2026.
+
 There are no automatic down migrations. Applied migration versions, names,
 statements, and checksums are immutable. Prefer a reviewed forward-fix for a
 compatible defect; a restore-based rollback requires stopped writes,
 reconciliation, and explicit owner approval.
 
-Implementation status: the repository now defines default-off migration and
-staging rehearsal Cloud Run Jobs, a keyless repository-scoped image-publisher
-identity, and a pull-request build/manual-approved image-publish workflow. The
-workflow publishes an immutable image candidate only; it cannot apply
-Terraform, deploy a service, or execute a Job. These definitions are source-only
-and unapplied. Every execution step remains blocked until the owner separately
-approves the protected GitHub environment and Workload Identity pool, exact
-image digest and Terraform plan, database principals and pinned secret versions,
-test-only rehearsal snapshot, least-privilege review, executor/verifier, cost
-window, and cleanup procedure.
+Implementation status: the repository now defines default-off migration,
+staging rehearsal, and outbox-drain Cloud Run Jobs, a keyless
+repository-scoped image-publisher identity, and a pull-request
+build/manual-approved image-publish workflow. The workflow publishes an
+immutable image candidate only; it cannot apply Terraform, deploy a service, or execute a Job.
+The outbox-drain definition is unscheduled and its shipped
+dispatcher registry is empty, so even a manual source execution is inert and
+claims no row. Its separately gated service account can connect to Cloud SQL,
+write logs, and read only the pinned runtime database password; it cannot read
+the web runtime's session, employee-OIDC, Workspace OAuth, or token-key secrets.
+These definitions are source-only and unapplied.
+Every execution step remains blocked until the owner separately approves the protected GitHub
+environment and Workload Identity pool, exact image digest and Terraform plan,
+database principals and pinned secret versions, test-only rehearsal snapshot,
+least-privilege review, executor/verifier, cost window, and cleanup procedure.
 
 ## 1. Staging migration rehearsal
 
@@ -65,6 +72,48 @@ inventory-only categories, while `phone-call` meetings now pass validation and
 rehearse against the registered v8 constraint. Passing it is useful source
 evidence but is not a complete migration or cutover rehearsal.
 
+### Degraded-mode route contract (BE-14, July 24, 2026)
+
+The production HTTP boundary distinguishes configuration from an outage:
+
+| Response | Meaning | Caller action |
+| --- | --- | --- |
+| `503 {"error":"feature_unavailable","retryable":false}` | The provider action is not composed. This is the current source default for file, Gmail, and Calendar actions. | Do not retry as though Google had a transient outage; activation still requires the recorded provider gate. |
+| `503 {"error":"provider_degraded","retryable":false}` | A composed provider classified the request as not safely retryable. | Preserve the request/evidence and require review or correction. |
+| `503 {"error":"provider_degraded","retryable":true}` | A composed provider is unreachable or temporarily unhealthy. A bounded `Retry-After` header may be present. | Retry only according to that classification unless the route returned a durable queue acknowledgment. |
+| `202 {"data":{"outcome":"queued","operationId":"..."},"retryable":false}` | The explicitly allowed deferred intent committed durably. | Do not submit the same side effect again; reconcile by the durable operation ID. |
+
+A route may return `202` only after its queue callback proves a durable commit.
+If the queue write fails or returns malformed evidence, the route retains the
+classified `provider_degraded` response. Authorization, exact-project scope,
+same-origin/CSRF checks, and audit persistence still run before provider or
+queue work.
+
+| Production route/path | Google-down behavior | Queue rule |
+| --- | --- | --- |
+| `GET /api/v1/dashboard`, `/search`, `/projects`, `/clients`, `/leads`, and project-meeting reads | Continue from PostgreSQL while session, authorization, and database readiness are healthy; these reads make no Google call. | Never queued. |
+| `POST /api/v1/clients` and `POST /api/v1/projects` | The accepted business record, activity evidence, idempotency response, and `client.created` or `project.created` outbox intent commit atomically. The `201` response reports `sheetSync.status:"queued"`; a Google outage does not roll back the business record. | Sheets mirror is safely deferred through the already committed creation event. The shipped drain registry remains empty, so source does not claim that delivery is active. |
+| `GET /api/v1/projects/:projectId/files` | `feature_unavailable` while no provider is composed; `provider_degraded` after composition when the provider is unavailable. | Read is not queued. |
+| `POST /api/v1/projects/:projectId/files` and `POST /api/v1/projects/:projectId/files/:fileId/share` | Fail with the typed provider response; never claim that upload bytes or a sharing change were accepted. | Not safely deferred by BE-14. |
+| `POST /api/v1/projects/:projectId/gmail/file` | Current source remains `feature_unavailable`. A future composed provider may fall back on a retryable failure only after the exact-project filing approval is already authorized. | Gmail filing is the only provider route with a deferred-action seam. It returns `202` only after that seam commits; no production Gmail queue schema/adapter is composed in BE-14. |
+| `POST /api/v1/projects/:projectId/calendar/events` | Fail with the typed provider response. | Not queued; a stale requested time must not be acknowledged as scheduled. |
+
+The fourth image entrypoint, `run-outbox-drain.mjs`, implements one bounded
+lease-recovery/claim/dispatch/complete-or-retry pass with version fencing and
+terminal dead lettering. It claims one event immediately before dispatch so
+later work does not age behind a slow provider call. Its nonempty registry law
+requires a dispatcher for every claimable event type and an explicit
+replay-safe `eventKey` idempotency declaration, preventing a partial worker from
+leasing work it cannot handle. A later activation packet must prove each
+provider mutation deduplicates by that key and finishes inside the reviewed
+lease; version fencing alone cannot make an external side effect exactly once.
+Retry/dead-letter evidence uses a closed server-owned failure catalog; raw
+provider exception messages, tokens, and caller-selected codes are never
+persisted.
+BE-14 deliberately registers none. No Cloud Scheduler trigger,
+Cloud Tasks queue, Google provider adapter, Workspace job migration, Terraform
+apply, Job execution, or live configuration is authorized by this contract.
+
 ## 2. Production go/no-go gate
 
 Do not schedule production cutover until every item is checked and the owner
@@ -88,11 +137,10 @@ gives a separate dated approval:
   owner, scope verification, token-key version/rotation response, Gmail watch
   and Calendar channel renewal, Drive/Sheets reconciliation, and duplicate-safe
   replay. Never record a client secret or token in this plan.
-- [ ] Define exactly which application paths remain usable when Google is
-  unavailable and which writes/side effects fail closed. No generic read-only
-  or queued degraded mode exists today; that remains a blocker until its data,
-  authorization, user messaging, recovery, and reconciliation behavior is
-  implemented and tested.
+- [ ] Verify the BE-14 route matrix above against the exact production
+  composition: which database-backed reads remain usable, which side effects
+  fail closed, which durable intents may acknowledge `queued`, and how each
+  operation is reconciled before normal provider work resumes.
 - [ ] A final production plan shows only approved resources and changes.
 - [ ] The current development deployment and data remain preserved until the
   rollback window closes and the owner approves disposition.

@@ -20,6 +20,7 @@ export default defineConfig({
         "cloud-run-server": resolve("production-runtime/src/cloud-run-server.ts"),
         "run-migrations": resolve("production-runtime/src/run-migrations.ts"),
         "run-core-rehearsal": resolve("production-runtime/src/run-core-rehearsal.ts"),
+        "run-outbox-drain": resolve("production-runtime/src/run-outbox-drain.ts"),
       },
       external: ["pg", "@google-cloud/cloud-sql-connector"],
       output: {

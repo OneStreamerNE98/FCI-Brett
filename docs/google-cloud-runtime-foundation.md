@@ -4,6 +4,8 @@ Reviewed: July 19, 2026
 
 Status: Implemented and tested in source only. Not provisioned, connected, migrated, or deployed.
 
+BE-14 runtime/degraded-mode update: July 24, 2026.
+
 ## Read this boundary first
 
 This slice creates the reviewable Cloud Run and Cloud SQL runtime foundation without changing the current Sites/Workers/D1/R2 development application. The container remains fail-closed while now exposing a narrow source-only employee API boundary:
@@ -11,7 +13,7 @@ This slice creates the reviewable Cloud Run and Cloud SQL runtime foundation wit
 - `GET` or `HEAD /healthz` reports process liveness.
 - `GET` or `HEAD /readyz` reports ready only when the configured PostgreSQL schema is reachable, the current role has schema `USAGE` but not `CREATE`, and every migration version, name, and checksum exactly matches source.
 - Dashboard, search, project list/exact-project, client list/create, project create, lead list/create, project-meeting list/create, and logout paths are composed through hashed-session authorization, capability gates, PostgreSQL scopes, and the shared record use cases.
-- File list/upload/share, Gmail filing, and Calendar creation pass through authorization, exact-project checks, and mutation CSRF checks but return `503 feature_unavailable` because production provider action adapters are absent.
+- File list/upload/share, Gmail filing, and Calendar creation pass through authorization, exact-project checks, and mutation CSRF checks but return typed `503 feature_unavailable` with `retryable:false` because production provider action adapters are absent.
 - Unknown paths and methods fail closed. No route trusts `oai-authenticated-user-email` or supplies a fake production identity.
 
 This is still not the employee web application. The current page and broader API tree imports `cloudflare:workers`, uses D1/R2 bindings, and depends on the Sites identity boundary. The source image has no seeded employee, no composed production file/Google provider actions, and no rendered interface. Workspace OIDC/session issuance, OIDC verifier/attempt-cookie hardening, the negative-case/real-PostgreSQL login test matrix, and an uncomposed GCS storage adapter now exist in source through PR #55, but that does not activate file routes, configure live identity, or admit an employee. It must not be deployed as though it were a usable employee rollout. The production checklist item “Containerize the Next.js application” remains open until the remaining routes, interface, object-storage composition, identity, and provider boundaries are ported and accepted.
@@ -26,6 +28,14 @@ The [Workspace-first, cost-controlled rollout](architecture-decision-workspace-f
 - Secret Manager-friendly password-file support. The password is non-enumerable in the in-memory configuration object and is never included in operational events.
 - One bounded `pg.Pool` per service instance, with copied query parameters, statement/lock/idle-transaction timeouts, connection lifetime limits, redacted idle-client error evidence, and ordered pool-then-connector shutdown.
 - Runtime composition for the completed PostgreSQL adapters. Client, project, lead, and project-meeting creation repositories are created per request so actor/idempotency metadata is not retained between requests; the outbox repository can be process-scoped.
+- A bounded outbox-drain application loop that recovers expired leases, claims
+  one event immediately before dispatch, and version-fences completion, retry,
+  and dead-letter transitions. A nonempty dispatcher registry must cover every
+  claimable event type and every handler must declare replay-safe
+  `eventKey` idempotency before activation.
+- A fourth `run-outbox-drain.mjs` entrypoint with an empty shipped dispatcher
+  registry. It returns without loading configuration or claiming rows until a
+  later reviewed packet composes the complete dispatcher set.
 - Portable repository contracts with D1 and PostgreSQL adapters for Workspace settings, per-user preferences, filing rules, and mail items. Registered production migration v7 defines those four tables, contiguous v8 registers the prepared tasks schema plus the widened `phone-call` meeting constraint, and contiguous v9 adds the seven flooring KPI project columns and their domain checks. Migrations v7–v9 remain source-only and unapplied.
 - Source-only employee request composition for dashboard, bounded search, project list/exact-project, client list/create, project create, lead list/create, project-meeting list/create, and idempotent logout. It reads one bounded host-only session cookie, hashes raw session/CSRF credentials immediately, requires exact same-origin plus live CSRF matching for mutations, clears unusable or confirmed-logout cookies while retaining retryable cookies after failed revocation, and applies generic `401`/`403`/`404` responses.
 - Authorization-gated file, Gmail, and Calendar route contracts that cannot call work after denial and deliberately report provider unavailability while their production adapters are absent.
@@ -52,9 +62,16 @@ Those source capabilities are deliberately not composed into the Cloud Run emplo
 router. No production connector start/callback route, connector-specific database
 grants, Secret Manager key delivery, or live Google provider adapter is active. The
 authorization-gated file, Gmail, and Calendar routes therefore continue to return
-`503 feature_unavailable`. That response means the production provider is not composed;
-it is an intentional fail-closed platform boundary, not evidence of a transient Google
-outage and not a stub to bypass before Gate C passes.
+`503 {"error":"feature_unavailable","retryable":false}`. That response means the
+production provider is not composed; it is an intentional fail-closed platform
+boundary, not evidence of a transient Google outage and not a stub to bypass before
+Gate C passes. Once a provider is composed, a classified outage instead returns
+`provider_degraded` with explicit retryability. Only an explicitly allowed durable
+queue commit may return `202 queued`; a failed queue write remains degraded rather than
+claiming acceptance. Provider success objects cross a separate closed,
+route-specific public-DTO boundary; extra fields, raw Google response objects,
+unsafe URLs, accessors, and unbounded values fail closed rather than reaching
+the JSON response.
 
 The production Google data connection is established by fresh consent, never by
 migrating the Sites credential. The development refresh token is AES-GCM ciphertext
@@ -110,8 +127,9 @@ contract:
   `/api/v1/admin/access` or `/api/v1/admin/audit` implementation. Both admin clients now
   feature-detect that boundary and return `secure_session_not_ready` before `fetch`,
   preventing development 404s without adding a second administration data plane.
-- File, Gmail, and Calendar provider routes are unchanged: authorization runs first and
-  absent production providers still return `503 feature_unavailable`.
+- File, Gmail, and Calendar provider routes remain denied by default:
+  authorization runs first and absent production providers return typed
+  `503 feature_unavailable` with `retryable:false`.
 
 ## Runtime configuration contract
 
@@ -131,12 +149,19 @@ The Google Cloud entry points deliberately do not use the development environmen
 | `FCI_POSTGRES_SCHEMA` | Required lowercase target schema in every stage and access mode. Staging and production must use a dedicated application schema unless the reviewed exception below is acknowledged; rehearsal schemas must begin `fci_rehearsal_`. |
 | `FCI_POSTGRES_PUBLIC_SCHEMA_ACKNOWLEDGMENT` | Leave unset for a dedicated schema. If staging or production deliberately targets literal `public`, set exactly `I ACKNOWLEDGE THAT THIS STAGING OR PRODUCTION DATABASE USES THE PUBLIC POSTGRESQL SCHEMA`; any missing, approximate, or stale acknowledgment fails before secret access or a database connection. Dev-stage schema behavior is unchanged. |
 | `FCI_POSTGRES_MIGRATION_ROLE` | Required only for migration mode; use the reviewed schema-owner role name. |
-| `FCI_POSTGRES_POOL_MAX` | Runtime defaults to `5` and is capped at `10`; migration and rehearsal must be `1`. |
+| `FCI_POSTGRES_POOL_MAX` | Service runtime defaults to `5` and is capped at `10`; migration, rehearsal, and the activated outbox drain must be `1`. |
 | `PORT` | Defaults to `8080`; Cloud Run supplies this for the ingress container. |
 
 Optional bounded timeout/lifetime values are documented in `.env.example`. They are non-secret configuration; passwords and other credentials still belong only in Secret Manager or another approved encrypted runtime setting.
 
-The low-level migration runner retains its `public` default for isolated library callers and existing development tests. Google Cloud service, migration, and rehearsal entry points all pass through `loadProductionConfig`, which requires an explicit `FCI_POSTGRES_SCHEMA`; staging and production therefore cannot silently inherit that low-level default. Literal `public` is an exceptional, acknowledged target rather than the production default.
+The low-level migration runner retains its `public` default for isolated library
+callers and existing development tests. Google Cloud service, migration,
+rehearsal, and active drain entry points all pass through
+`loadProductionConfig`, which requires an explicit `FCI_POSTGRES_SCHEMA`;
+staging and production therefore cannot silently inherit that low-level
+default. Literal `public` is an exceptional, acknowledged target rather than
+the production default. The shipped inert drain exits before loading this
+configuration because it cannot claim work.
 
 The Cloud SQL Node.js connector uses Application Default Credentials and private IP. Do not set `GOOGLE_APPLICATION_CREDENTIALS` to a committed or mounted service-account key in Cloud Run. Assign the service identity only the IAM permissions required to connect to its intended Cloud SQL instance and secrets.
 
@@ -146,11 +171,13 @@ The Cloud SQL Node.js connector uses Application Default Credentials and private
 npm.cmd run build:cloud-run
 ```
 
-The build produces three distinct entry points under `work/cloud-run`:
+The build produces four distinct entry points under `work/cloud-run`:
 
 - `cloud-run-server.mjs` — fail-closed health/readiness plus the source-only employee API boundary;
 - `run-migrations.mjs` — one-off immutable schema migration job;
-- `run-core-rehearsal.mjs` — non-production, test-data-only core migration rehearsal.
+- `run-core-rehearsal.mjs` — non-production, test-data-only core migration rehearsal;
+- `run-outbox-drain.mjs` — one bounded outbox pass, inert while its dispatcher
+  registry is empty.
 
 The source commands rebuild before local execution:
 
@@ -160,17 +187,31 @@ npm.cmd run db:migrate:postgres
 npm.cmd run db:rehearse:postgres-core -- --snapshot tests/fixtures/production-core-rehearsal.json
 ```
 
-Do not run the last two commands against any shared, staging, or production database without an approved environment procedure, verified backup/restore evidence, and owner authorization. Building or testing the commands does not authorize executing them.
+Do not run a database command or Job against any shared, staging, or production
+database without an approved environment procedure, verified backup/restore
+evidence, and owner authorization. Building or testing the commands does not
+authorize executing them.
 
-For a future Cloud Run Job, use the exact reviewed service image and override only its command. A job exits `0` only after the migration/rehearsal completes and exits nonzero on failure; it does not start an HTTP server.
+For a future Cloud Run Job, use the exact reviewed service image and override only
+its command. A job exits `0` only after its bounded command completes and exits
+nonzero on failure; it does not start an HTTP server. The source-only outbox-drain
+Job flag defaults to false, creates no schedule or execution, and its shipped
+registry remains inert even if someone runs the built command locally. Its
+flag-gated service account is separate from the web runtime identity: it has
+only Cloud SQL client/log-writer roles and access to the pinned runtime
+database password, not session, employee-OIDC, Workspace OAuth, or token-key
+secrets.
 
 ## Pool and scaling budget
 
-The initial runtime pool defaults to five connections per Cloud Run instance. Migration and rehearsal use one connection each. Before provisioning, the Cloud administrator must satisfy and document this budget:
+The initial runtime pool defaults to five connections per Cloud Run instance.
+Migration and rehearsal use one connection each. The separately gated outbox
+drain also uses at most one connection when its definition is enabled. Before
+provisioning, the Cloud administrator must satisfy and document this budget:
 
 ```text
 (runtime pool max × possible simultaneous Cloud Run instances/revisions)
-+ migration/rehearsal job connections
++ migration/rehearsal/enabled-outbox-drain job connections
 + administrator and monitoring reserve
 ≤ usable Cloud SQL connection budget
 ```

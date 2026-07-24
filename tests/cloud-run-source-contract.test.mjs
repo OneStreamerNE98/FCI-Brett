@@ -10,6 +10,9 @@ import {
 import {
   runConfiguredProductionMigrations,
 } from "../production-runtime/src/run-migrations.ts";
+import {
+  runConfiguredOutboxDrain,
+} from "../production-runtime/src/run-outbox-drain.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const read = (path) => readFile(join(root, path), "utf8");
@@ -75,13 +78,22 @@ function migrationConfig(overrides = {}) {
 }
 
 test("preserves Sites/Vinext commands while adding a physically separate Cloud Run build", async () => {
-  const [packageSource, sitesConfig, cloudRunConfig, serverEntry, migrationEntry, rehearsalEntry] = await Promise.all([
+  const [
+    packageSource,
+    sitesConfig,
+    cloudRunConfig,
+    serverEntry,
+    migrationEntry,
+    rehearsalEntry,
+    outboxDrainEntry,
+  ] = await Promise.all([
     read("package.json"),
     read("vite.config.ts"),
     read("vite.cloud-run.config.ts"),
     read("production-runtime/src/cloud-run-server.ts"),
     read("production-runtime/src/run-migrations.ts"),
     read("production-runtime/src/run-core-rehearsal.ts"),
+    read("production-runtime/src/run-outbox-drain.ts"),
   ]);
   const packageJson = JSON.parse(packageSource);
 
@@ -95,6 +107,7 @@ test("preserves Sites/Vinext commands while adding a physically separate Cloud R
   assert.match(cloudRunConfig, /production-runtime\/src\/cloud-run-server\.ts/);
   assert.match(cloudRunConfig, /production-runtime\/src\/run-migrations\.ts/);
   assert.match(cloudRunConfig, /production-runtime\/src\/run-core-rehearsal\.ts/);
+  assert.match(cloudRunConfig, /production-runtime\/src\/run-outbox-drain\.ts/);
   assert.match(cloudRunConfig, /outDir: "work\/cloud-run"/);
   assert.doesNotMatch(cloudRunConfig, /from ["']\.\/vite\.config|sites\(\)|cloudflare\(|worker\/index|hosting\.json/);
 
@@ -115,6 +128,9 @@ test("preserves Sites/Vinext commands while adding a physically separate Cloud R
   assert.match(migrationEntry, /statementTimeoutMs: config\.postgres\.pool\.statementTimeoutMs/);
   assert.match(rehearsalEntry, /config\.deploymentStage === "production"/);
   assert.match(rehearsalEntry, /config\.postgres\.accessMode !== "rehearsal"/);
+  assert.match(outboxDrainEntry, /NOOP_OUTBOX_DISPATCHER_REGISTRY/);
+  assert.match(outboxDrainEntry, /config\.postgres\.accessMode !== "runtime"/);
+  assert.match(outboxDrainEntry, /config\.postgres\.pool\.max !== 1/);
 });
 
 test("builds isolated service and job entries without migration SQL in the service graph", async () => {
@@ -129,10 +145,12 @@ test("builds isolated service and job entries without migration SQL in the servi
   assert.ok(names.includes("cloud-run-server.mjs"));
   assert.ok(names.includes("run-migrations.mjs"));
   assert.ok(names.includes("run-core-rehearsal.mjs"));
+  assert.ok(names.includes("run-outbox-drain.mjs"));
 
-  const [migrations, rehearsal, serviceGraph] = await Promise.all([
+  const [migrations, rehearsal, outboxDrainGraph, serviceGraph] = await Promise.all([
     readFile(join(outputRoot, "run-migrations.mjs"), "utf8"),
     readFile(join(outputRoot, "run-core-rehearsal.mjs"), "utf8"),
+    readBuiltModuleGraph(outputRoot, "run-outbox-drain.mjs"),
     readBuiltModuleGraph(outputRoot, "cloud-run-server.mjs"),
   ]);
 
@@ -150,6 +168,12 @@ test("builds isolated service and job entries without migration SQL in the servi
   assert.match(migrations, /RESET ROLE/);
   assert.match(rehearsal, /production_target_refused/);
   assert.match(rehearsal, /FCI_REHEARSAL_ACKNOWLEDGMENT/);
+  assert.match(outboxDrainGraph, /outbox_drain_inert/);
+  assert.match(outboxDrainGraph, /An active outbox dispatcher registry must cover every claimable event type/);
+  assert.doesNotMatch(
+    outboxDrainGraph,
+    /cloudflare:workers|vinext|worker\/index|FCI_WORKSPACE_TOKEN_ENCRYPTION_KEY/,
+  );
 });
 
 test("uses a non-root allowlisted container context and one image for service or controlled jobs", async () => {
@@ -166,6 +190,8 @@ test("uses a non-root allowlisted container context and one image for service or
   assert.match(dockerfile, /STOPSIGNAL SIGTERM/);
   assert.match(dockerfile, /run-migrations\.mjs/);
   assert.match(dockerfile, /run-core-rehearsal\.mjs/);
+  assert.match(dockerfile, /run-outbox-drain\.mjs/);
+  assert.match(dockerfile, /outbox drain is[\s\S]*?inert/);
   assert.match(dockerfile, /refuses the production deployment stage/);
   assert.match(dockerfile, /CMD \["node", "runtime\/cloud-run-server\.mjs"\]/);
   assert.doesNotMatch(dockerfile, /FCI_POSTGRES_PASSWORD|DATABASE_URL|COPY \. \./);
@@ -197,6 +223,134 @@ test("migration entry rejects the wrong mode or pool size before creating a pool
     /one-connection pool/,
   );
   assert.equal(createCalls, 0);
+});
+
+test("outbox drain entry is inert before configuration and enforces runtime max-one access when activated", async () => {
+  let loadCalls = 0;
+  let createCalls = 0;
+  const inert = await runConfiguredOutboxDrain({}, {
+    loadConfig() {
+      loadCalls += 1;
+      throw new Error("must not load");
+    },
+    async createPool() {
+      createCalls += 1;
+      throw new Error("must not create");
+    },
+  });
+  assert.deepEqual(inert, {
+    active: false,
+    recoveredForRetry: 0,
+    recoveredAsDeadLetter: 0,
+    claimed: 0,
+    completed: 0,
+    scheduledForRetry: 0,
+    deadLettered: 0,
+    staleTransitions: 0,
+  });
+  assert.equal(loadCalls, 0);
+  assert.equal(createCalls, 0);
+
+  const dispatchers = {
+    isEmpty: false,
+    async dispatch() {},
+  };
+  const createPool = async () => {
+    createCalls += 1;
+    throw new Error("must not create");
+  };
+  await assert.rejects(
+    runConfiguredOutboxDrain({}, {
+      dispatchers,
+      loadConfig: () => migrationConfig(),
+      createPool,
+    }),
+    /runtime access mode/,
+  );
+  await assert.rejects(
+    runConfiguredOutboxDrain({}, {
+      dispatchers,
+      loadConfig: () => migrationConfig({
+        postgres: {
+          accessMode: "runtime",
+          pool: { ...migrationConfig().postgres.pool, max: 2 },
+        },
+      }),
+      createPool,
+    }),
+    /one-connection PostgreSQL pool/,
+  );
+  assert.equal(createCalls, 0);
+});
+
+test("active outbox drain closes its max-one pool after a bounded pass", async () => {
+  const repositoryCalls = [];
+  let closeCalls = 0;
+  const result = await runConfiguredOutboxDrain({}, {
+    dispatchers: {
+      isEmpty: false,
+      async dispatch() {
+        throw new Error("no event should be claimed");
+      },
+    },
+    loadConfig: () => migrationConfig({
+      postgres: { accessMode: "runtime" },
+    }),
+    async createPool() {
+      return {
+        pool: { connect: async () => { throw new Error("repository is injected"); } },
+        async close() {
+          closeCalls += 1;
+        },
+      };
+    },
+    createRepository(pool, options) {
+      assert.equal(typeof pool.connect, "function");
+      assert.deepEqual(options, {
+        schema: "fci_app",
+        lockTimeoutMs: 5_000,
+        statementTimeoutMs: 30_000,
+      });
+      return {
+        async recoverExpiredLeases(input) {
+          repositoryCalls.push({ method: "recover", input });
+          return [];
+        },
+        async claimAvailable(input) {
+          repositoryCalls.push({ method: "claim", input });
+          return [];
+        },
+        async complete() {
+          throw new Error("no event should complete");
+        },
+        async retryOrDeadLetter() {
+          throw new Error("no event should fail");
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(result, {
+    active: true,
+    recoveredForRetry: 0,
+    recoveredAsDeadLetter: 0,
+    claimed: 0,
+    completed: 0,
+    scheduledForRetry: 0,
+    deadLettered: 0,
+    staleTransitions: 0,
+  });
+  assert.deepEqual(repositoryCalls, [
+    {
+      method: "recover",
+      input: { batchSize: 1, retryDelayMs: 30_000, maxAttempts: 5 },
+    },
+    {
+      method: "claim",
+      input: { batchSize: 1, leaseDurationMs: 60_000 },
+    },
+  ]);
+  assert.equal(closeCalls, 1);
 });
 
 test("migration entry activates the configured role and always closes its max-one pool", async () => {
