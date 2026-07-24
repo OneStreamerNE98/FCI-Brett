@@ -9,7 +9,7 @@ This guide is for two kinds of reader, and it is split so you only need your hal
 
 A short **Glossary** at the end defines the few special terms this guide uses (Shared Drive, blueprint, simulation, and others). Words in the glossary are written in plain language the first time they appear.
 
-> **How current this guide is.** Describes the app as built in source on 2026-07-23; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
+> **How current this guide is.** Describes the app as built in source on 2026-07-24; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
 
 ---
 
@@ -305,7 +305,9 @@ Administrators also see a read-only **Who has access** card. It shows the office
 
 ### 8. Testing & launch
 
-The **Test & launch checklist** — the ordered list you work through to prove the development copy behaves before production is opened to staff: clients and projects, meetings, inbox filing, calendar, the AI assistant, and production readiness. Use it as your pre-launch confidence check. It links straight to the Google Workspace setup.
+**Updated July 24, 2026.** The **Test & launch checklist** separates two kinds of development evidence. **Verified from live status** rows read the existing Workspace connection, Calendar access, and Client Directory mirror endpoints; they show current status and never have a checkbox. **Administrator attestations** are the human acceptance steps. When an administrator checks one, the app saves the administrator's email and the time, and that attestation remains after reload. The saved-checklist read model is safe and read-only for an office user, while the current company-setup navigation continues to keep this whole panel in the administrator audience.
+
+This card covers the working development copy only. It links straight to Google Workspace setup, but it does not complete or replace production acceptance. The production gate remains the separately reviewed [Production acceptance checklist](task-checklists/05-acceptance-checklist.md).
 
 Below the checklist, **Employee-login readiness** shows presence only for the separate authentication-only Google client. It lists the required configuration names, the open-invitation count from People & Access when that secure projection is available, and the owner activation gate. It never displays a client ID, redirect URI, hosted domain, secret, file path, or any other configured value. **Configuration ready** does not mean employee login is live: owner approval, production migration and grants, live OIDC configuration, and deployment remain separate gates.
 

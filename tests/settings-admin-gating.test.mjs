@@ -7,6 +7,8 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 const settingsMutationRoutes = [
   "app/api/v1/assistant/config/route.ts",
+  // SET-08 launch attestation mutation; kept separate from the Workspace defaults route.
+  "app/api/v1/settings/launch-checklist/route.ts",
   "app/api/v1/settings/workspace/route.ts",
   "app/api/v1/integrations/google/chat/config/route.ts",
   "app/api/v1/integrations/google/simulation/reset/route.ts",

@@ -177,16 +177,18 @@ test("Stage 4 pins normative verification and ongoing-upkeep copy without invent
 });
 
 test("Workspace cross-links target stage anchors while rendered personal settings use one name", async () => {
-  const [directory, testing, navigation, personal, routes] = await Promise.all([
+  const [directory, testing, launchChecklist, navigation, personal, routes] = await Promise.all([
     read("app/settings/components/DirectorySyncPanel.tsx"),
     read("app/settings/components/TestingLaunchPanel.tsx"),
+    read("app/settings/components/LaunchChecklistCard.tsx"),
     read("app/settings/components/SettingsAudienceNavigation.tsx"),
     read("app/settings/components/MySettingsPanel.tsx"),
     read("app/lib/operations-routes.ts"),
   ]);
 
   assert.match(directory, /href="\/settings\?section=google-workspace#workspace-stage-3">Open Google Workspace setup<\/a>/);
-  assert.match(testing, /href="\/settings\?section=google-workspace#workspace-stage-4">Open Google Workspace setup<\/a>/);
+  assert.match(launchChecklist, /href="\/settings\?section=google-workspace#workspace-stage-4">Open Google Workspace setup<\/a>/);
+  assert.match(testing, /<LaunchChecklistCard \/>/);
   assert.doesNotMatch(directory, /onClick=\{onConfigure\}/);
   assert.doesNotMatch(testing, /onClick=\{onGoogleSetup\}/);
   assert.match(navigation, /const PERSONAL_SECTION: SettingsSection = "My settings"/);
