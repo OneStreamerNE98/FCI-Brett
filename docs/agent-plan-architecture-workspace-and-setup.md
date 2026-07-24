@@ -1909,12 +1909,19 @@ on scroll-down and reveals on the FIRST scroll-up, iOS-Safari style — directio
 detection with a small threshold (no flicker on micro-scrolls), a passive
 rAF-throttled scroll listener, always visible at the top of the page, always
 revealed while focus is within it, and `prefers-reduced-motion` gets instant
-show/hide instead of the slide; desktop behavior unchanged.
+show/hide instead of the slide; desktop behavior unchanged. PLUS (owner
+screenshot, July 23, 2026) topbar control spacing: give `.topbar`
+(globals.css:58, currently `space-between` with NO gap) an explicit `gap`
+(~14 px) so the search field, notification button, and Add-lead button never
+render flush against each other at any width; the search's `min(480px,48vw)`
+width may also need a lower cap at intermediate widths (~1050 px is where the
+owner observed the collision).
 **Accept:** zero `font-size:0` in globals.css and an empty allowlist asserted;
 nav aria-labels unchanged; golden hashes unchanged; axe green desktop+mobile;
 a mobile-viewport e2e asserts the topbar hides on scroll-down, reveals on one
 upward scroll, stays visible with focus inside it, and renders statically under
-reduced motion.
+reduced motion; no topbar control renders flush against a neighbor anywhere in
+the 1180/960/820/620/560 sweep.
 **Effort:** small-medium. **Cost:** $0.
 
 ### DES-05 · Interactive vs static card grammar + FIX-08 absorption (medium; FloorOpsApp queue, after DES-06; GOLDEN REGEN 1 of 2)
@@ -1995,6 +2002,26 @@ state and the notifications popover; update `docs/design-critique-fix-plan.md`
 disposition); reconcile all DES statuses.
 **Accept:** ledgers agree with reality; screenshots committed; guard suite
 green (empty font-size-zero allowlist + undersized-control guard).
+**Effort:** small. **Cost:** $0.
+
+### DES-10 · Brand-mark presentation refinement (small; NOT priority — after the current DES queue; SVG work parallel-safe, the `.brand` edit takes the globals lock briefly)
+**Why:** owner feedback (July 23, 2026, post-DES-03 screenshot): the
+transparent logo "doesn't fit the UI" — the enhanced master is a 1254×1254
+SQUARE traced badge (133 paths, including a decorative frame) rendered into a
+wide sidebar slot via `object-fit:contain`, so it reads as a small floating
+framed label with dead space on the bare cream sidebar.
+**Do (mockup-first):** Fable produces 2–3 presentation variants as images for
+owner sign-off BEFORE any build — (a) crop the SVG viewBox to the mark's true
+bounds and remove the decorative frame paths; (b) horizontal lockup: the
+app-icon diamond mark plus "Floor Coverings International" set in the UI
+display font; (c) scale/position-only tuning. Codex then builds ONLY the
+chosen variant: SVG edits with SHA-pin updates in the same PR (DES-03
+discipline), `.brand`/`.sidebar-brand-row` sizing, collapsed-tile (34 px)
+coherence, mobile-drawer check.
+**Accept:** the owner-approved variant matches at 1280/collapsed/390 (dpr 1
+and 2 screenshots in the PR); SVG sanitizer and pin tests green; golden hashes
+unchanged; PNGs/manifest byte-identical unless the variant explicitly
+regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
 # Workstream G — AI assistant & automation (AI)
@@ -2370,7 +2397,8 @@ the extracted modules (parallel-safe among themselves); AI-07b after AI-07a;
 AI-09 closes the workstream. Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio =
 AI-07b; `tests/rendered-html.test.mjs` is touched additively by AI-02/07b/08 —
-serialize merges. Migration numbers are assigned at merge time (coordinate
+serialize merges. DES-10 (brand refinement, not priority) takes the globals
+lock only for its `.brand` edit, in a free window after DES-04/05/07. Migration numbers are assigned at merge time (coordinate
 with open BE-07's reserved PostgreSQL v7, KPI-04, and DES-08 a-T2).
 
 **Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
