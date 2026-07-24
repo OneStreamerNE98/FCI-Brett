@@ -1441,14 +1441,14 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
     await expect(page.locator(`[id="${descriptionId}"]`)).toBeHidden();
   }
   await expect(creationRow(page, "folder-tree")).toContainText("Unlocks after Shared Drive.");
-  await expect(creationRow(page, "spreadsheets")).toContainText("Unlocks after Shared Drive.");
-  await expect(creationRow(page, "templates")).toContainText("Unlocks after Shared Drive.");
-  await expect(creationRow(page, "calendars")).toContainText("Unlocks after Shared Drive.");
+  await expect(creationRow(page, "spreadsheets")).toContainText("Unlocks after Folder tree (from your blueprint).");
+  await expect(creationRow(page, "templates")).toContainText("Unlocks after Folder tree (from your blueprint).");
+  await expect(creationRow(page, "calendars")).toContainText("Unlocks after Templates.");
   for (const [key, buttonName, dependency] of [
     ["folder-tree", "Ensure root folders", "Unlocks after Shared Drive."],
-    ["spreadsheets", "Ensure spreadsheets", "Unlocks after Shared Drive."],
-    ["templates", "Ensure templates", "Unlocks after Shared Drive."],
-    ["calendars", "Verify calendar access", "Unlocks after Shared Drive."],
+    ["spreadsheets", "Ensure spreadsheets", "Unlocks after Folder tree (from your blueprint)."],
+    ["templates", "Ensure templates", "Unlocks after Folder tree (from your blueprint)."],
+    ["calendars", "Verify calendar access", "Unlocks after Templates."],
   ] as const) {
     const control = creationRow(page, key).getByRole("button", { name: buttonName });
     const descriptionId = await control.getAttribute("aria-describedby");
@@ -1483,7 +1483,7 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   await expect(creationRow(page, "templates").getByRole("button", { name: "Ensure templates" })).toBeDisabled();
   await expect(creationRow(page, "spreadsheets")).toContainText("Unlocks after Folder tree (from your blueprint).");
   await expect(creationRow(page, "templates")).toContainText("Unlocks after Folder tree (from your blueprint).");
-  await expect(creationRow(page, "calendars")).toContainText("Unlocks after Folder tree (from your blueprint).");
+  await expect(creationRow(page, "calendars")).toContainText("Unlocks after Templates.");
 
   await creationRow(page, "folder-tree").getByRole("button", { name: "Ensure root folders" }).click();
   expect(requests.folders).toEqual({ method: "POST", contentType: "application/json", body: {} });
@@ -1511,7 +1511,12 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   for (const missingType of ["drive.shared-drive", "drive.folder", "sheets.spreadsheet"] as const) {
     resources = completeRequiredResources.filter((resource) => resource.resourceType !== missingType);
     await page.getByRole("button", { name: "Check readiness" }).click();
-    await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS · 3 of 4");
+    const expectedReadyCount = missingType === "drive.shared-drive"
+      ? 0
+      : missingType === "drive.folder"
+        ? 1
+        : 3;
+    await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText(`IN PROGRESS · ${expectedReadyCount} of 4`);
     await expect(stageToggle(page, 3)).toHaveAttribute("aria-expanded", "true");
     await expect(stageToggle(page, 4)).toHaveAttribute("aria-expanded", "false");
     if (missingType === "drive.shared-drive") {
@@ -1550,6 +1555,43 @@ test("Stage 3 pins exact creation copy, dependency gates, request contracts, and
   await expect(creationRow(page, "calendars")).toHaveAttribute("data-workspace-creation-state", "VERIFY ONLY");
   await expect(creationRow(page, "calendars")).toContainText("No calendars are defined in this blueprint.");
   await expect(setupStage(page, 3).locator(".workspace-stage-chip")).toHaveText("DONE");
+});
+
+test.describe("FIX-18 Stage 3 status reconciliation", () => {
+  test("locked wins when seeded children report complete before the Shared Drive is adopted", async ({ page }) => {
+    await page.unroute("**/api/v1/integrations/google/setup/resources");
+    await mockWorkspaceResources(page, workspaceResources());
+    await mockConnectionHealth(page, connectedHealth());
+    await page.route("**/api/v1/google-workspace", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(readiness()) });
+    });
+    await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+    });
+
+    await page.goto("/settings?section=google-workspace#workspace-stage-3");
+    await setStageExpanded(page, 3, true);
+
+    await expect(creationCard(page).getByText("0 of 4 ready", { exact: true })).toBeVisible();
+    await expect(creationCard(page).locator('[data-workspace-creation-state="DONE"]')).toHaveCount(0);
+
+    for (const [key, state, buttonName, dependency] of [
+      ["folder-tree", "AFTER DRIVE", "Ensure root folders", "Unlocks after Shared Drive."],
+      ["spreadsheets", "AFTER FOLDERS", "Ensure spreadsheets", "Unlocks after Folder tree (from your blueprint)."],
+      ["templates", "AFTER FOLDERS", "Ensure templates", "Unlocks after Folder tree (from your blueprint)."],
+      ["calendars", "VERIFY ONLY", "Verify calendar access", "Unlocks after Templates."],
+    ] as const) {
+      const row = creationRow(page, key);
+      await expect(row).toHaveAttribute("data-workspace-creation-state", state);
+      await expect(row).not.toHaveClass(/creationRowComplete/);
+      await expect(row.getByText("DONE", { exact: true })).toHaveCount(0);
+      const control = row.getByRole("button", { name: buttonName });
+      await expect(control).toBeDisabled();
+      const descriptionId = await control.getAttribute("aria-describedby");
+      expect(descriptionId).toBeTruthy();
+      await expect(page.locator(`[id="${descriptionId}"]`)).toHaveText(dependency);
+    }
+  });
 });
 
 test("stale complete registry rows name Connect as the actual unmet dependency", async ({ page }) => {
