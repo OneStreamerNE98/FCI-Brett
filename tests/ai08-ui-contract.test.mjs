@@ -126,22 +126,22 @@ test("keeps the AI card in the zero-queue workflow stack and office read-only My
 });
 
 test("uses native disclosure semantics and keeps help isolated to the Assistant view", async () => {
-  const [help, app, card] = await Promise.all([
+  const [help, assistantView, app, card] = await Promise.all([
     read("app/assistant/components/AssistantHelpPanel.tsx"),
+    read("app/assistant/components/AssistantView.tsx"),
     read("app/FloorOpsApp.tsx"),
     read("app/settings/components/AiAssistantSettingsCard.tsx"),
   ]);
-  const assistantView = app.slice(
-    app.indexOf("function AssistantView"),
-    app.indexOf("function ReportBarRow"),
-  );
 
   assert.match(help, /<details>/u);
   assert.match(help, /<summary>/u);
   assert.doesNotMatch(help, /\b(?:useState|onClick|role="button")\b/u);
   assert.equal(help.match(/<li key=\{question\}>/gu)?.length, 1);
   assert.match(assistantView, /<AssistantHelpPanel \/>/u);
-  assert.equal(app.match(/<AssistantHelpPanel \/>/gu)?.length, 1);
+  assert.equal(assistantView.match(/<AssistantHelpPanel \/>/gu)?.length, 1);
+  assert.match(app, /import \{ AssistantView \} from "\.\/assistant\/components\/AssistantView";/u);
+  assert.match(app, /<AssistantView projects=\{projectItems\} \/>/u);
+  assert.doesNotMatch(app, /<AssistantHelpPanel \/>/u);
 
   assert.match(card, /\{isAdmin \? <form onSubmit=\{save\}>/u);
   assert.match(card, /className=\{styles\.readOnlyFeatures\} aria-label="AI feature states"/u);

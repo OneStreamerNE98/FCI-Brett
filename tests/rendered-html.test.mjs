@@ -8,6 +8,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const appSurfacePaths = [
   "app/FloorOpsApp.tsx",
   "app/assistant/components/AssistantHelpPanel.tsx",
+  "app/assistant/components/AssistantView.tsx",
   "app/settings/components/AiAssistantSettingsCard.tsx",
   "app/settings/components/ChatNotificationSettingsCard.tsx",
   "app/settings/components/DataSecurityPanel.tsx",
@@ -295,10 +296,13 @@ test("DES-04 keeps shell controls honest, reachable, and responsive", async () =
 });
 
 test("keeps the design-critique interaction contracts in the rendered app", async () => {
-  const app = await readAppSurface();
-  const inbox = app.slice(app.indexOf("function InboxView"), app.indexOf("function AssistantView"));
-  const assistant = app.slice(app.indexOf("function AssistantView"), app.indexOf("function ReportsView"));
-  const reports = app.slice(app.indexOf("function ReportBarRow"), app.indexOf("function SettingsView"));
+  const [app, shell, assistant] = await Promise.all([
+    readAppSurface(),
+    read("app/FloorOpsApp.tsx"),
+    read("app/assistant/components/AssistantView.tsx"),
+  ]);
+  const inbox = shell.slice(shell.indexOf("function InboxView"), shell.indexOf("function ReportBarRow"));
+  const reports = shell.slice(shell.indexOf("function ReportBarRow"), shell.indexOf("function SettingsView"));
   const askBox = assistant.slice(assistant.indexOf('className="ask-box"'), assistant.indexOf("</form>"));
 
   assert.match(app, /<LeadDrawer lead=\{selectedLead\}/);
@@ -887,8 +891,9 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
 
 // DES-07 keeps these structure-level pins separate from neighboring packet guards.
 test("DES-07 unifies operation metrics, empty states, and pill aliases", async () => {
-  const [app, primitives, businessKpis, featureStateBadge, css, appComponents] = await Promise.all([
+  const [app, assistantView, primitives, businessKpis, featureStateBadge, css, appComponents] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    read("app/assistant/components/AssistantView.tsx"),
     read("app/components/operations/OperationsPrimitives.tsx"),
     read("app/features/reports/BusinessKpisPanel.tsx"),
     read("app/components/FeatureStateBadge.tsx"),
@@ -909,7 +914,7 @@ test("DES-07 unifies operation metrics, empty states, and pill aliases", async (
   assert.doesNotMatch(css, /\.business-kpi-card\{[^}]*(?:display|flex-direction|padding):/);
 
   assert.match(primitives, /export function OperationsEmptyState/);
-  const operationSurfaces = `${app}\n${businessKpis}`;
+  const operationSurfaces = `${app}\n${assistantView}\n${businessKpis}`;
   for (const variant of ["table", "dashboard", "page", "inbox", "source", "meeting", "board", "client-projects"]) {
     assert.match(operationSurfaces, new RegExp(`<OperationsEmptyState variant="${variant}"`), `Missing the ${variant} shared empty-state variant.`);
   }
