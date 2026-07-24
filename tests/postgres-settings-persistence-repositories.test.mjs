@@ -13,11 +13,13 @@ const vite = await createServer({
 
 const [
   workspaceSettingsModule,
+  workspaceSettingsDomain,
   userPreferencesModule,
   filingRuleModule,
   mailItemModule,
 ] = await Promise.all([
   vite.ssrLoadModule("/app/adapters/postgres/workspace-settings-repository.ts"),
+  vite.ssrLoadModule("/app/domain/workspace-settings.ts"),
   vite.ssrLoadModule("/app/adapters/postgres/user-preferences-repository.ts"),
   vite.ssrLoadModule("/app/adapters/postgres/filing-rule-repository.ts"),
   vite.ssrLoadModule("/app/adapters/postgres/mail-item-repository.ts"),
@@ -93,7 +95,7 @@ function dataQuery(pool, pattern) {
   return query;
 }
 
-test("PostgreSQL Workspace settings preserve scalar resource IDs on document upsert", async () => {
+test("PostgreSQL Workspace settings atomically merge owned keys and preserve scalar resource IDs", async () => {
   const readPool = new RecordingPostgresPool(({ sql }) => {
     assert.match(sql, /FROM workspace_settings[\s\S]*WHERE id = \$1/);
     return result([{
@@ -128,7 +130,7 @@ test("PostgreSQL Workspace settings preserve scalar resource IDs on document ups
   const writer = createPostgresWorkspaceSettingsRepository(writePool, {
     schema: "settings_test",
   });
-  await writer.upsert({
+  await writer.mergeSettings({
     id: "workspace",
     settings: { appointmentCalendarId: "calendar-2" },
     updatedBy: "admin@example.test",
@@ -141,12 +143,67 @@ test("PostgreSQL Workspace settings preserve scalar resource IDs on document ups
     JSON.stringify({ appointmentCalendarId: "calendar-2" }),
     "admin@example.test",
     new Date(UPDATED_AT),
+    ["appointmentCalendarId"],
   ]);
   const conflictUpdate = upsert.sql.split("DO UPDATE SET")[1];
+  assert.match(
+    conflictUpdate,
+    /workspace_settings\.settings_json - \$5::text\[\][\s\S]*\|\| EXCLUDED\.settings_json/u,
+  );
+  assert.doesNotMatch(conflictUpdate, /settings_json = EXCLUDED\.settings_json/u);
   assert.doesNotMatch(
     conflictUpdate,
     /shared_drive_id|client_directory_sheet_id|intake_mailbox/,
     "document updates must not erase registered Workspace resource IDs",
+  );
+});
+
+test("PostgreSQL Workspace settings fence the merged document byte length and reject oversize merges atomically", async () => {
+  // The conflict update carries a WHERE on the merged jsonb text's byte length,
+  // measured on the same expression the update writes, so the fence is atomic.
+  const shapePool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^INSERT INTO workspace_settings/);
+    return result([], 1);
+  });
+  await createPostgresWorkspaceSettingsRepository(shapePool, {
+    schema: "settings_test",
+  }).mergeSettings({
+    id: "workspace",
+    settings: { appointmentCalendarId: "calendar-2" },
+    updatedBy: "admin@example.test",
+    updatedAt: UPDATED_AT,
+  });
+  const conflictUpdate = dataQuery(shapePool, /^INSERT INTO workspace_settings/)
+    .sql.split("DO UPDATE SET")[1];
+  assert.match(
+    conflictUpdate,
+    /WHERE octet_length\([\s\S]*workspace_settings\.settings_json - \$5::text\[\][\s\S]*\|\| EXCLUDED\.settings_json[\s\S]*\)::text\) <= 64000/u,
+  );
+
+  // A guard that matches no row (rowCount 0) surfaces the shared typed oversize
+  // error and rolls the bounded transaction back without a partial write.
+  const rejectingPool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^INSERT INTO workspace_settings/);
+    return result([], 0);
+  });
+  await assert.rejects(
+    createPostgresWorkspaceSettingsRepository(rejectingPool, {
+      schema: "settings_test",
+    }).mergeSettings({
+      id: "workspace",
+      settings: { appointmentCalendarId: "calendar-2" },
+      updatedBy: "admin@example.test",
+      updatedAt: UPDATED_AT,
+    }),
+    (error) =>
+      error instanceof TypeError
+      && error.message
+        === workspaceSettingsDomain.WORKSPACE_SETTINGS_DOCUMENT_TOO_LARGE_MESSAGE,
+  );
+  assert.equal(
+    rejectingPool.queries.some(({ sql }) => sql === "ROLLBACK"),
+    true,
+    "a rejected oversize merge must roll its bounded transaction back",
   );
 });
 

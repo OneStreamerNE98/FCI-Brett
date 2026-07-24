@@ -124,7 +124,7 @@ function routeRequest(path, email, method = "GET", body, origin = "https://fci.e
   return request;
 }
 
-test("workspace settings use one safe normalizer and JSON upserts preserve scalar resource columns", async () => {
+test("workspace settings use one safe normalizer and atomic JSON merges preserve scalar resource columns", async () => {
   const database = new FakeDatabase({
     first(statement) {
       assert.match(statement.sql, /FROM workspace_settings WHERE id = \?/u);
@@ -169,7 +169,7 @@ test("workspace settings use one safe normalizer and JSON upserts preserve scala
     workspaceDomain.DEFAULT_WORKSPACE_PREFERENCES,
   );
 
-  await repository.upsert({
+  await repository.mergeSettings({
     id: "workspace",
     settings: record.settings,
     updatedBy: "next-admin@example.test",
@@ -177,7 +177,9 @@ test("workspace settings use one safe normalizer and JSON upserts preserve scala
   });
   const write = database.statements.at(-1);
   assert.match(write.sql, /^INSERT INTO workspace_settings/u);
-  assert.match(write.sql, /DO UPDATE SET settings_json = excluded\.settings_json/u);
+  assert.match(write.sql, /settings_json = json_patch\(/u);
+  assert.match(write.sql, /json_remove\(/u);
+  assert.doesNotMatch(write.sql, /settings_json = excluded\.settings_json/u);
   assert.doesNotMatch(
     write.sql,
     /DO UPDATE SET[^]*?(?:shared_drive_id|client_directory_sheet_id|intake_mailbox)\s*=/u,
@@ -468,11 +470,10 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
   const storedSettings = JSON.parse(write.values[1]);
   assert.equal(storedSettings.appointmentReminderHours, 6);
   assert.equal(storedSettings.clientReminderHours, 48);
-  assert.deepEqual(storedSettings.futureWorkspaceSetting, { retained: true });
-  assert.deepEqual(storedSettings.aiFeatures, {
-    orgQa: false,
-    futureFeature: "preserved",
-  });
+  assert.equal("futureWorkspaceSetting" in storedSettings, false);
+  assert.equal("aiFeatures" in storedSettings, false);
+  assert.match(write.sql, /settings_json = json_patch\(/u);
+  assert.doesNotMatch(write.sql, /settings_json = excluded\.settings_json/u);
 });
 
 // SET-06: custom rules remain inert while their row presents that state honestly.

@@ -10,8 +10,13 @@ export type WorkspaceSettingsRecord = Readonly<{
   updatedAt: number;
 }>;
 
-export type WorkspaceSettingsUpsert = Readonly<{
+export type WorkspaceSettingsMerge = Readonly<{
   id: string;
+  /**
+   * Only these top-level keys are replaced. Every stored sibling key remains
+   * untouched so independently owned settings surfaces cannot overwrite one
+   * another from stale read-modify-write snapshots.
+   */
   settings: WorkspaceSettingsDocument;
   updatedBy: string;
   updatedAt: number;
@@ -20,8 +25,9 @@ export type WorkspaceSettingsUpsert = Readonly<{
 export interface WorkspaceSettingsRepository {
   findById(id: string): Promise<WorkspaceSettingsRecord | null>;
   /**
-   * Updates only the settings document and audit metadata. Existing scalar
-   * Workspace resource IDs are deliberately preserved.
+   * Atomically merges the supplied top-level settings keys and audit metadata
+   * in one database statement. Existing sibling keys and scalar Workspace
+   * resource IDs are deliberately preserved.
    */
-  upsert(input: WorkspaceSettingsUpsert): Promise<void>;
+  mergeSettings(input: WorkspaceSettingsMerge): Promise<void>;
 }

@@ -2,6 +2,11 @@ import type {
   WorkspaceSettingsRecord,
   WorkspaceSettingsRepository,
 } from "../../ports/workspace-settings-repository";
+import {
+  MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES,
+  prepareWorkspaceSettingsMerge,
+  workspaceSettingsDocumentTooLargeError,
+} from "../../domain/workspace-settings";
 import { withPostgresTransaction, type PostgresPool } from "./postgres-database";
 import {
   assertPersistenceText,
@@ -75,15 +80,6 @@ function workspaceSettingsRecord(row: WorkspaceSettingsDatabaseRow): WorkspaceSe
   });
 }
 
-function settingsDocumentJson(value: unknown) {
-  const document = parsePostgresJsonObject(value, "Workspace settings document");
-  const serialized = JSON.stringify(document);
-  if (Buffer.byteLength(serialized, "utf8") > 64_000) {
-    throw new TypeError("Workspace settings document must be at most 64000 UTF-8 bytes");
-  }
-  return serialized;
-}
-
 export function createPostgresWorkspaceSettingsRepository(
   pool: PostgresPool,
   options: PostgresWorkspaceSettingsOptions = {},
@@ -117,27 +113,48 @@ export function createPostgresWorkspaceSettingsRepository(
       );
     },
 
-    async upsert(input) {
+    async mergeSettings(input) {
       if (!validIdentifier(input.id)) {
         throw new TypeError("Workspace settings ID must be bounded nonblank text");
       }
       assertPersistenceText(input.updatedBy, "Workspace settings updater", 320);
       const updatedAt = persistenceDate(input.updatedAt, "Workspace settings updated_at");
-      const settingsJson = settingsDocumentJson(input.settings);
+      const merge = prepareWorkspaceSettingsMerge(input.settings);
       await withPostgresTransaction(pool, transactionOptions, async (client) => {
+        // The conflict update only applies when the RESULTING merged document
+        // fits the byte bound, enforced atomically inside the bounded
+        // transaction so no read-modify-write race can slip past it. When the
+        // guard fails the upsert touches no row (rowCount 0) and the stored row
+        // is left byte-identical, which we surface as the same typed oversize
+        // error the domain layer and D1 adapter raise. A fresh insert needs no
+        // guard: its document equals the already patch-bounded payload.
         const result = await client.query(
           `INSERT INTO workspace_settings (
              id, shared_drive_id, client_directory_sheet_id, intake_mailbox,
              settings_json, updated_by, updated_at
            ) VALUES ($1, NULL, NULL, NULL, $2::jsonb, $3, $4)
            ON CONFLICT (id) DO UPDATE SET
-             settings_json = EXCLUDED.settings_json,
+             settings_json = (
+               workspace_settings.settings_json - $5::text[]
+             ) || EXCLUDED.settings_json,
              updated_by = EXCLUDED.updated_by,
-             updated_at = EXCLUDED.updated_at`,
-          [input.id, settingsJson, input.updatedBy, updatedAt],
+             updated_at = EXCLUDED.updated_at
+           WHERE octet_length((
+             (workspace_settings.settings_json - $5::text[]) || EXCLUDED.settings_json
+           )::text) <= ${MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES}`,
+          [
+            input.id,
+            merge.serialized,
+            input.updatedBy,
+            updatedAt,
+            merge.keys,
+          ],
         );
+        if (result.rowCount === 0) {
+          throw workspaceSettingsDocumentTooLargeError();
+        }
         if (result.rowCount !== 1) {
-          throw new Error("PostgreSQL Workspace settings were not upserted exactly once");
+          throw new Error("PostgreSQL Workspace settings were not merged exactly once");
         }
       });
     },
