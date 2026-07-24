@@ -302,6 +302,10 @@ Administrators also see a read-only **Who has access** card. It shows the office
 
 The **Test & launch checklist** — the ordered list you work through to prove the development copy behaves before production is opened to staff: clients and projects, meetings, inbox filing, calendar, the AI assistant, and production readiness. Use it as your pre-launch confidence check. It links straight to the Google Workspace setup.
 
+Below the checklist, **Employee-login readiness** shows presence only for the separate authentication-only Google client. It lists the required configuration names, the open-invitation count from People & Access when that secure projection is available, and the owner activation gate. It never displays a client ID, redirect URI, hosted domain, secret, file path, or any other configured value. **Configuration ready** does not mean employee login is live: owner approval, production migration and grants, live OIDC configuration, and deployment remain separate gates.
+
+Two read-only policy cards explain **What each role can do** and the fixed **Employee session limits**. The role card covers Administrator, Office Operations, Project Manager, and the future one-project Field link. The session card records the 30-minute idle limit and eight-hour absolute limit. These cards have no switches because the server policy is fixed for the first release; People & Access assigns one role rather than editing capabilities or session rules.
+
 ---
 
 ## Connecting and verifying Google in plain words
@@ -393,7 +397,9 @@ Most of the time, FCI Operations looks after itself. Here is what actually needs
 
 Keep this straight in your head: the **app login** (who may open the app) is deliberately separate from the **Google data connection** (the one company account that supplies Gmail, Calendar, Drive, and Sheets). Connecting Google does **not** change how people log in.
 
-**How it will work at live login (planned).** The production plan replaces ChatGPT sign-in with **Sign in with your company Google account** and makes the **Administrator / Office Operations / Project Manager** roles — the same ones the People & Access screen already collects — enforced by the server, with project-level permissions so you can decide who sees which jobs. That server enforcement needs the production environment and is a developer-and-owner rollout, not an in-app toggle. Until it is switched on, the People & Access screen stays in test-data mode and adding or removing a real user is a request to the developer.
+**How it will work at live login (planned).** The production plan replaces ChatGPT sign-in with **Sign in with your company Google account** and makes the **Administrator / Office Operations / Project Manager** roles — the same ones the People & Access screen already collects — enforced by the server, with project-level permissions so you can decide who sees which jobs. Field workers do not receive employee accounts in the first release; a future Field link is read-only, limited to one exact project, expiring, and revocable. Every employee session has a 30-minute idle limit and an eight-hour absolute limit.
+
+Administrators can review the source readiness for that change under **Settings → Testing & launch → Employee-login readiness**. The card deliberately distinguishes three facts: whether the required configuration names are present, whether the secure People & Access projection can report a real open-invitation count, and whether the owner activation gate has been opened. A real zero invitations is shown as zero; an unavailable projection is shown as unavailable, never as zero. That server enforcement still needs the production environment and is a developer-and-owner rollout, not an in-app toggle. Until it is switched on, the People & Access screen stays in test-data mode and adding or removing a real user is a request to the developer.
 
 ---
 
