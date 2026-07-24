@@ -469,6 +469,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   });
   const readinessChecked = useRef(false);
   const stageThreeSubsectionsInitialized = useRef(false);
+  const workspaceResourcesLoadIdRef = useRef(0);
 
   const updateStageThreeCreationStatus = useCallback((next: StageThreeSubsectionStatus) => {
     setStageThreeCreationStatus((current) => (
@@ -616,13 +617,22 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
 
   const loadWorkspaceResources = useCallback(async (force = false) => {
     if (!isAdmin) return;
+    // Gate on the latest invocation: with a ?google=... OAuth callback the admin
+    // mount effect and the callback's forced refresh both hit this endpoint, and
+    // whichever completed first used to settle the status that seeds the one-shot
+    // Stage 3 disclosure init. Only the newest request may resolve/settle so the
+    // disclosures and chips reflect the authoritative (forced) response — not a
+    // stale completion that lands out of order.
+    const loadId = ++workspaceResourcesLoadIdRef.current;
     setWorkspaceResourcesState("loading");
     setWorkspaceResourcesError(null);
     try {
       const data = await cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force });
+      if (loadId !== workspaceResourcesLoadIdRef.current) return;
       setWorkspaceResources(data);
       setWorkspaceResourcesState("ready");
     } catch {
+      if (loadId !== workspaceResourcesLoadIdRef.current) return;
       setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
       setWorkspaceResourcesState("error");
     }

@@ -2151,6 +2151,56 @@ test.describe("SET-38 Stage 3 subsection disclosures", () => {
     await expect(stageThreeSubsection(page, "blueprint").getByRole("alert")).toContainText("FCI TEST blueprint unavailable");
   });
 
+  test("gates the disclosure init on the latest resources request when an OAuth callback lands out of order", async ({ page }) => {
+    // On a ?google=... callback the admin mount effect issues a non-forced
+    // resources load while the callback effect issues a forced copy. The forced
+    // (latest-started) request is authoritative. Resolve the two out of order:
+    // the first (stale) request lands immediately reporting every subsection
+    // complete, and the authoritative request lands last reporting Workspace
+    // creation incomplete. The one-shot disclosure init must follow the
+    // authoritative response — opening the first-incomplete subsection — and must
+    // not lock onto the stale completion that resolved first.
+    let resourcesRequestCount = 0;
+    await page.unroute("**/api/v1/integrations/google/setup/resources");
+    await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
+      resourcesRequestCount += 1;
+      if (resourcesRequestCount === 1) {
+        // Stale mount load: resolves first, reports creation already complete.
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(completedWorkspaceResources()),
+        });
+        return;
+      }
+      // Authoritative forced callback load: resolves last with creation incomplete.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(workspaceResources()),
+      });
+    });
+    await mockReadyWorkspaceForStageThree(page);
+
+    await page.goto("/settings?section=google-workspace&google=connected#workspace-stage-3");
+
+    const creationToggle = stageThreeSubsectionToggle(page, "creation");
+    const blueprintToggle = stageThreeSubsectionToggle(page, "blueprint");
+
+    // The authoritative response reports Workspace creation incomplete…
+    await expect(stageThreeSubsection(page, "creation").getByText("0 of 4 ready", { exact: true })).toBeVisible();
+    await expect(stageThreeSubsection(page, "blueprint").getByText("Seed defaults · version 0", { exact: true })).toBeVisible();
+    // …so the first-incomplete subsection (creation) opens — not the stale-complete
+    // result that resolved first, which would have left every subsection collapsed.
+    await expect(creationToggle).toHaveAttribute("aria-expanded", "true");
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#workspace-stage-3-creation-content")).toBeVisible();
+    await expect(page.locator("#workspace-stage-3-blueprint-content")).toBeHidden();
+    // Both racing loads (mount + forced callback) reached the resources endpoint.
+    expect(resourcesRequestCount).toBeGreaterThanOrEqual(2);
+  });
+
   test("reports a failed Blueprint refresh as unavailable while retaining the stale draft for recovery", async ({ page }) => {
     let blueprintGetCount = 0;
     await page.unroute("**/api/v1/integrations/google/setup/blueprint");
