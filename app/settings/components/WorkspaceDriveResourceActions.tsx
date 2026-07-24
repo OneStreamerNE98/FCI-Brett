@@ -75,7 +75,7 @@ type CreationRowProps = Readonly<{
   rowKey: string;
   label: string;
   info: string;
-  state: "FOUND — ADOPT" | "VERIFY" | "DONE" | "AFTER DRIVE" | "CREATE" | "AFTER FOLDERS" | "VERIFY ONLY" | "UNAVAILABLE";
+  state: "FOUND — ADOPT" | "VERIFY" | "AFTER DRIVE" | "CREATE" | "AFTER FOLDERS" | "VERIFY ONLY" | "UNAVAILABLE";
   complete?: boolean;
   lockedCaption?: string;
   children: ReactNode | ((dependencyDescriptionId: string | undefined) => ReactNode);
@@ -114,11 +114,18 @@ export function deriveWorkspaceCreationProgress(
   const folders = resources.filter((resource) => resource.resourceType === "drive.folder");
   const spreadsheets = resources.filter((resource) => resource.resourceType === "sheets.spreadsheet");
   const templates = resources.filter((resource) => resource.resourceType === "drive.file");
-  const sharedDriveComplete = resourcesReady
+  const sharedDriveReportedComplete = resourcesReady
     && resourceGroupComplete(sharedDrives, simulation);
-  const foldersComplete = resourcesReady && resourceGroupComplete(folders, simulation);
-  const spreadsheetsComplete = resourcesReady && resourceGroupComplete(spreadsheets, simulation);
-  const templatesComplete = resourcesReady && resourceGroupComplete(templates, simulation, true);
+  const foldersReportedComplete = resourcesReady && resourceGroupComplete(folders, simulation);
+  const spreadsheetsReportedComplete = resourcesReady && resourceGroupComplete(spreadsheets, simulation);
+  const templatesReportedComplete = resourcesReady && resourceGroupComplete(templates, simulation, true);
+
+  // Locked wins: a downstream group is not ready until every dependency before it is ready,
+  // even when stale or seeded registry rows independently report that group as complete.
+  const sharedDriveComplete = sharedDriveReportedComplete;
+  const foldersComplete = sharedDriveComplete && foldersReportedComplete;
+  const spreadsheetsComplete = foldersComplete && spreadsheetsReportedComplete;
+  const templatesComplete = foldersComplete && templatesReportedComplete;
   return {
     sharedDriveComplete,
     foldersComplete,
@@ -454,13 +461,16 @@ function CreationRow({
   lockedCaption,
   children,
 }: CreationRowProps) {
+  const locked = Boolean(lockedCaption);
+  const renderedComplete = complete && !locked;
+  const renderedState = renderedComplete ? "DONE" : state;
   const dependencyDescriptionId = lockedCaption
     ? `workspace-creation-${rowKey}-dependency`
     : undefined;
   return <li
-    className={`${styles.creationRow}${complete ? ` ${styles.creationRowComplete}` : ""}${lockedCaption ? ` ${styles.creationRowLocked}` : ""}`}
+    className={`${styles.creationRow}${renderedComplete ? ` ${styles.creationRowComplete}` : ""}${locked ? ` ${styles.creationRowLocked}` : ""}`}
     data-workspace-creation-row={rowKey}
-    data-workspace-creation-state={state}
+    data-workspace-creation-state={renderedState}
   >
     <span className={styles.rowNumber} aria-hidden="true">{order}</span>
     <div className={styles.rowBody}>
@@ -469,7 +479,7 @@ function CreationRow({
           <h4>{label}</h4>
           <WorkspaceInfoHint label={`About ${label}`} text={info} />
         </div>
-        <span className={`${styles.stateChip}${complete ? ` ${styles.stateChipDone}` : ""}`}>{state}</span>
+        <span className={`${styles.stateChip}${renderedComplete ? ` ${styles.stateChipDone}` : ""}`}>{renderedState}</span>
       </header>
       {lockedCaption && <p id={dependencyDescriptionId} className={styles.unlockCaption}>{lockedCaption}</p>}
       {typeof children === "function" ? children(dependencyDescriptionId) : children}
@@ -557,8 +567,6 @@ export function WorkspaceDriveResourceActions({
   const resourceStatusPending = !resourcesReady && !registryUnavailable;
   const sharedDriveState = registryUnavailable
     ? "UNAVAILABLE"
-    : progress.sharedDriveComplete
-    ? "DONE"
     : sharedDrive?.source === "env" || sharedDrive?.state === "Found"
       ? "FOUND — ADOPT"
       : "VERIFY";
@@ -584,27 +592,19 @@ export function WorkspaceDriveResourceActions({
     ? resourceStatusDependency
       ?? (!stageReady
         ? "Unlocks after Connect."
-        : !progress.sharedDriveComplete
-          ? "Unlocks after Shared Drive."
-          : "Unlocks after Folder tree (from your blueprint).")
+        : "Unlocks after Folder tree (from your blueprint).")
     : undefined;
   const templateDependency = !templatesEnabled
     ? resourceStatusDependency
       ?? (!stageReady
         ? "Unlocks after Connect."
-        : !progress.sharedDriveComplete
-          ? "Unlocks after Shared Drive."
-          : "Unlocks after Folder tree (from your blueprint).")
+        : "Unlocks after Folder tree (from your blueprint).")
     : undefined;
   const calendarDependency = !calendarsEnabled
     ? resourceStatusDependency
       ?? (!stageReady
         ? "Unlocks after Connect."
-        : !progress.sharedDriveComplete
-          ? "Unlocks after Shared Drive."
-          : !progress.foldersComplete
-            ? "Unlocks after Folder tree (from your blueprint)."
-            : "Unlocks after Templates.")
+        : "Unlocks after Templates.")
     : !simulation && !calendarReady
       ? "Unlocks after Calendar is enabled and connected."
       : undefined;
@@ -653,7 +653,7 @@ export function WorkspaceDriveResourceActions({
         rowKey="folder-tree"
         label="Folder tree (from your blueprint)"
         info={FOLDER_TREE_INFO}
-        state={progress.foldersComplete ? "DONE" : foldersEnabled ? "CREATE" : "AFTER DRIVE"}
+        state={foldersEnabled ? "CREATE" : "AFTER DRIVE"}
         complete={progress.foldersComplete}
         lockedCaption={folderDependency}
       >
@@ -667,7 +667,7 @@ export function WorkspaceDriveResourceActions({
         rowKey="spreadsheets"
         label="Spreadsheets"
         info={SPREADSHEETS_INFO}
-        state={progress.spreadsheetsComplete ? "DONE" : spreadsheetsEnabled ? "CREATE" : "AFTER FOLDERS"}
+        state={spreadsheetsEnabled ? "CREATE" : "AFTER FOLDERS"}
         complete={progress.spreadsheetsComplete}
         lockedCaption={spreadsheetDependency}
       >
@@ -681,7 +681,7 @@ export function WorkspaceDriveResourceActions({
         rowKey="templates"
         label="Templates"
         info={TEMPLATES_INFO}
-        state={progress.templatesComplete ? "DONE" : templatesEnabled ? "CREATE" : "AFTER FOLDERS"}
+        state={templatesEnabled ? "CREATE" : "AFTER FOLDERS"}
         complete={progress.templatesComplete}
         lockedCaption={templateDependency}
       >
