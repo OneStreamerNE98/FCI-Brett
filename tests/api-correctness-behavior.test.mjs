@@ -231,7 +231,9 @@ test("every development POST route checks same origin before authorization", asy
     const label = relative(rootPath, path).replaceAll("\\", "/");
     postRoutes.push(label);
     const originIndex = handler.indexOf("const originError = requireSameOrigin(request)");
-    const denialIndex = handler.indexOf("if (originError) return originError");
+    const denialIndex = handler.search(
+      /if \(originError\) return (?:originError|noStoreResponse\(originError\))/,
+    );
     const authorizationIndex = handler.indexOf("requireOfficeUser(request");
     if (
       originIndex < 0

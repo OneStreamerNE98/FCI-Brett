@@ -131,7 +131,9 @@ test("every limited mutation route checks its closed scope after office authoriz
 
   for (const route of limitedRoutes) {
     const source = await readFile(join(root, route.path), "utf8");
-    const authorization = source.indexOf('if ("response" in auth) return auth.response');
+    const authorization = source.search(
+      /if \("response" in auth\) return (?:auth\.response|noStoreResponse\(auth\.response\))/,
+    );
     const limiter = source.indexOf(
       `enforceDevelopmentRequestRateLimit("${route.scope}", auth.user.email)`,
     );
