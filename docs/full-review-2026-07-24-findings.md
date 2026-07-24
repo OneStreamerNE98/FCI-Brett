@@ -423,6 +423,26 @@ coordinate/fold into SET-06.
 some redesign-orphaned — collectively drag the polish level of the settings and
 overview surfaces. Bundling them into one bounded sweep avoids a swarm of one-line
 PRs while keeping each honest.
+
+**Additional residuals (added July 24, 2026, from the HINT-01 / SET-08 / DES-08d
+review cycle):**
+- LaunchChecklistCard renders a definitive "Not attested" while the checklist read
+  is failing or in flight — add an unknown/loading branch for the attestation rows
+  (P3; disabled checkboxes and the in-section error banner mitigate today).
+- Dashboard snapshot invalidation: local-midnight rollover, a displayTimezone
+  change, and assistant-recorded meetings do not refresh the fetched
+  `todayMeetings` until the next mutation-driven refresh. Revisit app-wide
+  alongside AI-04's shared-read work rather than per-section.
+- DES-08d overflow-honesty edges (both P3, disclosed states): client-side
+  project-join drops fold into the "and N more…" count, and the "Today + next up"
+  subtitle carries an unbounded upcoming total.
+- Settings-blob write fence (candidate BE packet, cross-cutting — raised
+  independently by our persistence lens and the automated review): every
+  `workspace_settings` writer (workspace route, assistant-config, launch
+  checklist) is a blob-granularity read-modify-write, so racing saves silently
+  drop one write. One shared version-fence or key-scoped merge belongs in the
+  settings repository port, applied to all writers including the BE-07
+  PostgreSQL adapter.
 **Do:**
 - **Orphaned old-stepper CSS (the substantive item):** delete `app/globals.css`
   L533–546, L606–639, L676–680, L728–734, L879; extend the globals guard in

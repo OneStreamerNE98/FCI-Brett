@@ -816,7 +816,7 @@ target `/settings?section=google-workspace`).
 deep-link string; slugs unchanged.
 
 ### SET-08 · Persist the launch checklists (medium, after SET-01+02)
-**Status:** In review — PR #169, July 24, 2026. Source-only and undeployed. Guide impact: updated `docs/settings-guide.md` with the persisted development-checklist contract.
+**Status:** Complete — PR #169, July 24, 2026. Source-only and undeployed. Opus fleet clean across route-security, persistence, UI-honesty, and tests lenses: admin-gated PATCH with server-stamped actor/timestamp and client-forged metadata rejected 400; widen-on-read proven in both directions; simulation reset provably never touches workspace_settings. Review fix (b6f98be, July 24, 2026) labels the simulated environment honestly — live rows read Simulated, the summary never counts simulated rows as verified. Residuals recorded in FIX-17; the cross-cutting settings-blob write fence is noted there as a candidate BE packet. Guide impact: updated `docs/settings-guide.md` with the persisted development-checklist contract and the simulated-environment note.
 
 **Why:** The 4 safeguard checkboxes are unbound inputs storing nothing; Testing & launch
 is a static list that looks trackable. Persisting is accepted tracked work.
@@ -2025,7 +2025,7 @@ assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
-**Status:** In review — PR #170, July 24, 2026 (draft; sub-scope d; source-only and undeployed; sub-scope b merged in PR #167; sub-scope c deferred because the current source has no live attention strip or truthful signal/destination, and the removed demo strip used fabricated counts). Guide impact: none.
+**Status:** Blocked — awaiting owner dispatch of sub-scope a-T1 (updated July 24, 2026). Sub-scopes b (PR #167) and d (PR #170) are merged; sub-scope c stays deferred (no truthful live attention-strip source; the removed demo strip used fabricated counts); a-T2 remains in the MIGRATION queue. Source-only and undeployed. Guide impact: none.
 
 **Why:** owner selections of July 22 — all four extras plus the meetings
 resolution of spec §5.
@@ -2082,6 +2082,26 @@ and 2 screenshots in the PR); SVG sanitizer and pin tests green; golden hashes
 unchanged; PNGs/manifest byte-identical unless the variant explicitly
 regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
+
+### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026; NOT prioritized)
+**Status:** Blocked — awaiting the plan-mode design and owner dispatch; queued behind the docs-health remediation per owner sequencing (July 24, 2026).
+
+**Why:** owner feedback (July 24, 2026): layout-editor cards only move
+vertically, and layouts can look incohesive after moves. Owner decisions,
+same day: free placement via snap-to-grid with automatic packing (no
+pixel-free dragging), and a CURATED resizable set — table/chart cards
+resizable, small KPI tiles fixed — chosen for simpler build, maintenance,
+and updates.
+**Do (design first, in plan mode):** grid-snap placement plus per-card
+grid-unit sizing layered on the SET-35 catalog model; persistence widens
+order+hidden to position+size under the widen-on-read law; keyboard parity
+for move and resize; reconcile with the Night-4 collapsible-cards spec
+(NFIX-40/41) so the two card initiatives compose instead of fighting.
+**Accept (finalized by the plan):** layouts stay presentable after any
+move/resize (auto-packing, per-card minimums); older saved layouts
+unaffected; NOTE — requires a NEW owner-sanctioned golden regen, as both
+prior regens are used.
+**Effort:** medium (est. 3–5 packets after design). **Cost:** $0.
 
 # Workstream G — AI assistant & automation (AI)
 
@@ -2373,7 +2393,7 @@ Google Workspace setup-flow hints are grandfathered outside the budget);
 label-fix beats hint.
 
 ### HINT-01 · InfoHint generalization (small-medium; takes the globals.css lock briefly, in a free window after DES-04/05/07)
-**Status:** In review — PR #171, July 24, 2026. PR #168 is merged; this draft carries the mobile-containment review follow-up. Source-only and undeployed. Guide impact: none (shared primitive relocation and anchoring only; no user-facing guidance content changes). Runtime census correction: 21 mounted usages (4 stage headers + 6 tenant rows + 5 creation rows + 3 verification rows + 3 ongoing rows); the earlier authored count of 22 was stale.
+**Status:** Complete — PR #168 + PR #171, July 24, 2026. Source-only and undeployed. #168 relocated the primitive to `app/components/` with byte-identical rendering (pure selector rename, property-identical declarations) and added left/right/auto anchoring — adoption wiring is HINT-02's scope by design. #171 (the automated-review follow-up) scoped the legacy mobile geometry to `.workspace-setup-stage` so shared and future modal contexts keep a local containing block, proven by a 390×844 modal-fixture e2e, and corrected the runtime census to 21 mounted usages. Guide impact: none.
 
 **Why:** `WorkspaceInfoHint` is styled by global `.workspace-info-hint*` classes
 named for the setup surface and its tooltip anchors bottom-right (`right:0`),
