@@ -42,7 +42,11 @@ test("InfoHint shared styles preserve the legacy default and mobile geometry", a
 
   assert.match(styles, /\.info-hint-tooltip\{[^}]*right:0;bottom:calc\(100% \+ 6px\)/);
   assert.match(styles, /@media \(min-width:561px\)\{\s+\.info-hint\.info-hint-anchor-left \.info-hint-tooltip\{right:auto;left:0\}/);
-  assert.match(styles, /@media \(max-width:560px\)[\s\S]+\.info-hint-tooltip\{top:calc\(100% \+ 4px\);right:12px;bottom:auto;left:12px;width:auto\}/);
+  assert.match(styles, /@media \(max-width:820px\)[\s\S]+\.info-hint-tooltip\{top:calc\(100% \+ 4px\);right:0;bottom:auto;left:auto\}/);
+  assert.match(styles, /\.info-hint\.info-hint-anchor-left \.info-hint-tooltip\{right:auto;left:0\}/);
+  assert.match(styles, /\.workspace-setup-stage \.info-hint\{position:static\}/);
+  assert.match(styles, /\.workspace-setup-stage \.info-hint-tooltip,[\s\S]+\.workspace-setup-stage \.info-hint\.info-hint-anchor-left \.info-hint-tooltip\{right:12px;left:12px;width:auto\}/);
+  assert.doesNotMatch(styles, /@media \(max-width:820px\)\{[\s\S]*?\n\s+\.info-hint\{position:static\}/);
   assert.match(component, /anchor = "right"/);
   assert.doesNotMatch(component, /data-info-hint/);
   assert.doesNotMatch(styles, /\.workspace-info-hint/);

@@ -885,8 +885,11 @@ button { color:inherit; }
   .workspace-stage-body .workspace-blueprint-card>header{align-items:flex-start;flex-direction:column}
   .workspace-stage-body .workspace-blueprint-version{max-width:100%;white-space:normal}
   .workspace-stage-body .workspace-resource-table .operations-data-table-frame{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
-  .info-hint{position:static}
-  .info-hint-tooltip{top:calc(100% + 4px);right:12px;bottom:auto;left:12px;width:auto}
+  .info-hint-tooltip{top:calc(100% + 4px);right:0;bottom:auto;left:auto}
+  .info-hint.info-hint-anchor-left .info-hint-tooltip{right:auto;left:0}
+  .workspace-setup-stage .info-hint{position:static}
+  .workspace-setup-stage .info-hint-tooltip,
+  .workspace-setup-stage .info-hint.info-hint-anchor-left .info-hint-tooltip{right:12px;left:12px;width:auto}
   .info-hint-tooltip::after{display:none}
   .business-kpis-header{display:grid;align-items:stretch;padding:16px}
   .business-kpis-header label{width:100%}

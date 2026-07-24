@@ -2360,12 +2360,12 @@ Owner-approved July 23, 2026 (forms-only decision). Design authority:
 recommended-tier rows (12 total: 9 now, 3 sequenced after AI-08); optional rows
 need a fresh owner opt-in; rejected rows stay rejected. Copy ships verbatim from
 the audit table with mutation-sensitive pins (the SET-29..34 pinning pattern).
-Budget law: ≤20 hints from THIS forms-audit initiative (the 22 pre-existing
+Budget law: ≤20 hints from THIS forms-audit initiative (the 21 pre-existing
 Google Workspace setup-flow hints are grandfathered outside the budget);
 label-fix beats hint.
 
 ### HINT-01 · InfoHint generalization (small-medium; takes the globals.css lock briefly, in a free window after DES-04/05/07)
-**Status:** In review — PR #168, July 24, 2026. Source-only and undeployed. Guide impact: none (shared primitive relocation and anchoring only; no user-facing guidance content changes).
+**Status:** In progress — `codex/hint01-mobile-containment`, July 24, 2026. PR #168 is merged; this branch carries the mobile-containment review follow-up. Source-only and undeployed. Guide impact: none (shared primitive relocation and anchoring only; no user-facing guidance content changes). Runtime census correction: 21 mounted usages (4 stage headers + 6 tenant rows + 5 creation rows + 3 verification rows + 3 ongoing rows); the earlier authored count of 22 was stale.
 
 **Why:** `WorkspaceInfoHint` is styled by global `.workspace-info-hint*` classes
 named for the setup surface and its tooltip anchors bottom-right (`right:0`),
@@ -2374,7 +2374,7 @@ placements need anchoring flexibility.
 **Do:** move/rename the `.workspace-info-hint*` styles to a shared or
 module-scoped form; add left/right/auto tooltip anchoring; relocate the component
 to a shared components path.
-**Accept:** the 22 existing Settings→Google Workspace usages render
+**Accept:** the 21 existing Settings→Google Workspace usages render
 byte-identically; `tests/workspace-setup-guidance.test.mjs` pins and the e2e
 stepper tooltip assertions stay green with mutation-sensitive updates only where
 class names change.

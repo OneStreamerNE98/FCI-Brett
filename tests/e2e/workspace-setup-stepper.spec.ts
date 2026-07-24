@@ -842,6 +842,9 @@ test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async
   await expect(tooltip).toBeHidden();
 
   const describedIds = await page.locator(".info-hint-trigger").evaluateAll((triggers) => triggers.map((trigger) => trigger.getAttribute("aria-describedby")));
+  // Four stage headers + six tenant rows + five creation rows + three
+  // verification rows + three ongoing rows are all mounted in this state.
+  expect(describedIds).toHaveLength(21);
   expect(describedIds.every(Boolean)).toBe(true);
   expect(new Set(describedIds).size).toBe(describedIds.length);
   const tooltipText = await page.locator(".info-hint-tooltip").allTextContents();
@@ -892,6 +895,15 @@ test.describe("Workspace stage hints on touch", () => {
       await expect(tooltip).toBeVisible();
       await expect(hint).toHaveAttribute("aria-expanded", "true");
       if (number === 1) {
+        const tooltipBox = await tooltip.boundingBox();
+        expect(tooltipBox).not.toBeNull();
+        const leftInset = (tooltipBox?.x ?? 0) - (stageBox?.x ?? 0);
+        const rightInset = ((stageBox?.x ?? 0) + (stageBox?.width ?? 0))
+          - ((tooltipBox?.x ?? 0) + (tooltipBox?.width ?? 0));
+        expect(leftInset).toBeGreaterThanOrEqual(12);
+        expect(leftInset).toBeLessThanOrEqual(13);
+        expect(rightInset).toBeGreaterThanOrEqual(12);
+        expect(rightInset).toBeLessThanOrEqual(13);
         await hint.tap();
         await expect(tooltip).toBeHidden();
         await expect(hint).toHaveAttribute("aria-expanded", "false");
@@ -975,6 +987,64 @@ test.describe("Workspace stage hints on touch", () => {
     });
     expect(stageOverflow.scrollWidth, JSON.stringify(stageOverflow)).toBeLessThanOrEqual(stageOverflow.clientWidth);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  });
+});
+
+test.describe("shared InfoHint mobile containment", () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
+
+  test("left, right, and auto hint anchors stay inside a modal and the viewport", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      const fixture = document.createElement("div");
+      fixture.id = "info-hint-modal-fixture";
+      fixture.className = "modal-backdrop";
+      fixture.innerHTML = `
+        <section class="modal" aria-label="InfoHint modal fixture">
+          <form>
+            <div style="display:flex;justify-content:flex-start">
+              <span class="info-hint info-hint-anchor-left open" data-test-anchor="left">
+                <button class="info-hint-trigger" type="button" aria-describedby="info-hint-modal-tooltip-left">i</button>
+                <span id="info-hint-modal-tooltip-left" class="info-hint-tooltip" role="tooltip">Left anchored mobile hint.</span>
+              </span>
+            </div>
+            <div style="display:flex;justify-content:flex-end">
+              <span class="info-hint open" data-test-anchor="right">
+                <button class="info-hint-trigger" type="button" aria-describedby="info-hint-modal-tooltip-right">i</button>
+                <span id="info-hint-modal-tooltip-right" class="info-hint-tooltip" role="tooltip">Right anchored mobile hint.</span>
+              </span>
+            </div>
+            <div style="display:flex;justify-content:flex-start">
+              <span class="info-hint info-hint-anchor-left open" data-test-anchor="auto-left">
+                <button class="info-hint-trigger" type="button" aria-describedby="info-hint-modal-tooltip-auto">i</button>
+                <span id="info-hint-modal-tooltip-auto" class="info-hint-tooltip" role="tooltip">Auto resolved mobile hint.</span>
+              </span>
+            </div>
+          </form>
+        </section>`;
+      document.body.append(fixture);
+    });
+
+    const modal = page.getByRole("region", { name: "InfoHint modal fixture" });
+    const modalBox = await modal.boundingBox();
+    expect(modalBox).not.toBeNull();
+    for (const [anchor, edge] of [["left", "left"], ["right", "right"], ["auto-left", "left"]] as const) {
+      const hint = page.locator(`[data-test-anchor="${anchor}"]`);
+      const tooltip = hint.getByRole("tooltip");
+      await expect(tooltip).toBeVisible();
+      const [hintBox, tooltipBox] = await Promise.all([hint.boundingBox(), tooltip.boundingBox()]);
+      expect(hintBox).not.toBeNull();
+      expect(tooltipBox).not.toBeNull();
+      expect(tooltipBox?.x ?? -1).toBeGreaterThanOrEqual(modalBox?.x ?? 0);
+      expect((tooltipBox?.x ?? 0) + (tooltipBox?.width ?? 0)).toBeLessThanOrEqual((modalBox?.x ?? 0) + (modalBox?.width ?? 0));
+      expect(tooltipBox?.y ?? -1).toBeGreaterThanOrEqual(0);
+      expect((tooltipBox?.y ?? 0) + (tooltipBox?.height ?? 0)).toBeLessThanOrEqual(844);
+      if (edge === "left") {
+        expect(Math.abs((tooltipBox?.x ?? 0) - (hintBox?.x ?? 0))).toBeLessThanOrEqual(1);
+      } else {
+        expect(Math.abs(((tooltipBox?.x ?? 0) + (tooltipBox?.width ?? 0)) - ((hintBox?.x ?? 0) + (hintBox?.width ?? 0)))).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });
 
