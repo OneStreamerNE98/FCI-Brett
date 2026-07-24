@@ -110,6 +110,12 @@ test("desktop sidebar collapse control stays fully clickable and expands again",
 
   const box = await expand.boundingBox();
   if (!box) throw new Error("Expand navigation control has no rendered bounds");
+  const sidebarBox = await sidebar.boundingBox();
+  if (!sidebarBox) throw new Error("Collapsed navigation has no rendered bounds");
+  expect(box.width).toBeGreaterThanOrEqual(44);
+  expect(box.height).toBeGreaterThanOrEqual(44);
+  expect(box.x).toBeGreaterThanOrEqual(sidebarBox.x);
+  expect(box.x + box.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width);
   const rightEdge = { x: box.x + box.width - 1, y: box.y + box.height / 2 };
   const rightEdgeHitsControl = await page.evaluate(({ x, y }) => {
     const control = document.querySelector<HTMLButtonElement>(".sidebar-collapse");
@@ -179,9 +185,9 @@ test("mobile navigation keeps management labels and compact status on one line w
     await page.getByRole("button", { name: "Open navigation" }).click();
     const navigation = page.getByRole("navigation", { name: "Main navigation" });
     const managementLinks = [
-      { link: navigation.getByRole("link", { name: "Reports · Working" }), compactState: "Working" },
-      { link: navigation.getByRole("link", { name: "Settings · In development" }), compactState: "Dev" },
-      { link: navigation.getByRole("link", { name: "People & Access · In development" }), compactState: "Dev" },
+      { link: navigation.getByRole("link", { name: "Reports · Working" }), compactState: "Working", fullState: "Working" },
+      { link: navigation.getByRole("link", { name: "Settings · In development" }), compactState: "Dev", fullState: "In development" },
+      { link: navigation.getByRole("link", { name: "People & Access · In development" }), compactState: "Dev", fullState: "In development" },
     ];
 
     await expect(navigation).toBeVisible();
@@ -191,14 +197,13 @@ test("mobile navigation keeps management labels and compact status on one line w
     }));
     expect(navigationWidth.scrollWidth).toBeLessThanOrEqual(navigationWidth.clientWidth);
 
-    for (const { link, compactState } of managementLinks) {
+    for (const { link, compactState, fullState } of managementLinks) {
       await expect(link).toBeVisible();
       const stateBadge = link.locator(".feature-state");
       await expect(stateBadge).toBeVisible();
-      const renderedCompactState = await stateBadge.evaluate((element) => (
-        window.getComputedStyle(element, "::after").content.replaceAll('"', "")
-      ));
-      expect(renderedCompactState).toBe(compactState);
+      await expect(stateBadge).toHaveText(compactState);
+      await expect(stateBadge).toHaveAttribute("aria-label", fullState);
+      await expect(stateBadge).toHaveAttribute("title", new RegExp(`^${fullState}:`));
       const labelLayout = await link.locator(".nav-label").evaluate((element) => {
         const style = window.getComputedStyle(element);
         const bounds = element.getBoundingClientRect();
@@ -220,6 +225,122 @@ test("mobile navigation keeps management labels and compact status on one line w
 
     await page.getByRole("button", { name: "Close navigation" }).click();
   }
+});
+
+test.describe("DES-04 responsive shell polish", () => {
+  test("mobile topbar hides on scroll down, reveals on the first upward scroll, and stays visible for focus", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 620 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/");
+    await waitForLiveRecords(page);
+
+    const topbar = page.locator(".topbar");
+    const search = page.getByRole("combobox", { name: "Search workspace" });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(topbar).not.toHaveClass(/topbar-hidden/);
+
+    await page.evaluate(() => window.scrollTo(0, 420));
+    await expect(topbar).toHaveClass(/topbar-hidden/);
+    await expect.poll(() => topbar.evaluate((element) => window.getComputedStyle(element).transform)).not.toBe("none");
+
+    await page.evaluate(() => window.scrollBy(0, -24));
+    await expect(topbar).not.toHaveClass(/topbar-hidden/);
+
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+      window.scrollBy(0, 80);
+    });
+    await expect(topbar).toHaveClass(/topbar-hidden/);
+    await page.keyboard.press("Control+K");
+    await expect(search).toBeFocused();
+    await expect(topbar).not.toHaveClass(/topbar-hidden/);
+
+    await page.evaluate(() => window.scrollBy(0, 80));
+    await expect(topbar).not.toHaveClass(/topbar-hidden/);
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(topbar).toHaveCSS("transition-duration", "0s");
+    await search.evaluate((element) => (element as HTMLInputElement).blur());
+    await page.evaluate(() => window.scrollBy(0, 80));
+    await expect(topbar).toHaveClass(/topbar-hidden/);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(topbar).not.toHaveClass(/topbar-hidden/);
+  });
+
+  test("shell spacing and the project drawer focus trap hold across the breakpoint sweep", async ({ page }) => {
+    for (const width of [1180, 960, 820, 620, 560]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto("/projects");
+      const projectRow = page.getByRole("button", { name: new RegExp(projectName) });
+      await expect(projectRow).toBeVisible();
+      await expect(page.getByRole("alert").filter({ hasText: "Live records could not be loaded" })).toHaveCount(0);
+      await page.evaluate(() => window.scrollTo(0, 0));
+
+      const topbarChildren = await page.locator(".topbar > *").evaluateAll((elements) => elements
+        .map((element) => {
+          const style = window.getComputedStyle(element);
+          const bounds = element.getBoundingClientRect();
+          return { display: style.display, left: bounds.left, right: bounds.right, width: bounds.width };
+        })
+        .filter(({ display, width: renderedWidth }) => display !== "none" && renderedWidth > 0)
+        .sort((left, right) => left.left - right.left));
+      expect(topbarChildren.length).toBeGreaterThanOrEqual(2);
+      for (let index = 1; index < topbarChildren.length; index += 1) {
+        expect(
+          topbarChildren[index].left - topbarChildren[index - 1].right,
+          `Topbar controls are flush at ${width}px`,
+        ).toBeGreaterThanOrEqual(13);
+      }
+
+      await projectRow.click();
+      const drawer = page.getByRole("dialog", { name: new RegExp(`${projectNumber} ${projectName}`) });
+      const close = drawer.getByRole("button", { name: "Close project" });
+      await expect(close).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      expect(await drawer.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+      await page.keyboard.press("Tab");
+      await expect(close).toBeFocused();
+      if (width === 1180 || width === 560) await expectNoSeriousAxeViolations(page, ".project-drawer");
+      await page.keyboard.press("Escape");
+      await expect(drawer).toHaveCount(0);
+      await expect(projectRow).toBeFocused();
+    }
+  });
+
+  test("390px blueprint folder-key chips use their own row and never wrap mid-word", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/settings?section=google-workspace#workspace-stage-3");
+
+    const folderKeys = page.locator(".workspace-blueprint-folder-row > code");
+    await expect(folderKeys.first()).toBeVisible();
+    const layouts = await folderKeys.evaluateAll((elements) => elements.map((element) => {
+      const text = element.textContent ?? "";
+      const lineStarts = [];
+      let previousTop: number | null = null;
+      for (let index = 0; index < text.length; index += 1) {
+        const range = document.createRange();
+        range.setStart(element.firstChild ?? element, index);
+        range.setEnd(element.firstChild ?? element, index + 1);
+        const top = Math.round(range.getBoundingClientRect().top);
+        if (previousTop === null || top !== previousTop) lineStarts.push(index);
+        previousTop = top;
+      }
+      const style = window.getComputedStyle(element);
+      return {
+        text,
+        gridColumnStart: style.gridColumnStart,
+        gridColumnEnd: style.gridColumnEnd,
+        invalidLineStarts: lineStarts.slice(1).filter((index) => text[index - 1] !== "-"),
+      };
+    }));
+
+    expect(layouts.length).toBeGreaterThan(0);
+    for (const layout of layouts) {
+      expect(layout.gridColumnStart).toBe("1");
+      expect(layout.gridColumnEnd).toBe("-1");
+      expect(layout.invalidLineStarts, `${layout.text} wrapped away from a hyphen`).toEqual([]);
+    }
+  });
 });
 
 test("global search supports the keyboard and returns focus after opening a project", async ({ page }) => {
@@ -258,8 +379,8 @@ test("feature labels distinguish working, in-development, setup-required, and pl
 
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
   await expect(page.getByRole("status", { name: "Development environment; test data only" })).toContainText("Development environment · Test data only");
-  await expect(navigation.getByRole("link", { name: "Overview · Working" })).toContainText("Working");
-  await expect(navigation.getByRole("link", { name: "Projects · In development" })).toContainText("In development");
+  await expect(navigation.getByRole("link", { name: "Overview · Working" }).locator(".feature-state")).toHaveText("Working");
+  await expect(navigation.getByRole("link", { name: "Projects · In development" }).locator(".feature-state")).toHaveText("Dev");
 
   await page.getByRole("button", { name: "View scheduling status" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Schedule & crews" })).toBeVisible();
