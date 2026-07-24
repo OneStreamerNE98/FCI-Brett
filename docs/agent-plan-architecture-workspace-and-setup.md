@@ -2389,7 +2389,7 @@ gate-off/key-Missing renders honest disabled state; `npm test` green.
 **Effort:** small-medium. **Cost:** $0.
 
 ### AI-07 · AI task extraction, review-first (medium, after AI-01 + AI-03; two PRs a/b)
-**Status:** In review — PR #185, July 24, 2026 (sub-PR a). Source-only and undeployed. BE-15/PR #181 is merged; sub-PR b remains blocked until this sub-PR merges.
+**Status:** In progress — `codex/ai07b-task-assigned-event`, updated July 24, 2026: the serial claim advances to sub-PR b (task.assigned Chat event with the widen-on-read catalog conversions first); sub-PR a is merged (PR #185 — Fable fleet clean with executed proof: never-persisted route, injection-contained strict schema, server-side assignee validation; review fixes 75d98c6 kept calendar-impossible-date proposals with null dueDate and added deterministic focus + a polite live status on accept/dismiss). Residuals for sub-PR b or AI-09: FCI_OFFICE_DOMAINS-admitted users get inert assignee suggestions (allowlist is emails+actor only); the records-only fallback bypasses the taskExtraction toggle when the key is Missing (deliberate, test-asserted — owner may revisit). Source-only and undeployed.
 
 **Why:** action items captured in meetings and phone-call notes die as
 strings; the owner wants them to become tracked to-dos — a human approving
