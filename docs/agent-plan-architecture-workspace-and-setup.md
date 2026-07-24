@@ -1514,12 +1514,20 @@ existing stage-shell disclosure mechanics (same aria contract) rather than
 inventing a second pattern; flatten the nested-border presentation so the
 subsection cards read as one organized surface (fewer competing borders,
 consistent spacing rhythm) without changing any subsection's content,
-actions, or copy.
+actions, or copy. **Initial-state rule (deterministic, added July 24, 2026
+per automated review on #175):** subsections render COLLAPSED by default,
+each disclosure header carrying that subsection's existing status signal
+(chip/summary line) so state stays visible without expanding; on first
+render, the FIRST subsection whose status is not complete auto-opens (all
+stay collapsed when everything is complete). Manual toggles override for the
+session; state is presentation-only (no persistence).
 **Accept:** every Stage 3 subsection collapses/expands with keyboard and
-screen-reader parity per the existing stage pattern; collapsed state is
-presentation-only unless the design review decides persistence is warranted;
-no golden impact (settings surfaces are not golden-hashed); e2e covering
-collapse/expand + axe; Guide impact stated per the currency rule.
+screen-reader parity per the existing stage pattern; the e2e asserts the
+INITIAL state per the rule above (exactly the first non-complete subsection
+open and the rest collapsed; all collapsed when all are complete; header
+status visible while collapsed) in addition to manual collapse/expand + axe;
+collapsed state is presentation-only; no golden impact (settings surfaces
+are not golden-hashed); Guide impact stated per the currency rule.
 **Effort:** small-medium. **Cost:** $0.
 
 ---
