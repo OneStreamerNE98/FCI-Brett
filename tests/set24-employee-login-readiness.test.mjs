@@ -228,7 +228,10 @@ test("SET-24 updates the ledger and both guide sections", async () => {
   ]);
   const packet = plan.slice(plan.indexOf("### SET-24"), plan.indexOf("### SET-25"));
 
-  assert.match(packet, /\*\*Status:\*\* In progress — `codex\/set24-employee-login-readiness`/);
+  assert.match(
+    packet,
+    /\*\*Status:\*\* In review — PR #158, July 24, 2026\. Source-only and undeployed;/,
+  );
   assert.match(guide, /### 8\. Testing & launch[\s\S]+Employee-login readiness/);
   assert.match(guide, /## Users and access[\s\S]+A real zero invitations is shown as zero; an unavailable projection is shown as unavailable/);
   assert.match(guide, /30-minute idle limit and an eight-hour absolute limit/);
