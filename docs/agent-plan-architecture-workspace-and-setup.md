@@ -1502,6 +1502,34 @@ Status line.
 tracking guard green.
 **Effort:** small (drafting complete at publication). **Cost:** $0.
 
+### SET-38 · Stage 3 declutter: collapsible subsections + border cleanup (owner enhancement, July 24, 2026; NOT prioritized)
+**Status:** Blocked — awaiting owner dispatch; enhancement parking lot (recorded July 24, 2026).
+
+**Why:** owner feedback (July 24, 2026): the Settings → Google Workspace →
+Stage 3 "Define & create your workspace" area is visually congested, and the
+nesting depth produces stacked borders that read messy inside the
+subsections.
+**Do:** make the Stage 3 subsections individually collapsible, reusing the
+existing stage-shell disclosure mechanics (same aria contract) rather than
+inventing a second pattern; flatten the nested-border presentation so the
+subsection cards read as one organized surface (fewer competing borders,
+consistent spacing rhythm) without changing any subsection's content,
+actions, or copy. **Initial-state rule (deterministic, added July 24, 2026
+per automated review on #175):** subsections render COLLAPSED by default,
+each disclosure header carrying that subsection's existing status signal
+(chip/summary line) so state stays visible without expanding; on first
+render, the FIRST subsection whose status is not complete auto-opens (all
+stay collapsed when everything is complete). Manual toggles override for the
+session; state is presentation-only (no persistence).
+**Accept:** every Stage 3 subsection collapses/expands with keyboard and
+screen-reader parity per the existing stage pattern; the e2e asserts the
+INITIAL state per the rule above (exactly the first non-complete subsection
+open and the rest collapsed; all collapsed when all are complete; header
+status visible while collapsed) in addition to manual collapse/expand + axe;
+collapsed state is presentation-only; no golden impact (settings surfaces
+are not golden-hashed); Guide impact stated per the currency rule.
+**Effort:** small-medium. **Cost:** $0.
+
 ---
 
 # Workstream D — Flooring KPIs & reporting (KPI)
@@ -2104,27 +2132,53 @@ regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
 ### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026; NOT prioritized)
-**Status:** Blocked — awaiting the plan-mode design and owner dispatch; queued behind the docs-health remediation per owner sequencing (July 24, 2026).
+**Status:** Blocked — awaiting owner prioritization and dispatch; design complete via the approved plan-mode design of July 24, 2026 (sub-scopes A/B below ship as sequential PRs when dispatched).
 
 **Why:** owner feedback (July 24, 2026): layout-editor cards only move
 vertically, and layouts can look incohesive after moves. Owner decisions,
-same day: free placement via snap-to-grid with automatic packing (no
-pixel-free dragging), and a CURATED resizable set — table/chart cards
-resizable, small KPI tiles fixed — chosen for simpler build, maintenance,
-and updates.
-**Do (design first, in plan mode):** grid-snap placement plus per-card
-grid-unit sizing layered on the SET-35 catalog model; persistence widens
-order+hidden to position+size under the widen-on-read law; keyboard parity
-for move and resize; reconcile with the nightly review program's Night-4
-collapsible-cards specification — its packets are filed by the nightly ledger
-when Night 4 runs and do not exist yet — so the two card initiatives compose
-instead of fighting (dependency on the future Night-4 outcome, not on any
-pre-assigned packet ID).
-**Accept (finalized by the plan):** layouts stay presentable after any
-move/resize (auto-packing, per-card minimums); older saved layouts
-unaffected; NOTE — requires a NEW owner-sanctioned golden regen, as both
-prior regens are used.
-**Effort:** medium (est. 3–5 packets after design). **Cost:** $0.
+same day: snap-to-grid with automatic packing (no pixel-free dragging), and
+a CURATED resizable set — table/chart panels resizable, small KPI tiles
+fixed — chosen for simpler build, maintenance, and updates.
+**Design (approved July 24, 2026):** a curated span model on the existing
+arranged grid. Each page layout's persisted `{order, hidden}` gains
+`fullWidth: sectionKey[]` under the same strict-write / widen-on-read /
+actor-invisible-merge laws as `hidden`. New
+`PAGE_LAYOUT_RESIZABLE_SECTIONS`: overview → lead-pipeline, scheduling,
+active-projects, gmail-project-inbox; reports → pipeline-by-stage,
+projects-by-status; everything else fixed. Cohesion is guaranteed by a pure
+pairing-promotion pass (`resolveArrangedSpans`): every rendered row is
+exactly one full card or two half cards — a lone half is promoted to full,
+so no layout can ever show a hole (also fixes the existing lone-half hole).
+DOM order stays visual order (no `grid-auto-flow:dense`). Arranged grid
+tracks become symmetric `repeat(2, minmax(0,1fr))` so "half means half".
+`isDefaultPageLayout` additionally requires empty `fullWidth` so span-only
+customization renders the arranged branch. Editor gains one `aria-pressed`
+"Full width" toggle per curated section (keyboard-operable, constant
+accessible name, no focus-choreography changes); Reset clears spans for
+free; control remains available at mobile widths with "Width applies on
+wide screens." copy. Reconciliation with the nightly program's future
+Night-4 collapse outcome: a later `collapsed: sectionKey[]` value key
+composes under the same laws without conflict.
+**Do:** (A) span model + arranged render — `app/lib/page-layouts.ts`
+(type, curated constant, validators, merge, isDefault, resolveArrangedSpans),
+FloorOpsApp arranged-branch mappings replacing the hardcoded full-width sets
+(+ `data-page-layout-size` hook), symmetric arranged-grid tracks in
+globals.css, unit-test updates (page-layouts, user-settings, rendered-html
+source pins); 1280 before/after screenshots of an arranged layout. (B) width
+toggle UI + e2e — PageLayoutEditor toggle + copy + pressed styling, e2e
+StoredPreferences type and one new test (curated-only toggle census,
+keyboard operation, pairing outcome via data-page-layout-size, axe at
+1280/390 in the editing state, ≥44px target, persistence round-trip, Reset →
+default digest byte-identical).
+**Accept:** NO golden regeneration — corrected July 24, 2026: the golden
+hashes capture only the default-layout markup and spans live entirely in the
+arranged branch, so `defaultSections` and every sectionNodes inner markup
+stay untouched and both golden constants remain byte-identical throughout;
+legacy stored layouts without `fullWidth` normalize to `[]` and still render
+the byte-pinned default; no new dependency; no x/y coordinates, row-height
+resize, or third width size.
+**Effort:** A small-medium + B small (2 packets; down from the pre-design
+3–5 estimate). **Cost:** $0.
 
 # Workstream G — AI assistant & automation (AI)
 
