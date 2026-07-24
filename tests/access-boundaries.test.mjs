@@ -64,7 +64,8 @@ test("scopes dashboard Gmail archive totals to the active Google connection", as
   ]);
 
   assert.match(dashboard, /getGoogleRuntimeConfig/);
-  assert.match(dashboard, /dashboardData\(env\.DB, google\.connectionKey\)/);
+  assert.match(dashboard, /dashboardData\(env\.DB, google\.connectionKey, \{ now: generatedAt, timeZone \}\)/);
+  assert.match(dashboard, /findByEmail\(auth\.user\.email\)/);
   assert.match(dashboardData, /gmail_file_archives WHERE connection_key = \? AND status = 'filed'/);
   assert.match(dashboardData, /bind\(connectionKey\)/);
 });

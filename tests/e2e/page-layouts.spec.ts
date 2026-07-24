@@ -201,7 +201,7 @@ test("keyboard-only Overview reorder and hide persist, while Reset restores byte
       ...originalPreferences,
       pageLayouts: {
         ...originalPreferences.pageLayouts,
-        overview: { order: ["metrics", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
+        overview: { order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
       },
     });
     await page.reload();
@@ -242,11 +242,11 @@ test("keyboard-only Overview reorder and hide persist, while Reset restores byte
     await page.keyboard.press("Enter");
     await expect(editor).toHaveCount(0);
     await expect(editLayout).toBeFocused();
-    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["metrics", "scheduling", "lead-pipeline", "active-projects"]);
+    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["metrics", "todays-meetings", "scheduling", "lead-pipeline", "active-projects"]);
 
     await page.reload();
     await expect(editLayout).toBeEnabled();
-    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["metrics", "scheduling", "lead-pipeline", "active-projects"]);
+    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["metrics", "todays-meetings", "scheduling", "lead-pipeline", "active-projects"]);
 
     await editLayout.focus();
     await page.keyboard.press("Enter");
@@ -350,7 +350,7 @@ test("ready Overview and Reports metrics follow the linked-versus-static card gr
     await restoreStoredPreferences(page, {
       ...originalPreferences,
       pageLayouts: {
-        overview: { order: ["metrics", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
+        overview: { order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
         reports: { order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "future-reports"], hidden: [] },
       },
     });

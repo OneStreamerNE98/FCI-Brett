@@ -1,4 +1,8 @@
 import type { D1Database } from "../adapters/d1/d1-database";
+import {
+  readTodayProjectMeetings,
+  TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT,
+} from "./today-project-meetings";
 
 type CountRow = { total: number | string | null };
 type PipelineRow = {
@@ -23,7 +27,11 @@ function numeric(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export async function dashboardData(database: D1Database, connectionKey: string) {
+export async function dashboardData(
+  database: D1Database,
+  connectionKey: string,
+  options: { now: number; timeZone: string } = { now: Date.now(), timeZone: "America/New_York" },
+) {
   const [
     pipeline,
     activeProjects,
@@ -32,6 +40,7 @@ export async function dashboardData(database: D1Database, connectionKey: string)
     activities,
     meetings,
     filedEmails,
+    todayMeetings,
   ] = await Promise.all([
     database.prepare("SELECT COUNT(*) AS active_leads, COALESCE(SUM(estimated_value), 0) AS estimated_pipeline_value FROM leads WHERE LOWER(status) = 'active'").first<PipelineRow>(),
     database.prepare("SELECT COUNT(*) AS total FROM projects WHERE LOWER(status) NOT IN ('archived', 'completed', 'cancelled')").first<CountRow>(),
@@ -40,6 +49,12 @@ export async function dashboardData(database: D1Database, connectionKey: string)
     database.prepare("SELECT e.id, e.record_id, e.action, e.actor, e.detail, e.created_at, p.project_number, p.name AS project_name, c.name AS client_name FROM activity_events e LEFT JOIN projects p ON p.id = e.record_id LEFT JOIN clients c ON c.id = p.client_id ORDER BY e.created_at DESC LIMIT 12").all<ActivityRow>(),
     database.prepare("SELECT COUNT(*) AS total FROM project_meetings").first<CountRow>(),
     database.prepare("SELECT COUNT(*) AS total FROM gmail_file_archives WHERE connection_key = ? AND status = 'filed'").bind(connectionKey).first<CountRow>(),
+    readTodayProjectMeetings(database, {
+      now: options.now,
+      timeZone: options.timeZone,
+      includeUpcoming: true,
+      limit: TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT,
+    }),
   ]);
 
   return {
@@ -56,5 +71,6 @@ export async function dashboardData(database: D1Database, connectionKey: string)
       count: numeric(row.total),
     })),
     recentActivity: activities.results,
+    todayMeetings,
   };
 }

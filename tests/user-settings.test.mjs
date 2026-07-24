@@ -207,7 +207,7 @@ test("widens stale stored layouts and preserves them through unrelated partial u
   const before = await route.GET(routeRequest(OFFICE_EMAIL));
   const beforeBody = await before.json();
   assert.deepEqual(beforeBody.preferences.pageLayouts.overview, {
-    order: ["scheduling", "metrics", "lead-pipeline", "active-projects", "gmail-project-inbox"],
+    order: ["scheduling", "metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
     hidden: ["gmail-project-inbox"],
   });
   assert.deepEqual(beforeBody.preferences.pageLayouts.reports, defaultPageLayouts(false).reports);
