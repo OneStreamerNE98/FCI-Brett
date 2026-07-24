@@ -1,5 +1,8 @@
 # Holistic review — July 23–24, 2026 — findings ledger
 
+> **Sibling reviews:** all findings ledgers are grouped under
+> [docs/README.md → Findings & reviews](README.md#findings--reviews). (Added July 24, 2026.)
+
 **Review target:** `origin/main` as of July 23–24, 2026 (post-merge state through
 PR #148 / commit `4da89b4`). This is a *holistic* quality walk of the merged waves
 that landed since the July 21 full review, not a fresh whole-codebase audit.

@@ -12,6 +12,8 @@ Every durable project has a **Meetings** tab. An office user can save:
 
 The app stores the meeting against exactly one project, records an activity event, and makes the saved summary, decisions, action items, notes, and a bounded transcript excerpt available to the project assistant as cited evidence.
 
+**Meeting types (updated July 24, 2026):** the meeting record model supports the types `client`, `site-walk`, `internal`, `pre-install`, `closeout`, `phone-call`, and `other`. The **Add meeting** form currently offers all of these except `phone-call` — that select option ships with the AI-02c packet. Until then, `phone-call` is source/API groundwork (added by AI-01): the design is that phone calls are captured as meetings against a project, with call summaries and action items flowing into the same project record and assistant evidence.
+
 ## Recommended first-release workflow
 
 1. Record the meeting with Otter and review speaker names before sharing it.

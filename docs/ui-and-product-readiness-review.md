@@ -2,6 +2,12 @@
 
 Reviewed: July 2026
 
+> **Historical review** (banner added July 24, 2026). The interface has since changed
+> under the Workstream F design-token/brand/nav wave (DES-01…07) and the four-stage
+> Google Workspace settings redesign (SET-29…34) — treat page-level UI detail below as
+> historical. Current status lives in the
+> [agent plan](agent-plan-architecture-workspace-and-setup.md).
+
 For the current company-size verdict, role/access model, live desktop walkthrough findings, production topology, and corrected delivery order, read the [20-user product and architecture review](20-user-product-and-architecture-review.md). This page remains the detailed section-by-section UI inventory.
 
 ## What this review covers

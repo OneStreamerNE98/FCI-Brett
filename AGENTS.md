@@ -4,7 +4,7 @@ These instructions apply to the entire repository and are intended to give every
 
 ## Read first
 
-Before changing code, read:
+Start with [`docs/README.md`](docs/README.md), the audience-grouped index of every document (added July 24, 2026). Then, before changing code, read:
 
 1. `docs/codex-to-codex-handoff.md`
 2. `docs/architecture-decision-production-platform.md`
@@ -17,6 +17,7 @@ Before changing code, read:
 9. `docs/google-workspace-rollout-guide.md`
 10. `docs/task-checklists/README.md`
 11. `docs/collaboration-and-sharing.md`
+12. `docs/nightly-reviews/README.md` (the standing nightly review program; added July 24, 2026)
 
 ## Current product boundary
 
@@ -60,6 +61,13 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
 - **After any sibling PR merges**, re-check your open branch's mergeability against
   `main` and resolve documentation-ledger conflicts by keeping main's newer status
   wording while preserving your branch's content additions.
+- **Standing review surfaces (added July 24, 2026).** A themed nightly review program
+  runs on the owner's kickoff; its index is
+  [`docs/nightly-reviews/README.md`](docs/nightly-reviews/README.md) and its findings
+  ledger is [`docs/nightly-review-2026-07-findings.md`](docs/nightly-review-2026-07-findings.md).
+  Separately, an automated review comments on every pull request; each
+  review-and-merge cycle addresses every automated comment on-thread with an
+  agree/disagree reason and whether it was fixed.
 
 ### Roles (owner-confirmed, July 21, 2026)
 

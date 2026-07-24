@@ -1,5 +1,8 @@
 # Full-codebase review — July 21, 2026 — findings ledger
 
+> **Sibling reviews:** all findings ledgers are grouped under
+> [docs/README.md → Findings & reviews](README.md#findings--reviews). (Added July 24, 2026.)
+
 **Review target:** pinned commit `58e4498` (origin/main as of July 21, 2026; two docs
 commits behind current main, which adds only PR #89's reviewed follow-ups).
 **Method:** nine review lenses. Six ran as independent Opus agents (D1

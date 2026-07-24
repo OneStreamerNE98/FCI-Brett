@@ -15,7 +15,7 @@ This is the owner-facing setup and product-readiness dashboard for the Google Wo
 | 20-user operating/access model | Owner + Workspace administrator | Application policy approved; Google/lifecycle policy pending | Decide rollout/direct Google reads, name Google Group/lifecycle owners, and later verify direct Google sharing. |
 | Production foundation and migration | Developer + Cloud administrator | BE-09/#51 and BE-12/#53 merged source-only | Finish the remaining migration/cutover tooling, approved calculator evidence, and owner inputs before any staging apply. |
 | Operations, recovery, and security | Owner + administrators | In progress, source only; audit model and minimized viewer are merged | Approve recovery/retention targets and add audit export plus production composition. |
-| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40; KPI-02/#52, SET-10/#56, logo refresh/#57, and later merged UI source remain undeployed | Current queue and wave order live in the [agent plan's wave text](../agent-plan-architecture-workspace-and-setup.md); Wave R1 fixes are complete and the SET-29 redesign series is active. |
+| Frontend multi-user hardening | Codex/developer | PR #32 at `adc79b8` is deployed as private Sites development version 40; KPI-02/#52, SET-10/#56, logo refresh/#57, and later merged UI source remain undeployed | Current queue and wave order live in the [agent plan's wave text](../agent-plan-architecture-workspace-and-setup.md); Wave R1 fixes are complete, and the SET-29…34 four-stage settings redesign and the DES-01…07 design-token/nav wave have since completed source-only (updated July 24, 2026). |
 | Production acceptance | Owner + administrator | Blocked | Complete restore, audit, permission, and lifecycle tests before real data. |
 | Codex coworker handoff | Owner + coworker | Ready | Follow the Codex-to-Codex guide and verify the coworker's baseline. |
 | Complete product/integration architecture | Owner + developer + operations | Runtime and first-rollout role boundaries approved; broader decisions open | Approve system boundaries, client access, state machines, messaging/file policy, and authoritative external systems. |
@@ -72,9 +72,12 @@ fix-packet status in the
 the exact current list, not this snapshot. Since that train, the dashboard-driven Workspace
 setup wave plus the flooring-KPI, rate-limiting, and Google-integration packets have merged
 source-only and undeployed; the nine-lens full-codebase review and the owner-approved
-four-stage settings redesign are published; and Wave R1 fixes are complete as of
-July 22, 2026, with the Wave R2 SET-29 redesign series active. All merges
+four-stage settings redesign are published; Wave R1 fixes are complete as of
+July 22, 2026; and the Wave R2 SET-29…34 redesign series and the DES-01…07 design wave
+have since completed (updated July 24, 2026). All merges
 remain source-only and undeployed and change no owner checkbox or deployment.
+The themed nightly review program's per-night findings and recommendations live in the
+[nightly review index](../nightly-reviews/README.md) (pointer added July 24, 2026).
 
 ## Checklists by topic
 
@@ -90,7 +93,7 @@ remain source-only and undeployed and change no owner checkbox or deployment.
 10. [Frontend and multi-user hardening](09-frontend-and-multi-user-hardening.md)
 11. [Complete product and integration architecture](10-complete-product-and-integration-architecture.md)
 12. [Google-native quick wins (no code)](11-google-quick-wins.md)
-12. [Codex-to-Codex coworker handoff](../codex-to-codex-handoff.md)
+13. [Codex-to-Codex coworker handoff](../codex-to-codex-handoff.md)
 
 Read the [20-user product and architecture review](../20-user-product-and-architecture-review.md) for the evidence, priority findings, corrected delivery order, and product ideas behind these task checklists.
 

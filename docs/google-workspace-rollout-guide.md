@@ -94,8 +94,15 @@ Google’s current access table and creation steps are in [Create a Shared Drive
 
 Do not create the full project folder tree manually. The application creates project folders after the drive is connected, verified, and provisioning is enabled.
 
-After connecting the approved account, use **Settings → Google Workspace → Resources**
-to find and adopt this Shared Drive. If more than one exact-name drive exists, select its
+> **Updated July 24, 2026:** the Settings → Google Workspace panel is now a four-stage
+> flow (SET-29…34): Stage 1 · Prepare the tenant, Stage 2 · Connect, Stage 3 · Define &
+> create your workspace, Stage 4 · Verify & maintain. The Resources table and its
+> **Ensure root folders** / **Ensure spreadsheets** actions live inside **Stage 3 ·
+> Define & create your workspace**; readiness checks live in **Stage 4 · Verify &
+> maintain**. Older "→ Resources" references in this guide mean that Stage 3 table.
+
+After connecting the approved account, use **Settings → Google Workspace → Stage 3 ·
+Define & create your workspace** (the Resources table) to find and adopt this Shared Drive. If more than one exact-name drive exists, select its
 ID explicitly. An environment-provided `GOOGLE_WORKSPACE_SHARED_DRIVE_ID` remains a
 first-boot fallback, but adoption saves the verified ID in the app-managed registry and
 that value becomes authoritative. Review the external-sharing restriction chip before
@@ -111,7 +118,7 @@ contract.
 ## Part 3: ensure the blueprint spreadsheets
 
 1. Connect the approved Workspace account and adopt the `FCI Operations` Shared Drive.
-2. In **Settings → Google Workspace → Resources**, select **Ensure root folders**.
+2. In **Settings → Google Workspace → Stage 3 · Define & create your workspace**, select **Ensure root folders**.
 3. Select **Ensure spreadsheets**. The application creates or reuses each workbook by
    its stable blueprint identity, saves the resulting ID in the app-managed registry,
    and prepares only the tabs appropriate to its role.

@@ -12,6 +12,10 @@ Open the [FCI Operations ChatGPT website](https://groundwork-flooring-ops.jagger
 
 Open the [Google Workspace and product-readiness Task Checklists](docs/task-checklists/README.md) for topic-by-topic owner tasks, current blockers, hosted configuration, the 20-user access model, production migration, staff-login development, operations, interface hardening, and acceptance checklists. Complete [Setup inputs and decisions](docs/task-checklists/00-setup-inputs.md) first. These are human-owned checklists; the GitHub **Actions** badge above is the separate automated build-and-test service. Never enter passwords, OAuth secrets, encryption keys, or tokens in GitHub.
 
+## Documentation map
+
+Every document in `docs/` is indexed, grouped by audience (owner, admins and staff, design authorities, findings and reviews, agent operations, architecture), in the [documentation index](docs/README.md). Start there when looking for any document this page does not link directly. (Added July 24, 2026.)
+
 ## Prerequisites
 
 - Node.js `>=22.13.0`
@@ -92,10 +96,10 @@ See [`docs/google-workspace-rollout-guide.md`](docs/google-workspace-rollout-gui
 
 ## Repository and development handoff
 
-Use this GitHub repository as the canonical collaboration history and keep one active local clone. The owner's current clone is in a OneDrive-synchronized folder and the GitHub repository is public; do not create a second editable copy, watch for synchronization conflicts, and never commit secrets or real business/client data. The owner may make the repository private before operational configuration begins.
+Use this GitHub repository as the canonical collaboration history and keep one active local clone. The owner's current clone lives in a local folder outside OneDrive synchronization (moved from the earlier OneDrive location; updated July 24, 2026) and the GitHub repository is public; do not create a second editable copy — agent tools must point at the current clone, not the retired OneDrive path — and never commit secrets or real business/client data. The owner may make the repository private before operational configuration begins.
 
 - Protect `main` as the last accepted release.
-- Use `codex/<short-feature-name>` feature branches and pull requests.
+- Use agent-prefixed branches and pull requests: `codex/<short-feature-name>` for feature work and `claude/<short-task-name>` for review, post-merge reconciliation, and documentation tasks. Implementation PRs open as drafts, an automated review runs on every pull request, and the owner reviews and merges. (Updated July 24, 2026 to match actual multi-agent practice; see `AGENTS.md`.)
 - Require passing tests, a production build, UI screenshots when applicable, and a short data/security impact note before merging.
 - Give developers Write access rather than Admin access and use separate development OAuth credentials where needed.
 - Share `.env.example`, never `.env.local`, OAuth credentials, encryption keys, tokens, `node_modules`, build caches, or production client exports.
