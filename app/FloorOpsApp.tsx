@@ -114,6 +114,7 @@ const projectOperationDateInputFormatter = new Intl.DateTimeFormat("en-CA", { ye
 const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
 const CLIENT_ACTIONABLE_COLUMNS = ["Client", "Primary contact", "Projects", ""] as const;
 const PROJECT_ACTIONABLE_COLUMNS = ["Project", "Status", "Schedule & site", "Value", ""] as const;
+const MOBILE_TOPBAR_SCROLL_THRESHOLD = 8;
 const focusableControlSelector = [
   "a[href]",
   "button:not([disabled])",
@@ -219,6 +220,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [mobileNav, setMobileNav] = useState(false);
   const [mobileNavViewport, setMobileNavViewport] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [topbarHidden, setTopbarHidden] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [leadModal, setLeadModal] = useState(false);
@@ -258,6 +260,12 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [pageLayoutsReady, setPageLayoutsReady] = useState(false);
   const [pageLayoutsError, setPageLayoutsError] = useState("");
   const pageLayoutsLoadIdRef = useRef(0);
+  const topbarRef = useRef<HTMLElement>(null);
+  const topbarHiddenRef = useRef(false);
+  const topbarLastScrollYRef = useRef(0);
+  const topbarScrollDirectionRef = useRef<-1 | 0 | 1>(0);
+  const topbarScrollDistanceRef = useRef(0);
+  const topbarAnimationFrameRef = useRef<number | null>(null);
   const mobileNavigationRef = useRef<HTMLElement>(null);
   const mobileNavigationCloseRef = useRef<HTMLButtonElement>(null);
   const mobileNavigationTriggerRef = useRef<HTMLButtonElement>(null);
@@ -273,6 +281,11 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const firstName = friendlyFirstName(userName, userEmail);
   const development = environment === "development";
   const userInitials = userName.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
+
+  const revealMobileTopbar = useCallback(() => {
+    topbarHiddenRef.current = false;
+    setTopbarHidden(false);
+  }, []);
 
   const reconcileCurrentUserSettings = useCallback((data: CurrentUserSettingsPayload) => {
     const nextIsAdmin = data?.isAdmin === true;
@@ -419,12 +432,78 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     const mediaQuery = window.matchMedia("(max-width: 820px)");
     const updateMobileNavigationMode = () => {
       setMobileNavViewport(mediaQuery.matches);
-      if (!mediaQuery.matches) setMobileNav(false);
+      if (!mediaQuery.matches) {
+        setMobileNav(false);
+        revealMobileTopbar();
+      }
     };
     updateMobileNavigationMode();
     mediaQuery.addEventListener("change", updateMobileNavigationMode);
     return () => mediaQuery.removeEventListener("change", updateMobileNavigationMode);
-  }, []);
+  }, [revealMobileTopbar]);
+
+  useEffect(() => {
+    if (!mobileNavViewport) {
+      topbarHiddenRef.current = false;
+      return;
+    }
+
+    const topbar = topbarRef.current;
+    topbarLastScrollYRef.current = Math.max(0, window.scrollY);
+    topbarScrollDirectionRef.current = 0;
+    topbarScrollDistanceRef.current = 0;
+
+    const applyScrollDirection = () => {
+      topbarAnimationFrameRef.current = null;
+      const nextScrollY = Math.max(0, window.scrollY);
+      const delta = nextScrollY - topbarLastScrollYRef.current;
+      topbarLastScrollYRef.current = nextScrollY;
+
+      if (
+        nextScrollY <= MOBILE_TOPBAR_SCROLL_THRESHOLD
+        || (topbar && document.activeElement instanceof Node && topbar.contains(document.activeElement))
+      ) {
+        topbarScrollDirectionRef.current = 0;
+        topbarScrollDistanceRef.current = 0;
+        revealMobileTopbar();
+        return;
+      }
+      if (delta === 0) return;
+
+      const direction: -1 | 1 = delta > 0 ? 1 : -1;
+      if (topbarScrollDirectionRef.current !== direction) {
+        topbarScrollDirectionRef.current = direction;
+        topbarScrollDistanceRef.current = Math.abs(delta);
+      } else {
+        topbarScrollDistanceRef.current += Math.abs(delta);
+      }
+      if (topbarScrollDistanceRef.current < MOBILE_TOPBAR_SCROLL_THRESHOLD) return;
+
+      topbarScrollDistanceRef.current = 0;
+      const hidden = direction > 0;
+      if (topbarHiddenRef.current !== hidden) {
+        topbarHiddenRef.current = hidden;
+        setTopbarHidden(hidden);
+      }
+    };
+
+    const handleScroll = () => {
+      if (topbarAnimationFrameRef.current !== null) return;
+      topbarAnimationFrameRef.current = window.requestAnimationFrame(applyScrollDirection);
+    };
+    const handleFocusIn = () => revealMobileTopbar();
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    topbar?.addEventListener("focusin", handleFocusIn);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      topbar?.removeEventListener("focusin", handleFocusIn);
+      if (topbarAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(topbarAnimationFrameRef.current);
+        topbarAnimationFrameRef.current = null;
+      }
+    };
+  }, [mobileNavViewport, revealMobileTopbar]);
 
   const mobileNavActive = mobileNavViewport && mobileNav;
 
@@ -497,12 +576,13 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        workspaceSearchRef.current?.focus();
+        revealMobileTopbar();
+        window.requestAnimationFrame(() => workspaceSearchRef.current?.focus());
       }
     };
     window.addEventListener("keydown", focusSearch);
     return () => window.removeEventListener("keydown", focusSearch);
-  }, []);
+  }, [revealMobileTopbar]);
 
   useEffect(() => {
     if (!workspaceMenuOpen && !profileMenuOpen && !notificationsOpen) return;
@@ -984,10 +1064,10 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         <button ref={mobileNavigationCloseRef} className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <p>Workspace</p>
-          {navItems.slice(0, 6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></Link>)}
+          {navItems.slice(0, 6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} variant="compact" /></Link>)}
           <p>Management</p>
-          {navItems.slice(6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} /></Link>)}
-          {isAdmin && <a href="/management/access" aria-label="People & Access · In development" title="People & Access · In development"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span><FeatureStateBadge state="In development" /></a>}
+          {navItems.slice(6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} variant="compact" /></Link>)}
+          {isAdmin && <a href="/management/access" aria-label="People & Access · In development" title="People & Access · In development"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span><FeatureStateBadge state="In development" variant="compact" /></a>}
         </nav>
         <div ref={workspaceMenuRef} className="sidebar-menu-wrap workspace-menu-wrap">
           <button className="workspace-card" onClick={() => { setWorkspaceMenuOpen((current) => !current); setProfileMenuOpen(false); setNotificationsOpen(false); }} aria-controls="workspace-actions-popover" aria-expanded={workspaceMenuOpen} title="Workspace actions"><div className="workspace-icon"><Building2 size={17} /></div><div><span>{development ? "Development workspace" : "Production workspace"}</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></button>
@@ -1001,7 +1081,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
 
       {mobileNavActive && <div className="sidebar-scrim" role="presentation" aria-hidden="true" onMouseDown={() => setMobileNav(false)} />}
       <main className="main-area" inert={mobileNavActive ? true : undefined}>
-        <header className="topbar">
+        <header ref={topbarRef} className={`topbar${topbarHidden ? " topbar-hidden" : ""}`}>
           <button
             ref={mobileNavigationTriggerRef}
             className="mobile-menu"

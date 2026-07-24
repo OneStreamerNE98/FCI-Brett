@@ -1935,6 +1935,8 @@ sanitizer assertions pass; golden hashes unchanged.
 **Effort:** small-medium. **Cost:** $0.
 
 ### DES-04 · Nav & shell polish: 44px toggle, honest compact badges, breakpoint sweep (small-medium, after DES-02; FloorOpsApp queue)
+**Status:** In progress — `codex/des04-nav-shell-polish`, July 23, 2026.
+
 **Why:** the collapse toggle is 36 px hung at `right:-13px`; the compact badge
 is a `font-size:0` + `::after` hack carrying a permanent test allowlist.
 **Do:** toggle to ≥44 px repositioned inside the rail; `FeatureStateBadge
