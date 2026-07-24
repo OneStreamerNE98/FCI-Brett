@@ -454,7 +454,7 @@ BE-11 Terraform (flag false).
 fencing); provider routes still deny by default; runbook blocker sentence gone.
 
 ### BE-15 · Atomic settings-blob writes across all workspace_settings writers (small-medium, after BE-07)
-**Status:** In review — PR #181, July 24, 2026. Source-only and undeployed; no route response, UI, endpoint, configuration, or migration change. Guide impact: none.
+**Status:** Complete — PR #181, July 24, 2026. Source-only and undeployed. Fable fleet with execution-grade verification: one shared prepareWorkspaceSettingsMerge primitive feeds a single-statement D1 json_remove+json_patch upsert and a bounded transactional PostgreSQL upsert with strictly equivalent semantics; all four writers (workspace route, assistant features, launch checklist, Chat routing) submit key-scoped patches and zero whole-blob writers remain; key deletion proven end-to-end. Review fix (861c5d0) restored the 64KB limit on the MERGED document atomically in both adapters (byte-accurate guards, typed error, boundary-exact tests). Recorded residuals: null-stripping is stricter than RFC 7396 (latent — no writer emits nulls); same-key sub-writes within one surface remain last-write-wins by the stated top-level-granular contract. Guide impact: none.
 
 **Why:** every `workspace_settings` writer (the workspace route,
 assistant-config-sites, launch-checklist-sites) is a blob-granularity
@@ -2244,7 +2244,7 @@ source-only/unapplied and the PR says so; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-02 · Assistant & Inbox surface extraction + phone-call option (medium; the ONLY FloorOpsApp packet — one queue slot, three serial PRs a→b→c)
-**Status:** In review — PR #182, July 24, 2026 (sub-PR a). Source-only and undeployed. Sub-PRs b and c remain serially gated on the prior sub-PR merge.
+**Status:** In progress — `codex/ai02a-assistant-extraction`, updated July 24, 2026: sub-PR a merged (PR #182 — byte-identical Assistant extraction, fleet clean, 39/39 executed green); sub-PRs b (Inbox extraction) and c (phone-call option) remain serially gated on the prior sub-PR merge. Source-only and undeployed.
 
 **Why:** AssistantView, InboxView, and GmailReplyModal live inside
 `FloorOpsApp.tsx`; without extraction every AI UI packet would serialize
