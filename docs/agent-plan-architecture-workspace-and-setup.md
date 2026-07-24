@@ -778,7 +778,7 @@ After SET-13.
 **Accept:** route tests for all three states; panel strings correct; docs updated.
 
 ### SET-06 · Truthful labels for persisted-but-inert settings and review-first rules (small, after SET-01; AMENDED July 23, 2026 — absorbs holistic-review FIX-14 + FIX-16)
-**Status:** In progress — `codex/set06-truthful-settings`, July 24, 2026.
+**Status:** In review — draft PR #163 (`codex/set06-truthful-settings`), July 24, 2026.
 
 **Why:** Reminder hours and office-notification email save but nothing consumes them;
 custom filing rules are forced review-first, admitted only in a footnote. The July
