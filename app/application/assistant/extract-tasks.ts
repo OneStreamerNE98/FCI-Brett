@@ -113,11 +113,15 @@ function details(value: unknown) {
 
 function dueDate(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
+  // Schema violation (wrong type or not YYYY-MM-DD): stay strict and discard the
+  // whole proposal by returning undefined.
   if (typeof value !== "string" || !DATE_PATTERN.test(value)) return undefined;
   const parsed = new Date(`${value}T00:00:00.000Z`);
+  // Pattern-valid but calendar-impossible (e.g. 2026-02-30): the optional due
+  // date is unusable, so drop it to null and keep the rest of the proposal.
   return Number.isFinite(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value
     ? value
-    : undefined;
+    : null;
 }
 
 function assigneeEmail(value: unknown, allowed: ReadonlySet<string>) {

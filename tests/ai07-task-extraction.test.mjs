@@ -214,6 +214,57 @@ test("AI-07a schema and parser bound proposals and drop unknown assignees", () =
   }, [OFFICE_EMAIL]), null);
 });
 
+test("AI-07a keeps proposals with a calendar-impossible due date but stays strict on pattern-invalid dates", () => {
+  const parsed = application.parseAssistantTaskProposals({
+    proposals: [{
+      title: "Survives an impossible due date",
+      details: "Keep the reviewable body.",
+      suggestedDueDate: "2026-02-30",
+      suggestedAssigneeEmail: OFFICE_EMAIL.toUpperCase(),
+    }, {
+      title: "Keeps a real due date",
+      details: null,
+      suggestedDueDate: "2026-07-30",
+      suggestedAssigneeEmail: null,
+    }],
+  }, [OFFICE_EMAIL]);
+
+  assert.equal(parsed.length, 2);
+  // Calendar-impossible but pattern-valid date normalizes to null; the rest of
+  // the proposal is retained intact.
+  assert.deepEqual(parsed[0], {
+    title: "Survives an impossible due date",
+    details: "Keep the reviewable body.",
+    suggestedDueDate: null,
+    suggestedAssigneeEmail: OFFICE_EMAIL,
+  });
+  // A genuinely valid calendar date is kept unchanged.
+  assert.deepEqual(parsed[1], {
+    title: "Keeps a real due date",
+    details: null,
+    suggestedDueDate: "2026-07-30",
+    suggestedAssigneeEmail: null,
+  });
+
+  // Pattern-invalid dates (schema violations) still drop the whole proposal.
+  assert.equal(application.parseAssistantTaskProposals({
+    proposals: [{
+      title: "One-digit month violates the strict date pattern",
+      details: null,
+      suggestedDueDate: "2026-2-30",
+      suggestedAssigneeEmail: null,
+    }],
+  }, [OFFICE_EMAIL]).length, 0);
+  assert.equal(application.parseAssistantTaskProposals({
+    proposals: [{
+      title: "Free-text date violates the strict date pattern",
+      details: null,
+      suggestedDueDate: "later this week",
+      suggestedAssigneeEmail: null,
+    }],
+  }, [OFFICE_EMAIL]).length, 0);
+});
+
 test("AI-07a sends only bounded untrusted meeting fields through the provider port", async () => {
   const database = fakeDatabase();
   database.meeting.summary = `Summary ${"s".repeat(12_100)} hidden-summary-tail`;
@@ -446,6 +497,16 @@ test("Assistant task review creates only through an explicit per-proposal Accept
   assert.match(view, />Review proposed tasks</u);
   assert.match(view, /Dismiss proposed task/u);
   assert.match(view, /Accept proposed task/u);
+
+  // AI-07a review fixes: accepts announce through a polite live status region and
+  // both Accept and Dismiss resolve focus deterministically to a stable target.
+  assert.match(view, /role="status" aria-live="polite">\{acceptAnnouncement\}/u);
+  assert.match(view, /setAcceptAnnouncement\(`Task created: \$\{proposal\.title\}`\)/u);
+  assert.match(view, /function nextReviewFocus\(/u);
+  assert.match(view, /pendingFocusRef\.current = nextReviewFocus\(/u);
+  assert.match(view, /id="assistant-task-review-title" ref=\{headingRef\} tabIndex=\{-1\}/u);
+  assert.match(view, /primaryActionRefs\.current\.set\(proposal\.reviewId/u);
+  assert.match(view, /onClick=\{\(\) => dismissTask\(proposal\)\}/u);
 
   assert.doesNotMatch(routeSource, /\bcreateTask\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b/u);
   assert.doesNotMatch(routeSource, /google-gmail|google-chat/u);

@@ -70,6 +70,24 @@ function meetingLabel(meeting: AssistantMeeting) {
   return `${meeting.title} — ${date}`;
 }
 
+type ReviewFocusTarget = { reviewId: string } | { heading: true };
+
+// After a proposal resolves (accepted in place or dismissed), pick the next
+// still-actionable proposal from startIndex, then the previous one, and fall back
+// to the stable heading when none remain focusable.
+function nextReviewFocus(
+  list: readonly ReviewTaskProposal[],
+  startIndex: number,
+): ReviewFocusTarget {
+  for (let index = startIndex; index < list.length; index += 1) {
+    if (!list[index].accepted) return { reviewId: list[index].reviewId };
+  }
+  for (let index = Math.min(startIndex, list.length) - 1; index >= 0; index -= 1) {
+    if (!list[index].accepted) return { reviewId: list[index].reviewId };
+  }
+  return { heading: true };
+}
+
 function AssistantTaskReview({ projectId }: { projectId: string }) {
   const [meetings, setMeetings] = useState<AssistantMeeting[]>([]);
   const [meetingId, setMeetingId] = useState("");
@@ -81,11 +99,25 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
   const [reviewFailed, setReviewFailed] = useState(false);
   const [reviewMessage, setReviewMessage] = useState("");
   const [acceptingId, setAcceptingId] = useState("");
+  const [acceptAnnouncement, setAcceptAnnouncement] = useState("");
   const [availability, setAvailability] = useState<TaskExtractionAvailability>("checking");
   const [availabilityMessage, setAvailabilityMessage] = useState("Checking task extraction availability…");
   const extractionRequestRef = useRef<AbortController | null>(null);
   const currentProjectIdRef = useRef(projectId);
   currentProjectIdRef.current = projectId;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const primaryActionRefs = useRef(new Map<string, HTMLButtonElement>());
+  const pendingFocusRef = useRef<ReviewFocusTarget | null>(null);
+
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (!pending) return;
+    pendingFocusRef.current = null;
+    const target = "reviewId" in pending
+      ? primaryActionRefs.current.get(pending.reviewId)
+      : headingRef.current;
+    target?.focus();
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -140,6 +172,7 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
     setReviewStarted(false);
     setReviewFailed(false);
     setReviewMessage("");
+    setAcceptAnnouncement("");
     setMeetingError("");
     if (!projectId) {
       setMeetingState("idle");
@@ -184,6 +217,7 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
     setReviewStarted(false);
     setReviewFailed(false);
     setReviewMessage("");
+    setAcceptAnnouncement("");
     setProposals([]);
     try {
       const response = await fetch("/api/v1/assistant/extract-tasks", {
@@ -264,11 +298,19 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
       if (!response.ok || !data.task) {
         throw new Error(data.error ?? "The task could not be created.");
       }
-      setProposals((current) => current.map((item) => (
-        item.reviewId === proposal.reviewId
-          ? { ...item, accepted: true, error: "" }
-          : item
-      )));
+      setAcceptAnnouncement(`Task created: ${proposal.title}`);
+      setProposals((current) => {
+        const acceptedIndex = current.findIndex((item) => item.reviewId === proposal.reviewId);
+        const next = current.map((item) => (
+          item.reviewId === proposal.reviewId
+            ? { ...item, accepted: true, error: "" }
+            : item
+        ));
+        if (acceptedIndex >= 0) {
+          pendingFocusRef.current = nextReviewFocus(next, acceptedIndex + 1);
+        }
+        return next;
+      });
     } catch (error) {
       setProposals((current) => current.map((item) => (
         item.reviewId === proposal.reviewId
@@ -283,22 +325,34 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
     }
   }
 
+  function dismissTask(proposal: ReviewTaskProposal) {
+    if (acceptingId) return;
+    setProposals((current) => {
+      const dismissedIndex = current.findIndex((item) => item.reviewId === proposal.reviewId);
+      if (dismissedIndex < 0) return current;
+      const remaining = current.filter((item) => item.reviewId !== proposal.reviewId);
+      pendingFocusRef.current = nextReviewFocus(remaining, dismissedIndex);
+      return remaining;
+    });
+  }
+
   return <section className={`panel ${styles.panel}`} aria-labelledby="assistant-task-review-title">
     <header className={styles.header}>
       <div>
         <p className="eyebrow">Meeting follow-through</p>
-        <h2 id="assistant-task-review-title">Review proposed tasks</h2>
+        <h2 id="assistant-task-review-title" ref={headingRef} tabIndex={-1}>Review proposed tasks</h2>
         <p>Choose a saved meeting, review each candidate, and accept tasks one at a time.</p>
       </div>
       <ListChecks size={22} aria-hidden="true" />
     </header>
+    <p className={styles.visuallyHidden} role="status" aria-live="polite">{acceptAnnouncement}</p>
     {availability !== "ai-enabled" && <p
       className={styles.message}
       role={availability === "unavailable" ? "alert" : "status"}
     >{availabilityMessage}</p>}
     {!projectId ? <OperationsEmptyState variant="source">Choose a project to review its saved meeting action items.</OperationsEmptyState> : meetingState === "loading" ? <OperationsEmptyState variant="source"><RefreshCw className={styles.spinner} size={18} aria-hidden="true" /> Loading saved meetings…</OperationsEmptyState> : meetingState === "error" ? <OperationsEmptyState variant="source" tone="error">{meetingError}</OperationsEmptyState> : meetings.length === 0 ? <OperationsEmptyState variant="source">No saved meetings are available for this project.</OperationsEmptyState> : <>
       <div className={styles.controls}>
-        <label>Saved meeting<select value={meetingId} onChange={(event) => { setMeetingId(event.target.value); setProposals([]); setReviewStarted(false); setReviewFailed(false); setReviewMessage(""); }} disabled={extracting || Boolean(acceptingId)}>{meetings.map((meeting) => <option value={meeting.id} key={meeting.id}>{meetingLabel(meeting)}</option>)}</select></label>
+        <label>Saved meeting<select value={meetingId} onChange={(event) => { setMeetingId(event.target.value); setProposals([]); setReviewStarted(false); setReviewFailed(false); setReviewMessage(""); setAcceptAnnouncement(""); }} disabled={extracting || Boolean(acceptingId)}>{meetings.map((meeting) => <option value={meeting.id} key={meeting.id}>{meetingLabel(meeting)}</option>)}</select></label>
         <button className="primary-button" type="button" onClick={() => void reviewTasks()} disabled={!["ai-enabled", "records-only"].includes(availability) || !meetingId || extracting || Boolean(acceptingId)}>{extracting ? <><span className="spinner" /> Preparing…</> : availability === "records-only" ? "Review saved action items" : "Review proposed tasks"}</button>
       </div>
       {reviewMessage && <p className={styles.message} role={reviewFailed ? "alert" : "status"}>{reviewMessage}</p>}
@@ -311,8 +365,8 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
         </div>
         <div className={styles.actions}>
           {proposal.accepted ? <span className={styles.acceptedLabel}><CheckCircle2 size={15} aria-hidden="true" /> Task created</span> : <>
-            <button className="soft-button" type="button" onClick={() => setProposals((current) => current.filter((item) => item.reviewId !== proposal.reviewId))} disabled={Boolean(acceptingId)} aria-label={`Dismiss proposed task ${proposal.title}`}><Trash2 size={14} aria-hidden="true" /> Dismiss</button>
-            <button className="primary-button" type="button" onClick={() => void acceptTask(proposal)} disabled={Boolean(acceptingId)} aria-label={`Accept proposed task ${proposal.title}`}>{acceptingId === proposal.reviewId ? <><span className="spinner" /> Creating…</> : "Accept"}</button>
+            <button className="soft-button" type="button" onClick={() => dismissTask(proposal)} disabled={Boolean(acceptingId)} aria-label={`Dismiss proposed task ${proposal.title}`}><Trash2 size={14} aria-hidden="true" /> Dismiss</button>
+            <button className="primary-button" type="button" ref={(node) => { if (node) primaryActionRefs.current.set(proposal.reviewId, node); else primaryActionRefs.current.delete(proposal.reviewId); }} onClick={() => void acceptTask(proposal)} disabled={Boolean(acceptingId)} aria-label={`Accept proposed task ${proposal.title}`}>{acceptingId === proposal.reviewId ? <><span className="spinner" /> Creating…</> : "Accept"}</button>
           </>}
         </div>
       </li>)}</ul>}

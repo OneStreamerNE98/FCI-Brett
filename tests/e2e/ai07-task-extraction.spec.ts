@@ -134,6 +134,87 @@ test("meeting task proposals stay review-first until each explicit Accept", asyn
   }]);
 });
 
+test("accept and dismiss resolve focus deterministically and announce created tasks", async ({ page }) => {
+  await mockMeetingList(page);
+  await mockAssistantConfig(page, "Configured", true);
+
+  await page.route("**/api/v1/assistant/extract-tasks", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        mode: "ai-assisted",
+        cause: null,
+        proposals: [
+          { title: "Task A", details: null, suggestedDueDate: null, suggestedAssigneeEmail: null },
+          { title: "Task B", details: null, suggestedDueDate: null, suggestedAssigneeEmail: null },
+          { title: "Task C", details: null, suggestedDueDate: null, suggestedAssigneeEmail: null },
+        ],
+      }),
+    });
+  });
+
+  await page.route("**/api/v1/tasks", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    const body = route.request().postDataJSON();
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ task: { id: `task-${String(body.title)}`, ...body } }),
+    });
+  });
+
+  await page.goto("/assistant");
+  const review = page.getByRole("region", { name: "Review proposed tasks" });
+
+  await review.getByRole("button", {
+    name: "Review proposed tasks",
+    exact: true,
+  }).click();
+  await expect(review.getByRole("list", {
+    name: "Proposed meeting tasks",
+  })).toBeVisible();
+
+  const liveStatus = review.getByRole("status").filter({ hasText: "Task created:" });
+
+  // Accepting the first proposal advances focus to the next proposal's primary
+  // action and announces the creation through the polite live region.
+  await review.getByRole("button", {
+    name: "Accept proposed task Task A",
+    exact: true,
+  }).click();
+  await expect(review.getByRole("button", {
+    name: "Accept proposed task Task B",
+    exact: true,
+  })).toBeFocused();
+  await expect(liveStatus).toHaveText("Task created: Task A");
+
+  // Dismissing the focused proposal moves focus to the following proposal's action.
+  await review.getByRole("button", {
+    name: "Dismiss proposed task Task B",
+    exact: true,
+  }).click();
+  await expect(review.getByText("Task B", { exact: true })).toHaveCount(0);
+  await expect(review.getByRole("button", {
+    name: "Accept proposed task Task C",
+    exact: true,
+  })).toBeFocused();
+
+  // Resolving the last actionable proposal empties the actionable set, so focus
+  // lands on the stable review heading.
+  await review.getByRole("button", {
+    name: "Accept proposed task Task C",
+    exact: true,
+  }).click();
+  await expect(liveStatus).toHaveText("Task created: Task C");
+  await expect(review.getByRole("heading", {
+    name: "Review proposed tasks",
+  })).toBeFocused();
+});
+
 test("configured-off task extraction is disabled with its cause before a request", async ({ page }) => {
   let extractionRequests = 0;
   await mockMeetingList(page);
