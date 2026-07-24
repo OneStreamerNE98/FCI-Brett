@@ -37,6 +37,7 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 
 ## Agent operations (the packet system)
 
+- [../AGENTS.md](../AGENTS.md) — the repository operating contract for every agent and human contributor: roles, required workflow, and multi-agent coordination rules. (Added to the index July 24, 2026.)
 - [agent-plan-architecture-workspace-and-setup.md](agent-plan-architecture-workspace-and-setup.md) — THE ledger: every workstream, packet, status, and sequencing rule.
 - [be04-oidc-review-and-followups.md](be04-oidc-review-and-followups.md) — the OIDC packet series.
 - [codex-project-handoff.md](codex-project-handoff.md) · [codex-to-codex-handoff.md](codex-to-codex-handoff.md) · [pr-51-57-claude-fable-review-handoff.md](pr-51-57-claude-fable-review-handoff.md) — agent handoff records.
@@ -46,6 +47,7 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 - [complete-product-and-google-cloud-architecture-audit.md](complete-product-and-google-cloud-architecture-audit.md) — the full architecture audit + roadmap.
 - [architecture-decision-production-platform.md](architecture-decision-production-platform.md) · [architecture-decision-workspace-first-cost-controlled-rollout.md](architecture-decision-workspace-first-cost-controlled-rollout.md) — the two foundational ADRs.
 - [production-persistence-boundary.md](production-persistence-boundary.md) · [production-postgresql-foundation.md](production-postgresql-foundation.md) · [production-postgresql-repositories.md](production-postgresql-repositories.md) · [development-d1-schema-migrations.md](development-d1-schema-migrations.md) — storage layers.
+- [google-cloud-runtime-foundation.md](google-cloud-runtime-foundation.md) — the fail-closed Cloud Run image, private Cloud SQL connector, one-off migration command, and bounded core rehearsal. (Added to the index July 24, 2026.)
 - [google-workspace-organization.md](google-workspace-organization.md) · [google-workspace-watch-and-queue-design.md](google-workspace-watch-and-queue-design.md) · [google-chat-notifications.md](google-chat-notifications.md) · [google-integration-opportunities.md](google-integration-opportunities.md) — Google integration design.
 - [flooring-kpis.md](flooring-kpis.md) — the authoritative KPI definitions.
 - [request-rate-limiting.md](request-rate-limiting.md) · [authorization-simulation.md](authorization-simulation.md) · [administration-and-access-plan.md](administration-and-access-plan.md) · [collaboration-and-sharing.md](collaboration-and-sharing.md) · [portable-record-creation.md](portable-record-creation.md) · [pre-workspace-development-plan.md](pre-workspace-development-plan.md) — subsystem references.

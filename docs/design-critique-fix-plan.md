@@ -45,6 +45,16 @@ The July 17 critique was based on ten routes at desktop and 390 px widths, five 
 | A7 — design-system pattern drift | Partial, Phase 3 | PR #29 added the first shared operations primitives. PR #30 added one reusable native table/card pattern, migrated Settings rules with rendered keyboard, mobile, and accessibility coverage, and is now included in private Sites development version 40. The source-only `codex/actionable-lists` branch is merged in PR #33 with a separate native list/list-item/button pattern across the Overview pipeline, Clients, and Projects. The Settings-only SET-01 component boundary is merged in PR #35. SET-02 is merged in PR #37 with one shared visible disabled-action treatment for Office users. Read-only `LeadStatusPanel` rows intentionally remain a static list; only actionable rows use the shared actionable-list pattern. | Migrate the remaining pill, empty-state, field, and button systems deliberately in later bounded packets; do not claim consolidation from visual overrides alone. |
 | A8 — token/cascade/style debt | Partial | Live cascade bugs, font token, warm active nav, responsive Reports, and current readability issues are fixed. | Remove dead sidebar theme rules, aliases, losing declarations, duplicated media queries, high-specificity overrides, and the remaining green-tinted legacy surface palette in the Phase 3 CSS track. |
 
+> **Updated July 24, 2026:** Workstream F (DES-01…07, all Complete — see the
+> [agent plan](agent-plan-architecture-workspace-and-setup.md)) has since executed much
+> of the open A5/A7/A8 scope this table lists as Phase-3 work: the token/alias/dead-rule
+> and media-query consolidation (DES-01), radius/shadow and border normalization
+> (DES-02), and the KpiMetric/pill/empty-state primitive unification (DES-07). The
+> remaining visual debt (for example the green-tinted legacy surface palette) and the
+> final reconciliation of this ledger belong to DES-09. The table rows above are kept
+> unchanged as the historical record; sibling findings ledgers are grouped under
+> [docs/README.md → Findings & reviews](README.md#findings--reviews).
+
 ## Screen findings ledger
 
 | ID | Screen | Status | Captured adjustment and evidence | Remaining work |

@@ -3,6 +3,13 @@
 Reviewed: July 12, 2026  
 Audience: Business owner, Google Workspace administrator, product owner, and developers
 
+> **Partially historical** (banner added July 24, 2026). The rollout verdict, access
+> model, and architecture sections remain load-bearing and this document is still
+> maintained for those. Page-level UI detail predates the Workstream F design wave
+> (DES-01…07) and the four-stage Workspace settings redesign (SET-29…34) — treat that
+> detail as historical; the [agent plan](agent-plan-architecture-workspace-and-setup.md)
+> owns current status.
+
 ## Executive decision
 
 The current application is a credible single-user hosted development environment. It is not ready for a 20-person company rollout or real client data.

@@ -12,6 +12,8 @@ Every durable project has a **Meetings** tab. An office user can save:
 
 The app stores the meeting against exactly one project, records an activity event, and makes the saved summary, decisions, action items, notes, and a bounded transcript excerpt available to the project assistant as cited evidence.
 
+**Meeting types (updated July 24, 2026):** each meeting is saved with one of the types `client`, `site-walk`, `internal`, `pre-install`, `closeout`, `phone-call`, or `other`. Phone calls are captured as meetings against a project — the app saves a phone call the same way it saves any other meeting note, so call summaries and action items flow into the same project record and assistant evidence.
+
 ## Recommended first-release workflow
 
 1. Record the meeting with Otter and review speaker names before sharing it.

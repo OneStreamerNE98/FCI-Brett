@@ -1,5 +1,8 @@
 # Nightly Review Program — findings ledger (July 2026)
 
+> **Sibling reviews:** all findings ledgers are grouped under
+> [docs/README.md → Findings & reviews](README.md#findings--reviews). (Added July 24, 2026.)
+
 **Target:** `origin/main`, re-synced at each night's kickoff. **Method:** per
 night — automated scans (viewport capture matrix; overlap / overflow /
 touch-target / control-gap / mid-word-wrap detectors with WCAG 2.2 SC 2.5.8
