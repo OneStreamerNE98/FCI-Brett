@@ -425,25 +425,29 @@ overview surfaces. Bundling them into one bounded sweep avoids a swarm of one-li
 PRs while keeping each honest.
 
 **Additional residuals (added July 24, 2026, from the HINT-01 / SET-08 / DES-08d
-review cycle):**
-- LaunchChecklistCard renders a definitive "Not attested" while the checklist read
-  is failing or in flight — add an unknown/loading branch for the attestation rows
-  (P3; disabled checkboxes and the in-section error banner mitigate today).
-- Dashboard snapshot invalidation: local-midnight rollover, a displayTimezone
-  change, and assistant-recorded meetings do not refresh the fetched
-  `todayMeetings` until the next mutation-driven refresh. Revisit app-wide
-  alongside AI-04's shared-read work rather than per-section.
-- DES-08d overflow-honesty edges (both P3, disclosed states): client-side
-  project-join drops fold into the "and N more…" count, and the "Today + next up"
-  subtitle carries an unbounded upcoming total.
-- Settings-blob write fence (candidate BE packet, cross-cutting — raised
-  independently by our persistence lens and the automated review): every
-  `workspace_settings` writer (workspace route, assistant-config, launch
-  checklist) is a blob-granularity read-modify-write, so racing saves silently
-  drop one write. One shared version-fence or key-scoped merge belongs in the
-  settings repository port, applied to all writers including the BE-07
-  PostgreSQL adapter.
+review cycle; updated same day so every item has an executable owner — the two
+in-scope items appear in the Do/Accept lists below, the other two are routed to
+named packets):**
+- IN SCOPE — **LaunchChecklistCard unknown-read honesty** (see the Do item below).
+- IN SCOPE — **DES-08d overflow-count honesty** (see the Do item below).
+- ROUTED → **AI-04**: dashboard-snapshot invalidation (local-midnight rollover,
+  displayTimezone change, assistant-recorded meetings do not refresh the fetched
+  `todayMeetings` until the next mutation-driven refresh) — recorded in AI-04's
+  packet body, July 24, 2026.
+- ROUTED → **BE-15**: the cross-cutting settings-blob write fence (raised
+  independently by the SET-08 persistence lens and the automated review) — filed
+  as BE-15 in the agent plan, July 24, 2026.
 **Do:**
+- **LaunchChecklistCard unknown-read honesty (July 24, 2026):** add an
+  indeterminate branch for the attestation rows — while the checklist read is in
+  flight or has failed, render an unknown/loading presentation instead of the
+  definitive "Not yet attested" / "Not attested" pill (today only the disabled
+  checkboxes and the in-section error banner mitigate the fabricated negative).
+- **DES-08d overflow-count honesty (July 24, 2026):** derive the "and N more…"
+  count so client-side project-join drops cannot inflate it (count only rows the
+  client can actually render, or surface an unavailable note when the join drops
+  rows), and bound or re-label the "Today + next up" total so the section heading
+  and the unbounded upcoming count agree.
 - **Orphaned old-stepper CSS (the substantive item):** delete `app/globals.css`
   L533–546, L606–639, L676–680, L728–734, L879; extend the globals guard in
   `workspace-setup-guidance.test.mjs` to assert `.workspace-setup-step*` /
@@ -477,7 +481,10 @@ review cycle):**
 **Accept:** the CSS-absence guard fails on a synthetic re-add of the dead tokens;
 render tests for the inbox/projects/subtitle fixes; sim/live parity tests for the
 calendar window and folder-existence validation; each accepted-as-is item recorded
-with a one-line rationale.
+with a one-line rationale; a test proves the launch-checklist attestation rows
+never claim "Not attested" while the read is failing or in flight; a test proves
+the Today's-meetings overflow line stays truthful when a rendered row is dropped
+client-side.
 **Dedup:** none of these are owned by an open packet in their filed form; the two
 note-only items are explicitly routed to DES-05 and DES-08d and are listed for
 visibility, not action. New.

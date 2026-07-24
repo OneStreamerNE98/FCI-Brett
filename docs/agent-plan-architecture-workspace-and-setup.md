@@ -451,6 +451,26 @@ BE-11 Terraform (flag false).
 **Accept:** build produces the drain bundle; drain-loop tests (claim/retry/dead-letter/
 fencing); provider routes still deny by default; runbook blocker sentence gone.
 
+### BE-15 · Atomic settings-blob writes across all workspace_settings writers (small-medium, after BE-07)
+**Status:** Blocked — backlog, not yet dispatched (filed July 24, 2026 from the SET-08 review cycle).
+
+**Why:** every `workspace_settings` writer (the workspace route,
+assistant-config-sites, launch-checklist-sites) is a blob-granularity
+read-modify-write — findById → merge → upsert rewrites the whole
+`settings_json`, so two racing saves silently drop one write. Raised
+independently by the SET-08 persistence review and the automated PR review
+(July 24, 2026). Last-write-wins was accepted per-surface at merge time; the
+durable fix belongs in one shared mechanism, not per-route patches.
+**Do:** add a version fence (optimistic concurrency) or key-scoped merge to
+the `WorkspaceSettingsRepository` port and apply it to ALL writers at once,
+including the BE-07 PostgreSQL adapter; add a concurrent-write regression
+test proving two racing saves to different top-level settings keys both
+survive.
+**Accept:** racing saves to different top-level keys both persist; a
+stale-version write is rejected or safely merged, never silently dropped;
+widen-on-read law preserved; D1 and PostgreSQL behavior identical.
+**Effort:** small-medium. **Cost:** $0.
+
 ---
 
 # Workstream B — Google Workspace connection & data flows (WS)
@@ -2095,8 +2115,11 @@ and updates.
 **Do (design first, in plan mode):** grid-snap placement plus per-card
 grid-unit sizing layered on the SET-35 catalog model; persistence widens
 order+hidden to position+size under the widen-on-read law; keyboard parity
-for move and resize; reconcile with the Night-4 collapsible-cards spec
-(NFIX-40/41) so the two card initiatives compose instead of fighting.
+for move and resize; reconcile with the nightly review program's Night-4
+collapsible-cards specification — its packets are filed by the nightly ledger
+when Night 4 runs and do not exist yet — so the two card initiatives compose
+instead of fighting (dependency on the future Night-4 outcome, not on any
+pre-assigned packet ID).
 **Accept (finalized by the plan):** layouts stay presentable after any
 move/resize (auto-packing, per-card minimums); older saved layouts
 unaffected; NOTE — requires a NEW owner-sanctioned golden regen, as both
@@ -2239,7 +2262,12 @@ fields), and a link-only needs-review inbox chip (deep link to
 Gmail call). Build-once with DES-08(d) per the cross-reference recorded in
 both packets: consume and extend
 `app/application/today-project-meetings.ts`; do not duplicate its
-timezone-aware bounded meeting query. UI: Today becomes the default tab of the extracted Assistant
+timezone-aware bounded meeting query. AI-04 also owns revisiting
+dashboard-snapshot invalidation app-wide — local-midnight rollover,
+displayTimezone changes, and assistant-recorded meetings currently leave the
+fetched Overview snapshot stale until the next mutation refresh (FIX-17
+residual routed here, July 24, 2026) — as one refresh model, not per-section
+patches. UI: Today becomes the default tab of the extracted Assistant
 page (Ask second); rows deep-link; inline complete-task checkbox via `PATCH
 /api/v1/tasks/[id]`; optional "Prioritize with AI" button sends the
 deterministic list through the AI-03 loop for one paragraph — on demand only,
