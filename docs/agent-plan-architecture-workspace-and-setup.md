@@ -1429,6 +1429,8 @@ in the single-file queue AFTER FIX-05 (shared sheet-status label mapper) merges;
 parallel-safe with the SET-29 series (no GoogleWorkspacePanel overlap).
 
 ### SET-36 · Read-only "Who has access" card in Data & security (small, independent)
+**Status:** In review — PR #157, July 23, 2026. Guide updated; source-only and undeployed.
+
 **Why:** Owner request (July 22, 2026): the development gate's office/admin allowlists
 live only in hosted configuration, so nothing inside the app shows who is currently
 allowed in. A display-only card gives the owner that visibility without creating any

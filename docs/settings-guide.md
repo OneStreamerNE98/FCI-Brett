@@ -292,7 +292,9 @@ Simple office defaults — client and crew reminder hours, and an office notific
 
 ### 7. Data & security
 
-A plain-language summary of the safeguards already in place: review-first email filing, one administrator-approved Workspace connection (consumer Gmail accounts are rejected in live mode), isolated local simulation that never contacts Google, and the installable web app. It also includes phone-install guidance. There is nothing to configure here — it is a reassurance-and-status page.
+A plain-language summary of the safeguards already in place: review-first email filing, one administrator-approved Workspace connection (consumer Gmail accounts are rejected in live mode), isolated local simulation that never contacts Google, and the installable web app. It also includes phone-install guidance.
+
+Administrators also see a read-only **Who has access** card. It shows the office-email, office-domain, and Administrator-email identifiers currently supplied by the hosting configuration — never secrets, keys, or tokens. If both office allowlists are empty, the card says **"Office access is not configured — the app denies everyone"**. This card describes the current development sign-in gate only: the lists are changed in hosting configuration, while live-login invitations and roles belong in **People & Access**. There is nothing to edit on this page.
 
 > [SCREENSHOT 8 — see Screenshot index]
 
