@@ -972,6 +972,11 @@ test("live and simulation Sheets sync emit the same success event-row shape", as
     persistence,
     async getAccessToken() { return "FCI_TEST_ACCESS_TOKEN"; },
     async writeIntegrationEvent(...args) { return eventWriter(liveEvents)(...args); },
+    async acquireSyncLease({ connectionKey, now }) {
+      return { operationKey: `${connectionKey}:setup:sheets-directory-sync`, leaseExpiresAt: now + 300_000 };
+    },
+    async completeSyncLease() {},
+    async failSyncLease() {},
     async fetch(input, init = {}) {
       const url = new URL(String(input));
       if ((init.method ?? "GET") === "GET" && !url.pathname.includes("/values/")) {
