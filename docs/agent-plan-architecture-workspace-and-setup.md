@@ -439,7 +439,7 @@ Align both docs.
 **Accept:** fail-closed config tests; dev-stage unchanged; docs agree.
 
 ### BE-14 · Degraded-mode contract + outbox drain entrypoint (medium, after BE-08/09/11)
-**Status:** In progress — `codex/be14-degraded-outbox-drain`, July 24, 2026. Source-only and undeployed.
+**Status:** In review — PR #178, July 24, 2026. Draft; source-only and undeployed. Provider actions remain uncomposed, the outbox-drain dispatcher registry remains empty, and the Terraform Job definition remains disabled by default.
 
 **Why:** The cutover go/no-go gate requires defining behavior when Google is down; the
 runbook states no degraded mode exists. The outbox machinery (claim/complete/retry/
