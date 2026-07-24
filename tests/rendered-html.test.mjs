@@ -836,8 +836,9 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
   };
 
   assert.match(primitives, /href\?: string/);
-  assert.match(primitives, /if \(href\) \{[\s\S]*return <Link className="metric-card metric-card-link" href=\{href\}>\{content\}<ChevronRight className="metric-card-chevron" size=\{16\} aria-hidden="true" \/><\/Link>;/);
-  assert.match(primitives, /return <article className="metric-card metric-card-static">\{content\}<\/article>;/);
+  assert.match(primitives, /const cardClassName = `metric-card \$\{href \? "metric-card-link" : "metric-card-static"\}/);
+  assert.match(primitives, /if \(href\) \{[\s\S]*return <Link className=\{cardClassName\} href=\{href\}>[\s\S]*<ChevronRight className="metric-card-chevron" size=\{16\} aria-hidden="true" \/><\/Link>;/);
+  assert.match(primitives, /return <article className=\{cardClassName\}>[\s\S]*<\/article>;/);
   const metricContent = primitives.slice(primitives.indexOf("const content ="), primitives.indexOf("if (href)"));
   assert.doesNotMatch(metricContent, /<(?:a|button|Link)\b/);
   assert.doesNotMatch(primitives, /\btrend\b/);
@@ -882,6 +883,59 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
   assert.match(css, /\.panel-header-subtitle-source\{[^}]*background:transparent/);
 
   assert.match(findings, /### FIX-08 · FloorOpsApp honesty polish bundle \(P3s; small\)\s+\*\*Status:\*\* Superseded — absorbed into DES-05\./);
+});
+
+// DES-07 keeps these structure-level pins separate from neighboring packet guards.
+test("DES-07 unifies operation metrics, empty states, and pill aliases", async () => {
+  const [app, primitives, businessKpis, featureStateBadge, css, appComponents] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/components/operations/OperationsPrimitives.tsx"),
+    read("app/features/reports/BusinessKpisPanel.tsx"),
+    read("app/components/FeatureStateBadge.tsx"),
+    read("app/globals.css"),
+    readAppComponentSource(),
+  ]);
+
+  const metricComponentDeclarations = [...appComponents.matchAll(/\b(?:export\s+)?function\s+(?:Kpi)?Metric\s*\(/g)];
+  assert.equal(metricComponentDeclarations.length, 1, "Metric must remain the only operation-metric component.");
+  assert.doesNotMatch(businessKpis, /\bKpiMetric\b/);
+  assert.match(businessKpis, /import \{ Metric, OperationsEmptyState \} from "\.\.\/\.\.\/components\/operations\/OperationsPrimitives"/);
+  assert.match(primitives, /caption\?: ReactNode;[\s\S]*footer\?: ReactNode;/);
+  assert.match(primitives, /metric-card-caption/);
+  assert.match(primitives, /metric-card-footer/);
+  assert.match(businessKpis, /footer=\{ready \? <Link className="business-kpi-link" href=\{operationsHref\("Leads"\)\}>Review lead outcomes/);
+  assert.match(businessKpis, /footer=\{ready \? <Link className="business-kpi-link" href=\{operationsHref\("Projects", \{ projectStatus: "Active" \}\)\}>View active projects/);
+  assert.match(css, /\.business-kpi-card\{min-height:188px\}/);
+  assert.doesNotMatch(css, /\.business-kpi-card\{[^}]*(?:display|flex-direction|padding):/);
+
+  assert.match(primitives, /export function OperationsEmptyState/);
+  const operationSurfaces = `${app}\n${businessKpis}`;
+  for (const variant of ["table", "dashboard", "page", "inbox", "source", "meeting", "board", "client-projects"]) {
+    assert.match(operationSurfaces, new RegExp(`<OperationsEmptyState variant="${variant}"`), `Missing the ${variant} shared empty-state variant.`);
+  }
+  assert.doesNotMatch(
+    operationSurfaces,
+    /<(?:div|section|p) className="(?:empty-table|dashboard-inbox-empty|panel empty-tab|inbox-empty|source-empty|meeting-empty(?: error)?|board-empty|empty-client-projects)"/,
+  );
+  for (const copy of [
+    "No active leads yet. Add the first opportunity to begin the live pipeline.",
+    "No active projects. Completed, cancelled, and archived work remains available on the Projects page.",
+    "No clients yet. Add the first client to create the live directory.",
+    "Connect Workspace Gmail to see the company inbox",
+    "No verified sources were returned for this answer.",
+    "No active leads are available for this report.",
+    "No project status data is available yet.",
+    "No meeting notes yet",
+    "No projects yet. Create the first independent project for this client.",
+    "No converted or lost leads are available for a win-rate calculation.",
+    "Not yet captured — no booked projects carry a flooring category for this month.",
+  ]) {
+    assert.ok(operationSurfaces.includes(copy), `Empty-state copy changed: ${copy}`);
+  }
+
+  assert.match(css, /\.pill,\.status,\.feature-state\{display:inline-flex;border-radius:var\(--radius-pill\);font-size:12px;font-weight:800;white-space:nowrap\}/);
+  assert.match(primitives, /className=\{`status status-\$\{text\.toLowerCase\(\)\.replaceAll\(" ", "-"\)\}`\}/);
+  assert.match(featureStateBadge, /className=\{`feature-state feature-state-\$\{className\}\$\{compact \? " feature-state-compact" : ""\}`\}/);
 });
 
 test("uses authorized project-manager identities and exposes the narrow admin correction", async () => {

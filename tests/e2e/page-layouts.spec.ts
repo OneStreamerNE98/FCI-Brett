@@ -2,10 +2,11 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { createHash } from "node:crypto";
 
-// The default pre-SET-35 groupings below now pin the owner-approved DES-05
-// markup grammar: whole-card metric links, flat static cards, and honest labels.
+// The Overview digest remains the owner-approved DES-05 markup byte-for-byte.
+// DES-07's second and final golden regeneration updates Reports only for the
+// shared Metric caption/footer structure that replaced its private KpiMetric.
 const OVERVIEW_LEGACY_SECTIONS_SHA256 = "ba8255dba5b118c91ec0d1a478c4aede9303238f0ca9c9708bea2d4b890f018b";
-const REPORTS_LEGACY_SECTIONS_SHA256 = "f4805cd8754e13172a04db55acaadba82f9f0d40d53ea586341faccecac4b757";
+const REPORTS_LEGACY_SECTIONS_SHA256 = "4ba01e91ed4a31e0b6da7a0a6ec2334894145cddaacf63bc99e24efd30b999b6";
 
 const legacyRecordFixtures = {
   leads: { leads: [] },

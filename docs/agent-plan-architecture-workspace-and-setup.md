@@ -2007,6 +2007,8 @@ golden hashes unchanged (headings sit outside them).
 **Effort:** small. **Cost:** $0.
 
 ### DES-07 · Primitive unification: KpiMetric→Metric, empty-state primitive, pill base (medium; FloorOpsApp queue after DES-04; GOLDEN REGEN 2 of 2, Reports hash only)
+**Status:** In review — PR #165, July 24, 2026. Source-only and undeployed.
+
 **Why:** Reports keeps a private duplicate `KpiMetric`; ~7 bespoke empty-state
 classes; five-plus pill systems — the design ledger's open Phase-3 primitive
 track.

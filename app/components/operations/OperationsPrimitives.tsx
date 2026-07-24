@@ -10,14 +10,46 @@ type MetricProps = {
   icon: LucideIcon;
   color: string;
   href?: string;
+  className?: string;
+  caption?: ReactNode;
+  footer?: ReactNode;
 };
 
-export function Metric({ label, value, note, icon: Icon, color, href }: MetricProps) {
+export function Metric({ label, value, note, icon: Icon, color, href, className, caption, footer }: MetricProps) {
+  const hasSupportingContent = Boolean(caption || footer);
+  const cardClassName = `metric-card ${href ? "metric-card-link" : "metric-card-static"}${hasSupportingContent ? " metric-card-with-supporting-content" : ""}${className ? ` ${className}` : ""}`;
   const content = <><div className={`metric-icon ${color}`}><Icon size={19} aria-hidden="true" /></div><div className="metric-top"><span>{label}</span></div><strong>{value}</strong><p>{note}</p></>;
   if (href) {
-    return <Link className="metric-card metric-card-link" href={href}>{content}<ChevronRight className="metric-card-chevron" size={16} aria-hidden="true" /></Link>;
+    return <Link className={cardClassName} href={href}>{content}{caption ? <div className="metric-card-caption">{caption}</div> : null}<ChevronRight className="metric-card-chevron" size={16} aria-hidden="true" /></Link>;
   }
-  return <article className="metric-card metric-card-static">{content}</article>;
+  return <article className={cardClassName}>{content}{caption ? <div className="metric-card-caption">{caption}</div> : null}{footer ? <footer className="metric-card-footer">{footer}</footer> : null}</article>;
+}
+
+type OperationsEmptyStateProps = {
+  variant: "table" | "dashboard" | "page" | "inbox" | "source" | "meeting" | "board" | "client-projects";
+  tone?: "default" | "error";
+  children: ReactNode;
+};
+
+export function OperationsEmptyState({ variant, tone = "default", children }: OperationsEmptyStateProps) {
+  switch (variant) {
+    case "page":
+      return <section className="panel empty-tab">{children}</section>;
+    case "source":
+      return <p className="source-empty">{children}</p>;
+    case "board":
+      return <p className="board-empty">{children}</p>;
+    case "client-projects":
+      return <p className="empty-client-projects">{children}</p>;
+    case "table":
+      return <div className="empty-table">{children}</div>;
+    case "dashboard":
+      return <div className="dashboard-inbox-empty">{children}</div>;
+    case "inbox":
+      return <div className="inbox-empty">{children}</div>;
+    case "meeting":
+      return <div className={`meeting-empty${tone === "error" ? " error" : ""}`}>{children}</div>;
+  }
 }
 
 export function PanelHeader({ title, subtitle, subtitleKind = "status", badge, action, onAction }: { title: string; subtitle?: string; subtitleKind?: "status" | "source"; badge?: FeatureState; action?: string; onAction?: () => void }) {
