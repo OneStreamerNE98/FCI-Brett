@@ -189,7 +189,20 @@ async function mockWorkspaceResources(page: Page, payload: WorkspaceResourcesPay
   });
 }
 
-async function mockEmptyStageFourVerificationStatus(page: Page) {
+type StageFourVerificationStatus = {
+  labelReady: boolean;
+  testEmailPassed: boolean;
+  calendarChecked: boolean;
+};
+
+async function mockStageFourVerificationStatus(
+  page: Page,
+  status: StageFourVerificationStatus = {
+    labelReady: false,
+    testEmailPassed: false,
+    calendarChecked: false,
+  },
+) {
   await page.route("**/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -197,8 +210,8 @@ async function mockEmptyStageFourVerificationStatus(page: Page) {
       body: JSON.stringify({
         bucket: "needs-review",
         messages: [],
-        labelReady: false,
-        testEmailPassed: false,
+        labelReady: status.labelReady,
+        testEmailPassed: status.testEmailPassed,
         limit: 20,
       }),
     });
@@ -207,7 +220,7 @@ async function mockEmptyStageFourVerificationStatus(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ events: [], verificationPassed: false }),
+      body: JSON.stringify({ events: [], verificationPassed: status.calendarChecked }),
     });
   });
 }
@@ -761,7 +774,7 @@ test("Stage 4 disabled verification actions are described by their actual depend
   await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
   });
-  await mockEmptyStageFourVerificationStatus(page);
+  await mockStageFourVerificationStatus(page);
 
   await page.goto("/settings?section=google-workspace#workspace-stage-4");
   await setStageExpanded(page, 4, true);
@@ -1148,6 +1161,11 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   let calendarReadRequest: { method: string; body: string | null } | null = null;
   let sheetsSyncRequest: { method: string; body: string | null } | null = null;
   let resourcesShouldFail = false;
+  const stageFourVerificationStatus: StageFourVerificationStatus = {
+    labelReady: false,
+    testEmailPassed: false,
+    calendarChecked: false,
+  };
 
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
@@ -1170,7 +1188,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror }) });
   });
-  await mockEmptyStageFourVerificationStatus(page);
+  await mockStageFourVerificationStatus(page, stageFourVerificationStatus);
   await page.route("**/api/v1/integrations/google/drive/verify", async (route) => {
     driveVerifyRequest = { method: route.request().method(), body: route.request().postData() };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verified: true }) });
@@ -1190,14 +1208,17 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   });
   await page.route("**/api/v1/integrations/google/gmail/labels/prepare", async (route) => {
     gmailPrepareRequest = { method: route.request().method(), body: route.request().postData() };
+    stageFourVerificationStatus.labelReady = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ prepared: true }) });
   });
   await page.route("**/api/v1/integrations/google/gmail/send-test", async (route) => {
     gmailSendRequest = { method: route.request().method(), body: route.request().postData() };
+    stageFourVerificationStatus.testEmailPassed = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sent: true }) });
   });
   await page.route("**/api/v1/integrations/google/calendar/events", async (route) => {
     calendarReadRequest = { method: route.request().method(), body: route.request().postData() };
+    stageFourVerificationStatus.calendarChecked = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ events: [] }) });
   });
   await page.route("**/api/v1/integrations/google/sheets/sync", async (route) => {

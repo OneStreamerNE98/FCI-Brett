@@ -162,7 +162,7 @@ test("Stage 4 pins normative verification and ongoing-upkeep copy without invent
   assert.doesNotMatch(panel, /const stageFourCompleteCount = \[[^\]]*sheetsSynced/);
   assert.match(panel, /const stageFourReady = !stageFourVerificationUnavailable && stageFourCompleteCount === 3/);
   assert.doesNotMatch(panel, /const stageFourReady = stageThreeComplete/);
-  assert.match(panel, /const stageFourStatus = statusSourcesLoading[\s\S]+CHECKING[\s\S]+statusSourcesUnavailable \|\| stageFourVerificationUnavailable[\s\S]+UNAVAILABLE[\s\S]+stageFourReady[\s\S]+READY[\s\S]+\$\{stageFourCompleteCount\} OF 3 VERIFIED/);
+  assert.match(panel, /const stageFourStatus = statusSourcesLoading[\s\S]+CHECKING[\s\S]+stageFourReady[\s\S]+READY[\s\S]+statusSourcesUnavailable \|\| stageFourVerificationUnavailable[\s\S]+UNAVAILABLE[\s\S]+\$\{stageFourCompleteCount\} OF 3 VERIFIED/);
   assert.match(panel, /const gmailVerificationPassed = gmailLabelsReady && gmailTestEmailPassed/);
   assert.match(panel, /setGmailTestEmailPassed\(true\)/);
   assert.match(panel, /const dependencyDescriptionId = dependencyBlocked \? `workspace-verification-\$\{rowKey\}-dependency` : undefined/);

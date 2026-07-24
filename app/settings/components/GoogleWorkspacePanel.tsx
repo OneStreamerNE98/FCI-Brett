@@ -982,11 +982,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       : "WAITING ON STAGE 2");
   const stageFourStatus = statusSourcesLoading
     ? "CHECKING"
-    : statusSourcesUnavailable || stageFourVerificationUnavailable
+    : stageFourReady
+      ? "READY"
+      : statusSourcesUnavailable || stageFourVerificationUnavailable
         ? "UNAVAILABLE"
-        : stageFourReady
-          ? "READY"
-          : `${stageFourCompleteCount} OF 3 VERIFIED`;
+        : `${stageFourCompleteCount} OF 3 VERIFIED`;
   const stageFourStatusNeutral = stageFourStatus === "CHECKING" || stageFourStatus === "UNAVAILABLE";
   const gmailVerificationStatus = gmailVerificationState === "error"
     ? "UNAVAILABLE"
