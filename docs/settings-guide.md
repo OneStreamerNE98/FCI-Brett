@@ -272,12 +272,15 @@ Where you review how incoming email is matched to projects and filed. The unbrea
 
 ### 5. Client Directory
 
-The **Client Directory & Project Register** — a one-way Google Sheets mirror of your clients and projects. The app is always the source of truth; the spreadsheet is a read-and-filter copy that updates after app changes and when you press **Sync now**.
+The **Client Directory & Project Register** — a one-way Google Sheets mirror of your clients and projects. The app is always the source of truth; the spreadsheet is a read-and-filter copy that updates after app changes and when an Administrator presses **Sync now**. **Refresh status** checks the latest recorded mirror state without running a sync, so any office viewer can re-read the status safely.
 
 - **Client Directory** tab mirrors client code, contacts, project count, folder link, status, and last update.
 - **Project Register** tab is rebuilt from your project records (client, status, site, value, manager, Drive link).
+- Each card shows the recorded `lastSyncedAt` and `lastError` values exactly as the mirror status returned them. The shared status labels translate the underlying state into **Checking sync**, **Syncing**, **Needs attention**, **Synced**, or **Not synced**.
 
 One column is deliberately yours to edit: **Account Notes**. Everything else on the generated Project Register will be overwritten on the next sync, so do not hand-edit it. Spreadsheet edits do not write back into the app.
+
+If the mirror is not configured, the card links directly to **Google Workspace → Stage 3**. `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` remains the fallback configuration name; the app shows only that name, never a configured value.
 
 > [SCREENSHOT 6 — see Screenshot index]
 

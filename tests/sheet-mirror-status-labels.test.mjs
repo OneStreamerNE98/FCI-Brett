@@ -90,11 +90,10 @@ test("routes all three sheet-mirror UI surfaces through the shared mapper", asyn
   assert.equal(clientsView.match(/sheetMirrorStatusLabel\(/g)?.length, 1);
   assert.match(clientsView, /<span className=\{`directory-status \$\{syncStateClass\}`\}>[\s\S]*?\{syncLabel\}<\/span>/);
 
-  const directorySummary = section(directory, '<div className="directory-sync-summary">', "{(mirror?.clients.lastError", "Directory summary");
-  assert.equal(directorySummary.match(/sheetMirrorStatusLabel\(/g)?.length, 2);
-  assert.equal(directorySummary.match(/<strong>/g)?.length, 2);
-  assert.match(directorySummary, /<strong>\{sheetMirrorStatusLabel\(mirror, "clients"\)\}<\/strong>/);
-  assert.match(directorySummary, /<strong>\{sheetMirrorStatusLabel\(mirror, "projects"\)\}<\/strong>/);
+  const directorySummary = section(directory, "function DirectoryMirrorSummary", "\n\nexport function DirectorySyncPanel", "Directory summary");
+  assert.equal(directorySummary.match(/sheetMirrorStatusLabel\(/g)?.length, 1);
+  assert.equal(directorySummary.match(/<strong>/g)?.length, 1);
+  assert.match(directorySummary, /<strong>\{sheetMirrorStatusLabel\(mirror, entity\)\}<\/strong>/);
 
   const workspaceSummary = section(workspace, '<div className="workspace-sheet-summary">', "{(sheetsStatusError", "Workspace Sheets summary");
   assert.equal(workspaceSummary.match(/sheetMirrorStatusLabel\(/g)?.length, 2);
@@ -107,7 +106,7 @@ test("routes all three sheet-mirror UI surfaces through the shared mapper", asyn
     ["Directory summary", directorySummary],
     ["Workspace Sheets summary", workspaceSummary],
   ]) {
-    assert.doesNotMatch(source, /\.(?:clients|projects)\.status|\b(?:clientsStatus|projectsStatus)\b/, `${label} must not render a raw enum path or alias`);
+    assert.doesNotMatch(source, /\.(?:clients|projects)\.status|\b(?:clientsStatus|projectsStatus)\b|\{entityStatus\?*\.status\}/, `${label} must not render a raw enum path or alias`);
   }
 });
 

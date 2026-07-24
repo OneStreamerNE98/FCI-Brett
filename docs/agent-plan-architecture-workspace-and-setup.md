@@ -854,6 +854,8 @@ with a Simulated tag.
 zero requests to the admin route.
 
 ### SET-11 · Directory mirror maintenance surface (small, after SET-01+02+04)
+**Status:** In progress — `codex/set11-directory-mirror`, July 24, 2026. Source-only and undeployed; the Settings guide will be updated with the maintenance controls.
+
 **Why:** Mirror status loads once at app start; the panel has no refresh; the
 unconfigured state dead-ends at a panel with no sheet-ID field (it's env-only).
 **Do:** "Refresh status" button (office-readable status route; lift the app-start loader
