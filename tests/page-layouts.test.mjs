@@ -12,7 +12,7 @@ import {
 } from "../app/lib/page-layouts.ts";
 
 const overviewKeys = ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"];
-const reportKeys = ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "future-reports"];
+const reportKeys = ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"];
 
 function validLayouts() {
   return {
@@ -104,5 +104,27 @@ test("widens an older saved Overview layout with Today's meetings without changi
       hidden: ["scheduling"],
     },
     reports: olderLayout.reports,
+  });
+});
+
+// DES-08 a-T1: a pre-catalog-addition user keeps every saved Reports choice
+// and receives Clients by industry at the end instead of having the layout reset.
+test("widens an older saved Reports layout with Clients by industry without changing prior order or visibility", () => {
+  const olderLayout = {
+    overview: {
+      order: [...overviewKeys],
+      hidden: ["scheduling"],
+    },
+    reports: {
+      order: ["projects-by-status", "summary-metrics", "business-kpis", "pipeline-by-stage", "future-reports"],
+      hidden: ["future-reports"],
+    },
+  };
+  assert.deepEqual(normalizePageLayoutsForRead(olderLayout, false), {
+    overview: olderLayout.overview,
+    reports: {
+      order: ["projects-by-status", "summary-metrics", "business-kpis", "pipeline-by-stage", "future-reports", "clients-by-industry"],
+      hidden: ["future-reports"],
+    },
   });
 });

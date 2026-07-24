@@ -75,7 +75,7 @@ async function mockOverview(page: Page, dashboardState: { value: ReturnType<type
               hidden: [],
             },
             reports: {
-              order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "future-reports"],
+              order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"],
               hidden: [],
             },
           },
