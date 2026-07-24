@@ -2023,7 +2023,7 @@ assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
-**Status:** In progress — `codex/des08b-remove-topbar-add-lead`, July 24, 2026 (sub-scope b). Guide impact: none.
+**Status:** In review — PR #167, July 24, 2026 (sub-scope b; source-only and undeployed; Guide impact: none).
 
 **Why:** owner selections of July 22 — all four extras plus the meetings
 resolution of spec §5.
