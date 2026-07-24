@@ -262,13 +262,15 @@ The heart of company setup: connecting the one company Google account and creati
 
 ### 3. Calendar & appointments
 
-The plan for the company's two shared calendars: one named **FCI • Client Appointments** (site visits, measurements, client meetings) and one named **FCI • Field Schedule** (crew and job assignments). You choose whether to create two new shared calendars or point at existing ones, set the timezone, and set reminder hours.
+The plan for the company's two shared calendars: one named **FCI • Client Appointments** (site visits, measurements, client meetings) and one named **FCI • Field Schedule** (crew and job assignments). You choose whether to create two new shared calendars or point at existing ones, set the timezone, and save the appointment-reminder default.
 
-Be aware: the reminder-hours and calendar-setup fields here are **saved defaults for automation that is still being switched on**. Saving them does not yet send reminders. The panel is honest that FCI Operations stays authoritative — if someone later edits an app-created Google event, it gets flagged for review rather than silently overwritten.
+The **Appointment reminder hours** field is marked **Planned**: it is saved for the upcoming reminder worker, but saving it does not send anything yet. Its value is separate from the client- and crew-reminder defaults under Workflow & notifications. The panel is also honest that FCI Operations stays authoritative — if someone later edits an app-created Google event, it gets flagged for review rather than silently overwritten.
 
 ### 4. Inbox & file rules
 
 Where you review how incoming email is matched to projects and filed. The unbreakable rule across the whole app is **review-first**: no email is ever archived, labeled, or copied into a project without you selecting the exact project and confirming. Rules here help *suggest* a match; a person always approves the action.
+
+The three built-in rules can drive those review suggestions. A custom rule is saved but does not have a live matcher yet, so its row shows **Review-first** and **Saved — not yet applied** instead of an active Action state. Its saved priority and Enabled/Paused state are configuration metadata; they do not change inbox suggestions until a supported matcher consumes the rule.
 
 ### 5. Client Directory
 
@@ -283,7 +285,7 @@ One column is deliberately yours to edit: **Account Notes**. Everything else on 
 
 ### 6. Workflow & notifications
 
-Simple office defaults — client and crew reminder hours, and an office notification email — plus two things worth knowing:
+Simple office defaults — independent client- and crew-reminder hours, and an office notification email — plus two things worth knowing. All three defaults are marked **Planned**: they remain editable and persist separately, but the upcoming reminder worker does not send anything yet. An older saved appointment-reminder value remains the appointment default only; it is not copied into the newer client-reminder field.
 
 - **Google Chat notification routing.** You can review which four event types are allowed to notify which approved Google Chat space, and switch each on individually. It is off by default. Webhook addresses are secrets that live in the hosting environment and never appear in the app or the browser.
 - **The AI assistant card.** Administrators see the provider (**OpenAI**), the company API-key state (**Configured** or **Missing**), and the configured model name — never the key value. Four switches control **Organization-wide answers**, **Inbox filing suggestions**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured. Organization-wide answers are marked **In development** because the server gate is wired but the current Assistant screen still asks for one selected project; the other three switches are visibly **Planned** until their later AI consumers ship. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.

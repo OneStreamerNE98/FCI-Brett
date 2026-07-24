@@ -9,6 +9,7 @@ export type WorkspacePreferences = Readonly<{
   fieldCalendarId: string;
   calendarEditPolicy: "app-authoritative";
   appointmentReminderHours: number;
+  clientReminderHours: number;
   crewReminderHours: number;
   inboxReviewMode: "review-first";
   officeNotificationEmail: string;
@@ -23,6 +24,7 @@ export const DEFAULT_WORKSPACE_PREFERENCES: WorkspacePreferences = Object.freeze
   fieldCalendarId: "",
   calendarEditPolicy: "app-authoritative",
   appointmentReminderHours: 24,
+  clientReminderHours: 24,
   crewReminderHours: 24,
   inboxReviewMode: "review-first",
   officeNotificationEmail: "",
@@ -82,6 +84,12 @@ export function normalizeWorkspacePreferences(value: unknown): WorkspacePreferen
     appointmentReminderHours: cleanHours(
       input.appointmentReminderHours,
       DEFAULT_WORKSPACE_PREFERENCES.appointmentReminderHours,
+    ),
+    // SET-06 widens older rows with this field's own default. The former shared
+    // appointment value seeds only appointment reminders and is never copied.
+    clientReminderHours: cleanHours(
+      input.clientReminderHours,
+      DEFAULT_WORKSPACE_PREFERENCES.clientReminderHours,
     ),
     crewReminderHours: cleanHours(
       input.crewReminderHours,

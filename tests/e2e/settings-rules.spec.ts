@@ -11,6 +11,15 @@ const ruleFixture = {
   targetCategory: "99_Unsorted Intake",
   approvalRequired: true,
 };
+const builtInRuleFixture = {
+  name: "Exact project number",
+  enabled: true,
+  priority: 1,
+  matchSummary: "Project number in the subject or message body",
+  action: "suggest",
+  targetCategory: "05_Correspondence / Email Archive",
+  approvalRequired: true,
+};
 
 test("Inbox rules use a responsive semantic table and retain keyboard actions", async ({ page }) => {
   const browserIssues: string[] = [];
@@ -18,7 +27,10 @@ test("Inbox rules use a responsive semantic table and retain keyboard actions", 
   let deleteRequests = 0;
 
   page.on("console", (message) => {
-    if (message.type() === "error") browserIssues.push(`console.error: ${message.text()}`);
+    const detail = message.text();
+    const localVinextFontWarning = detail.startsWith("Not allowed to load local resource: file:///")
+      && detail.includes("/.vinext/fonts/");
+    if (message.type() === "error" && !localVinextFontWarning) browserIssues.push(`console.error: ${detail}`);
   });
   page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.stack ?? error.message}`));
 
@@ -27,7 +39,7 @@ test("Inbox rules use a responsive semantic table and retain keyboard actions", 
     const pathname = new URL(request.url()).pathname;
 
     if (pathname === "/api/v1/filing-rules" && request.method() === "GET") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [ruleFixture] }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rules: [builtInRuleFixture, ruleFixture] }) });
       return;
     }
     if (pathname === "/api/v1/filing-rules/fci-test-rule" && request.method() === "PATCH") {
@@ -54,8 +66,21 @@ test("Inbox rules use a responsive semantic table and retain keyboard actions", 
 
   const row = table.locator("tbody tr").filter({ hasText: ruleName });
   await expect(row).toContainText("Subject contains an exact project number");
-  await expect(row).toContainText("Needs review");
+  await expect(row).toContainText("Saved — not yet applied");
+  await expect(row).toContainText("Review-first");
+  await expect(row.getByText("Review-first")).toHaveAttribute(
+    "title",
+    "Custom rules are saved for review but do not drive inbox suggestions until a supported matcher is added.",
+  );
+  await expect(row).not.toContainText("Needs review");
   await expect(row).toContainText("99_Unsorted Intake");
+
+  const builtInRow = table.locator("tbody tr").filter({
+    has: page.getByText("Exact project number", { exact: true }),
+  });
+  await expect(builtInRow).toContainText("Suggest");
+  await expect(builtInRow).not.toContainText("Saved — not yet applied");
+  await expect(builtInRow).not.toContainText("Review-first");
 
   const pauseButton = row.getByRole("button", { name: "Pause" });
   await pauseButton.focus();
