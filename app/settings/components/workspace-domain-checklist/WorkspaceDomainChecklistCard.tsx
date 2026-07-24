@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { CheckCircle2, Copy, ExternalLink, ShieldCheck } from "lucide-react";
 import { OperationsDataTable, OperationsDataTableCell } from "../../../components/operations/OperationsDataTable";
 import { Status } from "../../../components/operations/OperationsPrimitives";
-import { WorkspaceInfoHint } from "../workspace-setup-shell/WorkspaceInfoHint";
+import { WorkspaceInfoHint } from "../../../components/WorkspaceInfoHint";
 import styles from "./WorkspaceDomainChecklistCard.module.css";
 import {
   deriveWorkspaceDomainChecklist,

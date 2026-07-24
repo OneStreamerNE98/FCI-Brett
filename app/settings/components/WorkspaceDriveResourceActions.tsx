@@ -5,7 +5,7 @@ import { ChevronDown, ExternalLink, LockKeyhole } from "lucide-react";
 
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
 import styles from "./WorkspaceDriveResourceActions.module.css";
-import { WorkspaceInfoHint } from "./workspace-setup-shell/WorkspaceInfoHint";
+import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };

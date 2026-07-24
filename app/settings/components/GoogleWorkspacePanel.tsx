@@ -21,7 +21,7 @@ import {
   deriveWorkspaceDomainChecklist,
   workspaceDomainChecklistDisplayStatus,
 } from "./workspace-domain-checklist/workspace-domain-checklist";
-import { WorkspaceInfoHint } from "./workspace-setup-shell/WorkspaceInfoHint";
+import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
