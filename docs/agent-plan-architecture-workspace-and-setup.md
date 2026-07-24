@@ -1505,7 +1505,7 @@ tracking guard green.
 **Effort:** small (drafting complete at publication). **Cost:** $0.
 
 ### SET-38 · Stage 3 declutter: collapsible subsections + border cleanup (owner enhancement, July 24, 2026; NOT prioritized)
-**Status:** Blocked — awaiting owner dispatch; enhancement parking lot (recorded July 24, 2026).
+**Status:** In progress — `codex/set38-stage3-declutter`, July 24, 2026. Source-only and undeployed. Guide impact: the Stage 3 disclosure behavior will be documented in `docs/settings-guide.md`.
 
 **Why:** owner feedback (July 24, 2026): the Settings → Google Workspace →
 Stage 3 "Define & create your workspace" area is visually congested, and the
