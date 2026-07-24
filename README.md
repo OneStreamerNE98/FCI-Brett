@@ -96,7 +96,7 @@ See [`docs/google-workspace-rollout-guide.md`](docs/google-workspace-rollout-gui
 
 ## Repository and development handoff
 
-Use this GitHub repository as the canonical collaboration history and keep one active local clone. The owner's current clone is in a OneDrive-synchronized folder and the GitHub repository is public; do not create a second editable copy, watch for synchronization conflicts, and never commit secrets or real business/client data. The owner may make the repository private before operational configuration begins.
+Use this GitHub repository as the canonical collaboration history and keep one active local clone. The owner's current clone lives in a local folder outside OneDrive synchronization (moved from the earlier OneDrive location; updated July 24, 2026) and the GitHub repository is public; do not create a second editable copy — agent tools must point at the current clone, not the retired OneDrive path — and never commit secrets or real business/client data. The owner may make the repository private before operational configuration begins.
 
 - Protect `main` as the last accepted release.
 - Use agent-prefixed branches and pull requests: `codex/<short-feature-name>` for feature work and `claude/<short-task-name>` for review, post-merge reconciliation, and documentation tasks. Implementation PRs open as drafts, an automated review runs on every pull request, and the owner reviews and merges. (Updated July 24, 2026 to match actual multi-agent practice; see `AGENTS.md`.)
