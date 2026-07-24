@@ -16,6 +16,23 @@ type Attestation = {
   checkedAt: number | null;
 };
 
+type WorkspaceStatusFixture = {
+  connected: boolean;
+  workspace: {
+    connectionStatus: string;
+    calendarEnabled: boolean;
+    calendarConnected: boolean;
+  };
+};
+
+type MirrorStatusFixture = {
+  configured: boolean;
+  enabled: boolean;
+  connected: boolean;
+  clients: { status: string };
+  projects: { status: string };
+};
+
 function emptyChecklist(): Record<ItemId, Attestation> {
   return Object.fromEntries(ITEM_IDS.map((itemId) => [itemId, {
     checked: false,
@@ -27,6 +44,21 @@ function emptyChecklist(): Record<ItemId, Attestation> {
 async function mockLaunchSurface(page: Page, canAttest = true) {
   const state = emptyChecklist();
   const mutationBodies: unknown[] = [];
+  const workspaceStatus: WorkspaceStatusFixture = {
+    connected: true,
+    workspace: {
+      connectionStatus: "connected",
+      calendarEnabled: true,
+      calendarConnected: true,
+    },
+  };
+  const mirrorStatus: MirrorStatusFixture = {
+    configured: true,
+    enabled: true,
+    connected: true,
+    clients: { status: "synced" },
+    projects: { status: "synced" },
+  };
 
   await page.route("**/api/v1/settings/launch-checklist", async (route) => {
     if (route.request().method() === "PATCH") {
@@ -63,14 +95,7 @@ async function mockLaunchSurface(page: Page, canAttest = true) {
       status: 200,
       contentType: "application/json",
       headers: { "Cache-Control": "no-store" },
-      body: JSON.stringify({
-        connected: true,
-        workspace: {
-          connectionStatus: "connected",
-          calendarEnabled: true,
-          calendarConnected: true,
-        },
-      }),
+      body: JSON.stringify(workspaceStatus),
     });
   });
   await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
@@ -79,13 +104,7 @@ async function mockLaunchSurface(page: Page, canAttest = true) {
       contentType: "application/json",
       headers: { "Cache-Control": "no-store" },
       body: JSON.stringify({
-        mirror: {
-          configured: true,
-          enabled: true,
-          connected: true,
-          clients: { status: "synced" },
-          projects: { status: "synced" },
-        },
+        mirror: mirrorStatus,
       }),
     });
   });
@@ -130,7 +149,7 @@ async function mockLaunchSurface(page: Page, canAttest = true) {
     });
   });
 
-  return { state, mutationBodies };
+  return { state, mutationBodies, workspaceStatus, mirrorStatus };
 }
 
 test("SET-08 separates live verification from persisted Administrator attestations", async ({ page }) => {
@@ -192,7 +211,76 @@ test("SET-08 keeps failed live reads neutral instead of showing a VERIFIED state
   await expect(card.locator('[data-checklist-kind="verified"]').getByText("Verified", { exact: true })).toHaveCount(0);
 });
 
-test("SET-08 renders the non-admin checklist projection read-only without mutation traffic", async ({ page }) => {
+test("SET-08 requires every partial Calendar and mirror readiness predicate", async ({ page }) => {
+  const { workspaceStatus, mirrorStatus } = await mockLaunchSurface(page);
+  const resetReadyStatus = () => {
+    workspaceStatus.connected = true;
+    workspaceStatus.workspace.connectionStatus = "connected";
+    workspaceStatus.workspace.calendarEnabled = true;
+    workspaceStatus.workspace.calendarConnected = true;
+    mirrorStatus.configured = true;
+    mirrorStatus.enabled = true;
+    mirrorStatus.connected = true;
+    mirrorStatus.clients.status = "synced";
+    mirrorStatus.projects.status = "synced";
+  };
+  const scenarios: ReadonlyArray<{
+    name: string;
+    rowLabel: string;
+    makePartial: () => void;
+  }> = [
+    {
+      name: "Calendar enabled",
+      rowLabel: "Calendar access verified",
+      makePartial: () => { workspaceStatus.workspace.calendarEnabled = false; },
+    },
+    {
+      name: "Calendar connected",
+      rowLabel: "Calendar access verified",
+      makePartial: () => { workspaceStatus.workspace.calendarConnected = false; },
+    },
+    {
+      name: "Mirror configured",
+      rowLabel: "Client Directory mirror synced",
+      makePartial: () => { mirrorStatus.configured = false; },
+    },
+    {
+      name: "Mirror enabled",
+      rowLabel: "Client Directory mirror synced",
+      makePartial: () => { mirrorStatus.enabled = false; },
+    },
+    {
+      name: "Mirror connected",
+      rowLabel: "Client Directory mirror synced",
+      makePartial: () => { mirrorStatus.connected = false; },
+    },
+    {
+      name: "Client mirror synced",
+      rowLabel: "Client Directory mirror synced",
+      makePartial: () => { mirrorStatus.clients.status = "pending"; },
+    },
+    {
+      name: "Project mirror synced",
+      rowLabel: "Client Directory mirror synced",
+      makePartial: () => { mirrorStatus.projects.status = "pending"; },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    resetReadyStatus();
+    scenario.makePartial();
+    await page.goto("/settings?section=testing-launch");
+
+    const card = page.getByRole("region", { name: "Test & launch checklist" });
+    const row = card.locator('[data-checklist-kind="verified"]').filter({
+      hasText: scenario.rowLabel,
+    });
+    await expect(row, scenario.name).toContainText("Needs verification");
+    await expect(card.getByText("2 of 3 verified", { exact: true }), scenario.name).toBeVisible();
+  }
+});
+
+test("SET-08 renders a canAttest:false response read-only without mutation traffic", async ({ page }) => {
   const { mutationBodies } = await mockLaunchSurface(page, false);
   await page.goto("/settings?section=testing-launch");
 
