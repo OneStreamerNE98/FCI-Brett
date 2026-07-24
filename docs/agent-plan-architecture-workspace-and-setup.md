@@ -1960,7 +1960,7 @@ the 1180/960/820/620/560 sweep.
 **Effort:** small-medium. **Cost:** $0.
 
 ### DES-05 · Interactive vs static card grammar + FIX-08 absorption (medium; FloorOpsApp queue, after DES-06; GOLDEN REGEN 1 of 2)
-**Status:** In review — PR #149, July 23, 2026. Source-only and undeployed.
+**Status:** Complete — PR #149, July 23, 2026. Source-only and undeployed. Opus review with regen forensics: zero findings — every hashed markup delta traced to this packet, FIX-08 absorbed in full (Superseded recorded), holistic finding H-5 (Gmail panel pill wrap) fixed via the single-line source-subtitle treatment. Both golden hashes regenerated once as sanctioned. The FloorOpsApp queue slot passes to DES-04, which also takes the globals lock next.
 **Why:** interactive and static cards are pixel-identical at rest; Overview
 metrics carry false `trend="Current"` pills; FIX-08's honesty items live in the
 same cards — absorbed here so nothing is built twice.
