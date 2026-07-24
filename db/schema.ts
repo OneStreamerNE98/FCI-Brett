@@ -96,6 +96,7 @@ export const projects = sqliteTable("projects", {
   flooringCategory: text("flooring_category"),
   squareFeet: integer("square_feet"),
   contractValue: integer("contract_value"),
+  segment: text("segment"),
   installationStartedAt: integer("installation_started_at", { mode: "timestamp_ms" }),
   installationCompletedAt: integer("installation_completed_at", { mode: "timestamp_ms" }),
   hadCallback: integer("had_callback", { mode: "boolean" }).notNull().default(false),

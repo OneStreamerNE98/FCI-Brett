@@ -1,0 +1,68 @@
+.fieldset {
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  padding: 0;
+  color: #5a504a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.optional {
+  margin-left: 5px;
+  color: #655f59;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.help {
+  margin: 5px 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.option {
+  display: flex;
+  min-width: 0;
+  min-height: var(--target-min);
+  align-items: center;
+  gap: 8px;
+  margin: 0 !important;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: #fff;
+  cursor: pointer;
+}
+
+.option > input[type="radio"] {
+  display: block;
+  flex: 0 0 auto;
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: #49735c;
+}
+
+.option:has(input:checked) {
+  border-color: #8cb19c;
+  background: #f3f8f4;
+}
+
+.option span {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 800;
+}

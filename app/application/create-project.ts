@@ -87,6 +87,7 @@ export async function createProject(
       flooringCategory: normalized.value.flooringCategory,
       squareFeet: normalized.value.squareFeet,
       contractValue: normalized.value.contractValue,
+      segment: normalized.value.segment,
       createdBy: authorization.actorId,
       createdAt,
       updatedAt: createdAt,

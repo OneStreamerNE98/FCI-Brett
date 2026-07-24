@@ -1,3 +1,5 @@
+import { normalizeProjectSegment, type ProjectSegment } from "./project-segment.ts";
+
 export const PROJECT_STATUSES = ["planning", "mobilizing", "installation", "closeout", "completed", "cancelled", "archived"] as const;
 export const FLOORING_CATEGORIES = ["hardwood", "carpet", "luxury-vinyl", "tile-stone", "laminate", "specialty", "mixed"] as const;
 
@@ -16,6 +18,7 @@ export type NormalizedProjectCreation = {
   flooringCategory: FlooringCategory | null;
   squareFeet: number | null;
   contractValue: number | null;
+  segment: ProjectSegment | null;
 };
 
 export type ProjectManagerIdValidation =
@@ -97,6 +100,7 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
     if (record[field] !== undefined && typeof record[field] !== "string") return invalidJsonDetails();
   }
   if (record.flooringCategory !== undefined && record.flooringCategory !== null && typeof record.flooringCategory !== "string") return invalidJsonDetails();
+  if (record.segment !== undefined && record.segment !== null && typeof record.segment !== "string") return invalidJsonDetails();
   for (const field of ["estimatedValue", "squareFeet", "contractValue"] as const) {
     if (record[field] !== undefined && record[field] !== null && typeof record[field] !== "number") return invalidJsonDetails();
   }
@@ -130,6 +134,12 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
     return { ok: false, message: "contract value must be a non-negative whole number" };
   }
 
+  const segmentValue = (record.segment as string | undefined)?.trim().toLowerCase() || null;
+  const segment = normalizeProjectSegment(segmentValue);
+  if (segmentValue !== null && segment === null) {
+    return { ok: false, message: "project segment is invalid" };
+  }
+
   const managerCandidates = [record.projectManagerId, record.projectManager]
     .filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
   const normalizedManagers = managerCandidates.map(normalizeProjectManagerId);
@@ -150,6 +160,7 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
       flooringCategory,
       squareFeet: squareFeet ?? null,
       contractValue: contractValue ?? null,
+      segment,
     },
   };
 }

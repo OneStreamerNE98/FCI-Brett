@@ -40,15 +40,18 @@ test("project creation validates string and numeric JSON fields before use", asy
   assert.match(domain, /Number\.isSafeInteger\(estimatedValue\)/);
   assert.match(domain, /FLOORING_CATEGORIES/);
   assert.match(domain, /typeof record\.flooringCategory !== "string"/);
+  assert.match(domain, /typeof record\.segment !== "string"/);
+  assert.match(domain, /normalizeProjectSegment/);
   assert.match(domain, /\["estimatedValue", "squareFeet", "contractValue"\]/);
   assert.match(domain, /Number\.isSafeInteger\(squareFeet\).*squareFeet <= 0/);
   assert.match(domain, /Number\.isSafeInteger\(contractValue\).*contractValue < 0/);
   assert.match(domain, /normalizeProjectManagerId/);
   assert.match(route, /officeIdentityForEmail/);
   assert.match(route, /project_manager: projectManagerId,[\s\S]*project_manager_id: projectManagerId/);
-  assert.match(route, /p\.flooring_category, p\.square_feet, p\.contract_value/);
+  assert.match(route, /p\.flooring_category, p\.square_feet, p\.contract_value, p\.segment/);
   assert.match(route, /p\.installation_started_at, p\.installation_completed_at, p\.had_callback, p\.callback_note/);
   assert.match(route, /contract_value: auth\.user\.isAdmin \? record\.contract_value : null/);
+  assert.match(route, /client_industry: clientIndustry,[\s\S]*segment: resolveProjectSegment\(record\.segment, clientIndustry\)/);
   assert.match(route, /NextResponse\.json\(\{ projects \}, \{ headers: \{ "Cache-Control": "no-store" \} \}\)/);
   assert.match(route, /!auth\.user\.isAdmin && parsed\.body\.contractValue/);
   assert.match(route, /export async function PATCH/);
@@ -62,9 +65,10 @@ test("project creation validates string and numeric JSON fields before use", asy
 test("project creation makes the project and activity one conditional D1 batch", async () => {
   const adapter = await read("app/adapters/d1/project-repository.ts");
 
-  assert.match(adapter, /INSERT INTO projects[\s\S]*WHERE EXISTS \(SELECT 1 FROM clients WHERE id = \?\)/);
-  assert.match(adapter, /flooring_category, square_feet, contract_value/);
-  assert.match(adapter, /project\.flooringCategory, project\.squareFeet, project\.contractValue/);
+  assert.match(adapter, /INSERT INTO projects[\s\S]*FROM clients c WHERE c\.id = \?/);
+  assert.match(adapter, /flooring_category, square_feet, contract_value, segment/);
+  assert.match(adapter, /CASE WHEN \? = 'residential' THEN 'residential' WHEN \? = 'commercial' THEN 'commercial' WHEN LOWER\(TRIM\(COALESCE\(c\.industry, ''\)\)\) = 'residential' THEN 'residential' ELSE 'commercial' END/);
+  assert.match(adapter, /project\.flooringCategory, project\.squareFeet, project\.contractValue, project\.segment, project\.segment/);
   assert.match(adapter, /INSERT INTO activity_events[\s\S]*WHERE EXISTS \(SELECT 1 FROM projects WHERE id = \? AND project_number = \?/);
   assert.match(adapter, /results\[0\]\?\.meta\.changes === 1/);
   assert.match(adapter, /outcome: "client-not-found"/);

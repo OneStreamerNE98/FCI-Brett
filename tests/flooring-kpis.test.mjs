@@ -69,6 +69,78 @@ test("pins every Tier-1 and KPI-02 flooring formula to current lead and project 
   assert.equal(result.contractValueCaptureCount, 4);
 });
 
+test("splits every project KPI into the closed commercial and residential segments", () => {
+  const createdAt = Date.parse("2026-07-08T14:00:00Z");
+  const completedAt = Date.parse("2026-07-18T14:00:00Z");
+  const result = calculateFlooringKpis([], [
+    {
+      status: "planning",
+      estimatedValue: 100_000,
+      flooringCategory: "hardwood",
+      squareFeet: 1_000,
+      contractValue: 120_000,
+      segment: "commercial",
+      clientIndustry: "Residential",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      status: "completed",
+      estimatedValue: 50_000,
+      flooringCategory: "carpet",
+      squareFeet: 500,
+      contractValue: 60_000,
+      segment: null,
+      clientIndustry: "Residential",
+      installationStartedAt: Date.parse("2026-07-16T14:00:00Z"),
+      installationCompletedAt: completedAt,
+      hadCallback: true,
+      createdAt,
+      updatedAt: completedAt,
+    },
+    {
+      status: "mobilizing",
+      estimatedValue: 40_000,
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
+      segment: "future-third-value",
+      clientIndustry: "Healthcare",
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ], "2026-07");
+
+  assert.deepEqual(result.segmentSplits.map(({ segment, projectCount }) => ({ segment, projectCount })), [
+    { segment: "commercial", projectCount: 2 },
+    { segment: "residential", projectCount: 1 },
+  ]);
+
+  const commercial = result.segmentSplits[0];
+  assert.equal(commercial.bookedJobCount, 2);
+  assert.equal(commercial.bookedValue, 160_000);
+  assert.equal(commercial.averageJobValue, 80_000);
+  assert.equal(commercial.backlogCount, 2);
+  assert.equal(commercial.backlogValue, 140_000);
+  assert.equal(commercial.jobsCompleted, 0);
+  assert.deepEqual(commercial.productMix, [
+    { category: "hardwood", jobCount: 1, valuedJobCount: 1, valueShare: 1 },
+  ]);
+
+  const residential = result.segmentSplits[1];
+  assert.equal(residential.bookedJobCount, 1);
+  assert.equal(residential.bookedValue, 60_000);
+  assert.equal(residential.averageJobValue, 60_000);
+  assert.equal(residential.backlogCount, 0);
+  assert.equal(residential.backlogValue, 0);
+  assert.equal(residential.jobsCompleted, 1);
+  assert.equal(residential.averageInstallCycleDays, 2);
+  assert.equal(residential.callbackRate, 1);
+  assert.deepEqual(residential.productMix, [
+    { category: "carpet", jobCount: 1, valuedJobCount: 1, valueShare: 1 },
+  ]);
+});
+
 test("uses the Cherry Hill business month at UTC boundaries", () => {
   assert.equal(FLOORING_KPI_TIME_ZONE, "America/New_York");
   assert.equal(monthKeyForTimestamp(Date.parse("2026-08-01T01:00:00Z")), "2026-07");
