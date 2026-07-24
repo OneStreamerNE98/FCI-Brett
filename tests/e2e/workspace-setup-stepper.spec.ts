@@ -841,10 +841,10 @@ test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async
   await page.mouse.move(0, 0);
   await expect(tooltip).toBeHidden();
 
-  const describedIds = await page.locator(".workspace-info-hint-trigger").evaluateAll((triggers) => triggers.map((trigger) => trigger.getAttribute("aria-describedby")));
+  const describedIds = await page.locator(".info-hint-trigger").evaluateAll((triggers) => triggers.map((trigger) => trigger.getAttribute("aria-describedby")));
   expect(describedIds.every(Boolean)).toBe(true);
   expect(new Set(describedIds).size).toBe(describedIds.length);
-  const tooltipText = await page.locator(".workspace-info-hint-tooltip").allTextContents();
+  const tooltipText = await page.locator(".info-hint-tooltip").allTextContents();
   for (const text of tooltipText) expect(text).not.toMatch(/GOOGLE_[A-Z0-9_]+\s*=|<secret>|token value/i);
 });
 
@@ -922,7 +922,7 @@ test.describe("Workspace stage hints on touch", () => {
     await expect(firstFocusablePane).toBeVisible();
     expect(await firstFocusablePane.evaluate((element) => element.closest("[data-stage-three-pane]")?.getAttribute("data-stage-three-pane")))
       .toBe("creation");
-    const visibleHintTargets = await page.locator(".workspace-info-hint-trigger:visible").evaluateAll((triggers) => (
+    const visibleHintTargets = await page.locator(".info-hint-trigger:visible").evaluateAll((triggers) => (
       triggers.map((trigger) => {
         const rect = trigger.getBoundingClientRect();
         return {
@@ -1039,7 +1039,7 @@ test("domain checklist renders only payload-bounded unconfigured, partial, and c
   await expect(card.getByRole("listitem")).toHaveCount(6);
   for (const title of ["Company domain", "Operations account", "Workspace APIs", "OAuth web client", "Hosted secrets", "Role-aligned Google Groups"]) {
     const row = tenantChecklistRow(page, title);
-    await expect(row.locator(".workspace-info-hint-trigger")).toHaveCount(1);
+    await expect(row.locator(".info-hint-trigger")).toHaveCount(1);
     await expect(row.getByText("MISSING", { exact: true })).toBeVisible();
     await expect(row.getByRole("button", { name: `About ${title}`, exact: true })).toHaveAttribute("aria-describedby", /.+/);
   }

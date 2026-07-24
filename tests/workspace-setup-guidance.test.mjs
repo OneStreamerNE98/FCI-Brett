@@ -9,7 +9,7 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   const [panel, panelStyles, infoHint, checklist] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/settings/components/GoogleWorkspacePanel.module.css"),
-    read("app/settings/components/workspace-setup-shell/WorkspaceInfoHint.tsx"),
+    read("app/components/WorkspaceInfoHint.tsx"),
     read("app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx"),
   ]);
 
@@ -60,9 +60,12 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /aria-controls=\{bodyId\}/);
   assert.match(panel, /className="workspace-stage-body" hidden=\{!open\}/);
   assert.match(infoHint, /export function WorkspaceInfoHint/);
+  assert.match(infoHint, /anchor = "right"/);
+  assert.match(infoHint, /anchor\?: InfoHintAnchor/);
   assert.match(infoHint, /aria-describedby=\{descriptionId\}/);
   assert.match(infoHint, /role="tooltip"/);
   assert.match(infoHint, /event\.key !== "Escape"/);
+  assert.doesNotMatch(infoHint, /data-info-hint/);
   assert.match(panel, /Checking current status…/);
   assert.match(panel, /statusSourcesLoading[\s\S]+CHECKING[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE/);
   assert.match(panel, /statusSourcesLoading[\s\S]+Stage status pending[\s\S]+statusSourcesUnavailable[\s\S]+Current stage unavailable/);

@@ -7,7 +7,7 @@
 4. Portability: the tooltip anchors bottom-right (`right:0`, `globals.css:718`) and extends left/up, so left-column and full-width controls clip — **7 of 12** recommended rows need HINT-01 anchoring before shipping; 5 are OK-now.
 5. Two truthfulness flags carried to open questions: the AI-08 reminder fields must never promise sending, and "Appointment reminder hours" / "Client reminder hours" write the SAME stored value.
 
-Primitive: `WorkspaceInfoHint` (`app/settings/components/workspace-setup-shell/WorkspaceInfoHint.tsx`, props `{label,text}`). Rules applied: ≤25 words, plain flooring-business language, no env/secrets, truthful planned-vs-working.
+Primitive: `WorkspaceInfoHint` (`app/components/WorkspaceInfoHint.tsx`, props `{label,text,anchor?}`). Rules applied: ≤25 words, plain flooring-business language, no env/secrets, truthful planned-vs-working.
 
 Portability rule used: tooltip's right edge pins to the trigger and the box grows leftward. A field in the **right column** of a `.form-row`/grid keeps the box inside the container (**OK-now**); a **left-column or full-width** field puts the icon near the container's left edge, so the box clips (**needs-HINT-01-anchoring**). Verified column positions in source.
 
