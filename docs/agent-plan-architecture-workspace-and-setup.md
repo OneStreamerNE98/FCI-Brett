@@ -854,6 +854,8 @@ with a Simulated tag.
 zero requests to the admin route.
 
 ### SET-11 · Directory mirror maintenance surface (small, after SET-01+02+04)
+**Status:** In review — PR #162, July 24, 2026. Source-only and undeployed; the Settings guide documents refresh-vs-sync, recorded mirror evidence, and Stage 3 fallback setup.
+
 **Why:** Mirror status loads once at app start; the panel has no refresh; the
 unconfigured state dead-ends at a panel with no sheet-ID field (it's env-only).
 **Do:** "Refresh status" button (office-readable status route; lift the app-start loader
