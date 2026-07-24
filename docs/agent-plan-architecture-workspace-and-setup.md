@@ -2023,7 +2023,7 @@ assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
-**Status:** In review — PR #167, July 24, 2026 (sub-scope b; source-only and undeployed; Guide impact: none).
+**Status:** In review — PR #170, July 24, 2026 (draft; sub-scope d; source-only and undeployed; sub-scope b merged in PR #167; sub-scope c deferred because the current source has no live attention strip or truthful signal/destination, and the removed demo strip used fabricated counts). Guide impact: none.
 
 **Why:** owner selections of July 22 — all four extras plus the meetings
 resolution of spec §5.
@@ -2040,6 +2040,10 @@ per spec §5 — new SET-35 catalog entry, max ~5 one-line rows opening their
 project drawer, honest empty state; NOT scheduling. Build-once with AI-04:
 whichever of DES-08(d) and the AI Today view lands second consumes the first's
 today's-meetings server query (cross-reference recorded in both packets).
+DES-08(d) owns the build-once read in
+`app/application/today-project-meetings.ts`; the existing bounded AI `today`
+tool consumes it immediately, and AI-04 must extend that shared read rather
+than reintroducing a second project-meetings query.
 **Accept:** per sub-scope per the spec; each PR carries 1280/390 screenshots;
 (d) extends the SET-35 layout tests (catalog widen-on-read proves older saved
 layouts unaffected).
@@ -2211,7 +2215,9 @@ due-today open tasks, today's `project_meetings`, active leads with
 fields), and a link-only needs-review inbox chip (deep link to
 `/inbox?bucket=needs-review`; no fabricated count — counting requires a live
 Gmail call). Build-once with DES-08(d) per the cross-reference recorded in
-both packets. UI: Today becomes the default tab of the extracted Assistant
+both packets: consume and extend
+`app/application/today-project-meetings.ts`; do not duplicate its
+timezone-aware bounded meeting query. UI: Today becomes the default tab of the extracted Assistant
 page (Ask second); rows deep-link; inline complete-task checkbox via `PATCH
 /api/v1/tasks/[id]`; optional "Prioritize with AI" button sends the
 deterministic list through the AI-03 loop for one paragraph — on demand only,

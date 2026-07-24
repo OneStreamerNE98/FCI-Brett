@@ -3,6 +3,11 @@ import type { D1Database } from "../../adapters/d1/d1-database";
 import type { AssistantProviderToolDefinition } from "../../ports/assistant-provider";
 import { dashboardData } from "../dashboard-data";
 import { normalizeSearchQuery, searchRecords } from "../search-records";
+import {
+  calendarDateRange,
+  readTodayProjectMeetings,
+  TODAY_PROJECT_MEETINGS_TOOL_LIMIT,
+} from "../today-project-meetings";
 import { compact, type Evidence } from "./evidence";
 import { projectEvidence } from "./project-evidence";
 
@@ -137,13 +142,6 @@ function matchingExcerpt(value: string | null, query: string) {
   const start = Math.max(0, index - 400);
   const end = Math.min(value.length, index + query.length + 400);
   return `${start > 0 ? "…" : ""}${compact(value.slice(start, end), 820)}${end < value.length ? "…" : ""}`;
-}
-
-function utcDateRange(timestamp: number) {
-  const date = new Date(timestamp);
-  const day = date.toISOString().slice(0, 10);
-  const start = Date.parse(`${day}T00:00:00.000Z`);
-  return { day, start, end: start + 86_400_000 };
 }
 
 export function createAssistantToolRegistry(
@@ -457,17 +455,19 @@ export function createAssistantToolRegistry(
       const input = objectValue(argumentsValue);
       if (!input || !hasOnlyKeys(input, [])) return { evidence: [] };
       const currentTimestamp = now();
-      const range = utcDateRange(currentTimestamp);
+      const range = calendarDateRange(currentTimestamp, "UTC");
       const [tasks, meetings, staleLeads] = await Promise.all([
         createD1TaskRepository(database).list({
           status: "open",
           dueBefore: range.day,
           limit: 20,
         }),
-        database
-          .prepare("SELECT m.id, m.project_id, m.title, m.meeting_at, p.project_number FROM project_meetings m JOIN projects p ON p.id = m.project_id WHERE m.meeting_at >= ? AND m.meeting_at < ? ORDER BY m.meeting_at ASC LIMIT 12")
-          .bind(range.start, range.end)
-          .all<{ id: string; project_id: string; title: string; meeting_at: number; project_number: string }>(),
+        readTodayProjectMeetings(database, {
+          now: currentTimestamp,
+          timeZone: "UTC",
+          includeUpcoming: false,
+          limit: TODAY_PROJECT_MEETINGS_TOOL_LIMIT,
+        }),
         database
           .prepare("SELECT id, lead_number, company, next_action, next_action_at FROM leads WHERE LOWER(status) = 'active' AND next_action_at IS NOT NULL AND next_action_at < ? ORDER BY next_action_at ASC LIMIT 12")
           .bind(currentTimestamp)
@@ -480,10 +480,10 @@ export function createAssistantToolRegistry(
             label: `Task · ${compact(task.title, 160)}`,
             detail: `${task.due_date ? `Due ${task.due_date}` : "No due date"}${task.assignee_email ? ` · ${task.assignee_email}` : ""}`,
           })),
-          ...meetings.results.map((meeting) => ({
+          ...meetings.items.map((meeting) => ({
             id: `meeting:${meeting.id}`,
             label: `Meeting · ${compact(meeting.title, 160)}`,
-            detail: `${meeting.project_number} · ${new Date(meeting.meeting_at).toISOString()} UTC`,
+            detail: `${meeting.projectNumber} · ${new Date(meeting.meetingAt).toISOString()} UTC`,
           })),
           ...staleLeads.results.map((lead) => ({
             id: `lead:${lead.id}`,

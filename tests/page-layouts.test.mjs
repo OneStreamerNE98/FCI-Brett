@@ -11,7 +11,7 @@ import {
   parseStoredPageLayouts,
 } from "../app/lib/page-layouts.ts";
 
-const overviewKeys = ["metrics", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"];
+const overviewKeys = ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"];
 const reportKeys = ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "future-reports"];
 
 function validLayouts() {
@@ -44,7 +44,7 @@ test("widens each saved page independently while preserving valid order and hidd
   }, false);
 
   assert.deepEqual(normalized.overview, {
-    order: ["scheduling", "metrics", "lead-pipeline", "active-projects", "gmail-project-inbox"],
+    order: ["scheduling", "metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
     hidden: ["gmail-project-inbox"],
   });
   assert.deepEqual(normalized.reports, defaultPageLayout("reports", false));
@@ -57,7 +57,7 @@ test("strict writes reject unknown, duplicate, extra, and malformed keys without
   missingKnownKeys.overview.order = ["scheduling", "metrics"];
   missingKnownKeys.overview.hidden = ["active-projects"];
   assert.deepEqual(normalizePageLayoutsForWrite(missingKnownKeys, false)?.overview, {
-    order: ["scheduling", "metrics", "lead-pipeline", "active-projects", "gmail-project-inbox"],
+    order: ["scheduling", "metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
     hidden: ["active-projects"],
   });
 
@@ -82,8 +82,27 @@ test("stored parsing falls back safely without resetting a valid sibling page", 
     reports: { order: null, hidden: ["future-reports"] },
   }), false);
   assert.deepEqual(parsed.overview, {
-    order: ["active-projects", "metrics", "lead-pipeline", "scheduling", "gmail-project-inbox"],
+    order: ["active-projects", "metrics", "todays-meetings", "lead-pipeline", "scheduling", "gmail-project-inbox"],
     hidden: ["lead-pipeline"],
   });
   assert.deepEqual(parsed.reports, { order: reportKeys, hidden: ["future-reports"] });
+});
+
+// DES-08d: a pre-catalog-addition user keeps every saved choice and receives
+// the new optional section at the end instead of having the layout reset.
+test("widens an older saved Overview layout with Today's meetings without changing prior order or visibility", () => {
+  const olderLayout = {
+    overview: {
+      order: ["active-projects", "metrics", "lead-pipeline", "scheduling", "gmail-project-inbox"],
+      hidden: ["scheduling"],
+    },
+    reports: { order: [...reportKeys], hidden: ["future-reports"] },
+  };
+  assert.deepEqual(normalizePageLayoutsForRead(olderLayout, false), {
+    overview: {
+      order: ["active-projects", "metrics", "lead-pipeline", "scheduling", "gmail-project-inbox", "todays-meetings"],
+      hidden: ["scheduling"],
+    },
+    reports: olderLayout.reports,
+  });
 });

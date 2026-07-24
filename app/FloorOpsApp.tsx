@@ -74,6 +74,10 @@ type DashboardSummary = {
   metrics: { activeLeads: number; estimatedPipelineValue: number; activeProjects: number; clientCount: number; meetingCount: number; filedEmailCount: number };
   projectsByStatus: Array<{ status: string; count: number }>;
   recentActivity: Array<{ id: string; action: string; detail: string | null; actor: string; created_at: number }>;
+  todayMeetings: {
+    items: Array<{ id: string; projectId: string; title: string; meetingAt: number; projectNumber: string; projectName: string }>;
+    total: number;
+  };
   readiness: { scheduleDataAvailable: boolean; scheduleReason: string; reportsUseLiveProjectLeadTotals: boolean };
 };
 type LiveDataState = "loading" | "ready" | "error";
@@ -1169,7 +1173,29 @@ function unavailableMetricNote(state: LiveDataState) {
   return state === "error" ? "Unavailable until live records load" : "Loading current totals";
 }
 
-function Overview({ firstName, timezone, leads, projects, dashboard, state, isAdmin, layout, layoutReady, layoutError, onRetryLayout, onSaveLayout, onView, onProject, onLead }: { firstName: string | null; timezone: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; isAdmin: boolean; layout: PageLayout; layoutReady: boolean; layoutError: string; onRetryLayout: () => void; onSaveLayout: (layout: PageLayout) => Promise<void>; onView: (v: OperationsView) => void; onProject: (p: Project) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
+function overviewMeetingDate(value: number, timezone: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  }
+}
+
+function Overview({ firstName, timezone, leads, projects, dashboard, state, isAdmin, layout, layoutReady, layoutError, onRetryLayout, onSaveLayout, onView, onProject, onLead }: { firstName: string | null; timezone: string; leads: Lead[]; projects: Project[]; dashboard: DashboardSummary | null; state: LiveDataState; isAdmin: boolean; layout: PageLayout; layoutReady: boolean; layoutError: string; onRetryLayout: () => void; onSaveLayout: (layout: PageLayout) => Promise<void>; onView: (v: OperationsView) => void; onProject: (p: Project, returnFocusTarget?: HTMLElement | null) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
   const [currentTime, setCurrentTime] = useState<number | null>(null);
   useEffect(() => {
     const initialClock = window.requestAnimationFrame(() => setCurrentTime(Date.now()));
@@ -1185,12 +1211,40 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
   const activeProjects = projects.filter(isActiveProject);
   const recordsReady = state === "ready";
   const pendingMetricNote = unavailableMetricNote(state);
+  const todayMeetings = (dashboard?.todayMeetings?.items ?? []).flatMap((meeting) => {
+    const project = projects.find((candidate) => candidate.id === meeting.projectId);
+    return project ? [{ meeting, project }] : [];
+  });
+  const todayMeetingsTotal = Math.max(todayMeetings.length, dashboard?.todayMeetings?.total ?? 0);
+  const todayMeetingsOverflow = Math.max(0, todayMeetingsTotal - todayMeetings.length);
   const sectionNodes = {
     metrics: <section className="metrics-grid">
       <Metric label="Active pipeline" value={recordsReady ? money(metrics?.estimatedPipelineValue ?? 0) : "—"} note={recordsReady ? `${metrics?.activeLeads ?? activeLeads.length} open opportunities` : pendingMetricNote} icon={Zap} color="orange" href={recordsReady ? operationsHref("Leads") : undefined} />
       <Metric label="Active projects" value={recordsReady ? String(metrics?.activeProjects ?? activeProjects.length) : "—"} note={recordsReady ? "Projects currently in progress" : pendingMetricNote} icon={HardHat} color="green" href={recordsReady ? operationsHref("Projects", { projectStatus: "Active" }) : undefined} />
       <Metric label="Project meetings" value={recordsReady ? String(metrics?.meetingCount ?? 0) : "—"} note={recordsReady ? "Meeting notes saved" : pendingMetricNote} icon={MessageSquareText} color="blue" />
       <Metric label="Filed emails" value={recordsReady ? String(metrics?.filedEmailCount ?? 0) : "—"} note={recordsReady ? "Emails filed to projects" : pendingMetricNote} icon={Mail} color="violet" href={recordsReady ? operationsHref("Inbox") : undefined} />
+    </section>,
+    "todays-meetings": <section className="panel report-chart">
+      <PanelHeader title="Today's meetings" subtitle="Today + next up" />
+      {todayMeetings.length > 0 ? <ul className="bar-chart" aria-label="Today's and upcoming project meetings">
+        {todayMeetings.map(({ meeting, project }) => <li key={meeting.id}>
+          <Link
+            className="bar-chart-row actionable"
+            href={operationsHref("Projects")}
+            aria-label={`Open project ${meeting.projectNumber} for ${meeting.title}`}
+            onClick={(event) => {
+              event.preventDefault();
+              onProject(project, event.currentTarget);
+            }}
+          >
+            <span className="client-cell-copy"><strong title={meeting.title}>{meeting.title}</strong></span>
+            <span className="client-cell-copy"><span title={`${meeting.projectNumber} — ${meeting.projectName}`}>{meeting.projectNumber} — {meeting.projectName}</span></span>
+            <span className="client-cell-copy"><strong title={overviewMeetingDate(meeting.meetingAt, timezone)}>{overviewMeetingDate(meeting.meetingAt, timezone)}</strong></span>
+            <ChevronRight className="bar-chart-chevron" size={16} aria-hidden="true" />
+          </Link>
+        </li>)}
+        {todayMeetingsOverflow > 0 && <li><div className="bar-chart-row"><span className="bar-chart-label">and {todayMeetingsOverflow} more…</span><span>Upcoming project meetings</span><strong>Next up</strong><span className="bar-chart-spacer" aria-hidden="true" /></div></li>}
+      </ul> : <OperationsEmptyState variant="table">{state === "ready" ? "No today or upcoming project meetings are saved." : state === "error" ? "Today's meetings are unavailable until live records load." : "Loading today's meetings…"}</OperationsEmptyState>}
     </section>,
     "lead-pipeline": <div className="panel pipeline-panel">
         <PanelHeader title="Lead pipeline" subtitle={`${activeLeads.length} active records`} action="View all" onAction={() => onView("Leads")} />
@@ -1221,10 +1275,12 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
     const visibleKeys = activeLayout.order.filter((key) => !activeLayout.hidden.includes(key) && key in sectionNodes) as Array<keyof typeof sectionNodes>;
     const defaultSections = <>
       {sectionNodes.metrics}
+      {sectionNodes["todays-meetings"]}
       <section className="dashboard-grid">{sectionNodes["lead-pipeline"]}{sectionNodes.scheduling}</section>
       <section className="dashboard-grid lower-grid">{sectionNodes["active-projects"]}{sectionNodes["gmail-project-inbox"]}</section>
     </>;
-    const arrangedSections = <><div className="page-layout-grid page-layout-grid-overview">{visibleKeys.map((key) => <div className={key === "metrics" ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
+    const overviewFullWidthKeys = new Set<keyof typeof sectionNodes>(["metrics", "todays-meetings"]);
+    const arrangedSections = <><div className="page-layout-grid page-layout-grid-overview">{visibleKeys.map((key) => <div className={overviewFullWidthKeys.has(key) ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
     return <>
       <PageTitle eyebrow={dateLabel} title={`${greeting}${firstName ? `, ${firstName}` : ""}.`} text={recordsReady ? "Here’s the latest from your operations workspace." : "Connecting to your operations workspace."} state="Working" action={<><button className="soft-button" onClick={() => onView("Schedule")}><CalendarDays size={16} /> View scheduling status</button>{editButton}</>} />
       {editor}

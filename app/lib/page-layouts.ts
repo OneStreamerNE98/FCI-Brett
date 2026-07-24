@@ -14,6 +14,7 @@ export type PageLayoutCatalogEntry = {
 export const PAGE_LAYOUT_SECTION_CATALOG = {
   overview: [
     { key: "metrics", label: "Overview metrics", access: "office" },
+    { key: "todays-meetings", label: "Today's meetings", access: "office" },
     { key: "lead-pipeline", label: "Lead pipeline", access: "office" },
     { key: "scheduling", label: "Scheduling", access: "office" },
     { key: "active-projects", label: "Active projects", access: "office" },
