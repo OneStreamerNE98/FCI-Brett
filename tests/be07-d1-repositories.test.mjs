@@ -35,6 +35,7 @@ const [
   workspaceRoute,
   filingRoute,
   filingItemRoute,
+  googleWorkspace,
 ] =
   await Promise.all([
     vite.ssrLoadModule("/app/adapters/d1/workspace-settings-repository.ts"),
@@ -45,6 +46,7 @@ const [
     vite.ssrLoadModule("/app/api/v1/settings/workspace/route.ts"),
     vite.ssrLoadModule("/app/api/v1/filing-rules/route.ts"),
     vite.ssrLoadModule("/app/api/v1/filing-rules/[ruleId]/route.ts"),
+    vite.ssrLoadModule("/app/lib/google-workspace.ts"),
   ]);
 
 after(async () => {
@@ -147,13 +149,19 @@ test("workspace settings use one safe normalizer and JSON upserts preserve scala
   const record = await repository.findById("workspace");
   assert.equal(record.clientDirectorySheetId, "saved-sheet");
   assert.equal(record.settings.appointmentCalendarId, " saved-client-calendar ");
-  assert.deepEqual(workspaceDomain.normalizeWorkspacePreferences(record.settings), {
+  const widenedPreferences = workspaceDomain.normalizeWorkspacePreferences(record.settings);
+  assert.deepEqual(widenedPreferences, {
     ...workspaceDomain.DEFAULT_WORKSPACE_PREFERENCES,
     timezone: "America/Chicago",
     appointmentCalendarId: "saved-client-calendar",
     fieldCalendarId: "saved-field-calendar",
     appointmentReminderHours: 12,
   });
+  assert.equal(
+    widenedPreferences.clientReminderHours,
+    24,
+    "an older row must widen with the client-reminder default rather than copying appointment hours",
+  );
   assert.deepEqual(
     workspaceDomain.normalizeWorkspacePreferences(
       workspaceDomain.parseWorkspaceSettingsDocument("{not-json"),
@@ -445,6 +453,7 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
     routeRequest("/api/v1/settings/workspace", ADMIN_EMAIL, "PATCH", {
       timezone: "America/Denver",
       appointmentReminderHours: 6,
+      clientReminderHours: 48,
     }),
   );
   const patchBody = await patchResponse.json();
@@ -452,15 +461,61 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
   assert.equal(patchResponse.headers.get("cache-control"), "no-store");
   assert.equal(patchBody.settings.timezone, "America/Denver");
   assert.equal(patchBody.settings.appointmentReminderHours, 6);
+  assert.equal(patchBody.settings.clientReminderHours, 48);
   const write = database.statements.at(-1);
   assert.match(write.sql, /^INSERT INTO workspace_settings/u);
   assert.doesNotMatch(write.sql, /client_directory_sheet_id = excluded/u);
   const storedSettings = JSON.parse(write.values[1]);
+  assert.equal(storedSettings.appointmentReminderHours, 6);
+  assert.equal(storedSettings.clientReminderHours, 48);
   assert.deepEqual(storedSettings.futureWorkspaceSetting, { retained: true });
   assert.deepEqual(storedSettings.aiFeatures, {
     orgQa: false,
     futureFeature: "preserved",
   });
+});
+
+// SET-06: custom rules remain inert while their row presents that state honestly.
+test("a higher-priority custom rule does not change the built-in filing suggestion", () => {
+  const input = {
+    message: {
+      from: "client@example.test",
+      subject: "Update for FCI-2026-014",
+      snippet: "",
+    },
+    projects: [{
+      id: "project-14",
+      clientId: "client-14",
+      number: "FCI-2026-014",
+      client: "FCI TEST — DO NOT USE",
+      status: "active",
+    }],
+    clients: [{
+      id: "client-14",
+      name: "FCI TEST — DO NOT USE",
+      email: "client@example.test",
+    }],
+  };
+  const baseline = googleWorkspace.evaluateInboxFilingRules({
+    ...input,
+    rules: googleWorkspace.DEFAULT_FILING_RULES,
+  });
+  const withCustomRule = googleWorkspace.evaluateInboxFilingRules({
+    ...input,
+    rules: [{
+      id: "custom-priority-zero",
+      name: "Custom always-suggest rule",
+      enabled: true,
+      priority: 0,
+      matchSummary: "Every loaded message",
+      action: "suggest",
+      targetCategory: "99_Unsorted Intake",
+      approvalRequired: true,
+    }, ...googleWorkspace.DEFAULT_FILING_RULES],
+  });
+
+  assert.deepEqual(withCustomRule, baseline);
+  assert.equal(withCustomRule.ruleName, "Exact project number");
 });
 
 test("filing-rule routes preserve built-in merging and mutation response semantics through the repository", async () => {

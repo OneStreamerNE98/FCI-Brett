@@ -3,10 +3,12 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Building2, CalendarDays, Check, Mail, ShieldCheck } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
+import { FeatureStateBadge } from "../../components/FeatureStateBadge";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { AiAssistantSettingsCard } from "./AiAssistantSettingsCard";
 import { ChatNotificationSettingsCard } from "./ChatNotificationSettingsCard";
 import { SettingsDataNotice } from "./SettingsDataNotice";
+import styles from "./WorkspaceDefaultsPanel.module.css";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
@@ -21,6 +23,7 @@ type WorkspacePreferenceValues = {
   fieldCalendarId: string;
   calendarEditPolicy: "app-authoritative";
   appointmentReminderHours: number;
+  clientReminderHours: number;
   crewReminderHours: number;
   inboxReviewMode: "review-first";
   officeNotificationEmail: string;
@@ -34,10 +37,25 @@ const defaultWorkspacePreferences: WorkspacePreferenceValues = {
   fieldCalendarId: "",
   calendarEditPolicy: "app-authoritative",
   appointmentReminderHours: 24,
+  clientReminderHours: 24,
   crewReminderHours: 24,
   inboxReviewMode: "review-first",
   officeNotificationEmail: "",
 };
+
+const PLANNED_AUTOMATION_COPY = "Saved for the upcoming reminder worker — nothing sends yet";
+
+function PlannedSettingField({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  const descriptionId = `${id}-planned-note`;
+  return <div className={styles.plannedField} data-setting-consumer="planned">
+    <div className={styles.plannedFieldHeader}>
+      <label htmlFor={id}>{label}</label>
+      <FeatureStateBadge state="Planned" />
+    </div>
+    {children}
+    <small id={descriptionId}>{PLANNED_AUTOMATION_COPY}</small>
+  </div>;
+}
 
 function WorkflowSettingsStack({ children, notify, isAdmin }: { children: ReactNode; notify: Notify; isAdmin: boolean }) {
   return <div className="settings-panel-stack">
@@ -145,7 +163,9 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
           <label>Field schedule calendar ID<input value={settings.fieldCalendarId} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /></label>
         </div>}
         <div className="form-row">
-          <label>Appointment reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label>
+          <PlannedSettingField id="appointment-reminder-hours" label="Appointment reminder hours">
+            <input id="appointment-reminder-hours" aria-describedby="appointment-reminder-hours-planned-note" type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} />
+          </PlannedSettingField>
           <label>Scheduling source<input value="FCI Operations + shared Workspace calendars" readOnly /></label>
         </div>
         <div className="settings-static-row">
@@ -169,10 +189,16 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
       </div>
       <form onSubmit={save}>
         <div className="form-row">
-          <label>Client reminder hours<input type="number" min="0" max="168" value={settings.appointmentReminderHours} onChange={(event) => setSettings((current) => ({ ...current, appointmentReminderHours: Number(event.target.value) || 0 }))} /></label>
-          <label>Crew reminder hours<input type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} /></label>
+          <PlannedSettingField id="client-reminder-hours" label="Client reminder hours">
+            <input id="client-reminder-hours" aria-describedby="client-reminder-hours-planned-note" type="number" min="0" max="168" value={settings.clientReminderHours} onChange={(event) => setSettings((current) => ({ ...current, clientReminderHours: Number(event.target.value) || 0 }))} />
+          </PlannedSettingField>
+          <PlannedSettingField id="crew-reminder-hours" label="Crew reminder hours">
+            <input id="crew-reminder-hours" aria-describedby="crew-reminder-hours-planned-note" type="number" min="0" max="168" value={settings.crewReminderHours} onChange={(event) => setSettings((current) => ({ ...current, crewReminderHours: Number(event.target.value) || 0 }))} />
+          </PlannedSettingField>
         </div>
-        <label>Office notification email<input type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" /></label>
+        <PlannedSettingField id="office-notification-email" label="Office notification email">
+          <input id="office-notification-email" aria-describedby="office-notification-email-planned-note" type="email" value={settings.officeNotificationEmail} onChange={(event) => setSettings((current) => ({ ...current, officeNotificationEmail: event.target.value }))} placeholder="office@example.com" />
+        </PlannedSettingField>
         <div className="settings-static-row"><ShieldCheck size={16} /><div><strong>Inbox action policy</strong><span>Review-first is enforced: no email is automatically archived, labeled Filed, or copied to a project without an explicit project selection and confirmation.</span></div></div>
         <footer><AdministratorActionButton type="submit" className="primary-button" isAdmin={isAdmin} disabled={loadState !== "ready" || saving}>{saving ? "Saving…" : <><Check size={15} /> Save defaults</>}</AdministratorActionButton></footer>
       </form>

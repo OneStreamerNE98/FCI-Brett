@@ -778,6 +778,8 @@ After SET-13.
 **Accept:** route tests for all three states; panel strings correct; docs updated.
 
 ### SET-06 · Truthful labels for persisted-but-inert settings and review-first rules (small, after SET-01; AMENDED July 23, 2026 — absorbs holistic-review FIX-14 + FIX-16)
+**Status:** In review — PR #163, July 24, 2026. Source-only and undeployed.
+
 **Why:** Reminder hours and office-notification email save but nothing consumes them;
 custom filing rules are forced review-first, admitted only in a footnote. The July
 23–24 holistic review (docs/full-review-2026-07-24-findings.md) confirmed two

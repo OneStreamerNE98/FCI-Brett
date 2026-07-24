@@ -565,6 +565,40 @@ test("applies enabled built-in filing rules to inbox hints without automatic Gma
   assert.doesNotMatch(workspace, /applyFiledLabel/);
 });
 
+// SET-06: persisted-but-inert settings and custom rules must describe their actual consumers.
+test("labels planned reminders and inert custom rules without disturbing active built-ins", async () => {
+  const [defaults, defaultsStyles, settingsDomain, rules] = await Promise.all([
+    read("app/settings/components/WorkspaceDefaultsPanel.tsx"),
+    read("app/settings/components/WorkspaceDefaultsPanel.module.css"),
+    read("app/domain/workspace-settings.ts"),
+    read("app/settings/components/InboxRulesPanel.tsx"),
+  ]);
+
+  assert.match(defaults, /const PLANNED_AUTOMATION_COPY = "Saved for the upcoming reminder worker — nothing sends yet"/u);
+  assert.match(defaults, /<FeatureStateBadge state="Planned" \/>/u);
+  for (const [id, label, key] of [
+    ["appointment-reminder-hours", "Appointment reminder hours", "appointmentReminderHours"],
+    ["client-reminder-hours", "Client reminder hours", "clientReminderHours"],
+    ["crew-reminder-hours", "Crew reminder hours", "crewReminderHours"],
+    ["office-notification-email", "Office notification email", "officeNotificationEmail"],
+  ]) {
+    assert.match(defaults, new RegExp(`<PlannedSettingField id="${id}" label="${label}">[\\s\\S]*?value=\\{settings\\.${key}\\}`, "u"));
+  }
+  assert.doesNotMatch(
+    defaults,
+    /label="Client reminder hours"[\s\S]*?value=\{settings\.appointmentReminderHours\}/u,
+  );
+  assert.match(defaultsStyles, /\.plannedFieldHeader/u);
+  assert.match(settingsDomain, /clientReminderHours: cleanHours\(\s*input\.clientReminderHours,\s*DEFAULT_WORKSPACE_PREFERENCES\.clientReminderHours/u);
+
+  assert.match(rules, /getFilingRuleMatcher\(rule\) === null/u);
+  assert.match(rules, />Review-first<\/span>/u);
+  assert.match(rules, />Saved — not yet applied<\/span>/u);
+  assert.match(rules, /Custom rules are saved for review but do not drive inbox suggestions until a supported matcher is added\./u);
+  assert.match(rules, /isCustomRule \? <span[^>]*>Saved — not yet applied<\/span> : <Status/u);
+  assert.doesNotMatch(rules, /rule-footnote|Custom rules are saved as review-first policies/u);
+});
+
 test("keeps the app authoritative while mirroring clients and projects to Google Sheets", async () => {
   const [oauth, sheets, clientsApi, projectsApi, statusApi, syncApi, schema, guide] = await Promise.all([
     read("app/lib/google-oauth.ts"), read("app/lib/google-sheets.ts"), read("app/api/v1/clients/route.ts"),

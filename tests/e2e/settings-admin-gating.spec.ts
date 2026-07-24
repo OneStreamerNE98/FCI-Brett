@@ -44,6 +44,7 @@ async function mockIdentityForExternalServer(page: Page, isAdmin: boolean) {
           fieldCalendarId: "",
           calendarEditPolicy: "app-authoritative",
           appointmentReminderHours: 24,
+          clientReminderHours: 24,
           crewReminderHours: 24,
           inboxReviewMode: "review-first",
           officeNotificationEmail: "",
