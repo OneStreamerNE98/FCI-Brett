@@ -75,6 +75,7 @@ type ConnectionHealthPayload = {
 type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 type WorkspaceReadinessState = "idle" | "loading" | "ready" | "error";
 type WorkspaceSetupResourcesState = "idle" | "loading" | "ready" | "error";
+type StageFourVerificationState = "idle" | "loading" | "ready" | "error";
 type WorkspaceStageNumber = 1 | 2 | 3 | 4;
 type WorkspaceStageTone = "done" | "current" | "waiting" | "ready" | "neutral";
 
@@ -319,6 +320,31 @@ function sheetMirrorFullySynced(mirror: SheetMirrorStatus | null | undefined) {
   return mirror?.clients.status === "synced" && mirror.projects.status === "synced";
 }
 
+async function readStageFourVerification<T>(url: string) {
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) return { ok: false as const, data: null };
+    return { ok: true as const, data: await response.json() as T };
+  } catch {
+    return { ok: false as const, data: null };
+  }
+}
+
+function stageFourServiceEligible(
+  workspace: WorkspaceReadiness | null | undefined,
+  service: "gmail" | "calendar",
+) {
+  const enabled = service === "gmail"
+    ? workspace?.gmailEnabled === true
+    : workspace?.calendarEnabled === true;
+  if (!enabled) return false;
+  if (workspace?.simulation === true) return true;
+  if (workspace?.connectionStatus !== "connected") return false;
+  return service === "gmail"
+    ? workspace.gmailConnected === true
+    : workspace.calendarConnected === true;
+}
+
 function maskWorkspaceAccountForDisplay(value: string | null | undefined) {
   if (!value) return "Not connected";
   if (value === "Local Workspace simulation") return value;
@@ -354,6 +380,8 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [gmailTestEmailPassed, setGmailTestEmailPassed] = useState(false);
   const [calendarChecked, setCalendarChecked] = useState(false);
   const [sheetsVerificationPassed, setSheetsVerificationPassed] = useState(false);
+  const [gmailVerificationState, setGmailVerificationState] = useState<StageFourVerificationState>("idle");
+  const [calendarVerificationState, setCalendarVerificationState] = useState<StageFourVerificationState>("idle");
   const [filingMessage, setFilingMessage] = useState<WorkspaceMessage | null>(null);
   const [filingProjectId, setFilingProjectId] = useState("");
   const [filingPreview, setFilingPreview] = useState<GmailFilingPreview | null>(null);
@@ -374,8 +402,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         cachedGetJson<{ credentialsPresent?: boolean; missing?: string[]; missingDetails?: MissingDetail[]; workspace?: WorkspaceReadiness }>("/api/v1/google-workspace", { force }),
         sheetsRequest,
       ]);
+      const nextWorkspace = data.workspace ?? null;
+      const gmailVerificationEligible = isAdmin && stageFourServiceEligible(nextWorkspace, "gmail");
+      const calendarVerificationEligible = isAdmin && stageFourServiceEligible(nextWorkspace, "calendar");
       setMissingDetails(data.missingDetails ?? []);
-      setWorkspace(data.workspace ?? null);
+      setWorkspace(nextWorkspace);
       setWorkspaceReadinessState("ready");
       if (sheetsResult.ok) {
         const mirror = sheetsResult.data.mirror ?? null;
@@ -385,21 +416,60 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       } else {
         setSheetsStatusError("Mirror status could not be loaded. Refresh this step to try again.");
       }
-      if (!data.workspace?.simulation && data.workspace?.connectionStatus !== "connected") {
-        setDriveVerified(false);
+      if (gmailVerificationEligible) {
+        setGmailVerificationState("loading");
+      } else {
         setGmailLabelsReady(false);
         setGmailTestEmailPassed(false);
+        setGmailVerificationState("idle");
+      }
+      if (calendarVerificationEligible) {
+        setCalendarVerificationState("loading");
+      } else {
         setCalendarChecked(false);
+        setCalendarVerificationState("idle");
+      }
+      const [gmailVerification, calendarVerification] = await Promise.all([
+        gmailVerificationEligible
+          ? readStageFourVerification<{ labelReady?: boolean; testEmailPassed?: boolean }>(
+              "/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status",
+            )
+          : Promise.resolve(null),
+        calendarVerificationEligible
+          ? readStageFourVerification<{ verificationPassed?: boolean }>(
+              "/api/v1/integrations/google/calendar/events?verification=status",
+            )
+          : Promise.resolve(null),
+      ]);
+      if (gmailVerification?.ok) {
+        setGmailLabelsReady(Boolean(gmailVerification.data.labelReady));
+        setGmailTestEmailPassed(Boolean(gmailVerification.data.testEmailPassed));
+        setGmailVerificationState("ready");
+      } else if (gmailVerificationEligible) {
+        setGmailVerificationState("error");
+      }
+      if (calendarVerification?.ok) {
+        setCalendarChecked(Boolean(calendarVerification.data.verificationPassed));
+        setCalendarVerificationState("ready");
+      } else if (calendarVerificationEligible) {
+        setCalendarVerificationState("error");
+      }
+      if (!nextWorkspace?.simulation && nextWorkspace?.connectionStatus !== "connected") {
+        setDriveVerified(false);
         setSheetsVerificationPassed(false);
       }
-      notify("Workspace readiness refreshed. Current status is shown above.", data.workspace?.simulation || data.credentialsPresent ? "info" : "warning");
+      notify("Workspace readiness refreshed. Current status is shown above.", nextWorkspace?.simulation || data.credentialsPresent ? "info" : "warning");
     } catch {
       setWorkspaceReadinessState("error");
+      if (isAdmin) {
+        setGmailVerificationState("error");
+        setCalendarVerificationState("error");
+      }
       notify("Workspace readiness could not be checked. Confirm the app is running and try again.", "error");
     } finally {
       setChecking(false);
     }
-  }, [notify]);
+  }, [isAdmin, notify]);
 
   const loadConnectionHealth = useCallback(async (force = false) => {
     if (!isAdmin) return;
@@ -550,9 +620,8 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   async function refreshTestGmail() {
     setGmailWorking(true);
     try {
-      const data = await readApi<{ messages?: WorkspaceMessage[]; labelReady?: boolean }>("/api/v1/integrations/google/gmail/messages?label=inbox");
+      const data = await readApi<{ messages?: WorkspaceMessage[] }>("/api/v1/integrations/google/gmail/messages?label=inbox");
       setGmailMessages(data.messages ?? []);
-      setGmailLabelsReady((current) => current || Boolean(data.labelReady));
       notify(`Loaded ${data.messages?.length ?? 0} Workspace inbox message(s).`, "info");
     } catch (error) {
       notify(error instanceof Error ? error.message : "The test inbox could not be loaded.", "error");
@@ -835,8 +904,10 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const folderRenamesEnabled = stageTwoComplete
     && workspaceResourcesKnown
     && workspaceCreationProgress.sharedDriveComplete;
+  const stageFourVerificationUnavailable = gmailVerificationState === "error"
+    || calendarVerificationState === "error";
   const stageFourCompleteCount = [gmailVerificationPassed, calendarChecked, sheetsVerificationPassed].filter(Boolean).length;
-  const stageFourReady = stageFourCompleteCount === 3;
+  const stageFourReady = !stageFourVerificationUnavailable && stageFourCompleteCount === 3;
   const stageCompletion = [stageOneComplete, stageTwoComplete, stageThreeComplete, false] as const;
   const currentStageNumber = (stageCompletion.findIndex((complete) => !complete) + 1) as WorkspaceStageNumber;
   const currentStageName = WORKSPACE_STAGE_NAMES[currentStageNumber - 1];
@@ -913,22 +984,26 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     ? "CHECKING"
     : stageFourReady
       ? "READY"
-      : statusSourcesUnavailable
+      : statusSourcesUnavailable || stageFourVerificationUnavailable
         ? "UNAVAILABLE"
         : `${stageFourCompleteCount} OF 3 VERIFIED`;
   const stageFourStatusNeutral = stageFourStatus === "CHECKING" || stageFourStatus === "UNAVAILABLE";
-  const gmailVerificationStatus = gmailVerificationPassed
-    ? "VERIFIED"
-    : gmailLabelsReady
-      ? "TEST EMAIL NEEDED"
-      : gmailActionsEnabled
+  const gmailVerificationStatus = gmailVerificationState === "error"
+    ? "UNAVAILABLE"
+    : gmailVerificationPassed
+      ? "VERIFIED"
+      : gmailLabelsReady
+        ? "TEST EMAIL NEEDED"
+        : gmailActionsEnabled
+          ? "READY TO VERIFY"
+          : "WAITING";
+  const calendarVerificationStatus = calendarVerificationState === "error"
+    ? "UNAVAILABLE"
+    : calendarChecked
+      ? "VERIFIED"
+      : calendarActionsEnabled
         ? "READY TO VERIFY"
         : "WAITING";
-  const calendarVerificationStatus = calendarChecked
-    ? "VERIFIED"
-    : calendarActionsEnabled
-      ? "READY TO VERIFY"
-      : "WAITING";
   const sheetsVerificationStatus = sheetsVerificationPassed
     ? "VERIFIED"
     : sheetsStatusError
@@ -1127,7 +1202,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                 label="Gmail — labels & test email"
                 info={GMAIL_VERIFICATION_INFO}
                 status={gmailVerificationStatus}
-                complete={gmailVerificationPassed}
+                complete={gmailVerificationState !== "error" && gmailVerificationPassed}
                 dependencyBlocked={!gmailActionsEnabled}
               >
                 {(dependencyDescriptionId) => <div className="test-service-card">
@@ -1152,7 +1227,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                 label="Calendar — appointments & test hold"
                 info={CALENDAR_VERIFICATION_INFO}
                 status={calendarVerificationStatus}
-                complete={calendarChecked}
+                complete={calendarVerificationState !== "error" && calendarChecked}
                 dependencyBlocked={!calendarActionsEnabled}
               >
                 {(dependencyDescriptionId) => <div className="test-service-card">

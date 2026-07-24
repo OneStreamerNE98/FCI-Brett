@@ -189,6 +189,42 @@ async function mockWorkspaceResources(page: Page, payload: WorkspaceResourcesPay
   });
 }
 
+type StageFourVerificationStatus = {
+  labelReady: boolean;
+  testEmailPassed: boolean;
+  calendarChecked: boolean;
+};
+
+async function mockStageFourVerificationStatus(
+  page: Page,
+  status: StageFourVerificationStatus = {
+    labelReady: false,
+    testEmailPassed: false,
+    calendarChecked: false,
+  },
+) {
+  await page.route("**/api/v1/integrations/google/gmail/messages?label=needs-review&verification=status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        bucket: "needs-review",
+        messages: [],
+        labelReady: status.labelReady,
+        testEmailPassed: status.testEmailPassed,
+        limit: 20,
+      }),
+    });
+  });
+  await page.route("**/api/v1/integrations/google/calendar/events?verification=status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ events: [], verificationPassed: status.calendarChecked }),
+    });
+  });
+}
+
 async function mockWorkspaceBlueprint(page: Page, initial: WorkspaceBlueprint = seedWorkspaceBlueprint(), initialVersion = 0) {
   let blueprint = structuredClone(initial) as WorkspaceBlueprint;
   let version = initialVersion;
@@ -738,6 +774,7 @@ test("Stage 4 disabled verification actions are described by their actual depend
   await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
   });
+  await mockStageFourVerificationStatus(page);
 
   await page.goto("/settings?section=google-workspace#workspace-stage-4");
   await setStageExpanded(page, 4, true);
@@ -1124,6 +1161,11 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   let calendarReadRequest: { method: string; body: string | null } | null = null;
   let sheetsSyncRequest: { method: string; body: string | null } | null = null;
   let resourcesShouldFail = false;
+  const stageFourVerificationStatus: StageFourVerificationStatus = {
+    labelReady: false,
+    testEmailPassed: false,
+    calendarChecked: false,
+  };
 
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
@@ -1146,6 +1188,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror }) });
   });
+  await mockStageFourVerificationStatus(page, stageFourVerificationStatus);
   await page.route("**/api/v1/integrations/google/drive/verify", async (route) => {
     driveVerifyRequest = { method: route.request().method(), body: route.request().postData() };
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ verified: true }) });
@@ -1165,14 +1208,17 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   });
   await page.route("**/api/v1/integrations/google/gmail/labels/prepare", async (route) => {
     gmailPrepareRequest = { method: route.request().method(), body: route.request().postData() };
+    stageFourVerificationStatus.labelReady = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ prepared: true }) });
   });
   await page.route("**/api/v1/integrations/google/gmail/send-test", async (route) => {
     gmailSendRequest = { method: route.request().method(), body: route.request().postData() };
+    stageFourVerificationStatus.testEmailPassed = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sent: true }) });
   });
   await page.route("**/api/v1/integrations/google/calendar/events", async (route) => {
     calendarReadRequest = { method: route.request().method(), body: route.request().postData() };
+    stageFourVerificationStatus.calendarChecked = true;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ events: [] }) });
   });
   await page.route("**/api/v1/integrations/google/sheets/sync", async (route) => {
@@ -1253,6 +1299,282 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   resourcesShouldFail = true;
   await page.getByRole("button", { name: "Check readiness" }).click();
   await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
+});
+
+test.describe("FIX-13 Stage 4 verification durability", () => {
+  async function mockDurableStageFourState(page: Page, initial: {
+    labelReady?: boolean;
+    testEmailPassed?: boolean;
+    calendarChecked?: boolean;
+    sheetsSynced?: boolean;
+  } = {}) {
+    let labelReady = initial.labelReady ?? false;
+    let testEmailPassed = initial.testEmailPassed ?? false;
+    let calendarChecked = initial.calendarChecked ?? false;
+    let gmailStatusFailure = false;
+    let calendarStatusFailure = false;
+    const syncedAt = Date.now();
+    let mirror: MirrorStatus = initial.sheetsSynced
+      ? {
+          ...unsyncedMirror(),
+          clients: { status: "synced", lastSyncedAt: syncedAt, lastError: null },
+          projects: { status: "synced", lastSyncedAt: syncedAt, lastError: null },
+          lastSyncedAt: syncedAt,
+        }
+      : unsyncedMirror();
+
+    await page.unroute("**/api/v1/integrations/google/setup/resources");
+    await mockWorkspaceResources(page, completedWorkspaceResources());
+    await mockConnectionHealth(page, connectedHealth());
+    await page.route("**/api/v1/google-workspace", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(readiness()),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/gmail/messages*", async (route) => {
+      const verificationOnly = new URL(route.request().url()).searchParams.get("verification") === "status";
+      if (verificationOnly && gmailStatusFailure) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "FCI TEST Gmail verification status unavailable" }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          bucket: verificationOnly ? "needs-review" : "inbox",
+          messages: [],
+          labelReady,
+          testEmailPassed,
+          limit: 20,
+        }),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/gmail/labels/prepare", async (route) => {
+      labelReady = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ prepared: true }),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/gmail/send-test", async (route) => {
+      testEmailPassed = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ sent: true }),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/calendar/events*", async (route) => {
+      const verificationOnly = new URL(route.request().url()).searchParams.get("verification") === "status";
+      if (verificationOnly && calendarStatusFailure) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "FCI TEST Calendar verification status unavailable" }),
+        });
+        return;
+      }
+      if (!verificationOnly) calendarChecked = true;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          events: [],
+          verificationPassed: calendarChecked,
+        }),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ mirror }),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/sheets/sync", async (route) => {
+      const now = Date.now();
+      mirror = {
+        ...mirror,
+        clients: { status: "synced", lastSyncedAt: now, lastError: null },
+        projects: { status: "synced", lastSyncedAt: now, lastError: null },
+        lastSyncedAt: now,
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ mirror }),
+      });
+    });
+    return {
+      setDurableState(next: {
+        labelReady?: boolean;
+        testEmailPassed?: boolean;
+        calendarChecked?: boolean;
+      }) {
+        if (next.labelReady !== undefined) labelReady = next.labelReady;
+        if (next.testEmailPassed !== undefined) testEmailPassed = next.testEmailPassed;
+        if (next.calendarChecked !== undefined) calendarChecked = next.calendarChecked;
+      },
+      setStatusFailures(next: { gmail?: boolean; calendar?: boolean }) {
+        if (next.gmail !== undefined) gmailStatusFailure = next.gmail;
+        if (next.calendar !== undefined) calendarStatusFailure = next.calendar;
+      },
+    };
+  }
+
+  async function expectStageFourReady(page: Page) {
+    await setStageExpanded(page, 4, true);
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("READY");
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+  }
+
+  test("rehydrates READY after reload and an in-app navigate-away-and-back", async ({ page }) => {
+    await mockDurableStageFourState(page);
+    await page.goto("/settings?section=google-workspace#workspace-stage-4");
+    await setStageExpanded(page, 4, true);
+
+    await verificationRow(page, "gmail").getByRole("button", { name: "Prepare FCI labels" }).click();
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
+    await verificationRow(page, "gmail").getByRole("button", { name: "Send Workspace test" }).click();
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await verificationRow(page, "calendar").getByRole("button", { name: "View upcoming events" }).click();
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+    await verificationRow(page, "sheets").getByRole("button", { name: "Sync now" }).click();
+    await expectStageFourReady(page);
+
+    await page.reload();
+    await expectStageFourReady(page);
+
+    await page.locator(".settings-nav").getByRole("button", { name: "Calendar & appointments", exact: true }).click();
+    await expect(page.getByRole("heading", { level: 2, name: "Calendar & appointments", exact: true })).toBeVisible();
+    await page.locator(".settings-nav").getByRole("button", { name: "Google Workspace", exact: true }).click();
+    await expectStageFourReady(page);
+  });
+
+  test("reflects a server-ready Gmail label on the first render without inventing a test send", async ({ page }) => {
+    await mockDurableStageFourState(page, { labelReady: true });
+    await page.goto("/settings?section=google-workspace#workspace-stage-4");
+    await setStageExpanded(page, 4, true);
+
+    const gmail = verificationRow(page, "gmail");
+    await expect(gmail).toHaveAttribute("data-stage-four-state", "TEST EMAIL NEEDED");
+    await expect(gmail).not.toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+    await expect(gmail.getByRole("button", { name: "Refresh FCI labels" })).toBeVisible();
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("0 OF 3 VERIFIED");
+  });
+
+  test("renders failed status hydration honestly and reconciles exact recovered booleans", async ({ page }) => {
+    const durable = await mockDurableStageFourState(page, {
+      labelReady: true,
+      testEmailPassed: true,
+      calendarChecked: true,
+      sheetsSynced: true,
+    });
+    await page.goto("/settings?section=google-workspace#workspace-stage-4");
+    await expectStageFourReady(page);
+
+    durable.setStatusFailures({ gmail: true, calendar: true });
+    await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+    await setStageExpanded(page, 4, true);
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("UNAVAILABLE");
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveClass(/\bneutral\b/);
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "UNAVAILABLE");
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "UNAVAILABLE");
+    await expect(verificationRow(page, "gmail").getByRole("button", { name: "Refresh FCI labels" })).toBeVisible();
+
+    durable.setStatusFailures({ gmail: false, calendar: false });
+    durable.setDurableState({
+      labelReady: false,
+      testEmailPassed: false,
+      calendarChecked: false,
+    });
+    await page.getByRole("button", { name: "Check readiness", exact: true }).click();
+    await setStageExpanded(page, 4, true);
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).toHaveText("1 OF 3 VERIFIED");
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "READY TO VERIFY");
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "WAITING");
+    await expect(verificationRow(page, "sheets")).toHaveAttribute("data-stage-four-state", "VERIFIED");
+  });
+
+  test("keeps unavailable services waiting without making pre-connect verification reads", async ({ page }) => {
+    let gmailVerificationReads = 0;
+    let calendarVerificationReads = 0;
+    await page.unroute("**/api/v1/integrations/google/setup/resources");
+    await mockWorkspaceResources(page, workspaceResources({
+      connectReady: true,
+      identity: {
+        connectionAccount: null,
+        intakeMailboxMatches: null,
+        allowedDomains: ["cherryhillfci.com"],
+        mode: "workspace",
+      },
+    }));
+    await mockConnectionHealth(page, {
+      ...connectedHealth(),
+      connection: {
+        connected: false,
+        status: "not-connected",
+        account: null,
+        services: { drive: false, gmail: false, calendar: false, sheets: false },
+        grantedServices: null,
+        requiresReauthorization: false,
+      },
+    });
+    await page.route("**/api/v1/google-workspace", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(readiness({
+          connectionStatus: "not-connected",
+          connectionAccount: null,
+          driveConnected: false,
+          gmailConnected: false,
+          calendarConnected: false,
+          sheetsConnected: false,
+        })),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/gmail/messages*", async (route) => {
+      gmailVerificationReads += 1;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "FCI TEST expected pre-connect Gmail response" }),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/calendar/events*", async (route) => {
+      calendarVerificationReads += 1;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "FCI TEST expected pre-connect Calendar response" }),
+      });
+    });
+    await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ mirror: unsyncedMirror() }),
+      });
+    });
+
+    await page.goto("/settings?section=google-workspace#workspace-stage-4");
+    await setStageExpanded(page, 4, true);
+    await expect(verificationRow(page, "gmail")).toHaveAttribute("data-stage-four-state", "WAITING");
+    await expect(verificationRow(page, "calendar")).toHaveAttribute("data-stage-four-state", "WAITING");
+    await expect(setupStage(page, 4).locator(".workspace-stage-chip")).not.toHaveText("UNAVAILABLE");
+    expect(gmailVerificationReads).toBe(0);
+    expect(calendarVerificationReads).toBe(0);
+  });
 });
 
 test("Stage 3 pins exact creation copy, dependency gates, request contracts, and calendar-excluded completion", async ({ page }) => {
