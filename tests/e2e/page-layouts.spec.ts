@@ -280,7 +280,7 @@ test("Reports supports native drag, hide persistence, and reset to its legacy de
       ...originalPreferences,
       pageLayouts: {
         ...originalPreferences.pageLayouts,
-        reports: { order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "future-reports"], hidden: [] },
+        reports: { order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"], hidden: [] },
       },
     });
     await page.reload();
@@ -310,17 +310,17 @@ test("Reports supports native drag, hide persistence, and reset to its legacy de
       target.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
       source.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer }));
     });
-    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["business-kpis", "projects-by-status", "pipeline-by-stage", "future-reports", "summary-metrics"]);
+    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["business-kpis", "projects-by-status", "pipeline-by-stage", "clients-by-industry", "future-reports", "summary-metrics"]);
     await page.getByRole("button", { name: "Hide Future reports" }).click();
     await editor.getByRole("button", { name: "Done" }).click();
     await expect(editLayout).toBeFocused();
     await expect(monthInput).toHaveValue("2025-12");
-    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["business-kpis", "projects-by-status", "pipeline-by-stage", "summary-metrics"]);
+    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["business-kpis", "projects-by-status", "pipeline-by-stage", "clients-by-industry", "summary-metrics"]);
 
     await page.evaluate(() => window.history.replaceState({ ...(window.history.state ?? {}), fciReportsReturnFocusId: "report-project-mobilizing" }, "", window.location.href));
     await page.reload();
     await expect(editLayout).toBeEnabled();
-    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["business-kpis", "projects-by-status", "pipeline-by-stage", "summary-metrics"]);
+    await expect.poll(() => arrangedSectionOrder(page)).toEqual(["business-kpis", "projects-by-status", "pipeline-by-stage", "clients-by-industry", "summary-metrics"]);
     await expect(page.getByRole("link", { name: /View Mobilizing projects/u })).toBeFocused();
     await editLayout.click();
     const resetEditor = page.getByRole("region", { name: "Reports layout editor" });
@@ -351,7 +351,7 @@ test("ready Overview and Reports metrics follow the linked-versus-static card gr
       ...originalPreferences,
       pageLayouts: {
         overview: { order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
-        reports: { order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "future-reports"], hidden: [] },
+        reports: { order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"], hidden: [] },
       },
     });
 

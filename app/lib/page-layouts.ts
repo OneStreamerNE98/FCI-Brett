@@ -25,6 +25,7 @@ export const PAGE_LAYOUT_SECTION_CATALOG = {
     { key: "business-kpis", label: "Business KPIs", access: "office" },
     { key: "pipeline-by-stage", label: "Pipeline by stage", access: "office" },
     { key: "projects-by-status", label: "Projects by status", access: "office" },
+    { key: "clients-by-industry", label: "Clients by industry", access: "office" },
     { key: "future-reports", label: "Future reports", access: "office" },
   ],
 } as const satisfies Record<string, readonly PageLayoutCatalogEntry[]>;
