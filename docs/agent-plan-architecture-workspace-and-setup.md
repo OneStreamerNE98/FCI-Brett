@@ -454,7 +454,7 @@ BE-11 Terraform (flag false).
 fencing); provider routes still deny by default; runbook blocker sentence gone.
 
 ### BE-15 · Atomic settings-blob writes across all workspace_settings writers (small-medium, after BE-07)
-**Status:** Blocked — backlog, not yet dispatched (filed July 24, 2026 from the SET-08 review cycle).
+**Status:** In progress — `codex/be15-settings-write-fence`, July 24, 2026.
 
 **Why:** every `workspace_settings` writer (the workspace route,
 assistant-config-sites, launch-checklist-sites) is a blob-granularity
