@@ -111,6 +111,51 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.doesNotMatch(panel, /Run the readiness check to refresh this panel/);
 });
 
+test("Stage 3 subsections share the stage disclosure contract and initialize once from settled status", async () => {
+  const [panel, styles, actions, editor] = await Promise.all([
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/settings/components/GoogleWorkspacePanel.module.css"),
+    read("app/settings/components/WorkspaceDriveResourceActions.tsx"),
+    read("app/settings/components/WorkspaceBlueprintEditor.tsx"),
+  ]);
+
+  assert.equal(panel.match(/<StageThreeSubsection\b/g)?.length, 2);
+  for (const [key, title, headingId] of [
+    ["creation", "Workspace creation", "workspace-creation-heading"],
+    ["blueprint", "Blueprint", "workspace-blueprint-heading"],
+  ]) {
+    assert.match(
+      panel,
+      new RegExp(`subsectionKey="${key}"[\\s\\S]{0,180}title="${title}"[\\s\\S]{0,180}headingId="${headingId}"`),
+    );
+  }
+  assert.match(panel, /aria-label=\{`\$\{open \? "Collapse" : "Expand"\} \$\{title\}`\}/);
+  assert.match(panel, /aria-expanded=\{open\}/);
+  assert.match(panel, /aria-controls=\{bodyId\}/);
+  assert.match(panel, /aria-labelledby=\{headingId\}/);
+  assert.match(panel, /className=\{panelStyles\.stageThreeSubsectionBody\} hidden=\{!open\}/);
+  assert.match(panel, /bodyRef\.current\?\.contains\(document\.activeElement\)[\s\S]+toggleRef\.current\?\.focus\(\)/);
+  assert.match(panel, /creation: false,[\s\S]+blueprint: false/);
+  assert.match(
+    panel,
+    /const toggleStageThreeSubsection = useCallback\([\s\S]{0,300}stageThreeSubsectionsInitialized\.current = true;[\s\S]{0,300}setStageThreeSubsectionOpen/,
+  );
+  assert.match(
+    panel,
+    /!stageThreeCreationStatus\.settled[\s\S]+!stageThreeBlueprintStatus\.settled[\s\S]+const firstIncomplete = !stageThreeCreationStatus\.complete[\s\S]+!stageThreeBlueprintStatus\.complete/,
+  );
+  assert.match(panel, /creation: firstIncomplete === "creation"[\s\S]+blueprint: firstIncomplete === "blueprint"/);
+  assert.match(actions, /embedded = false[\s\S]+onStatusChange/);
+  assert.match(actions, /progressComplete = progress\.completedCount === 4/);
+  assert.match(actions, /if \(embedded\) return content/);
+  assert.match(editor, /complete: !loading && error === null && draft !== null[\s\S]+settled: !loading/);
+  assert.match(editor, /const headerStatus = loading[\s\S]+"Loading"[\s\S]+: error[\s\S]+"Unavailable"/);
+  assert.match(editor, /if \(embedded\) return content/);
+  assert.match(styles, /\.stageThreeUnified[\s\S]+gap: 0[\s\S]+border: 1px solid var\(--line\)/);
+  assert.match(styles, /\.stageThreeBlueprint[\s\S]+border-left: 1px solid var\(--line\)/);
+  assert.match(styles, /\.stageThreeSubsectionBody\[hidden\][\s\S]+display: none/);
+});
+
 test("Stage 4 pins normative verification and ongoing-upkeep copy without inventing operations", async () => {
   const [panel, styles, chatCard] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
@@ -514,7 +559,10 @@ test("Workspace blueprint is a structured admin editor and the legacy static car
     read("app/globals.css"),
   ]);
 
-  assert.match(panel, /<WorkspaceBlueprintEditor notify=\{notify\} refreshKey=\{blueprintEditorRevision\}/);
+  assert.match(
+    panel,
+    /<WorkspaceBlueprintEditor\s+notify=\{notify\}\s+refreshKey=\{blueprintEditorRevision\}\s+embedded\s+onStatusChange=\{updateStageThreeBlueprintStatus\}\s+\/>/,
+  );
   assert.match(panel, /setBlueprintEditorRevision\(\(current\) => current \+ 1\)/);
   assert.doesNotMatch(panel, /DRIVE_BLUEPRINT|className="drive-blueprint"|project-folder-list/);
   assert.doesNotMatch(css, /\.drive-blueprint|\.project-folder-list/);

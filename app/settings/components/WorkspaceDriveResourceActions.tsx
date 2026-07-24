@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronDown, ExternalLink, LockKeyhole } from "lucide-react";
 
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
@@ -532,6 +532,8 @@ export function WorkspaceDriveResourceActions({
   onVerifyDrive,
   onVerifyCalendar,
   onChanged,
+  embedded = false,
+  onStatusChange,
 }: {
   resources: readonly WorkspaceSetupResource[];
   simulation: boolean;
@@ -550,6 +552,8 @@ export function WorkspaceDriveResourceActions({
   onVerifyDrive: () => Promise<void> | void;
   onVerifyCalendar: () => Promise<void> | void;
   onChanged: (change: WorkspaceDriveChange) => Promise<void> | void;
+  embedded?: boolean;
+  onStatusChange?: (status: Readonly<{ label: string; complete: boolean; settled: boolean }>) => void;
 }) {
   const sharedDrives = resources.filter(isSharedDrive);
   const folders = resources.filter((resource) => resource.resourceType === "drive.folder");
@@ -565,6 +569,22 @@ export function WorkspaceDriveResourceActions({
   const calendarsEnabled = templatesEnabled && progress.templatesComplete;
   const registryUnavailable = !resourcesReady && Boolean(resourcesError);
   const resourceStatusPending = !resourcesReady && !registryUnavailable;
+  const progressLabel = resourcesLoading && !resourcesReady
+    ? "Loading"
+    : resourcesError && !resourcesReady
+      ? "Unavailable"
+      : `${progress.completedCount} of 4 ready`;
+  const progressComplete = progress.completedCount === 4;
+  const progressSettled = resourcesReady || (!resourcesLoading && Boolean(resourcesError));
+
+  useEffect(() => {
+    onStatusChange?.({
+      label: progressLabel,
+      complete: progressComplete,
+      settled: progressSettled,
+    });
+  }, [onStatusChange, progressComplete, progressLabel, progressSettled]);
+
   const sharedDriveState = registryUnavailable
     ? "UNAVAILABLE"
     : sharedDrive?.source === "env" || sharedDrive?.state === "Found"
@@ -609,18 +629,7 @@ export function WorkspaceDriveResourceActions({
       ? "Unlocks after Calendar is enabled and connected."
       : undefined;
 
-  return <section className={`${styles.creationCard} workspace-setup-card`} aria-labelledby="workspace-creation-heading">
-    <header className={styles.cardHeader}>
-      <div>
-        <p className="eyebrow">Create in order</p>
-        <h3 id="workspace-creation-heading">Workspace creation</h3>
-      </div>
-      <span className={styles.progressChip}>{resourcesLoading && !resourcesReady
-        ? "Loading"
-        : resourcesError && !resourcesReady
-          ? "Unavailable"
-          : `${progress.completedCount} of 4 ready`}</span>
-    </header>
+  const content = <>
     <p className={styles.cardIntro}>Use the saved blueprint first, then complete each creation row in order. Every action is repeat-safe and never deletes Google content.</p>
     {resourcesLoading && !resourcesReady && <p className={styles.resourceMessage} role="status">Loading the Workspace resource registry…</p>}
     {resourcesError && <div className={styles.resourcesError} role="alert"><span>{resourcesError}</span><button className="soft-button" type="button" onClick={() => void onRetryResources()}>Retry resources</button></div>}
@@ -707,5 +716,18 @@ export function WorkspaceDriveResourceActions({
         </>}
       </CreationRow>
     </ol>
+  </>;
+
+  if (embedded) return content;
+
+  return <section className={`${styles.creationCard} workspace-setup-card`} aria-labelledby="workspace-creation-heading">
+    <header className={styles.cardHeader}>
+      <div>
+        <p className="eyebrow">Create in order</p>
+        <h3 id="workspace-creation-heading">Workspace creation</h3>
+      </div>
+      <span className={styles.progressChip}>{progressLabel}</span>
+    </header>
+    {content}
   </section>;
 }

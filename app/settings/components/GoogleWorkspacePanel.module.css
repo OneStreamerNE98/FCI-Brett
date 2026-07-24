@@ -143,8 +143,11 @@
   display: grid;
   grid-template-columns: minmax(330px, 0.7fr) minmax(0, 1.3fr);
   align-items: start;
-  gap: 14px;
+  gap: 0;
   min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: #fcfaf7;
 }
 
 .stageThreeBlueprint,
@@ -152,8 +155,107 @@
   min-width: 0;
 }
 
-.stageThreeBlueprint :global(.workspace-blueprint-card) {
+.stageThreeBlueprint {
+  border-left: 1px solid var(--line);
+}
+
+.stageThreeSubsection {
+  min-width: 0;
+}
+
+.stageThreeSubsectionHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 58px;
+}
+
+.stageThreeSubsectionHeading {
+  min-width: 0;
   margin: 0;
+}
+
+.stageThreeSubsectionToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  padding: 11px 12px 11px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stageThreeSubsectionToggle:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #4f765e;
+  outline-offset: -3px;
+}
+
+.stageThreeSubsectionCopy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.stageThreeSubsectionCopy :global(.eyebrow) {
+  margin: 0;
+}
+
+.stageThreeSubsectionTitle {
+  color: var(--ink);
+  font: 700 13px/1.35 var(--font-display);
+}
+
+.stageThreeSubsectionChevron {
+  flex: 0 0 auto;
+  color: #6d675f;
+  transition: transform 0.16s ease;
+}
+
+.stageThreeSubsectionOpen .stageThreeSubsectionChevron {
+  transform: rotate(180deg);
+}
+
+.stageThreeSubsectionStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  margin-right: 14px;
+  padding: 5px 9px;
+  border-radius: var(--radius-pill);
+  background: #f0eeeb;
+  color: #6c655f;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.stageThreeSubsectionBody {
+  min-width: 0;
+  padding: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.stageThreeSubsectionBody[hidden] {
+  display: none;
+}
+
+.stageThreeBlueprint .stageThreeSubsectionBody > p {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .stageFourFrame {
@@ -322,6 +424,11 @@
   .stageThreeUnified {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .stageThreeBlueprint {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
 }
 
 @media (max-width: 560px) {
@@ -343,6 +450,27 @@
   .connectionHealthBody {
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .stageThreeSubsectionHeader {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 56px;
+  }
+
+  .stageThreeSubsectionToggle {
+    min-height: 56px;
+    padding-right: 10px;
+    padding-left: 12px;
+  }
+
+  .stageThreeSubsectionStatus {
+    max-width: 120px;
+    margin-right: 12px;
+    white-space: normal;
+  }
+
+  .stageThreeSubsectionBody {
+    padding: 12px;
   }
 
   .verificationGroup,

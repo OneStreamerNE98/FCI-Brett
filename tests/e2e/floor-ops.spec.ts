@@ -311,6 +311,13 @@ test.describe("DES-04 responsive shell polish", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/settings?section=google-workspace#workspace-stage-3");
 
+    // SET-38 renders the blueprint inside a collapsed-by-default Stage 3
+    // subsection; expand it before the chip assertions (which are unchanged).
+    const blueprintToggle = page.getByRole("button", { name: /^(?:Expand|Collapse) Blueprint$/ });
+    await expect(blueprintToggle).toBeVisible();
+    if (await blueprintToggle.getAttribute("aria-expanded") !== "true") await blueprintToggle.click();
+    await expect(blueprintToggle).toHaveAttribute("aria-expanded", "true");
+
     const folderKeys = page.locator(".workspace-blueprint-folder-row > code");
     await expect(folderKeys.first()).toBeVisible();
     const layouts = await folderKeys.evaluateAll((elements) => elements.map((element) => {

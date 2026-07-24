@@ -30,6 +30,17 @@ type FolderCollectionKey = "roots" | "clientFolders" | "projectFolders";
 type NotificationKind = "success" | "info" | "warning" | "error";
 type ErrorAction = "load" | "save";
 type Notify = (message: string, kind?: NotificationKind) => void;
+type WorkspaceBlueprintEditorStatus = Readonly<{
+  label: string;
+  complete: boolean;
+  settled: boolean;
+}>;
+type WorkspaceBlueprintEditorProps = Readonly<{
+  notify: Notify;
+  refreshKey?: number;
+  embedded?: boolean;
+  onStatusChange?: (status: WorkspaceBlueprintEditorStatus) => void;
+}>;
 type BlueprintResponse = {
   blueprint?: WorkspaceBlueprint;
   version?: number;
@@ -124,7 +135,12 @@ function FolderEditor({
   </li>;
 }
 
-export function WorkspaceBlueprintEditor({ notify, refreshKey = 0 }: { notify: Notify; refreshKey?: number }) {
+export function WorkspaceBlueprintEditor({
+  notify,
+  refreshKey = 0,
+  embedded = false,
+  onStatusChange,
+}: WorkspaceBlueprintEditorProps) {
   const [draft, setDraft] = useState<BlueprintDraft | null>(null);
   const [savedBlueprint, setSavedBlueprint] = useState<BlueprintDraft | null>(null);
   const [version, setVersion] = useState(0);
@@ -175,6 +191,21 @@ export function WorkspaceBlueprintEditor({ notify, refreshKey = 0 }: { notify: N
   const folderOptions = useMemo(() => draft ? flattenWorkspaceBlueprintFolders(draft) : [], [draft]);
   const spreadsheetFolderOptions = useMemo(() => draft ? flattenWorkspaceRootFolders(draft) : [], [draft]);
   const dirty = Boolean(draft && savedBlueprint && JSON.stringify(draft) !== JSON.stringify(savedBlueprint));
+  const headerStatus = loading
+    ? "Loading"
+    : error
+      ? "Unavailable"
+      : seeded
+        ? "Seed defaults · version 0"
+        : `Saved version ${version}`;
+
+  useEffect(() => {
+    onStatusChange?.({
+      label: headerStatus,
+      complete: !loading && error === null && draft !== null,
+      settled: !loading,
+    });
+  }, [draft, error, headerStatus, loading, onStatusChange]);
 
   const renameFolder = useCallback((collection: FolderCollectionKey, folderKey: string, name: string) => {
     updateDraft((next) => { visitFolder(next.drive[collection], folderKey, (folder) => { folder.name = name; }); });
@@ -256,11 +287,7 @@ export function WorkspaceBlueprintEditor({ notify, refreshKey = 0 }: { notify: N
     }
   }
 
-  return <section className="workspace-setup-card workspace-blueprint-card" aria-labelledby="workspace-blueprint-heading">
-    <header>
-      <div><p className="eyebrow">Workspace setup</p><h3 id="workspace-blueprint-heading">Blueprint</h3></div>
-      <span className="workspace-blueprint-version">{seeded ? "Seed defaults · version 0" : `Saved version ${version}`}</span>
-    </header>
+  const content = <>
     <p>Define the names and structure FCI will use when later setup steps create Workspace resources. Nothing is created in Google from this editor.</p>
     {loading && !draft && <p className="workspace-blueprint-message" role="status">Loading the Workspace blueprint…</p>}
     {error && <div className={`workspace-blueprint-error${conflictVersion !== null ? " conflict" : ""}`} role="alert"><span>{error}</span><button type="button" className="soft-button" onClick={() => void (conflictVersion !== null || errorAction !== "save" ? loadBlueprint() : saveBlueprint())}>{conflictVersion !== null ? `Load latest${conflictVersion ? ` (v${conflictVersion})` : ""}` : errorAction === "save" ? "Retry save" : "Retry"}</button></div>}
@@ -378,5 +405,15 @@ export function WorkspaceBlueprintEditor({ notify, refreshKey = 0 }: { notify: N
         <AdministratorActionButton type="button" className="primary-button" isAdmin disabled={!dirty || saving || conflictVersion !== null} onClick={() => void saveBlueprint()}>{saving ? "Saving…" : <><Save size={14} /> Save blueprint</>}</AdministratorActionButton>
       </footer>
     </div>}
+  </>;
+
+  if (embedded) return content;
+
+  return <section className="workspace-setup-card workspace-blueprint-card" aria-labelledby="workspace-blueprint-heading">
+    <header>
+      <div><p className="eyebrow">Workspace setup</p><h3 id="workspace-blueprint-heading">Blueprint</h3></div>
+      <span className="workspace-blueprint-version">{headerStatus}</span>
+    </header>
+    {content}
   </section>;
 }
