@@ -2244,7 +2244,7 @@ source-only/unapplied and the PR says so; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-02 · Assistant & Inbox surface extraction + phone-call option (medium; the ONLY FloorOpsApp packet — one queue slot, three serial PRs a→b→c)
-**Status:** In progress — `codex/ai02a-assistant-extraction`, updated July 24, 2026: sub-PR a merged (PR #182 — byte-identical Assistant extraction, fleet clean, 39/39 executed green); sub-PRs b (Inbox extraction) and c (phone-call option) remain serially gated on the prior sub-PR merge. Source-only and undeployed.
+**Status:** In progress — `codex/ai02b-inbox-extraction`, updated July 24, 2026: the serial claim advances to sub-PR b (Inbox extraction, dispatched under this branch per the kickoff); sub-PR a is merged (PR #182 — byte-identical Assistant extraction, fleet clean, 39/39 executed green); sub-PR c (phone-call option) follows b. The FloorOpsApp queue slot stays owned by this series until c merges. Source-only and undeployed.
 
 **Why:** AssistantView, InboxView, and GmailReplyModal live inside
 `FloorOpsApp.tsx`; without extraction every AI UI packet would serialize
