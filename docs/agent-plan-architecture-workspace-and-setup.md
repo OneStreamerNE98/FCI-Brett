@@ -1175,6 +1175,8 @@ simulated file and sees the placeholder; office non-admin can view (viewing is r
 work). **Effort:** medium. **Cost:** $0.
 
 ### SET-24 · Employee-login readiness card + read-only policy cards (small, after SET-13; activates fully when login goes live)
+**Status:** In review — PR #158, July 24, 2026. Source-only and undeployed; the Settings guide now documents the employee-login readiness, role, and session-policy cards.
+
 **Why:** The second OAuth client (employee login) has no setup surface — its config,
 invitation state, and activation gate live in docs and the access page; and the fixed
 role matrix / session policy invite "why can't I change this?" confusion.
