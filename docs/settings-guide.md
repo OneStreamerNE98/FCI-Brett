@@ -200,11 +200,11 @@ Your layout is saved to your account, so it follows you between devices.
 
 **Reports → Business KPIs** (flooring performance; some dollar figures are shown to administrators only). Each one is measured for the reporting month you pick, except where noted:
 
-- **Win rate** — of the leads that were decided, the share that were won, also broken out by lead source.
+- **Win rate** — of ALL the leads ever decided, the share that were won, also broken out by lead source. *Not month-scoped — this covers your whole history, so it will not change when you switch months.*
 - **Booked value per month** — the total contract value (or estimate, if no contract yet) of projects booked in the selected month.
-- **Average job value** — the average booked value across your projects that have a recorded contract value or estimate.
-- **Sales cycle days** — the average number of days from a lead being created to being won.
-- **Backlog** — how many active projects (Planning, Mobilizing, Installation, Closeout) are outstanding, with their estimated value.
+- **Average job value** — the average booked value across ALL your projects that have a recorded contract value or estimate. *Not month-scoped.*
+- **Sales cycle days** — the average number of days from a lead being created to being won, across ALL won leads. *Not month-scoped.*
+- **Backlog** — how many active projects (Planning, Mobilizing, Installation, Closeout) are outstanding right now, with their estimated value. *A current snapshot — not month-scoped.*
 - **Jobs completed per month** — how many projects were completed in the selected month.
 - **Install cycle days** — the average number of days from installation start to installation completion for jobs finished in the selected month.
 - **Callback rate** — of the jobs completed in the selected month, the share that had a post-installation callback recorded.
@@ -378,7 +378,7 @@ Most of the time, FCI Operations looks after itself. Here is what actually needs
 
 **Essentially never (leave it alone):**
 - The system filing folder names — they are locked because filing depends on them.
-- The generated Project Register columns in the spreadsheet — the next sync overwrites them. Only **Account Notes** is yours.
+- The generated spreadsheet columns — every **Project Register** column is cleared and rebuilt on each sync, so never edit that tab by hand. The one column that IS yours to edit lives on the **Client Directory** tab: **Account Notes** (column I), which the sync deliberately preserves.
 - Anything in the hosting environment (keys, secrets, addresses). Those are developer territory.
 
 ---
