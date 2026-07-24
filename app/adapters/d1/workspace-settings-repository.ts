@@ -1,6 +1,8 @@
 import {
+  MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES,
   parseWorkspaceSettingsDocument,
   prepareWorkspaceSettingsMerge,
+  workspaceSettingsDocumentTooLargeError,
 } from "../../domain/workspace-settings";
 import type {
   WorkspaceSettingsRecord,
@@ -64,7 +66,15 @@ export function createD1WorkspaceSettingsRepository(
       const mergeBase = merge.keys.length > 0
         ? `json_remove(${storedDocument}, ${merge.keys.map(() => "?").join(", ")})`
         : storedDocument;
-      await database
+      // The conflict update only applies when the RESULTING merged document
+      // fits the byte bound, measured on its UTF-8 bytes via a BLOB cast (not
+      // characters). When the guard fails the upsert is a no-op — changes() is
+      // 0 and the stored row is left byte-identical — which we surface as the
+      // same typed oversize error the domain layer raises. Keeping the check
+      // inside this one statement avoids any read-modify-write race. A fresh
+      // insert needs no guard: its document equals the already patch-bounded
+      // payload.
+      const result = await database
         .prepare(
           `INSERT INTO workspace_settings (
              id, shared_drive_id, client_directory_sheet_id, intake_mailbox,
@@ -73,7 +83,10 @@ export function createD1WorkspaceSettingsRepository(
            ON CONFLICT(id) DO UPDATE SET
              settings_json = json_patch(${mergeBase}, excluded.settings_json),
              updated_by = excluded.updated_by,
-             updated_at = excluded.updated_at`,
+             updated_at = excluded.updated_at
+           WHERE length(
+             CAST(json_patch(${mergeBase}, excluded.settings_json) AS BLOB)
+           ) <= ${MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES}`,
         )
         .bind(
           input.id,
@@ -81,8 +94,12 @@ export function createD1WorkspaceSettingsRepository(
           input.updatedBy,
           input.updatedAt,
           ...merge.keys.map((key) => `$."${key}"`),
+          ...merge.keys.map((key) => `$."${key}"`),
         )
         .run();
+      if (result.meta.changes === 0) {
+        throw workspaceSettingsDocumentTooLargeError();
+      }
     },
   };
 }

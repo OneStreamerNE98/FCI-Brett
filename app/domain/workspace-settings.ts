@@ -114,8 +114,29 @@ export function parseWorkspaceSettingsDocument(value: unknown): Readonly<Record<
 
 const WORKSPACE_SETTINGS_MERGE_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/u;
 const MAX_WORKSPACE_SETTINGS_MERGE_KEYS = 64;
-const MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES = 64_000;
+export const MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES = 64_000;
 const OMIT_MERGE_VALUE = Symbol("omit-workspace-settings-merge-value");
+
+/**
+ * The incoming PATCH is bounded first as a fast pre-filter. This wording names
+ * the patch itself, because the domain layer can only measure the bytes it is
+ * handed — never the resulting merged row on either database.
+ */
+export const WORKSPACE_SETTINGS_PATCH_TOO_LARGE_MESSAGE =
+  `Workspace settings merge patch must be at most ${MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES} UTF-8 bytes`;
+
+/**
+ * The merged document limit is enforced atomically inside each adapter's single
+ * write. When a merge would grow the stored row past the advertised bound the
+ * adapter throws this exact typed error so every caller sees one oversize shape.
+ */
+export const WORKSPACE_SETTINGS_DOCUMENT_TOO_LARGE_MESSAGE =
+  `Workspace settings document must be at most ${MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES} UTF-8 bytes after merging owned keys`;
+
+/** The one oversize error both adapters raise when a merge exceeds the bound. */
+export function workspaceSettingsDocumentTooLargeError(): TypeError {
+  return new TypeError(WORKSPACE_SETTINGS_DOCUMENT_TOO_LARGE_MESSAGE);
+}
 
 function stripMergeNulls(value: unknown): unknown | typeof OMIT_MERGE_VALUE {
   if (value === null) return OMIT_MERGE_VALUE;
@@ -158,10 +179,11 @@ export function prepareWorkspaceSettingsMerge(value: unknown) {
     throw new TypeError("Workspace settings merge must normalize to an object");
   }
   const serialized = JSON.stringify(normalized);
+  // Fast pre-filter: an individual patch this large can never merge under the
+  // bound, so reject it before touching the database. The merged-document limit
+  // itself is enforced atomically inside each adapter's single upsert.
   if (new TextEncoder().encode(serialized).byteLength > MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES) {
-    throw new TypeError(
-      `Workspace settings document must be at most ${MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES} UTF-8 bytes`,
-    );
+    throw new TypeError(WORKSPACE_SETTINGS_PATCH_TOO_LARGE_MESSAGE);
   }
   return Object.freeze({
     keys: Object.freeze([...keys]),

@@ -20,11 +20,13 @@ const vite = await createServer({
 
 const [
   workspaceSettingsModule,
+  workspaceSettingsDomain,
   userPreferencesModule,
   filingRuleModule,
   mailItemModule,
 ] = await Promise.all([
   vite.ssrLoadModule("/app/adapters/postgres/workspace-settings-repository.ts"),
+  vite.ssrLoadModule("/app/domain/workspace-settings.ts"),
   vite.ssrLoadModule("/app/adapters/postgres/user-preferences-repository.ts"),
   vite.ssrLoadModule("/app/adapters/postgres/filing-rule-repository.ts"),
   vite.ssrLoadModule("/app/adapters/postgres/mail-item-repository.ts"),
@@ -165,6 +167,62 @@ test(
         },
         "racing PostgreSQL saves to different top-level keys must both survive",
       );
+
+      // A single patch clears the domain pre-filter, but repeated disjoint
+      // merges must not grow the stored row past the advertised limit. The first
+      // block lands well under the bound; the second would push the merged
+      // document past 64,000 bytes and must be rejected atomically, leaving the
+      // stored row byte-identical.
+      await workspaceSettings.mergeSettings({
+        id: "workspace",
+        settings: { fenceBlockA: "a".repeat(40_000) },
+        updatedBy: "fence-admin@example.test",
+        updatedAt: NOW + 2_000,
+      });
+      const beforeFence = await pool.query(
+        `SELECT settings_json::text AS text, updated_by
+         FROM ${schema}.workspace_settings WHERE id = 'workspace'`,
+      );
+      await assert.rejects(
+        workspaceSettings.mergeSettings({
+          id: "workspace",
+          settings: { fenceBlockB: "b".repeat(30_000) },
+          updatedBy: "fence-oversize-admin@example.test",
+          updatedAt: NOW + 2_100,
+        }),
+        (error) =>
+          error instanceof TypeError
+          && error.message
+            === workspaceSettingsDomain.WORKSPACE_SETTINGS_DOCUMENT_TOO_LARGE_MESSAGE,
+        "a merge past 64,000 merged bytes must throw the typed oversize error",
+      );
+      const afterFence = await pool.query(
+        `SELECT settings_json::text AS text, updated_by
+         FROM ${schema}.workspace_settings WHERE id = 'workspace'`,
+      );
+      assert.equal(
+        afterFence.rows[0].text,
+        beforeFence.rows[0].text,
+        "a rejected oversize merge must leave the stored document byte-identical",
+      );
+      assert.equal(afterFence.rows[0].updated_by, "fence-admin@example.test");
+      const fenceStored = await workspaceSettings.findById("workspace");
+      assert.equal("fenceBlockB" in fenceStored.settings, false);
+      assert.equal(fenceStored.settings.fenceBlockA.length, 40_000);
+
+      // A later merge that still fits under the bound proceeds normally: the
+      // fence blocks only the growth that would breach the limit.
+      await workspaceSettings.mergeSettings({
+        id: "workspace",
+        settings: { fenceBlockC: "c".repeat(10_000) },
+        updatedBy: "fence-fitting-admin@example.test",
+        updatedAt: NOW + 2_200,
+      });
+      const fittedStored = await workspaceSettings.findById("workspace");
+      assert.equal(fittedStored.settings.fenceBlockA.length, 40_000);
+      assert.equal(fittedStored.settings.fenceBlockC.length, 10_000);
+      assert.equal("fenceBlockB" in fittedStored.settings, false);
+      assert.equal(fittedStored.updatedBy, "fence-fitting-admin@example.test");
 
       const firstPreferences = {
         userEmail: "first@example.test",

@@ -19,6 +19,9 @@ const vite = await createServer({
 const workspaceSettingsModule = await vite.ssrLoadModule(
   "/app/adapters/d1/workspace-settings-repository.ts",
 );
+const workspaceSettingsDomain = await vite.ssrLoadModule(
+  "/app/domain/workspace-settings.ts",
+);
 
 class SqliteD1Statement {
   constructor(statement) {
@@ -159,7 +162,104 @@ test("D1 atomically preserves both racing top-level settings saves and unknown s
       assert.match(sql, /settings_json = json_patch\(/u);
       assert.match(sql, /json_remove\(/u);
       assert.doesNotMatch(sql, /settings_json = excluded\.settings_json/u);
+      // The conflict update is fenced on the merged document's byte length so a
+      // growing row cannot exceed the advertised limit.
+      assert.match(sql, /WHERE length\(\s*CAST\([\s\S]*AS BLOB\)\s*\) <= 64000/u);
     }
+  } finally {
+    database.close();
+  }
+});
+
+function seedWorkspaceRow(database, settingsJson) {
+  database.database.prepare(`
+    INSERT INTO workspace_settings (
+      id, shared_drive_id, client_directory_sheet_id, intake_mailbox,
+      settings_json, updated_by, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    "workspace",
+    "shared-drive-1",
+    "directory-sheet-1",
+    "operations@example.test",
+    settingsJson,
+    "seed@example.test",
+    1,
+  );
+}
+
+function rawWorkspaceRow(database) {
+  return database.database
+    .prepare(
+      "SELECT settings_json, updated_by, updated_at FROM workspace_settings WHERE id = ?",
+    )
+    .get("workspace");
+}
+
+test("D1 rejects a merge that would grow the stored document past 64,000 bytes and leaves the row byte-identical", async () => {
+  const database = new SqliteD1Database();
+  try {
+    // The seed (30,015 bytes) plus this disjoint patch merges to 64,001 bytes —
+    // one over the limit — while the patch alone (33,987 bytes) clears the
+    // domain pre-filter, so the merged-document guard is what must reject it.
+    const seededSettings = JSON.stringify({ existing: "x".repeat(30_000) });
+    seedWorkspaceRow(database, seededSettings);
+    const repository =
+      workspaceSettingsModule.createD1WorkspaceSettingsRepository(database);
+
+    const before = rawWorkspaceRow(database);
+    await assert.rejects(
+      repository.mergeSettings({
+        id: "workspace",
+        settings: { addition: "y".repeat(33_972) },
+        updatedBy: "oversize-admin@example.test",
+        updatedAt: 2,
+      }),
+      (error) =>
+        error instanceof TypeError
+        && error.message
+          === workspaceSettingsDomain.WORKSPACE_SETTINGS_DOCUMENT_TOO_LARGE_MESSAGE,
+    );
+
+    const after = rawWorkspaceRow(database);
+    assert.equal(after.settings_json, before.settings_json);
+    assert.equal(after.settings_json, seededSettings);
+    assert.equal(after.updated_by, "seed@example.test");
+    assert.equal(after.updated_at, 1);
+  } finally {
+    database.close();
+  }
+});
+
+test("D1 applies a merge whose resulting document lands exactly at the 64,000-byte limit", async () => {
+  const database = new SqliteD1Database();
+  try {
+    // 30,000 + 33,971 value bytes merge to a minified document of exactly 64,000
+    // UTF-8 bytes, the largest the guard admits.
+    seedWorkspaceRow(database, JSON.stringify({ existing: "x".repeat(30_000) }));
+    const repository =
+      workspaceSettingsModule.createD1WorkspaceSettingsRepository(database);
+
+    await repository.mergeSettings({
+      id: "workspace",
+      settings: { addition: "y".repeat(33_971) },
+      updatedBy: "at-limit-admin@example.test",
+      updatedAt: 5,
+    });
+
+    const stored = await repository.findById("workspace");
+    assert.deepEqual(stored.settings, {
+      existing: "x".repeat(30_000),
+      addition: "y".repeat(33_971),
+    });
+    assert.equal(stored.updatedBy, "at-limit-admin@example.test");
+    assert.equal(stored.updatedAt, 5);
+    const storedBytes = database.database
+      .prepare(
+        "SELECT length(CAST(settings_json AS BLOB)) AS bytes FROM workspace_settings WHERE id = ?",
+      )
+      .get("workspace").bytes;
+    assert.equal(storedBytes, 64_000);
   } finally {
     database.close();
   }

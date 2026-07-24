@@ -2,7 +2,11 @@ import type {
   WorkspaceSettingsRecord,
   WorkspaceSettingsRepository,
 } from "../../ports/workspace-settings-repository";
-import { prepareWorkspaceSettingsMerge } from "../../domain/workspace-settings";
+import {
+  MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES,
+  prepareWorkspaceSettingsMerge,
+  workspaceSettingsDocumentTooLargeError,
+} from "../../domain/workspace-settings";
 import { withPostgresTransaction, type PostgresPool } from "./postgres-database";
 import {
   assertPersistenceText,
@@ -117,6 +121,13 @@ export function createPostgresWorkspaceSettingsRepository(
       const updatedAt = persistenceDate(input.updatedAt, "Workspace settings updated_at");
       const merge = prepareWorkspaceSettingsMerge(input.settings);
       await withPostgresTransaction(pool, transactionOptions, async (client) => {
+        // The conflict update only applies when the RESULTING merged document
+        // fits the byte bound, enforced atomically inside the bounded
+        // transaction so no read-modify-write race can slip past it. When the
+        // guard fails the upsert touches no row (rowCount 0) and the stored row
+        // is left byte-identical, which we surface as the same typed oversize
+        // error the domain layer and D1 adapter raise. A fresh insert needs no
+        // guard: its document equals the already patch-bounded payload.
         const result = await client.query(
           `INSERT INTO workspace_settings (
              id, shared_drive_id, client_directory_sheet_id, intake_mailbox,
@@ -127,7 +138,10 @@ export function createPostgresWorkspaceSettingsRepository(
                workspace_settings.settings_json - $5::text[]
              ) || EXCLUDED.settings_json,
              updated_by = EXCLUDED.updated_by,
-             updated_at = EXCLUDED.updated_at`,
+             updated_at = EXCLUDED.updated_at
+           WHERE octet_length((
+             (workspace_settings.settings_json - $5::text[]) || EXCLUDED.settings_json
+           )::text) <= ${MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES}`,
           [
             input.id,
             merge.serialized,
@@ -136,6 +150,9 @@ export function createPostgresWorkspaceSettingsRepository(
             merge.keys,
           ],
         );
+        if (result.rowCount === 0) {
+          throw workspaceSettingsDocumentTooLargeError();
+        }
         if (result.rowCount !== 1) {
           throw new Error("PostgreSQL Workspace settings were not merged exactly once");
         }
