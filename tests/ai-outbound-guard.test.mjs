@@ -43,6 +43,7 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     ...applicationFiles,
     "app/api/v1/assistant/route.ts",
     "app/api/v1/assistant/config/route.ts",
+    "app/api/v1/assistant/extract-tasks/route.ts",
     "app/domain/assistant-config.ts",
     "app/lib/assistant-config-sites.ts",
     "app/ports/assistant-provider.ts",
@@ -70,6 +71,33 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     route.match(/NextResponse\.json/g)?.length,
     1,
     "route-owned JSON responses must all pass through noStore",
+  );
+
+  const taskExtractionRoute = await read(
+    "app/api/v1/assistant/extract-tasks/route.ts",
+  );
+  assert.match(taskExtractionRoute, /function noStore\(/);
+  assert.match(taskExtractionRoute, /function noStoreResponse\(/);
+  assert.match(
+    taskExtractionRoute,
+    /response\.headers\.set\("Cache-Control", "no-store"\)/,
+  );
+  assert.match(
+    taskExtractionRoute,
+    /if \(originError\) return noStoreResponse\(originError\)/,
+  );
+  assert.match(
+    taskExtractionRoute,
+    /if \("response" in auth\) return noStoreResponse\(auth\.response\)/,
+  );
+  assert.equal(
+    taskExtractionRoute.match(/NextResponse\.json/g)?.length,
+    1,
+    "task-extraction responses must all pass through noStore",
+  );
+  assert.doesNotMatch(
+    taskExtractionRoute,
+    /\bcreateTask\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b/,
   );
 });
 
