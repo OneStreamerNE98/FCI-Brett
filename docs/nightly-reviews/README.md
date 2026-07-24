@@ -25,9 +25,9 @@ review-and-merge loop.
 | 3 | Spacing & alignment (1280/1440 + rhythm) | pending | — | — | — |
 | 4 | Collapsible cards & disclosure (owner-gated spec) | pending | — | — | — |
 | 5 | Design-system conformance | pending | — | — | — |
-| 6 | Architecture & duplication | pending | — | — | — |
+| 6 | Architecture & duplication | complete (co-run with 8) | July 24, 2026 | 4 (2 P2) | [night-06](night-06-architecture-duplication.md) |
 | 7 | Code correctness | pending | — | — | — |
-| 8 | Google integration depth | pending | — | — | — |
+| 8 | Google integration depth | complete (co-run with 6) | July 24, 2026 | 7 (2 P2) | [night-08](night-08-google-integration-depth.md) |
 | 9 | Performance (numbers required) | pending | — | — | — |
 | 10 | Accessibility + maintenance + synthesis | pending | — | — | — |
 
