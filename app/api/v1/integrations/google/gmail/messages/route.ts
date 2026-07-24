@@ -1,4 +1,7 @@
+import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
+import type { D1Database } from "../../../../../../adapters/d1/d1-database";
+import { readGoogleIntegrationVerification } from "../../../../../../adapters/d1/google-integration-verification";
 import { normalizeGmailBucket, normalizeGmailSearch } from "../../../../../../lib/google-gmail";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 import { getWorkspaceGmailClient, gmailErrorResponse } from "../_route-helpers";
@@ -8,10 +11,27 @@ export async function GET(request: NextRequest) {
   if ("response" in auth) return auth.response;
 
   try {
-    const { client } = await getWorkspaceGmailClient();
+    const { config, client } = await getWorkspaceGmailClient();
     const bucket = normalizeGmailBucket(request.nextUrl.searchParams.get("label"));
     const search = normalizeGmailSearch(request.nextUrl.searchParams.get("q"));
     const labelId = await client.labelIdForBucket(bucket);
+    const verificationOnly = request.nextUrl.searchParams.get("verification") === "status";
+    if (verificationOnly) {
+      const verification = await readGoogleIntegrationVerification(
+        env.DB as unknown as D1Database,
+        config.connectionKey,
+      );
+      return NextResponse.json(
+        {
+          bucket,
+          messages: [],
+          labelReady: Boolean(labelId),
+          testEmailPassed: verification.gmailTestEmailPassed,
+          limit: 20,
+        },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (!labelId) {
       return NextResponse.json(
         { bucket, messages: [], labelReady: false, limit: 20 },
