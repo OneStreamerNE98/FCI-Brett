@@ -2023,7 +2023,7 @@ assertion); Reports regen diff = KpiMetric structure only; screenshot pass.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-08 · Owner-selected additions: industry surfacing, segment, quick-add removal, attention strip, Today's meetings (small each; sub-scopes ship as separate PRs in the FloorOpsApp queue)
-**Status:** In review — draft PR #170, July 24, 2026 (sub-scope d; source-only and undeployed; sub-scope b merged in PR #167; sub-scope c deferred because the current source has no live attention strip or truthful signal/destination, and the removed demo strip used fabricated counts). Guide impact: none.
+**Status:** In review — PR #170, July 24, 2026 (draft; sub-scope d; source-only and undeployed; sub-scope b merged in PR #167; sub-scope c deferred because the current source has no live attention strip or truthful signal/destination, and the removed demo strip used fabricated counts). Guide impact: none.
 
 **Why:** owner selections of July 22 — all four extras plus the meetings
 resolution of spec §5.
