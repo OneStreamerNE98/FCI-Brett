@@ -63,11 +63,13 @@ deployment_config = {
   verified_provider_attribute_condition = ""
 }
 
-# These switches add Job definitions only; they never execute either Job.
+# These switches add Job definitions only; they never execute a Job. The
+# outbox drain remains inert even when defined until provider dispatchers exist.
 # The rehearsal inputs must point to an approved, existing test-data bucket.
 cloud_run_jobs = {
   deploy_migration_job              = false
   deploy_rehearsal_job              = false
+  deploy_outbox_drain_job           = false
   migration_database_user           = ""
   migration_role                    = ""
   migration_postgres_secret_version = ""

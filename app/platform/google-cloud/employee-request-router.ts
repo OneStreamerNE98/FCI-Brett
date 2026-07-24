@@ -57,6 +57,11 @@ import {
   readEmployeeOidcAttemptCookie,
   type EmployeeOidcClient,
 } from "./employee-oidc.ts";
+import {
+  isProviderActionQueued,
+  ProviderDegradedError,
+  type ProviderActionQueued,
+} from "./provider-action-contract.ts";
 import { RequestRateLimitExceeded } from "./request-rate-limit.ts";
 
 const MAX_URL_LENGTH = 2_048;
@@ -107,6 +112,40 @@ export type EmployeeRouteTestActions = Readonly<{
   createCalendarEvent?: (input: EmployeeRouteActionInput) => Promise<unknown>;
 }>;
 
+export type EmployeeRouteProviderActions = EmployeeRouteTestActions;
+
+export type EmployeeRouteDeferredActions = Readonly<{
+  /**
+   * This callback may resolve only after a durable Gmail filing intent commits.
+   * It is deliberately absent from the source composition until the production
+   * job schema and provider adapter are reviewed together.
+   */
+  enqueueGmailFiling?: (
+    input: EmployeeRouteActionInput,
+  ) => Promise<ProviderActionQueued>;
+}>;
+
+const DEFERRED_PROVIDER_ACTION = Symbol("deferred-provider-action");
+type DeferredProviderAction = Readonly<{
+  [DEFERRED_PROVIDER_ACTION]: ProviderActionQueued;
+}>;
+
+function deferredProviderAction(
+  queued: ProviderActionQueued,
+): DeferredProviderAction {
+  return Object.freeze({ [DEFERRED_PROVIDER_ACTION]: queued });
+}
+
+function isDeferredProviderAction(
+  value: unknown,
+): value is DeferredProviderAction {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && DEFERRED_PROVIDER_ACTION in value,
+  );
+}
+
 export type EmployeeCoreRecordRepositories = Readonly<{
   clients(request: PostgresCreationRequestMetadata): ClientRepository;
   projects(request?: PostgresCreationRequestMetadata): ProjectRepository;
@@ -121,6 +160,10 @@ export type EmployeeRequestRouterDependencies = Readonly<{
   adminAccess: AdminAccessPersistenceRepository;
   audit: SecurityAuditRepository;
   coreRecords: EmployeeCoreRecordRepositories;
+  /** Closed provider DTOs; absent in the current fail-closed composition. */
+  providerActions?: EmployeeRouteProviderActions;
+  /** Durable fallback for the explicitly deferrable Gmail filing operation. */
+  deferredActions?: EmployeeRouteDeferredActions;
   /** Both are absent until the fail-closed employee OIDC config is complete. */
   oidc?: EmployeeOidcClient;
   identity?: Pick<IdentityPersistenceRepository, "authenticateEmployeeSession">;
@@ -977,6 +1020,12 @@ export function createEmployeeRequestRouter(
   if (dependencies.testActions && dependencies.testMode !== true) {
     throw new Error("Employee route test actions require explicit test mode");
   }
+  if (dependencies.testActions && dependencies.providerActions) {
+    throw new Error("Employee provider actions and test actions cannot both be composed");
+  }
+  if (dependencies.deferredActions && !dependencies.providerActions && !dependencies.testActions) {
+    throw new Error("Deferred provider actions require a provider action boundary");
+  }
   if (Boolean(dependencies.oidc) !== Boolean(dependencies.identity)) {
     throw new Error("Employee OIDC routing requires both verification and identity persistence");
   }
@@ -990,6 +1039,7 @@ export function createEmployeeRequestRouter(
     ?? (() => randomBytes(32).toString("base64url"));
   const employeeLoginEnabled = Boolean(dependencies.oidc && dependencies.identity);
   const testActions = dependencies.testMode === true ? dependencies.testActions : undefined;
+  const providerActions = dependencies.providerActions ?? testActions;
 
   return async function handleEmployeeRequest(
     request: IncomingMessage,
@@ -1758,40 +1808,62 @@ export function createEmployeeRequestRouter(
       ) => {
         const parsedBody = matched.method === "POST" ? await jsonBody(request) : null;
         if (!action) return unavailable;
-        return action(Object.freeze({
+        const actionInput = Object.freeze({
           context,
           projectId,
           fileId: matched.fileId,
           body: parsedBody,
           requestId,
           correlationId,
-        }));
+        });
+        try {
+          return await action(actionInput);
+        } catch (error) {
+          const enqueue = dependencies.deferredActions?.enqueueGmailFiling;
+          if (
+            error instanceof ProviderDegradedError
+            && error.retryable
+            && matched.kind === "gmail_file"
+            && enqueue
+          ) {
+            try {
+              const queued = await enqueue(actionInput);
+              if (!isProviderActionQueued(queued)) throw error;
+              return deferredProviderAction(queued);
+            } catch {
+              // Preserve the classified provider failure. A queue write that did
+              // not durably commit must never be acknowledged as accepted.
+              throw error;
+            }
+          }
+          throw error;
+        }
       };
 
       const result = matched.kind === "files"
         ? await dependencies.authorization.performFilesView(
             projectTrace,
-            (context) => input(context, testActions?.listFiles),
+            (context) => input(context, providerActions?.listFiles),
           )
         : matched.kind === "files_upload"
           ? await dependencies.authorization.performFilesUpload(
               projectTrace,
-              (context) => input(context, testActions?.uploadFile),
+              (context) => input(context, providerActions?.uploadFile),
             )
           : matched.kind === "files_share"
             ? await dependencies.authorization.performFilesShare(
                 projectTrace,
-                (context) => input(context, testActions?.shareFile),
+                (context) => input(context, providerActions?.shareFile),
               )
             : matched.kind === "gmail_file"
               ? await dependencies.authorization.performGmailFile(
                   projectTrace,
-                  (context) => input(context, testActions?.fileGmailMessage),
+                  (context) => input(context, providerActions?.fileGmailMessage),
                 )
               : matched.kind === "calendar_create"
                 ? await dependencies.authorization.performCalendarCreate(
                     projectTrace,
-                    (context) => input(context, testActions?.createCalendarEvent),
+                    (context) => input(context, providerActions?.createCalendarEvent),
                   )
                 : null;
 
@@ -1799,7 +1871,39 @@ export function createEmployeeRequestRouter(
       if (!result.allowed) throw denialFailure(result.reason);
       if (result.value === unavailable) {
         discardUnreadBody(request);
-        jsonResponse(request, response, 503, { error: "feature_unavailable" });
+        jsonResponse(
+          request,
+          response,
+          503,
+          { error: "feature_unavailable", retryable: false },
+        );
+        return;
+      }
+      if (isDeferredProviderAction(result.value)) {
+        if (matched.kind !== "gmail_file") {
+          jsonResponse(
+            request,
+            response,
+            503,
+            { error: "provider_degraded", retryable: false },
+          );
+          return;
+        }
+        jsonResponse(
+          request,
+          response,
+          202,
+          { data: result.value[DEFERRED_PROVIDER_ACTION], retryable: false },
+        );
+        return;
+      }
+      if (isProviderActionQueued(result.value)) {
+        jsonResponse(
+          request,
+          response,
+          503,
+          { error: "provider_degraded", retryable: false },
+        );
         return;
       }
       jsonResponse(request, response, 200, { data: result.value });
@@ -1814,6 +1918,21 @@ export function createEmployeeRequestRouter(
           request,
           response,
           new HttpFailure(429, "rate_limited"),
+          clearOidcAttemptOnFailure ? [CLEAR_EMPLOYEE_OIDC_ATTEMPT_COOKIE] : [],
+        );
+        return;
+      }
+      if (error instanceof ProviderDegradedError) {
+        if (error.retryable && error.retryAfterSeconds !== null) {
+          response.setHeader("Retry-After", error.retryAfterSeconds);
+        }
+        discardUnreadBody(request);
+        jsonResponse(
+          request,
+          response,
+          503,
+          { error: "provider_degraded", retryable: error.retryable },
+          false,
           clearOidcAttemptOnFailure ? [CLEAR_EMPLOYEE_OIDC_ATTEMPT_COOKIE] : [],
         );
         return;

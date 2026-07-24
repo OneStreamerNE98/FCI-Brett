@@ -17,6 +17,7 @@ variable "cloud_run_jobs" {
   type = object({
     deploy_migration_job              = bool
     deploy_rehearsal_job              = bool
+    deploy_outbox_drain_job           = optional(bool, false)
     migration_database_user           = string
     migration_role                    = string
     migration_postgres_secret_version = string
@@ -29,6 +30,7 @@ variable "cloud_run_jobs" {
   default = {
     deploy_migration_job              = false
     deploy_rehearsal_job              = false
+    deploy_outbox_drain_job           = false
     migration_database_user           = ""
     migration_role                    = ""
     migration_postgres_secret_version = ""

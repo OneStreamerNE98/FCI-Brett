@@ -17,6 +17,7 @@
     "production-runtime/src/**/*.ts",
     "app/application/authorization-*.ts",
     "app/application/google-workspace-oauth.ts",
+    "app/application/outbox-drain.ts",
     "app/lib/google-oauth.ts",
     "app/lib/google-drive.ts",
     "app/lib/google-gmail.ts",

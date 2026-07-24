@@ -27,3 +27,13 @@ output "rehearsal_job_name" {
   description = "Null until the staging rehearsal Job definition gate is enabled. A name does not indicate an execution."
   value       = local.rehearsal_job_enabled ? google_cloud_run_v2_job.rehearsal[0].name : null
 }
+
+output "outbox_drain_job_planned" {
+  description = "Whether the unscheduled, inert outbox-drain Job definition is in the approved plan. This does not execute the Job."
+  value       = local.outbox_drain_job_enabled
+}
+
+output "outbox_drain_job_name" {
+  description = "Null until the outbox-drain Job definition gate is enabled. A name does not indicate an execution or active dispatchers."
+  value       = local.outbox_drain_job_enabled ? google_cloud_run_v2_job.outbox_drain[0].name : null
+}

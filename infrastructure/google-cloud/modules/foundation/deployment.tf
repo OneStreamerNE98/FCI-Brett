@@ -3,11 +3,13 @@ locals {
     var.deployment_config.enable_identity ||
     var.cloud_run_config.deploy_service ||
     var.cloud_run_jobs.deploy_migration_job ||
-    var.cloud_run_jobs.deploy_rehearsal_job
+    var.cloud_run_jobs.deploy_rehearsal_job ||
+    var.cloud_run_jobs.deploy_outbox_drain_job
   )
   cloud_run_job_requested = (
     var.cloud_run_jobs.deploy_migration_job ||
-    var.cloud_run_jobs.deploy_rehearsal_job
+    var.cloud_run_jobs.deploy_rehearsal_job ||
+    var.cloud_run_jobs.deploy_outbox_drain_job
   )
   immutable_application_image = (
     startswith(
@@ -21,6 +23,10 @@ locals {
     var.enable_core &&
     var.deployment_stage == "staging" &&
     var.cloud_run_jobs.deploy_rehearsal_job
+  )
+  outbox_drain_job_enabled = (
+    var.enable_core &&
+    var.cloud_run_jobs.deploy_outbox_drain_job
   )
   rehearsal_snapshot_path = "/rehearsal/${var.cloud_run_jobs.rehearsal_snapshot_object}"
   required_wif_provider_condition = (
@@ -37,6 +43,7 @@ resource "terraform_data" "deployment_gate" {
     service            = var.cloud_run_config.deploy_service
     migration_job      = var.cloud_run_jobs.deploy_migration_job
     rehearsal_job      = var.cloud_run_jobs.deploy_rehearsal_job
+    outbox_drain_job   = var.cloud_run_jobs.deploy_outbox_drain_job
   }
 
   lifecycle {
@@ -99,6 +106,14 @@ resource "terraform_data" "deployment_gate" {
         !strcontains(var.cloud_run_jobs.rehearsal_snapshot_object, "//")
       )
       error_message = "The rehearsal job requires a reviewed staging test-data bucket and a bounded relative JSON object path."
+    }
+
+    precondition {
+      condition = !var.cloud_run_jobs.deploy_outbox_drain_job || (
+        can(regex("^[a-z_][a-z0-9_]{0,62}$", var.cloud_run_config.runtime_database_user)) &&
+        can(regex("^[1-9][0-9]*$", var.cloud_run_config.postgres_secret_version))
+      )
+      error_message = "The outbox drain job requires the reviewed runtime database login and a pinned numeric PostgreSQL secret version."
     }
   }
 
@@ -430,6 +445,134 @@ resource "google_cloud_run_v2_job" "rehearsal" {
     google_secret_manager_secret_iam_member.rehearsal_postgres,
     google_service_networking_connection.private_vpc,
     google_storage_bucket_iam_member.rehearsal_snapshot_reader,
+    terraform_data.deployment_gate,
+  ]
+}
+
+# Source-only and unscheduled. BE-14 ships an empty dispatcher registry, so
+# even an owner-approved manual execution exits without claiming outbox rows.
+resource "google_cloud_run_v2_job" "outbox_drain" {
+  count = local.outbox_drain_job_enabled ? 1 : 0
+
+  project             = var.owner_inputs.project_id
+  name                = "${local.name}-outbox-drain"
+  location            = var.owner_inputs.region
+  deletion_protection = var.deployment_stage == "production"
+  deletion_policy     = var.deployment_stage == "production" ? "PREVENT" : "DELETE"
+  labels              = merge(local.common_labels, { component = "outbox-drain-job" })
+
+  template {
+    task_count  = 1
+    parallelism = 1
+
+    template {
+      service_account       = google_service_account.runtime[0].email
+      timeout               = "300s"
+      max_retries           = 0
+      execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
+
+      vpc_access {
+        egress = "PRIVATE_RANGES_ONLY"
+
+        network_interfaces {
+          network    = google_compute_network.application[0].id
+          subnetwork = google_compute_subnetwork.cloud_run[0].id
+        }
+      }
+
+      containers {
+        name    = "outbox-drain"
+        image   = var.cloud_run_config.image
+        command = ["node"]
+        args    = ["runtime/run-outbox-drain.mjs"]
+
+        resources {
+          limits = {
+            cpu    = var.cloud_run_config.cpu
+            memory = var.cloud_run_config.memory
+          }
+        }
+
+        env {
+          name  = "FCI_APP_ENVIRONMENT"
+          value = "production"
+        }
+
+        env {
+          name  = "FCI_DEPLOYMENT_STAGE"
+          value = var.deployment_stage
+        }
+
+        env {
+          name  = "FCI_POSTGRES_ACCESS_MODE"
+          value = "runtime"
+        }
+
+        env {
+          name  = "FCI_POSTGRES_CONNECTION_MODE"
+          value = "cloud-sql-connector"
+        }
+
+        env {
+          name  = "FCI_CLOUD_SQL_INSTANCE_CONNECTION_NAME"
+          value = google_sql_database_instance.application[0].connection_name
+        }
+
+        env {
+          name  = "FCI_CLOUD_SQL_IP_TYPE"
+          value = "PRIVATE"
+        }
+
+        env {
+          name  = "FCI_POSTGRES_DATABASE"
+          value = google_sql_database.application[0].name
+        }
+
+        env {
+          name  = "FCI_POSTGRES_USER"
+          value = var.cloud_run_config.runtime_database_user
+        }
+
+        env {
+          name  = "FCI_POSTGRES_PASSWORD_FILE"
+          value = "/secrets/postgres/password"
+        }
+
+        env {
+          name  = "FCI_POSTGRES_SCHEMA"
+          value = "fci_app"
+        }
+
+        env {
+          name  = "FCI_POSTGRES_POOL_MAX"
+          value = "1"
+        }
+
+        volume_mounts {
+          name       = "postgres-password"
+          mount_path = "/secrets/postgres"
+        }
+      }
+
+      volumes {
+        name = "postgres-password"
+
+        secret {
+          secret = google_secret_manager_secret.core["postgres-runtime-password"].secret_id
+
+          items {
+            version = var.cloud_run_config.postgres_secret_version
+            path    = "password"
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    google_project_iam_member.core_identities,
+    google_secret_manager_secret_iam_member.runtime,
+    google_service_networking_connection.private_vpc,
     terraform_data.deployment_gate,
   ]
 }

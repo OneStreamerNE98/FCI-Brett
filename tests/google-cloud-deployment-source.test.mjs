@@ -40,12 +40,14 @@ test("every deployment mechanism is independently absent by default", () => {
     assert.match(variables, /enable_identity\s*=\s*false/);
     assert.match(variables, /deploy_migration_job\s*=\s*false/);
     assert.match(variables, /deploy_rehearsal_job\s*=\s*false/);
+    assert.match(variables, /deploy_outbox_drain_job\s*=\s*false/);
   }
 
   for (const example of [stagingExample, productionExample]) {
     assert.match(example, /^\s*enable_identity\s*=\s*false$/m);
     assert.match(example, /^\s*deploy_migration_job\s*=\s*false$/m);
     assert.match(example, /^\s*deploy_rehearsal_job\s*=\s*false$/m);
+    assert.match(example, /^\s*deploy_outbox_drain_job\s*=\s*false$/m);
   }
 
   for (const root of [stagingMain, productionMain]) {
@@ -55,7 +57,7 @@ test("every deployment mechanism is independently absent by default", () => {
 
   assert.match(
     deploymentDefinitions,
-    /deployment_resource_requested[\s\S]*?var\.deployment_config\.enable_identity[\s\S]*?var\.cloud_run_config\.deploy_service[\s\S]*?var\.cloud_run_jobs\.deploy_migration_job[\s\S]*?var\.cloud_run_jobs\.deploy_rehearsal_job/,
+    /deployment_resource_requested[\s\S]*?var\.deployment_config\.enable_identity[\s\S]*?var\.cloud_run_config\.deploy_service[\s\S]*?var\.cloud_run_jobs\.deploy_migration_job[\s\S]*?var\.cloud_run_jobs\.deploy_rehearsal_job[\s\S]*?var\.cloud_run_jobs\.deploy_outbox_drain_job/,
   );
   assert.equal(countMatches(ciWorkflow, /terraform test/g), 4);
 });
@@ -90,7 +92,7 @@ test("the image publisher is keyless, immutable-repository scoped, and cannot de
   assert.doesNotMatch(completeFoundation, /allUsers/);
 });
 
-test("migration and staging rehearsal Jobs are bounded definitions, never executions", () => {
+test("migration, rehearsal, and inert outbox-drain Jobs are bounded definitions, never executions", () => {
   assert.match(
     deploymentDefinitions,
     /resource "google_cloud_run_v2_job" "migration"[\s\S]*?count\s*=\s*local\.migration_job_enabled/,
@@ -99,22 +101,30 @@ test("migration and staging rehearsal Jobs are bounded definitions, never execut
     deploymentDefinitions,
     /resource "google_cloud_run_v2_job" "rehearsal"[\s\S]*?count\s*=\s*local\.rehearsal_job_enabled/,
   );
-  assert.equal(countMatches(deploymentDefinitions, /task_count\s*=\s*1/g), 2);
-  assert.equal(countMatches(deploymentDefinitions, /parallelism\s*=\s*1/g), 2);
-  assert.equal(countMatches(deploymentDefinitions, /max_retries\s*=\s*0/g), 2);
-  assert.equal(countMatches(deploymentDefinitions, /name\s*=\s*"FCI_POSTGRES_POOL_MAX"[\s\S]*?value\s*=\s*"1"/g), 2);
-  assert.equal(countMatches(deploymentDefinitions, /image\s*=\s*var\.cloud_run_config\.image/g), 2);
+  assert.match(
+    deploymentDefinitions,
+    /resource "google_cloud_run_v2_job" "outbox_drain"[\s\S]*?count\s*=\s*local\.outbox_drain_job_enabled/,
+  );
+  assert.equal(countMatches(deploymentDefinitions, /task_count\s*=\s*1/g), 3);
+  assert.equal(countMatches(deploymentDefinitions, /parallelism\s*=\s*1/g), 3);
+  assert.equal(countMatches(deploymentDefinitions, /max_retries\s*=\s*0/g), 3);
+  assert.equal(countMatches(deploymentDefinitions, /name\s*=\s*"FCI_POSTGRES_POOL_MAX"[\s\S]*?value\s*=\s*"1"/g), 3);
+  assert.equal(countMatches(deploymentDefinitions, /image\s*=\s*var\.cloud_run_config\.image/g), 3);
   assert.match(deploymentDefinitions, /args\s*=\s*\["runtime\/run-migrations\.mjs"\]/);
   assert.match(deploymentDefinitions, /name\s*=\s*"FCI_POSTGRES_ACCESS_MODE"\s+value\s*=\s*"migration"/);
   assert.match(deploymentDefinitions, /name\s*=\s*"FCI_POSTGRES_MIGRATION_ROLE"/);
   assert.match(deploymentDefinitions, /"runtime\/run-core-rehearsal\.mjs"[\s\S]*?"--snapshot"/);
   assert.match(deploymentDefinitions, /name\s*=\s*"FCI_POSTGRES_ACCESS_MODE"\s+value\s*=\s*"rehearsal"/);
+  assert.match(deploymentDefinitions, /args\s*=\s*\["runtime\/run-outbox-drain\.mjs"\]/);
+  assert.match(deploymentDefinitions, /name\s*=\s*"FCI_POSTGRES_ACCESS_MODE"\s+value\s*=\s*"runtime"/);
+  assert.match(foundationMain, /deploy_outbox_drain_job\s*\?\s*1\s*:\s*0/);
   assert.match(deploymentDefinitions, /\^fci_rehearsal_/);
   assert.match(deploymentDefinitions, /gcs\s*\{[\s\S]*?read_only\s*=\s*true/);
   assert.match(deploymentDefinitions, /roles\/storage\.objectViewer/);
   assert.match(deploymentDefinitions, /FCI TEST — DO NOT USE/);
   assert.doesNotMatch(deploymentDefinitions, /(?:start|run)_execution_token/);
   assert.doesNotMatch(deploymentDefinitions, /google_cloud_run_v2_job_iam/);
+  assert.doesNotMatch(deploymentDefinitions, /google_cloud_scheduler_job|jobs\.run/);
 });
 
 test("image CI builds pull requests and only publishes approved main dispatches", () => {
@@ -161,7 +171,13 @@ test("CI keeps real-PostgreSQL suites enabled through TEST_POSTGRES_URL", () => 
 
 test("the runbook truthfully keeps execution owner-gated", () => {
   assert.doesNotMatch(migrationRunbook, /no Cloud Run Job, deployment identity, image-build/);
+  assert.doesNotMatch(migrationRunbook, /No generic read-only or queued degraded mode exists today/);
   assert.match(migrationRunbook, /source-only\s+and unapplied/);
   assert.match(migrationRunbook, /cannot apply\s+Terraform, deploy a service, or execute a Job/);
   assert.match(migrationRunbook, /Every execution step remains blocked/);
+  assert.match(migrationRunbook, /feature_unavailable","retryable":false/);
+  assert.match(migrationRunbook, /provider_degraded","retryable":true/);
+  assert.match(migrationRunbook, /Gmail filing is the only provider route with a deferred-action seam/);
+  assert.match(migrationRunbook, /sheetSync\.status:"queued"/);
+  assert.match(migrationRunbook, /BE-14 deliberately registers none/);
 });

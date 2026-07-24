@@ -133,7 +133,8 @@ locals {
   )
   controlled_job_connections = (
     var.cloud_run_config.migration_connections +
-    (var.deployment_stage == "staging" ? var.cloud_run_config.rehearsal_connections : 0)
+    (var.deployment_stage == "staging" ? var.cloud_run_config.rehearsal_connections : 0) +
+    (var.cloud_run_jobs.deploy_outbox_drain_job ? 1 : 0)
   )
   planned_connection_total = (
     local.runtime_connection_ceiling +

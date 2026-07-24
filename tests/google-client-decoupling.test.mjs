@@ -299,7 +299,10 @@ test("Cloud Run client graph is Cloudflare-free and provider routes remain uncom
   for (const path of coreFiles.slice(0, 6)) {
     assert.match(tsconfig, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  assert.match(router, /503, \{ error: "feature_unavailable" \}/);
+  assert.match(
+    router,
+    /503,[\s\S]*?\{ error: "feature_unavailable", retryable: false \}/,
+  );
   assert.doesNotMatch(router, /createProductionGoogleOauth|google-workspace-oauth/);
   assert.doesNotMatch(composition, /createProductionGoogleOauth|google-workspace-oauth/);
 });

@@ -2,6 +2,8 @@
 
 Status: **source-only, reviewable, and unapplied**
 
+BE-14 outbox-drain definition update: **July 24, 2026**
+
 These Terraform definitions describe the cost-controlled FCI Operations Google
 Cloud boundary. They have not created projects, enabled APIs, changed IAM or
 billing, stored secrets, migrated data, connected Workspace, or deployed the
@@ -46,9 +48,12 @@ application.
   from that environment's Terraform-managed Artifact Registry repository and a
   pinned numeric Secret Manager version.
 - `deployment_config.enable_identity`, `cloud_run_jobs.deploy_migration_job`,
-  and `cloud_run_jobs.deploy_rehearsal_job` also default to `false`. The
+  `cloud_run_jobs.deploy_rehearsal_job`, and
+  `cloud_run_jobs.deploy_outbox_drain_job` also default to `false`. The
   rehearsal definition is staging-only. A Job flag creates a definition in an
-  approved plan; it never starts an execution.
+  approved plan; it never starts an execution. The outbox-drain Job is
+  unscheduled and its shipped dispatcher registry is empty, so it is inert even
+  if its source command is run before a later reviewed composition packet.
 - The keyless deployment identity is deliberately an image publisher, not a
   Terraform applier or Cloud Run operator. Its Workload Identity binding accepts
   only immutable GitHub repository ID `1298731126` (FCI-Brett) in the
@@ -85,10 +90,13 @@ defines:
 - one Cloud Run v2 modular-monolith service definition with min `0`, max `2`,
   Direct VPC egress, `/readyz` startup/readiness, and `/healthz` liveness probes;
 - separately gated Cloud Run v2 Job definitions for one-task, one-connection,
-  zero-retry migrations and a staging-only bounded core rehearsal. Both use the
-  same approved immutable service-image digest, dedicated database identities
-  and pinned Secret Manager versions; the rehearsal mounts one approved
-  test-data bucket read-only and requires an `fci_rehearsal_` schema;
+  zero-retry migrations, a staging-only bounded core rehearsal, and one
+  unscheduled outbox-drain pass. All use the same approved immutable
+  service-image digest; migration/rehearsal retain their dedicated database
+  identities, while the drain uses the least-privilege runtime identity and
+  pinned runtime database secret. The rehearsal mounts one approved test-data
+  bucket read-only and requires an `fci_rehearsal_` schema; the drain has no
+  active dispatcher in BE-14;
 - email notification channels, a project-scoped budget alert, Cloud SQL CPU,
   disk, and connection alerts; a log-based failed/skipped-backup alert; plus a
   Cloud Run 5xx alert when the service is separately enabled.

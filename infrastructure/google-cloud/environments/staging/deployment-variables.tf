@@ -13,10 +13,11 @@ variable "deployment_config" {
 }
 
 variable "cloud_run_jobs" {
-  description = "Independent source-definition gates for the staging migration and test-data rehearsal jobs. A definition never executes a job."
+  description = "Independent source-definition gates for the staging migration, test-data rehearsal, and inert outbox-drain jobs. A definition never executes a job."
   type = object({
     deploy_migration_job              = bool
     deploy_rehearsal_job              = bool
+    deploy_outbox_drain_job           = optional(bool, false)
     migration_database_user           = string
     migration_role                    = string
     migration_postgres_secret_version = string
@@ -29,6 +30,7 @@ variable "cloud_run_jobs" {
   default = {
     deploy_migration_job              = false
     deploy_rehearsal_job              = false
+    deploy_outbox_drain_job           = false
     migration_database_user           = ""
     migration_role                    = ""
     migration_postgres_secret_version = ""

@@ -29,6 +29,8 @@ STOPSIGNAL SIGTERM
 # Cloud Run Jobs use this same immutable image with one of these command overrides:
 # ["node", "runtime/run-migrations.mjs"]
 # ["node", "runtime/run-core-rehearsal.mjs", "--snapshot", "/path/to/test-snapshot.json"]
-# The service command never imports either job entry. Core rehearsal additionally
-# refuses the production deployment stage at runtime.
+# ["node", "runtime/run-outbox-drain.mjs"]
+# The service command never imports any job entry. Core rehearsal additionally
+# refuses the production deployment stage at runtime, and the outbox drain is
+# inert until a later reviewed packet registers every dispatcher.
 CMD ["node", "runtime/cloud-run-server.mjs"]

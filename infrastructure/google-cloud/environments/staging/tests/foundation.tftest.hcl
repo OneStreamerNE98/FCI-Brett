@@ -75,7 +75,8 @@ run "default_switch_creates_nothing" {
       output.planning.deployment_identity == false &&
       output.planning.cloud_run_planned == false &&
       output.planning.migration_job_planned == false &&
-      output.planning.rehearsal_job_planned == false
+      output.planning.rehearsal_job_planned == false &&
+      output.planning.outbox_drain_job_planned == false
     )
     error_message = "Every deployment identity, service, and Job definition must remain absent by default."
   }
@@ -207,8 +208,8 @@ run "staging_jobs_use_independent_definition_gates" {
     cloud_run_config = {
       deploy_service           = false
       image                    = "us-central1-docker.pkg.dev/fci-staging-test/fci-ops-stg-app/fci@sha256:0000000000000000000000000000000000000000000000000000000000000000"
-      runtime_database_user    = ""
-      postgres_secret_version  = ""
+      runtime_database_user    = "fci_runtime_login"
+      postgres_secret_version  = "1"
       cpu                      = "1"
       memory                   = "512Mi"
       request_concurrency      = 40
@@ -224,6 +225,7 @@ run "staging_jobs_use_independent_definition_gates" {
     cloud_run_jobs = {
       deploy_migration_job              = true
       deploy_rehearsal_job              = true
+      deploy_outbox_drain_job           = true
       migration_database_user           = "fci_migration_login"
       migration_role                    = "fci_migration"
       migration_postgres_secret_version = "2"
@@ -239,7 +241,9 @@ run "staging_jobs_use_independent_definition_gates" {
     condition = (
       output.planning.deployment_identity &&
       output.planning.migration_job_planned &&
-      output.planning.rehearsal_job_planned
+      output.planning.rehearsal_job_planned &&
+      output.planning.outbox_drain_job_planned &&
+      output.planning.connection_budget.planned_total == 33
     )
     error_message = "Approved staging inputs should add the keyless publisher and both Job definitions without executing them."
   }

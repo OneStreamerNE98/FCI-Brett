@@ -29,6 +29,12 @@ const {
 const { createEmployeeRequestRouter } = await vite.ssrLoadModule(
   "/app/platform/google-cloud/employee-request-router.ts",
 );
+const {
+  providerActionQueued,
+  ProviderDegradedError,
+} = await vite.ssrLoadModule(
+  "/app/platform/google-cloud/provider-action-contract.ts",
+);
 const { createEmployeeRequestRateLimit } = await vite.ssrLoadModule(
   "/app/platform/google-cloud/request-rate-limit.ts",
 );
@@ -599,6 +605,8 @@ async function startHarness(options = {}) {
     coreRecords,
     testActions: actions,
     testMode: true,
+    providerActions: options.providerActions,
+    deferredActions: options.deferredActions,
     now: () => NOW,
     newId: randomUUID,
     newInvitationCredential: () => options.invitationCredential ?? INVITATION_CREDENTIAL,
@@ -841,6 +849,10 @@ test("core create routes preserve replay, conflict, principal, operation, and en
     const clientBody = await json(client);
     assert.equal(clientBody.data.name, clientInput.name);
     assert.equal(clientBody.data.version, "1");
+    assert.deepEqual(clientBody.data.sheetSync, {
+      status: "queued",
+      message: "Saved in FCI Operations; directory synchronization is queued for background processing.",
+    });
 
     const replay = await running.request("/api/v1/clients", {
       method: "POST",
@@ -877,7 +889,12 @@ test("core create routes preserve replay, conflict, principal, operation, and en
       },
     });
     assert.equal(project.status, 201);
-    assert.equal((await json(project)).data.projectManagerId, ROLE_IDENTITIES.administrator.email);
+    const projectBody = (await json(project)).data;
+    assert.equal(projectBody.projectManagerId, ROLE_IDENTITIES.administrator.email);
+    assert.deepEqual(projectBody.sheetSync, {
+      status: "queued",
+      message: "Saved in FCI Operations; directory synchronization is queued for background processing.",
+    });
     assert.equal(running.acceptedCreations.projects.size, 1);
 
     const lead = await running.request("/api/v1/leads", {
@@ -1698,11 +1715,245 @@ test("authorized routes without production provider actions fail closed after au
       json: { messageId: "message-1" },
     });
     assert.equal(response.status, 503);
-    assert.deepEqual(await json(response), { error: "feature_unavailable" });
+    assert.deepEqual(await json(response), {
+      error: "feature_unavailable",
+      retryable: false,
+    });
     assert.ok(running.repositoryCalls.capabilityChecks.some(
       ({ capabilityKey }) => capabilityKey === AUTHORIZATION_CAPABILITIES.gmailFile,
     ));
     assert.equal(running.audits.at(-1)?.action, "authorization.access_allowed");
+  } finally {
+    await running.close();
+  }
+});
+
+test("composed provider outages return a typed retryability contract without exposing provider detail", async () => {
+  const providerSecret = "test-only-provider-secret-detail";
+  const running = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    providerActions: {
+      async fileGmailMessage() {
+        const failure = new ProviderDegradedError({
+          retryable: true,
+          retryAfterSeconds: 37,
+        });
+        failure.cause = new Error(providerSecret);
+        throw failure;
+      },
+      async createCalendarEvent() {
+        throw new ProviderDegradedError({ retryable: false });
+      },
+    },
+  });
+  try {
+    const retryable = await running.request(
+      `/api/v1/projects/${PROJECT_A}/gmail/file`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { messageId: "message-1" },
+      },
+    );
+    assert.equal(retryable.status, 503);
+    assert.equal(retryable.headers.get("retry-after"), "37");
+    const retryableText = await retryable.text();
+    assert.deepEqual(JSON.parse(retryableText), {
+      error: "provider_degraded",
+      retryable: true,
+    });
+    assert.doesNotMatch(retryableText, new RegExp(providerSecret));
+
+    const terminal = await running.request(
+      `/api/v1/projects/${PROJECT_A}/calendar/events`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { title: "FCI TEST — DO NOT USE" },
+      },
+    );
+    assert.equal(terminal.status, 503);
+    assert.equal(terminal.headers.get("retry-after"), null);
+    assert.deepEqual(await json(terminal), {
+      error: "provider_degraded",
+      retryable: false,
+    });
+  } finally {
+    await running.close();
+  }
+});
+
+test("retryable Gmail degradation acknowledges only a durably queued operation", async () => {
+  const queuedInputs = [];
+  const running = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    providerActions: {
+      async fileGmailMessage() {
+        throw new ProviderDegradedError({
+          retryable: true,
+          retryAfterSeconds: 15,
+        });
+      },
+    },
+    deferredActions: {
+      async enqueueGmailFiling(input) {
+        queuedInputs.push(input);
+        return providerActionQueued("gmail-filing-operation-1");
+      },
+    },
+  });
+  try {
+    const response = await running.request(
+      `/api/v1/projects/${PROJECT_A}/gmail/file`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { messageId: "message-1" },
+      },
+    );
+    assert.equal(response.status, 202);
+    assert.equal(response.headers.get("retry-after"), null);
+    assert.deepEqual(await json(response), {
+      data: {
+        outcome: "queued",
+        operationId: "gmail-filing-operation-1",
+      },
+      retryable: false,
+    });
+    assert.equal(queuedInputs.length, 1);
+    assert.equal(queuedInputs[0].projectId, PROJECT_A);
+    assert.deepEqual(queuedInputs[0].body, { messageId: "message-1" });
+    assert.equal(queuedInputs[0].context.email, ROLE_IDENTITIES.administrator.email);
+    assert.equal(JSON.stringify(queuedInputs[0]).includes(SESSION_CREDENTIAL), false);
+  } finally {
+    await running.close();
+  }
+});
+
+test("Gmail never acknowledges a missing or malformed durable queue write", async () => {
+  for (const [label, enqueueGmailFiling] of [
+    ["write failure", async () => {
+      throw new Error("test-only queue unavailable");
+    }],
+    ["malformed result", async () => ({ outcome: "queued", operationId: "" })],
+  ]) {
+    const running = await startHarness({
+      role: AUTHORIZATION_ROLES.administrator,
+      providerActions: {
+        async fileGmailMessage() {
+          throw new ProviderDegradedError({
+            retryable: true,
+            retryAfterSeconds: 19,
+          });
+        },
+      },
+      deferredActions: { enqueueGmailFiling },
+    });
+    try {
+      const response = await running.request(
+        `/api/v1/projects/${PROJECT_A}/gmail/file`,
+        {
+          method: "POST",
+          sameOrigin: true,
+          csrf: true,
+          json: { messageId: "message-1" },
+        },
+      );
+      assert.equal(response.status, 503, label);
+      assert.equal(response.headers.get("retry-after"), "19", label);
+      assert.deepEqual(await json(response), {
+        error: "provider_degraded",
+        retryable: true,
+      }, label);
+    } finally {
+      await running.close();
+    }
+  }
+});
+
+test("a provider result cannot impersonate the Gmail durable queue callback", async () => {
+  const running = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    providerActions: {
+      async fileGmailMessage() {
+        return providerActionQueued("provider-returned-shape");
+      },
+    },
+  });
+  try {
+    const response = await running.request(
+      `/api/v1/projects/${PROJECT_A}/gmail/file`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { messageId: "message-1" },
+      },
+    );
+    assert.equal(response.status, 503);
+    assert.deepEqual(await json(response), {
+      error: "provider_degraded",
+      retryable: false,
+    });
+  } finally {
+    await running.close();
+  }
+});
+
+test("only the enumerated Gmail operation may use the deferred provider boundary", async () => {
+  let queueCalls = 0;
+  const running = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    providerActions: {
+      async fileGmailMessage() {
+        throw new ProviderDegradedError({ retryable: false });
+      },
+      async createCalendarEvent() {
+        return providerActionQueued("calendar-must-not-be-acknowledged");
+      },
+    },
+    deferredActions: {
+      async enqueueGmailFiling() {
+        queueCalls += 1;
+        return providerActionQueued("must-not-be-used");
+      },
+    },
+  });
+  try {
+    const gmail = await running.request(
+      `/api/v1/projects/${PROJECT_A}/gmail/file`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { messageId: "message-1" },
+      },
+    );
+    assert.equal(gmail.status, 503);
+    assert.deepEqual(await json(gmail), {
+      error: "provider_degraded",
+      retryable: false,
+    });
+
+    const calendar = await running.request(
+      `/api/v1/projects/${PROJECT_A}/calendar/events`,
+      {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        json: { title: "FCI TEST — DO NOT USE" },
+      },
+    );
+    assert.equal(calendar.status, 503);
+    assert.equal(calendar.headers.get("retry-after"), null);
+    assert.deepEqual(await json(calendar), {
+      error: "provider_degraded",
+      retryable: false,
+    });
+    assert.equal(queueCalls, 0);
   } finally {
     await running.close();
   }
