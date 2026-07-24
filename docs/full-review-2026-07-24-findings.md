@@ -190,14 +190,12 @@ so the pill grammar breaks only here.
 **Pre-existing:** the July 22 pre-DES baseline (`design-baseline/2026-07-22/
 overview-1280.png`) shows the identical 3-line pill — the wave neither introduced nor
 fixed it.
-**Dedup / disposition:** R1's own dedup found DES-05's *recorded* scope is the
-Scheduling subtitle → FeatureStateBadge conversion and trend-pill removal, i.e.
-Scheduling-only, so on paper this is unowned. Per orchestration routing, treat it as
-**DES-05-carried** — DES-05 reworks panel-subtitle grammar and should absorb the
-Gmail panel when it lands. Listed in the FIX-17 polish sweep as a carried item so it
-is visible for triage. **Owner should confirm DES-05 extends to this panel; if it
-lands Scheduling-only, this needs explicit pickup** (a one-line
-`white-space:nowrap` + ellipsis or short-label swap otherwise closes it).
+**Dedup / disposition history:** R1's dedup initially found this unowned (DES-05's
+recorded scope was Scheduling-only), so it was routed as DES-05-carried at filing
+time. The orchestrator then folded the fix into the DES-05 kickoff explicitly, and
+PR #149 (merged July 23, 2026) shipped it: `subtitleKind="source"` renders long
+source labels as single-line ellipsized text. RESOLVED — no pickup, no owner
+action, no remaining work on this finding.
 
 ### P3 — worthwhile, filed on its own
 
@@ -291,7 +289,7 @@ globals guard to assert these tokens' absence so it can't regrow).
 #### H-10 · Cross-round polish nits (P3, bundle) → FIX-17
 The remaining pure-polish P3s, each verified in its round, bundled into one triage
 entry (details and dispositions in the **FIX-17** packet below):
-- Gmail-panel source-label 3-line pill wrap (H-5; **DES-05-carried** — note only).
+- Gmail-panel source-label 3-line pill wrap (H-5; **RESOLVED by DES-05 / PR #149** — no action).
 - Inbox PageTitle header actions stack vertically under the long subtitle
   (`FloorOpsApp.tsx:1446`, `globals.css:127 .title-actions{flex-wrap:wrap}`).
 - Projects table "Not scheduled" wraps to two lines in the too-narrow SCHEDULE column
@@ -451,8 +449,9 @@ PRs while keeping each honest.
   a missing anchor (pattern already exists at
   `sheet-mirror-status-labels.test.mjs:24–28`); revisit the docs-vs-docs tracking map
   tax (`task-tracking-docs.test.mjs:275–289`).
-- **Note only (already routed):** Gmail-panel pill wrap is **DES-05-carried**; the
-  empty layout-grid message is **DES-08d**-owned — do not re-pick-up here.
+- **Note only (already routed):** Gmail-panel pill wrap is **RESOLVED (DES-05 /
+  PR #149, merged)**; the empty layout-grid message is **DES-08d**-owned — do not
+  re-pick-up either here.
 **Accept:** the CSS-absence guard fails on a synthetic re-add of the dead tokens;
 render tests for the inbox/projects/subtitle fixes; sim/live parity tests for the
 calendar window and folder-existence validation; each accepted-as-is item recorded

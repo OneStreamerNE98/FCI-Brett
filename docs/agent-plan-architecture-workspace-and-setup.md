@@ -1451,6 +1451,9 @@ from a non-admin's rendered settings (render-invariance); displayed values match
 the configured environment exactly incl. multi-value lists and the unset
 fail-closed state; grep-guard that the new endpoint contains no write/mutation
 handler; no-store asserted; the People & Access note text pinned.
+**Effort:** small. **Cost:** $0. **Sequencing:** touches `DataSecurityPanel.tsx` +
+one small route — independent of the FloorOpsApp queue and the SET-29 series;
+assignable anytime.
 
 ### SET-37 · Settings & daily-use guide (docs-only; owner-approved July 23, 2026)
 **Status:** Complete — PR #150, July 23, 2026. Docs-only; the guide is a living
@@ -1467,9 +1470,7 @@ settings surfaces must update the guide or state "Guide impact: none" in its
 Status line.
 **Accept:** guide published; truth pass against source (corrections logged);
 tracking guard green.
-**Effort:** small. **Cost:** $0. **Sequencing:** touches `DataSecurityPanel.tsx` +
-one small route — independent of the FloorOpsApp queue and the SET-29 series;
-assignable anytime.
+**Effort:** small (drafting complete at publication). **Cost:** $0.
 
 ---
 
@@ -2343,7 +2344,9 @@ Owner-approved July 23, 2026 (forms-only decision). Design authority:
 recommended-tier rows (12 total: 9 now, 3 sequenced after AI-08); optional rows
 need a fresh owner opt-in; rejected rows stay rejected. Copy ships verbatim from
 the audit table with mutation-sensitive pins (the SET-29..34 pinning pattern).
-Budget law: ≤20 hints app-wide; label-fix beats hint.
+Budget law: ≤20 hints from THIS forms-audit initiative (the 22 pre-existing
+Google Workspace setup-flow hints are grandfathered outside the budget);
+label-fix beats hint.
 
 ### HINT-01 · InfoHint generalization (small-medium; takes the globals.css lock briefly, in a free window after DES-04/05/07)
 **Why:** `WorkspaceInfoHint` is styled by global `.workspace-info-hint*` classes
@@ -2367,15 +2370,17 @@ file) and for SET-06's wiring fix (their copy must describe the fixed behavior).
 the existing e2e pattern.
 
 ### HINT-02-B · Adoption, FloorOpsApp modals (small; ONE FloorOpsApp queue slot at the tail, after AI-02)
-**Do:** the recommended-tier hints in LeadModal, ClientModal, NewProjectModal,
-and FollowUpResultModal per the audit table — written against post-DES-05/07
-component names.
+**Do:** the recommended-tier hints in LeadModal, ClientModal, and
+NewProjectModal per the audit table — written against post-DES-05/07 component
+names. (FollowUpResultModal's "Post-installation callback" is a LABEL FIX per
+the audit, not a hint — routed via the findings label-fix track, not this
+packet.)
 **Accept:** audit-table copy verbatim, pinned; golden hashes unchanged (modals
 sit outside the hashed containers); axe green.
 
 ### HINT-03 · Pinning + closure (small, last)
 **Do:** one representative e2e tooltip-semantics assertion per new surface
-family; verify the ≤20 budget holds; flip Workstream H statuses; reconcile the
+family; verify the ≤20 initiative budget holds (audit-scope hints only; grandfathered setup-flow hints excluded); flip Workstream H statuses; reconcile the
 audit doc.
 **Accept:** every shipped hint copy-pinned mutation-sensitively; ledger and
 audit agree.
