@@ -778,7 +778,7 @@ After SET-13.
 **Accept:** route tests for all three states; panel strings correct; docs updated.
 
 ### SET-06 · Truthful labels for persisted-but-inert settings and review-first rules (small, after SET-01; AMENDED July 23, 2026 — absorbs holistic-review FIX-14 + FIX-16)
-**Status:** In review — PR #163, July 24, 2026. Source-only and undeployed.
+**Status:** Complete — PR #163, July 24, 2026. Source-only and undeployed. Opus review clean: the H-3 reminder-hours split verified (new clientReminderHours key, widen-on-read proven, independent round-trips e2e-pinned), H-7 inert custom rules render "Saved — not yet applied" with built-ins byte-identical, Planned badges honest. P3 note (July 24): an unrelated local-font console-error filter rode along in the e2e — harmless, recorded.
 
 **Why:** Reminder hours and office-notification email save but nothing consumes them;
 custom filing rules are forced review-first, admitted only in a footnote. The July
@@ -856,7 +856,7 @@ with a Simulated tag.
 zero requests to the admin route.
 
 ### SET-11 · Directory mirror maintenance surface (small, after SET-01+02+04)
-**Status:** In review — PR #162, July 24, 2026. Source-only and undeployed; the Settings guide documents refresh-vs-sync, recorded mirror evidence, and Stage 3 fallback setup.
+**Status:** Complete — PR #162, July 24, 2026. Source-only and undeployed. Opus review: zero findings — refresh provably never syncs (call-recording + e2e write-counter), status/error verbatim with the shared mapper, raw-enum guard strengthened. Guide documents refresh-vs-sync, recorded mirror evidence, and Stage 3 fallback setup.
 
 **Why:** Mirror status loads once at app start; the panel has no refresh; the
 unconfigured state dead-ends at a panel with no sheet-ID field (it's env-only).
@@ -1618,7 +1618,7 @@ suites pass.
 **Deps:** KPI-02. Effort: medium.
 
 ### KPI-04 · PostgreSQL parity and rehearsal coverage for KPI fields (small, after KPI-02/03 + BE-06)
-**Status:** In review — PR #164, July 24, 2026. Source-only and unapplied; production PostgreSQL migration v9 has not been applied.
+**Status:** Complete — PR #164, July 24, 2026. Source-only and unapplied; production PostgreSQL migration v9 has not been applied. Opus review: zero findings — v9 checksum independently recomputed and matched, v1–v8 byte-untouched, CHECK constraints byte-equal to the D1 domain rules, rehearsal format-v2 expansion activated fail-closed, grants column-scoped and readiness-aligned.
 
 **Why:** Guardrail: the D1 dev schema and the production PostgreSQL boundary must not
 drift. The postgres `projects` table (migration v1) predates the KPI columns.
@@ -2007,7 +2007,7 @@ golden hashes unchanged (headings sit outside them).
 **Effort:** small. **Cost:** $0.
 
 ### DES-07 · Primitive unification: KpiMetric→Metric, empty-state primitive, pill base (medium; FloorOpsApp queue after DES-04; GOLDEN REGEN 2 of 2, Reports hash only)
-**Status:** In review — PR #165, July 24, 2026. Source-only and undeployed.
+**Status:** Complete — PR #165, July 24, 2026. Source-only and undeployed. Opus review with regen forensics: Overview hash BYTE-IDENTICAL, Reports hash changed exactly once with every delta traced to the KpiMetric→Metric fold; empty-state copy pins byte-identical; pill class names rendered unchanged. Workstream F core (DES-01…07) is now COMPLETE. P3 for FIX-17 (July 24): the fold gives all KPI cards uniform 16px padding (+1px vs the old 15px override) — cosmetic. The FloorOpsApp queue advances to the DES-08 sub-scopes; the globals lock is FREE (HINT-01 may claim it).
 
 **Why:** Reports keeps a private duplicate `KpiMetric`; ~7 bespoke empty-state
 classes; five-plus pill systems — the design ledger's open Phase-3 primitive
