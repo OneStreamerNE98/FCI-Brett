@@ -176,8 +176,8 @@ admin page.
 **Disposition:** new packet **FIX-19**.
 
 #### H-5 · Overview Gmail-panel source label wraps to a 3-line pill (P2, pre-existing)
-**Disposition (owner-approved July 23): IN FLIGHT — the fix is part of DES-05 (PR #149,
-under review at publication time); this entry closes when #149 merges.**
+**Disposition: RESOLVED — fixed by DES-05 (PR #149, merged July 23, 2026): PanelHeader
+now renders long source labels as single-line ellipsized text instead of a wrapping pill.**
 **Lenses:** [google][navigate] — R1 desktop-core (confirmed).
 **Where:** `app/FloorOpsApp.tsx:1131` passes `subtitle="Google Workspace Gmail"` to
 `PanelHeader`, and `app/globals.css:66` renders every `.panel-header span` as a
