@@ -85,6 +85,7 @@ function persistence({
   projects = [],
   states = [],
   failFirstSyncingWrite = false,
+  failFailedWrite = false,
 } = {}) {
   const writes = [];
   let syncingWriteFailed = false;
@@ -98,6 +99,9 @@ function persistence({
         if (failFirstSyncingWrite && input.status === "syncing" && !syncingWriteFailed) {
           syncingWriteFailed = true;
           throw new Error("Injected initial sync-state write failure");
+        }
+        if (failFailedWrite && input.status === "failed") {
+          throw new Error("Injected failed-state bookkeeping write failure");
         }
       },
       async getSyncStates() { return states; },
@@ -370,4 +374,72 @@ test("stale live syncing reads recover to pending while fresh and simulation sta
   assert.equal(recovered.clients.status, "pending");
   assert.equal(active.clients.status, "syncing");
   assert.equal(simulation.clients.status, "syncing");
+});
+
+test("a transient lease release after a fully successful live sync stays successful and records no failure", async () => {
+  const provider = sheetProvider();
+  const store = persistence({ clients: [clientRow()], projects: [projectRow()] });
+  const events = [];
+  let completeAttempts = 0;
+  const failures = [];
+  const leases = {
+    async acquireSyncLease(input) {
+      return {
+        operationKey: `${input.connectionKey}:setup:sheets-directory-sync`,
+        leaseExpiresAt: input.now + 5 * 60 * 1_000,
+      };
+    },
+    async completeSyncLease() {
+      completeAttempts += 1;
+      throw new Error("Injected transient lease release failure");
+    },
+    async failSyncLease(lease, errorCode) {
+      failures.push({ lease, errorCode });
+    },
+  };
+  const deps = {
+    ...dependencies({ provider, store, leases }),
+    async writeIntegrationEvent(_config, eventType, _actor, entityType, entityId, detail) {
+      events.push({ eventType, entityType, entityId, detail });
+    },
+  };
+
+  const result = await sheets.syncGoogleDirectory(liveConfig(), "admin@example.test", deps);
+
+  // The sync itself fully succeeded, so the caller still receives a success result.
+  assert.equal(result.clients.inserted, 1);
+  assert.equal(result.projects.total, 1);
+  assert.equal(result.spreadsheetUrl, "https://docs.google.com/spreadsheets/d/directory-sheet/edit");
+  // The lease release was attempted; its transient failure was swallowed, never routed to failSyncLease.
+  assert.equal(completeAttempts, 1);
+  assert.equal(failures.length, 0);
+  // Both entity states settled on 'synced' and were never flipped to 'failed'.
+  const finalStatus = new Map();
+  for (const write of store.writes) finalStatus.set(write.entityType, write.status);
+  assert.equal(finalStatus.get("clients"), "synced");
+  assert.equal(finalStatus.get("projects"), "synced");
+  assert.equal(store.writes.some((write) => write.status === "failed"), false);
+  // No false directory-failed integration event was emitted for a genuinely successful sync.
+  assert.equal(events.some((event) => event.eventType === "sheets.directory.failed"), false);
+  assert.equal(events.some((event) => event.eventType === "sheets.directory.synced"), true);
+});
+
+test("a failed sync whose failure bookkeeping also throws still surfaces the original sync error", async () => {
+  const provider = sheetProvider({ failProjectReplacement: true });
+  const store = persistence({ projects: [projectRow()], failFailedWrite: true });
+  const leases = connectionScopedLeases();
+
+  await assert.rejects(
+    sheets.syncGoogleDirectory(
+      liveConfig(),
+      "admin@example.test",
+      dependencies({ provider, store, leases }),
+    ),
+    (error) => error?.code === "sheets_request_failed" && !/bookkeeping/.test(error?.message ?? ""),
+  );
+
+  // The lease is still released with the ORIGINAL sync error code despite the bookkeeping throw.
+  assert.deepEqual(leases.failures.map(({ errorCode }) => errorCode), ["sheets_request_failed"]);
+  assert.equal(leases.completions.length, 0);
+  assert.equal(leases.held.size, 0);
 });

@@ -451,16 +451,38 @@ export async function syncGoogleDirectory(
       integrationEvent.entityId,
       integrationEvent.detail,
     );
-    await dependencies.completeSyncLease(lease!, dependencies.now());
+    // The sync has fully succeeded here: the sheet is written, both entity states are
+    // 'synced', and the synced integration event is audited. Releasing the lease is the
+    // last step, and it must be fault-isolated: a transient completeSyncLease failure must
+    // NOT re-enter the failure path and record a genuinely successful sync as a durable
+    // failure (recovery only self-heals 'syncing', never 'failed'). The 5-minute lease TTL
+    // already reclaims an unreleased lease, so we swallow the error and still return success.
+    try {
+      await dependencies.completeSyncLease(lease!, dependencies.now());
+    } catch (releaseError) {
+      const releaseDetail = errorDetails(releaseError);
+      try {
+        await dependencies.writeIntegrationEvent(config, "sheets.directory.lease_release_failed", actor, "google-sheet", spreadsheetId, releaseDetail.code);
+      } catch {
+        // Best-effort audit only; the sync already succeeded and must not be reported as failed.
+      }
+    }
     return { clients: clientResult, projects: projectResult, spreadsheetUrl: sheetUrl(spreadsheetId), completedAt };
   } catch (error) {
     const detail = errorDetails(error);
     try {
-      await Promise.all([
-        updateSyncState(config, "clients", { status: "failed", error: detail, actor }, dependencies),
-        updateSyncState(config, "projects", { status: "failed", error: detail, actor }, dependencies),
-      ]);
-      await dependencies.writeIntegrationEvent(config, "sheets.directory.failed", actor, "google-sheet", spreadsheetId, detail.code);
+      // Best-effort failure bookkeeping. If any of these writes throw transiently, that
+      // must never replace the original sync error the caller needs to see, so swallow it
+      // and let the unconditional `throw error` below propagate the genuine failure.
+      try {
+        await Promise.all([
+          updateSyncState(config, "clients", { status: "failed", error: detail, actor }, dependencies),
+          updateSyncState(config, "projects", { status: "failed", error: detail, actor }, dependencies),
+        ]);
+        await dependencies.writeIntegrationEvent(config, "sheets.directory.failed", actor, "google-sheet", spreadsheetId, detail.code);
+      } catch {
+        // Swallow bookkeeping failures; the original error is re-thrown unconditionally below.
+      }
     } finally {
       if (lease) await dependencies.failSyncLease(lease, detail.code, dependencies.now());
     }
