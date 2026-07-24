@@ -484,7 +484,13 @@ export async function syncGoogleDirectory(
         // Swallow bookkeeping failures; the original error is re-thrown unconditionally below.
       }
     } finally {
-      if (lease) await dependencies.failSyncLease(lease, detail.code, dependencies.now());
+      // Best-effort as well: a transient failSyncLease rejection must not replace the
+      // original sync error the caller needs; the 5-minute TTL reclaims the lease anyway.
+      try {
+        if (lease) await dependencies.failSyncLease(lease, detail.code, dependencies.now());
+      } catch {
+        // Swallowed; `throw error` below propagates the genuine failure.
+      }
     }
     throw error;
   }

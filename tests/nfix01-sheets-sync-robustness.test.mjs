@@ -443,3 +443,28 @@ test("a failed sync whose failure bookkeeping also throws still surfaces the ori
   assert.equal(leases.completions.length, 0);
   assert.equal(leases.held.size, 0);
 });
+
+test("a failed sync whose lease release also rejects still surfaces the original sync error", async () => {
+  const provider = sheetProvider({ failProjectReplacement: true });
+  const store = persistence({ projects: [projectRow()] });
+  const leases = connectionScopedLeases();
+  const originalFailSyncLease = leases.failSyncLease;
+  let failSyncLeaseAttempts = 0;
+  leases.failSyncLease = async (lease, errorCode, now) => {
+    failSyncLeaseAttempts += 1;
+    await originalFailSyncLease(lease, errorCode, now);
+    throw new Error("lease bookkeeping unavailable");
+  };
+
+  await assert.rejects(
+    sheets.syncGoogleDirectory(
+      liveConfig(),
+      "admin@example.test",
+      dependencies({ provider, store, leases }),
+    ),
+    (error) => error?.code === "sheets_request_failed" && !/lease bookkeeping/.test(error?.message ?? ""),
+  );
+
+  // The release was attempted; its rejection was swallowed so the caller saw the sync error.
+  assert.equal(failSyncLeaseAttempts, 1);
+});
