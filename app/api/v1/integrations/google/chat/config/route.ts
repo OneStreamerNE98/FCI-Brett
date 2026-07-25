@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 import { parseBoundedJsonObject } from "../../../../../../lib/api-json-body";
@@ -8,14 +8,9 @@ import {
   saveSitesGoogleChatRouting,
 } from "../../../../../../lib/google-chat-notifier-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
+import { noStoreJson as json } from "../../../../../../lib/no-store-json";
 
 export const MAX_GOOGLE_CHAT_CONFIG_BODY_BYTES = 8_000;
-const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
-
-function json(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
-}
-
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;

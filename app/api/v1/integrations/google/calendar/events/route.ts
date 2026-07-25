@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import type { D1Database } from "../../../../../../adapters/d1/d1-database";
 import { readGoogleIntegrationVerification } from "../../../../../../adapters/d1/google-integration-verification";
 import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
@@ -8,14 +8,9 @@ import { calendarEventsListedIntegrationEvent } from "../../../../../../lib/goog
 import { listSimulationCalendarEvents } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
+import { noStoreJson as noStore } from "../../../../../../lib/no-store-json";
 
 export const dynamic = "force-dynamic";
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });

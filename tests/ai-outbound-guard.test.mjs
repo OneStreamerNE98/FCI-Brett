@@ -62,26 +62,17 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
   assert.doesNotMatch(tools, /name:\s*["'](?:send|write|create|update|delete)/i);
 
   const route = await read("app/api/v1/assistant/route.ts");
-  assert.match(route, /function noStore\(/);
-  assert.match(route, /function noStoreResponse\(/);
-  assert.match(route, /response\.headers\.set\("Cache-Control", "no-store"\)/);
+  assert.match(route, /import \{ noStoreJson as noStore, noStoreResponse \} from "\.\.\/\.\.\/\.\.\/lib\/no-store-json"/);
+  assert.doesNotMatch(route, /function noStore(?:Response)?\(/);
   assert.match(route, /if \(originError\) return noStoreResponse\(originError\)/);
   assert.match(route, /if \("response" in auth\) return noStoreResponse\(auth\.response\)/);
-  assert.equal(
-    route.match(/NextResponse\.json/g)?.length,
-    1,
-    "route-owned JSON responses must all pass through noStore",
-  );
+  assert.doesNotMatch(route, /NextResponse\.json/);
 
   const taskExtractionRoute = await read(
     "app/api/v1/assistant/extract-tasks/route.ts",
   );
-  assert.match(taskExtractionRoute, /function noStore\(/);
-  assert.match(taskExtractionRoute, /function noStoreResponse\(/);
-  assert.match(
-    taskExtractionRoute,
-    /response\.headers\.set\("Cache-Control", "no-store"\)/,
-  );
+  assert.match(taskExtractionRoute, /import \{ noStoreJson as noStore, noStoreResponse \} from "\.\.\/\.\.\/\.\.\/\.\.\/lib\/no-store-json"/);
+  assert.doesNotMatch(taskExtractionRoute, /function noStore(?:Response)?\(/);
   assert.match(
     taskExtractionRoute,
     /if \(originError\) return noStoreResponse\(originError\)/,
@@ -90,11 +81,11 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     taskExtractionRoute,
     /if \("response" in auth\) return noStoreResponse\(auth\.response\)/,
   );
-  assert.equal(
-    taskExtractionRoute.match(/NextResponse\.json/g)?.length,
-    1,
-    "task-extraction responses must all pass through noStore",
-  );
+  assert.doesNotMatch(taskExtractionRoute, /NextResponse\.json/);
+
+  const noStoreHelper = await read("app/lib/no-store-json.ts");
+  assert.match(noStoreHelper, /NextResponse\.json\(/);
+  assert.match(noStoreHelper, /response\.headers\.set\("Cache-Control", "no-store"\)/);
   assert.doesNotMatch(
     taskExtractionRoute,
     /\bcreateTask\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b/,

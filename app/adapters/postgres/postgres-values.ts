@@ -24,9 +24,6 @@ export function postgresSchemaName(value: unknown = "public") {
   return value;
 }
 
-/** Backwards-compatible descriptive alias for callers that prefer a parser name. */
-export const parsePostgresSchemaName = postgresSchemaName;
-
 /** Returns a safely quoted, schema-qualified name after validating both parts. */
 export function qualifiedPostgresName(schema: unknown, relation: unknown) {
   const safeSchema = postgresSchemaName(schema);
@@ -133,15 +130,6 @@ export function parsePostgresNumericSafeInteger(
   return Number(integer);
 }
 
-export const parsePostgresSafeWholeNumber = parsePostgresNumericSafeInteger;
-
-export function parseNullablePostgresSafeWholeNumber(
-  value: unknown,
-  label = "PostgreSQL numeric",
-) {
-  return parsePostgresNumericSafeInteger(value, label, { nullable: true });
-}
-
 /** Converts a `timestamptz` driver value into a validated epoch-millisecond value. */
 export function parsePostgresTimestamp(value: unknown, label = "PostgreSQL timestamptz") {
   let milliseconds: number;
@@ -158,8 +146,6 @@ export function parsePostgresTimestamp(value: unknown, label = "PostgreSQL times
   }
   return milliseconds;
 }
-
-export const parsePostgresTimestampMs = parsePostgresTimestamp;
 
 /** Allows only the object shape guaranteed by a JSONB object constraint. */
 export function parsePostgresJsonObject(

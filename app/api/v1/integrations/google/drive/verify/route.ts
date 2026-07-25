@@ -1,20 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { GoogleDriveClient } from "../../../../../../lib/google-drive";
-import { mapGoogleIntegrationError } from "../../../../../../lib/google-integration-error";
+import { googleIntegrationErrorResponse } from "../../../../../../lib/google-integration-error";
 import { getEffectiveGoogleRuntimeSetup, getGoogleAccessToken, writeGoogleIntegrationEvent } from "../../../../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
-
-function errorResponse(error: unknown) {
-  const mapped = mapGoogleIntegrationError(error, "The Google Drive workspace could not be verified. Try again.");
-  return noStore(mapped.body, { status: mapped.status });
-}
+import { noStoreJson as noStore, noStoreResponse } from "../../../../../../lib/no-store-json";
 
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
@@ -34,6 +24,6 @@ export async function POST(request: NextRequest) {
     await writeGoogleIntegrationEvent(config, "drive.root_verified", auth.user.email, "workspace", root.id, "mode=workspace");
     return noStore({ verified: true, simulated: false, workspace: { name: root.name, url: root.url, runtimeMode: config.environment } });
   } catch (error) {
-    return errorResponse(error);
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The Google Drive workspace could not be verified. Try again."));
   }
 }

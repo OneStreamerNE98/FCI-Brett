@@ -1,12 +1,13 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { buildProjectDriveBlueprintPlan, GoogleDriveClient } from "../../../../../lib/google-drive";
-import { mapGoogleIntegrationError } from "../../../../../lib/google-integration-error";
+import { googleIntegrationErrorResponse } from "../../../../../lib/google-integration-error";
 import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, getGoogleAccessToken } from "../../../../../lib/google-oauth-sites";
 import { enforceDevelopmentRequestRateLimit } from "../../../../../lib/development-request-rate-limit";
 import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
+import { noStoreJson as noStore, noStoreResponse } from "../../../../../lib/no-store-json";
 
 type ProjectRow = {
   id: string;
@@ -20,17 +21,6 @@ type ProjectRow = {
 type MappingRow = { drive_file_id: string; drive_url: string };
 
 const OPERATION_LEASE_EXISTS = "EXISTS (SELECT 1 FROM google_drive_operations WHERE operation_key = ? AND status = 'in-progress' AND lease_expires_at = ?)";
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
-
-function errorResponse(error: unknown) {
-  const mapped = mapGoogleIntegrationError(error, "The project Drive workspace could not be created. Try again.");
-  return noStore(mapped.body, { status: mapped.status });
-}
 
 function integrationEventStatement(
   connectionKey: string,
@@ -89,7 +79,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
       }
       return noStore({ created: false, driveFolderId: existing.drive_file_id, driveUrl: existing.drive_url, environment: config.environment });
     } catch (error) {
-      return errorResponse(error);
+      return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
     }
   }
   let drive: GoogleDriveClient | null = null;
@@ -97,7 +87,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     try {
       drive = new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
     } catch (error) {
-      return errorResponse(error);
+      return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
     }
   }
 
@@ -194,6 +184,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
       env.DB.prepare("UPDATE google_drive_operations SET status = 'failed', lease_expires_at = NULL, last_error_code = ?, updated_at = ? WHERE operation_key = ? AND status = 'in-progress' AND lease_expires_at = ?")
         .bind(code, Date.now(), operationKey, leaseExpiresAt),
     ]);
-    return errorResponse(error);
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
   }
 }

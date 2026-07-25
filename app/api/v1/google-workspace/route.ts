@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { env } from "cloudflare:workers";
 import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-workspace";
 import { getEffectiveGoogleRuntimeSetup, getGoogleConnectionStatus } from "../../../lib/google-oauth-sites";
@@ -6,14 +6,9 @@ import { readGoogleChatPublicConfig } from "../../../lib/google-chat-notifier-si
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+import { noStoreJson as noStore } from "../../../lib/no-store-json";
 
 const MAX_FOLDER_PLAN_BODY_BYTES = 8_000;
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 function folderPlanText(value: unknown, maximum: number) {
   if (typeof value !== "string") return null;

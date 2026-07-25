@@ -28,6 +28,7 @@ import { JobSiteMapCard } from "./features/maps/JobSiteMapCard";
 import { normalizeJobSiteLocation, type JobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
 import { cachedGetJson, invalidateCachedGet } from "./lib/client-get-cache";
 import { CLIENT_INDUSTRY_OPTIONS, clientIndustryReportState } from "./lib/client-industries";
+import { formatUsd } from "./lib/format-usd";
 import {
   defaultPageLayouts,
   isDefaultPageLayout,
@@ -116,7 +117,6 @@ type CurrentUserSettingsPayload = {
 const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((stage) => LEAD_STAGE_LABELS[stage]);
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
 const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
-const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const projectOperationDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: FLOORING_KPI_TIME_ZONE });
 const projectOperationDateInputFormatter = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: FLOORING_KPI_TIME_ZONE });
 const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
@@ -151,7 +151,7 @@ function displayStatus(value: unknown, fallback: string) {
 }
 
 function money(value: number) {
-  return currencyFormatter.format(value);
+  return formatUsd(value);
 }
 
 function optionalRecordNumber(value: unknown) {

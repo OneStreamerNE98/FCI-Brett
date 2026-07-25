@@ -5,16 +5,6 @@ export const USER_PREFERENCE_KEYS = Object.freeze([
   "pageLayouts",
 ] as const);
 
-const USER_PREFERENCE_KEY_SET = new Set<string>(USER_PREFERENCE_KEYS);
-
-export function isUserPreferenceUpdate(value: unknown): value is Record<string, unknown> {
-  return Boolean(value)
-    && typeof value === "object"
-    && !Array.isArray(value)
-    && Object.keys(value).length > 0
-    && Object.keys(value).every((key) => USER_PREFERENCE_KEY_SET.has(key));
-}
-
 export function normalizeUserDisplayTimezone(value: unknown) {
   if (typeof value !== "string") return null;
   const candidate = value.trim();

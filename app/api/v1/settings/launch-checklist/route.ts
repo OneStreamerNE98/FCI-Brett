@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import type { D1Database } from "../../../../adapters/d1/d1-database";
 import { parseLaunchChecklistUpdate } from "../../../../domain/launch-checklist";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
@@ -7,22 +7,11 @@ import {
   readSitesLaunchChecklist,
   saveSitesLaunchChecklist,
 } from "../../../../lib/launch-checklist-sites";
+import { noStoreJson as json, noStoreResponse } from "../../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 
 export const MAX_LAUNCH_CHECKLIST_BODY_BYTES = 4_000;
-
-function json(body: unknown, status = 200) {
-  return NextResponse.json(body, {
-    status,
-    headers: { "Cache-Control": "no-store" },
-  });
-}
-
-function noStoreResponse(response: Response) {
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);

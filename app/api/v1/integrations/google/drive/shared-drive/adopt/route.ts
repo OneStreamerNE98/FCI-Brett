@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import {
   acquireWorkspaceSetupLease,
@@ -9,7 +9,7 @@ import {
 import { upsertWorkspaceResource } from "../../../../../../../adapters/d1/workspace-resources";
 import { parseBoundedJsonObject } from "../../../../../../../lib/api-json-body";
 import { GoogleDriveClient, type DriveSharedDrive } from "../../../../../../../lib/google-drive";
-import { mapGoogleIntegrationError } from "../../../../../../../lib/google-integration-error";
+import { googleIntegrationErrorResponse } from "../../../../../../../lib/google-integration-error";
 import {
   getEffectiveGoogleRuntimeSetup,
   getGoogleAccessToken,
@@ -18,17 +18,7 @@ import {
 import { GoogleIntegrationError } from "../../../../../../../lib/google-oauth";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../../_workspace-data";
-
-const RESPONSE_HEADERS = { "Cache-Control": "no-store" } as const;
-
-function response(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: RESPONSE_HEADERS });
-}
-
-function errorResponse(error: unknown) {
-  const mapped = mapGoogleIntegrationError(error, "The Shared Drive could not be adopted or verified. Try again.");
-  return response(mapped.body, mapped.status);
-}
+import { noStoreJson as response, noStoreResponse } from "../../../../../../../lib/no-store-json";
 
 function driveId(value: unknown) {
   if (value === undefined) return undefined;
@@ -154,6 +144,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const code = error instanceof GoogleIntegrationError ? error.code : "shared_drive_adopt_failed";
     await failWorkspaceSetupLease(env.DB, lease, code, Date.now());
-    return errorResponse(error);
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The Shared Drive could not be adopted or verified. Try again."));
   }
 }

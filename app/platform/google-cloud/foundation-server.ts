@@ -8,7 +8,6 @@ import type { AddressInfo } from "node:net";
 import type { DatabaseReadinessProbe } from "./database-readiness.ts";
 
 export const CLOUD_RUN_LISTEN_HOST = "0.0.0.0";
-export const CLOUD_RUN_DEFAULT_PORT = 8_080;
 
 export type FoundationServerOptions = {
   readiness: DatabaseReadinessProbe;

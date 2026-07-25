@@ -283,5 +283,3 @@ export async function createSimulationCalendarHold(start: Date) {
   await writeState(state);
   return { event: publicSimulationEvent(event), created: true } as const;
 }
-
-export const WORKSPACE_SIMULATION_ACCOUNT = SIMULATION_ACCOUNT;

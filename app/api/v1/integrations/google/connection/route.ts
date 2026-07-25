@@ -1,13 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { disconnectGoogleConnection, getGoogleConnectionStatus, getGoogleRuntimeConfig, writeGoogleIntegrationEvent } from "../../../../../lib/google-oauth-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
+import { noStoreJson as noStore } from "../../../../../lib/no-store-json";
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });

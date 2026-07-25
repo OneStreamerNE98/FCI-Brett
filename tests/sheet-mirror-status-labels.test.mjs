@@ -4,7 +4,7 @@ import test from "node:test";
 import { sheetMirrorStatusLabel } from "../app/lib/sheet-mirror-status.ts";
 
 const root = new URL("../", import.meta.url);
-const read = (path) => readFile(new URL(path, root), "utf8");
+const read = async (path) => (await readFile(new URL(path, root), "utf8")).replaceAll("\r\n", "\n");
 
 function mirror(clientsStatus, projectsStatus = clientsStatus, reason = null) {
   return {
