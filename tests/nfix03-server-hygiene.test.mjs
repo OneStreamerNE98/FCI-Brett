@@ -29,6 +29,7 @@ const noStoreRoutes = [
   "app/api/v1/projects/[projectId]/drive/route.ts",
   "app/api/v1/settings/launch-checklist/route.ts",
   "app/api/v1/tasks/[taskId]/route.ts",
+  "app/api/v1/tasks/route.ts",
   "app/api/v1/uploads/route.ts",
 ];
 
