@@ -2347,7 +2347,7 @@ green; secret-leak suite green; `npm test` green.
 **Effort:** large. **Cost:** $0 (runtime spend is owner-keyed OpenAI usage).
 
 ### AI-04 · Today view (medium, after AI-01 + AI-02; assistant components only)
-**Status:** In progress — `codex/ai04-today-view`, July 25, 2026.
+**Status:** In review — PR #201, July 25, 2026. Source-only and undeployed.
 **Why:** the owner's core daily ask — open the app and see what to get done
 today. Computed on open; no scheduler (repo law); one surface, no new nav.
 **Do:** `GET /api/v1/assistant/today` (office-gated, `no-store`):
