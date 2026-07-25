@@ -1,0 +1,67 @@
+# FCI Operations — environment variable registry (NAMES ONLY, no real values).
+#
+# This file is the single maintained catalog of every configuration value the
+# app reads. To use it locally: copy to `.dev.vars` (gitignored) and fill in
+# real values there. On the hosted ChatGPT Sites environment, set the same
+# names in the environment settings UI.
+#
+# LAW: real secrets, API keys, tokens, webhook URLs, and client secrets are
+# NEVER committed to this repository, pasted into chat/email, or shown in the
+# app (the UI reports Configured/Missing by name only). This file holds
+# placeholders exclusively.
+
+# ── App access (Sign in with ChatGPT allowlist) ──────────────────────────────
+FCI_OFFICE_EMAILS=owner@example.com            # comma-separated sign-in allowlist
+FCI_OFFICE_DOMAINS=                            # optional: whole-domain allowlist
+FCI_ADMIN_EMAILS=owner@example.com             # Administrator tier (dollar KPIs, settings writes)
+FCI_LOCAL_DEV_USER_EMAIL=owner@example.com     # local dev identity
+FCI_APP_ENVIRONMENT=development
+FCI_DEPLOYMENT_STAGE=development
+
+# ── Session + request limits ─────────────────────────────────────────────────
+FCI_SESSION_SECRET=replace-me                  # or FCI_SESSION_SECRET_FILE (path)
+FCI_REQUEST_RATE_LIMIT_CAPACITY=
+FCI_REQUEST_RATE_LIMIT_REFILL_INTERVAL_MS=
+FCI_REQUEST_RATE_LIMIT_REFILL_TOKENS=
+
+# ── AI assistant (OpenAI) ────────────────────────────────────────────────────
+OPENAI_API_KEY=                                # hosted env settings / .dev.vars ONLY
+OPENAI_MODEL=                                  # optional override
+
+# ── Google Maps (Cloud API key — no Workspace involvement) ───────────────────
+GOOGLE_MAPS_BROWSER_API_KEY=                   # browser key, HTTP-referrer restricted;
+                                               # set it and job-site map embeds go live
+
+# ── Google integration mode ──────────────────────────────────────────────────
+GOOGLE_INTEGRATION_MODE=simulation             # simulation | live (live needs the connector below)
+
+# ── Google Workspace connector (live mode only; see task-checklists/02) ──────
+GOOGLE_WORKSPACE_CLIENT_ID=
+GOOGLE_WORKSPACE_CLIENT_SECRET=                # never in GitHub; hosted settings only
+GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI=
+GOOGLE_WORKSPACE_ALLOWED_DOMAINS=
+GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=          # the one admin-approved company account
+GOOGLE_WORKSPACE_ENABLED_SERVICES=
+GOOGLE_WORKSPACE_SHARED_DRIVE_ID=
+GOOGLE_WORKSPACE_INTAKE_MAILBOX=
+GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=
+GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=
+GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=
+GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY=         # AES-GCM keyring; never in GitHub
+GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION=
+DRIVE_PROVISIONING_ENABLED=
+
+# ── Google Chat notifications (all events off by default) ────────────────────
+GOOGLE_CHAT_NOTIFICATIONS_ENABLED=false
+GOOGLE_CHAT_SALES_WEBHOOK_URL=                 # webhook URLs are secrets; hosted settings only
+GOOGLE_CHAT_OFFICE_OPS_WEBHOOK_URL=
+GOOGLE_CHAT_FIELD_WEBHOOK_URL=
+GOOGLE_CHAT_SERVICE_WEBHOOK_URL=
+
+# ── Production Cloud Run boundary ONLY (unused on the Sites dev site) ────────
+FCI_EMPLOYEE_OIDC_CLIENT_ID=
+FCI_EMPLOYEE_OIDC_CLIENT_SECRET=               # or FCI_EMPLOYEE_OIDC_CLIENT_SECRET_FILE
+FCI_EMPLOYEE_OIDC_REDIRECT_URI=
+FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN=
+FCI_CLOUD_SQL_INSTANCE_CONNECTION_NAME=
+FCI_CLOUD_SQL_IP_TYPE=
