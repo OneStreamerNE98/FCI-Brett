@@ -424,6 +424,8 @@ coordinate/fold into SET-06.
 **Effort:** small. **Cost:** $0.
 
 ### FIX-17 · Post-wave polish sweep (P3 bundle H-10 + H-9; small-medium)
+**Status:** In progress — `codex/fix17-polish-sweep`, July 25, 2026.
+
 **Why:** a cluster of independently-verified low-severity nits — some pre-existing,
 some redesign-orphaned — collectively drag the polish level of the settings and
 overview surfaces. Bundling them into one bounded sweep avoids a swarm of one-line

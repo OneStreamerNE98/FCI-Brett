@@ -389,9 +389,14 @@ test("SET-08 renders computed VERIFIED rows without checkboxes and persisted ATT
     card.indexOf("<h3>Administrator attestations</h3>"),
   );
   const attestedBlock = card.slice(card.indexOf("<h3>Administrator attestations</h3>"));
+  const attestationCheckbox = card.slice(
+    card.indexOf("function AttestationCheckbox"),
+    card.indexOf("function LiveVerificationRow"),
+  );
 
   assert.doesNotMatch(verifiedBlock, /type="checkbox"/u);
-  assert.match(attestedBlock, /type="checkbox"/u);
+  assert.match(attestationCheckbox, /type="checkbox"/u);
+  assert.match(attestedBlock, /<AttestationCheckbox/u);
   assert.match(card, /data-checklist-kind="verified"/u);
   assert.match(card, /data-checklist-kind="attested"/u);
   assert.match(card, /Checked by \{attestation\.actorEmail\} on \{checkedAtLabel\(attestation\.checkedAt\)\}/u);

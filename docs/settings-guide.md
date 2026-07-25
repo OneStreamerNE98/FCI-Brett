@@ -9,7 +9,7 @@ This guide is for two kinds of reader, and it is split so you only need your hal
 
 A short **Glossary** at the end defines the few special terms this guide uses (Shared Drive, blueprint, simulation, and others). Words in the glossary are written in plain language the first time they appear.
 
-> **How current this guide is.** Describes the app as built in source on 2026-07-24; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
+> **How current this guide is.** Describes the app as built in source on 2026-07-25; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
 
 ---
 
@@ -305,7 +305,7 @@ Administrators also see a read-only **Who has access** card. It shows the office
 
 ### 8. Testing & launch
 
-**Updated July 24, 2026.** The **Test & launch checklist** separates two kinds of development evidence. **Verified from live status** rows read the existing Workspace connection, Calendar access, and Client Directory mirror endpoints; they show current status and never have a checkbox. **Administrator attestations** are the human acceptance steps. When an administrator checks one, the app saves the administrator's email and the time, and that attestation remains after reload. The saved-checklist read model is safe and read-only for an office user, while the current company-setup navigation continues to keep this whole panel in the administrator audience. **Updated July 24, 2026:** in the local development simulation those live rows read *Simulated* rather than *Verified*, and the summary reports a simulated environment, because there is no real Google connection to verify against.
+**Updated July 25, 2026.** The **Test & launch checklist** separates two kinds of development evidence. **Verified from live status** rows read the existing Workspace connection, Calendar access, and Client Directory mirror endpoints; they show current status and never have a checkbox. **Administrator attestations** are the human acceptance steps. When an administrator checks one, the app saves the administrator's email and the time, and that attestation remains after reload. While those saved attestations are being checked—or if their read is unavailable—the rows show an honest checking/unavailable state rather than claiming they are not attested. The saved-checklist read model is safe and read-only for an office user, while the current company-setup navigation continues to keep this whole panel in the administrator audience. In the local development simulation those live rows read *Simulated* rather than *Verified*, and the summary reports a simulated environment, because there is no real Google connection to verify against.
 
 This card covers the working development copy only. It links straight to Google Workspace setup, but it does not complete or replace production acceptance. The production gate remains the separately reviewed [Production acceptance checklist](task-checklists/05-acceptance-checklist.md).
 

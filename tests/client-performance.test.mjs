@@ -10,6 +10,15 @@ import {
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
+function sourceSection(source, start, end, label) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(startIndex, -1, `${label} start marker must remain present`);
+  assert.notEqual(endIndex, -1, `${label} end marker must remain present`);
+  assert.ok(endIndex > startIndex, `${label} markers must remain ordered`);
+  return source.slice(startIndex, endIndex);
+}
+
 test("deduplicates in-flight client GETs, reuses fresh data, and invalidates explicitly", async () => {
   const originalFetch = globalThis.fetch;
   let requests = 0;
@@ -76,13 +85,17 @@ test("keeps the bounded initial-load and rendering optimizations in place", asyn
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
   ]);
   const settingsSources = `${myAccount}\n${googleWorkspace}`;
-  const rootComponent = app.slice(
-    app.indexOf("export function FloorOpsApp"),
-    app.indexOf("function LiveDataBanner"),
+  const rootComponent = sourceSection(
+    app,
+    "export function FloorOpsApp",
+    "function LiveDataBanner",
+    "FloorOpsApp root component",
   );
-  const overviewComponent = app.slice(
-    app.indexOf("function Overview"),
-    app.indexOf("function LeadsView"),
+  const overviewComponent = sourceSection(
+    app,
+    "function Overview",
+    "function LeadsView",
+    "Overview component",
   );
 
   assert.match(app, /import \{ formatUsd \} from "\.\/lib\/format-usd"/);

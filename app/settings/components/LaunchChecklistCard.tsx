@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   CircleAlert,
@@ -139,6 +139,32 @@ function checkedAtLabel(value: number) {
   return new Date(value).toLocaleString();
 }
 
+function AttestationCheckbox({
+  checked,
+  disabled,
+  indeterminate,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  indeterminate: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+
+  return <input
+    ref={inputRef}
+    type="checkbox"
+    checked={checked}
+    disabled={disabled}
+    onChange={(event) => onChange(event.currentTarget.checked)}
+  />;
+}
+
 function LiveVerificationRow({
   label,
   description,
@@ -265,6 +291,8 @@ export function LaunchChecklistCard() {
 
   const simulatedEnvironment = Object.values(verifications).every((state) => state === "simulated");
   const verifiedCount = Object.values(verifications).filter((state) => state === "verified").length;
+  const checklistKnown = launchChecklist !== null;
+  const checklistUnavailable = !checklistKnown && Boolean(checklistError);
 
   return <section className={`panel test-launch ${styles.card}`} aria-labelledby="launch-checklist-heading">
     <div className="settings-heading">
@@ -321,22 +349,38 @@ export function LaunchChecklistCard() {
         {LAUNCH_CHECKLIST_ITEMS.map((item) => {
           const attestation = launchChecklist?.[item.itemId];
           const checked = attestation?.checked === true;
-          return <label className={styles.attestationRow} key={item.itemId} data-checklist-kind="attested">
-            <input
-              type="checkbox"
+          const attestationState = checklistKnown
+            ? checked ? "attested" : "not-attested"
+            : checklistUnavailable ? "unavailable" : "checking";
+          return <label
+            className={styles.attestationRow}
+            key={item.itemId}
+            data-attestation-state={attestationState}
+            data-checklist-kind="attested"
+          >
+            <AttestationCheckbox
               checked={checked}
               disabled={!launchChecklist || !canAttest || savingItemId !== null}
-              onChange={(event) => void saveAttestation(item.itemId, event.currentTarget.checked)}
+              indeterminate={!checklistKnown}
+              onChange={(nextChecked) => void saveAttestation(item.itemId, nextChecked)}
             />
             <span className={styles.rowCopy}>
               <strong>{item.label}</strong>
               <small>{item.description}</small>
               {checked && attestation?.actorEmail && attestation.checkedAt
                 ? <small className={styles.auditLine}>Checked by {attestation.actorEmail} on {checkedAtLabel(attestation.checkedAt)}</small>
-                : <small className={styles.auditLine}>Not yet attested</small>}
+                : checklistKnown
+                  ? <small className={styles.auditLine}>Not yet attested</small>
+                  : <small className={styles.auditLine}>
+                    {checklistUnavailable ? "Saved attestation unavailable" : "Checking saved attestation"}
+                  </small>}
             </span>
             <span className={`status ${checked ? "status-connected" : "status-inactive"}`}>
-              {savingItemId === item.itemId ? "Saving" : checked ? "Attested" : "Not attested"}
+              {savingItemId === item.itemId
+                ? "Saving"
+                : checklistKnown
+                  ? checked ? "Attested" : "Not attested"
+                  : checklistUnavailable ? "Unavailable" : "Checking"}
             </span>
           </label>;
         })}

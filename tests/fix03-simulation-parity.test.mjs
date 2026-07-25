@@ -421,7 +421,7 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 
-const [gmailFileRoute, calendarEventsRoute, calendarHoldRoute, resetRoute, sheets, oauthSites, simulation, integrationEvents] = await Promise.all([
+const [gmailFileRoute, calendarEventsRoute, calendarHoldRoute, resetRoute, sheets, oauthSites, simulation, integrationEvents, drive, blueprintModule] = await Promise.all([
   vite.ssrLoadModule("/app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/calendar/events/route.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/calendar/test-hold/route.ts"),
@@ -430,6 +430,8 @@ const [gmailFileRoute, calendarEventsRoute, calendarHoldRoute, resetRoute, sheet
   vite.ssrLoadModule("/app/lib/google-oauth-sites.ts"),
   vite.ssrLoadModule("/app/lib/workspace-simulation.ts"),
   vite.ssrLoadModule("/app/lib/google-integration-events.ts"),
+  vite.ssrLoadModule("/app/lib/google-drive.ts"),
+  vite.ssrLoadModule("/app/lib/workspace-blueprint.ts"),
 ]);
 
 let providerCalls = 0;
@@ -519,7 +521,7 @@ async function configureLive(databaseFixture) {
   };
 }
 
-function installLiveFilingProvider(messageId) {
+function installLiveFilingProvider(messageId, options = {}) {
   const gmailRaw = Buffer.from("From: client@example.test\r\nTo: operations@cherryhillfci.com\r\nSubject: FCI TEST\r\n\r\nTest body").toString("base64url");
   const liveAttachmentBytes = Buffer.from("FCI TEST attachment");
   const folderById = {
@@ -623,7 +625,7 @@ function installLiveFilingProvider(messageId) {
     if (url.hostname === "www.googleapis.com" && url.pathname === "/drive/v3/files" && method === "GET") {
       const query = url.searchParams.get("q") ?? "";
       const name = query.match(/name = '([^']+)'/u)?.[1];
-      const folder = name ? folderForName[name] : null;
+      const folder = name && name !== options.missingFolderName ? folderForName[name] : null;
       return Response.json({ files: folder ? [{
         ...folder,
         mimeType: "application/vnd.google-apps.folder",
@@ -803,6 +805,128 @@ test("shared integration contracts keep live and simulation event-row shapes equ
   );
 });
 
+test("simulation Calendar listing enforces the live seven-day time window", async () => {
+  const fixture = createBehaviorDatabase();
+  const now = new Date("2026-07-25T12:00:00.000Z");
+  const end = new Date("2026-08-01T12:00:00.000Z");
+  fixture.state.simulationState = {
+    id: "fci-workspace",
+    state_json: JSON.stringify({
+      labelsPrepared: true,
+      messages: [],
+      drafts: [],
+      calendarEvents: [
+        { id: "ended-at-start", title: "Ended at start", start: "2026-07-25T11:00:00.000Z", end: now.toISOString() },
+        { id: "overlaps-start", title: "Overlaps start", start: "2026-07-25T11:59:59.999Z", end: "2026-07-25T12:10:00.000Z" },
+        { id: "window-start", title: "Window start", start: now.toISOString(), end: "2026-07-25T12:30:00.000Z" },
+        { id: "inside-late", title: "Inside late", start: "2026-07-31T16:00:00.000Z", end: "2026-07-31T17:00:00.000Z" },
+        { id: "inside-early", title: "Inside early", start: "2026-07-26T16:00:00.000Z", end: "2026-07-26T17:00:00.000Z" },
+        { id: "window-end", title: "Window end", start: end.toISOString(), end: "2026-08-01T12:30:00.000Z" },
+        { id: "invalid", title: "Invalid", start: "not-a-date", end: "not-a-date" },
+      ],
+    }),
+    updated_at: now.getTime(),
+  };
+
+  try {
+    configureSimulation(fixture);
+    const listed = await simulation.listSimulationCalendarEvents(now);
+    assert.deepEqual(listed.window, { start: now.toISOString(), end: end.toISOString() });
+    assert.deepEqual(listed.events.map((event) => event.id), ["overlaps-start", "window-start", "inside-early", "inside-late"]);
+
+    const manyEvents = Array.from({ length: 22 }, (_, index) => ({
+      id: `bounded-${String(index).padStart(2, "0")}`,
+      title: `Bounded ${index}`,
+      start: new Date(now.getTime() + index * 60 * 60 * 1000).toISOString(),
+      end: new Date(now.getTime() + (index + 1) * 60 * 60 * 1000).toISOString(),
+    })).reverse();
+    fixture.state.simulationState.state_json = JSON.stringify({
+      labelsPrepared: true,
+      messages: [],
+      drafts: [],
+      calendarEvents: manyEvents,
+    });
+    const capped = await simulation.listSimulationCalendarEvents(now);
+    assert.equal(capped.events.length, 20);
+    assert.deepEqual(
+      capped.events.map((event) => event.id),
+      Array.from({ length: 20 }, (_, index) => `bounded-${String(index).padStart(2, "0")}`),
+    );
+  } finally {
+    configureSimulation(database);
+  }
+});
+
+test("simulation Gmail filing resolves only blueprint-managed destination folders", () => {
+  const blueprint = blueprintModule.seedWorkspaceBlueprint();
+  const projectRootId = `sim-project-${PROJECT_ID}`;
+  const archive = drive.resolveSimulatedManagedProjectFolderPath(
+    projectRootId,
+    blueprint,
+    ["05_Correspondence", "Email Archive"],
+  );
+  const attachments = drive.resolveSimulatedManagedProjectFolderPath(
+    projectRootId,
+    blueprint,
+    ["05_Correspondence", "Email Attachments"],
+  );
+
+  assert.equal(archive.name, "Email Archive");
+  assert.equal(attachments.name, "Email Attachments");
+  assert.notEqual(archive.id, `${projectRootId}-email-archive`);
+  assert.notEqual(attachments.id, `${projectRootId}-email-attachments`);
+  assert.throws(
+    () => drive.resolveSimulatedManagedProjectFolderPath(
+      projectRootId,
+      blueprint,
+      ["05_Correspondence", "Fabricated destination"],
+    ),
+    (error) => error?.code === "project_drive_folder_missing" && error?.status === 409,
+  );
+});
+
+test("live and simulation filing folder resolution share a fail-closed missing-folder contract", async () => {
+  const blueprint = blueprintModule.seedWorkspaceBlueprint();
+  let simulationError;
+  try {
+    drive.resolveSimulatedManagedProjectFolderPath(
+      `sim-project-${PROJECT_ID}`,
+      blueprint,
+      ["05_Correspondence", "Missing destination"],
+    );
+  } catch (error) {
+    simulationError = error;
+  }
+  assert.equal(simulationError?.code, "project_drive_folder_missing");
+  assert.equal(simulationError?.status, 409);
+
+  const liveDatabase = createBehaviorDatabase();
+  const liveMessageId = "live-msg-missing-folder";
+  liveDatabase.state.mappings = [{
+    id: "live-project-mapping",
+    connection_key: LIVE_CONNECTION,
+    entity_type: "project",
+    entity_id: PROJECT_ID,
+    folder_key: "project-root",
+    drive_file_id: "live-project-root",
+    drive_url: "https://drive.google.test/live-project-root",
+  }];
+  try {
+    await configureLive(liveDatabase);
+    installLiveFilingProvider(liveMessageId, { missingFolderName: "Email Attachments" });
+    const response = await gmailFileRoute.GET(
+      routeRequest(`/api/v1/integrations/google/gmail/messages/${liveMessageId}/file?projectId=${PROJECT_ID}`),
+      { params: Promise.resolve({ messageId: liveMessageId }) },
+    );
+    const body = await response.json();
+    assert.equal(response.status, simulationError.status);
+    assert.equal(body.code, simulationError.code);
+    assert.match(body.error, /Email Attachments is missing/u);
+  } finally {
+    configureSimulation(database);
+  }
+});
+
 test("live and simulation Gmail filing emit the same durable event-row shape", async () => {
   const simulationDatabase = createBehaviorDatabase();
   const liveDatabase = createBehaviorDatabase();
@@ -826,6 +950,23 @@ test("live and simulation Gmail filing emit the same durable event-row shape", a
     );
     assert.equal(simulationResponse.status, 200, JSON.stringify(await simulationResponse.clone().json()));
     const simulationBody = await simulationResponse.json();
+    const simulationBlueprint = blueprintModule.seedWorkspaceBlueprint();
+    assert.equal(
+      simulationDatabase.state.archives[0].email_archive_folder_id,
+      drive.resolveSimulatedManagedProjectFolderPath(
+        `sim-project-${PROJECT_ID}`,
+        simulationBlueprint,
+        ["05_Correspondence", "Email Archive"],
+      ).id,
+    );
+    assert.equal(
+      simulationDatabase.state.archives[0].attachment_folder_id,
+      drive.resolveSimulatedManagedProjectFolderPath(
+        `sim-project-${PROJECT_ID}`,
+        simulationBlueprint,
+        ["05_Correspondence", "Email Attachments"],
+      ).id,
+    );
 
     await configureLive(liveDatabase);
     installLiveFilingProvider(liveMessageId);

@@ -1300,12 +1300,16 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
   const activeProjects = projects.filter(isActiveProject);
   const recordsReady = state === "ready";
   const pendingMetricNote = unavailableMetricNote(state);
-  const todayMeetings = (dashboard?.todayMeetings?.items ?? []).flatMap((meeting) => {
+  const todayMeetingItems = dashboard?.todayMeetings?.items ?? [];
+  const todayMeetings = todayMeetingItems.flatMap((meeting) => {
     const project = projects.find((candidate) => candidate.id === meeting.projectId);
     return project ? [{ meeting, project }] : [];
   });
-  const todayMeetingsTotal = Math.max(todayMeetings.length, dashboard?.todayMeetings?.total ?? 0);
-  const todayMeetingsOverflow = Math.max(0, todayMeetingsTotal - todayMeetings.length);
+  const todayMeetingsHaveDroppedRows = todayMeetings.length !== todayMeetingItems.length;
+  const todayMeetingsTotal = Math.max(todayMeetingItems.length, dashboard?.todayMeetings?.total ?? 0);
+  const todayMeetingsOverflow = todayMeetingsHaveDroppedRows
+    ? 0
+    : Math.max(0, todayMeetingsTotal - todayMeetingItems.length);
   const sectionNodes = {
     metrics: <section className="metrics-grid">
       <Metric label="Active pipeline" value={recordsReady ? money(metrics?.estimatedPipelineValue ?? 0) : "—"} note={recordsReady ? `${metrics?.activeLeads ?? activeLeads.length} open opportunities` : pendingMetricNote} icon={Zap} color="orange" href={recordsReady ? operationsHref("Leads") : undefined} />
@@ -1314,7 +1318,7 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
       <Metric label="Filed emails" value={recordsReady ? String(metrics?.filedEmailCount ?? 0) : "—"} note={recordsReady ? "Emails filed to projects" : pendingMetricNote} icon={Mail} color="violet" href={recordsReady ? operationsHref("Inbox") : undefined} />
     </section>,
     "todays-meetings": <section className="panel report-chart">
-      <PanelHeader title="Today's meetings" subtitle="Today + next up" />
+      <PanelHeader title="Today's meetings" subtitle="Today + upcoming" />
       {todayMeetings.length > 0 ? <ul className="bar-chart" aria-label="Today's and upcoming project meetings">
         {todayMeetings.map(({ meeting, project }) => <li key={meeting.id}>
           <Link
@@ -1332,8 +1336,9 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
             <ChevronRight className="bar-chart-chevron" size={16} aria-hidden="true" />
           </Link>
         </li>)}
-        {todayMeetingsOverflow > 0 && <li><div className="bar-chart-row"><span className="bar-chart-label">and {todayMeetingsOverflow} more…</span><span>Upcoming project meetings</span><strong>Next up</strong><span className="bar-chart-spacer" aria-hidden="true" /></div></li>}
-      </ul> : <OperationsEmptyState variant="table">{state === "ready" ? "No today or upcoming project meetings are saved." : state === "error" ? "Today's meetings are unavailable until live records load." : "Loading today's meetings…"}</OperationsEmptyState>}
+        {todayMeetingsOverflow > 0 && <li><div className="bar-chart-row"><span className="bar-chart-label">and {todayMeetingsOverflow} more…</span><span>Additional saved meetings</span><strong>Upcoming</strong><span className="bar-chart-spacer" aria-hidden="true" /></div></li>}
+        {todayMeetingsHaveDroppedRows && <li><div className="bar-chart-row"><span className="bar-chart-label">Additional meeting count unavailable</span><span>One or more project records did not load.</span><strong>Unavailable</strong><span className="bar-chart-spacer" aria-hidden="true" /></div></li>}
+      </ul> : <OperationsEmptyState variant="table">{state === "ready" && todayMeetingsHaveDroppedRows ? "Saved meetings cannot be displayed until their project records load." : state === "ready" ? "No today or upcoming project meetings are saved." : state === "error" ? "Today's meetings are unavailable until live records load." : "Loading today's meetings…"}</OperationsEmptyState>}
     </section>,
     "lead-pipeline": <div className="panel pipeline-panel">
         <PanelHeader title="Lead pipeline" subtitle={`${activeLeads.length} active records`} action="View all" onAction={() => onView("Leads")} />
@@ -1548,7 +1553,10 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin, layo
 
 function SettingsView({ notify, section, onSection, onTimezoneChange, onCurrentUserSettingsLoaded, rules, projects, userName, userEmail, isAdmin, onGoogleSetup, onAddRule, onUpdateRule, onDeleteRule, sheetMirror, onSyncGoogleSheet, syncingSheet }: { notify: Notify; section: SettingsSection; onSection: (section: SettingsSection) => void; onTimezoneChange: (timezone: string) => void; onCurrentUserSettingsLoaded: (data: CurrentUserSettingsPayload) => void; rules: FilingRuleDraft[]; projects: Project[]; userName: string; userEmail: string; isAdmin: boolean; onGoogleSetup: () => void; onAddRule: () => void; onUpdateRule: (rule: FilingRuleDraft, patch: Partial<Pick<FilingRuleDraft, "enabled" | "priority">>) => Promise<void>; onDeleteRule: (rule: FilingRuleDraft) => Promise<void>; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
   const visibleSection: SettingsSection = isAdmin ? section : "My settings";
-  return <><PageTitle eyebrow="Control center" title="Settings" text={isAdmin ? "Manage your own preferences separately from Workspace and company setup." : "Manage the preferences tied to your signed-in FCI account."} state="In development" />
+  const headingText = isAdmin && visibleSection !== "My settings"
+    ? "Manage shared Workspace, company defaults, security, and launch-readiness settings."
+    : "Manage the preferences tied to your signed-in FCI account.";
+  return <><PageTitle eyebrow="Control center" title="Settings" text={headingText} state="In development" />
     <div className="settings-layout"><SettingsAudienceNavigation section={visibleSection} isAdmin={isAdmin} onSection={onSection} />
       {visibleSection === "My settings" && <MySettingsPanel notify={notify} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onTimezoneChange={onTimezoneChange} onSettingsLoaded={onCurrentUserSettingsLoaded} />}
       {isAdmin && visibleSection === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} isAdmin={isAdmin} />}

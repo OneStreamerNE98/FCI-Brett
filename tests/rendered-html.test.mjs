@@ -5,6 +5,16 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
+
+function sourceSection(source, start, end, label) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(startIndex, -1, `${label} start marker must remain present`);
+  assert.notEqual(endIndex, -1, `${label} end marker must remain present`);
+  assert.ok(endIndex > startIndex, `${label} markers must remain ordered`);
+  return source.slice(startIndex, endIndex);
+}
+
 const appSurfacePaths = [
   "app/FloorOpsApp.tsx",
   "app/assistant/components/AssistantHelpPanel.tsx",
@@ -105,7 +115,7 @@ function selectorTargetsInteractiveControl(selector, interactiveClassNames) {
   if (finalClassNames.some((className) => interactiveClassNames.has(className))) {
     return true;
   }
-  return /\.(?:add-card|primary-button|soft-button|icon-button|[\w-]*(?:action|button|collapse|control|cta|link|remove|tab|toggle|trigger)[\w-]*)\b/i.test(finalCompound);
+  return /\.(?:primary-button|soft-button|icon-button|[\w-]*(?:action|button|collapse|control|cta|link|remove|tab|toggle|trigger)[\w-]*)\b/i.test(finalCompound);
 }
 
 function undersizedFixedControlDeclarations(source, interactiveClassNames) {
@@ -305,8 +315,8 @@ test("keeps the design-critique interaction contracts in the rendered app", asyn
     read("app/assistant/components/AssistantView.tsx"),
     read("app/inbox/components/InboxView.tsx"),
   ]);
-  const reports = shell.slice(shell.indexOf("function ReportBarRow"), shell.indexOf("function SettingsView"));
-  const askBox = assistant.slice(assistant.indexOf('className="ask-box"'), assistant.indexOf("</form>"));
+  const reports = sourceSection(shell, "function ReportBarRow", "function SettingsView", "Reports interaction section");
+  const askBox = sourceSection(assistant, 'className="ask-box"', "</form>", "Assistant ask form");
 
   assert.match(app, /<LeadDrawer lead=\{selectedLead\}/);
   assert.match(app, /function LeadDrawer\(/);
@@ -315,7 +325,11 @@ test("keeps the design-critique interaction contracts in the rendered app", asyn
   assert.match(app, /visibleClients\.map/);
   assert.equal(inbox.match(/inbox-state-strip/g)?.length, 1);
   assert.match(assistant, /className="assistant-project-scope"/);
-  assert.ok(assistant.indexOf('className="assistant-project-scope"') < assistant.indexOf('className="ask-box"'));
+  const projectScopeIndex = assistant.indexOf('className="assistant-project-scope"');
+  const askBoxIndex = assistant.indexOf('className="ask-box"');
+  assert.notEqual(projectScopeIndex, -1, "Assistant project-scope marker must remain present");
+  assert.notEqual(askBoxIndex, -1, "Assistant ask-box marker must remain present");
+  assert.ok(projectScopeIndex < askBoxIndex, "Assistant project scope must remain before the ask box");
   assert.doesNotMatch(askBox, /<select/);
   assert.match(reports, /projectLifecycleOrder\.indexOf/);
   assert.match(reports, /<ul className="bar-chart"/);
@@ -834,8 +848,8 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
     read("app/globals.css"),
     read("docs/full-review-2026-07-21-findings.md"),
   ]);
-  const overview = app.slice(app.indexOf("function Overview"), app.indexOf("function LeadsView"));
-  const reports = app.slice(app.indexOf("function ReportsView"), app.indexOf("function SettingsView"));
+  const overview = sourceSection(app, "function Overview", "function LeadsView", "Overview metric section");
+  const reports = sourceSection(app, "function ReportsView", "function SettingsView", "Reports metric section");
   const metricCall = (source, label) => {
     const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const call = source.match(new RegExp(`<Metric label="${escapedLabel}"[^>]*\\/>`))?.[0];
@@ -847,7 +861,7 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
   assert.match(primitives, /const cardClassName = `metric-card \$\{href \? "metric-card-link" : "metric-card-static"\}/);
   assert.match(primitives, /if \(href\) \{[\s\S]*return <Link className=\{cardClassName\} href=\{href\}>[\s\S]*<ChevronRight className="metric-card-chevron" size=\{16\} aria-hidden="true" \/><\/Link>;/);
   assert.match(primitives, /return <article className=\{cardClassName\}>[\s\S]*<\/article>;/);
-  const metricContent = primitives.slice(primitives.indexOf("const content ="), primitives.indexOf("if (href)"));
+  const metricContent = sourceSection(primitives, "const content =", "if (href)", "Metric content section");
   assert.doesNotMatch(metricContent, /<(?:a|button|Link)\b/);
   assert.doesNotMatch(primitives, /\btrend\b/);
 

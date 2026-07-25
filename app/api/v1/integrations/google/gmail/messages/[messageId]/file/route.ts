@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleDriveClient } from "../../../../../../../../lib/google-drive";
+import { GoogleDriveClient, resolveSimulatedManagedProjectFolderPath } from "../../../../../../../../lib/google-drive";
 import { gmailAttachmentArtifactKey } from "../../../../../../../../lib/google-gmail-artifacts";
 import {
   gmailArchiveApprovedIntegrationEvent,
@@ -11,6 +11,7 @@ import {
 import { googleIntegrationErrorResponse } from "../../../../../../../../lib/google-integration-error";
 import { GoogleIntegrationError, getGoogleAccessToken, type GoogleRuntimeConfig } from "../../../../../../../../lib/google-oauth-sites";
 import { validateGmailMessageId } from "../../../../../../../../lib/google-gmail";
+import type { WorkspaceBlueprint } from "../../../../../../../../lib/workspace-blueprint";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../../lib/workspace-auth";
 import { getWorkspaceGmailClient, gmailErrorResponse, readBoundedJson } from "../../../_route-helpers";
 
@@ -108,7 +109,7 @@ async function sha256Base64Url(bytes: Uint8Array) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-async function loadProjectContext(config: GoogleRuntimeConfig, selectedProjectId: string): Promise<ArchiveProjectContext> {
+async function loadProjectContext(config: GoogleRuntimeConfig, blueprint: WorkspaceBlueprint, selectedProjectId: string): Promise<ArchiveProjectContext> {
   const project = await env.DB.prepare("SELECT p.id, p.project_number, p.name, c.name AS client_name FROM projects p JOIN clients c ON c.id = p.client_id WHERE p.id = ?")
     .bind(selectedProjectId)
     .first<ProjectRow>();
@@ -127,8 +128,8 @@ async function loadProjectContext(config: GoogleRuntimeConfig, selectedProjectId
     return {
       project,
       projectRoot,
-      emailArchiveFolder: { id: `${projectRoot.drive_file_id}-email-archive`, name: "Email Archive" },
-      attachmentFolder: { id: `${projectRoot.drive_file_id}-email-attachments`, name: "Email Attachments" },
+      emailArchiveFolder: resolveSimulatedManagedProjectFolderPath(projectRoot.drive_file_id, blueprint, EMAIL_ARCHIVE_PATH),
+      attachmentFolder: resolveSimulatedManagedProjectFolderPath(projectRoot.drive_file_id, blueprint, EMAIL_ATTACHMENTS_PATH),
       drive: null,
     };
   }
@@ -176,10 +177,10 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mes
     const { messageId } = await context.params;
     const safeMessageId = validateGmailMessageId(messageId);
     const selectedProjectId = projectId(request.nextUrl.searchParams.get("projectId"));
-    const { config, client } = await getWorkspaceGmailClient();
+    const { config, client, blueprint } = await getWorkspaceGmailClient();
     const [existing, workspace, message] = await Promise.all([
       findArchive(config, safeMessageId),
-      loadProjectContext(config, selectedProjectId),
+      loadProjectContext(config, blueprint, selectedProjectId),
       client.getMessageArchive(safeMessageId),
     ]);
     assertArchiveProject(existing, selectedProjectId);
@@ -246,7 +247,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     config = gmail.config;
     const [existing, workspace, message] = await Promise.all([
       findArchive(config, safeMessageId),
-      loadProjectContext(config, selectedProjectId),
+      loadProjectContext(config, gmail.blueprint, selectedProjectId),
       gmail.client.getMessageArchive(safeMessageId),
     ]);
     assertArchiveProject(existing, selectedProjectId);
