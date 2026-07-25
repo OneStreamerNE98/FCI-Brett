@@ -186,7 +186,7 @@ async function readCloseoutFollowUps(
 
 /**
  * One bounded, deterministic Today assembly shared by the route and AI tool.
- * It reads saved records only and never contacts Gmail or another provider.
+ * It reads saved records only and never performs a network read or provider call.
  */
 export async function assembleToday(
   database: D1Database,

@@ -29,6 +29,32 @@ import styles from "./TodayPanel.module.css";
 
 type LoadState = "loading" | "ready" | "error";
 
+type TaskFocusTarget = { taskId: string } | { heading: true };
+
+// The actionable checkboxes render in DOM order: overdue tasks, then due-today
+// tasks. Focus resolution walks that same flat order.
+function orderedTaskIds(assembly: TodayAssembly): string[] {
+  return [...assembly.overdueTasks.items, ...assembly.dueTodayTasks.items].map((task) => task.id);
+}
+
+// After a completed row drops out of the refreshed list, pick the next row still
+// present from completedIndex, then the previous one, and fall back to the stable
+// panel heading when none remain (mirrors AI-07's nextReviewFocus).
+function nextTaskFocus(
+  previousIds: readonly string[],
+  completedIndex: number,
+  remainingIds: readonly string[],
+): TaskFocusTarget {
+  const remaining = new Set(remainingIds);
+  for (let index = completedIndex + 1; index < previousIds.length; index += 1) {
+    if (remaining.has(previousIds[index])) return { taskId: previousIds[index] };
+  }
+  for (let index = Math.min(completedIndex, previousIds.length) - 1; index >= 0; index -= 1) {
+    if (remaining.has(previousIds[index])) return { taskId: previousIds[index] };
+  }
+  return { heading: true };
+}
+
 function dateTimeLabel(timestamp: number, timeZone: string) {
   return new Intl.DateTimeFormat("en-US", {
     timeZone,
@@ -60,6 +86,7 @@ function TaskSection({
   total,
   completingTaskId,
   onComplete,
+  registerControl,
 }: {
   title: string;
   empty: string;
@@ -67,6 +94,7 @@ function TaskSection({
   total: number;
   completingTaskId: string;
   onComplete: (task: TodayTask) => void;
+  registerControl: (taskId: string, node: HTMLInputElement | null) => void;
 }) {
   const overflow = overflowLabel(items.length, total);
   return <section className={styles.section} aria-labelledby={`today-${title.toLowerCase().replaceAll(" ", "-")}`}>
@@ -80,6 +108,7 @@ function TaskSection({
     {items.length === 0 ? <p className={styles.empty}>{empty}</p> : <ul className={styles.rows}>{items.map((task) => <li className={styles.taskRow} key={task.id}>
       <label className={styles.taskControl}>
         <input
+          ref={(node) => registerControl(task.id, node)}
           type="checkbox"
           checked={false}
           disabled={Boolean(completingTaskId)}
@@ -173,10 +202,34 @@ export function TodayPanel() {
   const [announcement, setAnnouncement] = useState("");
   const [taskError, setTaskError] = useState("");
   const loadIdRef = useRef(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const taskControlRefs = useRef(new Map<string, HTMLInputElement>());
+  const pendingFocusRef = useRef<TaskFocusTarget | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const registerTaskControl = useCallback((taskId: string, node: HTMLInputElement | null) => {
+    if (node) taskControlRefs.current.set(taskId, node);
+    else taskControlRefs.current.delete(taskId);
+  }, []);
+
+  // Resolve deferred focus once controls are re-enabled after an in-place refresh.
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (!pending || completingTaskId) return;
+    pendingFocusRef.current = null;
+    const target = "taskId" in pending
+      ? taskControlRefs.current.get(pending.taskId)
+      : headingRef.current;
+    target?.focus();
+  });
+
+  const load = useCallback(async (
+    options?: { signal?: AbortSignal; silent?: boolean },
+  ): Promise<TodayAssembly | undefined> => {
+    const signal = options?.signal;
     const loadId = ++loadIdRef.current;
-    setState("loading");
+    // A silent reload (the completion path) keeps the current list mounted while
+    // fresh data loads instead of swapping in the loading empty state.
+    if (!options?.silent) setState("loading");
     setError("");
     try {
       const response = await fetch("/api/v1/assistant/today", {
@@ -190,8 +243,11 @@ export function TodayPanel() {
       if (loadId !== loadIdRef.current) return;
       setToday(data);
       setState("ready");
+      return data;
     } catch (loadError) {
       if (signal?.aborted || loadId !== loadIdRef.current) return;
+      // Stale-while-revalidate: a failed background refresh keeps the stale list.
+      if (options?.silent) return;
       setToday(null);
       setState("error");
       setError(loadError instanceof Error ? loadError.message : "Today could not be loaded.");
@@ -200,7 +256,7 @@ export function TodayPanel() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.resolve().then(() => load(controller.signal));
+    void Promise.resolve().then(() => load({ signal: controller.signal }));
     return () => controller.abort();
   }, [load]);
 
@@ -211,16 +267,18 @@ export function TodayPanel() {
       currentTimestamp,
       today.displayTimezone,
     ).day === today.day;
-    const timeoutId = window.setTimeout(
-      () => void load(),
-      responseIsCurrent
-        ? localDayRolloverDelay(currentTimestamp, today.displayTimezone)
-        : 0,
-    );
+    const rolloverDelay = responseIsCurrent
+      ? localDayRolloverDelay(currentTimestamp, today.displayTimezone)
+      : 0;
+    // Floor the corrective re-read at the same 1s minimum localDayRolloverDelay
+    // enforces so clock skew can't cause back-to-back refetch hammering.
+    const timeoutId = window.setTimeout(() => void load(), Math.max(1_000, rolloverDelay));
     return () => window.clearTimeout(timeoutId);
   }, [load, today]);
 
   async function completeTask(task: TodayTask) {
+    const previousIds = today ? orderedTaskIds(today) : [];
+    const completedIndex = previousIds.indexOf(task.id);
     setCompletingTaskId(task.id);
     setAnnouncement("");
     setTaskError("");
@@ -233,7 +291,13 @@ export function TodayPanel() {
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "The task could not be completed.");
       setAnnouncement(`${task.title} completed.`);
-      await load();
+      const refreshed = await load({ silent: true });
+      if (refreshed && completedIndex >= 0) {
+        const remainingIds = orderedTaskIds(refreshed);
+        if (!remainingIds.includes(task.id)) {
+          pendingFocusRef.current = nextTaskFocus(previousIds, completedIndex, remainingIds);
+        }
+      }
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : "The task could not be completed.";
       setTaskError(message);
@@ -242,37 +306,45 @@ export function TodayPanel() {
     }
   }
 
+  const savedWorkCount = today
+    ? today.overdueTasks.total
+      + today.dueTodayTasks.total
+      + today.meetings.total
+      + today.leadFollowUps.total
+      + today.closeoutFollowUps.total
+    : 0;
+
+  let content;
   if (state === "loading") {
-    return <OperationsEmptyState variant="page"><RefreshCw className={styles.spinner} size={24} aria-hidden="true" /><h2>Loading today&apos;s saved records…</h2><p>Checking tasks, meetings, leads, and closeout follow-ups.</p></OperationsEmptyState>;
+    content = <OperationsEmptyState variant="page"><RefreshCw className={styles.spinner} size={24} aria-hidden="true" /><h2>Loading today&apos;s saved records…</h2><p>Checking tasks, meetings, leads, and closeout follow-ups.</p></OperationsEmptyState>;
+  } else if (state === "error" || !today) {
+    content = <OperationsEmptyState variant="page" tone="error"><CircleAlert size={24} aria-hidden="true" /><h2>Today is unavailable</h2><p>{error || "Today could not be loaded."}</p><button className="soft-button" type="button" onClick={() => void load()}>Try again</button></OperationsEmptyState>;
+  } else {
+    content = <>
+      <section className={styles.summary} aria-labelledby="today-summary-title">
+        <div><p className="eyebrow">Saved-record snapshot</p><h2 id="today-summary-title" ref={headingRef} tabIndex={-1}>{savedWorkCount === 0 ? "Nothing due in saved records" : `${savedWorkCount} saved item${savedWorkCount === 1 ? "" : "s"} to review`}</h2><p>Computed when you open this page in {today.displayTimezone}. No scheduler or Gmail search runs here.</p></div>
+        <CheckCircle2 size={24} aria-hidden="true" />
+      </section>
+      <div className={styles.grid}>
+        <TaskSection title="Overdue tasks" empty="No open tasks are overdue." items={today.overdueTasks.items} total={today.overdueTasks.total} completingTaskId={completingTaskId} onComplete={(task) => void completeTask(task)} registerControl={registerTaskControl} />
+        <TaskSection title="Due today" empty="No open tasks are due today." items={today.dueTodayTasks.items} total={today.dueTodayTasks.total} completingTaskId={completingTaskId} onComplete={(task) => void completeTask(task)} registerControl={registerTaskControl} />
+        <MeetingSection items={today.meetings.items} total={today.meetings.total} timeZone={today.displayTimezone} />
+        <LeadFollowUpSection items={today.leadFollowUps.items} total={today.leadFollowUps.total} timeZone={today.displayTimezone} />
+        <CloseoutFollowUpSection items={today.closeoutFollowUps.items} total={today.closeoutFollowUps.total} timeZone={today.displayTimezone} />
+        <section className={`${styles.section} ${styles.inbox}`} aria-labelledby="today-inbox">
+          <header><div><Inbox size={18} aria-hidden="true" /><h2 id="today-inbox">{today.inbox.label}</h2></div></header>
+          <Link href={today.inbox.href}><span><strong>{today.inbox.detail}</strong><small>Review messages without guessing a count.</small></span><ChevronRight size={16} aria-hidden="true" /></Link>
+        </section>
+      </div>
+    </>;
   }
 
-  if (state === "error" || !today) {
-    return <OperationsEmptyState variant="page" tone="error"><CircleAlert size={24} aria-hidden="true" /><h2>Today is unavailable</h2><p>{error || "Today could not be loaded."}</p><button className="soft-button" type="button" onClick={() => void load()}>Try again</button></OperationsEmptyState>;
-  }
-
-  const savedWorkCount = today.overdueTasks.total
-    + today.dueTodayTasks.total
-    + today.meetings.total
-    + today.leadFollowUps.total
-    + today.closeoutFollowUps.total;
-
+  // One live region and one task-error region stay mounted across every state so
+  // completion announcements render into an already-present region and focus can
+  // fall back to the panel heading.
   return <div className={styles.panel}>
     <p className={styles.visuallyHidden} role="status" aria-live="polite">{announcement}</p>
     {taskError && <p className={styles.taskError} role="alert">{taskError}</p>}
-    <section className={styles.summary} aria-labelledby="today-summary-title">
-      <div><p className="eyebrow">Saved-record snapshot</p><h2 id="today-summary-title">{savedWorkCount === 0 ? "Nothing due in saved records" : `${savedWorkCount} saved item${savedWorkCount === 1 ? "" : "s"} to review`}</h2><p>Computed when you open this page in {today.displayTimezone}. No scheduler or Gmail search runs here.</p></div>
-      <CheckCircle2 size={24} aria-hidden="true" />
-    </section>
-    <div className={styles.grid}>
-      <TaskSection title="Overdue tasks" empty="No open tasks are overdue." items={today.overdueTasks.items} total={today.overdueTasks.total} completingTaskId={completingTaskId} onComplete={(task) => void completeTask(task)} />
-      <TaskSection title="Due today" empty="No open tasks are due today." items={today.dueTodayTasks.items} total={today.dueTodayTasks.total} completingTaskId={completingTaskId} onComplete={(task) => void completeTask(task)} />
-      <MeetingSection items={today.meetings.items} total={today.meetings.total} timeZone={today.displayTimezone} />
-      <LeadFollowUpSection items={today.leadFollowUps.items} total={today.leadFollowUps.total} timeZone={today.displayTimezone} />
-      <CloseoutFollowUpSection items={today.closeoutFollowUps.items} total={today.closeoutFollowUps.total} timeZone={today.displayTimezone} />
-      <section className={`${styles.section} ${styles.inbox}`} aria-labelledby="today-inbox">
-        <header><div><Inbox size={18} aria-hidden="true" /><h2 id="today-inbox">{today.inbox.label}</h2></div></header>
-        <Link href={today.inbox.href}><span><strong>{today.inbox.detail}</strong><small>Review messages without guessing a count.</small></span><ChevronRight size={16} aria-hidden="true" /></Link>
-      </section>
-    </div>
+    {content}
   </div>;
 }

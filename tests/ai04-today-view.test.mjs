@@ -349,6 +349,7 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(routeSource, /requireOfficeUser\(request\)/u);
   assert.match(routeSource, /noStoreJson\(today\)/u);
   assert.doesNotMatch(routeSource, /gmail|fetch\(/iu);
+  assert.doesNotMatch(assembly, /gmail|fetch\(/iu);
   assert.match(assembly, /href: "\/inbox\?bucket=needs-review"/u);
   assert.match(tools, /todayEvidence\(await assembleToday\(database/u);
   assert.doesNotMatch(tools, /current UTC date|timeZone: "UTC"/u);
@@ -364,7 +365,22 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(panel, /if \(signal\?\.aborted \|\| loadId !== loadIdRef\.current\) return;/u);
   assert.match(panel, /fetch\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(task\.id\)\}`[\s\S]*method: "PATCH"[\s\S]*body: JSON\.stringify\(\{ status: "done" \}\)/u);
   assert.match(panel, /if \(!response\.ok\) throw new Error\(data\.error \?\? "The task could not be completed\."\)/u);
-  assert.match(panel, /setAnnouncement\(`\$\{task\.title\} completed\.`\);\s+await load\(\);/u);
+  // Completion refreshes in place: a silent reload keeps the current list mounted
+  // instead of swapping in the loading empty state.
+  assert.match(panel, /setAnnouncement\(`\$\{task\.title\} completed\.`\);\s+const refreshed = await load\(\{ silent: true \}\);/u);
+  assert.match(panel, /if \(!options\?\.silent\) setState\("loading"\);/u);
+  // One live region stays mounted across every state (loading/error/ready), so
+  // the announcement renders into an already-present region — it is the first
+  // child of the always-rendered panel wrapper, before the state-dependent body.
+  assert.match(panel, /return <div className=\{styles\.panel\}>\s*<p className=\{styles\.visuallyHidden\} role="status" aria-live="polite">\{announcement\}<\/p>[\s\S]*\{content\}/u);
+  // The loading empty state is assigned to content, not returned early, so it can
+  // only appear on the initial mount — never as a completion side effect.
+  assert.match(panel, /content = <OperationsEmptyState variant="page"><RefreshCw/u);
+  // Deterministic focus after a completed row drops out: next actionable row,
+  // else previous, else the panel heading.
+  assert.match(panel, /pendingFocusRef\.current = nextTaskFocus\(previousIds, completedIndex, remainingIds\);/u);
+  assert.match(panel, /return \{ heading: true \};/u);
+  assert.match(panel, /<h2 id="today-summary-title" ref=\{headingRef\} tabIndex=\{-1\}>/u);
   assert.match(panel, /Loading today&apos;s saved records…/u);
   assert.match(panel, /<h2>Today is unavailable<\/h2>/u);
   assert.match(panel, /Nothing due in saved records/u);
@@ -379,7 +395,7 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(app, /localDayRolloverDelay\(Date\.now\(\), displayTimezone\)/u);
   assert.match(app, /window\.clearTimeout\(timeoutId\)/u);
   assert.match(app, /onMeetingRecorded=\{\(\) => void refreshDashboardSnapshot\(\)/u);
-  assert.match(panel, /const currentTimestamp = Date\.now\(\);[\s\S]*calendarDateRange\(\s*currentTimestamp,\s*today\.displayTimezone,\s*\)\.day === today\.day;[\s\S]*responseIsCurrent\s*\? localDayRolloverDelay\(currentTimestamp, today\.displayTimezone\)\s*: 0,/u);
+  assert.match(panel, /const currentTimestamp = Date\.now\(\);[\s\S]*calendarDateRange\(\s*currentTimestamp,\s*today\.displayTimezone,\s*\)\.day === today\.day;[\s\S]*responseIsCurrent\s*\? localDayRolloverDelay\(currentTimestamp, today\.displayTimezone\)\s*: 0;[\s\S]*window\.setTimeout\(\(\) => void load\(\), Math\.max\(1_000, rolloverDelay\)\)/u);
   assert.match(goldens, /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "ba8255dba5b118c91ec0d1a478c4aede9303238f0ca9c9708bea2d4b890f018b";/u);
   assert.match(goldens, /const REPORTS_LEGACY_SECTIONS_SHA256 = "4ba01e91ed4a31e0b6da7a0a6ec2334894145cddaacf63bc99e24efd30b999b6";/u);
 });
