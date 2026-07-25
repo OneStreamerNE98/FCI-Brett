@@ -124,6 +124,15 @@ const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. valu
 const CLIENT_ACTIONABLE_COLUMNS = ["Client", "Primary contact", "Projects", ""] as const;
 const PROJECT_ACTIONABLE_COLUMNS = ["Project", "Status", "Schedule & site", "Value", ""] as const;
 const MOBILE_TOPBAR_SCROLL_THRESHOLD = 8;
+const SUCCESS_INFO_SUPPRESSION_MS = 2_000;
+// Constraint: success-window suppression may only ever swallow these two post-success reload
+// notices (workspace-readiness refresh after a simulation reset, and the inbox message reload
+// after a Gmail filing). Any info toast that does not match one of these must always render —
+// unrelated info feedback (e.g. "already at the final pipeline stage") must never be dropped.
+const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp[] = [
+  /^Workspace readiness refreshed\. Current status is shown above\.$/u,
+  /^Loaded \d+ messages? from .+\.$/u,
+];
 const focusableControlSelector = [
   "a[href]",
   "button:not([disabled])",
@@ -269,6 +278,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [pageLayoutsReady, setPageLayoutsReady] = useState(false);
   const [pageLayoutsError, setPageLayoutsError] = useState("");
   const pageLayoutsLoadIdRef = useRef(0);
+  const directoryLoadIdRef = useRef(0);
   const dashboardRefreshLoadIdRef = useRef(0);
   const dashboardAppliedLoadIdRef = useRef(0);
   const dashboardTimezoneRef = useRef(displayTimezone);
@@ -286,6 +296,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const notificationsMenuRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const activeToastRef = useRef<{ kind: NotificationKind; shownAt: number } | null>(null);
   const projectDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const clientDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
   const leadDrawerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -332,6 +343,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   }, [isAdmin, router, settingsArea, view]);
 
   const refreshDirectoryData = useCallback(() => {
+    const directoryLoadId = ++directoryLoadIdRef.current;
     const dashboardLoadId = ++dashboardRefreshLoadIdRef.current;
     async function getJson(path: string) {
       const response = await fetch(path, { headers: { Accept: "application/json" } });
@@ -352,10 +364,12 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     // Requests start synchronously; loading state moves to a microtask so the
     // mount effect does not cause a cascading render before I/O begins.
     void Promise.resolve().then(() => {
+      if (directoryLoadId !== directoryLoadIdRef.current) return;
       setLiveDataState("loading");
       setLiveDataError("");
     });
     return directoryRequests.then(([leadData, clientData, projectData, dashboardData]) => {
+      if (directoryLoadId !== directoryLoadIdRef.current) return;
       const leadRows = Array.isArray(leadData.leads) ? leadData.leads as Record<string, unknown>[] : [];
       const clientRows = Array.isArray(clientData.clients) ? clientData.clients as Record<string, unknown>[] : [];
       const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
@@ -384,6 +398,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       setLiveDataState("ready");
 
       void optionalRequests.then(([ruleResult, mirrorResult]) => {
+        if (directoryLoadId !== directoryLoadIdRef.current) return;
         if (ruleResult.status === "fulfilled") {
           const ruleRows = Array.isArray(ruleResult.value.rules) ? ruleResult.value.rules as Record<string, unknown>[] : [];
           setFilingRules(ruleRows.filter((rule) => rule && typeof rule === "object").map((rule) => ({ id: rule.id ? String(rule.id) : undefined, name: String(rule.name), enabled: Boolean(rule.enabled), priority: Number(rule.priority), matchSummary: String(rule.matchSummary ?? rule.match_summary), action: String(rule.action) as FilingRuleDraft["action"], targetCategory: String(rule.targetCategory ?? rule.target_category), approvalRequired: Boolean(rule.approvalRequired ?? rule.approval_required) })));
@@ -396,6 +411,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         // must never replace successfully loaded CRM records with a global error.
       });
     }).catch((error) => {
+      if (directoryLoadId !== directoryLoadIdRef.current) return;
       setLiveDataState("error");
       setLiveDataError(error instanceof Error ? error.message : "Live application data could not be loaded.");
     });
@@ -665,17 +681,30 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       window.clearTimeout(toastTimerRef.current);
       toastTimerRef.current = null;
     }
+    activeToastRef.current = null;
     setToast(null);
   }, []);
 
   const notify = useCallback<Notify>((message, kind = "info", action) => {
+    const shownAt = Date.now();
+    const activeToast = activeToastRef.current;
+    if (kind === "info"
+      && activeToast?.kind === "success"
+      && shownAt - activeToast.shownAt < SUCCESS_INFO_SUPPRESSION_MS
+      && SUPPRESSIBLE_FOLLOW_UP_INFO.some((pattern) => pattern.test(message))) {
+      return;
+    }
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = null;
+    const nextActiveToast = { kind, shownAt };
+    activeToastRef.current = nextActiveToast;
     setToast({ message, kind, action });
     if (kind !== "error") {
       const duration = kind === "warning" ? 8_000 : kind === "info" ? 5_000 : 3_200;
       toastTimerRef.current = window.setTimeout(() => {
+        if (activeToastRef.current !== nextActiveToast) return;
         toastTimerRef.current = null;
+        activeToastRef.current = null;
         setToast(null);
       }, duration);
     }
@@ -683,6 +712,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
 
   useEffect(() => () => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    activeToastRef.current = null;
   }, []);
 
   async function addLead(lead: Lead) {
@@ -1689,6 +1719,15 @@ function formatMeetingDate(value: string) {
   return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+function compareProjectMeetingsDescending(left: ProjectMeeting, right: ProjectMeeting) {
+  const leftMeetingAt = Date.parse(left.meetingAt);
+  const rightMeetingAt = Date.parse(right.meetingAt);
+  const leftSortValue = Number.isNaN(leftMeetingAt) ? Number.NEGATIVE_INFINITY : leftMeetingAt;
+  const rightSortValue = Number.isNaN(rightMeetingAt) ? Number.NEGATIVE_INFINITY : rightMeetingAt;
+  if (leftSortValue !== rightSortValue) return rightSortValue - leftSortValue;
+  return right.createdAt - left.createdAt;
+}
+
 async function fetchProjectMeetings(projectId: string) {
   const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/meetings`);
   const data = await response.json().catch(() => ({})) as { meetings?: ProjectMeeting[]; error?: string };
@@ -1729,7 +1768,10 @@ function ProjectMeetings({ project, notify, onMeetingRecorded }: { project: Proj
   }, [project.id]);
 
   function savedMeeting(meeting: ProjectMeeting) {
-    setMeetings((current) => [meeting, ...current]);
+    setMeetings((current) => [
+      meeting,
+      ...current.filter((currentMeeting) => currentMeeting.id !== meeting.id),
+    ].sort(compareProjectMeetingsDescending));
     setAdding(false);
     onMeetingRecorded();
     notify(`${meeting.title} saved to ${project.number}`, "success");

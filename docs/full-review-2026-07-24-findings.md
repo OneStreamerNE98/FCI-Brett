@@ -378,6 +378,8 @@ fields). New.
 **Effort:** small. **Cost:** $0.
 
 ### FIX-15 · Single-slot toast clobbers (P3 H-6; small)
+**Status:** In review — PR #206, July 25, 2026. Includes N7-7/N7-8 folds. Source-only and undeployed. Guide impact: none.
+
 **Why:** `notify()` is single-slot, so a success confirmation is overwritten within
 ~120ms by a follow-up info toast — the simulation-reset "restored N messages"
 confirmation and the Gmail filing-success "copied + labeled + inbox-retained"
