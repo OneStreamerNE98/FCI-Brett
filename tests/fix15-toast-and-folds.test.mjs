@@ -39,6 +39,53 @@ test("FIX-15 keeps a fresh success toast ahead of immediate informational follow
   assert.match(notify, /if \(activeToastRef\.current !== nextActiveToast\) return;[\s\S]+activeToastRef\.current = null;[\s\S]+setToast\(null\);/u);
 });
 
+test("FIX-15 scopes success-window suppression to the two reload follow-up notices", async () => {
+  const app = await source(appPath);
+  const notify = sliceBetween(app, "const notify = useCallback<Notify>", "useEffect(() => () => {");
+
+  // The allowlist exists and gates the suppression early return.
+  assert.match(app, /const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp\[\] = \[/u);
+  assertOrdered(
+    notify,
+    "shownAt - activeToast.shownAt < SUCCESS_INFO_SUPPRESSION_MS",
+    "SUPPRESSIBLE_FOLLOW_UP_INFO.some((pattern) => pattern.test(message))",
+    "the early return must also require the info message to match the follow-up allowlist",
+  );
+  assertOrdered(
+    notify,
+    "SUPPRESSIBLE_FOLLOW_UP_INFO.some((pattern) => pattern.test(message))",
+    "return;",
+    "the allowlist gate must sit inside the suppression early return",
+  );
+
+  // Behavioral pin: reconstruct the allowlist from source and confirm it swallows the two real
+  // post-success reload notices but never an arbitrary info message.
+  const allowlistBlock = sliceBetween(app, "const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp[] = [", "];");
+  const patterns = [...allowlistBlock.matchAll(/\/(\^[\s\S]*?\$)\/([a-z]*)/gu)].map(
+    ([, body, flags]) => new RegExp(body, flags),
+  );
+  assert.equal(patterns.length, 2, "expected exactly two follow-up reload patterns");
+
+  const matchesAllowlist = (message) => patterns.some((pattern) => pattern.test(message));
+  assert.ok(
+    matchesAllowlist("Workspace readiness refreshed. Current status is shown above."),
+    "the workspace-readiness refresh notice must stay suppressible",
+  );
+  assert.ok(
+    matchesAllowlist("Loaded 1 message from Inbox."),
+    "the singular inbox reload notice must stay suppressible",
+  );
+  assert.ok(
+    matchesAllowlist("Loaded 12 messages from FCI/Needs Review."),
+    "the plural inbox reload notice must stay suppressible",
+  );
+  assert.equal(
+    matchesAllowlist("Steel City Flooring is already at the final pipeline stage"),
+    false,
+    "an arbitrary info message must never be swallowed by success-window suppression",
+  );
+});
+
 test("N7-7 fences every directory refresh outcome without merging AI-04 dashboard arbitration", async () => {
   const app = await source(appPath);
   const refresh = sliceBetween(app, "const refreshDirectoryData = useCallback", "const refreshDashboardSnapshot = useCallback");

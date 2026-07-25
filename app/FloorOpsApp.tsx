@@ -125,6 +125,14 @@ const CLIENT_ACTIONABLE_COLUMNS = ["Client", "Primary contact", "Projects", ""] 
 const PROJECT_ACTIONABLE_COLUMNS = ["Project", "Status", "Schedule & site", "Value", ""] as const;
 const MOBILE_TOPBAR_SCROLL_THRESHOLD = 8;
 const SUCCESS_INFO_SUPPRESSION_MS = 2_000;
+// Constraint: success-window suppression may only ever swallow these two post-success reload
+// notices (workspace-readiness refresh after a simulation reset, and the inbox message reload
+// after a Gmail filing). Any info toast that does not match one of these must always render —
+// unrelated info feedback (e.g. "already at the final pipeline stage") must never be dropped.
+const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp[] = [
+  /^Workspace readiness refreshed\. Current status is shown above\.$/u,
+  /^Loaded \d+ messages? from .+\.$/u,
+];
 const focusableControlSelector = [
   "a[href]",
   "button:not([disabled])",
@@ -682,7 +690,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     const activeToast = activeToastRef.current;
     if (kind === "info"
       && activeToast?.kind === "success"
-      && shownAt - activeToast.shownAt < SUCCESS_INFO_SUPPRESSION_MS) {
+      && shownAt - activeToast.shownAt < SUCCESS_INFO_SUPPRESSION_MS
+      && SUPPRESSIBLE_FOLLOW_UP_INFO.some((pattern) => pattern.test(message))) {
       return;
     }
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
