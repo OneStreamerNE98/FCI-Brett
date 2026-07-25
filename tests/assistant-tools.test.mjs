@@ -604,12 +604,13 @@ function capResolver(kind, sql) {
   return [];
 }
 
-test("every normative tool enforces its output cap and today captures UTC now once", async () => {
+test("every normative tool enforces its output cap and Today captures display-timezone now once", async () => {
   let nowCalls = 0;
   const registry = createAssistantToolRegistry({
     database: new FakeDatabase(capResolver),
     connectionKey: "workspace",
     isAdmin: true,
+    timeZone: "America/Chicago",
     now: () => {
       nowCalls += 1;
       return Date.UTC(2026, 6, 23, 12);

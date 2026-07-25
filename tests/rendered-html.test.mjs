@@ -9,6 +9,7 @@ const appSurfacePaths = [
   "app/FloorOpsApp.tsx",
   "app/assistant/components/AssistantHelpPanel.tsx",
   "app/assistant/components/AssistantView.tsx",
+  "app/assistant/components/TodayPanel.tsx",
   "app/inbox/components/GmailReplyModal.tsx",
   "app/inbox/components/InboxView.tsx",
   "app/settings/components/AiAssistantSettingsCard.tsx",
@@ -1010,7 +1011,7 @@ test("captures durable project meetings and bounded Otter evidence", async () =>
   assert.match(meetingAdapter, /INSERT INTO activity_events/);
   assert.match(meetingOperations, /Meeting notes captured/);
 
-  assert.match(app, /<ProjectMeetings project=\{project\} notify=\{notify\} \/>/);
+  assert.match(app, /<ProjectMeetings project=\{project\} notify=\{notify\} onMeetingRecorded=\{onMeetingRecorded\} \/>/);
   assert.match(app, /Recommended Otter workflow/);
   assert.match(app, /Capture meeting notes/);
   assert.match(app, /name="sourceUrl"/);

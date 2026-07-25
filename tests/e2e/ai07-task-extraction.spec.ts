@@ -45,6 +45,15 @@ async function mockAssistantConfig(
   });
 }
 
+async function openAsk(page: Page) {
+  await page.goto("/assistant");
+  const askTab = page.getByRole("tab", { name: "Ask", exact: true });
+  await expect(async () => {
+    await askTab.click();
+    await expect(askTab).toHaveAttribute("aria-selected", "true", { timeout: 500 });
+  }).toPass({ intervals: [100, 250, 500], timeout: 10_000 });
+}
+
 test("meeting task proposals stay review-first until each explicit Accept", async ({ page }) => {
   const extractionRequests: Array<Record<string, unknown>> = [];
   const taskRequests: Array<Record<string, unknown>> = [];
@@ -94,7 +103,7 @@ test("meeting task proposals stay review-first until each explicit Accept", asyn
     });
   });
 
-  await page.goto("/assistant");
+  await openAsk(page);
   const review = page.getByRole("region", { name: "Review proposed tasks" });
   await expect(review.getByLabel("Saved meeting")).toContainText(
     "FCI TEST — DO NOT USE task review",
@@ -167,7 +176,7 @@ test("accept and dismiss resolve focus deterministically and announce created ta
     });
   });
 
-  await page.goto("/assistant");
+  await openAsk(page);
   const review = page.getByRole("region", { name: "Review proposed tasks" });
 
   await review.getByRole("button", {
@@ -224,7 +233,7 @@ test("configured-off task extraction is disabled with its cause before a request
     await route.abort();
   });
 
-  await page.goto("/assistant");
+  await openAsk(page);
   const review = page.getByRole("region", { name: "Review proposed tasks" });
   await expect(review.getByText(
     "Task extraction is turned off in AI settings.",
@@ -241,7 +250,7 @@ test("a missing key keeps the deterministic records-only review action available
   await mockMeetingList(page);
   await mockAssistantConfig(page, "Missing", false);
 
-  await page.goto("/assistant");
+  await openAsk(page);
   const review = page.getByRole("region", { name: "Review proposed tasks" });
   await expect(review.getByRole("button", {
     name: "Review saved action items",
