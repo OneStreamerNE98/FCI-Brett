@@ -180,7 +180,7 @@ change on success paths.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-03 · Server hygiene sweep: response-helper and formatter consolidation, dead-export removal (small)
-**Status:** Blocked — awaiting owner dispatch; BE-15 hold released (merged PR #181, July 24, 2026), paste now HELD until the AI-02 serial slot clears — the formatUsd adoption touches FloorOpsApp.tsx, owned by AI-02's sub-PRs b/c.
+**Status:** Blocked — awaiting owner dispatch; ALL holds released (BE-15 merged PR #181; AI-02 series complete through PR #193, July 24, 2026) — Codex paste ready, zone clear of open lanes.
 
 **Why:** N6-2/N6-4 — one four-line `noStore` helper exists ~22×, the Google
 error-response wrapper 8×, USD formatting has no home, and eight exports are
