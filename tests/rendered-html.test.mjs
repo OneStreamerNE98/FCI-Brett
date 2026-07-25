@@ -37,6 +37,7 @@ const appSurfacePaths = [
   "app/settings/components/WorkspaceBlueprintEditor.tsx",
   "app/settings/components/WorkspaceDriveResourceActions.tsx",
   "app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx",
+  "app/settings/components/workspace-reconcile/WorkspaceReconcileCard.tsx",
 ];
 const readAppSurface = async () => (await Promise.all(appSurfacePaths.map(read))).join("\n");
 async function readAppComponentSource(directory = new URL("app/", root)) {

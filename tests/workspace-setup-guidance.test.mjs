@@ -193,11 +193,12 @@ test("Stage 3 subsections share the stage disclosure contract and initialize onc
   assert.match(styles, /\.stageThreeSubsectionBody\[hidden\][\s\S]+display: none/);
 });
 
-test("Stage 4 pins normative verification and ongoing-upkeep copy without inventing operations", async () => {
-  const [panel, styles, chatCard] = await Promise.all([
+test("Stage 4 pins normative verification and ongoing-upkeep copy with review-first reconciliation", async () => {
+  const [panel, styles, chatCard, reconcileCard] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
     read("app/settings/components/GoogleWorkspacePanel.module.css"),
     read("app/settings/components/ChatNotificationSettingsCard.tsx"),
+    read("app/settings/components/workspace-reconcile/WorkspaceReconcileCard.tsx"),
   ]);
 
   for (const [label, info] of [
@@ -236,10 +237,21 @@ test("Stage 4 pins normative verification and ongoing-upkeep copy without invent
     assert.match(stageFourSource, new RegExp(`rowKey="${rowKey}"[\\s\\S]+label="${label}"`));
   }
   assert.doesNotMatch(stageFourSource, /label="(?:Drift check & reconcile|Managed folder renames)"/);
-  assert.match(stageFourSource, /rowKey="drift"[\s\S]+state="PLANNED"[\s\S]+Planned for SET-18\. No reconcile action is available yet\./);
+  assert.match(stageFourSource, /rowKey="drift"[\s\S]+state=\{workspaceReconcileEnabled \? "AVAILABLE" : reconcileCalendarReadable \? "WAITING" : "UNAVAILABLE"\}[\s\S]+<WorkspaceReconcileCard/);
   const driftStart = stageFourSource.indexOf('rowKey="drift"');
   const renameStart = stageFourSource.indexOf('rowKey="renames"', driftStart);
-  assert.doesNotMatch(stageFourSource.slice(driftStart, renameStart), /<button|<a /);
+  assert.match(stageFourSource.slice(driftStart, renameStart), /enabled=\{workspaceReconcileEnabled\}[\s\S]+Calendar is registered but unavailable[\s\S]+onChanged=\{refreshAfterDriveSetup\}/);
+  assert.match(panel, /const registeredCalendarPresent = !simulation && resourceRows\.some[\s\S]+const workspaceReconcileEnabled = folderRenamesEnabled && reconcileCalendarReadable/);
+  assert.match(reconcileCard, /Check Google against the saved blueprint\. The check reads provider metadata only; every repair waits for your click, and removed resources stay in Google\./);
+  assert.match(reconcileCard, />Blueprint and Drive are in sync\.<\/p>/);
+  assert.match(reconcileCard, /"Rename in Drive"/);
+  assert.match(reconcileCard, /"Use Drive name in blueprint"/);
+  assert.match(reconcileCard, /"Create from blueprint"/);
+  assert.match(reconcileCard, /expectedVersion: result\.blueprintVersion[\s\S]+externalId: item\.externalId[\s\S]+actualName: item\.actualName/);
+  assert.match(reconcileCard, /current\.version !== result\.blueprintVersion[\s\S]+expectedVersion: current\.version/);
+  assert.match(reconcileCard, /withoutNoMutationSuffix[\s\S]+endsWith\(NO_MUTATION_SUFFIX\)/);
+  assert.match(reconcileCard, /Informational only — nothing will be deleted\./);
+  assert.doesNotMatch(reconcileCard, /\bmethod:\s*"DELETE"/);
   assert.match(panel, /const \[sheetsVerificationPassed, setSheetsVerificationPassed\] = useState\(false\)/);
   assert.match(panel, /function sheetMirrorFullySynced[\s\S]+clients\.status === "synced" && mirror\.projects\.status === "synced"/);
   assert.ok((panel.match(/setSheetsVerificationPassed\(\(current\) => current \|\| sheetMirrorFullySynced\(mirror\)\)/g) ?? []).length >= 3);

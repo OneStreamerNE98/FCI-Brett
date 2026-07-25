@@ -17,6 +17,7 @@ import {
   type WorkspaceSetupResourcesPayload,
 } from "./WorkspaceDriveResourceActions";
 import { WorkspaceDomainChecklistCard } from "./workspace-domain-checklist/WorkspaceDomainChecklistCard";
+import { WorkspaceReconcileCard } from "./workspace-reconcile/WorkspaceReconcileCard";
 import {
   deriveWorkspaceDomainChecklist,
   workspaceDomainChecklistDisplayStatus,
@@ -348,7 +349,7 @@ function OngoingTool({
   rowKey: string;
   label: string;
   info: string;
-  state: "AVAILABLE" | "WAITING" | "PLANNED";
+  state: "AVAILABLE" | "WAITING" | "PLANNED" | "UNAVAILABLE";
   children: ReactNode;
 }) {
   const headingId = `workspace-upkeep-${rowKey}-heading`;
@@ -1043,6 +1044,15 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const folderRenamesEnabled = stageTwoComplete
     && workspaceResourcesKnown
     && workspaceCreationProgress.sharedDriveComplete;
+  const registeredCalendarPresent = !simulation && resourceRows.some((resource) => (
+    resource.resourceType === "calendar.calendar" && Boolean(resource.externalId)
+  ));
+  const reconcileCalendarReadable = !registeredCalendarPresent
+    || (
+      connectionHealthState === "ready"
+      && connectionHealth?.enabledServices.includes("calendar") === true
+    );
+  const workspaceReconcileEnabled = folderRenamesEnabled && reconcileCalendarReadable;
   const stageFourVerificationUnavailable = gmailVerificationState === "error"
     || calendarVerificationState === "error";
   const stageFourCompleteCount = [gmailVerificationPassed, calendarChecked, sheetsVerificationPassed].filter(Boolean).length;
@@ -1442,9 +1452,17 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                 rowKey="drift"
                 label="Drift check"
                 info={DRIFT_CHECK_INFO}
-                state="PLANNED"
+                state={workspaceReconcileEnabled ? "AVAILABLE" : reconcileCalendarReadable ? "WAITING" : "UNAVAILABLE"}
               >
-                <p>Planned for SET-18. No reconcile action is available yet.</p>
+                <WorkspaceReconcileCard
+                  enabled={workspaceReconcileEnabled}
+                  isAdmin={isAdmin}
+                  notify={notify}
+                  unavailableMessage={reconcileCalendarReadable
+                    ? "Adopt the Shared Drive and load Workspace resource status before checking drift."
+                    : "Calendar is registered but unavailable to this connection. Enable Calendar before checking all registered Workspace resources."}
+                  onChanged={refreshAfterDriveSetup}
+                />
               </OngoingTool>
               <OngoingTool
                 rowKey="renames"

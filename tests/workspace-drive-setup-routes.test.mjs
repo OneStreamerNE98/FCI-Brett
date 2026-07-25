@@ -118,6 +118,7 @@ function fakeDatabase({
     mapping: null,
     sheetStates: [],
     workspaceSettings,
+    failNextIntegrationEvent: false,
   };
 
   const database = {
@@ -245,6 +246,10 @@ function fakeDatabase({
             return { meta: { changes: 1 } };
           }
           if (sql.startsWith("INSERT INTO google_integration_events")) {
+            if (state.failNextIntegrationEvent) {
+              state.failNextIntegrationEvent = false;
+              throw new Error("FCI TEST integration-event write failed");
+            }
             if (sql.includes("FROM workspace_blueprints") && !state.lastBlueprintSaveChanged) return { meta: { changes: 0 } };
             const [id, connectionKey, eventType, actor, entityType, entityId, detail, createdAt] = query.values;
             state.events.push({ id, connectionKey, eventType, actor, entityType, entityId, detail, createdAt });
@@ -397,13 +402,50 @@ function installProvider({ matches = [], driveNames = {}, fileParents = {} } = {
   return calls;
 }
 
-function installRenameProvider({ folderId, rootId, initialName, failCompensation = false }) {
+function installRenameProvider({
+  folderId,
+  rootId,
+  initialName,
+  failCompensation = false,
+  identityKey = "client-accounts",
+  parentId = rootId,
+  mimeType = "application/vnd.google-apps.folder",
+  duplicateIdentity = false,
+  onIdentityRead = () => {},
+}) {
   const patchNames = [];
   let currentName = initialName;
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     if (url.href === "https://oauth2.googleapis.com/token") {
       return Response.json({ access_token: "FCI_TEST_ACCESS_TOKEN", expires_in: 3600 });
+    }
+    if (url.pathname === "/drive/v3/files" && (init.method ?? "GET") === "GET") {
+      const query = url.searchParams.get("q") ?? "";
+      if (query.includes("key='fciRootKey'") && query.includes(`value='${identityKey}'`)) {
+        onIdentityRead();
+      }
+      return Response.json({
+        files: query.includes("key='fciRootKey'") && query.includes(`value='${identityKey}'`)
+          ? [{
+            id: folderId,
+            name: currentName,
+            mimeType,
+            parents: [parentId],
+            trashed: false,
+            webViewLink: `https://drive.google.test/${folderId}`,
+            appProperties: { fciRootKey: identityKey },
+          }, ...(duplicateIdentity ? [{
+            id: `${folderId}-duplicate`,
+            name: currentName,
+            mimeType,
+            parents: [parentId],
+            trashed: false,
+            webViewLink: `https://drive.google.test/${folderId}-duplicate`,
+            appProperties: { fciRootKey: identityKey },
+          }] : [])]
+          : [],
+      });
     }
     if (url.pathname !== `/drive/v3/files/${folderId}`) {
       throw new Error(`Unexpected provider request: ${(init.method ?? "GET")} ${url}`);
@@ -419,11 +461,11 @@ function installRenameProvider({ folderId, rootId, initialName, failCompensation
     return Response.json({
       id: folderId,
       name: currentName,
-      mimeType: "application/vnd.google-apps.folder",
-      parents: [rootId],
+      mimeType,
+      parents: [parentId],
       trashed: false,
       webViewLink: `https://drive.google.test/${folderId}`,
-      appProperties: { fciRootKey: "client-accounts" },
+      appProperties: { fciRootKey: identityKey },
     });
   };
   return { patchNames, currentName: () => currentName };
@@ -895,6 +937,38 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
     "02_Custom Projects",
   );
 
+  const systemFolder = database.state.resources.find((resource) => (
+    resource.resource_type === "drive.folder" && resource.resource_key === "unsorted-intake"
+  ));
+  systemFolder.metadata_json = JSON.stringify({
+    ...JSON.parse(systemFolder.metadata_json),
+    name: "Externally renamed intake",
+  });
+  const blueprintBeforeSystemReconcile = database.state.blueprint.blueprint_json;
+  const systemReconcileResponse = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "unsorted-intake",
+      mode: "reconcile-drive-name",
+      expectedVersion: 2,
+      externalId: systemFolder.external_id,
+      actualName: "Externally renamed intake",
+    },
+  ));
+  const systemReconciled = await systemReconcileResponse.json();
+  assert.equal(systemReconcileResponse.status, 200);
+  assert.equal(systemReconciled.reconciled, true);
+  assert.equal(systemReconciled.previousName, "Externally renamed intake");
+  assert.equal(systemReconciled.folder.name, "99_Unsorted Intake");
+  assert.equal(database.state.blueprint.blueprint_json, blueprintBeforeSystemReconcile);
+  assert.equal(
+    JSON.parse(database.state.resources.find((resource) => (
+      resource.resource_type === "drive.folder" && resource.resource_key === "unsorted-intake"
+    )).metadata_json).name,
+    "99_Unsorted Intake",
+  );
+
   database.state.project = {
     id: "project-fix02",
     project_number: "FCI2026-902",
@@ -929,8 +1003,11 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.drive_roots_ensured").length, 2);
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.spreadsheets_ensured").length, 2);
   assert.match(database.state.events.find((event) => event.eventType === "setup.spreadsheets_ensured").detail, /outcomes=client-directory:created,first-run-import:created,project-ledger:created/u);
-  assert.equal(eventTypes.filter((eventType) => eventType === "setup.folder_renamed").length, 1);
-  assert.match(database.state.events.find((event) => event.eventType === "setup.folder_renamed").detail, /key=projects/u);
+  assert.equal(eventTypes.filter((eventType) => eventType === "setup.folder_renamed").length, 2);
+  assert.ok(database.state.events.some((event) => (
+    event.eventType === "setup.folder_renamed"
+    && /mode=reconcile-drive-name;key=unsorted-intake;from=Externally renamed intake;to=99_Unsorted Intake/u.test(event.detail)
+  )));
   assert.equal(eventTypes.filter((eventType) => eventType === "drive.simulation_project_folder_provisioned").length, 1);
 });
 
@@ -989,6 +1066,73 @@ test("simulation project provisioning returns 409 for an active lease and succee
   );
   assert.equal(database.state.leases.get(operationKey).status, "completed");
   assert.equal(database.state.leases.get(operationKey).leaseExpiresAt, null);
+});
+
+test("reconcile-only folder rename fences stale reviews and restores simulation metadata if its audit fails", async () => {
+  const database = fakeDatabase();
+  simulationEnvironment(database);
+  globalThis.fetch = async () => {
+    throw new Error("Simulation reconcile rename must not call Google.");
+  };
+  assert.equal(
+    (await adoptRoute.POST(routeRequest("/api/v1/integrations/google/drive/shared-drive/adopt"))).status,
+    200,
+  );
+  assert.equal(
+    (await ensureRoute.POST(routeRequest("/api/v1/integrations/google/drive/folders/ensure-roots"))).status,
+    201,
+  );
+  const folder = database.state.resources.find((resource) => (
+    resource.resource_type === "drive.folder" && resource.resource_key === "unsorted-intake"
+  ));
+  folder.metadata_json = JSON.stringify({
+    ...JSON.parse(folder.metadata_json),
+    name: "FCI TEST external rename",
+  });
+
+  const staleResponse = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "unsorted-intake",
+      mode: "reconcile-drive-name",
+      expectedVersion: 99,
+      externalId: folder.external_id,
+      actualName: "FCI TEST external rename",
+    },
+  ));
+  const stale = await staleResponse.json();
+  assert.equal(staleResponse.status, 409);
+  assert.equal(stale.code, "workspace_blueprint_version_conflict");
+  assert.equal(stale.currentVersion, 0);
+  assert.equal(JSON.parse(folder.metadata_json).name, "FCI TEST external rename");
+
+  database.state.failNextIntegrationEvent = true;
+  const auditFailureResponse = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "unsorted-intake",
+      mode: "reconcile-drive-name",
+      expectedVersion: 0,
+      externalId: folder.external_id,
+      actualName: "FCI TEST external rename",
+    },
+  ));
+  assert.equal(auditFailureResponse.status, 503);
+  assert.equal(
+    JSON.parse(database.state.resources.find((resource) => (
+      resource.resource_type === "drive.folder" && resource.resource_key === "unsorted-intake"
+    )).metadata_json).name,
+    "FCI TEST external rename",
+  );
+  assert.equal(
+    database.state.events.some((event) => (
+      event.eventType === "setup.folder_renamed"
+      && /mode=reconcile-drive-name/u.test(event.detail)
+    )),
+    false,
+  );
 });
 
 test("simulation project provisioning cannot commit after its exact lease is replaced", async () => {
@@ -1564,6 +1708,171 @@ test("live rename restores the provider's actual prior name when blueprint CAS l
   assert.equal(provider.currentName(), "01_Manual Provider Drift");
   assert.equal(database.state.events.some((event) => event.eventType === "setup.folder_renamed"), false);
   assert.equal(database.state.events.some((event) => event.eventType === "setup.folder_rename_compensation_failed"), false);
+});
+
+test("live reconcile rename mutates only the reviewed identity even when the registry is stale", async () => {
+  const rootId = "app-shared-drive-123";
+  const reviewedFolderId = "reviewed-client-folder";
+  const database = fakeDatabase({
+    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprintConnectionKey: "google-workspace",
+  });
+  await workspaceEnvironment(database);
+  database.state.resources.push(
+    savedResource({
+      id: "shared",
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: rootId,
+      name: "FCI Operations",
+    }),
+    savedResource({
+      id: "stale-folder",
+      resourceType: "drive.folder",
+      resourceKey: "client-accounts",
+      externalId: "stale-unrelated-folder",
+      parentExternalId: rootId,
+      name: "Stale registry target",
+    }),
+  );
+  const provider = installRenameProvider({
+    folderId: reviewedFolderId,
+    rootId,
+    initialName: "01_Provider Drift",
+  });
+
+  const response = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "client-accounts",
+      mode: "reconcile-drive-name",
+      expectedVersion: 1,
+      externalId: reviewedFolderId,
+      actualName: "01_Provider Drift",
+    },
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.deepEqual(provider.patchNames, ["01_Client Accounts"]);
+  assert.equal(body.folder.id, reviewedFolderId);
+  assert.equal(body.previousName, "01_Provider Drift");
+  assert.equal(database.state.events.at(-1).entityId, reviewedFolderId);
+});
+
+test("live reconcile rename rejects a stale provider name, duplicate, type, or blueprint parent before PATCH", async (t) => {
+  const scenarios = [
+    {
+      name: "provider name changed",
+      provider: { initialName: "01_Changed After Review" },
+      reviewedName: "01_Provider Drift",
+    },
+    {
+      name: "identity became duplicated",
+      provider: { initialName: "01_Provider Drift", duplicateIdentity: true },
+      reviewedName: "01_Provider Drift",
+    },
+    {
+      name: "identity moved under another contained folder",
+      provider: { initialName: "01_Provider Drift", parentId: "different-managed-parent" },
+      reviewedName: "01_Provider Drift",
+    },
+    {
+      name: "identity moved onto a non-folder",
+      provider: {
+        initialName: "01_Provider Drift",
+        mimeType: "application/vnd.google-apps.spreadsheet",
+      },
+      reviewedName: "01_Provider Drift",
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const rootId = "app-shared-drive-123";
+      const reviewedFolderId = "reviewed-client-folder";
+      const database = fakeDatabase({
+        blueprint: blueprintModule.seedWorkspaceBlueprint(),
+        blueprintConnectionKey: "google-workspace",
+      });
+      await workspaceEnvironment(database);
+      database.state.resources.push(savedResource({
+        id: "shared",
+        resourceType: "drive.shared-drive",
+        resourceKey: "primary",
+        externalId: rootId,
+        name: "FCI Operations",
+      }));
+      const provider = installRenameProvider({
+        folderId: reviewedFolderId,
+        rootId,
+        ...scenario.provider,
+      });
+
+      const response = await renameRoute.POST(routeRequest(
+        "/api/v1/integrations/google/drive/folders/rename",
+        ADMIN_EMAIL,
+        {
+          key: "client-accounts",
+          mode: "reconcile-drive-name",
+          expectedVersion: 1,
+          externalId: reviewedFolderId,
+          actualName: scenario.reviewedName,
+        },
+      ));
+      const body = await response.json();
+
+      assert.equal(response.status, 409, JSON.stringify(body));
+      assert.equal(body.code, "workspace_reconcile_review_stale");
+      assert.deepEqual(provider.patchNames, []);
+    });
+  }
+});
+
+test("live reconcile rename rechecks the blueprint after provider discovery and never PATCHes a stale review", async () => {
+  const rootId = "app-shared-drive-123";
+  const reviewedFolderId = "reviewed-client-folder";
+  const database = fakeDatabase({
+    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprintConnectionKey: "google-workspace",
+  });
+  await workspaceEnvironment(database);
+  database.state.resources.push(savedResource({
+    id: "shared",
+    resourceType: "drive.shared-drive",
+    resourceKey: "primary",
+    externalId: rootId,
+    name: "FCI Operations",
+  }));
+  let advanced = false;
+  const provider = installRenameProvider({
+    folderId: reviewedFolderId,
+    rootId,
+    initialName: "01_Provider Drift",
+    onIdentityRead() {
+      if (advanced) return;
+      advanced = true;
+      database.state.blueprint.version += 1;
+    },
+  });
+
+  const response = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "client-accounts",
+      mode: "reconcile-drive-name",
+      expectedVersion: 1,
+      externalId: reviewedFolderId,
+      actualName: "01_Provider Drift",
+    },
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "workspace_blueprint_version_conflict");
+  assert.deepEqual(provider.patchNames, []);
 });
 
 test("live rename reports and audits a failed compensation after blueprint CAS loses", async () => {

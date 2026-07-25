@@ -746,10 +746,11 @@ test("Stage 4 keeps normative copy, polished mirror labels, and operational upke
     await expect(row.getByRole("button", { name: `About ${label}`, exact: true })).toHaveCount(1);
   }
   const drift = upkeepRow(page, "drift");
-  await expect(drift).toHaveAttribute("data-stage-four-upkeep-state", "PLANNED");
-  await expect(drift.getByText("Planned for SET-18. No reconcile action is available yet.", { exact: true })).toBeVisible();
-  await expect(drift.locator("button, a")).toHaveCount(1);
+  await expect(drift).toHaveAttribute("data-stage-four-upkeep-state", "AVAILABLE");
+  await expect(drift.getByText("Check Google against the saved blueprint. The check reads provider metadata only; every repair waits for your click, and removed resources stay in Google.", { exact: true })).toBeVisible();
+  await expect(drift.locator("button, a")).toHaveCount(2);
   await expect(drift.getByRole("button", { name: "About Drift check", exact: true })).toHaveCount(1);
+  await expect(drift.getByRole("button", { name: "Check for drift", exact: true })).toBeEnabled();
   await expect(drift.getByRole("link")).toHaveCount(0);
   await expect(verificationRow(page, "gmail").getByText("Gmail verification", { exact: true })).toBeVisible();
   await expect(verificationRow(page, "calendar").getByText("Calendar verification", { exact: true })).toBeVisible();

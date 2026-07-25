@@ -101,3 +101,15 @@ export function sheetsDirectorySyncedIntegrationEvent(
     }),
   );
 }
+
+export function setupReconcileRunIntegrationEvent(
+  connectionKey: string,
+  counts: Readonly<{ missing: number; renamed: number; unmanaged: number; inSync: number }>,
+) {
+  return eventSpec(
+    "setup.reconcile_run",
+    "workspace",
+    connectionKey,
+    `missing=${boundedCount(counts.missing, "Missing drift count")};renamed=${boundedCount(counts.renamed, "Renamed drift count")};unmanaged=${boundedCount(counts.unmanaged, "Unmanaged drift count")};in_sync=${boundedCount(counts.inSync, "In-sync resource count")}`,
+  );
+}
