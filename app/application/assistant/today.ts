@@ -158,19 +158,27 @@ async function readLeadFollowUps(
 
 async function readCloseoutFollowUps(
   database: D1Database,
+  now: number,
 ): Promise<TodayCollection<TodayCloseoutFollowUp>> {
+  // The installation-dates validator (domain/project-operations.ts) accepts any
+  // timestamp up to the maximum JS date and only requires completion on/after
+  // start, so a saved project can legitimately hold a FUTURE
+  // installation_completed_at. Bind the assembly's now and require completion at
+  // or before it, keeping the same absolute-time semantics the meeting and lead
+  // reads use, so tomorrow's completions cannot enter today's follow-up queue.
   const rows = await database
     .prepare(`SELECT p.id, p.project_number, p.name, p.installation_completed_at, COUNT(*) OVER() AS total
       FROM projects p
       WHERE LOWER(p.status) = 'closeout'
         AND p.installation_completed_at IS NOT NULL
+        AND p.installation_completed_at <= ?
         AND NOT EXISTS (
           SELECT 1 FROM activity_events e
           WHERE e.record_id = p.id AND e.action = 'Follow-up result recorded'
         )
       ORDER BY p.installation_completed_at ASC, p.updated_at ASC, p.id ASC
       LIMIT ?`)
-    .bind(TODAY_SECTION_LIMIT)
+    .bind(now, TODAY_SECTION_LIMIT)
     .all<TodayCloseoutRow>();
   return {
     items: rows.results.map((row) => ({
@@ -212,7 +220,7 @@ export async function assembleToday(
       limit: TODAY_PROJECT_MEETINGS_TOOL_LIMIT,
     }),
     readLeadFollowUps(database, options.now),
-    readCloseoutFollowUps(database),
+    readCloseoutFollowUps(database, options.now),
   ]);
 
   return {

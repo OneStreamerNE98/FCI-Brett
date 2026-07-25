@@ -129,10 +129,11 @@ class TodayDatabase {
       return rows.slice(0, limit).map((row) => ({ ...row, total: rows.length }));
     }
     if (sql.includes("FROM projects p")) {
-      const [limit] = values;
+      const [now, limit] = values;
       const rows = this.projects
         .filter((project) => project.status.toLowerCase() === "closeout")
         .filter((project) => project.installation_completed_at !== null)
+        .filter((project) => project.installation_completed_at <= now)
         .filter((project) => !project.followUpRecorded)
         .sort((left, right) => (
           left.installation_completed_at - right.installation_completed_at
@@ -280,6 +281,135 @@ test("AI-04 local-midnight refresh delay is DST-safe", () => {
   assert.equal(localDayRolloverDelay(springForward, "America/New_York"), 23 * 60 * 60 * 1_000 + 250);
   assert.equal(calendarDateRange(fallBack, "America/New_York").end - fallBack, 25 * 60 * 60 * 1_000);
   assert.equal(localDayRolloverDelay(fallBack, "America/New_York"), 25 * 60 * 60 * 1_000 + 250);
+});
+
+test("AI-04 excludes future-dated closeout completions until the clock passes them", async () => {
+  // The installation-dates validator accepts future timestamps, so a saved
+  // closeout project can hold a completion that has not happened yet. Today's
+  // follow-up queue must only surface installations completed at or before the
+  // assembly's now, and must admit one the moment now advances past it.
+  const database = new TodayDatabase();
+  database.projects = [{
+    id: "past-completion",
+    project_number: "P-PAST",
+    name: "Completed yesterday",
+    status: "closeout",
+    installation_completed_at: Date.UTC(2026, 6, 24, 12),
+    updated_at: 1,
+    followUpRecorded: false,
+  }, {
+    id: "future-completion",
+    project_number: "P-FUTURE",
+    name: "Completion is still scheduled",
+    status: "closeout",
+    installation_completed_at: Date.UTC(2026, 6, 26, 12),
+    updated_at: 2,
+    followUpRecorded: false,
+  }];
+
+  const beforeFutureCompletion = await assembleToday(database, {
+    now: Date.UTC(2026, 6, 25, 12),
+    timeZone: "America/New_York",
+  });
+  assert.deepEqual(
+    beforeFutureCompletion.closeoutFollowUps.items.map((item) => item.id),
+    ["past-completion"],
+  );
+  assert.equal(beforeFutureCompletion.closeoutFollowUps.total, 1);
+
+  const afterFutureCompletion = await assembleToday(database, {
+    now: Date.UTC(2026, 6, 27, 12),
+    timeZone: "America/New_York",
+  });
+  assert.deepEqual(
+    afterFutureCompletion.closeoutFollowUps.items.map((item) => item.id),
+    ["past-completion", "future-completion"],
+  );
+  assert.equal(afterFutureCompletion.closeoutFollowUps.total, 2);
+
+  const closeoutQuery = database.queries.find((sql) => sql.includes("FROM projects p"));
+  assert.match(closeoutQuery, /AND p\.installation_completed_at <= \?/u);
+});
+
+test("AI-04 rows deep-link to the supported destinations for each row type", async () => {
+  // Verified with the bot P2 on today.ts: the app exposes no record-id search
+  // state or dynamic record route, and canonicalOperationsSearch strips any
+  // param outside each view's bounded allowlist, so a bare href cannot target an
+  // exact project or lead. Exact-record activation lives only in-component
+  // (FloorOpsApp openProject/openLead), which the propless URL-driven TodayPanel
+  // cannot reach without inventing route state. These pins lock every row to its
+  // best supported destination: closeout uses the lifecycle filter; the rest
+  // land on the correct filtered list view.
+  const database = new TodayDatabase();
+  database.tasks = [{
+    id: "task-project",
+    title: "Task project",
+    due_date: "2026-07-20",
+    project_id: "project-1",
+    lead_id: null,
+    assignee_email: OFFICE_EMAIL,
+    updated_at: 3,
+    status: "open",
+  }, {
+    id: "task-lead",
+    title: "Task lead",
+    due_date: "2026-07-25",
+    project_id: null,
+    lead_id: "lead-9",
+    assignee_email: OFFICE_EMAIL,
+    updated_at: 2,
+    status: "open",
+  }, {
+    id: "task-unlinked",
+    title: "Task unlinked",
+    due_date: "2026-07-25",
+    project_id: null,
+    lead_id: null,
+    assignee_email: OFFICE_EMAIL,
+    updated_at: 1,
+    status: "open",
+  }];
+  database.meetings = [{
+    id: "meeting-1",
+    project_id: "project-1",
+    title: "Site review",
+    meeting_at: Date.UTC(2026, 6, 25, 15),
+    created_at: 1,
+    project_number: "P-1",
+    project_name: "Lobby",
+  }];
+  database.leads = [{
+    id: "lead-1",
+    lead_number: "L-1",
+    company: "FCI TEST — DO NOT USE",
+    next_action: "Call the estimator",
+    next_action_at: 1,
+    updated_at: 1,
+    status: "active",
+  }];
+  database.projects = [{
+    id: "closeout-1",
+    project_number: "P-3",
+    name: "Awaiting follow-up",
+    status: "closeout",
+    installation_completed_at: 2,
+    updated_at: 2,
+    followUpRecorded: false,
+  }];
+
+  const today = await assembleToday(database, {
+    now: Date.UTC(2026, 6, 25, 12),
+    timeZone: "America/New_York",
+  });
+  const taskHrefById = new Map(
+    [...today.overdueTasks.items, ...today.dueTodayTasks.items].map((task) => [task.id, task.href]),
+  );
+  assert.equal(taskHrefById.get("task-project"), "/projects");
+  assert.equal(taskHrefById.get("task-lead"), "/leads");
+  assert.equal(taskHrefById.get("task-unlinked"), "/assistant");
+  assert.equal(today.meetings.items[0].href, "/projects");
+  assert.equal(today.leadFollowUps.items[0].href, "/leads");
+  assert.equal(today.closeoutFollowUps.items[0].href, "/projects?status=closeout");
 });
 
 const routeDatabase = fixtureDatabase();
