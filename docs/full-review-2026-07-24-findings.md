@@ -424,7 +424,7 @@ coordinate/fold into SET-06.
 **Effort:** small. **Cost:** $0.
 
 ### FIX-17 · Post-wave polish sweep (P3 bundle H-10 + H-9; small-medium)
-**Status:** In review — PR #208, July 25, 2026. Source-only and undeployed. Guide impact: `docs/settings-guide.md` updated.
+**Status:** Complete — PR #208, July 25, 2026. Opus fleet clean — zero confirmed findings: independent selector set-diff proved the dead-CSS sweep removed 64 selectors with zero live consumers (`.panel-header-subtitle*` exclusion honored, dynamic emitter verified live); goldens byte-identical (the DES-08d edits render outside the pinned capture); all 11 Do items mapped to hunks — LaunchChecklist indeterminate/unavailable branches, DES-08d client-renderable counts with an honest unavailable row, segment "Derived" radio (value="" → null, no third stored value), sim calendar [now,now+7d) half-open window capped at 20, sim filing folder-ids validated fail-closed against blueprint leaves with the live branch byte-identical; 116+ unit tests executed green across both lenses. P3 notes: PR grep-proofs were narrative + a mutation-sensitive 28-family guard rather than literal command output; the guard omits two deleted zero-emitter modifiers (`.blocked-by-previous-step`/`.blocked-by-prerequisites`); `.title-actions` flex-wrap→nowrap now applies to ALL header action rows (intended, test-pinned — watch narrow-viewport overflow if actions grow); `workspace-simulation.ts` hunks noted for SET-25 merge-serialization. Source-only and undeployed. Guide impact: `docs/settings-guide.md` updated.
 
 **Why:** a cluster of independently-verified low-severity nits — some pre-existing,
 some redesign-orphaned — collectively drag the polish level of the settings and

@@ -2662,11 +2662,13 @@ AI-07 is COMPLETE (PR #185 + PR #195, July 25, 2026 — do not re-claim the
 merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED. NFIX-03 (PR #197) and BE-16 (PR #198)
 both MERGED July 25, 2026. AI-04 (PR #201), AI-05 (PR #205), and FIX-15
-(PR #206, with the N7-7/N7-8 folds) are COMPLETE — **FIX-17 is now the
-dispatchable head of the FloorOpsApp fix-tail** (then SET-22; SET-26 remains
-gated on SET-23, open). **AI-06 is dispatchable in parallel** (its kickoff
-paste is with the owner; UI file `GmailReplyModal.tsx`, disjoint from FIX-17's
-surfaces; both additive on `tests/rendered-html.test.mjs` — serialize merges
+(PR #206, with the N7-7/N7-8 folds) and FIX-17 (PR #208) are COMPLETE —
+**SET-22 is now the dispatchable head of the FloorOpsApp fix-tail** (SET-26
+remains gated on SET-23, open). **AI-06 and SET-25 are dispatchable in
+parallel** (kickoff pastes with the owner; claims recorded on their packet
+status lines when their `codex/*` branches open; SET-25 must serialize any
+`workspace-simulation.ts` merge with FIX-17's calendar/folder-id hunks; both
+additive on `tests/rendered-html.test.mjs` — serialize merges
 only; it builds on AI-05's public `getMessageSummary`). AI-09 closes the
 workstream after AI-06. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
