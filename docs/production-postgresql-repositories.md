@@ -2,7 +2,7 @@
 
 Reviewed: July 25, 2026
 
-Status: Foundation implementation merged through PR #51; BE-16 project-segment parity is in draft PR #198, source-only and unapplied as of July 25, 2026. The repositories and employee-facing core-record routes are not provisioned, migrated, configured, or deployed.
+Status: Foundation implementation merged through PR #51; BE-16 project-segment parity merged in PR #198 (July 25, 2026), source-only and unapplied. The repositories and employee-facing core-record routes are not provisioned, migrated, configured, or deployed.
 
 ## Boundary
 
