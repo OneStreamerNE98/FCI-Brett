@@ -207,19 +207,27 @@ test("simulation suggests one message and preserves the existing human filing re
     `${project.project_number} — ${project.name}`,
   );
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => (
-    document.documentElement.scrollWidth <= document.documentElement.clientWidth
-  ))).toBe(true);
-  expect(await aiSuggestion.getByRole("button", {
+  // page.setViewportSize resolves before the browser finishes reflowing to the
+  // new width, so the button can still sit at its pre-resize (wide) position
+  // while window.innerWidth has already shrunk to 390. Poll the settled layout
+  // instead of taking a single-shot getBoundingClientRect that races the reflow
+  // (a genuinely clipped button would still fail once the layout settles).
+  await expect
+    .poll(() => page.evaluate(() => (
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    )))
+    .toBe(true);
+  const acceptButton = aiSuggestion.getByRole("button", {
     name: `Accept AI suggestion for ${message.subject}: ${project.project_number} — ${project.name}; high confidence; The exact project number appears in the saved subject.`,
-  }).evaluate((button) => {
-    const bounds = button.getBoundingClientRect();
-    return bounds.left >= 0 && bounds.right <= window.innerWidth;
-  })).toBe(true);
+  });
+  await expect
+    .poll(() => acceptButton.evaluate((button) => {
+      const bounds = button.getBoundingClientRect();
+      return bounds.left >= 0 && bounds.right <= window.innerWidth;
+    }))
+    .toBe(true);
 
-  await aiSuggestion.getByRole("button", {
-    name: `Accept AI suggestion for ${message.subject}: ${project.project_number} — ${project.name}; high confidence; The exact project number appears in the saved subject.`,
-  }).click();
+  await acceptButton.click();
   const filingDialog = page.getByRole("dialog", {
     name: "File email to one project",
   });
