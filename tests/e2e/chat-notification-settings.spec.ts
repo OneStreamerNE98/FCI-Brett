@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 const forbiddenWebhookSentinel = "FCI_TEST_WEBHOOK_URL_VALUE_DO_NOT_RENDER";
 const forbiddenTokenSentinel = "FCI_TEST_WEBHOOK_TOKEN_VALUE_DO_NOT_RENDER";
 
-type ChatEventType = "lead.created" | "gmail.filing_review_needed" | "calendar.schedule_changed" | "project.warranty_follow_up_due";
+type ChatEventType = "lead.created" | "gmail.filing_review_needed" | "calendar.schedule_changed" | "project.warranty_follow_up_due" | "task.assigned";
 type ChatEventConfig = { type: ChatEventType; label: string; description: string; enabled: boolean; spaceKey: string };
 type ChatConfig = {
   canEdit: boolean;
@@ -26,6 +26,7 @@ const chatConfigFixture: ChatConfig = {
     { type: "gmail.filing_review_needed", label: "Filing review needed", description: "A Gmail thread needs a project filing decision.", enabled: true, spaceKey: "office-ops" },
     { type: "calendar.schedule_changed", label: "Schedule change", description: "A shared field schedule item changed.", enabled: false, spaceKey: "field" },
     { type: "project.warranty_follow_up_due", label: "Warranty follow-up due", description: "A closeout project needs warranty follow-up.", enabled: true, spaceKey: "service" },
+    { type: "task.assigned", label: "Task assigned", description: "A task was assigned to an office user.", enabled: false, spaceKey: "office-ops" },
   ],
   spaces: [
     { key: "sales", label: "Sales & intake", secretEnvVar: "GOOGLE_CHAT_SALES_WEBHOOK_URL", configured: true },
@@ -102,6 +103,7 @@ test("Administrator can save closed Google Chat event routing without receiving 
       { type: "gmail.filing_review_needed", enabled: true, spaceKey: "office-ops" },
       { type: "calendar.schedule_changed", enabled: false, spaceKey: "field" },
       { type: "project.warranty_follow_up_due", enabled: true, spaceKey: "service" },
+      { type: "task.assigned", enabled: false, spaceKey: "office-ops" },
     ],
   });
   await expectNoHorizontalOverflow(page);

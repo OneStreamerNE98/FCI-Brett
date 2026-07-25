@@ -48,6 +48,13 @@ const events = [
     projectName: "Suite & Hall",
     followUpLabel: "Due <tomorrow>",
   },
+  {
+    eventType: "task.assigned",
+    entityId: "task-1",
+    taskTitle: "Confirm <material> delivery",
+    assigneeEmail: "office.user@example.test",
+    dueDate: "2026-07-25",
+  },
 ];
 
 const expectedLinks = new Map([
@@ -55,6 +62,7 @@ const expectedLinks = new Map([
   ["gmail.filing_review_needed", "/inbox?bucket=needs-review"],
   ["calendar.schedule_changed", "/schedule"],
   ["project.warranty_follow_up_due", "/projects?status=closeout"],
+  ["task.assigned", "/assistant"],
 ]);
 
 function enabledRouting(eventType, spaceKey = "sales") {
@@ -91,7 +99,7 @@ function deliveryDependencies(overrides = {}) {
   };
 }
 
-test("defines the exact four-event catalog and fixed default-off routing", () => {
+test("defines the exact five-event catalog and fixed default-off routing", () => {
   assert.deepEqual(
     notifier.GOOGLE_CHAT_EVENT_CATALOG.map(({ eventType }) => eventType),
     events.map(({ eventType }) => eventType),
@@ -144,11 +152,11 @@ test("strict routing parser accepts the exact full catalog and rejects caller-co
   };
   const parsed = notifier.parseGoogleChatRoutingUpdate(body);
   assert.ok(parsed);
-  assert.equal(parsed.routes.length, 4);
+  assert.equal(parsed.routes.length, 5);
   assert.equal(parsed.routes[0].enabled, true);
 
   assert.equal(notifier.parseGoogleChatRoutingUpdate({ ...body, webhookUrl: "forbidden" }), null);
-  assert.equal(notifier.parseGoogleChatRoutingUpdate({ events: body.events.slice(0, 3) }), null);
+  assert.equal(notifier.parseGoogleChatRoutingUpdate({ events: body.events.slice(0, 4) }), null);
   assert.equal(notifier.parseGoogleChatRoutingUpdate({ events: [...body.events, body.events[0]] }), null);
   assert.equal(notifier.parseGoogleChatRoutingUpdate({
     events: body.events.map((event, index) => index === 0 ? { ...event, spaceKey: "custom-space" } : event),
@@ -156,6 +164,38 @@ test("strict routing parser accepts the exact full catalog and rejects caller-co
   assert.equal(notifier.parseGoogleChatRoutingUpdate({
     events: body.events.map((event, index) => index === 0 ? { ...event, secretEnvVar: "CALLER_VALUE" } : event),
   }), null);
+});
+
+test("widens a legacy four-event stored routing document without resetting saved choices", () => {
+  const legacy = {
+    routes: [
+      { eventType: "lead.created", enabled: true, spaceKey: "office-ops" },
+      { eventType: "gmail.filing_review_needed", enabled: false, spaceKey: "sales" },
+      { eventType: "calendar.schedule_changed", enabled: true, spaceKey: "field" },
+      { eventType: "project.warranty_follow_up_due", enabled: true, spaceKey: "service" },
+    ],
+  };
+
+  assert.deepEqual(notifier.normalizeStoredGoogleChatRouting(legacy), {
+    routes: [
+      { eventType: "lead.created", enabled: true, spaceKey: "office-ops" },
+      { eventType: "gmail.filing_review_needed", enabled: false, spaceKey: "sales" },
+      { eventType: "calendar.schedule_changed", enabled: true, spaceKey: "field" },
+      { eventType: "project.warranty_follow_up_due", enabled: true, spaceKey: "service" },
+      { eventType: "task.assigned", enabled: false, spaceKey: "office-ops" },
+    ],
+  });
+});
+
+test("ignores an unknown stored route while preserving every current route", () => {
+  const current = notifier.defaultGoogleChatRouting();
+  const widened = notifier.normalizeStoredGoogleChatRouting({
+    routes: [
+      ...current.routes,
+      { eventType: "future.catalog.entry", enabled: true, spaceKey: "sales" },
+    ],
+  });
+  assert.deepEqual(widened, current);
 });
 
 test("safe public config returns only fixed secret names and presence", () => {
@@ -173,7 +213,7 @@ test("safe public config returns only fixed secret names and presence", () => {
   });
   assert.equal(config.featureEnabled, true);
   assert.equal(config.mode, "webhook");
-  assert.equal(config.events.length, 4);
+  assert.equal(config.events.length, 5);
   assert.equal(config.spaces.find((space) => space.key === "sales").configured, true);
   assert.deepEqual(config.missingDetails, [{
     label: "Service and warranty Google Chat webhook",
@@ -217,14 +257,14 @@ test("default-off and disabled routes perform no secret, network, backoff, or au
   assert.deepEqual(counters, { secret: 0, fetch: 0, sleep: 0, audit: 0, uuid: 0 });
 });
 
-test("simulation resolves no webhook and records only a sanitized integration event", async () => {
+test("task assignment simulation resolves no webhook and records only a sanitized integration event", async () => {
   const audits = [];
   let secretCalls = 0;
   let networkCalls = 0;
-  const result = await notifier.deliverGoogleChatNotification(events[0], "actor@example.test", APP_ORIGIN, {
+  const result = await notifier.deliverGoogleChatNotification(events[4], "actor@example.test", APP_ORIGIN, {
     notificationsEnabled: true,
     simulation: true,
-    routing: enabledRouting("lead.created", "sales"),
+    routing: enabledRouting("task.assigned", "office-ops"),
   }, deliveryDependencies({
     resolveWebhook: () => { secretCalls += 1; throw new Error("must not resolve"); },
     fetch: async () => { networkCalls += 1; throw new Error("must not fetch"); },
@@ -236,13 +276,15 @@ test("simulation resolves no webhook and records only a sanitized integration ev
   assert.equal(networkCalls, 0);
   assert.equal(audits.length, 1);
   assert.equal(audits[0].eventType, "chat.notification.simulated");
+  assert.equal(audits[0].entityType, "task");
+  assert.equal(audits[0].entityId, "task-1");
   assert.deepEqual(JSON.parse(audits[0].detail), {
-    sourceEventType: "lead.created",
-    spaceKey: "sales",
+    sourceEventType: "task.assigned",
+    spaceKey: "office-ops",
     outcome: "simulated",
     attempts: 0,
   });
-  assert.doesNotMatch(audits[0].detail, /requestId|fallbackText|cardsV2|webhook|company/iu);
+  assert.doesNotMatch(audits[0].detail, /requestId|fallbackText|cardsV2|webhook|assignee|office\.user/iu);
 });
 
 test("uses Google's stable requestId query parameter and retries once for network, 429, or 503", async (t) => {

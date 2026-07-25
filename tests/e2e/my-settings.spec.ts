@@ -50,9 +50,9 @@ test("simulation user edits, persists, and reloads a personal preference without
     await signature.fill("SET-28 simulation signature");
     await newLeads.setChecked(true);
 
-    await expect(plannedRows).toHaveCount(4);
-    await expect(plannedRows.locator(".feature-state-planned")).toHaveCount(4);
-    await expect(plannedRows).toContainText(["Planned", "Planned", "Planned", "Planned"]);
+    await expect(plannedRows).toHaveCount(5);
+    await expect(plannedRows.locator(".feature-state-planned")).toHaveCount(5);
+    await expect(plannedRows).toContainText(["Planned", "Planned", "Planned", "Planned", "Planned"]);
 
     await page.getByRole("button", { name: "Save my settings" }).click();
     await expect(page.getByRole("status").filter({ hasText: "My settings are saved" })).toBeVisible();
@@ -62,8 +62,8 @@ test("simulation user edits, persists, and reloads a personal preference without
     await expect(page.getByLabel("My display timezone")).toHaveValue("America/Chicago");
     await expect(page.getByLabel("Default reply signature")).toHaveValue("SET-28 simulation signature");
     await expect(page.getByRole("checkbox", { name: /New leads/u })).toBeChecked();
-    await expect(page.locator('[data-preference-consumer="planned"]')).toHaveCount(4);
-    await expect(page.locator('[data-preference-consumer="planned"] .feature-state-planned')).toHaveCount(4);
+    await expect(page.locator('[data-preference-consumer="planned"]')).toHaveCount(5);
+    await expect(page.locator('[data-preference-consumer="planned"] .feature-state-planned')).toHaveCount(5);
   } finally {
     await restoreStoredPreferences(page, originalPreferences);
   }
@@ -93,14 +93,14 @@ test("planned notification rendering is invariant across every saved boolean val
 
   await page.goto("/settings");
   const rows = page.locator('[data-preference-consumer="planned"]');
-  await expect(rows).toHaveCount(4);
-  await expect(rows.locator(".feature-state-planned")).toHaveCount(4);
+  await expect(rows).toHaveCount(5);
+  await expect(rows.locator(".feature-state-planned")).toHaveCount(5);
 
   for (const checkbox of await page.getByRole("checkbox").all()) await checkbox.check();
   await page.getByRole("button", { name: "Save my settings" }).click();
   await expect(page.getByRole("status").filter({ hasText: "My settings are saved" })).toBeVisible();
 
-  await expect(rows).toHaveCount(4);
-  await expect(rows.locator(".feature-state-planned")).toHaveCount(4);
-  await expect(rows).toContainText(["Planned", "Planned", "Planned", "Planned"]);
+  await expect(rows).toHaveCount(5);
+  await expect(rows.locator(".feature-state-planned")).toHaveCount(5);
+  await expect(rows).toContainText(["Planned", "Planned", "Planned", "Planned", "Planned"]);
 });

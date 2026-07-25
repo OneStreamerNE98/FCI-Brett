@@ -1,10 +1,10 @@
 # Google Chat notification boundary
 
-Status: GI-02 source-only implementation; feature-gated off by default, not configured, not deployed, and never live-tested.
+Status: GI-02 source-only implementation with AI-07b's task-assignment event (updated July 24, 2026); feature-gated off by default, not configured, not deployed, and never live-tested.
 
 ## Purpose and current scope
 
-FCI Operations can prepare one-way Google Chat notifications for four operational events. Incoming webhooks require no OAuth scope, but each space has its own secret webhook URL. The application stores only event routing choices; webhook URLs remain hosted secrets and are never returned to the browser, stored in D1, written to Git, or included in audit detail.
+FCI Operations can prepare one-way Google Chat notifications for five operational events. Incoming webhooks require no OAuth scope, but each space has its own secret webhook URL. The application stores only event routing choices; webhook URLs remain hosted secrets and are never returned to the browser, stored in D1, written to Git, or included in audit detail.
 
 | Event type | Notification | FCI destination | Current trigger |
 | --- | --- | --- | --- |
@@ -12,6 +12,7 @@ FCI Operations can prepare one-way Google Chat notifications for four operationa
 | `gmail.filing_review_needed` | Filing review needed | `/inbox?bucket=needs-review` | Catalog only; no durable review-queue event exists yet |
 | `calendar.schedule_changed` | Schedule change | `/schedule` | Catalog only; scheduling is not implemented |
 | `project.warranty_follow_up_due` | Warranty follow-up due | `/projects?status=closeout` | Catalog only; warranty follow-up is not implemented |
+| `task.assigned` | Task assigned | `/assistant` | Successful task creation with an assignee |
 
 The catalog-only entries are deliberate integration seams. GI-02 does not invent scheduling, warranty, or Gmail queue state to manufacture triggers.
 
@@ -29,7 +30,7 @@ All values below belong in approved hosted runtime configuration. The gate is a 
 
 Do not paste a webhook URL into Settings, `.env.example`, a pull request, a ticket, a log, or an audit record. The URL contains both the Google Chat key and token. This source-only packet does not authorize creating a webhook or changing hosted configuration.
 
-Settings → Workflow & notifications reads `GET /api/v1/integrations/google/chat/config`. Office users can see the event-to-space map and the exact secret names with configured/missing presence only. Administrators may update the four event toggles and their fixed space aliases through the same-origin, bounded `PATCH` route. The endpoint never accepts or returns a URL or caller-supplied environment-variable name.
+Settings → Workflow & notifications reads `GET /api/v1/integrations/google/chat/config`. Office users can see the event-to-space map and the exact secret names with configured/missing presence only. Administrators may update the five event toggles and their fixed space aliases through the same-origin, bounded `PATCH` route. The endpoint never accepts or returns a URL or caller-supplied environment-variable name.
 
 ## Delivery and failure isolation
 
@@ -45,7 +46,7 @@ Settings → Workflow & notifications reads `GET /api/v1/integrations/google/cha
 
 ## Simulation and verification
 
-Simulation resolves no webhook secret and makes no network request. When the hosted gate and an event route are enabled in a synthetic simulation test, the notifier records `chat.notification.simulated` in `google_integration_events` instead of posting. Automated acceptance covers all four payload/deep-link shapes, default-off behavior, exact one-retry behavior, non-blocking scheduling, strict config authorization/validation, rendered Administrator and read-only states, and repository/response/audit secret-leak checks.
+Simulation resolves no webhook secret and makes no network request. When the hosted gate and an event route are enabled in a synthetic simulation test, the notifier records `chat.notification.simulated` in `google_integration_events` instead of posting. Automated acceptance covers all five payload/deep-link shapes, default-off behavior, exact one-retry behavior, non-blocking scheduling, strict config authorization/validation, rendered Administrator and read-only states, and repository/response/audit secret-leak checks.
 
 No live Chat message is part of GI-02 acceptance. A future owner-authorized live test must create the intended space webhooks, save each URL only as its named hosted secret, review the event routes, turn on the gate, and retain only redacted audit evidence.
 

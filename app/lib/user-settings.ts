@@ -19,6 +19,11 @@ export const USER_NOTIFICATION_PREFERENCE_CATALOG = [
     label: "Warranty follow-ups",
     description: "Choose whether a future personal notification should flag due closeout or warranty follow-ups.",
   },
+  {
+    key: "task.assigned",
+    label: "Task assignments",
+    description: "Choose whether a future personal notification should flag tasks assigned to you.",
+  },
 ] as const;
 
 export type UserNotificationPreferenceKey = typeof USER_NOTIFICATION_PREFERENCE_CATALOG[number]["key"];
@@ -43,6 +48,7 @@ export function defaultUserNotificationPreferences(): UserNotificationPreference
     "gmail.filing_review_needed": false,
     "calendar.schedule_changed": false,
     "project.warranty_follow_up_due": false,
+    "task.assigned": false,
   };
 }
 
@@ -55,16 +61,30 @@ export function defaultUserSettingsPreferences(): UserSettingsPreferences {
 }
 
 /**
- * Accepts only the complete closed catalog so unknown future keys never become implied consumers.
- * A future catalog expansion must widen-on-read by merging missing or unknown keys against defaults,
- * or ship a data migration; otherwise this all-or-nothing normalizer resets saved preferences.
+ * Widens stored or server-returned preferences onto the current closed catalog.
+ * Missing current keys default off and unknown future/stale keys are ignored, while
+ * malformed values for a current key still fail closed.
  */
 export function normalizeUserNotificationPreferences(value: unknown): UserNotificationPreferences | null {
   if (!isRecord(value)) return null;
+  const preferences = defaultUserNotificationPreferences();
+  for (const key of USER_NOTIFICATION_PREFERENCE_KEYS) {
+    if (!Object.hasOwn(value, key)) continue;
+    if (typeof value[key] !== "boolean") return null;
+    preferences[key] = value[key];
+  }
+  return preferences;
+}
+
+/** Writes remain exact even though reads widen legacy catalogs. */
+export function parseUserNotificationPreferencesUpdate(value: unknown): UserNotificationPreferences | null {
+  if (!isRecord(value)) return null;
   const keys = Object.keys(value);
-  if (keys.length !== USER_NOTIFICATION_PREFERENCE_KEYS.length || keys.some((key) => !USER_NOTIFICATION_PREFERENCE_KEY_SET.has(key))) return null;
-  if (USER_NOTIFICATION_PREFERENCE_KEYS.some((key) => typeof value[key] !== "boolean")) return null;
-  return Object.fromEntries(USER_NOTIFICATION_PREFERENCE_KEYS.map((key) => [key, value[key]])) as UserNotificationPreferences;
+  if (
+    keys.length !== USER_NOTIFICATION_PREFERENCE_KEYS.length
+    || keys.some((key) => !USER_NOTIFICATION_PREFERENCE_KEY_SET.has(key))
+  ) return null;
+  return normalizeUserNotificationPreferences(value);
 }
 
 export function parseStoredUserNotificationPreferences(value: string | null | undefined): UserNotificationPreferences {

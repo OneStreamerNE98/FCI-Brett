@@ -298,7 +298,7 @@ GOOGLE_CHAT_SERVICE_WEBHOOK_URL=<hosted secret>
 ```
 
 Settings → Workflow & notifications shows each exact secret name and only its
-configured/missing state. Administrators map the four closed event types to those
+configured/missing state. Administrators map the five closed event types to those
 fixed space aliases and enable them individually; office users see the same mapping
 read-only. The browser never receives a webhook URL. See the
 [Google Chat notification boundary](google-chat-notifications.md).
