@@ -473,6 +473,44 @@ stale-version write is rejected or safely merged, never silently dropped;
 widen-on-read law preserved; D1 and PostgreSQL behavior identical.
 **Effort:** small-medium. **Cost:** $0.
 
+### BE-16 · PostgreSQL parity for the project segment (small, after BE-15 + DES-08 a-T2; filed July 24, 2026)
+**Status:** Blocked — awaiting owner dispatch; Codex paste ready (zone: PG migrations/adapters/rehearsal, disjoint from all open lanes).
+
+**Why:** DES-08 a-T2 (PR #179) added the two-value `projects.segment` to D1
+only, per the KPI-04 precedent of deferring production PostgreSQL parity to
+its own packet; without it, the production repository cannot store or derive
+segments and the KPI segment splits have no production data path.
+**Do:** register a checksummed production PostgreSQL migration as the next
+contiguous version (v10 expected; v1–v9 definitions AND checksums
+byte-untouched) adding nullable `projects.segment` with a domain CHECK
+byte-equal to the D1 catalog (`commercial`|`residential`); extend the PG
+project repository with the segment mapping at D1 parity — explicit choice
+stored, widen-on-read deriving from the joined client industry for
+null/invalid rows, the private joined field never exposed (mirror the D1
+adapter's semantics); update least-privilege grants; deferral docs updated
+with dates. **Spec completions (July 24, 2026, per automated review):**
+(1) include `segment` in `projectCreationFingerprintInput` so a reused
+idempotency key with a changed segment is a DIFFERENT creation, not a dedupe
+hit — and verify the D1 creation path's fingerprint/dedupe treats segment
+identically (align if not); (2) route segment through the PRODUCTION READ
+path — `AuthorizationRepository.listProjectsForScope` and
+`getProjectForScope` in `app/adapters/postgres/authorization-repository.ts`
+(incl. the derive-on-read client-industry join), not only the project
+repository, or Cloud Run list/detail responses never expose it; (3) extend
+the rehearsal format for segment PRESERVATION (format-v3 or an amended v2
+per the KPI-04 fail-closed activation precedent) — today's exact
+`PROJECT_KEYS` rejects the field while omission imports NULL and silently
+drops explicit choices; activation stays fail-closed until registered.
+**Accept:** v10 contiguous with prior checksums untouched; CHECK byte-equal
+to the D1 domain rules; parity proven by the real-PG integration suite
+(round-trip incl. derive-on-read and third-value rejection); a fingerprint
+test proving segment-changed reuse of an idempotency key creates distinctly;
+authorization-repository reads return the segment with derive-on-read
+proven; a rehearsal test proving an explicit segment survives
+snapshot→import; no runtime path assumes v10 applied (source-only law);
+`npm test` green.
+**Effort:** small. **Cost:** $0.
+
 ---
 
 # Workstream B — Google Workspace connection & data flows (WS)
