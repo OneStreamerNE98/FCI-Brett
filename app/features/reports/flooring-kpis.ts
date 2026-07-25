@@ -270,14 +270,15 @@ export function calculateFlooringKpis(
     return status === "converted" || status === "lost";
   });
   const convertedLeads = decidedLeads.filter((lead) => normalizedStatus(lead.status) === "converted");
-  const sourceGroups = new Map<string, { won: number; decided: number }>();
+  const sourceGroups = new Map<string, { source: string; won: number; decided: number }>();
 
   for (const lead of decidedLeads) {
     const source = lead.source.trim() || "Unspecified";
-    const group = sourceGroups.get(source) ?? { won: 0, decided: 0 };
+    const sourceKey = source.toLowerCase();
+    const group = sourceGroups.get(sourceKey) ?? { source, won: 0, decided: 0 };
     group.decided += 1;
     if (normalizedStatus(lead.status) === "converted") group.won += 1;
-    sourceGroups.set(source, group);
+    sourceGroups.set(sourceKey, group);
   }
 
   const salesCycleDays = convertedLeads.flatMap((lead) => {
@@ -302,8 +303,8 @@ export function calculateFlooringKpis(
     wonLeads: convertedLeads.length,
     decidedLeads: decidedLeads.length,
     winRate: decidedLeads.length > 0 ? convertedLeads.length / decidedLeads.length : null,
-    winRateBySource: [...sourceGroups.entries()]
-      .map(([source, result]) => ({ source, ...result, rate: result.won / result.decided }))
+    winRateBySource: [...sourceGroups.values()]
+      .map((result) => ({ ...result, rate: result.won / result.decided }))
       .sort((left, right) => left.source.localeCompare(right.source)),
     averageSalesCycleDays: average(salesCycleDays),
     salesCycleLeadCount: salesCycleDays.length,

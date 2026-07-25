@@ -278,7 +278,7 @@ The **Client Directory & Project Register** — a one-way Google Sheets mirror o
 
 - **Client Directory** tab mirrors client code, contacts, project count, folder link, status, and last update.
 - **Project Register** tab is rebuilt from your project records (client, status, site, value, manager, Drive link).
-- Each card shows the recorded `lastSyncedAt` and `lastError` values exactly as the mirror status returned them. The shared status labels translate the underlying state into **Checking sync**, **Syncing**, **Needs attention**, **Synced**, or **Not synced**. If a live sync is interrupted, an over-age **Syncing** state recovers to **Not synced** on the next status refresh instead of remaining frozen.
+- Each card formats the recorded `lastSyncedAt` as a readable local date and time while showing `lastError` exactly as the mirror status returned it. The shared status labels translate the underlying state into **Checking sync**, **Syncing**, **Needs attention**, **Synced**, or **Not synced**. If a live sync is interrupted, an over-age **Syncing** state recovers to **Not synced** on the next status refresh instead of remaining frozen.
 
 One column is deliberately yours to edit: **Account Notes**. Everything else on the generated Project Register will be overwritten on the next sync, so do not hand-edit it. Spreadsheet edits do not write back into the app.
 

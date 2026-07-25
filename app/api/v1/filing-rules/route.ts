@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
-  const auth = requireOfficeUser(request);
+  const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
   const parsed = await parseBoundedJsonObject(request, {
     maximumBytes: MAX_RULE_BODY_BYTES,

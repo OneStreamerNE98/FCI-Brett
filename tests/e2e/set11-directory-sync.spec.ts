@@ -40,7 +40,7 @@ async function routeMirrorSequence(page: Page, mirrors: readonly Mirror[]) {
   };
 }
 
-test("SET-11 refreshes recorded mirror status without syncing and keeps returned values verbatim", async ({ page }) => {
+test("SET-11 refreshes mirror status without syncing, formats timestamps, and keeps errors verbatim", async ({ page }) => {
   const firstSyncedAt = 1_721_111_111_111;
   const refreshedSyncedAt = 1_722_222_222_222;
   const recordedError = "Recorded client mirror failure: row <7> & retry manually.";
@@ -74,13 +74,17 @@ test("SET-11 refreshes recorded mirror status without syncing and keeps returned
   await page.goto("/settings?section=client-directory");
   const panel = page.getByRole("region", { name: "Client Directory & Project Register" });
   await expect(panel).toBeVisible();
-  await expect(panel.getByText(`Last synced: ${firstSyncedAt}`, { exact: true })).toHaveCount(2);
+  const firstSyncedLabel = await page.evaluate((value) => new Date(value).toLocaleString(), firstSyncedAt);
+  await expect(panel.getByText(`Last synced: ${firstSyncedLabel}`, { exact: true })).toHaveCount(2);
+  await expect(panel.getByText(`Last synced: ${firstSyncedAt}`, { exact: true })).toHaveCount(0);
   const readsBeforeRefresh = calls.statusReads();
 
   await panel.getByRole("button", { name: "Refresh status" }).click();
 
   await expect.poll(calls.statusReads).toBe(readsBeforeRefresh + 1);
-  await expect(panel.getByText(`Last synced: ${refreshedSyncedAt}`, { exact: true })).toHaveCount(2);
+  const refreshedSyncedLabel = await page.evaluate((value) => new Date(value).toLocaleString(), refreshedSyncedAt);
+  await expect(panel.getByText(`Last synced: ${refreshedSyncedLabel}`, { exact: true })).toHaveCount(2);
+  await expect(panel.getByText(`Last synced: ${refreshedSyncedAt}`, { exact: true })).toHaveCount(0);
   await expect(panel.getByText(`Last error: ${recordedError}`, { exact: true })).toBeVisible();
   await expect(panel.getByText("Needs attention", { exact: true })).toBeVisible();
   await expect(panel.getByText("Syncing", { exact: true })).toBeVisible();

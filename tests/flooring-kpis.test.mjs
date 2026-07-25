@@ -147,6 +147,18 @@ test("uses the Cherry Hill business month at UTC boundaries", () => {
   assert.equal(monthKeyForTimestamp(Date.parse("2026-08-01T04:00:00Z")), "2026-08");
 });
 
+test("groups win-rate sources by trimmed case-insensitive identity while keeping first-seen casing", () => {
+  const result = calculateFlooringKpis([
+    { status: "converted", source: "Referral", estimatedValue: null },
+    { status: "lost", source: " referral ", estimatedValue: null },
+    { status: "converted", source: "REFERRAL", estimatedValue: null },
+  ], [], "2026-07");
+
+  assert.deepEqual(result.winRateBySource, [
+    { source: "Referral", won: 2, decided: 3, rate: 2 / 3 },
+  ]);
+});
+
 test("uses explicit completion dates before the fallback and computes install quality from completed jobs", () => {
   const common = {
     status: "completed",
@@ -224,6 +236,7 @@ test("pins the financial gate, definitions document, drill-through, and A7 excep
   assert.match(panel, /operationsHref\("Leads"\)/);
   assert.match(panel, /operationsHref\("Projects", \{ projectStatus: "Active" \}\)/);
   assert.match(definitions, /converted.*converted, lost/si);
+  assert.match(definitions, /trimmed, case-insensitive `source` key[\s\S]*first-seen trimmed casing/);
   assert.match(definitions, /A denominator of zero.*em dash/si);
   assert.match(definitions, /effectiveCompletionAt = valid installationCompletedAt \?\? valid updatedAt/);
   assert.match(definitions, /\*\*Install cycle days\*\*[\s\S]*same-day installation is a valid zero-day result/);

@@ -342,7 +342,7 @@ byte-identical; `npm test` and e2e green.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-05 · Correctness small fixes: filing-rules admin gate, normalized win-rate sources, readable sync timestamps (small)
-**Status:** Blocked — awaiting owner dispatch (zone: filing-rules routes + `features/reports/flooring-kpis.ts` + `settings/components/DirectorySyncPanel.tsx`; clear of all open lanes).
+**Status:** In review — PR #202, July 25, 2026. Source-only and undeployed. Filing-rule mutations now require Administrator access; win-rate sources normalize trimmed casing variants; Directory mirror timestamps render as readable local time. Guide impact: `docs/settings-guide.md` updated.
 
 **Why:** N7-1 (filing-rules mutations office-gated while every sibling
 settings config route requires admin; UI already admin-only), N7-4 (win-rate

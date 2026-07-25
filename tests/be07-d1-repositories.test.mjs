@@ -548,7 +548,7 @@ test("filing-rule routes preserve built-in merging and mutation response semanti
   assert.equal(getBody.rules.at(-1).approvalRequired, true);
 
   const postResponse = await filingRoute.POST(
-    routeRequest("/api/v1/filing-rules", OFFICE_EMAIL, "POST", {
+    routeRequest("/api/v1/filing-rules", ADMIN_EMAIL, "POST", {
       name: "Builder invitations",
       priority: 8,
       matchSummary: "Known builder",
@@ -560,7 +560,7 @@ test("filing-rule routes preserve built-in merging and mutation response semanti
   assert.equal(postResponse.headers.get("cache-control"), "no-store");
 
   const patchResponse = await filingItemRoute.PATCH(
-    routeRequest("/api/v1/filing-rules/custom-rule", OFFICE_EMAIL, "PATCH", {
+    routeRequest("/api/v1/filing-rules/custom-rule", ADMIN_EMAIL, "PATCH", {
       enabled: false,
     }),
     { params: Promise.resolve({ ruleId: "custom-rule" }) },
@@ -569,9 +569,44 @@ test("filing-rule routes preserve built-in merging and mutation response semanti
   assert.equal((await patchResponse.json()).updated, true);
 
   const deleteResponse = await filingItemRoute.DELETE(
-    routeRequest("/api/v1/filing-rules/custom-rule", OFFICE_EMAIL, "DELETE"),
+    routeRequest("/api/v1/filing-rules/custom-rule", ADMIN_EMAIL, "DELETE"),
     { params: Promise.resolve({ ruleId: "custom-rule" }) },
   );
   assert.equal(deleteResponse.status, 200);
   assert.deepEqual(await deleteResponse.json(), { deleted: true });
+});
+
+test("filing-rule POST, PATCH, and DELETE reject a non-admin office user before persistence", async () => {
+  const database = new FakeDatabase();
+  setEnvironment(database);
+  const context = { params: Promise.resolve({ ruleId: "custom-rule" }) };
+
+  const responses = await Promise.all([
+    filingRoute.POST(
+      routeRequest("/api/v1/filing-rules", OFFICE_EMAIL, "POST", {
+        name: "Builder invitations",
+        priority: 8,
+        matchSummary: "Known builder",
+        action: "suggest",
+        targetCategory: "05_Correspondence / Email Archive",
+      }),
+    ),
+    filingItemRoute.PATCH(
+      routeRequest("/api/v1/filing-rules/custom-rule", OFFICE_EMAIL, "PATCH", {
+        enabled: false,
+      }),
+      context,
+    ),
+    filingItemRoute.DELETE(
+      routeRequest("/api/v1/filing-rules/custom-rule", OFFICE_EMAIL, "DELETE"),
+      context,
+    ),
+  ]);
+
+  for (const response of responses) {
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "An FCI administrator must complete this action." });
+  }
+  assert.equal(database.statements.length, 0);
+  assert.equal(database.runs.length, 0);
 });
