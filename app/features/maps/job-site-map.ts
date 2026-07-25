@@ -98,8 +98,11 @@ export function resolveJobSiteMapsRuntimeConfig(input: Readonly<{
     : null;
   return Object.freeze({
     simulation: input.simulation,
-    // Simulation never places a key in rendered markup or creates an iframe.
-    browserApiKey: input.simulation ? null : browserApiKey,
+    // Maps is a Google Cloud browser embed, not a Workspace data operation:
+    // a configured key renders live embeds even while Workspace runs in
+    // simulation (owner decision, July 25, 2026). Workspace surfaces stay
+    // simulated; without a key, simulation keeps its placeholder card.
+    browserApiKey,
   });
 }
 
@@ -119,7 +122,7 @@ export function resolveJobSiteMapState(
   }
 
   const directionsUrl = buildGoogleMapsDirectionsUrl(location);
-  if (runtime.simulation) {
+  if (runtime.simulation && !runtime.browserApiKey) {
     return Object.freeze({
       kind: "simulation",
       location,
