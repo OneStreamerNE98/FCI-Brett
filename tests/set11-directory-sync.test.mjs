@@ -35,11 +35,10 @@ test("SET-11 refresh re-reads the no-store status route and cannot trigger a syn
   assert.doesNotMatch(route, /export async function (?:POST|PUT|PATCH|DELETE)/);
 });
 
-test("SET-11 renders recorded sync timestamps and errors verbatim through the shared status mapper", async () => {
+test("SET-11 renders recorded sync timestamps readably and errors verbatim through the shared status mapper", async () => {
   const panel = await read("app/settings/components/DirectorySyncPanel.tsx");
 
-  assert.match(panel, /function syncTime[\s\S]+return value === null \|\| value === undefined \? "Not yet synced" : String\(value\)/);
-  assert.doesNotMatch(panel, /new Date|toLocaleString|formatSyncTime/);
+  assert.match(panel, /function syncTime[\s\S]+return value === null \|\| value === undefined \? "Not yet synced" : new Date\(value\)\.toLocaleString\(\)/);
   assert.match(panel, /sheetMirrorStatusLabel\(mirror, entity\)/);
   assert.match(panel, /Last synced: \{syncTime\(entityStatus\?\.lastSyncedAt\)\}/);
   assert.match(panel, /Last error: \{entityStatus\.lastError\}/);
@@ -58,6 +57,7 @@ test("SET-11 unconfigured guidance names only the fallback key and deep-links to
   assert.doesNotMatch(panel, /process\.env|env\[[^\]]+\]/);
 
   assert.match(guide, /\*\*Refresh status\*\* checks the latest recorded mirror state without running a sync/);
+  assert.match(guide, /formats the recorded `lastSyncedAt` as a readable local date and time while showing `lastError` exactly as the mirror status returned it/);
   assert.match(guide, /`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` remains the fallback configuration name/);
   assert.match(guide, /Google Workspace → Stage 3/);
 });

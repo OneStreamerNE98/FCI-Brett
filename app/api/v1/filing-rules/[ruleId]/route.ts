@@ -13,7 +13,7 @@ const MAX_RULE_BODY_BYTES = 8_000;
 export async function PATCH(request: NextRequest, context: { params: Promise<{ ruleId: string }> }) {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
-  const auth = requireOfficeUser(request);
+  const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const { ruleId } = await context.params;
@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ r
 export async function DELETE(request: NextRequest, context: { params: Promise<{ ruleId: string }> }) {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
-  const auth = requireOfficeUser(request);
+  const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
   const { ruleId } = await context.params;

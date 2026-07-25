@@ -40,7 +40,7 @@ function isSheetMirrorStatus(value: unknown): value is SheetMirrorStatus {
 }
 
 function syncTime(value: number | null | undefined) {
-  return value === null || value === undefined ? "Not yet synced" : String(value);
+  return value === null || value === undefined ? "Not yet synced" : new Date(value).toLocaleString();
 }
 
 function DirectoryMirrorSummary({
