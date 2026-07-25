@@ -1019,6 +1019,10 @@ test("captures durable project meetings and bounded Otter evidence", async () =>
   assert.match(app, /name="actionItems"/);
   assert.match(app, /name="notes"/);
   assert.match(app, /name="transcript"/);
+  assert.match(
+    app,
+    /name="meetingType" defaultValue="client"><option value="client">Client meeting<\/option><option value="site-walk">Site walk<\/option><option value="internal">Internal huddle<\/option><option value="pre-install">Pre-install meeting<\/option><option value="closeout">Closeout review<\/option><option value="phone-call">Phone call<\/option><option value="other">Other<\/option><\/select>/,
+  );
   assert.match(app, /Open source/);
 
   assert.match(assistantEvidence, /FROM project_meetings WHERE project_id = \?/);
