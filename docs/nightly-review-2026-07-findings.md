@@ -153,12 +153,17 @@ The 4px intra-control gap inside the Projects segmented filter pill is
 intended spacing; segments are 34px (≥ the WCAG 24px floor) and no 8px token
 governs intra-pill gaps. Recorded so future nights do not re-file. Note-only.
 
-#### N1-3 · Control-size token scale caps at 42px app-wide (P3)
+#### N1-3 · The three sub-44 control tokens drive ~70 below-HIG targets (P3; corrected July 25, 2026)
 `--control-compact:34 / --control-standard:40 / --control-page:42` drive ~70
-below-HIG (24–43px) targets on every route; `--target-min:44` exists but is
-never applied to controls. Uniformly ≥24px, so no WCAG 2.5.8 failure — a
-single-token root with an owner-visible density change if bumped. → NFIX-04
-(CSS-token-only; default-layout markup is byte-pinned by the golden hashes).
+below-HIG (24–43px) targets across routes. Uniformly ≥24px, so no WCAG 2.5.8
+failure. **Correction (automated review):** `--target-min:44` is NOT unused —
+it is deliberately applied to sidebar-collapse, collapsed nav links,
+icon-button/mobile nav, workspace-stage-toggle, ProjectSegmentSelector
+options, PageLayoutEditor buttons, and the connection-health toggle. This is
+a chosen two-tier density scale, not a single unused-token root; NFIX-04 must
+enumerate the actual below-44 selector families and raise a curated set, not
+blanket-bump tokens on a false premise. → NFIX-04 (CSS-only; default-layout
+markup is byte-pinned by the golden hashes).
 
 #### N1-4 · Sub-8px gaps between adjacent action controls (P3)
 google-workspace action row (6px between primary/soft buttons); the
@@ -194,15 +199,21 @@ UI hides the panel behind `isAdmin` (API-only surface). Refuted to P3:
 trusted-insider actor, same-origin only, review-first impact (no Gmail
 write). Defense-in-depth parity fix. → NFIX-05.
 
-#### N7-2 · Revenue-per-sq-ft averages per-project ratios, not aggregate ÷ aggregate (P3)
+#### N7-2 · Revenue-per-sq-ft averages per-project ratios, not aggregate ÷ aggregate (P3; verified intentional)
 `average(value/sqft per project)` weights a 250-sqft job equally with a
-10,000-sqft job (example divergence ~1.9×). May be intended "average unit
-price" — the caption discloses a per-project basis. **Owner decision.**
+10,000-sqft job. **Resolved as documented intended behavior (automated
+review):** `docs/flooring-kpis.md` defines this KPI as "the arithmetic mean
+of those per-job ratios, **not aggregate dollars divided by aggregate square
+feet**" — the code matches its source of truth exactly. No open decision;
+revisit only if the owner wants the definition itself changed.
 
-#### N7-3 · Booked value/count and average job value include cancelled projects (P3)
-`bookedProjects` filters only by creation month and `averageJobValue` spans
-all projects regardless of terminal status, so cancelled work inflates both.
-May be an intended point-in-time booking snapshot. **Owner decision.**
+#### N7-3 · Booked value/count and average job value include cancelled projects (P3; verified intentional)
+`bookedProjects` filters only by creation month; `averageJobValue` spans all
+loaded valued projects. **Resolved as documented intended behavior (automated
+review):** `docs/flooring-kpis.md` defines monthly bookings by `createdAt`
+with no status exclusion and average job value across "all currently loaded
+projects." Code matches the accepted formulas. No open decision; revisit only
+if the owner wants the definitions changed.
 
 #### N7-4 · Win-rate-by-source groups on raw casing/whitespace (P3)
 `lead.source.trim()` without case normalization splits one logical source
@@ -311,18 +322,22 @@ removal breaks no test; `npm test` green.
 
 **Why:** N1-1 — the app's only page-level horizontal overflow (testing-launch
 at 360–390: unbreakable OIDC requirement names + a heading-stack rule scoped
-to `.workspace-settings` only). N1-3 — the control token scale caps at 42px,
-leaving ~70 targets below the 44px HIG tier app-wide. N1-4 — 6–7px gaps in
-three settings sections against the 8px rhythm.
+to `.workspace-settings` only). N1-3 (as corrected) — the three sub-44 control
+tokens drive ~70 below-HIG targets while `--target-min:44` is already applied
+to a deliberate set of controls. N1-4 — 6–7px gaps in three settings sections
+against the 8px rhythm.
 **Do:** add overflow-wrap/word-break to `.settings-security-list strong`;
 broaden the ≤560px heading-stack rule beyond `.workspace-settings` (or give
-`.settings-heading` flex-wrap); bump the control token tier toward 44px
-(CSS-token-only — default-layout markup is byte-pinned by the golden hashes,
-NO markup edits); raise the three sub-8px control gaps to ≥8px. PR carries
-before/after phone screenshots (the token bump is an owner-visible density
-change).
+`.settings-heading` flex-wrap); **enumerate the below-44 interactive selector
+families** (the `--control-compact/-standard/-page` consumers) and raise a
+curated set to the 44px tier on phone widths — per-family, with a one-line
+keep-or-raise rationale each, NOT a blanket token bump (CSS-only —
+default-layout markup is byte-pinned by the golden hashes, NO markup edits);
+raise the three sub-8px control gaps to ≥8px. PR carries before/after phone
+screenshots (density changes are owner-visible).
 **Accept:** Night-1 scanner re-run at 360/375/390/430 shows zero page-level
-overflow and no sub-8px gaps on the three named sections; golden hashes
+overflow and no sub-8px gaps on the three named sections; the PR lists every
+below-44 family with its keep-or-raise decision; golden hashes
 byte-identical; `npm test` and e2e green.
 **Effort:** small. **Cost:** $0.
 
@@ -336,11 +351,16 @@ milliseconds).
 **Do:** add `{admin:true}` to filing-rules POST/PATCH/DELETE authorization +
 a non-admin 403 test (mirrors sibling settings routes); key
 win-rate-by-source on trimmed+lowercased source with a canonical display
-label (first-seen casing); format `DirectorySyncPanel` `lastSyncedAt` via the
+label (first-seen casing) — this is a **formula refinement**, so the same PR
+must update the win-rate grouping definition in `docs/flooring-kpis.md`
+(currently "trimmed `source`") and the pure-helper tests, per that document's
+own refinement rule; format `DirectorySyncPanel` `lastSyncedAt` via the
 existing `toLocaleString` pattern used for the same field in
 GoogleWorkspacePanel.
 **Accept:** non-admin office user gets 403 on all three filing-rules
 mutations (test-asserted); same-source case variants collapse to one row with
-a combined rate (test-asserted); "Last synced" renders a locale timestamp;
-`npm test` green; no other behavior change.
+a combined rate (test-asserted) AND `docs/flooring-kpis.md` + pure-helper
+tests updated in the same PR; "Last synced" renders a locale timestamp;
+`npm test` green; no other behavior change. Owner dispatch of this packet is
+the sign-off on the grouping-definition refinement.
 **Effort:** small. **Cost:** $0.

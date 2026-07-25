@@ -24,7 +24,7 @@ P1/P2 adversarially verified.
 |---|---|---|---|
 | N1-1 | P2 | Testing & launch forces page-level horizontal scroll (unbreakable OIDC names + heading-stack rule scoped to `.workspace-settings` only) | NFIX-04 |
 | N1-2 | P3 | Projects filter pill 4px gap — refuted from P2: intended segmented-pill spacing, ≥ WCAG floor | Note-only |
-| N1-3 | P3 | Control token scale caps at 42px; ~70 below-HIG targets app-wide, single-token root | NFIX-04 |
+| N1-3 | P3 | Three sub-44 control tokens drive ~70 below-HIG targets (corrected: `--target-min` IS applied to a deliberate control set — curated per-family raise, not a blanket bump) | NFIX-04 |
 | N1-4 | P3 | 6–7px control gaps in google-workspace / workflow-notifications / calendar sections | NFIX-04 |
 | N1-5 | P3 | Scanner checkbox "failures" are label-wrapped false positives (labels ≥44px are the real targets) | Documented allowlist note |
 

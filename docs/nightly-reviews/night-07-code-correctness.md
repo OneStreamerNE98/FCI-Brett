@@ -25,8 +25,8 @@ P3s filed:
 | ID | Sev | Finding | Disposition |
 |---|---|---|---|
 | N7-1 | P3 | filing-rules mutations office-gated while every sibling settings route requires admin (core confirmed; severity-refuted from P2 — API-only, trusted insiders, review-first impact) | NFIX-05 |
-| N7-2 | P3 | Revenue-per-sq-ft is an average of per-project ratios, not aggregate ÷ aggregate (~1.9× divergence possible) | Owner decision |
-| N7-3 | P3 | Booked value/count + average job value include cancelled projects | Owner decision |
+| N7-2 | P3 | Revenue-per-sq-ft is an average of per-project ratios, not aggregate ÷ aggregate | Verified intentional — `docs/flooring-kpis.md` defines exactly this formula |
+| N7-3 | P3 | Booked value/count + average job value include cancelled projects | Verified intentional — matches the documented booking/average definitions |
 | N7-4 | P3 | Win-rate-by-source splits rows on raw casing while status is normalized in the same loop | NFIX-05 |
 | N7-5 | P3 | DirectorySyncPanel renders "Last synced" as raw epoch milliseconds | NFIX-05 |
 | N7-6 | P3 | Meeting POST coerces unknown meetingType to "other"; far-off dates accepted (direct-API surface only) | Note-only |
@@ -40,15 +40,20 @@ loadedBucket guard.
 
 ## Recommended
 
-NFIX-05 is dispatchable immediately (zone clear of all open lanes). Bring
-N7-2 and N7-3 to the owner as one KPI-semantics conversation — both are
-"what should this number mean" questions, not bugs. N7-7/N7-8 ride FIX-15's
-FloorOpsApp pass rather than opening a competing lane in the same file.
+NFIX-05 is dispatchable immediately (zone clear of all open lanes); its
+win-rate normalization is a formula refinement, so the packet carries the
+`docs/flooring-kpis.md` definition update + pure-helper tests in the same PR
+per that document's rule. N7-2/N7-3 resolved as documented intended behavior
+(the KPI source of truth defines both formulas exactly as coded) — mention to
+the owner only as "revisit the definitions if you ever want different
+semantics." N7-7/N7-8 ride FIX-15's FloorOpsApp pass rather than opening a
+competing lane in the same file.
 
 ## Pastes issued
 
-NFIX-05 drafted and zone-checked. N7-2/N7-3 carried to the owner's morning
-report as decisions — no paste.
+NFIX-05 drafted and zone-checked (amended after automated review to carry the
+KPI-definition update). N7-2/N7-3 closed as verified-intentional — no paste,
+no pending decision.
 
 ## Coverage honesty
 
