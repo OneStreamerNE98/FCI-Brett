@@ -2660,9 +2660,12 @@ merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED. NFIX-03 (PR #197) and BE-16 (PR #198)
 both MERGED July 25, 2026 — **FIX-15 is now the dispatchable head of the
 FloorOpsApp fix-tail** (then FIX-17, SET-22; SET-26 remains gated on SET-23,
-open). **AI-04 is the active Codex claim** (dispatched July 25, 2026) — the
-assistant zone freed when PR #195 merged; AI-05/AI-06 follow in the extracted
-modules (parallel-safe among themselves); AI-09 closes the workstream. DES-08's
+open). **AI-04 is next and dispatchable** — its kickoff paste is with the owner
+(July 25, 2026), dispatch not yet confirmed; when its `codex/*` branch opens,
+the claim is recorded on AI-04's packet status line (the canonical mechanism)
+in that PR. The assistant zone freed when PR #195 merged; AI-05/AI-06 follow
+in the extracted modules (parallel-safe among themselves); AI-09 closes the
+workstream. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
