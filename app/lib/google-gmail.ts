@@ -12,6 +12,10 @@ const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(inpu
 const MAX_SEARCH_QUERY_LENGTH = 240;
 const MAX_ARCHIVE_MESSAGE_PARTS = 160;
 const MEBIBYTE = 1024 * 1024;
+// A reply draft only needs a bounded, plain-text view of the untrusted message
+// body. Keeping the cap here (never trusting a caller) stops a malformed message
+// from making the worker decode an unbounded body into the AI request.
+export const GMAIL_REPLY_TEXT_LIMIT = 10_000;
 
 // Archive retrieval happens in the request path for the connected Workspace mailbox.
 // Keep the hard caps here (rather than trusting a caller) so a malformed message
@@ -316,6 +320,48 @@ function collectAttachmentCandidates(payload: GmailMessagePart | undefined) {
   return candidates;
 }
 
+/** Best-effort base64url text decode for a single MIME part; never throws. */
+function decodeGmailBase64UrlText(value: unknown) {
+  if (typeof value !== "string" || !value || !/^[A-Za-z0-9_-]*={0,2}$/.test(value)) return "";
+  try {
+    const unpadded = value.replace(/=+$/g, "").replace(/-/g, "+").replace(/_/g, "/");
+    const padding = "=".repeat((4 - (unpadded.length % 4)) % 4);
+    const binary = atob(`${unpadded}${padding}`);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Collects the text/plain body parts of a message, bounded in both traversal and
+ * output. This is untrusted message content, so it is only ever handed onward as
+ * data; it deliberately ignores text/html and attachment parts.
+ */
+function collectGmailPlainTextBody(payload: GmailMessagePart | undefined, maximum: number) {
+  if (!payload) return "";
+  const chunks: string[] = [];
+  const pending: GmailMessagePart[] = [payload];
+  let inspected = 0;
+  let total = 0;
+  while (pending.length && total < maximum) {
+    const part = pending.shift();
+    if (!part) continue;
+    inspected += 1;
+    if (inspected > MAX_ARCHIVE_MESSAGE_PARTS) break;
+    for (const child of part.parts ?? []) pending.push(child);
+    if (part.filename && part.filename.trim()) continue;
+    if ((part.mimeType?.toLowerCase() ?? "") !== "text/plain") continue;
+    const text = decodeGmailBase64UrlText(part.body?.data);
+    if (!text) continue;
+    chunks.push(text);
+    total += text.length;
+  }
+  return chunks.join("\n");
+}
+
 export function validateGmailMessageId(messageId: string) {
   if (!/^[A-Za-z0-9_-]{1,256}$/.test(messageId)) {
     throw new GoogleIntegrationError("invalid_gmail_message", "The Gmail message identifier is invalid.", 400);
@@ -618,6 +664,23 @@ export class GoogleGmailClient {
       throw archiveResponseError("Gmail returned an unexpected message summary.");
     }
     return mapMessage(message);
+  }
+
+  /**
+   * Returns a bounded plain-text view of one message body for reply drafting. It
+   * is read-only against Gmail (format=full), id-validated, and never labels,
+   * sends, or drafts. The result is untrusted message content for the caller.
+   */
+  async getMessageBodyText(messageId: string) {
+    const safeMessageId = validateGmailMessageId(messageId);
+    const message = await this.getFullMessage(safeMessageId);
+    const plain = collectGmailPlainTextBody(message.payload, GMAIL_REPLY_TEXT_LIMIT)
+      || compactText(message.snippet, GMAIL_REPLY_TEXT_LIMIT);
+    return plain
+      .replace(/\r\n/g, "\n")
+      .replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+      .slice(0, GMAIL_REPLY_TEXT_LIMIT)
+      .trim();
   }
 
   private async getFullMessage(messageId: string) {

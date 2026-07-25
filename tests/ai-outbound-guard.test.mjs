@@ -45,18 +45,26 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     "app/api/v1/assistant/config/route.ts",
     "app/api/v1/assistant/extract-tasks/route.ts",
     "app/api/v1/assistant/triage/route.ts",
+    "app/api/v1/assistant/reply-draft/route.ts",
     "app/domain/assistant-config.ts",
     "app/lib/assistant-config-sites.ts",
     "app/ports/assistant-provider.ts",
   ];
+  // Only the two Gmail-reading routes (triage, reply-draft) may import the Gmail
+  // client for read-only summary/context lookups; every other guarded file — all
+  // application modules included — must stay clear of google-gmail entirely.
+  const gmailReaderRoutes = new Set([
+    "app/api/v1/assistant/triage/route.ts",
+    "app/api/v1/assistant/reply-draft/route.ts",
+  ]);
   const sources = await Promise.all(guardedFiles.map(read));
   const combined = sources.join("\n");
-  const guardedWithoutTriage = sources
-    .filter((_source, index) => guardedFiles[index] !== "app/api/v1/assistant/triage/route.ts")
+  const guardedWithoutGmailReaders = sources
+    .filter((_source, index) => !gmailReaderRoutes.has(guardedFiles[index]))
     .join("\n");
 
   assert.doesNotMatch(combined, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/);
-  assert.doesNotMatch(guardedWithoutTriage, /from\s+["'][^"']*(?:google-gmail|google-chat)/i);
+  assert.doesNotMatch(guardedWithoutGmailReaders, /from\s+["'][^"']*(?:google-gmail|google-chat)/i);
   assert.doesNotMatch(combined, /from\s+["'][^"']*google-chat/i);
   assert.doesNotMatch(combined, /\.\s*(?:send|createDraft|createMessage)\s*\(/i);
   assert.doesNotMatch(combined, /\bfetch\s*\(/);
@@ -106,6 +114,36 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     /\b(?:applyFiledLabel|createReplyDraft|sendTestMessage|getMessageArchive|modify|send)\s*\(/,
   );
   assert.doesNotMatch(triageRoute, /\bfetch\s*\(/);
+
+  // AI-06 reply drafting reuses the exact same read-only Gmail boundary: it may
+  // read the reply context and a bounded body, and nothing else. Any draft/send
+  // path (the only Gmail write stays the separate save-draft route) is denied.
+  const replyDraftRoute = await read("app/api/v1/assistant/reply-draft/route.ts");
+  const replyDraftApplication = await read("app/application/assistant/reply-draft.ts");
+  assert.match(
+    replyDraftRoute,
+    /import \{ validateGmailMessageId \} from ["'][^"']*lib\/google-gmail["']/,
+  );
+  assert.match(
+    replyDraftRoute,
+    /import \{ noStoreJson, noStoreResponse \} from ["'][^"']*lib\/no-store-json["']/,
+  );
+  assert.doesNotMatch(replyDraftRoute, /NextResponse\.json/);
+  assert.match(replyDraftRoute, /if \(originError\) return noStoreResponse\(originError\)/);
+  assert.match(replyDraftRoute, /if \("response" in auth\) return noStoreResponse\(auth\.response\)/);
+  // Single-client-call accounting: exactly the two allowed read-only methods.
+  assert.match(replyDraftRoute, /client\.getReplyContext\(messageId\)/);
+  assert.match(replyDraftRoute, /client\.getMessageBodyText\(messageId\)/);
+  assert.equal(replyDraftRoute.match(/client\.[A-Za-z]+/gu)?.length, 2);
+  // Deny + count: neither the route nor its application module may reach a Gmail
+  // mutation, draft, archive fetch, label, or send.
+  assert.doesNotMatch(
+    `${replyDraftRoute}\n${replyDraftApplication}`,
+    /\b(?:applyFiledLabel|createReplyDraft|sendTestMessage|getMessageArchive|modify|send)\s*\(/u,
+  );
+  assert.doesNotMatch(replyDraftRoute, /\bfetch\s*\(/);
+  assert.doesNotMatch(replyDraftApplication, /\bfetch\s*\(/);
+  assert.doesNotMatch(replyDraftApplication, /from\s+["'][^"']*google-gmail/i);
 });
 
 test("the OpenAI adapter has one exact Responses API outbound call site", async () => {
