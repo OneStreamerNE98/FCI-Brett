@@ -180,7 +180,7 @@ change on success paths.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-03 · Server hygiene sweep: response-helper and formatter consolidation, dead-export removal (small)
-**Status:** In review — PR #197, `codex/nfix03-server-hygiene`, July 25, 2026 (dispatched by owner after all holds released: BE-15 merged in PR #181, AI-02 series complete through PR #193). Source-only and undeployed.
+**Status:** Complete — PR #197, July 25, 2026. Opus fleet clean with executed proof (82 tests green on the PR branch): response byte-identity settled decisively (Next 16's NextResponse.json wraps Response.json, so every constructor swap preserves status/headers/body), all 8 dead exports grep-proven zero-reference, every test hunk justified with none weakening a response assertion, BE-16 zone confirmed untouched by empty-diff proof. P3 notes: the api-correctness no-store source guard was relaxed to accept a helper import (coverage held by the new nfix03-server-hygiene suite asserting the header + all 25 route imports); the gmail file route intentionally skips the noStoreResponse wrap (matches its original behavior, test-encoded); two test-helper CRLF-normalization hunks were benign bundled scope. Merged after a conflict-resolution merge with main (status-line collision with PR #196, resolved 6e5542b). Source-only and undeployed.
 
 **Why:** N6-2/N6-4 — one four-line `noStore` helper exists ~22×, the Google
 error-response wrapper 8×, USD formatting has no home, and eight exports are

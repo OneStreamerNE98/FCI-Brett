@@ -474,7 +474,7 @@ widen-on-read law preserved; D1 and PostgreSQL behavior identical.
 **Effort:** small-medium. **Cost:** $0.
 
 ### BE-16 · PostgreSQL parity for the project segment (small, after BE-15 + DES-08 a-T2; filed July 24, 2026)
-**Status:** In review — PR #198, `codex/be16-segment-postgres-parity`, July 25, 2026. Draft, source-only, and unapplied; no migration, grant, hosted rehearsal, deployment, configuration, or data change occurred.
+**Status:** Complete — PR #198, July 25, 2026. Fable fleet clean with executed proof (118 + 131 unit tests green, tsc clean): PostgreSQL migration v10 contiguous with v1–v9 byte-untouched and DDL parity with D1 0019 plus a named two-value CHECK; creation fingerprint includes segment; listProjectsForScope/getProjectForScope carry segment through production reads, closing a-T2's production modal segment-tap 400 end-to-end; rehearsal format v3 fail-closed with segment round-trip; least-privilege keeps segment creation-only. Real-PG integration suites were static-reviewed (CI is that gate). Residual notes (P3, informational): the PG creation-fingerprint kept `version: 1` while its input shape gained segment — bump the marker or note the policy next time the shape changes on a system that could hold live idempotency rows; pre-existing from PR #179, D1's INSERT-time segment derive uses SQLite LOWER(TRIM()) while all other paths use the shared JS helper (Unicode semantics) — flag for a future D1 cleanup packet. Source-only and unapplied; no migration, grant, rehearsal, deployment, or data change occurred.
 
 **Why:** DES-08 a-T2 (PR #179) added the two-value `projects.segment` to D1
 only, per the KPI-04 precedent of deferring production PostgreSQL parity to
@@ -2657,12 +2657,12 @@ and proceed in parallel with R1-R3.
 2026):** the backend chain AI-01 → AI-03 → AI-08 → AI-07 is fully MERGED and
 AI-07 is COMPLETE (PR #185 + PR #195, July 25, 2026 — do not re-claim the
 merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
-the FloorOpsApp queue slot is RELEASED — the fix-tail (NFIX-03, FIX-15,
-FIX-17, SET-22) is dispatchable; SET-26 remains gated on SET-23 (open); NFIX-03
-and BE-16 are the active Codex lanes (July 25, 2026). **AI-04 is next and
-dispatchable** — the assistant zone freed when PR #195 merged; AI-05/AI-06
-follow in the extracted modules (parallel-safe among themselves); AI-09 closes
-the workstream. DES-08's
+the FloorOpsApp queue slot is RELEASED. NFIX-03 (PR #197) and BE-16 (PR #198)
+both MERGED July 25, 2026 — **FIX-15 is now the dispatchable head of the
+FloorOpsApp fix-tail** (then FIX-17, SET-22; SET-26 remains gated on SET-23,
+open). **AI-04 is the active Codex claim** (dispatched July 25, 2026) — the
+assistant zone freed when PR #195 merged; AI-05/AI-06 follow in the extracted
+modules (parallel-safe among themselves); AI-09 closes the workstream. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
