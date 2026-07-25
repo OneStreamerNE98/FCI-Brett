@@ -553,7 +553,7 @@ test("models clients, independent projects, and review-first email filing", asyn
   assert.match(projectsApi, /client_id/);
   assert.match(rulesApi, /createD1FilingRuleRepository/);
   assert.match(rulesAdapter, /approval_required/);
-  assert.match(workspace, /needs-project-selection/);
+  assert.match(workspace, /multiple eligible independent projects/);
   assert.match(blueprint, /FCI\/Needs Review/);
 });
 

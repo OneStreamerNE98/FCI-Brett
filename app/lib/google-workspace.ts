@@ -196,14 +196,3 @@ export function buildProjectFolderPlan(input: {
     gmailLabels: blueprint.gmail.labels.map((label) => label.name),
   };
 }
-
-export function chooseEmailDestination(input: {
-  projectNumber?: string | null;
-  explicitProjectId?: string | null;
-  eligibleProjectIds: string[];
-}) {
-  if (input.projectNumber || input.explicitProjectId) return "suggest-project" as const;
-  if (input.eligibleProjectIds.length === 1) return "suggest-project" as const;
-  if (input.eligibleProjectIds.length > 1) return "needs-project-selection" as const;
-  return "needs-review" as const;
-}

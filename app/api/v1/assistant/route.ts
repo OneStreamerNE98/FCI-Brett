@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { OpenAIResponsesProvider } from "../../../adapters/openai/responses-provider";
 import {
   answerProjectQuestion,
@@ -24,23 +24,13 @@ import {
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { noStoreJson as noStore, noStoreResponse } from "../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
 function runtimeValue(name: string) {
   return (env as unknown as Record<string, string | undefined>)[name]
     ?? process.env[name];
-}
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
-
-function noStoreResponse(response: Response) {
-  response.headers.set("Cache-Control", "no-store");
-  return response;
 }
 
 function provider() {

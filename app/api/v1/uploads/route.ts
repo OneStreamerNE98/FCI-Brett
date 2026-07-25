@@ -1,19 +1,14 @@
 import { env } from "cloudflare:workers";
 import { createHash } from "node:crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { R2ObjectStorage } from "../../../adapters/r2/object-storage";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
+import { noStoreJson as noStore } from "../../../lib/no-store-json";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_MULTIPART_BYTES = 22 * 1024 * 1024;
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 async function hasAllowedContentSignature(file: File) {
   const bytes = new Uint8Array(await file.slice(0, 512).arrayBuffer());

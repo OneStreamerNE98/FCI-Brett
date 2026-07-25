@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import { saveWorkspaceBlueprint } from "../../../../../../../adapters/d1/workspace-blueprints";
 import {
@@ -9,7 +9,7 @@ import {
 } from "../../../../../../../adapters/d1/workspace-setup-leases";
 import { parseBoundedJsonObject } from "../../../../../../../lib/api-json-body";
 import { GoogleDriveClient } from "../../../../../../../lib/google-drive";
-import { mapGoogleIntegrationError } from "../../../../../../../lib/google-integration-error";
+import { googleIntegrationErrorResponse } from "../../../../../../../lib/google-integration-error";
 import {
   getEffectiveGoogleRuntimeSetup,
   getGoogleAccessToken,
@@ -23,17 +23,7 @@ import {
 } from "../../../../../../../lib/workspace-blueprint";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../../_workspace-data";
-
-const RESPONSE_HEADERS = { "Cache-Control": "no-store" } as const;
-
-function response(body: unknown, status = 200) {
-  return NextResponse.json(body, { status, headers: RESPONSE_HEADERS });
-}
-
-function errorResponse(error: unknown) {
-  const mapped = mapGoogleIntegrationError(error, "The managed Drive folder could not be renamed. Try again.");
-  return response(mapped.body, mapped.status);
-}
+import { noStoreJson as response, noStoreResponse } from "../../../../../../../lib/no-store-json";
 
 async function compensateDriveName(
   drive: GoogleDriveClient,
@@ -175,6 +165,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const code = error instanceof GoogleIntegrationError ? error.code : "drive_folder_rename_failed";
     await failWorkspaceSetupLease(env.DB, lease, code, Date.now());
-    return errorResponse(error);
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The managed Drive folder could not be renamed. Try again."));
   }
 }

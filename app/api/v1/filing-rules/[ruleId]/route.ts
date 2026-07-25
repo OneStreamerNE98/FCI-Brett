@@ -1,19 +1,14 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import type { D1Database } from "../../../../adapters/d1/d1-database";
 import { createD1FilingRuleRepository } from "../../../../adapters/d1/filing-rule-repository";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { validateFilingRulePatch } from "../../../../domain/filing-rule";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
+import { noStoreJson as noStore } from "../../../../lib/no-store-json";
 
 const MAX_RULE_BODY_BYTES = 8_000;
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ ruleId: string }> }) {
   const originError = requireSameOrigin(request);

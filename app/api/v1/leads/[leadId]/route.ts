@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import type { D1Database } from "../../../../adapters/d1/d1-database";
 import { createD1LeadRepository } from "../../../../adapters/d1/lead-repository";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
@@ -7,16 +7,11 @@ import { ensureWorkspaceSchema } from "../../_workspace-data";
 import { MAX_LEAD_BODY_BYTES, leadResponse, validateLeadValues } from "../../../../domain/lead";
 import type { LeadActivityIntent } from "../../../../ports/lead-repository";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
+import { noStoreJson as noStore } from "../../../../lib/no-store-json";
 
 type RouteContext = { params: Promise<{ leadId: string }> };
 
 const MUTABLE_KEYS = new Set(["company", "contactName", "contactEmail", "contactPhone", "projectName", "source", "stage", "site", "estimatedValue", "nextAction", "nextActionAt", "ownerEmail", "status"]);
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const originError = requireSameOrigin(request);

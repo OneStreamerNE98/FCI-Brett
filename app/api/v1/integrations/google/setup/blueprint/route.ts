@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 import {
   getWorkspaceBlueprint,
@@ -7,6 +7,7 @@ import {
 } from "../../../../../../adapters/d1/workspace-blueprints";
 import { parseBoundedJsonObject } from "../../../../../../lib/api-json-body";
 import { getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
+import { noStoreJson } from "../../../../../../lib/no-store-json";
 import {
   sanitizeWorkspaceBlueprint,
   seedWorkspaceBlueprint,
@@ -17,10 +18,9 @@ import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/work
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 
 const MAXIMUM_BLUEPRINT_BODY_BYTES = 64 * 1024;
-const RESPONSE_HEADERS = { "Cache-Control": "no-store" } as const;
 
 function invalidBody(error: string, status = 400) {
-  return NextResponse.json({ error }, { status, headers: RESPONSE_HEADERS });
+  return noStoreJson({ error }, status);
 }
 
 export async function GET(request: NextRequest) {
@@ -30,11 +30,11 @@ export async function GET(request: NextRequest) {
 
   const config = getGoogleRuntimeConfig();
   const persisted = await getWorkspaceBlueprint(env.DB, config.connectionKey);
-  return NextResponse.json({
+  return noStoreJson({
     blueprint: persisted?.blueprint ?? seedWorkspaceBlueprint(),
     version: persisted?.version ?? 0,
     seeded: persisted === null,
-  }, { headers: RESPONSE_HEADERS });
+  });
 }
 
 export async function PUT(request: NextRequest) {
@@ -65,7 +65,7 @@ export async function PUT(request: NextRequest) {
     blueprint = sanitizeWorkspaceBlueprint(parsed.body.blueprint);
   } catch (error) {
     if (error instanceof WorkspaceBlueprintValidationError) {
-      return NextResponse.json({ error: error.message, path: error.path }, { status: 400, headers: RESPONSE_HEADERS });
+      return noStoreJson({ error: error.message, path: error.path }, 400);
     }
     throw error;
   }
@@ -89,15 +89,15 @@ export async function PUT(request: NextRequest) {
     },
   });
   if (!result.saved) {
-    return NextResponse.json({
+    return noStoreJson({
       error: "The Workspace blueprint changed after this editor loaded. Load the latest version before saving again.",
       code: "workspace_blueprint_version_conflict",
       currentVersion: result.currentVersion,
-    }, { status: 409, headers: RESPONSE_HEADERS });
+    }, 409);
   }
-  return NextResponse.json({
+  return noStoreJson({
     blueprint: result.record.blueprint,
     version: result.record.version,
     seeded: false,
-  }, { headers: RESPONSE_HEADERS });
+  });
 }

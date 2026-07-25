@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import type { D1Database } from "../../../adapters/d1/d1-database";
 import { createD1UserPreferencesRepository } from "../../../adapters/d1/user-preferences-repository";
 import { normalizeUserDisplayTimezone } from "../../../domain/user-preferences";
@@ -8,12 +8,7 @@ import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { defaultUserSettingsPreferences } from "../../../lib/user-settings";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { dashboardData } from "../../../application/dashboard-data";
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
+import { noStoreJson as noStore } from "../../../lib/no-store-json";
 
 /** Live, persisted dashboard totals. This endpoint never substitutes demo values. */
 export async function GET(request: NextRequest) {

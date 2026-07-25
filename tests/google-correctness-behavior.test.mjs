@@ -3,7 +3,11 @@ import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { createServer } from "vite";
 import { gmailAttachmentArtifactKey } from "../app/lib/google-gmail-artifacts.ts";
-import { GoogleIntegrationError, mapGoogleIntegrationError } from "../app/lib/google-integration-error.ts";
+import {
+  GoogleIntegrationError,
+  googleIntegrationErrorResponse,
+  mapGoogleIntegrationError,
+} from "../app/lib/google-integration-error.ts";
 
 const originalFetch = globalThis.fetch;
 globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = {};
@@ -105,6 +109,25 @@ test("standard Google integration errors preserve the typed status and code", ()
     body: { error: "Safe fallback" },
     status: 503,
   });
+});
+
+test("standard Google integration error responses preserve typed and fallback bodies", async () => {
+  const typed = googleIntegrationErrorResponse(
+    new GoogleIntegrationError("drive_not_found", "The configured drive was not found.", 404),
+    "Fallback",
+  );
+  assert.equal(typed.status, 404);
+  assert.equal(typed.headers.get("content-type"), "application/json");
+  assert.equal(typed.headers.get("cache-control"), null);
+  assert.equal(
+    await typed.text(),
+    '{"error":"The configured drive was not found.","code":"drive_not_found"}',
+  );
+
+  const fallback = googleIntegrationErrorResponse(new Error("private detail"), "Safe fallback");
+  assert.equal(fallback.status, 503);
+  assert.equal(fallback.headers.get("content-type"), "application/json");
+  assert.equal(await fallback.text(), '{"error":"Safe fallback"}');
 });
 
 test("Gmail readiness requires the intake mailbox to be the single approved connection account", () => {

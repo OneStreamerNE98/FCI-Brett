@@ -22,3 +22,8 @@ export function mapGoogleIntegrationError(error: unknown, fallbackMessage: strin
     status: 503,
   };
 }
+
+export function googleIntegrationErrorResponse(error: unknown, fallbackMessage: string) {
+  const mapped = mapGoogleIntegrationError(error, fallbackMessage);
+  return Response.json(mapped.body, { status: mapped.status });
+}

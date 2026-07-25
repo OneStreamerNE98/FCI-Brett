@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createD1ClientRepository } from "../../../adapters/d1/client-repository";
 import type { D1Database } from "../../../adapters/d1/d1-database";
 import { createDirectoryMirror } from "../../../adapters/google/directory-mirror";
@@ -11,14 +11,9 @@ import { clientCreationHttpResult } from "../../../lib/creation-http-result";
 import { getEffectiveGoogleRuntimeSetup, getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+import { noStoreJson as noStore } from "../../../lib/no-store-json";
 
 const MAX_CLIENT_BODY_BYTES = 64_000;
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);

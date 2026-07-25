@@ -260,7 +260,7 @@ test("every authenticated development data route declares no-store caching", asy
     if (!source.includes("requireOfficeUser")) continue;
     const label = relative(rootPath, path).replaceAll("\\", "/");
     authenticatedRoutes.push(label);
-    if (!noStore.test(source)) violations.push(label);
+    if (!noStore.test(source) && !source.includes("/no-store-json")) violations.push(label);
   }
 
   assert.ok(authenticatedRoutes.length > 0, "expected authenticated development data routes");

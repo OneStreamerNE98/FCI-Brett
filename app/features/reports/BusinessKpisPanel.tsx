@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { Activity, BriefcaseBusiness, CheckCircle2, ChevronRight, Clock3, RefreshCw, ShieldCheck, Zap } from "lucide-react";
 import { Metric, OperationsEmptyState } from "../../components/operations/OperationsPrimitives";
+import { formatUsd } from "../../lib/format-usd";
 import { operationsHref } from "../../lib/operations-routes";
 import {
   calculateFlooringKpis,
@@ -20,7 +21,6 @@ type BusinessKpisPanelProps = {
   onSelectedMonthChange: (month: string) => void;
 };
 
-const currencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const unitCurrencyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const rateFormatter = new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 });
 const durationFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -38,7 +38,7 @@ export function BusinessKpisPanel({ leads, projects, isAdmin, state, selectedMon
   const ready = state === "ready";
   const selectedMonthLabel = monthLabel(selectedMonth);
   const pendingNote = unavailableNote(state);
-  const moneyValue = (value: number | null) => !ready ? "—" : !isAdmin ? FINANCIAL_RESTRICTION_LABEL : value === null ? "—" : currencyFormatter.format(value);
+  const moneyValue = (value: number | null) => !ready ? "—" : !isAdmin ? FINANCIAL_RESTRICTION_LABEL : value === null ? "—" : formatUsd(value);
   const tierTwoFinancialValue = (captureCount: number, value: number | null, format: (amount: number) => string) => !ready ? "—" : !isAdmin ? FINANCIAL_RESTRICTION_LABEL : captureCount === 0 ? "Not yet captured" : value === null ? "—" : format(value);
   const financialCaption = <span className="business-kpi-access"><ShieldCheck size={13} aria-hidden="true" />{isAdmin ? "Administrator financial view" : "Dollar value available to administrators only"}</span>;
 
@@ -53,7 +53,7 @@ export function BusinessKpisPanel({ leads, projects, isAdmin, state, selectedMon
       <Metric className="business-kpi-card" label={`Booked value · ${selectedMonthLabel}`} value={moneyValue(kpis.bookedValue)} note={ready ? `${kpis.bookedJobCount} booked ${kpis.bookedJobCount === 1 ? "project" : "projects"} · contract value, then estimate fallback` : pendingNote} icon={Zap} color="orange" caption={financialCaption} />
       <Metric className="business-kpi-card" label="Average job value" value={moneyValue(kpis.averageJobValue)} note={ready ? isAdmin ? `${kpis.averageJobValueCount} valued ${kpis.averageJobValueCount === 1 ? "project" : "projects"} · contract value, then estimate fallback` : "Project values are restricted" : pendingNote} icon={BriefcaseBusiness} color="blue" caption={financialCaption} />
       <Metric className="business-kpi-card" label="Sales cycle" value={!ready || kpis.averageSalesCycleDays === null ? "—" : `${durationFormatter.format(kpis.averageSalesCycleDays)} days`} note={ready ? `${kpis.salesCycleLeadCount} converted ${kpis.salesCycleLeadCount === 1 ? "lead" : "leads"} · last-update approximation` : pendingNote} icon={Clock3} color="violet" />
-      <Metric className="business-kpi-card" label="Backlog" value={ready ? `${kpis.backlogCount} ${kpis.backlogCount === 1 ? "job" : "jobs"}` : "—"} note={ready ? isAdmin ? `${kpis.backlogValue === null ? "—" : currencyFormatter.format(kpis.backlogValue)} estimated value · ${kpis.backlogValueCount} valued` : "Estimated backlog value is restricted" : pendingNote} icon={BriefcaseBusiness} color="green" caption={financialCaption} footer={ready ? <Link className="business-kpi-link" href={operationsHref("Projects", { projectStatus: "Active" })}>View active projects<ChevronRight size={15} aria-hidden="true" /></Link> : undefined} />
+      <Metric className="business-kpi-card" label="Backlog" value={ready ? `${kpis.backlogCount} ${kpis.backlogCount === 1 ? "job" : "jobs"}` : "—"} note={ready ? isAdmin ? `${kpis.backlogValue === null ? "—" : formatUsd(kpis.backlogValue)} estimated value · ${kpis.backlogValueCount} valued` : "Estimated backlog value is restricted" : pendingNote} icon={BriefcaseBusiness} color="green" caption={financialCaption} footer={ready ? <Link className="business-kpi-link" href={operationsHref("Projects", { projectStatus: "Active" })}>View active projects<ChevronRight size={15} aria-hidden="true" /></Link> : undefined} />
       <Metric className="business-kpi-card" label={`Jobs completed · ${selectedMonthLabel}`} value={ready ? String(kpis.jobsCompleted) : "—"} note={ready ? "Recorded installation completion, then last-update fallback" : pendingNote} icon={CheckCircle2} color="blue" />
       <Metric className="business-kpi-card" label={`Install cycle · ${selectedMonthLabel}`} value={!ready || kpis.averageInstallCycleDays === null ? "—" : `${durationFormatter.format(kpis.averageInstallCycleDays)} days`} note={ready ? `${kpis.installCycleJobCount} completed ${kpis.installCycleJobCount === 1 ? "job" : "jobs"} with both installation dates` : pendingNote} icon={Clock3} color="violet" />
       <Metric className="business-kpi-card" label={`Callback rate · ${selectedMonthLabel}`} value={!ready || kpis.callbackRate === null ? "—" : rateFormatter.format(kpis.callbackRate)} note={ready ? `${kpis.callbackJobCount} recorded Yes across ${kpis.callbackCompletedJobCount} completed · default No can include uncaptured legacy rows` : pendingNote} icon={RefreshCw} color="orange" />

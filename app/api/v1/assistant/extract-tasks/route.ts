@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import type { D1Database } from "../../../../adapters/d1/d1-database";
 import { OpenAIResponsesProvider } from "../../../../adapters/openai/responses-provider";
 import {
@@ -13,6 +13,7 @@ import {
 } from "../../../../lib/assistant-config-sites";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../../lib/development-request-rate-limit";
+import { noStoreJson as noStore, noStoreResponse } from "../../../../lib/no-store-json";
 import {
   requireOfficeUser,
   requireSameOrigin,
@@ -22,17 +23,6 @@ import { ensureWorkspaceSchema } from "../../_workspace-data";
 export const MAX_TASK_EXTRACTION_BODY_BYTES = 8_000;
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
-
-function noStoreResponse(response: Response) {
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 function runtimeValue(name: string) {
   return (env as unknown as Record<string, string | undefined>)[name]

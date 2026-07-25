@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import {
   acquireWorkspaceSetupLease,
   completeWorkspaceSetupLease,
@@ -12,16 +12,11 @@ import { calendarHoldCreatedIntegrationEvent } from "../../../../../../lib/googl
 import { createSimulationCalendarHold } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
+import { noStoreJson as noStore } from "../../../../../../lib/no-store-json";
 
 const MINIMUM_LEAD_MS = 5 * 60 * 1000;
 const MAXIMUM_LEAD_MS = 14 * 24 * 60 * 60 * 1000;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-
-function noStore(body: unknown, init: ResponseInit = {}) {
-  const response = NextResponse.json(body, init);
-  response.headers.set("Cache-Control", "no-store");
-  return response;
-}
 
 function nextRoundedHour(now = new Date()) {
   const next = new Date(now);

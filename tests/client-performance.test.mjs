@@ -85,7 +85,9 @@ test("keeps the bounded initial-load and rendering optimizations in place", asyn
     app.indexOf("function LeadsView"),
   );
 
-  assert.match(app, /const currencyFormatter = new Intl\.NumberFormat/);
+  assert.match(app, /import \{ formatUsd \} from "\.\/lib\/format-usd"/);
+  assert.match(app, /return formatUsd\(value\)/);
+  assert.doesNotMatch(app, /const currencyFormatter = new Intl\.NumberFormat/);
   assert.match(dataSecurity, /const PhoneInstallPanel = dynamic\(/);
   assert.match(dataSecurity, /import\("\.\.\/\.\.\/PhoneInstallPanel"\)/);
   assert.doesNotMatch(dataSecurity, /import \{ PhoneInstallPanel \} from/);

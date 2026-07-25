@@ -8,6 +8,7 @@ import {
   gmailArchiveFiledIntegrationEvent,
   type GoogleIntegrationEventSpec,
 } from "../../../../../../../../lib/google-integration-events";
+import { googleIntegrationErrorResponse } from "../../../../../../../../lib/google-integration-error";
 import { GoogleIntegrationError, getGoogleAccessToken, type GoogleRuntimeConfig } from "../../../../../../../../lib/google-oauth-sites";
 import { validateGmailMessageId } from "../../../../../../../../lib/google-gmail";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../../lib/workspace-auth";
@@ -59,13 +60,6 @@ function projectId(value: unknown) {
 
 function compactErrorCode(error: unknown) {
   return error instanceof GoogleIntegrationError ? error.code : "gmail_file_archive_failed";
-}
-
-function errorResponse(error: unknown) {
-  if (error instanceof GoogleIntegrationError) {
-    return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
-  }
-  return NextResponse.json({ error: "The email could not be filed. Nothing was automatically moved; retry after reviewing the project workspace." }, { status: 503 });
 }
 
 function integrationEventStatement(
@@ -219,7 +213,9 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mes
       environment: config.environment,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return error instanceof GoogleIntegrationError ? errorResponse(error) : gmailErrorResponse(error);
+    return error instanceof GoogleIntegrationError
+      ? googleIntegrationErrorResponse(error, "The email could not be filed. Nothing was automatically moved; retry after reviewing the project workspace.")
+      : gmailErrorResponse(error);
   }
 }
 
@@ -503,6 +499,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
         // operation lease make the next user-approved retry safe to resume.
       }
     }
-    return error instanceof GoogleIntegrationError ? errorResponse(error) : gmailErrorResponse(error);
+    return error instanceof GoogleIntegrationError
+      ? googleIntegrationErrorResponse(error, "The email could not be filed. Nothing was automatically moved; retry after reviewing the project workspace.")
+      : gmailErrorResponse(error);
   }
 }

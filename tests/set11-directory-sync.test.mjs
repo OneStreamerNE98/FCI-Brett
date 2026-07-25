@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("../", import.meta.url);
-const read = (path) => readFile(new URL(path, root), "utf8");
+const read = async (path) => (await readFile(new URL(path, root), "utf8")).replaceAll("\r\n", "\n");
 
 function section(source, start, end, label) {
   const startIndex = source.indexOf(start);

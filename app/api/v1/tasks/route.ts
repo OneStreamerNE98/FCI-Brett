@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import type { D1Database } from "../../../adapters/d1/d1-database";
 import { createD1TaskRepository } from "../../../adapters/d1/task-repository";
 import { createTask, listTasks } from "../../../application/task-operations";
@@ -9,14 +9,9 @@ import { MAX_TASK_BODY_BYTES } from "../../../domain/task";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
+import { noStoreJson as json } from "../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
-
-const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
-
-function json(body: Record<string, unknown>, status = 200) {
-  return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
-}
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
