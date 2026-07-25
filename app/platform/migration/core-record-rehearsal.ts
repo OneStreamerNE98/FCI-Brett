@@ -6,6 +6,10 @@ import {
   type FlooringCategory,
 } from "../../domain/project-creation.ts";
 import {
+  normalizeProjectSegment,
+  type ProjectSegment,
+} from "../../domain/project-segment.ts";
+import {
   EXPECTED_PRODUCTION_SCHEMA_HISTORY,
   productionSchemaHistoryMatches,
   type ProductionMigrationHistoryRow,
@@ -226,6 +230,7 @@ type PreparedProject = {
   flooringCategory: FlooringCategory | null;
   squareFeet: number | null;
   contractValue: number | null;
+  segment: ProjectSegment | null;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -344,7 +349,7 @@ export type CoreRecordRehearsalPlan = {
 };
 
 export type CoreRecordRehearsalReport = {
-  formatVersion: 2;
+  formatVersion: 3;
   dataClassification: "test";
   scope: "bounded-core-only";
   targetEnvironment: RehearsalEnvironment;
@@ -495,6 +500,7 @@ const PROJECT_KEYS = [
   "flooringCategory",
   "squareFeet",
   "contractValue",
+  "segment",
   "driveFolderId",
   "driveUrl",
   "createdBy",
@@ -833,9 +839,9 @@ function tableEvidence<T extends { id: string }>(table: string, rows: readonly T
   const ordered = [...rows].sort((left, right) => left.id.localeCompare(right.id));
   return {
     count: ordered.length,
-    contentSha256: sha256Evidence(`${table}:content:v2`, ordered),
+    contentSha256: sha256Evidence(`${table}:content:v3`, ordered),
     identifiersSha256: sha256Evidence(
-      `${table}:identifiers:v2`,
+      `${table}:identifiers:v3`,
       ordered.map((row) => row.id),
     ),
   };
@@ -905,7 +911,7 @@ function prepareSnapshot(value: unknown): {
   deferredSourceCounts: Record<DeferredSourceCategory, 0>;
 } {
   const source = exactObject(value, TOP_LEVEL_KEYS, "snapshot");
-  if (source.formatVersion !== 2) fail("unsupported_snapshot_version", "snapshot.formatVersion must be 2");
+  if (source.formatVersion !== 3) fail("unsupported_snapshot_version", "snapshot.formatVersion must be 3");
   if (source.dataClassification !== "test") {
     fail("unsafe_data_classification", "snapshot.dataClassification must be test");
   }
@@ -1101,6 +1107,13 @@ function prepareSnapshot(value: unknown): {
         `projects[${index}].flooringCategory is unsupported`,
       );
     }
+    const segment = row.segment === null ? null : normalizeProjectSegment(row.segment);
+    if ((segment === null && row.segment !== null) || segment !== row.segment) {
+      fail(
+        "invalid_snapshot_value",
+        `projects[${index}].segment is unsupported`,
+      );
+    }
     const createdAt = canonicalTimestamp(row.createdAt, `projects[${index}].createdAt`);
     const updatedAt = canonicalTimestamp(row.updatedAt, `projects[${index}].updatedAt`);
     if (updatedAt < createdAt) fail("invalid_timestamp_order", `projects[${index}] timestamps are out of order`);
@@ -1122,6 +1135,7 @@ function prepareSnapshot(value: unknown): {
         row.contractValue,
         `projects[${index}].contractValue`,
       ),
+      segment,
       createdBy: requiredText(row.createdBy, `projects[${index}].createdBy`),
       updatedBy: requiredText(row.updatedBy, `projects[${index}].updatedBy`),
       createdAt,
@@ -1476,6 +1490,7 @@ async function insertPreparedRows(
       "flooring_category",
       "square_feet",
       "contract_value",
+      "segment",
       "created_by",
       "updated_by",
       "created_at",
@@ -1494,6 +1509,7 @@ async function insertPreparedRows(
       row.flooringCategory,
       row.squareFeet,
       row.contractValue,
+      row.segment,
       row.createdBy,
       row.updatedBy,
       row.createdAt,
@@ -1591,6 +1607,15 @@ function databaseCount(value: unknown, label: string): number {
   fail("invalid_database_response", `${label} is not a nonnegative count`);
 }
 
+function databaseProjectSegment(value: unknown, label: string): ProjectSegment | null {
+  if (value === null) return null;
+  const segment = normalizeProjectSegment(value);
+  if (segment === null || segment !== value) {
+    fail("invalid_database_response", `${label} is not a supported project segment`);
+  }
+  return segment;
+}
+
 async function assertEmptyTarget(client: CoreRehearsalClient): Promise<void> {
   const result = await client.query(
     `SELECT
@@ -1675,7 +1700,7 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
             estimated_value::text AS "estimatedValue",
             flooring_category AS "flooringCategory",
             square_feet::text AS "squareFeet",
-            contract_value::text AS "contractValue", created_by AS "createdBy",
+            contract_value::text AS "contractValue", segment, created_by AS "createdBy",
             updated_by AS "updatedBy", created_at AS "createdAt", updated_at AS "updatedAt",
             version::text AS "version"
      FROM projects ORDER BY id`,
@@ -1701,7 +1726,7 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
   );
 
   const targetLikeSnapshot = {
-    formatVersion: 2,
+    formatVersion: 3,
     dataClassification: "test",
     sourceSystem: CORE_REHEARSAL_SOURCE_SYSTEM,
     deferredSourceCounts: Object.fromEntries(
@@ -1746,6 +1771,7 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
         row.contractValue,
         "destination project contractValue",
       ),
+      segment: databaseProjectSegment(row.segment, "destination project segment"),
       createdAt: databaseTimestamp(row.createdAt, "destination project createdAt"),
       updatedAt: databaseTimestamp(row.updatedAt, "destination project updatedAt"),
     })),
@@ -1888,7 +1914,7 @@ export async function runCoreRecordRehearsal(
     transactionStarted = false;
 
     return {
-      formatVersion: 2,
+      formatVersion: 3,
       dataClassification: "test",
       scope: "bounded-core-only",
       targetEnvironment: plan.targetEnvironment,

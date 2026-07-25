@@ -1,3 +1,5 @@
+import type { ProjectSegment } from "../domain/project-segment";
+
 export type AuthorizationUserStatus = "active" | "disabled";
 
 export type AuthorizationRoleGrantSnapshot = Readonly<{
@@ -40,6 +42,7 @@ type AuthorizedProjectBase = Readonly<{
   status: string;
   site: string | null;
   projectManagerId: string;
+  segment: ProjectSegment;
   updatedAt: number;
   version: string;
 }>;

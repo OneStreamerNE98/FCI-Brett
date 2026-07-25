@@ -51,7 +51,9 @@ test(
         ),
       ]);
       assert.deepEqual(
-        concurrentResults.flatMap(({ appliedVersions }) => appliedVersions).sort(),
+        concurrentResults
+          .flatMap(({ appliedVersions }) => appliedVersions)
+          .sort((left, right) => left - right),
         MIGRATION_VERSIONS,
       );
       assert.deepEqual(
@@ -252,10 +254,11 @@ test(
         `INSERT INTO ${schema}.projects (
            id, project_number, client_id, name, status, estimated_value,
            flooring_category, square_feet, contract_value,
+           segment,
            installation_started_at, installation_completed_at,
            had_callback, callback_note, created_by, updated_by
          ) VALUES ($1, 'CF-2026-ABCD1234', $2, 'Test Project', 'planning',
-           9007199254740991, 'hardwood', 2400, 132500,
+           9007199254740991, 'hardwood', 2400, 132500, 'residential',
            '2026-07-10T12:00:00.000Z', '2026-07-12T12:00:00.000Z',
            true, 'FCI TEST — DO NOT USE — Callback complete', 'actor-1', 'actor-1')`,
         [projectId, clientId],
@@ -264,6 +267,7 @@ test(
         `SELECT estimated_value::text AS estimated_value, flooring_category,
                 square_feet::text AS square_feet,
                 contract_value::text AS contract_value,
+                segment,
                 installation_started_at, installation_completed_at,
                 had_callback, callback_note
          FROM ${schema}.projects WHERE id = $1`,
@@ -274,11 +278,40 @@ test(
         flooring_category: "hardwood",
         square_feet: "2400",
         contract_value: "132500",
+        segment: "residential",
         installation_started_at: new Date("2026-07-10T12:00:00.000Z"),
         installation_completed_at: new Date("2026-07-12T12:00:00.000Z"),
         had_callback: true,
         callback_note: "FCI TEST — DO NOT USE — Callback complete",
       }]);
+      assert.equal(
+        (await pool.query(
+          `UPDATE ${schema}.projects SET segment = 'commercial'
+           WHERE id = $1 RETURNING segment`,
+          [projectId],
+        )).rows[0]?.segment,
+        "commercial",
+      );
+      assert.equal(
+        (await pool.query(
+          `UPDATE ${schema}.projects SET segment = NULL
+           WHERE id = $1 RETURNING segment`,
+          [projectId],
+        )).rows[0]?.segment,
+        null,
+      );
+      await pool.query(
+        `UPDATE ${schema}.projects SET segment = 'residential' WHERE id = $1`,
+        [projectId],
+      );
+      await expectPostgresError(
+        pool.query(
+          `UPDATE ${schema}.projects SET segment = 'mixed' WHERE id = $1`,
+          [projectId],
+        ),
+        "23514",
+        "projects_segment_check",
+      );
 
       await expectPostgresError(
         pool.query(

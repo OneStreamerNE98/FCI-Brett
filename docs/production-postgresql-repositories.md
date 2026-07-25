@@ -1,8 +1,8 @@
 # Production PostgreSQL repositories
 
-Reviewed: July 20, 2026
+Reviewed: July 25, 2026
 
-Status: Implemented, tested, and merged in source through PR #51. The repositories and employee-facing core-record routes are not provisioned, migrated, configured, or deployed.
+Status: Foundation implementation merged through PR #51; BE-16 project-segment parity is in draft PR #198, source-only and unapplied as of July 25, 2026. The repositories and employee-facing core-record routes are not provisioned, migrated, configured, or deployed.
 
 ## Boundary
 
@@ -27,6 +27,15 @@ The claim, record, evidence, outbox intent, and completed replay response either
 
 The repository adapter derives request fingerprints from normalized persisted business fields and excludes generated record/activity/outbox IDs and timestamps. Caller-supplied fingerprint metadata is ignored. Deterministic duplicate-name and missing-client failures store an allowlisted 409 or 404 response with the same key binding, so the exact failure replays and a changed request conflicts. Expiry is cleanup eligibility only; it does not permit automatic request takeover.
 
+That fingerprint/replay contract is PostgreSQL-only. The Sites/D1 project
+route and repository have no idempotency-key, fingerprint, replay, or dedupe-hit
+facility: every authorized creation attempts its own conditional project plus
+activity batch. BE-16 therefore does not fabricate a D1 idempotency subsystem.
+The D1 adapter already binds the requested segment twice into its only project
+INSERT's exact SQL CASE on every create; tests prove two distinct calls each
+reach that batch. PostgreSQL binds segment into its fingerprint because its
+existing production idempotency boundary requires it.
+
 Project creation locks the parent client and meeting creation locks the parent project with `FOR KEY SHARE` before inserting, so a concurrent delete cannot turn a verified relationship into an untyped foreign-key race. Generated client-code, project-number, lead-number, UUID, or outbox-key collisions roll back and return a distinct retryable identifier-collision outcome; they are never mislabeled as a duplicate business name.
 
 ## Exact data handling
@@ -34,7 +43,8 @@ Project creation locks the parent client and meeting creation locks the parent p
 - Client uniqueness uses the documented application key: Unicode NFKC normalization, outer trim, Unicode-whitespace collapse to one ASCII space, and lowercase.
 - PostgreSQL `bigint` versions are validated and returned as canonical decimal strings, including values above JavaScript's safe-integer ceiling.
 - The constrained project `numeric` value is converted to a JavaScript number only after proving it is nonnegative, whole, and no greater than `Number.MAX_SAFE_INTEGER`.
-- Project creation persists flooring category, square feet, and contract value with the same nullable safe-value semantics as D1; those fields also participate in the idempotency fingerprint.
+- Project creation persists flooring category, square feet, contract value, and project segment with D1-parity semantics. Segment participates in the PostgreSQL idempotency fingerprint; only a byte-exact catalog choice is explicit at the repository boundary, while null, a future value, or a whitespace/case mutation derives from the locked parent client's industry exactly like D1.
+- Scoped project list, search, and exact-project reads resolve null/invalid stored segments through the joined client industry and return only the two-value public segment. The private industry projection is never serialized.
 - `timestamptz` parameters are bound as `Date` values, and returned timestamps must be timezone-aware.
 - JSONB response, activity, and outbox values are restricted to JSON objects.
 - Lead values reuse the development validator, retain `L-YYYY-XXXXXXXX` identifiers, and store update activity in the same transaction as the row version change.
@@ -65,7 +75,7 @@ Fast tests run without PostgreSQL and cover:
 - canonical fingerprints, atomic-claim SQL, replay, key conflicts, and response completion;
 - transaction begin/commit/rollback/discard behavior, local timeouts, effective-schema verification, and `pg_temp` shadow protection;
 - Unicode client keys plus bigint, numeric, timestamp, UUID, schema, and JSON parsing;
-- client/project/lead/meeting transaction order, success/failure replay truthfulness, generated-identifier collision mapping, locked missing parents, lead updates, manager audit behavior, and all seven D1/PostgreSQL project-KPI mappings;
+- client/project/lead/meeting transaction order, success/failure replay truthfulness, segment-aware conflicts and derivation, generated-identifier collision mapping, locked missing parents, lead updates, manager audit behavior, and all seven D1/PostgreSQL project-KPI mappings;
 - outbox claim ordering, version fencing, safe provider-error evidence, distinct dead-letter IDs, retry/dead-letter/recovery SQL, and rollback when dead-letter activity fails.
 - portable client/project HTTP status and error-body mapping for accepted, validation, authorization, replay-conflict, duplicate/not-found, and retryable identifier outcomes.
 

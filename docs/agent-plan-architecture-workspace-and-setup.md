@@ -474,7 +474,7 @@ widen-on-read law preserved; D1 and PostgreSQL behavior identical.
 **Effort:** small-medium. **Cost:** $0.
 
 ### BE-16 · PostgreSQL parity for the project segment (small, after BE-15 + DES-08 a-T2; filed July 24, 2026)
-**Status:** In progress — `codex/be16-segment-postgres-parity`, dispatched by owner July 25, 2026 (zone: PG migrations/adapters/rehearsal, disjoint from all open lanes).
+**Status:** In review — PR #198, `codex/be16-segment-postgres-parity`, July 25, 2026. Draft, source-only, and unapplied; no migration, grant, hosted rehearsal, deployment, configuration, or data change occurred.
 
 **Why:** DES-08 a-T2 (PR #179) added the two-value `projects.segment` to D1
 only, per the KPI-04 precedent of deferring production PostgreSQL parity to

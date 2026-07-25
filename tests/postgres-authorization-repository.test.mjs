@@ -171,6 +171,8 @@ function projectRow(overrides = {}) {
     status: "installation",
     site: "123 Test Street",
     project_manager: "manager@cherryhillfci.com",
+    segment: null,
+    client_industry: " Residential ",
     estimated_value: "125000",
     updated_at: new Date(NOW - 1_000),
     version: "3",
@@ -338,6 +340,7 @@ test("exact-project query scopes the requested ID in SQL and returns a nonfinanc
     status: "installation",
     site: "123 Test Street",
     projectManagerId: "manager@cherryhillfci.com",
+    segment: "residential",
     updatedAt: NOW - 1_000,
     version: "3",
     financialVisible: false,
@@ -404,6 +407,7 @@ test("assigned-project list scopes in SQL before ordering and limiting and never
     client_id: SECOND_CLIENT_ID,
     client_name: "Sentinel Client",
     name: "Sentinel Project",
+    segment: "commercial",
     estimated_value: "999999",
   });
   const { client, repository } = repositoryFor([
@@ -434,7 +438,12 @@ test("assigned-project list scopes in SQL before ordering and limiting and never
   assert.equal(projects.length, 2);
   assert.equal(projects[1].projectNumber, "SENTINEL-NOT-POST-FILTERED");
   assert.deepEqual(projects.map(({ financialVisible }) => financialVisible), [false, false]);
+  assert.deepEqual(projects.map(({ segment }) => segment), ["residential", "commercial"]);
   assert.equal(projects.some((project) => "estimatedValue" in project), false);
+  assert.equal(
+    projects.some((project) => "client_industry" in project || "clientIndustry" in project),
+    false,
+  );
   client.assertComplete();
 });
 
@@ -443,6 +452,8 @@ test("assigned-project search performs membership and search filtering before or
     id: SECOND_PROJECT_ID,
     project_number: "SENTINEL-NO-JS-SEARCH-FILTER",
     name: "No matching phrase",
+    segment: "future-segment",
+    client_industry: "Residential",
   });
   const { client, repository } = repositoryFor([
     ...transactionSetupSteps(),
@@ -475,6 +486,8 @@ test("assigned-project search performs membership and search filtering before or
   const projects = await repository.searchProjectsForScope(ASSIGNED_SCOPE, "Cedar", NOW, 10);
   assert.equal(projects.length, 1);
   assert.equal(projects[0].projectNumber, "SENTINEL-NO-JS-SEARCH-FILTER");
+  assert.equal(projects[0].segment, "residential");
+  assert.equal("client_industry" in projects[0] || "clientIndustry" in projects[0], false);
   client.assertComplete();
 });
 
@@ -608,6 +621,7 @@ test("company financial scope is explicit in both project and dashboard SQL proj
   );
   assert.equal(projects[0].financialVisible, true);
   assert.equal(projects[0].estimatedValue, 125000);
+  assert.equal(projects[0].segment, "residential");
   projectRepository.client.assertComplete();
 
   const dashboardRepository = repositoryFor([

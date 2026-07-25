@@ -100,6 +100,7 @@ function projectIntent({
   flooringCategory = null,
   squareFeet = null,
   contractValue = null,
+  segment = null,
   createdAt,
   id = randomUUID(),
   activityId = randomUUID(),
@@ -118,6 +119,7 @@ function projectIntent({
       flooringCategory,
       squareFeet,
       contractValue,
+      segment,
       createdBy: actorId,
       createdAt,
       updatedAt: createdAt,
@@ -680,6 +682,7 @@ test(
         flooringCategory: "luxury-vinyl",
         squareFeet: 3_200,
         contractValue: 175_000,
+        segment: "residential",
         createdAt: projectCreatedAt,
       });
       const projectRequest = creationRequest({
@@ -701,6 +704,7 @@ test(
                 p.flooring_category,
                 p.square_feet::text AS square_feet,
                 p.contract_value::text AS contract_value,
+                p.segment,
                 p.version::text AS version,
                 (SELECT count(*)::integer FROM ${schema}.activity_events WHERE project_id = p.id) AS activities,
                 (SELECT count(*)::integer FROM ${schema}.outbox_events WHERE project_id = p.id) AS outbox_events,
@@ -714,11 +718,27 @@ test(
         flooring_category: "luxury-vinyl",
         square_feet: "3200",
         contract_value: "175000",
+        segment: "residential",
         version: "1",
         activities: 1,
         outbox_events: 1,
         requests: 1,
       });
+
+      const changedSegmentIntent = structuredClone(acceptedProjectIntent);
+      changedSegmentIntent.project.segment = "commercial";
+      assert.deepEqual(
+        await createPostgresProjectRepository(pool, {
+          schema,
+          request: {
+            ...projectRequest,
+            idempotencyRequestId: randomUUID(),
+            outboxEventId: randomUUID(),
+          },
+        }).create(changedSegmentIntent),
+        { outcome: "idempotency-conflict" },
+        "the same key with a changed segment must conflict instead of replaying",
+      );
 
       const scopedRequests = await pool.query(
         `SELECT actor_id, operation, count(*)::integer AS total
@@ -1412,6 +1432,15 @@ test(
         }),
       }).create(uppercaseClientProject);
       assert.equal(project.outcome, "accepted");
+      assert.equal(
+        (await oneRow(
+          pool,
+          `SELECT segment FROM ${schema}.projects WHERE id = $1`,
+          [uppercaseClientProject.project.id],
+        )).segment,
+        "commercial",
+        "a null choice derives and stores the non-residential client default",
+      );
     } finally {
       if (schemaCreated) await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();

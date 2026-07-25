@@ -273,7 +273,8 @@ test(
       const projectKpiReadback = await client.query(
         `SELECT flooring_category AS "flooringCategory",
                 square_feet::text AS "squareFeet",
-                contract_value::text AS "contractValue"
+                contract_value::text AS "contractValue",
+                segment
          FROM ${schema}.projects
          WHERE id = $1`,
         [fixture.projects[0].id],
@@ -282,6 +283,7 @@ test(
         flooringCategory: fixture.projects[0].flooringCategory,
         squareFeet: String(fixture.projects[0].squareFeet),
         contractValue: String(fixture.projects[0].contractValue),
+        segment: fixture.projects[0].segment,
       }]);
 
       const activityReferences = await client.query(

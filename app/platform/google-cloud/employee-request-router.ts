@@ -88,6 +88,7 @@ const PRODUCTION_PROJECT_CREATION_FIELDS = new Set([
   "name",
   "projectManager",
   "projectManagerId",
+  "segment",
   "site",
   "status",
 ]);

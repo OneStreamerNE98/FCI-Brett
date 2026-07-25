@@ -210,6 +210,7 @@ function projectIntent() {
       flooringCategory: "tile-stone",
       squareFeet: 2_500,
       contractValue: 130_000,
+      segment: null,
       createdBy: "actor@example.test",
       createdAt: CREATED_AT,
       updatedAt: UPDATED_AT,
@@ -236,12 +237,13 @@ test("project fingerprints canonicalize equivalent uppercase UUIDs", () => {
   );
 });
 
-test("project fingerprints bind every creation-time flooring KPI field", () => {
+test("project fingerprints bind every creation-time flooring KPI and segment field", () => {
   const baseline = projectIntent();
   for (const [field, value] of [
     ["flooringCategory", "carpet"],
     ["squareFeet", 2_501],
     ["contractValue", 130_001],
+    ["segment", "residential"],
   ]) {
     const changed = structuredClone(baseline);
     changed.project[field] = value;
@@ -569,7 +571,10 @@ test("generated project-number collisions return a retryable typed outcome", asy
   const client = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
     step(/INSERT INTO idempotency_requests/, result([{ id: projectRequest().idempotencyRequestId }], 1)),
-    step(/SELECT id::text AS id[\s\S]*FOR KEY SHARE/, result([{ id: CLIENT_ID }], 1)),
+    step(
+      /SELECT id::text AS id, industry[\s\S]*FOR KEY SHARE/,
+      result([{ id: CLIENT_ID, industry: "Residential" }], 1),
+    ),
     step(/INSERT INTO projects/, result(), { error: uniqueError }),
     step(/^ROLLBACK$/),
   ]);
@@ -583,22 +588,31 @@ test("generated project-number collisions return a retryable typed outcome", asy
   client.assertComplete();
 });
 
-test("project creation safely parses numeric and bigint values before storing its accepted response", async () => {
+test("project creation mirrors D1 exact-choice segment fallback and safely parses returned values", async () => {
+  const directSegmentIntent = projectIntent();
+  directSegmentIntent.project.segment = " Residential ";
   const client = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
     step(/INSERT INTO idempotency_requests/, result([{ id: projectRequest().idempotencyRequestId }], 1), {
       inspect: ({ values }) => assert.equal(
         values[4],
-        calculatePostgresProjectCreationFingerprint(projectIntent()),
+        calculatePostgresProjectCreationFingerprint(directSegmentIntent),
       ),
     }),
-    step(/SELECT id::text AS id[\s\S]*FOR KEY SHARE/, result([{ id: CLIENT_ID }], 1)),
     step(
-      /INSERT INTO projects[\s\S]*flooring_category, square_feet, contract_value[\s\S]*VALUES \(\$1, \$2, \$3[\s\S]*estimated_value::text/,
+      /SELECT id::text AS id, industry[\s\S]*FOR KEY SHARE/,
+      result([{ id: CLIENT_ID, industry: "Commercial" }], 1),
+    ),
+    step(
+      /INSERT INTO projects[\s\S]*flooring_category, square_feet, contract_value, segment[\s\S]*VALUES \(\$1, \$2, \$3[\s\S]*estimated_value::text/,
       result([acceptedProjectRow()], 1),
       {
         inspect: ({ values }) => {
-          assert.deepEqual(values.slice(8, 11), ["tile-stone", 2_500, 130_000]);
+          assert.deepEqual(
+            values.slice(8, 12),
+            ["tile-stone", 2_500, 130_000, "commercial"],
+            "a non-canonical direct choice derives from the locked client industry exactly like D1",
+          );
         },
       },
     ),
@@ -614,7 +628,7 @@ test("project creation safely parses numeric and bigint values before storing it
   });
   let providerCalls = 0;
 
-  const creation = await repository.create(projectIntent(), () => {
+  const creation = await repository.create(directSegmentIntent, () => {
     providerCalls += 1;
   });
 

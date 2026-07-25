@@ -1,3 +1,4 @@
+import { resolveProjectSegment } from "../../domain/project-segment";
 import type {
   AuthorizationRecordScope,
   AuthorizationRepository,
@@ -57,6 +58,8 @@ type ProjectRow = Record<string, unknown> & {
   status: unknown;
   site: unknown;
   project_manager: unknown;
+  segment: unknown;
+  client_industry: unknown;
   estimated_value?: unknown;
   updated_at: unknown;
   version: unknown;
@@ -241,6 +244,7 @@ function projectFromRow(row: ProjectRow, includeFinancial: boolean): AuthorizedP
       "PostgreSQL authorized project manager",
       320,
     ),
+    segment: resolveProjectSegment(row.segment, row.client_industry),
     updatedAt: parsePostgresTimestamp(row.updated_at, "PostgreSQL project updated_at"),
     version: parsePostgresPositiveBigint(row.version, "PostgreSQL project version"),
   };
@@ -385,6 +389,7 @@ function projectProjection(includeFinancial: boolean) {
   return `project.id::text AS id, project.project_number,
           project.client_id::text AS client_id, client.name AS client_name,
           project.name, project.status, project.site, project.project_manager,
+          project.segment, client.industry AS client_industry,
           ${includeFinancial ? "project.estimated_value::text AS estimated_value," : ""}
           project.updated_at, project.version::text AS version`;
 }

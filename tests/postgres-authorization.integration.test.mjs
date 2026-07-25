@@ -152,13 +152,13 @@ async function seedAuthorizationFixture(pool, schema, now) {
 
   await pool.query(
     `INSERT INTO ${schema}.clients (
-       id, client_code, name, normalized_name_key, status,
+       id, client_code, name, normalized_name_key, status, industry,
        created_by, updated_by, created_at, updated_at
-     ) VALUES
+      ) VALUES
        ($1, $3, 'FCI TEST — DO NOT USE Client A', 'fci test — do not use client a',
-        'active', $5, $5, $6, $7),
+         'active', ' Residential ', $5, $5, $6, $7),
        ($2, $4, 'FCI TEST — DO NOT USE Client B', 'fci test — do not use client b',
-        'active', $5, $5, $6, $7)`,
+         'active', 'Commercial', $5, $5, $6, $7)`,
     [
       ids.clientA,
       ids.clientB,
@@ -182,12 +182,12 @@ async function seedAuthorizationFixture(pool, schema, now) {
   await pool.query(
     `INSERT INTO ${schema}.projects (
        id, project_number, client_id, name, status, site, project_manager,
-       estimated_value, created_by, updated_by, created_at, updated_at
-     ) VALUES
+       estimated_value, segment, created_by, updated_by, created_at, updated_at
+      ) VALUES
        ($1, $3, $5, 'FCI TEST — DO NOT USE Project A', 'planning',
-        'FCI TEST — DO NOT USE Site A', $7, 100000, $8, $8, $9, $10),
+         'FCI TEST — DO NOT USE Site A', $7, 100000, NULL, $8, $8, $9, $10),
        ($2, $4, $6, 'FCI TEST — DO NOT USE Project B', 'completed',
-        'FCI TEST — DO NOT USE Site B', $7, 250000, $8, $8, $9, $10)`,
+         'FCI TEST — DO NOT USE Site B', $7, 250000, 'residential', $8, $8, $9, $10)`,
     [
       ids.projectA,
       ids.projectB,
@@ -305,6 +305,11 @@ test(
       );
       assert.deepEqual(sortedIds(projectManagerProjects), [ids.projectA]);
       assertNoFinancialProjection(projectManagerProjects);
+      assert.equal(projectManagerProjects[0].segment, "residential");
+      assert.equal(
+        "client_industry" in projectManagerProjects[0] || "clientIndustry" in projectManagerProjects[0],
+        false,
+      );
 
       const projectManagerSearch = await repository.searchProjectsForScope(
         projectManagerScope,
@@ -314,6 +319,7 @@ test(
       );
       assert.deepEqual(sortedIds(projectManagerSearch), [ids.projectA]);
       assertNoFinancialProjection(projectManagerSearch);
+      assert.equal(projectManagerSearch[0].segment, "residential");
       assert.deepEqual(
         sortedIds(await repository.listClientsForScope(projectManagerScope, now, 20)),
         [ids.clientA],
@@ -332,6 +338,11 @@ test(
         now,
       );
       assert.equal(exactAssignedProject?.id, ids.projectA);
+      assert.equal(exactAssignedProject?.segment, "residential");
+      assert.equal(
+        "client_industry" in exactAssignedProject || "clientIndustry" in exactAssignedProject,
+        false,
+      );
       assertNoFinancialProjection([exactAssignedProject]);
       assert.equal(
         await repository.getProjectForScope(projectManagerScope, ids.projectB, now),
@@ -365,6 +376,13 @@ test(
       const officeProjects = await repository.listProjectsForScope(officeScope, now, 20);
       assert.deepEqual(sortedIds(officeProjects), projectIds);
       assertNoFinancialProjection(officeProjects);
+      assert.deepEqual(
+        new Map(officeProjects.map(({ id, segment }) => [id, segment])),
+        new Map([
+          [ids.projectA, "residential"],
+          [ids.projectB, "residential"],
+        ]),
+      );
       assert.deepEqual(
         sortedIds(await repository.listClientsForScope(officeScope, now, 20)),
         clientIds,

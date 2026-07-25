@@ -4,6 +4,7 @@ import { ADMIN_AUDIT_ACTIVITY_STATEMENTS } from "./admin-audit-activity-schema.t
 import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-schema.ts";
 import { FLOORING_KPI_SCHEMA_STATEMENTS } from "./flooring-kpi-schema.ts";
 import { LEAD_PROJECT_MEETING_STATEMENTS } from "./lead-project-meeting-schema.ts";
+import { PROJECT_SEGMENT_SCHEMA_STATEMENTS } from "./project-segment-schema.ts";
 import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "./settings-persistence-schema.ts";
 import { TASK_SCHEMA_STATEMENTS } from "./task-schema.ts";
@@ -445,6 +446,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "flooring_kpi_fields",
     checksum: "sha256:c3f3dc194ce5a92aabc172db7bc136d886a6f2900136cdf53fb30720f5d711d1",
     statements: FLOORING_KPI_SCHEMA_STATEMENTS,
+  },
+  {
+    version: 10,
+    name: "project_segment",
+    checksum: "sha256:9fe7e63bb2f266636164f20436753189938cd9c47a21b2a5e565e8faa79b87b9",
+    statements: PROJECT_SEGMENT_SCHEMA_STATEMENTS,
   },
 ];
 

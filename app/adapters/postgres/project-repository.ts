@@ -1,4 +1,8 @@
 import { FLOORING_CATEGORIES } from "../../domain/project-creation";
+import {
+  PROJECT_SEGMENTS,
+  resolveProjectSegment,
+} from "../../domain/project-segment";
 import type {
   AcceptedProjectCreation,
   ProjectCreationIntent,
@@ -65,6 +69,7 @@ function projectCreationFingerprintInput(intent: ProjectCreationIntent) {
     flooringCategory: intent.project.flooringCategory,
     squareFeet: intent.project.squareFeet,
     contractValue: intent.project.contractValue,
+    segment: intent.project.segment,
   };
 }
 
@@ -243,8 +248,8 @@ export function createPostgresProjectRepository(
         }
         const clientId = parsePostgresUuid(intent.project.clientId);
 
-        const parentClient = await client.query<{ id: unknown }>(
-          `SELECT id::text AS id
+        const parentClient = await client.query<{ id: unknown; industry: unknown }>(
+          `SELECT id::text AS id, industry
            FROM clients
            WHERE id = $1
            FOR KEY SHARE`,
@@ -265,15 +270,25 @@ export function createPostgresProjectRepository(
           }
           throw new Error("PostgreSQL project parent lookup returned an invalid result");
         }
+        // The D1 INSERT CASE treats only byte-exact catalog values as explicit.
+        // Keep direct-adapter inputs aligned even though normal HTTP creation
+        // already canonicalizes valid user input before reaching this port.
+        const explicitSegment = PROJECT_SEGMENTS.find(
+          (candidate) => candidate === intent.project.segment,
+        ) ?? null;
+        const segment = resolveProjectSegment(
+          explicitSegment,
+          parentClient.rows[0].industry,
+        );
 
         const inserted = await client.query<ProjectInsertRow>(
           `INSERT INTO projects (
              id, project_number, client_id, name, status, site, project_manager,
-             estimated_value, flooring_category, square_feet, contract_value,
+             estimated_value, flooring_category, square_feet, contract_value, segment,
              created_by, updated_by, created_at, updated_at, version
            )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-             $12, $12, $13, $14, 1)
+             $12, $13, $13, $14, $15, 1)
            RETURNING id::text AS id, project_number, project_manager,
                      estimated_value::text AS estimated_value, created_at,
                      version::text AS version`,
@@ -289,6 +304,7 @@ export function createPostgresProjectRepository(
             intent.project.flooringCategory,
             intent.project.squareFeet,
             intent.project.contractValue,
+            segment,
             intent.project.createdBy,
             new Date(intent.project.createdAt),
             new Date(intent.project.updatedAt),

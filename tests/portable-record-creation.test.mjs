@@ -392,6 +392,90 @@ test("the D1 adapter closes a direct third segment value behind its two-value SQ
   assert.deepEqual(prepared[0].values.slice(11, 13), ["mixed", "mixed"]);
 });
 
+test("D1 project creates have no fingerprint dedupe and bind segment on every insert", async () => {
+  const batches = [];
+  const database = {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return { sql, values };
+        },
+      };
+    },
+    async batch(statements) {
+      batches.push(statements);
+      return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }];
+    },
+  };
+  const repository = createD1ProjectRepository(database);
+  const intent = (suffix, segment) => ({
+    project: {
+      id: `project-direct-${suffix}`,
+      projectNumber: `CF-2026-${suffix.toUpperCase()}`,
+      clientId: "client-1",
+      name: `Direct segment ${suffix}`,
+      status: "planning",
+      site: null,
+      projectManagerId: "manager@example.test",
+      estimatedValue: null,
+      flooringCategory: null,
+      squareFeet: null,
+      contractValue: null,
+      segment,
+      createdBy: "manager@example.test",
+      createdAt: 1,
+      updatedAt: 1,
+    },
+    activity: {
+      id: `activity-direct-${suffix}`,
+      recordId: `project-direct-${suffix}`,
+      action: "Project created",
+      actor: "manager@example.test",
+      detail: `Direct segment ${suffix}`,
+      createdAt: 1,
+    },
+  });
+
+  assert.deepEqual(
+    await repository.create(intent("first", " Residential ")),
+    { outcome: "created" },
+  );
+  assert.deepEqual(
+    await repository.create(intent("second", "commercial")),
+    { outcome: "created" },
+  );
+  assert.equal(batches.length, 2, "each D1 create attempts its own atomic batch");
+  assert.deepEqual(
+    batches.map(([projectInsert]) => projectInsert.values.slice(11, 13)),
+    [
+      [" Residential ", " Residential "],
+      ["commercial", "commercial"],
+    ],
+    "the only D1 project INSERT binds every requested segment twice for its exact SQL CASE",
+  );
+
+  const [adapterSource, routeSource] = await Promise.all([
+    readFile(
+      new URL("../app/adapters/d1/project-repository.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../app/api/v1/projects/route.ts", import.meta.url),
+      "utf8",
+    ),
+  ]);
+  for (const [label, source] of [
+    ["adapter", adapterSource],
+    ["route", routeSource],
+  ]) {
+    assert.doesNotMatch(
+      source,
+      /idempotency|fingerprint|dedup(?:e|lication)?|request[_ -]?key/iu,
+      `the D1 ${label} has no idempotency-key or fingerprint hit path to align`,
+    );
+  }
+});
+
 test("project creation rejects an unlisted manager and defaults an omitted manager to the authorized actor", async () => {
   const rejected = await createProject(
     { clientId: "client-1", name: "Rejected", projectManagerId: "outsider@example.test" },
