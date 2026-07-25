@@ -342,7 +342,7 @@ byte-identical; `npm test` and e2e green.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-05 · Correctness small fixes: filing-rules admin gate, normalized win-rate sources, readable sync timestamps (small)
-**Status:** In review — PR #202, July 25, 2026. Source-only and undeployed. Filing-rule mutations now require Administrator access; win-rate sources normalize trimmed casing variants; Directory mirror timestamps render as readable local time. Guide impact: `docs/settings-guide.md` updated.
+**Status:** Complete — PR #202, July 25, 2026. Opus fleet clean — zero findings, executed proof (959-test full sweep, 0 fail): admin gate landed on exactly the three mutations with GET left office-visible (matches the admin-only UI), the non-admin 403 test proven to fail without the fix; win-rate grouping matches the updated `docs/flooring-kpis.md` definition exactly with a doc-pin test (the formula-refinement rule satisfied in-PR); mirror timestamps render via the shared `toLocaleString` pattern with e2e assertions strengthened (negative raw-epoch checks added). Merged on green CI after an empty bot window (one summon, no response). Source-only and undeployed.
 
 **Why:** N7-1 (filing-rules mutations office-gated while every sibling
 settings config route requires admin; UI already admin-only), N7-4 (win-rate

@@ -2347,7 +2347,7 @@ green; secret-leak suite green; `npm test` green.
 **Effort:** large. **Cost:** $0 (runtime spend is owner-keyed OpenAI usage).
 
 ### AI-04 · Today view (medium, after AI-01 + AI-02; assistant components only)
-**Status:** In review — PR #201, July 25, 2026. Source-only and undeployed.
+**Status:** Complete — PR #201, July 25, 2026. Fable fleet with executed proof (97+102 unit tests across both lenses; the no-Gmail guard mutation-tested — an injected fetch fails the suite; real 23h/25h DST-day boundary tests; snapshot invalidation verified as ONE model with a shared generation counter and timezone/midnight/meeting triggers). Review fixes on-branch: 55d76fa kept the status/alert live regions mounted across all panel states with silent in-place completion reloads and AI-07-style deterministic focus; fb98def bound closeout follow-ups to `installation_completed_at <= now` (future-dated completions excluded, injectable-now tested). Residuals recorded: Today rows land on supported filtered destinations — record-targeted deep links need a record-id route state that does not exist (future navigation packet; bot thread routed, not dropped); one redundant dashboard GET on first open when saved displayTimezone differs from default; Ask-tab state resets on tab switch (unmount); "Prioritize with AI" not built (packet-optional). Source-only and undeployed.
 **Why:** the owner's core daily ask — open the app and see what to get done
 today. Computed on open; no scheduler (repo law); one surface, no new nav.
 **Do:** `GET /api/v1/assistant/today` (office-gated, `no-store`):
@@ -2661,12 +2661,13 @@ merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED. NFIX-03 (PR #197) and BE-16 (PR #198)
 both MERGED July 25, 2026 — **FIX-15 is now the dispatchable head of the
 FloorOpsApp fix-tail** (then FIX-17, SET-22; SET-26 remains gated on SET-23,
-open). **AI-04 is next and dispatchable** — its kickoff paste is with the owner
-(July 25, 2026), dispatch not yet confirmed; when its `codex/*` branch opens,
-the claim is recorded on AI-04's packet status line (the canonical mechanism)
-in that PR. The assistant zone freed when PR #195 merged; AI-05/AI-06 follow
-in the extracted modules (parallel-safe among themselves); AI-09 closes the
-workstream. DES-08's
+open). AI-04 is COMPLETE (PR #201, July 25, 2026) and the FloorOpsApp zone it
+briefly held (snapshot invalidation) is released — **FIX-15 is dispatchable
+now** as the fix-tail head. **AI-05 is next and dispatchable** — its kickoff
+paste is with the owner (July 25, 2026), dispatch not yet confirmed; the claim
+is recorded on AI-05's packet status line when its `codex/*` branch opens.
+AI-06 follows AFTER AI-05 merges (they share `InboxView.tsx`); AI-09 closes
+the workstream. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
