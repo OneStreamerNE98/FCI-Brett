@@ -2379,6 +2379,8 @@ default tab.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-05 · AI triage suggestions in the Inbox (medium, after AI-02 + AI-03; inbox components only; admin-gated)
+**Status:** In progress — `codex/ai05-inbox-triage`, July 25, 2026.
+
 **Why:** filing email to the right project is the daily drag; rules catch the
 easy cases — an AI suggestion with confidence + rationale catches the rest,
 suggest-only and review-first per spec §6's calibration protocol.
