@@ -499,6 +499,11 @@ test("inbox keeps one primary load action and exposes semantic status details", 
 test("assistant exposes one visible project context and one suggested-question family", async ({ page }) => {
   await page.goto("/assistant");
   await expect(page.getByRole("heading", { level: 1, name: "Ask FCI Assistant" })).toBeVisible();
+  const askTab = page.getByRole("tab", { name: "Ask", exact: true });
+  await expect(async () => {
+    await askTab.click();
+    await expect(askTab).toHaveAttribute("aria-selected", "true", { timeout: 500 });
+  }).toPass({ intervals: [100, 250, 500], timeout: 10_000 });
 
   const projectContext = page.getByRole("combobox", { name: "Project context" });
   await expect(projectContext).toHaveCount(1);

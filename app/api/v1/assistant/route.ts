@@ -1,5 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
+import type { D1Database } from "../../../adapters/d1/d1-database";
+import { createD1UserPreferencesRepository } from "../../../adapters/d1/user-preferences-repository";
 import { OpenAIResponsesProvider } from "../../../adapters/openai/responses-provider";
 import {
   answerProjectQuestion,
@@ -17,6 +19,7 @@ import {
   normalizeSearchQuery,
   searchRecords,
 } from "../../../application/search-records";
+import { normalizeUserDisplayTimezone } from "../../../domain/user-preferences";
 import {
   assistantRuntimeConfiguration,
   readSitesAssistantConfiguration,
@@ -25,6 +28,7 @@ import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { noStoreJson as noStore, noStoreResponse } from "../../../lib/no-store-json";
+import { defaultUserSettingsPreferences } from "../../../lib/user-settings";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
@@ -158,10 +162,16 @@ export async function POST(request: NextRequest) {
       missingEvidence: `${disabledCause} ${fallback.missingEvidence}`,
     });
   }
+  const preferences = await createD1UserPreferencesRepository(
+    env.DB as unknown as D1Database,
+  ).findByEmail(auth.user.email);
+  const timeZone = normalizeUserDisplayTimezone(preferences?.displayTimezone)
+    ?? defaultUserSettingsPreferences().displayTimezone;
   const tools = createAssistantToolRegistry({
     database: env.DB,
     connectionKey: google.connectionKey,
     isAdmin: auth.user.isAdmin,
+    timeZone,
   });
   const modelOutcome = assistantProvider
     ? await answerQuestion({

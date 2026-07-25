@@ -187,6 +187,11 @@ test("Missing-key state uses the canonical honest copy and disables every contro
 
 test("What you can ask is a keyboard and touch-native collapsed disclosure", async ({ page }) => {
   await page.goto("/assistant");
+  const askTab = page.getByRole("tab", { name: "Ask", exact: true });
+  await expect(async () => {
+    await askTab.click();
+    await expect(askTab).toHaveAttribute("aria-selected", "true", { timeout: 500 });
+  }).toPass({ intervals: [100, 250, 500], timeout: 10_000 });
   await expect(page.getByLabel("Ask FCI Assistant")).toBeEnabled();
   const help = page.getByRole("region", { name: "Assistant help" });
   const details = help.locator("details");

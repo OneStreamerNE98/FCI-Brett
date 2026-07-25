@@ -8,6 +8,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const expectedAssistantComponents = new Map([
   ["AssistantHelpPanel.tsx", ["AssistantHelpPanel"]],
   ["AssistantView.tsx", ["AssistantView"]],
+  ["TodayPanel.tsx", ["TodayPanel"]],
 ]);
 const expectedInboxComponents = new Map([
   ["GmailReplyModal.tsx", ["GmailReplyModal"]],

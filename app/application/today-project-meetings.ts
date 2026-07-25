@@ -109,6 +109,11 @@ export function calendarDateRange(timestamp: number, requestedTimeZone: string) 
   };
 }
 
+export function localDayRolloverDelay(timestamp: number, timeZone: string) {
+  const milliseconds = calendarDateRange(timestamp, timeZone).end - timestamp + 250;
+  return Math.max(1_000, milliseconds);
+}
+
 function boundedLimit(value: number) {
   return Number.isSafeInteger(value) && value > 0
     ? Math.min(value, 25)

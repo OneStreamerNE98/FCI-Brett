@@ -84,18 +84,23 @@ test("DES-08d reads at most five local-today and next-up rows with an exact over
   });
 });
 
-test("DES-08d routes the existing AI Today window through the same bounded read", async () => {
-  const [tools, dashboard, route] = await Promise.all([
+test("DES-08d and AI-04 route every Today consumer through the shared bounded read", async () => {
+  const [tools, dashboard, dashboardRoute, assistantRoute, todayAssembly] = await Promise.all([
     read("app/application/assistant/tools.ts"),
     read("app/application/dashboard-data.ts"),
     read("app/api/v1/dashboard/route.ts"),
+    read("app/api/v1/assistant/route.ts"),
+    read("app/application/assistant/today.ts"),
   ]);
-  assert.match(tools, /readTodayProjectMeetings\(database, \{\s+now: currentTimestamp,\s+timeZone: "UTC",\s+includeUpcoming: false,\s+limit: TODAY_PROJECT_MEETINGS_TOOL_LIMIT/u);
+  assert.match(tools, /todayEvidence\(await assembleToday\(database, \{\s+now: now\(\),\s+timeZone:/u);
+  assert.doesNotMatch(tools, /timeZone: "UTC"|current UTC date/u);
   assert.doesNotMatch(tools, /WHERE m\.meeting_at >= \? AND m\.meeting_at < \? ORDER BY m\.meeting_at ASC LIMIT 12/u);
+  assert.match(todayAssembly, /readTodayProjectMeetings\(database, \{\s+now: options\.now,\s+timeZone: range\.timeZone,\s+includeUpcoming: false,\s+limit: TODAY_PROJECT_MEETINGS_TOOL_LIMIT/u);
   assert.equal(TODAY_PROJECT_MEETINGS_TOOL_LIMIT, 12);
   assert.match(dashboard, /includeUpcoming: true,\s+limit: TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT/u);
   assert.equal(TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT, 5);
-  assert.match(route, /findByEmail\(auth\.user\.email\)/u);
-  assert.match(route, /normalizeUserDisplayTimezone\(preferences\?\.displayTimezone\)/u);
-  assert.match(route, /dashboardData\(env\.DB, google\.connectionKey, \{ now: generatedAt, timeZone \}\)/u);
+  assert.match(dashboardRoute, /findByEmail\(auth\.user\.email\)/u);
+  assert.match(dashboardRoute, /normalizeUserDisplayTimezone\(preferences\?\.displayTimezone\)/u);
+  assert.match(dashboardRoute, /dashboardData\(env\.DB, google\.connectionKey, \{ now: generatedAt, timeZone \}\)/u);
+  assert.match(assistantRoute, /findByEmail\(auth\.user\.email\)[\s\S]*createAssistantToolRegistry\(\{[\s\S]*timeZone,/u);
 });

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import type { AppEnvironment } from "./lib/app-environment";
 import { AssistantView } from "./assistant/components/AssistantView";
+import { localDayRolloverDelay } from "./application/today-project-meetings";
 import { InboxView } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
@@ -268,6 +269,9 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [pageLayoutsReady, setPageLayoutsReady] = useState(false);
   const [pageLayoutsError, setPageLayoutsError] = useState("");
   const pageLayoutsLoadIdRef = useRef(0);
+  const dashboardRefreshLoadIdRef = useRef(0);
+  const dashboardAppliedLoadIdRef = useRef(0);
+  const dashboardTimezoneRef = useRef(displayTimezone);
   const topbarRef = useRef<HTMLElement>(null);
   const topbarHiddenRef = useRef(false);
   const topbarLastScrollYRef = useRef(0);
@@ -328,6 +332,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   }, [isAdmin, router, settingsArea, view]);
 
   const refreshDirectoryData = useCallback(() => {
+    const dashboardLoadId = ++dashboardRefreshLoadIdRef.current;
     async function getJson(path: string) {
       const response = await fetch(path, { headers: { Accept: "application/json" } });
       const data = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -372,7 +377,10 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         const jobSite = normalizeJobSiteLocation({ address: project.site, latitude: project.latitude, longitude: project.longitude });
         return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory: optionalFlooringCategory(project.flooring_category), squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0 ? squareFeet : null, contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0 ? contractValue : null, segment: resolveProjectSegment(project.segment), installationStartedAt, installationCompletedAt, hadCallback: project.had_callback === true || project.had_callback === 1, callbackNote, site: jobSite?.address ?? "Site pending", jobSite, managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
       }));
-      setDashboard(dashboardData as unknown as DashboardSummary);
+      if (dashboardLoadId > dashboardAppliedLoadIdRef.current) {
+        dashboardAppliedLoadIdRef.current = dashboardLoadId;
+        setDashboard(dashboardData as unknown as DashboardSummary);
+      }
       setLiveDataState("ready");
 
       void optionalRequests.then(([ruleResult, mirrorResult]) => {
@@ -393,9 +401,56 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     });
   }, [userEmail, userName]);
 
+  const refreshDashboardSnapshot = useCallback(async () => {
+    const loadId = ++dashboardRefreshLoadIdRef.current;
+    const response = await fetch("/api/v1/dashboard", {
+      headers: { Accept: "application/json" },
+    });
+    const data = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) {
+      throw new Error(typeof data.error === "string"
+        ? data.error
+        : `Dashboard refresh failed (${response.status}).`);
+    }
+    if (loadId > dashboardAppliedLoadIdRef.current) {
+      dashboardAppliedLoadIdRef.current = loadId;
+      setDashboard(data as unknown as DashboardSummary);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshDirectoryData();
   }, [refreshDirectoryData]);
+
+  useEffect(() => {
+    const previousTimeZone = dashboardTimezoneRef.current;
+    dashboardTimezoneRef.current = displayTimezone;
+    if (previousTimeZone === displayTimezone) return;
+    void refreshDashboardSnapshot().catch(() => {
+      // Keep the last honest snapshot when an isolated refresh fails. The next
+      // app-open, manual retry, or local-midnight refresh tries again.
+    });
+  }, [displayTimezone, refreshDashboardSnapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    const schedule = () => {
+      if (cancelled) return;
+      timeoutId = window.setTimeout(() => {
+        void refreshDashboardSnapshot()
+          .catch(() => {
+            // Preserve the prior snapshot and re-arm the same single refresh model.
+          })
+          .finally(schedule);
+      }, localDayRolloverDelay(Date.now(), displayTimezone));
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [displayTimezone, refreshDashboardSnapshot]);
 
   useEffect(() => {
     const loadId = ++pageLayoutsLoadIdRef.current;
@@ -1155,7 +1210,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} managerId={userEmail.trim().toLowerCase()} managerLabel={userName.trim() || userEmail} isAdmin={isAdmin} onClose={closeNewProject} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
       {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} returnFocusRef={leadDrawerReturnFocusRef} />}
-      {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} jobSiteMaps={jobSiteMaps} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
+      {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} jobSiteMaps={jobSiteMaps} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} onMeetingRecorded={() => void refreshDashboardSnapshot().catch(() => {})} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
       {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} jobSiteMaps={jobSiteMaps} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
       {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"} aria-atomic="true">
         {toast.kind === "success" ? <CheckCircle2 size={18} aria-hidden="true" /> : toast.kind === "info" ? <Info size={18} aria-hidden="true" /> : <CircleAlert size={18} aria-hidden="true" />}
@@ -1519,7 +1574,7 @@ function LeadDrawer({ lead, onClose, onAdvance, returnFocusRef }: { lead: Lead; 
   </AccessibleOverlay>;
 }
 
-function ProjectDrawer({ project, jobSiteMaps, onClose, notify, onProvisionDrive, onAssignToMe, onRecordInstallationDates, onRecordFollowUpResult, isAdmin, currentUserEmail, returnFocusRef }: { project: Project; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; notify: Notify; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; onRecordInstallationDates: (project: Project, installationStartedAt: number, installationCompletedAt: number) => Promise<void>; onRecordFollowUpResult: (project: Project, hadCallback: boolean, callbackNote: string | null) => Promise<void>; isAdmin: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
+function ProjectDrawer({ project, jobSiteMaps, onClose, notify, onProvisionDrive, onAssignToMe, onRecordInstallationDates, onRecordFollowUpResult, onMeetingRecorded, isAdmin, currentUserEmail, returnFocusRef }: { project: Project; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; notify: Notify; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; onRecordInstallationDates: (project: Project, installationStartedAt: number, installationCompletedAt: number) => Promise<void>; onRecordFollowUpResult: (project: Project, hadCallback: boolean, callbackNote: string | null) => Promise<void>; onMeetingRecorded: () => void; isAdmin: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
   const [tab, setTab] = useState<"Overview" | "Meetings">("Overview");
   const [provisioning, setProvisioning] = useState(false);
   const [assigningManager, setAssigningManager] = useState(false);
@@ -1557,7 +1612,7 @@ function ProjectDrawer({ project, jobSiteMaps, onClose, notify, onProvisionDrive
           <div className="drawer-stats"><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Contract value</span><strong>{!isAdmin ? FINANCIAL_RESTRICTION_LABEL : project.contractValue === null ? "Not yet captured" : money(project.contractValue)}</strong></div><div><span>Segment</span><strong>{displayStatus(project.segment ?? "commercial", "Commercial")}</strong></div><div><span>Flooring category</span><strong>{project.flooringCategory === null ? "Not yet captured" : displayStatus(project.flooringCategory, project.flooringCategory)}</strong></div><div><span>Square feet</span><strong>{project.squareFeet === null ? "Not yet captured" : new Intl.NumberFormat("en-US").format(project.squareFeet)}</strong></div><div><span>Installation started</span><strong>{formatProjectOperationDate(project.installationStartedAt)}</strong></div><div><span>Installation completed</span><strong>{formatProjectOperationDate(project.installationCompletedAt)}</strong></div><div><span>Post-installation callback</span><strong>{project.hadCallback ? "Yes recorded" : "No recorded callback"}</strong>{project.callbackNote ? <small>{project.callbackNote}</small> : !project.hadCallback && <small>Default No can include an uncaptured legacy result.</small>}</div><div className="project-manager-stat"><span>Project manager</span><strong>{project.lead}</strong>{project.managerId === currentUserEmail ? <small>Assigned to your signed-in account</small> : isAdmin ? <button className="manager-assignment-button" onClick={() => void handleAssignToMe()} disabled={assigningManager}>{assigningManager ? "Assigning…" : "Assign to me"}</button> : project.managerId ? <small>Authorized office account</small> : <small>No authorized manager is assigned</small>}</div><div><span>Drive folder</span><strong>{project.driveFolderId ? "Ready" : "Setup required"}</strong></div></div>
           <section className="project-operation-actions"><header><h3>Installation &amp; follow-up</h3><p>{isAdmin ? "Record the dates and callback outcome used by flooring KPI reporting." : "Only an administrator can record installation dates and callback results."}</p></header>{isAdmin && <div><button type="button" className="soft-button" onClick={() => setInstallationDatesOpen(true)}><CalendarDays size={16} /> Record installation dates</button><button type="button" className="soft-button" onClick={() => setFollowUpResultOpen(true)}><MessageSquareText size={16} /> Record follow-up result</button></div>}</section>
           <section className="project-capability-plan"><header><div><h3>Planned project capabilities</h3><p>These items are informational and are not available as controls yet.</p></div><FeatureStateBadge state="Planned" /></header><ul><li>Durable tasks and scheduled reminders</li><li>Indexed project files beyond the working Drive folder link</li><li>Crews, shifts, and field schedule</li><li>Project activity feed and outbound updates</li></ul></section>
-        </> : <ProjectMeetings project={project} notify={notify} />}
+        </> : <ProjectMeetings project={project} notify={notify} onMeetingRecorded={onMeetingRecorded} />}
       </div>
       <footer>
         <span className="planned-project-updates"><FeatureStateBadge state="Planned" /> Project updates</span>
@@ -1641,7 +1696,7 @@ async function fetchProjectMeetings(projectId: string) {
   return data.meetings ?? [];
 }
 
-function ProjectMeetings({ project, notify }: { project: Project; notify: Notify }) {
+function ProjectMeetings({ project, notify, onMeetingRecorded }: { project: Project; notify: Notify; onMeetingRecorded: () => void }) {
   const [meetings, setMeetings] = useState<ProjectMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1676,6 +1731,7 @@ function ProjectMeetings({ project, notify }: { project: Project; notify: Notify
   function savedMeeting(meeting: ProjectMeeting) {
     setMeetings((current) => [meeting, ...current]);
     setAdding(false);
+    onMeetingRecorded();
     notify(`${meeting.title} saved to ${project.number}`, "success");
   }
 

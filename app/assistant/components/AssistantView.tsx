@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import {
   Bot,
   CheckCircle2,
@@ -18,6 +18,8 @@ import {
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
 import { AssistantHelpPanel } from "./AssistantHelpPanel";
+import { TodayPanel } from "./TodayPanel";
+import viewStyles from "./AssistantView.module.css";
 import styles from "./AssistantTaskReview.module.css";
 
 type AssistantProject = {
@@ -29,6 +31,8 @@ type AssistantProject = {
 type AssistantViewProps = {
   projects: readonly AssistantProject[];
 };
+
+type AssistantTab = "today" | "ask";
 
 export type AssistantCitation = { id: string; label: string; detail: string };
 
@@ -375,12 +379,35 @@ function AssistantTaskReview({ projectId }: { projectId: string }) {
 }
 
 export function AssistantView({ projects }: AssistantViewProps) {
+  const [tab, setTab] = useState<AssistantTab>("today");
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<{ mode: "ai-grounded" | "records-only"; answer: string; citations: AssistantCitation[]; missingEvidence: string } | null>(null);
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [sourceDetail, setSourceDetail] = useState<AssistantCitation | null>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const activeProjectId = projects.some((project) => project.id === projectId) ? projectId : projects[0]?.id ?? "";
+
+  function selectTab(nextTab: AssistantTab, focus = false) {
+    setTab(nextTab);
+    if (focus) {
+      const index = nextTab === "today" ? 0 : 1;
+      tabRefs.current[index]?.focus();
+    }
+  }
+
+  function handleTabKey(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    const tabs: AssistantTab[] = ["today", "ask"];
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    if (event.key === "ArrowLeft") nextIndex = (index + tabs.length - 1) % tabs.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = tabs.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    selectTab(tabs[nextIndex], true);
+  }
+
   async function ask(q?: string) {
     const prompt = q ?? question;
     if (!prompt.trim() || !activeProjectId) return;
@@ -397,10 +424,27 @@ export function AssistantView({ projects }: AssistantViewProps) {
       setLoading(false);
     }
   }
-  return <><PageTitle eyebrow="Project-record assistant" title="Ask FCI Assistant" text="Ask about saved projects, clients, contacts, activity, approved email archives, and meeting notes. Every answer stays within the selected project." state="In development" />
-    <AssistantHelpPanel />
-    <AssistantTaskReview projectId={activeProjectId} />
-    <div className="assistant-layout"><section className="assistant-main panel"><div className="assistant-hero"><div className="ai-orb"><Bot size={29} /></div><h2>What would you like to know?</h2><p>Choose one project so every answer has a clear, reviewable evidence boundary.</p></div><label className="assistant-project-scope">Project context<select value={activeProjectId} onChange={(event) => { setProjectId(event.target.value); setAnswer(null); }} disabled={!projects.length || loading}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name}</option>)}</select></label>{!projects.length && <div className="assistant-blocker"><CircleAlert size={18} /><div><strong>Create a project first</strong><span>The assistant answers project-specific questions and needs a project record before it can search evidence.</span></div></div>}{answer && <article className="ai-answer" aria-live="polite"><div><Sparkles size={18} /><strong>{answer.mode === "ai-grounded" ? "AI-grounded answer" : "Project-record summary"}</strong><span className="assistant-mode">{answer.mode === "ai-grounded" ? "OpenAI enabled" : "Records-only mode"}</span></div><p>{answer.answer}</p>{answer.missingEvidence && <p className="assistant-missing"><CircleAlert size={14} /> {answer.missingEvidence}</p>}<h4>Sources</h4>{answer.citations.length ? answer.citations.map((citation, index) => <button key={citation.id} onClick={() => setSourceDetail(citation)}><FileText size={14} /><span>[{index + 1}] {citation.label}</span><ChevronRight size={14} /></button>) : <OperationsEmptyState variant="source">No verified sources were returned for this answer.</OperationsEmptyState>}</article>}<form className="ask-box" onSubmit={(event) => { event.preventDefault(); void ask(); }}><div><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about the selected project record…" aria-label="Ask FCI Assistant" maxLength={2000} disabled={!projects.length || loading} /><button disabled={loading || !question.trim() || !activeProjectId} aria-label="Send question">{loading ? <span className="spinner" /> : <Send size={18} />}</button></div><small><Sparkles size={12} /> Every answer is read-only and cites only server-selected project evidence.</small></form></section><aside className="panel recent-questions"><h3>Suggested questions</h3>{["What is the current project status?", "Who is the primary contact?", "How many email archives are linked?", "What evidence has not been captured yet?"].map((q) => <button key={q} onClick={() => void ask(q)} disabled={loading || !activeProjectId}><MessageSquareText size={15} /><span>{q}<small>Selected project only</small></span></button>)}<div className="privacy-note"><CheckCircle2 size={17} /><p><strong>Office-record scope</strong><br />This first version uses the operational records available to approved office users. Project-specific permissions are the next access-control layer.</p></div></aside></div>
+  return <><PageTitle eyebrow="Office-record assistant" title="Ask FCI Assistant" text="Review today's saved work, or ask a read-only question grounded in office records." state="In development" />
+    <div className={viewStyles.tabs} role="tablist" aria-label="Assistant views">
+      {(["today", "ask"] as const).map((item, index) => <button
+        key={item}
+        ref={(node) => { tabRefs.current[index] = node; }}
+        type="button"
+        role="tab"
+        id={`assistant-${item}-tab`}
+        aria-controls={`assistant-${item}-panel`}
+        aria-selected={tab === item}
+        tabIndex={tab === item ? 0 : -1}
+        onClick={() => selectTab(item)}
+        onKeyDown={(event) => handleTabKey(event, index)}
+      >{item === "today" ? "Today" : "Ask"}</button>)}
+    </div>
+    <section role="tabpanel" id="assistant-today-panel" aria-labelledby="assistant-today-tab" hidden={tab !== "today"}>{tab === "today" && <TodayPanel />}</section>
+    <section role="tabpanel" id="assistant-ask-panel" aria-labelledby="assistant-ask-tab" hidden={tab !== "ask"}>{tab === "ask" && <>
+      <AssistantHelpPanel />
+      <AssistantTaskReview projectId={activeProjectId} />
+      <div className="assistant-layout"><section className="assistant-main panel"><div className="assistant-hero"><div className="ai-orb"><Bot size={29} /></div><h2>What would you like to know?</h2><p>Choose one project so every answer has a clear, reviewable evidence boundary.</p></div><label className="assistant-project-scope">Project context<select value={activeProjectId} onChange={(event) => { setProjectId(event.target.value); setAnswer(null); }} disabled={!projects.length || loading}><option value="">Choose a project…</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.number} — {project.name}</option>)}</select></label>{!projects.length && <div className="assistant-blocker"><CircleAlert size={18} /><div><strong>Create a project first</strong><span>The assistant answers project-specific questions and needs a project record before it can search evidence.</span></div></div>}{answer && <article className="ai-answer" aria-live="polite"><div><Sparkles size={18} /><strong>{answer.mode === "ai-grounded" ? "AI-grounded answer" : "Project-record summary"}</strong><span className="assistant-mode">{answer.mode === "ai-grounded" ? "OpenAI enabled" : "Records-only mode"}</span></div><p>{answer.answer}</p>{answer.missingEvidence && <p className="assistant-missing"><CircleAlert size={14} /> {answer.missingEvidence}</p>}<h4>Sources</h4>{answer.citations.length ? answer.citations.map((citation, index) => <button key={citation.id} onClick={() => setSourceDetail(citation)}><FileText size={14} /><span>[{index + 1}] {citation.label}</span><ChevronRight size={14} /></button>) : <OperationsEmptyState variant="source">No verified sources were returned for this answer.</OperationsEmptyState>}</article>}<form className="ask-box" onSubmit={(event) => { event.preventDefault(); void ask(); }}><div><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about the selected project record…" aria-label="Ask FCI Assistant" maxLength={2000} disabled={!projects.length || loading} /><button disabled={loading || !question.trim() || !activeProjectId} aria-label="Send question">{loading ? <span className="spinner" /> : <Send size={18} />}</button></div><small><Sparkles size={12} /> Every answer is read-only and cites only server-selected project evidence.</small></form></section><aside className="panel recent-questions"><h3>Suggested questions</h3>{["What is the current project status?", "Who is the primary contact?", "How many email archives are linked?", "What evidence has not been captured yet?"].map((q) => <button key={q} onClick={() => void ask(q)} disabled={loading || !activeProjectId}><MessageSquareText size={15} /><span>{q}<small>Selected project only</small></span></button>)}<div className="privacy-note"><CheckCircle2 size={17} /><p><strong>Office-record scope</strong><br />This first version uses the operational records available to approved office users. Project-specific permissions are the next access-control layer.</p></div></aside></div>
+    </>}</section>
     {sourceDetail && <SourceDetailModal citation={sourceDetail} onClose={() => setSourceDetail(null)} />}
   </>;
 }

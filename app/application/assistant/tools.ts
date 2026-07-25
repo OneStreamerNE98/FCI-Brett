@@ -1,15 +1,12 @@
 import { createD1TaskRepository } from "../../adapters/d1/task-repository";
 import type { D1Database } from "../../adapters/d1/d1-database";
+import { defaultUserSettingsPreferences } from "../../lib/user-settings";
 import type { AssistantProviderToolDefinition } from "../../ports/assistant-provider";
 import { dashboardData } from "../dashboard-data";
 import { normalizeSearchQuery, searchRecords } from "../search-records";
-import {
-  calendarDateRange,
-  readTodayProjectMeetings,
-  TODAY_PROJECT_MEETINGS_TOOL_LIMIT,
-} from "../today-project-meetings";
 import { compact, type Evidence } from "./evidence";
 import { projectEvidence } from "./project-evidence";
+import { assembleToday, todayEvidence } from "./today";
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -31,6 +28,7 @@ type AssistantToolRegistryOptions = {
   database: D1Database;
   connectionKey: string;
   isAdmin: boolean;
+  timeZone?: string;
   now?: () => number;
   driveSearch?: DriveSearchService;
 };
@@ -448,49 +446,17 @@ export function createAssistantToolRegistry(
 
   const todayTool = tool(
     "today",
-    "Load the deterministic records currently available for the current UTC date. This is the bounded pre-AI-04 assembly, not a display-timezone promise.",
+    "Load the bounded deterministic Today assembly in the signed-in user's display timezone.",
     {},
     [],
     async (argumentsValue) => {
       const input = objectValue(argumentsValue);
       if (!input || !hasOnlyKeys(input, [])) return { evidence: [] };
-      const currentTimestamp = now();
-      const range = calendarDateRange(currentTimestamp, "UTC");
-      const [tasks, meetings, staleLeads] = await Promise.all([
-        createD1TaskRepository(database).list({
-          status: "open",
-          dueBefore: range.day,
-          limit: 20,
-        }),
-        readTodayProjectMeetings(database, {
-          now: currentTimestamp,
-          timeZone: "UTC",
-          includeUpcoming: false,
-          limit: TODAY_PROJECT_MEETINGS_TOOL_LIMIT,
-        }),
-        database
-          .prepare("SELECT id, lead_number, company, next_action, next_action_at FROM leads WHERE LOWER(status) = 'active' AND next_action_at IS NOT NULL AND next_action_at < ? ORDER BY next_action_at ASC LIMIT 12")
-          .bind(currentTimestamp)
-          .all<{ id: string; lead_number: string; company: string; next_action: string; next_action_at: number }>(),
-      ]);
       return {
-        evidence: [
-          ...tasks.map((task) => ({
-            id: `task:${task.id}`,
-            label: `Task · ${compact(task.title, 160)}`,
-            detail: `${task.due_date ? `Due ${task.due_date}` : "No due date"}${task.assignee_email ? ` · ${task.assignee_email}` : ""}`,
-          })),
-          ...meetings.items.map((meeting) => ({
-            id: `meeting:${meeting.id}`,
-            label: `Meeting · ${compact(meeting.title, 160)}`,
-            detail: `${meeting.projectNumber} · ${new Date(meeting.meetingAt).toISOString()} UTC`,
-          })),
-          ...staleLeads.results.map((lead) => ({
-            id: `lead:${lead.id}`,
-            label: `Lead follow-up · ${lead.lead_number} — ${lead.company}`,
-            detail: `${compact(lead.next_action, 300)} · ${new Date(lead.next_action_at).toISOString()} UTC`,
-          })),
-        ].slice(0, 25),
+        evidence: todayEvidence(await assembleToday(database, {
+          now: now(),
+          timeZone: options.timeZone ?? defaultUserSettingsPreferences().displayTimezone,
+        })),
       };
     },
   );
