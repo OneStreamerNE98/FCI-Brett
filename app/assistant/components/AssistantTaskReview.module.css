@@ -177,6 +177,11 @@
     width: 100%;
   }
 
+  .controls select,
+  .controls > button {
+    min-height: var(--target-min);
+  }
+
   .actions {
     justify-content: stretch;
   }

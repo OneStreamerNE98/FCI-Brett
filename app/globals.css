@@ -866,12 +866,16 @@ button { color:inherit; }
 .chat-routing-list .chat-space-select>span{font-size:12px;font-weight:800}
 .chat-routing-list .chat-space-select select{min-width:0;margin:0}
 .chat-routing-fieldset:disabled .settings-checkbox,.chat-routing-fieldset:disabled .chat-space-select{cursor:not-allowed;background:#f5f2ee;color:#746d67}
+.settings-security-list strong{overflow-wrap:anywhere;word-break:break-word}
 
 @media (max-width:700px){
   .chat-routing-list>li{grid-template-columns:1fr}
 }
 
 @media (max-width:560px){
+  .settings-heading{display:grid;gap:12px}
+  .settings-heading>svg{display:none}
+  .settings-heading>.primary-button,.settings-heading>.soft-button{width:100%}
   .workspace-settings{padding:16px}
   .workspace-settings>.settings-heading{display:grid;gap:12px}
   .workspace-settings>.settings-heading .primary-button{width:100%}
@@ -909,4 +913,62 @@ button { color:inherit; }
   .chat-secret-list>li,.chat-missing-details li{grid-template-columns:1fr}
   .chat-secret-status{justify-self:start}
   .chat-missing-details li>span{text-align:left}
+
+  /* NFIX-04: explicit phone targets preserve compact desktop density without changing the shared tokens. */
+  .primary-button,.soft-button,.icon-button,
+  .page-heading .primary-button,.page-heading .soft-button,
+  .title-actions .primary-button,.title-actions .soft-button,
+  .main-nav>a,.settings-nav button,.tabs button,
+  .search,.search input,.client-directory-toolbar input,
+  .ask-box select,.ask-box>div button,.assistant-project-scope select,
+  .settings-form-panel input,.settings-form-panel select,.settings-form-panel textarea,
+  .business-kpis-header input,.job-site-map-card>footer>a,
+  .access-management-header>.primary-button,.access-management-header-action>.soft-button,
+  .access-management-tabs button,.access-management-actions button,
+  .access-management-invitations .soft-button,
+  .access-management-activity-filters select,.access-management-filter-actions .soft-button,
+  .access-management-page .text-button,.access-management-activity-footer .soft-button,
+  .access-management-dialog input,.access-management-dialog select,.access-management-dialog textarea,
+  .add-card,.inbox-cta,.inbox-panel .inbox-cta,.inbox-state-actions .soft-button,
+  .active-route-filter .soft-button,
+  .panel-header button,.schedule-alert button,.inbox-safety button,
+  .client-project-section header button,.access-management-back,
+  .toast>button,.toast button,.toast>.toast-dismiss,.integration-row>button,
+  .lead-card footer button,.lead-detail-button,
+  .rule-inline-actions .soft-button,.icon-text-button,
+  .meeting-source-link,.ai-answer button,.business-kpi-link,
+  .directory-sync-actions .soft-button,.workspace-actions .soft-button,
+  .test-service-card .workspace-actions .primary-button,
+  .test-service-card .workspace-actions .soft-button,.test-service-list .soft-button,
+  .sidebar-popover button,.sidebar-popover a,
+  .inbox-connection .soft-button,.live-inbox-toolbar select,.live-inbox-toolbar input,
+  .live-inbox-toolbar .workspace-actions .primary-button,
+  .live-inbox-toolbar .workspace-actions .soft-button,
+  .live-message-row .message-actions .primary-button,
+  .live-message-row .message-actions .soft-button,.inbox-empty .primary-button,
+  .workspace-blueprint-editor input,.workspace-blueprint-editor select,
+  .workspace-blueprint-row-actions .soft-button,.workspace-blueprint-add,
+  .workspace-blueprint-remove,.workspace-blueprint-lock,
+  .workspace-resources-error .soft-button,
+  .workspace-resource-action-buttons .soft-button,
+  .workspace-resource-action-buttons .primary-button,
+  .workspace-drive-candidates select,.workspace-resource-rename input,
+  .workspace-copy-value .soft-button,.workspace-copy-helpers article>.soft-button,
+  .workspace-connection-health-error .soft-button{
+    min-height:var(--target-min)
+  }
+  .gmail-message-actions .primary-button,.gmail-message-actions .soft-button{
+    min-height:var(--target-min)!important
+  }
+  .modal>header button,.project-drawer>header button{
+    width:var(--target-min);
+    min-width:var(--target-min);
+    min-height:var(--target-min)
+  }
+  .info-hint-trigger{
+    width:var(--target-min);
+    min-height:var(--target-min)
+  }
+  .toast>.toast-dismiss{width:var(--target-min)}
+  .workspace-resource-action-buttons{gap:8px}
 }
