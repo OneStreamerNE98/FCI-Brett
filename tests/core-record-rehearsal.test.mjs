@@ -68,8 +68,14 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
       flooringCategory: plan.rows.projects[0].flooringCategory,
       squareFeet: plan.rows.projects[0].squareFeet,
       contractValue: plan.rows.projects[0].contractValue,
+      segment: plan.rows.projects[0].segment,
     },
-    { flooringCategory: "hardwood", squareFeet: 2400, contractValue: 132500 },
+    {
+      flooringCategory: "hardwood",
+      squareFeet: 2400,
+      contractValue: 132500,
+      segment: "residential",
+    },
   );
   assert.equal(plan.rows.projectMeetings[0].id, fixture.projectMeetings[0].id);
   assert.deepEqual(plan.rows.activityEvents.map((row) => row.id), fixture.activityEvents.map((row) => row.id));
@@ -84,8 +90,8 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
   );
   assert.equal(
     plan.sourceEvidence.projects.contentSha256,
-    "sha256:a63e7da9dcb1aff0955068da265ee297d89d05e8e86af5ae0823431b6312ee6f",
-    "the format-v2 project evidence includes the three registered KPI-04 values",
+    "sha256:47344b72ed459be8c4eb6f47c3a2b647cf0325df3b5cfeb21755fe90d45e0db4",
+    "the format-v3 project evidence includes the registered KPI-04 and BE-16 values",
   );
 
   const serializedEvidence = JSON.stringify(plan.sourceEvidence);
@@ -140,9 +146,9 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
 
   const rehearsalSource = await readFile(rehearsalSourceUrl, "utf8");
   assert.doesNotMatch(rehearsalSource, /from ["'][^"']*db\/schema/);
-  assert.match(rehearsalSource, /\$\{table\}:content:v2/);
-  assert.match(rehearsalSource, /\$\{table\}:identifiers:v2/);
-  assert.doesNotMatch(rehearsalSource, /\$\{table\}:(?:content|identifiers):v1/);
+  assert.match(rehearsalSource, /\$\{table\}:content:v3/);
+  assert.match(rehearsalSource, /\$\{table\}:identifiers:v3/);
+  assert.doesNotMatch(rehearsalSource, /\$\{table\}:(?:content|identifiers):v[12]/);
 
   const inventory = createCoreRecordRehearsalPlan(fixture, options).sourceInventory;
   assert.equal(inventory.length, 25);
@@ -199,7 +205,7 @@ test("D1 inventory discovery uses table metadata and cannot lose a table to decl
 
 test("bounded core rehearsal refuses unsafe targets before connecting", () => {
   const oldFormat = clone(fixture);
-  oldFormat.formatVersion = 1;
+  oldFormat.formatVersion = 2;
   expectRefusal(() => createCoreRecordRehearsalPlan(oldFormat, options), "unsupported_snapshot_version");
   expectRefusal(
     () => createCoreRecordRehearsalPlan(fixture, { ...options, targetEnvironment: "production" }),
@@ -344,8 +350,8 @@ test("phone-call meetings enter the PostgreSQL-facing rehearsal plan after v8 re
   );
 });
 
-test("v2 project KPI fields are exact-shape and fail closed on invalid values", async () => {
-  for (const field of ["flooringCategory", "squareFeet", "contractValue"]) {
+test("v3 project KPI and segment fields are exact-shape and fail closed on invalid values", async () => {
+  for (const field of ["flooringCategory", "squareFeet", "contractValue", "segment"]) {
     const missing = clone(fixture);
     delete missing.projects[0][field];
     expectRefusal(
@@ -360,6 +366,7 @@ test("v2 project KPI fields are exact-shape and fail closed on invalid values", 
     ["squareFeet", 1.5],
     ["contractValue", -1],
     ["contractValue", 1.5],
+    ["segment", "mixed"],
   ]) {
     const snapshot = clone(fixture);
     snapshot.projects[0][field] = value;
@@ -423,6 +430,7 @@ function destinationRows(source = fixture) {
       flooringCategory: row.flooringCategory,
       squareFeet: row.squareFeet === null ? null : String(row.squareFeet),
       contractValue: row.contractValue === null ? null : String(row.contractValue),
+      segment: row.segment,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
       createdAt: new Date(row.createdAt),
@@ -529,7 +537,7 @@ function fakePool(client) {
 test("bounded core rehearsal uses the restricted role, reconciles inside one transaction, and emits no rows", async () => {
   const client = new FakeRehearsalClient();
   const report = await runCoreRecordRehearsal(fakePool(client), fixture, options);
-  assert.equal(report.formatVersion, 2);
+  assert.equal(report.formatVersion, 3);
   assert.equal(report.status, "reconciled");
   assert.equal(report.cutoverReady, false);
   assert.deepEqual(report.sideEffects, {
@@ -557,7 +565,7 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
   assert.match(sql, /INSERT INTO project_meetings/);
   assert.match(
     sql,
-    /INSERT INTO projects \(id, project_number, client_id, name, status, site, project_manager, estimated_value, flooring_category, square_feet, contract_value,/,
+    /INSERT INTO projects \(id, project_number, client_id, name, status, site, project_manager, estimated_value, flooring_category, square_feet, contract_value, segment,/,
   );
   assert.match(sql, /INSERT INTO activity_events \(id, client_id, project_id, lead_id,/);
   assert.match(sql, /COALESCE\(client_id, project_id, lead_id\)::text/);
@@ -575,11 +583,12 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
   const projectInsert = client.queries.find((query) => query.sql.startsWith("INSERT INTO projects"));
   assert.ok(projectInsert);
   assert.deepEqual(
-    projectInsert.values.slice(8, 11),
+    projectInsert.values.slice(8, 12),
     [
       fixture.projects[0].flooringCategory,
       fixture.projects[0].squareFeet,
       fixture.projects[0].contractValue,
+      fixture.projects[0].segment,
     ],
   );
 
@@ -588,9 +597,9 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
   assert.doesNotMatch(serializedReport, UUID_PATTERN);
 });
 
-test("bounded core rehearsal rolls back rather than accepting target tampering", async () => {
+test("bounded core rehearsal rolls back when destination segment evidence is tampered", async () => {
   const tampered = destinationRows();
-  tampered.projects[0].name = `${tampered.projects[0].name} changed`;
+  tampered.projects[0].segment = "commercial";
   const client = new FakeRehearsalClient({ targetRows: tampered });
   await assert.rejects(runCoreRecordRehearsal(fakePool(client), fixture, options), (error) => {
     assert.ok(error instanceof CoreRecordRehearsalError);

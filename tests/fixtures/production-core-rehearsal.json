@@ -1,5 +1,5 @@
 {
-  "formatVersion": 2,
+  "formatVersion": 3,
   "dataClassification": "test",
   "sourceSystem": "d1-development-test-export",
   "deferredSourceCounts": {
@@ -92,6 +92,7 @@
       "flooringCategory": "hardwood",
       "squareFeet": 2400,
       "contractValue": 132500,
+      "segment": "residential",
       "driveFolderId": null,
       "driveUrl": null,
       "createdBy": "rehearsal@example.test",

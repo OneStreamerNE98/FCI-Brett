@@ -1,6 +1,6 @@
 # D1 development deployment migrations
 
-Status: Migrations 0012, 0013, and 0014 implemented in merged source; SET-14 migration 0015 implemented in this source branch; none deployed or applied to Sites by this change
+Status: Migrations through 0019 exist in source; migrations 0012–0019 remain undeployed and unapplied to Sites
 Scope: Controlled single-user development environment using test data only
 
 ## Boundary
@@ -89,10 +89,22 @@ reconciliation rather than copying development rows.
 
 Migration 0015 is source-only and unapplied to the hosted development D1 database. Any
 future approved Sites deployment must back up the controlled test database, apply the
-pending 0012→0015 sequence in order, verify all four migration records, and smoke-test
+pending 0012→0019 sequence in order, verify every migration record, and smoke-test
 project reads/actions, the Workspace resource registry, and blueprint seed/save/conflict
 behavior. Until that happens, the live development site must be treated as having none
-of the KPI-02, SET-13, KPI-03, or SET-14 schema additions.
+of the pending schema additions.
+
+## DES-08 a-T2 project segment — merged PR #179; PostgreSQL parity source-only July 25, 2026
+
+Migration `0019_demonic_lady_vermin.sql` adds the nullable development-only
+`projects.segment` column. The application owns its closed `commercial` /
+`residential` catalog, stores a valid explicit choice, and derives null or invalid
+legacy reads from the joined client industry without exposing that private join.
+
+BE-16 adds matching source-only PostgreSQL migration v10, repository/read parity,
+and rehearsal format v3. Neither D1 migration 0019 nor PostgreSQL migration v10
+has been applied, no hosted configuration changed, and no deployment or data
+migration occurred on July 25, 2026.
 
 ## Migration 0011 existing development database safety
 

@@ -14,10 +14,15 @@ import {
   validateProductionMigrationRegistry,
 } from "../app/platform/postgres/production-schema-migrations.ts";
 import { FLOORING_CATEGORIES } from "../app/domain/project-creation.ts";
+import { PROJECT_SEGMENTS } from "../app/domain/project-segment.ts";
 import {
   FLOORING_KPI_SCHEMA_STATEMENTS,
   PRODUCTION_FLOORING_CATEGORIES,
 } from "../app/platform/postgres/flooring-kpi-schema.ts";
+import {
+  PRODUCTION_PROJECT_SEGMENTS,
+  PROJECT_SEGMENT_SCHEMA_STATEMENTS,
+} from "../app/platform/postgres/project-segment-schema.ts";
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "../app/platform/postgres/settings-persistence-schema.ts";
 import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts";
 
@@ -145,7 +150,7 @@ function queryIndex(client, pattern) {
 test("keeps production migration declarations immutable and line-ending independent", () => {
   validateProductionMigrationRegistry(PRODUCTION_SCHEMA_MIGRATIONS);
   assert.deepEqual(
-    PRODUCTION_SCHEMA_MIGRATIONS.slice(0, 8).map(({ checksum }) => checksum),
+    PRODUCTION_SCHEMA_MIGRATIONS.slice(0, 9).map(({ checksum }) => checksum),
     [
       "sha256:b3aab0addffeb3e8b4efc58373f359f56489778be9d0ec16dc098ab183beb9f6",
       "sha256:18e19555f53bc5f7f793e0fc5a2960ead8124cc67debff1db24785732bea5aea",
@@ -155,6 +160,7 @@ test("keeps production migration declarations immutable and line-ending independ
       "sha256:ff32915b98da08104a94eb4946aca84d0e1c1b144cc8b90d5bc2c7b435e34f99",
       "sha256:cb468b7237bc478ebe7f35f93ccc97611c94b66fc870e61258b6762297e7d63a",
       "sha256:e7df1a997fabf3aab599dbeefc7629e8d987a9152b0620a1372ebc0a57074951",
+      "sha256:c3f3dc194ce5a92aabc172db7bc136d886a6f2900136cdf53fb30720f5d711d1",
     ],
   );
 
@@ -362,6 +368,25 @@ test("registers flooring KPI parity as contiguous migration nine with domain che
     sql,
     /\b(?:DROP|TRUNCATE|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/i,
   );
+});
+
+test("registers project segment parity as contiguous migration ten with the exact D1 catalog", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 10);
+  assert.ok(migration);
+  assert.equal(migration.name, "project_segment");
+  assert.equal(migration.statements, PROJECT_SEGMENT_SCHEMA_STATEMENTS);
+  assert.deepEqual([...PRODUCTION_PROJECT_SEGMENTS], [...PROJECT_SEGMENTS]);
+  assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  ]);
+
+  const sql = migration.statements.join("\n");
+  assert.match(sql, /ALTER TABLE projects ADD COLUMN segment text/);
+  assert.match(
+    sql,
+    /projects_segment_check CHECK \(\s*segment IS NULL\s*OR segment IN \('commercial', 'residential'\)\s*\)/,
+  );
+  assert.doesNotMatch(sql, /\b(?:DROP TABLE|TRUNCATE|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/i);
 });
 
 test("rejects gaps, duplicate names, transaction control, and concurrent indexes", () => {

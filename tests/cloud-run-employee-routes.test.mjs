@@ -113,6 +113,7 @@ const PROJECT_FIXTURES = Object.freeze([
     status: "planning",
     site: "FCI TEST — DO NOT USE Site A",
     projectManagerId: ROLE_IDENTITIES[AUTHORIZATION_ROLES.projectManager].email,
+    segment: "residential",
     estimatedValue: 100_000,
     updatedAt: NOW - 1_000,
     version: "3",
@@ -126,6 +127,7 @@ const PROJECT_FIXTURES = Object.freeze([
     status: "completed",
     site: "FCI TEST — DO NOT USE Site B",
     projectManagerId: ROLE_IDENTITIES[AUTHORIZATION_ROLES.officeOperations].email,
+    segment: "commercial",
     estimatedValue: 250_000,
     updatedAt: NOW - 2_000,
     version: "5",
@@ -549,6 +551,7 @@ async function startHarness(options = {}) {
             site: intent.project.site,
             projectManagerId: intent.project.projectManagerId,
             estimatedValue: intent.project.estimatedValue,
+            segment: intent.project.segment,
           }, {
             id: intent.project.id,
             projectNumber: intent.project.projectNumber,
@@ -911,11 +914,16 @@ test("core create routes preserve replay, conflict, principal, operation, and en
         clientId: CLIENT_FIXTURES[0].id,
         name: "FCI TEST — DO NOT USE Created Project",
         status: "planning",
+        segment: "residential",
       },
     });
     assert.equal(project.status, 201);
     const projectBody = (await json(project)).data;
     assert.equal(projectBody.projectManagerId, ROLE_IDENTITIES.administrator.email);
+    assert.equal(
+      running.coreRecordCalls.find(({ method }) => method === "projects.create")?.intent.project.segment,
+      "residential",
+    );
     assert.deepEqual(projectBody.sheetSync, {
       status: "queued",
       message: "Saved in FCI Operations; directory synchronization is queued for background processing.",
@@ -1011,14 +1019,13 @@ test("core writes deny missing capabilities before body parsing or repository wo
   }
 });
 
-test("production project creation rejects D1-only project fields before repository work", async () => {
+test("production project creation rejects unsupported KPI fields before repository work", async () => {
   const running = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
   try {
     for (const [field, value] of [
       ["flooringCategory", "hardwood"],
       ["squareFeet", 1_200],
       ["contractValue", 25_000],
-      ["segment", "residential"],
     ]) {
       const response = await running.request("/api/v1/projects", {
         method: "POST",

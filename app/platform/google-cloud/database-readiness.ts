@@ -83,6 +83,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "flooring_kpi_fields",
       checksum: "sha256:c3f3dc194ce5a92aabc172db7bc136d886a6f2900136cdf53fb30720f5d711d1",
     }),
+    Object.freeze({
+      version: 10,
+      name: "project_segment",
+      checksum: "sha256:9fe7e63bb2f266636164f20436753189938cd9c47a21b2a5e565e8faa79b87b9",
+    }),
   ]);
 
 /**
