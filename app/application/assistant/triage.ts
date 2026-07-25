@@ -6,6 +6,10 @@ export const ASSISTANT_TRIAGE_MESSAGE_LIMIT = 20;
 export const ASSISTANT_TRIAGE_PROJECT_LIMIT = 100;
 export const ASSISTANT_TRIAGE_RATIONALE_LIMIT = 200;
 export const ASSISTANT_TRIAGE_PROVIDER_CONCURRENCY = 4;
+// A single wall-clock budget for the whole batch. Four workers over up to twenty
+// messages, each provider call carrying its own timeout, would otherwise stall
+// for ~100s worst case and blow past the assistant's 60s budget. Kept under 60s.
+export const ASSISTANT_TRIAGE_BATCH_DEADLINE_MS = 55_000;
 
 export type TriageMessageSummary = Readonly<{
   id: string;
@@ -106,11 +110,7 @@ export function parseAssistantTriageSuggestion(
   if (
     Object.keys(value).length !== 4
     || value.messageId !== expectedMessageId
-    || (value.projectId !== null && (
-      typeof value.projectId !== "string"
-      || !IDENTIFIER_PATTERN.test(value.projectId)
-      || !candidateProjectIds.has(value.projectId)
-    ))
+    || (value.projectId !== null && typeof value.projectId !== "string")
     || typeof value.confidence !== "string"
     || !CONFIDENCE_VALUES.has(value.confidence)
   ) {
@@ -118,10 +118,26 @@ export function parseAssistantTriageSuggestion(
   }
   const rationale = normalizeRationale(value.rationale);
   if (!rationale) return null;
+  // Resolve to a known candidate; any absent, malformed, or unknown project id
+  // is coerced to null ("no confident match") rather than rejecting the whole
+  // row, because a null suggestion is still useful review signal.
+  const projectId =
+    typeof value.projectId === "string"
+      && IDENTIFIER_PATTERN.test(value.projectId)
+      && candidateProjectIds.has(value.projectId)
+      ? value.projectId
+      : null;
+  // The system prompt defines "null projectId => low confidence". Model output is
+  // untrusted, so enforce that relationship here instead of trusting the model:
+  // a null project with "high" confidence would otherwise render as
+  // "high · No confident project match" and mislead the reviewer.
+  const confidence: AssistantTriageSuggestion["confidence"] = projectId === null
+    ? "low"
+    : (value.confidence as AssistantTriageSuggestion["confidence"]);
   return Object.freeze({
     messageId: expectedMessageId,
-    projectId: value.projectId as string | null,
-    confidence: value.confidence as AssistantTriageSuggestion["confidence"],
+    projectId,
+    confidence,
     rationale,
   });
 }
@@ -197,12 +213,23 @@ export async function suggestInboxTriage(input: {
   projects: readonly TriageProjectCandidate[];
   provider: AssistantProvider;
   signal: AbortSignal;
+  batchDeadlineMs?: number;
 }): Promise<AssistantTriageSuggestion[]> {
   const messages = input.messages.slice(0, ASSISTANT_TRIAGE_MESSAGE_LIMIT);
   const suggestions: Array<AssistantTriageSuggestion | null> = Array.from(
     { length: messages.length },
     () => null,
   );
+  // One shared deadline bounds the whole run. Mirrors the single
+  // AbortSignal.timeout shared across attempts in app/lib/google-fetch-resilience.
+  // Combining it with the caller signal makes each provider call's effective
+  // timeout min(per-call, time remaining), and messages not started by the
+  // deadline (plus any in flight when it fires) return no suggestion rather than
+  // failing the batch. Injectable via batchDeadlineMs for tests.
+  const batchDeadline = AbortSignal.timeout(
+    input.batchDeadlineMs ?? ASSISTANT_TRIAGE_BATCH_DEADLINE_MS,
+  );
+  const effectiveSignal = AbortSignal.any([input.signal, batchDeadline]);
   let nextMessageIndex = 0;
   const workers = Array.from(
     {
@@ -216,6 +243,9 @@ export async function suggestInboxTriage(input: {
         if (input.signal.aborted) {
           throw input.signal.reason ?? new Error("AI triage request aborted.");
         }
+        // Batch budget spent: stop dispatching so unstarted messages return no
+        // suggestion instead of extending the run past the wall-clock budget.
+        if (batchDeadline.aborted) break;
         const messageIndex = nextMessageIndex;
         nextMessageIndex += 1;
         try {
@@ -223,9 +253,11 @@ export async function suggestInboxTriage(input: {
             message: messages[messageIndex],
             projects: input.projects,
             provider: input.provider,
-            signal: input.signal,
+            signal: effectiveSignal,
           });
         } catch (error) {
+          // Only a caller abort fails the batch; a deadline abort (or any single
+          // provider failure) leaves that message without a suggestion.
           if (input.signal.aborted) throw error;
           suggestions[messageIndex] = null;
         }

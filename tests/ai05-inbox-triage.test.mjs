@@ -230,11 +230,61 @@ test("AI-05 schema and parser are strict, bounded, and drop unknown project ids"
     confidence: "high",
     rationale: "The exact project number appears in the saved subject.",
   });
-  assert.equal(application.parseAssistantTriageSuggestion({
+  // An unknown project id is dropped to null and its confidence clamped to low,
+  // rather than rejecting the whole row: a null suggestion is still useful signal.
+  assert.deepEqual(application.parseAssistantTriageSuggestion({
     messageId: SAFE_MESSAGE_ID,
     projectId: "unknown-project",
     confidence: "high",
     rationale: "Invented project.",
+  }, SAFE_MESSAGE_ID, allowed), {
+    messageId: SAFE_MESSAGE_ID,
+    projectId: null,
+    confidence: "low",
+    rationale: "Invented project.",
+  });
+  // A null projectId with a claimed high/medium confidence is clamped to low,
+  // matching the system prompt's "null = no confident match" contract.
+  assert.deepEqual(application.parseAssistantTriageSuggestion({
+    messageId: SAFE_MESSAGE_ID,
+    projectId: null,
+    confidence: "high",
+    rationale: "No confident project match.",
+  }, SAFE_MESSAGE_ID, allowed), {
+    messageId: SAFE_MESSAGE_ID,
+    projectId: null,
+    confidence: "low",
+    rationale: "No confident project match.",
+  });
+  assert.deepEqual(application.parseAssistantTriageSuggestion({
+    messageId: SAFE_MESSAGE_ID,
+    projectId: null,
+    confidence: "medium",
+    rationale: "Ambiguous saved summary.",
+  }, SAFE_MESSAGE_ID, allowed), {
+    messageId: SAFE_MESSAGE_ID,
+    projectId: null,
+    confidence: "low",
+    rationale: "Ambiguous saved summary.",
+  });
+  // A valid candidate keeps its stated confidence unchanged.
+  assert.deepEqual(application.parseAssistantTriageSuggestion({
+    messageId: SAFE_MESSAGE_ID,
+    projectId: PROJECT_ID,
+    confidence: "medium",
+    rationale: "Saved subject cites the project number.",
+  }, SAFE_MESSAGE_ID, allowed), {
+    messageId: SAFE_MESSAGE_ID,
+    projectId: PROJECT_ID,
+    confidence: "medium",
+    rationale: "Saved subject cites the project number.",
+  });
+  // A grossly malformed projectId type is still rejected outright.
+  assert.equal(application.parseAssistantTriageSuggestion({
+    messageId: SAFE_MESSAGE_ID,
+    projectId: 42,
+    confidence: "high",
+    rationale: "Numeric project id.",
   }, SAFE_MESSAGE_ID, allowed), null);
   assert.equal(application.parseAssistantTriageSuggestion({
     messageId: HOSTILE_MESSAGE_ID,
@@ -437,6 +487,60 @@ test("AI-05 bounds provider concurrency and isolates individual provider failure
   );
 });
 
+test("AI-05 bounds the whole batch with a shared deadline and starts no message after it", async () => {
+  const projects = [{
+    id: PROJECT_ID,
+    number: "CF-2026-041",
+    name: "Westport Medical Center",
+    client: "Atlas Health",
+  }];
+  const messages = Array.from({ length: 12 }, (_, index) => ({
+    id: `deadline-message-${index}`,
+    from: "client@example.test",
+    subject: `Project update ${index}`,
+    snippet: "Saved records only.",
+  }));
+  let started = 0;
+  const provider = {
+    complete(request) {
+      started += 1;
+      // A stalled provider that only settles when the shared deadline aborts the
+      // (combined) request signal — never on its own.
+      return new Promise((_resolve, reject) => {
+        const fail = () => reject(request.signal.reason ?? new Error("aborted"));
+        if (request.signal.aborted) {
+          fail();
+          return;
+        }
+        request.signal.addEventListener("abort", fail, { once: true });
+      });
+    },
+  };
+  const start = Date.now();
+  const suggestions = await application.suggestInboxTriage({
+    messages,
+    projects,
+    provider,
+    signal: new AbortController().signal,
+    batchDeadlineMs: 40,
+  });
+  const elapsed = Date.now() - start;
+
+  assert.deepEqual(suggestions, []);
+  assert.ok(
+    elapsed < 2_000,
+    `batch should finish near the 40ms deadline, took ${elapsed}ms`,
+  );
+  assert.ok(
+    started <= application.ASSISTANT_TRIAGE_PROVIDER_CONCURRENCY,
+    `only in-flight workers dispatch before the deadline (started ${started})`,
+  );
+  assert.ok(
+    started < messages.length,
+    "messages not started by the deadline must not dispatch",
+  );
+});
+
 test("live Gmail triage reads exact metadata only and rejects a mismatched response id", async () => {
   const calls = [];
   const expectedUrl = [
@@ -621,6 +725,52 @@ test("configured AI-05 route reads summaries only and returns isolated validated
     assert.equal(providerBodies.length, 2);
     assert.equal(database.writes.length, 0);
     assert.doesNotMatch(JSON.stringify(body), new RegExp(SECRET));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("AI-05 route isolates one unreachable summary and still files the rest", async () => {
+  const database = fakeDatabase();
+  setEnvironment(database);
+  const originalFetch = globalThis.fetch;
+  const providerBodies = [];
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "https://api.openai.com/v1/responses");
+    const body = JSON.parse(String(init.body));
+    providerBodies.push(body);
+    const messageId = body.text.format.schema.properties.messageId.enum[0];
+    return openAiOutput({
+      messageId,
+      projectId: PROJECT_ID,
+      confidence: "high",
+      rationale: "The exact project number appears in the saved subject.",
+    });
+  };
+  try {
+    // "sim-missing-message" was listed then deleted before Suggest with AI, so
+    // its summary fetch rejects. Under Promise.all the whole batch would fail;
+    // per-message isolation drops only that message and files SAFE_MESSAGE_ID.
+    const response = await route.POST(routeRequest({
+      messageIds: ["sim-missing-message", SAFE_MESSAGE_ID],
+    }));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(body, {
+      suggestions: [{
+        messageId: SAFE_MESSAGE_ID,
+        projectId: PROJECT_ID,
+        confidence: "high",
+        rationale: "The exact project number appears in the saved subject.",
+      }],
+    });
+    // Only the reachable message reached the provider; the failed one is absent.
+    assert.equal(providerBodies.length, 1);
+    assert.equal(
+      body.suggestions.some(({ messageId }) => messageId === "sim-missing-message"),
+      false,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

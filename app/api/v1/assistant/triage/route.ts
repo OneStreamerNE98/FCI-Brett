@@ -103,8 +103,18 @@ export async function POST(request: NextRequest) {
       getWorkspaceGmailClient(),
       readTriageProjectCandidates(database),
     ]);
-    const messages = await Promise.all(
+    // Isolate every summary fetch so one deleted or inaccessible message (listed,
+    // then removed before "Suggest with AI") cannot reject the whole batch and
+    // mask the other messages' suggestions. Failed fetches drop out; the rest
+    // proceed. Exactly one summary call-site per message is preserved.
+    const summaries = await Promise.allSettled(
       messageIds.map((messageId) => client.getMessageSummary(messageId)),
+    );
+    if (request.signal.aborted) {
+      throw request.signal.reason ?? new Error("AI triage request aborted.");
+    }
+    const messages = summaries.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
     );
     const runtime = assistantRuntimeConfiguration(environment);
     const apiKey = runtimeValue("OPENAI_API_KEY");
