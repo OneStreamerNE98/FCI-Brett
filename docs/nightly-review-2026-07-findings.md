@@ -318,7 +318,7 @@ removal breaks no test; `npm test` green.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-04 · Phone polish: testing-launch overflow, 44px control tier, 8px control gaps (small)
-**Status:** In review — PR #203, July 25, 2026. Source-only and undeployed. Guide impact: none.
+**Status:** Complete — PR #203, July 25, 2026. Opus fleet clean — zero confirmed findings: screenshots verified faithful down to pixel-crops, the census test derives every `--control-*` family and pins raise-or-keep decisions (mutation-sensitive), all 8 `.settings-heading` consumers audited under the broadened stack rule. Executed scanner proof on the PR head: zero overflow/gap findings across the four affected routes at 360/390/430, with a live 360px capture confirming the OIDC names wrap in-viewport (vacuous-zero check per the Night-1 lesson). Bot P2 fixed on-branch (d184675): decorative direct-child heading icons hidden in the ≤560px stacked layout, capture-verified. Density notes recorded: the two module-file gap raises (WorkspaceDefaults planned fields, Drive-resource action buttons) are unscoped and add ~1–2px at desktop too; the google-workspace action row keeps its 6px gap on desktop (phone-scoped raise); shared control tokens 34/40/42 unchanged. Source-only and undeployed. Guide impact: none.
 
 **Why:** N1-1 — the app's only page-level horizontal overflow (testing-launch
 at 360–390: unbreakable OIDC requirement names + a heading-stack rule scoped
