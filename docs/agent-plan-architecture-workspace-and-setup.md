@@ -2406,7 +2406,7 @@ suggestions; simulation e2e suggests and files one message through review;
 **Effort:** medium. **Cost:** $0.
 
 ### AI-06 · Reply with AI (small-medium, after AI-02 + AI-03; inbox components only; admin-gated)
-**Status:** In progress — `claude/ai06-reply-draft`, July 25, 2026.
+**Status:** In review — PR #212, July 25, 2026. Source-only and undeployed.
 **Why:** explicit owner ask — a button on an email that generates the reply
 draft; the human triggers, edits, and sends; the AI never sends.
 **Do:** `POST /api/v1/assistant/reply-draft` (admin + same-origin + bounded):
