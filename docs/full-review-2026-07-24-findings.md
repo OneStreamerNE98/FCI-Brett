@@ -378,7 +378,7 @@ fields). New.
 **Effort:** small. **Cost:** $0.
 
 ### FIX-15 · Single-slot toast clobbers (P3 H-6; small)
-**Status:** In review — PR #206, July 25, 2026. Includes N7-7/N7-8 folds. Source-only and undeployed. Guide impact: none.
+**Status:** Complete — PR #206, July 25, 2026. Includes N7-7/N7-8 folds. Opus fleet clean (the +676/−1 additive-diff puzzle resolved: the shared notify() callback is a real chokepoint — GoogleWorkspacePanel receives it as a prop, both toast pairs proven routed through it; the −1 was exactly the old index-0 prepend). Bot P2 fixed on-branch (f0086bc): suppression scoped to an anchored allowlist of the two reload notices, so unrelated info feedback (e.g. advanceLead's final-stage notice) always renders. CI e2e failure root-caused as cross-spec state pollution introduced by this PR's own e2e (real simulation reset deletes the seeded workspace_resources row on the single shared server) and fixed in 57f5958 by restoring the registry via the real simulation endpoints with a self-checking verify — the stepper spec then passed clean. Fleet P3 notes: node suite is structural pins with runtime proof on the CI Playwright gate; 2s suppression window vs 3.2s success duration gap unreachable by the targeted flows. Source-only and undeployed. Guide impact: none.
 
 **Why:** `notify()` is single-slot, so a success confirmation is overwritten within
 ~120ms by a follow-up info toast — the simulation-reset "restored N messages"
