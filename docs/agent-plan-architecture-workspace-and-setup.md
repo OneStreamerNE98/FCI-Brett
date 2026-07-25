@@ -2282,7 +2282,7 @@ source-only/unapplied and the PR says so; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-02 · Assistant & Inbox surface extraction + phone-call option (medium; the ONLY FloorOpsApp packet — one queue slot, three serial PRs a→b→c)
-**Status:** Complete — PR #182 + PR #187 + PR #193, July 24, 2026. Source-only and undeployed. All three serial sub-PRs fleet-clean: a and b were byte-identical extractions of the Assistant and Inbox surfaces (39/39 and 38/38 executed green, every pin a required re-point), and c added the phone-call meeting option — the packet's only behavior change — with the full option-list mutation-pinned, evidence at 1280/390, and the meeting guide updated in-PR per the currency rule. The FloorOpsApp queue slot is RELEASED; the fix-tail (NFIX-03, FIX-15, FIX-17, SET-22/26) and AI-04 are unblocked. Guide impact: `docs/meeting-notes-and-otter.md` updated (phone-call now offered).
+**Status:** Complete — PR #182 + PR #187 + PR #193, July 24, 2026. Source-only and undeployed. All three serial sub-PRs fleet-clean: a and b were byte-identical extractions of the Assistant and Inbox surfaces (39/39 and 38/38 executed green, every pin a required re-point), and c added the phone-call meeting option — the packet's only behavior change — with the full option-list mutation-pinned, evidence at 1280/390, and the meeting guide updated in-PR per the currency rule. The FloorOpsApp queue slot is RELEASED; the fix-tail (NFIX-03, FIX-15, FIX-17, SET-22) and AI-04 are unblocked — SET-26 stays gated on SET-23 (its acceptance needs the SET-23 viewer). Guide impact: `docs/meeting-notes-and-otter.md` updated (phone-call now offered).
 
 **Why:** AssistantView, InboxView, and GmailReplyModal live inside
 `FloorOpsApp.tsx`; without extraction every AI UI packet would serialize
@@ -2659,7 +2659,7 @@ and proceed in parallel with R1-R3.
 (`codex/ai07b-task-assigned-event`, dispatched July 24 — do not re-claim the
 merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED — the fix-tail (NFIX-03, FIX-15,
-FIX-17, SET-22/26) is dispatchable. AI-04/AI-05/AI-06 follow in the extracted modules
+FIX-17, SET-22) is dispatchable; SET-26 remains gated on SET-23 (open). AI-04/AI-05/AI-06 follow in the extracted modules
 (parallel-safe among themselves); AI-09 closes the workstream. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
