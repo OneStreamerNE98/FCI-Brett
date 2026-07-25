@@ -138,6 +138,50 @@ async function expectSuccessToastLifetime(page: Page, message: string) {
   await expect(page.locator(".toast")).toHaveCount(0);
 }
 
+// The simulation-reset toast test drives the REAL "Reset simulation data"
+// endpoint (no route mocks), and that endpoint deletes every workspace_resources
+// row for the shared "workspace-simulation" connection — see
+// app/api/v1/integrations/google/simulation/reset/route.ts (DELETE FROM
+// workspace_resources ...). resetWorkspaceSimulation() only re-seeds the Gmail /
+// calendar state and never re-provisions the registry. That deleted partition
+// includes the seed.sql-provisioned "client-directory" spreadsheet row
+// (tests/e2e/fixtures/seed.sql) that workspace-setup-stepper.spec.ts reads as its
+// "App-managed" / "Created" precondition. playwright.config.ts runs a single
+// worker (workers: 1, fullyParallel: false) against one shared web server, and
+// this spec sorts before workspace-setup-stepper.spec.ts, so the deletion leaks
+// forward and leaves that precondition reading "Not configured". Re-provision the
+// registry through the same real simulation setup endpoints the stepper creation
+// journey exercises (adopt Shared Drive -> ensure root folders -> ensure
+// spreadsheets); in simulation these run without a Google connection and recreate
+// the app-managed "client-directory" row with origin "created".
+async function restoreSimulationDirectoryRegistry(page: Page) {
+  return page.evaluate(async () => {
+    const post = async (url: string) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (!response.ok) {
+        throw new Error(`restore step ${url} failed: ${response.status} ${await response.text()}`);
+      }
+    };
+    // Order matters: ensure-roots and ensure-spreadsheets both require the
+    // Shared Drive to be adopted into the registry first.
+    await post("/api/v1/integrations/google/drive/shared-drive/adopt");
+    await post("/api/v1/integrations/google/drive/folders/ensure-roots");
+    await post("/api/v1/integrations/google/sheets/ensure");
+    const verify = await fetch("/api/v1/integrations/google/setup/resources");
+    if (!verify.ok) throw new Error(`restore verification failed: ${verify.status}`);
+    const payload = await verify.json() as {
+      resources: Array<{ key: string; resourceType: string; source: string; origin?: string }>;
+    };
+    return payload.resources.find(
+      (resource) => resource.resourceType === "sheets.spreadsheet" && resource.key === "client-directory",
+    ) ?? null;
+  });
+}
+
 test.describe("FIX-15 toast timeline", () => {
   test("simulation-reset success is not clobbered by its readiness refresh", async ({ page }) => {
     await page.goto("/settings?section=google-workspace");
@@ -153,6 +197,13 @@ test.describe("FIX-15 toast timeline", () => {
 
     await expectSuccessToastLifetime(page, "Workspace simulation reset with");
     await expect(page.getByText("Workspace readiness refreshed. Current status is shown above.", { exact: true })).toHaveCount(0);
+
+    // Restore the shared simulation registry this real reset destroyed so that
+    // workspace-setup-stepper.spec.ts still reads an App-managed / Created
+    // "client-directory" row for its pre-reset precondition.
+    const restoredDirectory = await restoreSimulationDirectoryRegistry(page);
+    expect(restoredDirectory?.source).toBe("app");
+    expect(restoredDirectory?.origin).toBe("created");
   });
 
   test("Gmail filing success is not clobbered by the follow-up message reload", async ({ page }) => {
