@@ -302,6 +302,28 @@ test("AI-05 isolates every untrusted email from every other provider request", a
   assert.doesNotMatch(requests[0].messages[1].content, new RegExp(SAFE_SUBJECT));
   assert.match(requests[1].messages[1].content, new RegExp(SAFE_SUBJECT));
   assert.doesNotMatch(requests[1].messages[1].content, new RegExp(HOSTILE_SUBJECT));
+  for (const request of requests) {
+    const [
+      candidateLabel,
+      candidateJson,
+      summaryLabel,
+      summaryJson,
+    ] = request.messages[1].content.split("\n");
+    assert.equal(candidateLabel, "CANDIDATE PROJECTS:");
+    assert.equal(summaryLabel, "UNTRUSTED EMAIL SUMMARY:");
+    const candidates = JSON.parse(candidateJson);
+    assert.ok(candidates.length > 0);
+    for (const candidate of candidates) {
+      assert.deepEqual(
+        Object.keys(candidate).sort(),
+        ["client", "id", "name", "number"],
+      );
+    }
+    assert.deepEqual(
+      Object.keys(JSON.parse(summaryJson)).sort(),
+      ["from", "messageId", "snippet", "subject"],
+    );
+  }
   assert.deepEqual(suggestions, [{
     messageId: SAFE_MESSAGE_ID,
     projectId: PROJECT_ID,

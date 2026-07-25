@@ -211,14 +211,14 @@ test("simulation suggests one message and preserves the existing human filing re
     document.documentElement.scrollWidth <= document.documentElement.clientWidth
   ))).toBe(true);
   expect(await aiSuggestion.getByRole("button", {
-    name: `Accept AI suggestion for ${message.subject}`,
+    name: `Accept AI suggestion for ${message.subject}: ${project.project_number} — ${project.name}; high confidence; The exact project number appears in the saved subject.`,
   }).evaluate((button) => {
     const bounds = button.getBoundingClientRect();
     return bounds.left >= 0 && bounds.right <= window.innerWidth;
   })).toBe(true);
 
   await aiSuggestion.getByRole("button", {
-    name: `Accept AI suggestion for ${message.subject}`,
+    name: `Accept AI suggestion for ${message.subject}: ${project.project_number} — ${project.name}; high confidence; The exact project number appears in the saved subject.`,
   }).click();
   const filingDialog = page.getByRole("dialog", {
     name: "File email to one project",
