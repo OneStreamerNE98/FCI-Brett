@@ -874,6 +874,7 @@ button { color:inherit; }
 
 @media (max-width:560px){
   .settings-heading{display:grid;gap:12px}
+  .settings-heading>svg{display:none}
   .settings-heading>.primary-button,.settings-heading>.soft-button{width:100%}
   .workspace-settings{padding:16px}
   .workspace-settings>.settings-heading{display:grid;gap:12px}
