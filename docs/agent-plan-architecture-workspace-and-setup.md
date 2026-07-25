@@ -2282,7 +2282,7 @@ source-only/unapplied and the PR says so; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-02 · Assistant & Inbox surface extraction + phone-call option (medium; the ONLY FloorOpsApp packet — one queue slot, three serial PRs a→b→c)
-**Status:** In progress — `codex/ai02c-phone-call-option`, updated July 24, 2026: the serial claim advances to sub-PR c (phone-call meeting option — the packet's only behavior change; continuation nudge with the owner). Sub-PRs a (PR #182) and b (PR #187) are merged, both fleet-clean byte-identical extractions. The FloorOpsApp queue slot stays owned by this series until c merges. Source-only and undeployed. Guide impact: none.
+**Status:** In review — PR #193, July 24, 2026. Sub-PR c adds the phone-call meeting option as the packet's only behavior change while preserving the existing default; sub-PRs a (PR #182) and b (PR #187) are merged, both fleet-clean byte-identical extractions. The FloorOpsApp queue slot stays owned by this series until c merges. Source-only and undeployed. Guide impact: none.
 
 **Why:** AssistantView, InboxView, and GmailReplyModal live inside
 `FloorOpsApp.tsx`; without extraction every AI UI packet would serialize
