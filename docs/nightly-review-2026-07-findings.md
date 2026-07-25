@@ -128,6 +128,115 @@ Coverage honesty: static reads only — no live Google calls, no e2e; the D1
 adapters behind the lease helpers were trusted per their own test suites;
 sim-only branches skipped by repo law.
 
+### Night 1 — Responsive: phones (run July 25, 2026; co-run with Night 7)
+
+Scan-first review at 360/375/390/430 across all 16 routes: 64 page-views
+against the seeded e2e server (populated test data), 114 deduped probe
+findings (93 touch-target, 10 wrap, 7 gap, 3 container-overflow, 1 overlap),
+then three Opus lenses (targets/gaps, overflow/wrap + visual screenshot pass,
+synthesis) and adversarial verification per P1/P2. Summary page:
+[`nightly-reviews/night-01-phone-viewports.md`](nightly-reviews/night-01-phone-viewports.md).
+
+#### N1-1 · Testing & launch forces page-level horizontal scroll on phones (P2, verified)
+Two causes, one symptom — the app's only page-level horizontal overflow
+(`page-wrap` scrollWidth 397 vs 360, reproduced live). (a) OIDC requirement
+names (`FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN`, …) render in
+`.settings-security-list strong` with no overflow-wrap, and the unbreakable
+tokens push the page wide. (b) `.settings-heading` is flex with no wrap and
+the ≤560px heading-stack rule is scoped to `.workspace-settings` only, so the
+test-launch heading + "Open Google Workspace setup" button never stack.
+Verifier-agent crash was backfilled by an orchestrator inline verification
+(live re-scan repro + source confirmation). → NFIX-04.
+
+#### N1-2 · Projects filter pill gap (P3, refuted from P2)
+The 4px intra-control gap inside the Projects segmented filter pill is
+intended spacing; segments are 34px (≥ the WCAG 24px floor) and no 8px token
+governs intra-pill gaps. Recorded so future nights do not re-file. Note-only.
+
+#### N1-3 · Control-size token scale caps at 42px app-wide (P3)
+`--control-compact:34 / --control-standard:40 / --control-page:42` drive ~70
+below-HIG (24–43px) targets on every route; `--target-min:44` exists but is
+never applied to controls. Uniformly ≥24px, so no WCAG 2.5.8 failure — a
+single-token root with an owner-visible density change if bumped. → NFIX-04
+(CSS-token-only; default-layout markup is byte-pinned by the golden hashes).
+
+#### N1-4 · Sub-8px gaps between adjacent action controls (P3)
+google-workspace action row (6px between primary/soft buttons); the
+info-hint→reminder-input pairs on workflow-notifications and calendar (7px).
+Violates the 8px design rhythm, not WCAG geometry (both sides ≥24px). → NFIX-04.
+
+#### N1-5 · Scanner "wcag-fail" checkboxes are label-wrapped false positives (P3, documented)
+The probe measures the 15–18px `<input>`, but every flagged checkbox sits in
+a clickable `<label>` ≥44px (featureList, notificationRow, settings-checkbox,
+attestationRow — CSS-verified), which is the real WCAG target. Documented as
+an allowlist note so future nights do not re-file; no fix needed.
+
+Coverage honesty: the first scan pass was vacuous — every page rendered a
+Vite error overlay from a stale root-clone serve state — and was detected by
+screenshot inspection and re-run in full against the seeded e2e server (the
+dev-DB server was unmigrated and near-empty, which would have scanned empty
+states). Captures at four phone widths; DES-04's scroll-reveal topbar and the
+≤1180/≤820 single-column collapses are by design; golden hashes constrain all
+N1 fixes to CSS-only.
+
+### Night 7 — Code correctness (run July 25, 2026; co-run with Night 1)
+
+Static review: three Opus lenses (domain/application computation, API route
+correctness, client-state + synthesis), adversarial verification with
+executed-proof preference per P1/P2. **Zero P1/P2 survived verification** —
+the computation core held up; eight P3s filed. Summary page:
+[`nightly-reviews/night-07-code-correctness.md`](nightly-reviews/night-07-code-correctness.md).
+
+#### N7-1 · filing-rules mutations are office-gated; every sibling settings config route requires admin (P3, verified core, severity-refuted from P2)
+POST/PATCH/DELETE call `requireOfficeUser` without `{admin:true}` — confirmed
+reachable — while all sibling settings mutations pass the admin flag and the
+UI hides the panel behind `isAdmin` (API-only surface). Refuted to P3:
+trusted-insider actor, same-origin only, review-first impact (no Gmail
+write). Defense-in-depth parity fix. → NFIX-05.
+
+#### N7-2 · Revenue-per-sq-ft averages per-project ratios, not aggregate ÷ aggregate (P3)
+`average(value/sqft per project)` weights a 250-sqft job equally with a
+10,000-sqft job (example divergence ~1.9×). May be intended "average unit
+price" — the caption discloses a per-project basis. **Owner decision.**
+
+#### N7-3 · Booked value/count and average job value include cancelled projects (P3)
+`bookedProjects` filters only by creation month and `averageJobValue` spans
+all projects regardless of terminal status, so cancelled work inflates both.
+May be an intended point-in-time booking snapshot. **Owner decision.**
+
+#### N7-4 · Win-rate-by-source groups on raw casing/whitespace (P3)
+`lead.source.trim()` without case normalization splits one logical source
+into several rows with misleading per-row rates, while lead status in the
+same loop is normalized. Overall win rate unaffected. → NFIX-05.
+
+#### N7-5 · "Last synced" renders raw epoch milliseconds (P3)
+DirectorySyncPanel's `syncTime` stringifies the number (e.g.
+`1753142400000`) while GoogleWorkspacePanel formats the identical field with
+`toLocaleString()`. → NFIX-05.
+
+#### N7-6 · Meeting POST coerces unknown meetingType to "other"; far-off meetingAt accepted (P3)
+Unlike task validation (unknown → 400), an unrecognized meeting type is
+silently stored as "other", and any parseable date passes. UI dropdown +
+datetime-local avoid it; direct-API surface only. Note-only.
+
+#### N7-7 · refreshDirectoryData lacks the load-generation guard its sibling loaders use (P3)
+The core CRM loader can resolve out of order with a mutation-triggered
+refresh and briefly restore a stale snapshot (self-heals on next refresh).
+The loadId idiom already exists in three other loaders. Fold into FIX-15's
+FloorOpsApp pass (same file zone).
+
+#### N7-8 · Optimistic meeting prepend ignores meeting_at DESC order (P3)
+A newly saved past-dated meeting jumps to the top until reload, contradicting
+the server sort. Cosmetic transient. Fold into FIX-15's FloorOpsApp pass.
+
+Verified clean along the way: settings/me + my-settings + workspace-resources
+load-generation guards, toast-timer cleanup, mobile-nav focus trap,
+optimistic project updates re-sync selectedProject, ask-loading Q-race guard,
+inbox loadedBucket guard. Coverage honesty: page wrappers
+(leads/clients/projects/reports/schedule), management/access,
+GoogleWorkspacePanel L720+ (Night 8's zone), the workspace editor/defaults
+cards, features/maps, and repo internals were not read by any lens.
+
 ---
 
 ## Packets
@@ -195,4 +304,43 @@ grep-proof in the PR.
 **Accept:** byte-identical responses (headers and bodies) proven by the
 existing route tests passing unchanged; zero behavior change; dead-export
 removal breaks no test; `npm test` green.
+**Effort:** small. **Cost:** $0.
+
+### NFIX-04 · Phone polish: testing-launch overflow, 44px control tier, 8px control gaps (small)
+**Status:** Blocked — awaiting owner dispatch (zone: `globals.css` tokens + settings surfaces; coordinate with FIX-17's globals.css dead-CSS deletions — either order, serialize merges).
+
+**Why:** N1-1 — the app's only page-level horizontal overflow (testing-launch
+at 360–390: unbreakable OIDC requirement names + a heading-stack rule scoped
+to `.workspace-settings` only). N1-3 — the control token scale caps at 42px,
+leaving ~70 targets below the 44px HIG tier app-wide. N1-4 — 6–7px gaps in
+three settings sections against the 8px rhythm.
+**Do:** add overflow-wrap/word-break to `.settings-security-list strong`;
+broaden the ≤560px heading-stack rule beyond `.workspace-settings` (or give
+`.settings-heading` flex-wrap); bump the control token tier toward 44px
+(CSS-token-only — default-layout markup is byte-pinned by the golden hashes,
+NO markup edits); raise the three sub-8px control gaps to ≥8px. PR carries
+before/after phone screenshots (the token bump is an owner-visible density
+change).
+**Accept:** Night-1 scanner re-run at 360/375/390/430 shows zero page-level
+overflow and no sub-8px gaps on the three named sections; golden hashes
+byte-identical; `npm test` and e2e green.
+**Effort:** small. **Cost:** $0.
+
+### NFIX-05 · Correctness small fixes: filing-rules admin gate, normalized win-rate sources, readable sync timestamps (small)
+**Status:** Blocked — awaiting owner dispatch (zone: filing-rules routes + `features/reports/flooring-kpis.ts` + `settings/components/DirectorySyncPanel.tsx`; clear of all open lanes).
+
+**Why:** N7-1 (filing-rules mutations office-gated while every sibling
+settings config route requires admin; UI already admin-only), N7-4 (win-rate
+rows split by raw source casing), N7-5 ("Last synced" shows epoch
+milliseconds).
+**Do:** add `{admin:true}` to filing-rules POST/PATCH/DELETE authorization +
+a non-admin 403 test (mirrors sibling settings routes); key
+win-rate-by-source on trimmed+lowercased source with a canonical display
+label (first-seen casing); format `DirectorySyncPanel` `lastSyncedAt` via the
+existing `toLocaleString` pattern used for the same field in
+GoogleWorkspacePanel.
+**Accept:** non-admin office user gets 403 on all three filing-rules
+mutations (test-asserted); same-source case variants collapse to one row with
+a combined rate (test-asserted); "Last synced" renders a locale timestamp;
+`npm test` green; no other behavior change.
 **Effort:** small. **Cost:** $0.

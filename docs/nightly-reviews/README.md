@@ -20,13 +20,13 @@ review-and-merge loop.
 
 | Night | Theme | Status | Run date | Findings | Summary |
 |---|---|---|---|---|---|
-| 1 | Responsive: phones (360/375/390/430) | pending | — | — | — |
+| 1 | Responsive: phones (360/375/390/430) | complete (co-run with 7) | July 25, 2026 | 5 (1 P2) | [night-01](night-01-phone-viewports.md) |
 | 2 | Tablet & awkward middles (768–1024 + 600–900) | pending | — | — | — |
 | 3 | Spacing & alignment (1280/1440 + rhythm) | pending | — | — | — |
 | 4 | Collapsible cards & disclosure (owner-gated spec) | pending | — | — | — |
 | 5 | Design-system conformance | pending | — | — | — |
 | 6 | Architecture & duplication | complete (co-run with 8) | July 24, 2026 | 4 (2 P2) | [night-06](night-06-architecture-duplication.md) |
-| 7 | Code correctness | pending | — | — | — |
+| 7 | Code correctness | complete (co-run with 1) | July 25, 2026 | 8 (0 P2) | [night-07](night-07-code-correctness.md) |
 | 8 | Google integration depth | complete (co-run with 6) | July 24, 2026 | 7 (2 P2) | [night-08](night-08-google-integration-depth.md) |
 | 9 | Performance (numbers required) | pending | — | — | — |
 | 10 | Accessibility + maintenance + synthesis | pending | — | — | — |
