@@ -239,10 +239,18 @@ class StatefulD1Database {
 const database = new StatefulD1Database();
 const originalNodeEnvironment = process.env.NODE_ENV;
 process.env.NODE_ENV = "test";
-globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = {
+const workerEnvironment = {
   FCI_OFFICE_EMAILS: OFFICE_EMAIL,
   FCI_ADMIN_EMAILS: OFFICE_EMAIL,
   DB: database,
+};
+const deferredChatTasks = [];
+globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = workerEnvironment;
+globalThis.__FCI_TEST_CLOUDFLARE_WAIT_UNTIL__ = (promise) => {
+  deferredChatTasks.push({
+    promise,
+    persistedTaskIds: [...database.tasks.keys()],
+  });
 };
 
 const rootUrl = new URL("../", import.meta.url);
@@ -287,6 +295,7 @@ after(async () => {
   if (originalNodeEnvironment === undefined) delete process.env.NODE_ENV;
   else process.env.NODE_ENV = originalNodeEnvironment;
   delete globalThis.__FCI_TEST_CLOUDFLARE_ENV__;
+  delete globalThis.__FCI_TEST_CLOUDFLARE_WAIT_UNTIL__;
   await vite.close();
 });
 
@@ -535,6 +544,37 @@ test("D1 task routes round-trip create, list, and completion with activity evide
       .every(({ sql }) => sql.includes("WHERE EXISTS (SELECT 1 FROM tasks")),
     true,
   );
+});
+
+test("task-create Chat trigger queues only assigned tasks after persistence and keeps the 201 response", async () => {
+  deferredChatTasks.length = 0;
+  workerEnvironment.GOOGLE_CHAT_NOTIFICATIONS_ENABLED = "true";
+  try {
+    database.reset();
+    const unassigned = await tasksRoute.POST(taskRequest("/api/v1/tasks", "POST", {
+      title: "Leave this task unassigned",
+      source: "manual",
+    }));
+    assert.equal(unassigned.status, 201);
+    assert.equal((await unassigned.json()).task.assigneeEmail, null);
+    assert.equal(deferredChatTasks.length, 0);
+
+    database.reset();
+    const assigned = await tasksRoute.POST(taskRequest("/api/v1/tasks", "POST", {
+      title: "Notify the assigned office user",
+      assigneeEmail: OFFICE_EMAIL,
+      source: "manual",
+    }));
+    const assignedBody = await assigned.json();
+    assert.equal(assigned.status, 201);
+    assert.equal(assignedBody.task.assigneeEmail, OFFICE_EMAIL);
+    assert.equal(deferredChatTasks.length, 1);
+    assert.deepEqual(deferredChatTasks[0].persistedTaskIds, [assignedBody.task.id]);
+    await deferredChatTasks[0].promise;
+  } finally {
+    delete workerEnvironment.GOOGLE_CHAT_NOTIFICATIONS_ENABLED;
+    deferredChatTasks.length = 0;
+  }
 });
 
 test("D1 task routes return 404 for orphan project and lead relationships without writes", async () => {

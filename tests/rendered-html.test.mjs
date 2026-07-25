@@ -49,7 +49,7 @@ test("renders feature-gated Google Chat routing without a webhook-value field", 
   ]);
 
   assert.match(card, /const CHAT_CONFIG_URL = "\/api\/v1\/integrations\/google\/chat\/config"/);
-  assert.match(card, /"lead\.created"[\s\S]+"gmail\.filing_review_needed"[\s\S]+"calendar\.schedule_changed"[\s\S]+"project\.warranty_follow_up_due"/);
+  assert.match(card, /"lead\.created"[\s\S]+"gmail\.filing_review_needed"[\s\S]+"calendar\.schedule_changed"[\s\S]+"project\.warranty_follow_up_due"[\s\S]+"task\.assigned"/);
   assert.match(card, /Simulation log only/);
   assert.match(card, /Read-only notification routing/);
   assert.match(card, /config\.missingDetails\.map/);
@@ -463,7 +463,7 @@ test("keeps My settings scoped to the authenticated office user and honest about
   assert.match(preferencesAdapter, /WHERE user_email = \?/);
   assert.match(preferencesApi, /auth\.user\.email/);
   assert.match(preferencesAdapter, /notification_preferences_json/);
-  assert.match(preferencesApi, /normalizeUserNotificationPreferences/);
+  assert.match(preferencesApi, /parseUserNotificationPreferencesUpdate/);
   assert.match(preferencesApi, /normalizePageLayoutsForWrite/);
   assert.match(preferencesAdapter, /page_layouts_json/);
   assert.match(preferencesApi, /PREFERENCE_KEYS/);
@@ -483,6 +483,7 @@ test("keeps My settings scoped to the authenticated office user and honest about
   assert.match(notificationCatalog, /"gmail\.filing_review_needed"/);
   assert.match(notificationCatalog, /"calendar\.schedule_changed"/);
   assert.match(notificationCatalog, /"project\.warranty_follow_up_due"/);
+  assert.match(notificationCatalog, /"task\.assigned"/);
   assert.match(pageLayouts, /PAGE_LAYOUT_SECTION_CATALOG/);
   assert.match(pageLayouts, /normalizePageLayoutsForRead/);
   assert.match(pageLayouts, /normalizePageLayoutsForWrite/);

@@ -159,8 +159,13 @@ test("Office identity sees My settings only and never renders company or Adminis
   await expect(page.locator('[data-settings-audience="personal"]')).toBeVisible();
   await expect(page.locator('[data-session-profile="true"]')).toContainText("E2E Office");
   await expect(page.locator('[data-session-profile="true"]')).toContainText("e2e-office@example.test");
-  await expect(page.locator('[data-preference-consumer="planned"]')).toHaveCount(4);
-  await expect(page.locator('[data-preference-consumer="planned"] .feature-state-planned')).toHaveCount(4);
+  const plannedPreferenceRows = page.locator('[data-preference-consumer="planned"]');
+  await expect(plannedPreferenceRows).toHaveCount(5);
+  await expect(plannedPreferenceRows.locator(".feature-state-planned")).toHaveCount(5);
+  const taskAssignmentPreference = plannedPreferenceRows.filter({ hasText: "Task assignments" });
+  await expect(taskAssignmentPreference).toHaveCount(1);
+  await expect(taskAssignmentPreference).toContainText("Choose whether a future personal notification should flag tasks assigned to you.");
+  await expect(taskAssignmentPreference.locator(".feature-state-planned")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Save my settings" })).toBeEnabled();
   for (const heading of ["Google Workspace", "Calendar & appointments", "Workflow & notifications", "Data & security", "Test & launch checklist"]) {
     await expect(page.getByRole("heading", { name: heading, exact: true })).toHaveCount(0);

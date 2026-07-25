@@ -5,6 +5,7 @@ import { createServer } from "vite";
 import {
   defaultUserNotificationPreferences,
   normalizeUserNotificationPreferences,
+  parseUserNotificationPreferencesUpdate,
   parseStoredUserNotificationPreferences,
 } from "../app/lib/user-settings.ts";
 import { defaultPageLayouts } from "../app/lib/page-layouts.ts";
@@ -121,23 +122,38 @@ function pageLayouts(overviewFirst, overviewHidden, reportsFirst, reportsHidden)
   };
 }
 
-test("keeps the per-user notification catalog closed and fails stored corruption to safe defaults", () => {
+test("widens legacy stored notification preferences while keeping writes closed", () => {
   const defaults = defaultUserNotificationPreferences();
   assert.deepEqual(defaults, {
     "lead.created": false,
     "gmail.filing_review_needed": false,
     "calendar.schedule_changed": false,
     "project.warranty_follow_up_due": false,
+    "task.assigned": false,
   });
   assert.deepEqual(normalizeUserNotificationPreferences(notificationPreferences("lead.created")), {
     ...defaults,
     "lead.created": true,
   });
-  assert.equal(normalizeUserNotificationPreferences({ "lead.created": true }), null);
-  assert.equal(normalizeUserNotificationPreferences({ ...defaults, invented: true }), null);
+  const legacy = {
+    "lead.created": true,
+    "gmail.filing_review_needed": false,
+    "calendar.schedule_changed": true,
+    "project.warranty_follow_up_due": false,
+  };
+  assert.deepEqual(normalizeUserNotificationPreferences({ ...legacy, invented: true }), {
+    ...legacy,
+    "task.assigned": false,
+  });
+  assert.deepEqual(parseStoredUserNotificationPreferences(JSON.stringify(legacy)), {
+    ...legacy,
+    "task.assigned": false,
+  });
+  assert.equal(parseUserNotificationPreferencesUpdate(legacy), null);
+  assert.ok(parseUserNotificationPreferencesUpdate(defaults));
+  assert.equal(parseUserNotificationPreferencesUpdate({ ...defaults, invented: true }), null);
   assert.equal(normalizeUserNotificationPreferences({ ...defaults, "lead.created": "yes" }), null);
   assert.deepEqual(parseStoredUserNotificationPreferences("not-json"), defaults);
-  assert.deepEqual(parseStoredUserNotificationPreferences(JSON.stringify({ "lead.created": true })), defaults);
 });
 
 test("GET and PATCH read and write only the authenticated identity row", async () => {
@@ -244,11 +260,17 @@ test("page-layout-only PATCH preserves every existing SET-28 preference", async 
   const preferences = (await update.json()).preferences;
   assert.equal(preferences.displayTimezone, "America/Los_Angeles");
   assert.equal(preferences.replySignature, "Keep this signature exactly.");
-  assert.deepEqual(preferences.notificationPreferences, notificationPreferences);
+  assert.deepEqual(preferences.notificationPreferences, {
+    ...notificationPreferences,
+    "task.assigned": false,
+  });
   assert.deepEqual(preferences.pageLayouts, nextLayouts);
   assert.equal(database.rows.get(OFFICE_EMAIL).display_timezone, "America/Los_Angeles");
   assert.equal(database.rows.get(OFFICE_EMAIL).reply_signature, "Keep this signature exactly.");
-  assert.equal(database.rows.get(OFFICE_EMAIL).notification_preferences_json, JSON.stringify(notificationPreferences));
+  assert.equal(
+    database.rows.get(OFFICE_EMAIL).notification_preferences_json,
+    JSON.stringify({ ...notificationPreferences, "task.assigned": false }),
+  );
 });
 
 test("rejects target-identity injection, malformed preferences, cross-origin writes, and unauthenticated access before persistence", async () => {

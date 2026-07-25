@@ -8,6 +8,7 @@ import { creationAuthorizationFor } from "../../../application/creation-authoriz
 import { MAX_TASK_BODY_BYTES } from "../../../domain/task";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
+import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
@@ -69,6 +70,19 @@ export async function POST(request: NextRequest) {
           ? 404
           : 409;
     return json({ error: result.message }, status);
+  }
+  if (result.value.assigneeEmail) {
+    queueGoogleChatNotification(
+      {
+        eventType: "task.assigned",
+        entityId: result.value.id,
+        taskTitle: result.value.title,
+        assigneeEmail: result.value.assigneeEmail,
+        ...(result.value.dueDate ? { dueDate: result.value.dueDate } : {}),
+      },
+      auth.user.email,
+      request.nextUrl.origin,
+    );
   }
   return json({ task: result.value }, 201);
 }

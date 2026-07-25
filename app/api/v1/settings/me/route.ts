@@ -16,7 +16,7 @@ import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import {
   defaultUserSettingsPreferences,
-  normalizeUserNotificationPreferences,
+  parseUserNotificationPreferencesUpdate,
   parseStoredUserNotificationPreferences,
   type UserSettingsPreferences,
 } from "../../../../lib/user-settings";
@@ -105,7 +105,7 @@ export async function PATCH(request: NextRequest) {
     preferences.replySignature = signature;
   }
   if (Object.hasOwn(body, "notificationPreferences")) {
-    const notificationPreferences = normalizeUserNotificationPreferences(body.notificationPreferences);
+    const notificationPreferences = parseUserNotificationPreferencesUpdate(body.notificationPreferences);
     if (!notificationPreferences) return NextResponse.json({ error: "notificationPreferences must contain the complete supported notification catalog with boolean values." }, { status: 400 });
     preferences.notificationPreferences = notificationPreferences;
   }

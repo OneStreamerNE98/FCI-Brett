@@ -12,6 +12,7 @@ const CHAT_EVENT_TYPES = [
   "gmail.filing_review_needed",
   "calendar.schedule_changed",
   "project.warranty_follow_up_due",
+  "task.assigned",
 ] as const;
 
 type ChatEventType = (typeof CHAT_EVENT_TYPES)[number];

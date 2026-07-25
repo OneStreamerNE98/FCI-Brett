@@ -31,6 +31,14 @@ export const GOOGLE_CHAT_EVENT_CATALOG = [
     deepLink: "/projects?status=closeout",
     entityType: "project",
   },
+  {
+    eventType: "task.assigned",
+    label: "Task assigned",
+    description: "A task was assigned to an office user.",
+    defaultSpaceKey: "office-ops",
+    deepLink: "/assistant",
+    entityType: "task",
+  },
 ] as const;
 
 export const GOOGLE_CHAT_SPACE_CATALOG = [
@@ -97,6 +105,13 @@ export type GoogleChatNotificationEvent =
       entityId: string;
       projectName: string;
       followUpLabel: string;
+    }>
+  | Readonly<{
+      eventType: "task.assigned";
+      entityId: string;
+      taskTitle: string;
+      assigneeEmail: string;
+      dueDate?: string;
     }>;
 
 export type GoogleChatCardsV2Payload = Readonly<{
@@ -228,18 +243,24 @@ function parseStoredGoogleChatRouting(value: unknown): GoogleChatRoutingSettings
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const input = value as Record<string, unknown>;
   if (!exactObjectKeys(input, ROUTING_KEYS) || !Array.isArray(input.routes)) return null;
-  if (input.routes.length !== GOOGLE_CHAT_EVENT_CATALOG.length) return null;
 
-  const routes = new Map<GoogleChatEventType, GoogleChatRoute>();
+  const routes = new Map<GoogleChatEventType, GoogleChatRoute>(
+    defaultGoogleChatRouting().routes.map((route) => [route.eventType, route]),
+  );
+  const storedEventTypes = new Set<GoogleChatEventType>();
   for (const candidate of input.routes) {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
     const route = candidate as Record<string, unknown>;
     if (!exactObjectKeys(route, ROUTE_KEYS)) return null;
-    if (typeof route.eventType !== "string" || !EVENT_TYPES.has(route.eventType)) return null;
+    if (typeof route.eventType !== "string") return null;
+    // A future or stale stored event is data, not authorization to extend the
+    // current catalog. Ignore it while widening known routes onto defaults.
+    if (!EVENT_TYPES.has(route.eventType)) continue;
     if (typeof route.enabled !== "boolean") return null;
     if (typeof route.spaceKey !== "string" || !SPACE_KEYS.has(route.spaceKey)) return null;
     const eventType = route.eventType as GoogleChatEventType;
-    if (routes.has(eventType)) return null;
+    if (storedEventTypes.has(eventType)) return null;
+    storedEventTypes.add(eventType);
     routes.set(eventType, Object.freeze({
       eventType,
       enabled: route.enabled,
@@ -247,7 +268,6 @@ function parseStoredGoogleChatRouting(value: unknown): GoogleChatRoutingSettings
     }));
   }
 
-  if (routes.size !== GOOGLE_CHAT_EVENT_CATALOG.length) return null;
   return Object.freeze({
     routes: Object.freeze(GOOGLE_CHAT_EVENT_CATALOG.map(({ eventType }) => routes.get(eventType)!)),
   });
@@ -381,6 +401,10 @@ function eventSummary(event: GoogleChatNotificationEvent) {
       return `${cleanDynamicText(event.projectName, 120, "Project not provided")} · ${cleanDynamicText(event.changeSummary, 180, "Schedule details changed")}`;
     case "project.warranty_follow_up_due":
       return `${cleanDynamicText(event.projectName, 120, "Project not provided")} · ${cleanDynamicText(event.followUpLabel, 120, "Follow-up is due")}`;
+    case "task.assigned": {
+      const dueDate = event.dueDate ? ` · Due ${cleanDynamicText(event.dueDate, 32, "")}` : "";
+      return `${cleanDynamicText(event.taskTitle, 180, "Task assigned")} · ${cleanDynamicText(event.assigneeEmail, 254, "Assignee unavailable")}${dueDate}`;
+    }
   }
 }
 

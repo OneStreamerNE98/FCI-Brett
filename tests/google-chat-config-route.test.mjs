@@ -146,13 +146,14 @@ test("GET is office-readable, no-store, default-off, and returns only secret nam
   assert.equal(body.featureEnabled, false);
   assert.equal(body.mode, "disabled");
   assert.equal(body.updatedAt, "");
-  assert.equal(body.events.length, 4);
+  assert.equal(body.events.length, 5);
   assert.ok(body.events.every((event) => event.enabled === false));
   assert.deepEqual(body.events.map(({ type, spaceKey }) => [type, spaceKey]), [
     ["lead.created", "sales"],
     ["gmail.filing_review_needed", "office-ops"],
     ["calendar.schedule_changed", "field"],
     ["project.warranty_follow_up_due", "service"],
+    ["task.assigned", "office-ops"],
   ]);
   assert.deepEqual(body.spaces.map(({ key, secretEnvVar }) => [key, secretEnvVar]), [
     ["sales", "GOOGLE_CHAT_SALES_WEBHOOK_URL"],
@@ -222,7 +223,7 @@ test("PATCH is same-origin Administrator-only, persists a distinct row, and retu
   const stored = database.rows.get("google-chat-routing");
   assert.ok(stored);
   assert.equal(stored.updated_by, ADMIN_EMAIL);
-  assert.equal(JSON.parse(stored.settings_json).routes.length, 4);
+  assert.equal(JSON.parse(stored.settings_json).routes.length, 5);
   assert.equal(JSON.parse(database.rows.get("workspace").settings_json).timezone, "America/New_York");
 
   const getResponse = await route.GET(routeRequest("/api/v1/integrations/google/chat/config", OFFICE_EMAIL));
@@ -357,7 +358,7 @@ test("PATCH rejects every incomplete or expanded catalog shape without a write",
   const valid = exactUpdate();
   const invalidBodies = [
     { ...valid, webhookUrl: "caller-supplied" },
-    { events: valid.events.slice(0, 3) },
+    { events: valid.events.slice(0, 4) },
     { events: [...valid.events, valid.events[0]] },
     { events: valid.events.map((event, index) => index === 0 ? { ...event, enabled: "true" } : event) },
     { events: valid.events.map((event, index) => index === 0 ? { ...event, type: "lead.unknown" } : event) },
