@@ -100,8 +100,8 @@ test("Administrator sees four controls and saves only the closed AI feature payl
   ]) {
     await expect(card.getByRole("checkbox", { name: label })).toBeVisible();
   }
-  await expect(card.getByText("In development", { exact: true })).toHaveCount(1);
-  await expect(card.getByText("Planned", { exact: true })).toHaveCount(3);
+  await expect(card.getByText("In development", { exact: true })).toHaveCount(2);
+  await expect(card.getByText("Planned", { exact: true })).toHaveCount(2);
   await expect(card.getByText(footerCopy, { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(secretSentinel);
 
@@ -149,8 +149,8 @@ test("Office identity is redirected to My settings and receives read-only AI sta
   const states = card.getByLabel("AI feature states").locator("strong");
   await expect(states).toHaveCount(4);
   await expect(states).toHaveText(["On", "On", "Off", "On"]);
-  await expect(card.getByText("In development", { exact: true })).toHaveCount(1);
-  await expect(card.getByText("Planned", { exact: true })).toHaveCount(3);
+  await expect(card.getByText("In development", { exact: true })).toHaveCount(2);
+  await expect(card.getByText("Planned", { exact: true })).toHaveCount(2);
   await expect(card.getByText(footerCopy, { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(secretSentinel);
   expect(patchRequests).toBe(0);

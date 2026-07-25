@@ -10,7 +10,7 @@ import styles from "./AiAssistantSettingsCard.module.css";
 const ASSISTANT_CONFIG_URL = "/api/v1/assistant/config";
 const AI_FEATURES = [
   { key: "orgQa", label: "Organization-wide answers", state: "In development" },
-  { key: "triage", label: "Inbox filing suggestions", state: "Planned" },
+  { key: "triage", label: "Inbox filing suggestions", state: "In development" },
   { key: "replyDrafts", label: "Reply drafting", state: "Planned" },
   { key: "taskExtraction", label: "Task extraction from meetings", state: "Planned" },
 ] as const;

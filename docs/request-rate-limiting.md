@@ -56,7 +56,7 @@ requests per 60-second window for each of four isolated scopes:
 
 | Scope | Route | Protected cost |
 | --- | --- | --- |
-| `assistant` | `POST /api/v1/assistant` | OpenAI request opportunity |
+| `assistant` | `POST /api/v1/assistant`, `/assistant/extract-tasks`, `/assistant/triage` | OpenAI request opportunity |
 | `uploads` | `POST /api/v1/uploads` | R2 object write opportunity |
 | `google-sheets-sync` | `POST /api/v1/integrations/google/sheets/sync` | Google Sheets reconciliation |
 | `project-drive-provisioning` | `POST /api/v1/projects/:projectId/drive` | Google Drive provisioning |
