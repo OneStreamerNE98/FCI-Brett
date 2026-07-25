@@ -474,7 +474,7 @@ widen-on-read law preserved; D1 and PostgreSQL behavior identical.
 **Effort:** small-medium. **Cost:** $0.
 
 ### BE-16 · PostgreSQL parity for the project segment (small, after BE-15 + DES-08 a-T2; filed July 24, 2026)
-**Status:** Blocked — awaiting owner dispatch; Codex paste ready (zone: PG migrations/adapters/rehearsal, disjoint from all open lanes).
+**Status:** In progress — `codex/be16-segment-postgres-parity`, dispatched by owner July 25, 2026 (zone: PG migrations/adapters/rehearsal, disjoint from all open lanes).
 
 **Why:** DES-08 a-T2 (PR #179) added the two-value `projects.segment` to D1
 only, per the KPI-04 precedent of deferring production PostgreSQL parity to
@@ -2427,7 +2427,7 @@ gate-off/key-Missing renders honest disabled state; `npm test` green.
 **Effort:** small-medium. **Cost:** $0.
 
 ### AI-07 · AI task extraction, review-first (medium, after AI-01 + AI-03; two PRs a/b)
-**Status:** In review — PR #195, `codex/ai07b-task-assigned-event`, updated July 24, 2026: sub-PR b widens legacy four-event Chat routing and four-key user preferences without resetting saved choices, adds the default-off `task.assigned` event after successful assigned-task persistence, and keeps simulation audit detail sanitized; focused Node and rendered tests, the tracking guard, lint, and `npm test` are green. Sub-PR a is merged (PR #185 — Fable fleet clean with executed proof: never-persisted route, injection-contained strict schema, server-side assignee validation; review fixes 75d98c6 kept calendar-impossible-date proposals with null dueDate and added deterministic focus + a polite live status on accept/dismiss). Residual for AI-09: FCI_OFFICE_DOMAINS-admitted users get inert assignee suggestions (allowlist is emails+actor only); the records-only fallback bypasses the taskExtraction toggle when the key is Missing (deliberate, test-asserted — owner may revisit). Source-only and undeployed.
+**Status:** Complete — PR #185 + PR #195, July 25, 2026. Sub-PR a (PR #185): review-first task proposals with a never-persisted route, injection-contained strict schema, and server-side assignee validation; review fixes 75d98c6 kept calendar-impossible-date proposals with null dueDate and added deterministic focus + a polite live status on accept/dismiss. Sub-PR b (PR #195, Fable fleet clean — both lenses executed the touched suites, 84 tests green): widened legacy four-event Chat routing and four-key user preferences to widen-on-read without resetting saved choices (writes stay exact-key via a dedicated update parser), added the default-off `task.assigned` Chat event queued strictly after assigned-task persistence with defer-failure isolation, and kept simulation audit detail sanitized; merged on green CI after an empty bot window (one summon, no response). Residual for AI-09: FCI_OFFICE_DOMAINS-admitted users get inert assignee suggestions (allowlist is emails+actor only); the records-only fallback bypasses the taskExtraction toggle when the key is Missing (deliberate, test-asserted — owner may revisit). Source-only and undeployed.
 
 **Why:** action items captured in meetings and phone-call notes die as
 strings; the owner wants them to become tracked to-dos — a human approving
@@ -2654,18 +2654,20 @@ feature queue resumes stage-native, plus FIX-09, the production-only FIX-11
 and proceed in parallel with R1-R3.
 
 **AI wave (Workstream G, approved July 23, 2026; order updated July 24,
-2026):** the backend chain AI-01 → AI-03 → AI-08 → AI-07a is fully MERGED
-(AI-07a in PR #185); **AI-07b is the ACTIVE claim**
-(`codex/ai07b-task-assigned-event`, dispatched July 24 — do not re-claim the
+2026):** the backend chain AI-01 → AI-03 → AI-08 → AI-07 is fully MERGED and
+AI-07 is COMPLETE (PR #185 + PR #195, July 25, 2026 — do not re-claim the
 merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED — the fix-tail (NFIX-03, FIX-15,
-FIX-17, SET-22) is dispatchable; SET-26 remains gated on SET-23 (open). AI-04/AI-05/AI-06 follow in the extracted modules
-(parallel-safe among themselves); AI-09 closes the workstream. DES-08's
+FIX-17, SET-22) is dispatchable; SET-26 remains gated on SET-23 (open); NFIX-03
+and BE-16 are the active Codex lanes (July 25, 2026). **AI-04 is next and
+dispatchable** — the assistant zone freed when PR #195 merged; AI-05/AI-06
+follow in the extracted modules (parallel-safe among themselves); AI-09 closes
+the workstream. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
-= AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio =
-AI-07b; `tests/rendered-html.test.mjs` is touched additively by AI-02/07b/08 —
-serialize merges. DES-10 (brand refinement, not priority) takes the globals
+= AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
+AI-07b's (released at the PR #195 merge); `tests/rendered-html.test.mjs` is
+touched additively by the AI packets — serialize merges. DES-10 (brand refinement, not priority) takes the globals
 lock only for its `.brand` edit, in a free window after DES-04/05/07. Migration numbers are assigned at merge time (coordinate
 with open BE-07's reserved PostgreSQL v7, KPI-04, and DES-08 a-T2).
 

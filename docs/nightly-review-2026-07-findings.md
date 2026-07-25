@@ -180,7 +180,7 @@ change on success paths.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-03 · Server hygiene sweep: response-helper and formatter consolidation, dead-export removal (small)
-**Status:** In review — PR #197, `codex/nfix03-server-hygiene`, July 25, 2026. Source-only and undeployed.
+**Status:** In review — PR #197, `codex/nfix03-server-hygiene`, July 25, 2026 (dispatched by owner after all holds released: BE-15 merged in PR #181, AI-02 series complete through PR #193). Source-only and undeployed.
 
 **Why:** N6-2/N6-4 — one four-line `noStore` helper exists ~22×, the Google
 error-response wrapper 8×, USD formatting has no home, and eight exports are
