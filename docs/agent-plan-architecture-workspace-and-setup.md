@@ -2666,8 +2666,10 @@ briefly held (snapshot invalidation) is released — **FIX-15 is dispatchable
 now** as the fix-tail head. **AI-05 is next and dispatchable** — its kickoff
 paste is with the owner (July 25, 2026), dispatch not yet confirmed; the claim
 is recorded on AI-05's packet status line when its `codex/*` branch opens.
-AI-06 follows AFTER AI-05 merges (they share `InboxView.tsx`); AI-09 closes
-the workstream. DES-08's
+AI-06 is PARALLEL-SAFE with AI-05 (corrected July 25, 2026 — AI-05's UI file
+is `InboxView.tsx`, AI-06's is `GmailReplyModal.tsx`; disjoint, both additive
+on `tests/rendered-html.test.mjs` — serialize merges only); AI-09 closes the
+workstream. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
