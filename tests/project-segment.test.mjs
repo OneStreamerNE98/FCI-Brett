@@ -51,6 +51,8 @@ test("the optional creation tap stays closed and leaving it untouched reaches se
 
   assert.match(selector, /PROJECT_SEGMENTS\.map/u);
   assert.match(selector, /type="radio" name="segment" value=\{segment\}/u);
+  assert.match(selector, /type="radio" name="segment" value=""[\s\S]*<span>Derived<\/span>/u);
+  assert.equal(selector.match(/name="segment"/gu)?.length, 2);
   assert.doesNotMatch(selector, /\brequired\b|\bdefaultChecked\b/u);
   assert.match(app, /segment: project\.segment \?\? undefined/u);
   assert.match(app, /const segment = normalizeProjectSegment\(form\.get\("segment"\)\)/u);

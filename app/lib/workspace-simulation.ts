@@ -16,6 +16,7 @@ import {
 const STATE_ID = "fci-workspace";
 const SIMULATION_ACCOUNT = "workspace-simulation@fci.example";
 const UPCOMING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_UPCOMING_EVENTS = 20;
 
 type SimulationAttachment = {
   filename: string;
@@ -262,12 +263,28 @@ export class WorkspaceSimulationGmailClient {
 
 export async function listSimulationCalendarEvents(now = new Date()) {
   const state = await getSimulationState();
+  const windowStart = now.getTime();
+  const windowEnd = windowStart + UPCOMING_WINDOW_MS;
   return {
     window: {
       start: now.toISOString(),
-      end: new Date(now.getTime() + UPCOMING_WINDOW_MS).toISOString(),
+      end: new Date(windowEnd).toISOString(),
     },
-    events: state.calendarEvents.map(publicSimulationEvent),
+    events: state.calendarEvents
+      .filter((event) => {
+        const eventStart = Date.parse(event.start);
+        const eventEnd = Date.parse(event.end);
+        // Google Calendar's timeMin/timeMax contract includes an event that
+        // overlaps the window: timeMin bounds event end and timeMax bounds
+        // event start. Simulation follows that same half-open interval.
+        return Number.isFinite(eventStart)
+          && Number.isFinite(eventEnd)
+          && eventEnd > windowStart
+          && eventStart < windowEnd;
+      })
+      .sort((left, right) => Date.parse(left.start) - Date.parse(right.start))
+      .slice(0, MAX_UPCOMING_EVENTS)
+      .map(publicSimulationEvent),
     timeZone: "America/New_York",
     windowDays: 7,
     simulated: true,

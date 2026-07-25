@@ -344,6 +344,12 @@ test("Calendar requires the configured company calendar and never falls back to 
   await client.listUpcomingEvents(new Date("2026-07-13T12:00:00.000Z"));
   assert.match(requestedUrl, /calendars\/appointments%40group\.calendar\.google\.com\/events/);
   assert.doesNotMatch(requestedUrl, /calendars\/primary\/events/);
+  const calendarQuery = new URL(requestedUrl).searchParams;
+  assert.equal(calendarQuery.get("timeMin"), "2026-07-13T12:00:00.000Z");
+  assert.equal(calendarQuery.get("timeMax"), "2026-07-20T12:00:00.000Z");
+  assert.equal(calendarQuery.get("maxResults"), "20");
+  assert.equal(calendarQuery.get("singleEvents"), "true");
+  assert.equal(calendarQuery.get("orderBy"), "startTime");
 
   let fetchCalls = 0;
   globalThis.fetch = async () => {

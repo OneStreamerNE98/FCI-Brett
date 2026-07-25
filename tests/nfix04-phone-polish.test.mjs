@@ -15,6 +15,7 @@ const domainChecklistPath = resolve(
 );
 
 const globals = readFileSync(globalsPath, "utf8");
+const floorOpsApp = readFileSync(resolve(repositoryRoot, "app/FloorOpsApp.tsx"), "utf8");
 const assistantReviewStyles = readFileSync(assistantReviewPath, "utf8");
 const defaultsStyles = readFileSync(defaultsPath, "utf8");
 const resourceStyles = readFileSync(resourcesPath, "utf8");
@@ -51,7 +52,6 @@ const RAISED_BELOW_44_FAMILIES = new Map([
   [`${G}.access-management-page .text-button`, ACTION],
   [`${G}.access-management-tabs button`, NAVIGATION],
   [`${G}.active-route-filter .soft-button`, NAVIGATION],
-  [`${G}.add-card`, ACTION],
   [`${G}.ai-answer button`, ACTION],
   [`${G}.ask-box select`, FORM],
   [`${G}.ask-box>div button`, ACTION],
@@ -120,11 +120,6 @@ const RAISED_BELOW_44_FAMILIES = new Map([
   [`${G}.workspace-connection-health-error .soft-button`, WORKSPACE],
   [`${G}.workspace-copy-helpers article>.soft-button`, WORKSPACE],
   [`${G}.workspace-copy-value .soft-button`, WORKSPACE],
-  [`${G}.workspace-drive-candidates select`, FORM],
-  [`${G}.workspace-resource-action-buttons .primary-button`, WORKSPACE],
-  [`${G}.workspace-resource-action-buttons .soft-button`, WORKSPACE],
-  [`${G}.workspace-resource-rename input`, FORM],
-  [`${G}.workspace-resources-error .soft-button`, WORKSPACE],
   [`${R}.actionButtons :global(.primary-button)`, WORKSPACE],
   [`${R}.actionButtons :global(.soft-button)`, WORKSPACE],
   [`${R}.driveCandidates select`, FORM],
@@ -204,6 +199,25 @@ test("NFIX-04 wraps long readiness identifiers and stacks every Settings heading
   assert.match(phone.get(".settings-heading>.soft-button") ?? "", /width:100%/);
 });
 
+test("FIX-17 keeps page-title actions horizontal and unscheduled project status on one line", () => {
+  assert.match(globals, /\.title-actions\{flex-wrap:nowrap\}/);
+  assert.doesNotMatch(globals, /\.title-actions\{[^}]*flex-wrap:wrap/);
+  assert.match(
+    globals,
+    /\.project-row-details>\.is-unscheduled\{[^}]*white-space:nowrap[^}]*\}/,
+  );
+  assert.match(
+    floorOpsApp,
+    /className=\{project\.date\.toLowerCase\(\) === "not scheduled" \? "is-unscheduled" : ""\}/,
+  );
+
+  assert.match(globals, /\.title-actions\{width:100%\}/);
+  assert.match(
+    globals,
+    /\.title-actions>\.primary-button,.title-actions>\.soft-button\{flex:1\}/,
+  );
+});
+
 test("NFIX-04 pins a complete, explicit raise-or-keep census for every below-44 family", () => {
   assert.match(globals, /--control-compact:34px/);
   assert.match(globals, /--control-standard:40px/);
@@ -255,8 +269,6 @@ test("NFIX-04 pins a complete, explicit raise-or-keep census for every below-44 
 });
 
 test("NFIX-04 keeps the three named control gaps at eight pixels or more", () => {
-  const phone = mediaRules(globals, "max-width:560px");
-  assert.match(phone.get(".workspace-resource-action-buttons") ?? "", /gap:8px/);
   assert.match(resourceStyles, /\.actionButtons\s*\{[^}]*gap:\s*8px/s);
   assert.match(defaultsStyles, /\.plannedField\s*\{[^}]*gap:\s*8px/s);
   assert.match(defaultsStyles, /\.plannedFieldHeader\s*\{[^}]*gap:\s*8px/s);

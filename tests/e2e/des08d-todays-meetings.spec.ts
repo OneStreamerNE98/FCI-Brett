@@ -111,6 +111,7 @@ test("Today's meetings is bounded, opens its project drawer, reports overflow, a
   await page.goto("/");
 
   const section = page.getByRole("heading", { name: "Today's meetings" }).locator("xpath=ancestor::section[1]");
+  await expect(section.getByText("Today + upcoming", { exact: true })).toBeVisible();
   await expect(section.getByRole("link")).toHaveCount(5);
   await expect(section.getByText("and 3 more…", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -132,6 +133,22 @@ test("Today's meetings is bounded, opens its project drawer, reports overflow, a
   const emptySection = page.getByRole("heading", { name: "Today's meetings" }).locator("xpath=ancestor::section[1]");
   await expect(emptySection.getByRole("link")).toHaveCount(0);
   await expect(emptySection.getByText("No today or upcoming project meetings are saved.", { exact: true })).toBeVisible();
+});
+
+test("Today's meetings suppresses an inflated overflow count when a project join drops a row", async ({ page }) => {
+  const value = dashboard();
+  value.todayMeetings.items[1] = {
+    ...value.todayMeetings.items[1],
+    projectId: "missing-project-record",
+  };
+  await mockOverview(page, { value });
+  await page.goto("/");
+
+  const section = page.getByRole("heading", { name: "Today's meetings" }).locator("xpath=ancestor::section[1]");
+  await expect(section.getByRole("link")).toHaveCount(4);
+  await expect(section.getByText("Additional meeting count unavailable", { exact: true })).toBeVisible();
+  await expect(section.getByText("One or more project records did not load.", { exact: true })).toBeVisible();
+  await expect(section.getByText(/^and \d+ more…$/u)).toHaveCount(0);
 });
 
 test("Today's meetings distinguishes loading from unavailable live records", async ({ page }) => {

@@ -92,6 +92,8 @@ test("Administrator identity keeps protected Settings actions available", async 
   await page.goto("/settings?section=calendar");
   await initialIdentityRead;
   await expect(page.getByRole("heading", { level: 2, name: "Calendar & appointments" })).toBeVisible();
+  await expect(page.getByText("Manage shared Workspace, company defaults, security, and launch-readiness settings.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Manage the preferences tied to your signed-in FCI account.", { exact: true })).toHaveCount(0);
 
   const identity = await readIdentity(page);
   expect(identity).toEqual({ status: 200, body: expect.objectContaining({ isAdmin: true }) });
@@ -148,6 +150,8 @@ test("Office identity sees My settings only and never renders company or Adminis
   await page.goto("/settings?section=calendar");
   await expect(page).toHaveURL(/\/settings$/u);
   await expect(page.getByRole("heading", { level: 2, name: "My settings" })).toBeVisible();
+  await expect(page.getByText("Manage the preferences tied to your signed-in FCI account.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Manage shared Workspace, company defaults, security, and launch-readiness settings.", { exact: true })).toHaveCount(0);
 
   const identity = await readIdentity(page);
   expect(identity).toEqual({ status: 200, body: expect.objectContaining({ isAdmin: false }) });

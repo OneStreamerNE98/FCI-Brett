@@ -18,7 +18,7 @@ export function ProjectSegmentSelector() {
         Project segment <span className={styles.optional}>Optional</span>
       </legend>
       <p className={styles.help} id={helpId}>
-        Leave unselected to use the client industry: Residential clients default to Residential; every other client defaults to Commercial.
+        Choose Derived or leave unselected to use the client industry: Residential clients default to Residential; every other client defaults to Commercial.
       </p>
       <div className={styles.options}>
         {PROJECT_SEGMENTS.map((segment) => (
@@ -27,6 +27,10 @@ export function ProjectSegmentSelector() {
             <span>{SEGMENT_LABELS[segment]}</span>
           </label>
         ))}
+        <label className={styles.option}>
+          <input type="radio" name="segment" value="" aria-describedby={helpId} />
+          <span>Derived</span>
+        </label>
       </div>
     </fieldset>
   );

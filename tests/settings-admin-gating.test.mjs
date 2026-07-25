@@ -5,6 +5,16 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
+function sourceSection(source, start, end, label) {
+  const startIndex = source.indexOf(start);
+  assert.notEqual(startIndex, -1, `${label} start marker must remain present`);
+  if (end === null) return source.slice(startIndex);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(endIndex, -1, `${label} end marker must remain present`);
+  assert.ok(endIndex > startIndex, `${label} markers must remain ordered`);
+  return source.slice(startIndex, endIndex);
+}
+
 const settingsMutationRoutes = [
   "app/api/v1/assistant/config/route.ts",
   // SET-08 launch attestation mutation; kept separate from the Workspace defaults route.
@@ -45,7 +55,8 @@ test("exposes the authenticated user's Administrator flag through the shared acc
 
 test("uses one reconciled Administrator flag for shell and Settings content gates", async () => {
   const app = await read("app/FloorOpsApp.tsx");
-  const shell = app.slice(app.indexOf("export function FloorOpsApp"), app.indexOf("function Overview"));
+  const shell = sourceSection(app, "export function FloorOpsApp", "function Overview", "FloorOpsApp shell");
+  const settingsView = sourceSection(app, "function SettingsView", "function LeadModal", "SettingsView");
 
   assert.match(shell, /const \[isAdmin, setIsAdmin\] = useState\(accessLabel === "Admin"\)/);
   assert.equal([...shell.matchAll(/accessLabel === "Admin"/g)].length, 1);
@@ -59,6 +70,11 @@ test("uses one reconciled Administrator flag for shell and Settings content gate
   assert.match(shell, /\{isAdmin && <button onClick=\{openGoogleWorkspace\}><Building2 size=\{15\} \/> Google connection<\/button>\}/);
   assert.match(shell, /<SettingsView[^>]+isAdmin=\{isAdmin\}/);
   assert.doesNotMatch(shell, /accessLabel === "Admin" &&/);
+  assert.match(
+    settingsView,
+    /const headingText = isAdmin && visibleSection !== "My settings"\s+\? "Manage shared Workspace, company defaults, security, and launch-readiness settings\."\s+: "Manage the preferences tied to your signed-in FCI account\."/,
+  );
+  assert.doesNotMatch(settingsView, /Manage your own preferences separately from Workspace and company setup\./);
 
   const mySettings = await read("app/settings/components/MySettingsPanel.tsx");
   assert.match(mySettings, /typeof data\.isAdmin !== "boolean"/);
@@ -87,14 +103,12 @@ test("guards Administrator integration GETs before schema or persistence work", 
     read("app/api/v1/integrations/google/setup/resources/route.ts"),
     read("app/api/v1/integrations/google/setup/blueprint/route.ts"),
   ]);
-  const deleteStart = connectionSource.indexOf("export async function DELETE");
   const handlers = [
-    connectionSource.slice(connectionSource.indexOf("export async function GET"), deleteStart),
-    resourcesSource.slice(resourcesSource.indexOf("export async function GET")),
-    blueprintSource.slice(blueprintSource.indexOf("export async function GET"), blueprintSource.indexOf("export async function PUT")),
+    sourceSection(connectionSource, "export async function GET", "export async function DELETE", "connection GET handler"),
+    sourceSection(resourcesSource, "export async function GET", null, "resources GET handler"),
+    sourceSection(blueprintSource, "export async function GET", "export async function PUT", "blueprint GET handler"),
   ];
 
-  assert.ok(deleteStart > connectionSource.indexOf("export async function GET"));
   for (const getHandler of handlers) {
     assert.match(getHandler, /requireOfficeUser\(request, \{ admin: true \}\)/);
     assert.ok(getHandler.indexOf("requireOfficeUser") < getHandler.indexOf("ensureWorkspaceSchema"));

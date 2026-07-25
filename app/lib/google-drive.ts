@@ -128,6 +128,42 @@ export function buildProjectDriveBlueprintPlan(blueprint: WorkspaceBlueprint) {
   });
 }
 
+/**
+ * Resolves one folder from the exact virtual tree created by simulation
+ * provisioning. Simulation has no Google provider to query, so the persisted
+ * blueprint is its managed-folder authority; an arbitrary concatenated id is
+ * never accepted as proof that a destination exists.
+ */
+export function resolveSimulatedManagedProjectFolderPath(
+  projectFolderId: string,
+  blueprint: WorkspaceBlueprint,
+  path: string | readonly string[],
+): DriveFolder {
+  const segments = normalizedProjectFolderPath(path);
+  const projectFolderPaths = buildProjectDriveBlueprintPlan(blueprint).projectFolderPaths;
+  const managedPath = projectFolderPaths.find((candidate) => (
+    candidate.length === segments.length
+    && candidate.every((segment, index) => segment === segments[index])
+  ));
+  if (!managedPath) {
+    throw new GoogleIntegrationError(
+      "project_drive_folder_missing",
+      `The managed project folder ${segments.at(-1)} is missing. Re-provision the project workspace before filing email.`,
+      409,
+    );
+  }
+  const virtualId = (parts: readonly string[]) => (
+    `sim-project-folder-${encodeURIComponent(projectFolderId)}-${parts.map((segment) => encodeURIComponent(segment)).join("--")}`
+  );
+  return Object.freeze({
+    id: virtualId(managedPath),
+    name: managedPath.at(-1)!,
+    parents: managedPath.length === 1
+      ? [projectFolderId]
+      : [virtualId(managedPath.slice(0, -1))],
+  });
+}
+
 function driveQueryString(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }

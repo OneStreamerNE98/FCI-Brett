@@ -168,6 +168,14 @@ test("actionable rows preserve decision-useful metadata without responsive overf
       expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(44);
       expect(bounds?.x ?? -1).toBeGreaterThanOrEqual(0);
       expect((bounds?.x ?? viewport.width) + (bounds?.width ?? 0)).toBeLessThanOrEqual(viewport.width);
+      if (surface.path === "/projects") {
+        const unscheduled = button.locator(".project-row-details > .is-unscheduled");
+        await expect(unscheduled).toHaveText("Not scheduled");
+        expect(await unscheduled.evaluate((element) => ({
+          whiteSpace: getComputedStyle(element).whiteSpace,
+          singleLine: element.scrollHeight <= element.clientHeight,
+        }))).toEqual({ whiteSpace: "nowrap", singleLine: true });
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     }
   }

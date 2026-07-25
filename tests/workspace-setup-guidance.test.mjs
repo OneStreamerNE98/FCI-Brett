@@ -5,6 +5,43 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
+const DEAD_GLOBAL_CSS_FAMILIES = [
+  { label: "workspace setup step", pattern: /\.workspace-setup-step/, mutant: ".workspace-setup-step" },
+  { label: "workspace step", pattern: /\.workspace-step-/, mutant: ".workspace-step-regression" },
+  { label: "workspace resources error", pattern: /\.workspace-resources-error\b/, mutant: ".workspace-resources-error" },
+  { label: "workspace resource", pattern: /\.workspace-resource-/, mutant: ".workspace-resource-regression" },
+  { label: "workspace identity state", pattern: /\.workspace-identity-state\b/, mutant: ".workspace-identity-state" },
+  { label: "workspace restrictions chip", pattern: /\.workspace-restrictions-chip\b/, mutant: ".workspace-restrictions-chip" },
+  { label: "workspace drive candidates", pattern: /\.workspace-drive-candidates\b/, mutant: ".workspace-drive-candidates" },
+  { label: "timeline", pattern: /\.timeline(?:\b|-)/, mutant: ".timeline-item" },
+  { label: "mail list", pattern: /\.mail-list\b/, mutant: ".mail-list" },
+  { label: "mail item", pattern: /\.mail-item\b/, mutant: ".mail-item" },
+  { label: "mail avatar", pattern: /\.mail-avatar\b/, mutant: ".mail-avatar" },
+  { label: "calendar board", pattern: /\.calendar-board\b/, mutant: ".calendar-board" },
+  { label: "calendar corner", pattern: /\.calendar-corner\b/, mutant: ".calendar-corner" },
+  { label: "calendar day", pattern: /\.calendar-day\b/, mutant: ".calendar-day" },
+  { label: "calendar row", pattern: /\.calendar-row\b/, mutant: ".calendar-row" },
+  { label: "day cell", pattern: /\.day-cell\b/, mutant: ".day-cell" },
+  { label: "crew label", pattern: /\.crew-label\b/, mutant: ".crew-label" },
+  { label: "shift block", pattern: /\.shift-block\b/, mutant: ".shift-block" },
+  { label: "draft shift", pattern: /\.draft-shift/, mutant: ".draft-shift-row" },
+  { label: "health donut", pattern: /\.health-donut\b/, mutant: ".health-donut" },
+  { label: "legacy chart legend", pattern: /\.legend\b/, mutant: ".legend" },
+  { label: "next actions", pattern: /\.next-actions\b/, mutant: ".next-actions" },
+  { label: "recent activity", pattern: /\.recent-activity\b/, mutant: ".recent-activity" },
+  { label: "event icon", pattern: /\.event-icon\b/, mutant: ".event-icon" },
+  { label: "prompt chips", pattern: /\.prompt-chips\b/, mutant: ".prompt-chips" },
+  { label: "add card", pattern: /\.add-card\b/, mutant: ".add-card" },
+  { label: "Google ready", pattern: /\.google-ready\b/, mutant: ".google-ready" },
+  { label: "Google pending", pattern: /\.google-pending\b/, mutant: ".google-pending" },
+];
+
+function assertDeadGlobalCssAbsent(source) {
+  for (const family of DEAD_GLOBAL_CSS_FAMILIES) {
+    assert.doesNotMatch(source, family.pattern, `${family.label} global CSS must stay removed`);
+  }
+}
+
 test("Workspace setup is a four-stage endpoint-driven shell with callback refresh", async () => {
   const [panel, panelStyles, infoHint, checklist] = await Promise.all([
     read("app/settings/components/GoogleWorkspacePanel.tsx"),
@@ -549,6 +586,33 @@ test("Workspace setup masks accounts and exposes copy-exact safe helpers", async
   assert.match(checklist, /Keep authorization restricted to the approved Workspace domain/);
   assert.match(checklist, /Keep Gmail filing review-first and project-specific/);
   assert.match(checklist, /verify the company-owned Shared Drive and sender mailbox, both shared calendars, and the Sheets mirror/);
+});
+
+test("FIX-17 keeps orphaned global CSS absent without deleting live dynamic neighbors", async () => {
+  const [css, primitives, checklist, panel] = await Promise.all([
+    read("app/globals.css"),
+    read("app/components/operations/OperationsPrimitives.tsx"),
+    read("app/settings/components/workspace-domain-checklist/WorkspaceDomainChecklistCard.tsx"),
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+  ]);
+
+  assertDeadGlobalCssAbsent(css);
+  for (const family of DEAD_GLOBAL_CSS_FAMILIES) {
+    assert.throws(
+      () => assertDeadGlobalCssAbsent(`${css}\n${family.mutant}{display:block}`),
+      { name: "AssertionError" },
+      `${family.label} synthetic re-add must trip the absence guard`,
+    );
+  }
+
+  assert.match(css, /\.workspace-resources-message\{/);
+  assert.match(checklist, /className="workspace-resources-message"/);
+  assert.match(css, /\.workspace-env-note\{/);
+  assert.match(panel, /className="workspace-env-note"/);
+  assert.match(css, /\.panel-header-subtitle\{/);
+  assert.match(css, /\.panel-header-subtitle-status\{/);
+  assert.match(css, /\.panel-header-subtitle-source\{/);
+  assert.match(primitives, /className=\{`panel-header-subtitle panel-header-subtitle-\$\{subtitleKind\}`\}/);
 });
 
 test("Workspace blueprint is a structured admin editor and the legacy static card is removed", async () => {

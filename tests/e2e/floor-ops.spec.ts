@@ -484,6 +484,18 @@ test("inbox keeps one primary load action and exposes semantic status details", 
   await page.goto("/inbox");
   await expect(page.getByRole("heading", { level: 1, name: "Gmail project inbox" })).toBeVisible();
 
+  const titleActions = page.locator(".page-heading .title-actions");
+  const titleActionButtons = titleActions.locator(":scope > button");
+  await expect(titleActionButtons).toHaveCount(2);
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    expect(await titleActions.evaluate((element) => getComputedStyle(element).flexWrap)).toBe("nowrap");
+    expect(await titleActionButtons.evaluateAll((buttons) => {
+      const tops = buttons.map((button) => button.getBoundingClientRect().top);
+      return Math.max(...tops) - Math.min(...tops) < 1;
+    })).toBe(true);
+  }
+
   const loadMessages = page.getByRole("button", { name: "Load messages", exact: true });
   await expect(loadMessages).toHaveCount(1);
   await expect(loadMessages).toHaveClass(/primary-button/);

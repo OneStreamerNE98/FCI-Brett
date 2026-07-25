@@ -140,11 +140,20 @@ test("the optional one-tap segment selector is responsive and persists its expli
   await expect(modal).toBeVisible();
   const commercial = modal.getByLabel("Commercial", { exact: true });
   const residential = modal.getByLabel("Residential", { exact: true });
+  const derived = modal.getByLabel("Derived", { exact: true });
   await expect(commercial).not.toBeChecked();
   await expect(residential).not.toBeChecked();
+  await expect(derived).not.toBeChecked();
   await residential.check();
   await expect(residential).toBeChecked();
   await expect(commercial).not.toBeChecked();
+  await derived.check();
+  await expect(derived).toBeChecked();
+  await expect(residential).not.toBeChecked();
+  await expect(commercial).not.toBeChecked();
+  await residential.check();
+  await expect(residential).toBeChecked();
+  await expect(derived).not.toBeChecked();
   await expectAccessible(page, ".modal");
   await expectNoHorizontalOverflow(page);
 
@@ -177,6 +186,7 @@ test("the optional one-tap segment selector is responsive and persists its expli
   await expect(modal).toBeVisible();
   await expect(modal.getByLabel("Commercial", { exact: true })).not.toBeChecked();
   await expect(modal.getByLabel("Residential", { exact: true })).not.toBeChecked();
+  await expect(modal.getByLabel("Derived", { exact: true })).not.toBeChecked();
   await expectAccessible(page, ".modal");
   await expectNoHorizontalOverflow(page);
   if (process.env.FCI_CAPTURE_DES08A2 === "true") {

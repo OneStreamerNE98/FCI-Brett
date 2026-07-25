@@ -332,3 +332,70 @@ test("SET-08 renders a canAttest:false response read-only without mutation traff
   await expect(card.getByText("Not yet attested", { exact: true })).toHaveCount(4);
   expect(mutationBodies).toEqual([]);
 });
+
+test("FIX-17 keeps in-flight attestation reads indeterminate until server truth arrives", async ({ page }) => {
+  await mockLaunchSurface(page);
+  await page.unroute("**/api/v1/settings/launch-checklist");
+
+  let releaseRead!: () => void;
+  const readReleased = new Promise<void>((resolve) => {
+    releaseRead = resolve;
+  });
+  await page.route("**/api/v1/settings/launch-checklist", async (route) => {
+    await readReleased;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "Cache-Control": "no-store" },
+      body: JSON.stringify({
+        launchChecklist: emptyChecklist(),
+        canAttest: true,
+        updatedAt: FIXED_CHECKED_AT,
+      }),
+    });
+  });
+
+  await page.goto("/settings?section=testing-launch");
+  const card = page.getByRole("region", { name: "Test & launch checklist" });
+  const attestationRows = card.locator('[data-checklist-kind="attested"]');
+  await expect(attestationRows).toHaveCount(4);
+  await expect(attestationRows.getByText("Checking saved attestation", { exact: true })).toHaveCount(4);
+  await expect(attestationRows.getByText("Checking", { exact: true })).toHaveCount(4);
+  await expect(attestationRows.getByText("Not yet attested", { exact: true })).toHaveCount(0);
+  await expect(attestationRows.getByText("Not attested", { exact: true })).toHaveCount(0);
+  await expect.poll(() => attestationRows.locator('input[type="checkbox"]').evaluateAll(
+    (inputs) => inputs.every((input) => (input as HTMLInputElement).indeterminate),
+  )).toBe(true);
+
+  releaseRead();
+  await expect(attestationRows.getByText("Not yet attested", { exact: true })).toHaveCount(4);
+  await expect(attestationRows.getByText("Not attested", { exact: true })).toHaveCount(4);
+  await expect.poll(() => attestationRows.locator('input[type="checkbox"]').evaluateAll(
+    (inputs) => inputs.every((input) => !(input as HTMLInputElement).indeterminate),
+  )).toBe(true);
+});
+
+test("FIX-17 keeps failed attestation reads unavailable instead of fabricating negatives", async ({ page }) => {
+  await mockLaunchSurface(page);
+  await page.unroute("**/api/v1/settings/launch-checklist");
+  await page.route("**/api/v1/settings/launch-checklist", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      headers: { "Cache-Control": "no-store" },
+      body: "{}",
+    });
+  });
+
+  await page.goto("/settings?section=testing-launch");
+  const card = page.getByRole("region", { name: "Test & launch checklist" });
+  const attestationRows = card.locator('[data-checklist-kind="attested"]');
+  await expect(card.getByRole("alert")).toContainText("Saved attestations are unavailable. Nothing was changed.");
+  await expect(attestationRows.getByText("Saved attestation unavailable", { exact: true })).toHaveCount(4);
+  await expect(attestationRows.getByText("Unavailable", { exact: true })).toHaveCount(4);
+  await expect(attestationRows.getByText("Not yet attested", { exact: true })).toHaveCount(0);
+  await expect(attestationRows.getByText("Not attested", { exact: true })).toHaveCount(0);
+  await expect.poll(() => attestationRows.locator('input[type="checkbox"]').evaluateAll(
+    (inputs) => inputs.every((input) => (input as HTMLInputElement).indeterminate),
+  )).toBe(true);
+});
