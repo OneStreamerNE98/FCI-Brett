@@ -2379,7 +2379,7 @@ default tab.
 **Effort:** medium. **Cost:** $0.
 
 ### AI-05 · AI triage suggestions in the Inbox (medium, after AI-02 + AI-03; inbox components only; admin-gated)
-**Status:** In review — PR #205, July 25, 2026. Source-only and undeployed. Guide impact: none.
+**Status:** Complete — PR #205, July 25, 2026. Fable fleet clean (51+91 executed tests): per-message provider isolation (no batching — a hostile subject cannot touch a neighbor's suggestion), candidates SQL-bounded to id/number/name/client, mutation ban enforced by a single-client-call count assertion, review-first proven (Accept only preselects the existing GmailFilingModal; preview/filing calls asserted zero at accept). Bot P2s fixed on-branch (4dc4962): summary stage isolates stale messages via allSettled with client-abort semantics preserved; one shared 55s batch deadline via AbortSignal.any (per-call timeout = min(20s, remaining)); null-project confidence clamped to low server-side. Residual P3s recorded: AI-suggestion chip is a role-less div with title-only rationale for null matches (future combined a11y pass); mutator deny-list is name-based (consider allowlist); google-gmail getMessageSummary rename landed here — AI-06 builds on it. Source-only and undeployed. Guide impact: none.
 
 **Why:** filing email to the right project is the daily drag; rules catch the
 easy cases — an AI suggestion with confidence + rationale catches the rest,
@@ -2661,17 +2661,14 @@ and proceed in parallel with R1-R3.
 AI-07 is COMPLETE (PR #185 + PR #195, July 25, 2026 — do not re-claim the
 merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED. NFIX-03 (PR #197) and BE-16 (PR #198)
-both MERGED July 25, 2026 — **FIX-15 is now the dispatchable head of the
-FloorOpsApp fix-tail** (then FIX-17, SET-22; SET-26 remains gated on SET-23,
-open). AI-04 is COMPLETE (PR #201, July 25, 2026) and the FloorOpsApp zone it
-briefly held (snapshot invalidation) is released — **FIX-15 is dispatchable
-now** as the fix-tail head. **AI-05 is next and dispatchable** — its kickoff
-paste is with the owner (July 25, 2026), dispatch not yet confirmed; the claim
-is recorded on AI-05's packet status line when its `codex/*` branch opens.
-AI-06 is PARALLEL-SAFE with AI-05 (corrected July 25, 2026 — AI-05's UI file
-is `InboxView.tsx`, AI-06's is `GmailReplyModal.tsx`; disjoint, both additive
-on `tests/rendered-html.test.mjs` — serialize merges only); AI-09 closes the
-workstream. DES-08's
+both MERGED July 25, 2026. AI-04 (PR #201), AI-05 (PR #205), and FIX-15
+(PR #206, with the N7-7/N7-8 folds) are COMPLETE — **FIX-17 is now the
+dispatchable head of the FloorOpsApp fix-tail** (then SET-22; SET-26 remains
+gated on SET-23, open). **AI-06 is dispatchable in parallel** (its kickoff
+paste is with the owner; UI file `GmailReplyModal.tsx`, disjoint from FIX-17's
+surfaces; both additive on `tests/rendered-html.test.mjs` — serialize merges
+only; it builds on AI-05's public `getMessageSummary`). AI-09 closes the
+workstream after AI-06. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
