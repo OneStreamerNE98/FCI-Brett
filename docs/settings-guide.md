@@ -284,6 +284,8 @@ One column is deliberately yours to edit: **Account Notes**. Everything else on 
 
 If the mirror is not configured, the card links directly to **Google Workspace → Stage 3**. `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` remains the fallback configuration name; the app shows only that name, never a configured value.
 
+**Updated July 25, 2026.** Administrators can use **First-run data import** below the mirror cards to review existing clients first and projects second, in batches of up to 10 rows. The preferred source is a blueprint spreadsheet with the clearly marked **Clients Import** and **Projects Import** tabs; a bounded CSV is the alternative. Previewing never creates records. The administrator must select each ready row (or use **Select all ready rows**) and confirm it. Client duplicates are reviewed by email, phone, or address; the readable client address is not saved, only an irreversible duplicate-check fingerprint for safe re-runs. Every project must match one saved client by code, name, or email, and an unmatched project never creates a client for itself. Once records exist, the import tools collapse until an administrator explicitly reopens them. This source build remains development-only: every imported client or project name must begin with **FCI TEST — DO NOT USE**, and real client data stays blocked until the WS-11 acceptance gate and owner launch approval are complete.
+
 > [SCREENSHOT 6 — see Screenshot index]
 
 ### 6. Workflow & notifications

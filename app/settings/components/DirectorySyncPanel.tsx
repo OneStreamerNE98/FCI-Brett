@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
+import { FirstRunImportCard } from "../../import/components/FirstRunImportCard";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
 
 const SHEET_STATUS_PATH = "/api/v1/integrations/google/sheets/status";
@@ -71,12 +72,14 @@ export function DirectorySyncPanel({
   mirror,
   syncing,
   onSync,
+  onImportConfirmed,
   isAdmin,
 }: {
   mirror: SheetMirrorStatus | null;
   syncing: boolean;
   onSync: () => Promise<void>;
   onConfigure: () => void;
+  onImportConfirmed: () => Promise<void>;
   isAdmin: boolean;
 }) {
   const [refreshSnapshot, setRefreshSnapshot] = useState<{
@@ -111,7 +114,8 @@ export function DirectorySyncPanel({
   const ready = Boolean(currentMirror?.configured && currentMirror.enabled && currentMirror.connected);
   const unconfigured = currentMirror !== null && !currentMirror.configured;
 
-  return <section className="panel client-directory-settings" aria-labelledby="client-directory-settings-heading">
+  return <div className="settings-panel-stack">
+    <section className="panel client-directory-settings" aria-labelledby="client-directory-settings-heading">
     <div className="settings-heading">
       <div>
         <p className="eyebrow">Google Sheets mirror</p>
@@ -172,5 +176,7 @@ export function DirectorySyncPanel({
         <p>Use it to view, filter, export, and add account notes. Do not edit the generated Project Register; the next sync rebuilds it from FCI Operations. Spreadsheet edits do not write back to the app yet.</p>
       </div>
     </div>
-  </section>;
+    </section>
+    <FirstRunImportCard onImportConfirmed={onImportConfirmed} />
+  </div>;
 }

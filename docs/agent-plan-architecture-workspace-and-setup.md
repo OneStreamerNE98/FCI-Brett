@@ -1257,6 +1257,8 @@ endpoints beyond one presence read; no secret or env values in markup; non-admin
 variant informational only. **Effort:** small. **Cost:** $0.
 
 ### SET-25 · First-run data import: clients AND projects (medium-large, after SET-16) — OWNER PRIORITY (July 21)
+**Status:** In progress — `codex/set25-first-run-import`, July 25, 2026.
+
 **Why:** Day-one onboarding gap: nothing loads the company's existing client and
 project lists when real use begins — without this, launch starts with manual re-entry.
 **Do:** Admin-gated, review-first import for BOTH entities, spreadsheet-first (the way

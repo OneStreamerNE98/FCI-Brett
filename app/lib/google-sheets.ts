@@ -18,6 +18,29 @@ const PROJECT_REGISTER_TAB = "Project Register";
 const SHEET_SYNC_STALE_AFTER_MS = 5 * 60 * 1_000;
 export const GOOGLE_IMPORT_CLIENTS_TAB = "Clients Import";
 export const GOOGLE_IMPORT_PROJECTS_TAB = "Projects Import";
+export const GOOGLE_IMPORT_CLIENT_HEADERS = Object.freeze([
+  "Client Code",
+  "Client / Company",
+  "Status",
+  "Industry",
+  "Primary Contact",
+  "Email",
+  "Phone",
+  "Address",
+] as const);
+export const GOOGLE_IMPORT_PROJECT_HEADERS = Object.freeze([
+  "Project Name",
+  "Client Code",
+  "Client / Company",
+  "Client Email",
+  "Site",
+  "Status",
+  "Estimated Value",
+  "Flooring Category",
+  "Square Feet",
+  "Contract Value",
+  "Segment",
+] as const);
 const CLIENT_HEADERS = [
   "Client Code", "Client / Company", "Status", "Primary Contact", "Email", "Phone",
   "Client Folder Link", "Active Project Count", "Account Notes", "Last Updated", "FCI Client ID",
@@ -27,7 +50,15 @@ const PROJECT_HEADERS = [
   "Project Manager", "Site", "Estimated Value", "Project Folder Link", "Created", "Last Updated",
 ];
 
-type SheetProperties = { sheetId: number; title: string; gridProperties?: { rowCount?: number; columnCount?: number } };
+type SheetProperties = {
+  sheetId: number;
+  title: string;
+  gridProperties?: {
+    rowCount?: number;
+    columnCount?: number;
+    frozenRowCount?: number;
+  };
+};
 type SpreadsheetMetadata = { sheets?: Array<{ properties?: SheetProperties }> };
 type ValuesResponse = { values?: string[][] };
 
@@ -176,15 +207,15 @@ export class GoogleSheetsClient {
     const data = await response.json().catch(() => null) as Record<string, unknown> | null;
     if (response.ok && data) return data as T;
     if (response.status === 401) throw new GoogleIntegrationError("sheets_reauthorization_required", "Google authorization needs to be reconnected before Sheets can sync.", 409);
-    if (response.status === 403) throw new GoogleIntegrationError("sheets_permission_denied", "Enable the Google Sheets API for this Google Cloud project and confirm the approved account can edit the Client Directory spreadsheet.", 403);
-    if (response.status === 404) throw new GoogleIntegrationError("sheets_not_found", "The configured Client Directory spreadsheet could not be found.", 404);
+    if (response.status === 403) throw new GoogleIntegrationError("sheets_permission_denied", "Enable the Google Sheets API for this Google Cloud project and confirm the approved account can edit the requested Workspace spreadsheet.", 403);
+    if (response.status === 404) throw new GoogleIntegrationError("sheets_not_found", "The requested Workspace spreadsheet could not be found.", 404);
     if (response.status === 429) throw new GoogleIntegrationError("sheets_rate_limited", "Google Sheets is temporarily rate-limited. Try again shortly.", 429);
     throw new GoogleIntegrationError("sheets_request_failed", "Google Sheets could not complete that operation. Try again.", 503);
   }
 
   metadata() {
     return this.request<SpreadsheetMetadata>(
-      "?fields=sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))",
+      "?fields=sheets.properties(sheetId,title,gridProperties(rowCount,columnCount,frozenRowCount))",
       {},
       { idempotent: true },
     );
@@ -279,20 +310,142 @@ export async function prepareGoogleDirectorySpreadsheet(client: GoogleSheetsClie
   return { clientSheet, projectSheet };
 }
 
-/**
- * Reserves clearly marked entity tabs for SET-25. Column schemas stay owned by
- * the review-first importer packet, so this preparation deliberately writes no
- * headers or entity rows.
- */
+function headerValues(values: readonly string[]) {
+  let length = values.length;
+  while (length > 0 && values[length - 1] === "") length -= 1;
+  return values.slice(0, length);
+}
+
+function validateImportHeaders(
+  title: string,
+  existing: readonly string[],
+  expected: readonly string[],
+) {
+  const present = headerValues(existing);
+  if (present.length === 0) return false;
+  if (
+    present.length !== expected.length
+    || present.some((value, index) => value !== expected[index])
+  ) {
+    throw new GoogleIntegrationError(
+      "import_sheet_schema_mismatch",
+      `The ${title} tab headers do not match the first-run import template. Restore the exact header row before previewing an import.`,
+      409,
+    );
+  }
+  return true;
+}
+
+const MAX_GOOGLE_SHEET_COLUMNS = 18_278;
+
+function a1ColumnLabel(columnCount: number) {
+  let remaining = columnCount;
+  let label = "";
+  while (remaining > 0) {
+    remaining -= 1;
+    label = String.fromCharCode(65 + (remaining % 26)) + label;
+    remaining = Math.floor(remaining / 26);
+  }
+  return label;
+}
+
+function importHeaderReadRange(
+  sheet: SheetProperties,
+  expectedWidth: number,
+) {
+  const reportedWidth = sheet.gridProperties?.columnCount;
+  const safeWidth = typeof reportedWidth === "number" && Number.isFinite(reportedWidth)
+    ? Math.trunc(reportedWidth)
+    : expectedWidth;
+  const width = Math.min(
+    MAX_GOOGLE_SHEET_COLUMNS,
+    Math.max(expectedWidth, safeWidth),
+  );
+  return `A1:${a1ColumnLabel(width)}1`;
+}
+
+/** Prepares the closed SET-25 import schemas without writing any entity rows. */
 export async function prepareGoogleImportSpreadsheet(client: GoogleSheetsClient) {
-  const metadata = await client.metadata();
+  let metadata = await client.metadata();
   const missing = [GOOGLE_IMPORT_CLIENTS_TAB, GOOGLE_IMPORT_PROJECTS_TAB]
     .filter((title) => !sheetProperties(metadata, title));
   if (missing.length) {
     await client.batchUpdate(missing.map((title) => ({
-      addSheet: { properties: { title, gridProperties: { rowCount: 1000, columnCount: 20 } } },
+      addSheet: {
+        properties: {
+          title,
+          gridProperties: {
+            rowCount: 1000,
+            columnCount: title === GOOGLE_IMPORT_CLIENTS_TAB
+              ? GOOGLE_IMPORT_CLIENT_HEADERS.length
+              : GOOGLE_IMPORT_PROJECT_HEADERS.length,
+          },
+        },
+      },
     })));
+    metadata = await client.metadata();
   }
+
+  const clientSheet = sheetProperties(metadata, GOOGLE_IMPORT_CLIENTS_TAB);
+  const projectSheet = sheetProperties(metadata, GOOGLE_IMPORT_PROJECTS_TAB);
+  if (!clientSheet || !projectSheet) {
+    throw new GoogleIntegrationError(
+      "sheets_tab_creation_failed",
+      "Google Sheets did not create the first-run import tabs. Try again.",
+      503,
+    );
+  }
+
+  const [clientHeaderResponse, projectHeaderResponse] = await Promise.all([
+    client.values(range(
+      GOOGLE_IMPORT_CLIENTS_TAB,
+      importHeaderReadRange(clientSheet, GOOGLE_IMPORT_CLIENT_HEADERS.length),
+    )),
+    client.values(range(
+      GOOGLE_IMPORT_PROJECTS_TAB,
+      importHeaderReadRange(projectSheet, GOOGLE_IMPORT_PROJECT_HEADERS.length),
+    )),
+  ]);
+  const clientHeadersPresent = validateImportHeaders(
+    GOOGLE_IMPORT_CLIENTS_TAB,
+    clientHeaderResponse.values?.[0] ?? [],
+    GOOGLE_IMPORT_CLIENT_HEADERS,
+  );
+  const projectHeadersPresent = validateImportHeaders(
+    GOOGLE_IMPORT_PROJECTS_TAB,
+    projectHeaderResponse.values?.[0] ?? [],
+    GOOGLE_IMPORT_PROJECT_HEADERS,
+  );
+
+  const headerUpdates: Array<{ range: string; values: string[][] }> = [];
+  if (!clientHeadersPresent) {
+    headerUpdates.push({
+      range: range(GOOGLE_IMPORT_CLIENTS_TAB, "A1:H1"),
+      values: [[...GOOGLE_IMPORT_CLIENT_HEADERS]],
+    });
+  }
+  if (!projectHeadersPresent) {
+    headerUpdates.push({
+      range: range(GOOGLE_IMPORT_PROJECTS_TAB, "A1:K1"),
+      values: [[...GOOGLE_IMPORT_PROJECT_HEADERS]],
+    });
+  }
+  if (headerUpdates.length) await client.batchValues(headerUpdates);
+
+  const freezeRequests = [clientSheet, projectSheet]
+    .filter((sheet) => sheet.gridProperties?.frozenRowCount !== 1)
+    .map((sheet) => ({
+      updateSheetProperties: {
+        properties: {
+          sheetId: sheet.sheetId,
+          gridProperties: { frozenRowCount: 1 },
+        },
+        fields: "gridProperties.frozenRowCount",
+      },
+    }));
+  if (freezeRequests.length) await client.batchUpdate(freezeRequests, { idempotent: true });
+
+  return { clientSheet, projectSheet };
 }
 
 function clientCells(row: ClientMirrorRow) {
