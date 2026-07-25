@@ -8,6 +8,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 const noStoreRoutes = [
   "app/api/v1/assistant/config/route.ts",
   "app/api/v1/assistant/extract-tasks/route.ts",
+  "app/api/v1/assistant/triage/route.ts",
   "app/api/v1/assistant/route.ts",
   "app/api/v1/clients/route.ts",
   "app/api/v1/dashboard/route.ts",

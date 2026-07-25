@@ -15,6 +15,11 @@ const apiRoot = join(root, "app", "api", "v1");
 
 const limitedRoutes = [
   {
+    path: "app/api/v1/assistant/triage/route.ts",
+    scope: "assistant",
+    firstWork: "await parseBoundedJsonObject(request",
+  },
+  {
     path: "app/api/v1/assistant/extract-tasks/route.ts",
     scope: "assistant",
     firstWork: "await parseBoundedJsonObject(request",

@@ -180,6 +180,22 @@ export class WorkspaceSimulationGmailClient {
       .map((message) => ({ id: message.id, threadId: message.threadId, from: message.from, to: message.to, subject: message.subject, date: message.date, snippet: message.snippet, labelIds: message.labelIds }));
   }
 
+  async getMessageSummary(messageId: string) {
+    const state = await getSimulationState();
+    const message = state.messages.find((item) => item.id === messageId);
+    if (!message) throw new Error("Simulated message not found.");
+    return {
+      id: message.id,
+      threadId: message.threadId,
+      from: message.from,
+      to: message.to,
+      subject: message.subject,
+      date: message.date,
+      snippet: message.snippet,
+      labelIds: message.labelIds,
+    };
+  }
+
   async getMessageArchive(messageId: string): Promise<GmailMessageArchive> {
     const state = await getSimulationState();
     const message = state.messages.find((item) => item.id === messageId);

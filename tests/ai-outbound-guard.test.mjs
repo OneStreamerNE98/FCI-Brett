@@ -44,15 +44,20 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     "app/api/v1/assistant/route.ts",
     "app/api/v1/assistant/config/route.ts",
     "app/api/v1/assistant/extract-tasks/route.ts",
+    "app/api/v1/assistant/triage/route.ts",
     "app/domain/assistant-config.ts",
     "app/lib/assistant-config-sites.ts",
     "app/ports/assistant-provider.ts",
   ];
   const sources = await Promise.all(guardedFiles.map(read));
   const combined = sources.join("\n");
+  const guardedWithoutTriage = sources
+    .filter((_source, index) => guardedFiles[index] !== "app/api/v1/assistant/triage/route.ts")
+    .join("\n");
 
   assert.doesNotMatch(combined, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/);
-  assert.doesNotMatch(combined, /from\s+["'][^"']*(?:google-gmail|google-chat)/i);
+  assert.doesNotMatch(guardedWithoutTriage, /from\s+["'][^"']*(?:google-gmail|google-chat)/i);
+  assert.doesNotMatch(combined, /from\s+["'][^"']*google-chat/i);
   assert.doesNotMatch(combined, /\.\s*(?:send|createDraft|createMessage)\s*\(/i);
   assert.doesNotMatch(combined, /\bfetch\s*\(/);
 
@@ -70,6 +75,11 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
 
   const taskExtractionRoute = await read(
     "app/api/v1/assistant/extract-tasks/route.ts",
+  );
+  const triageRoute = await read("app/api/v1/assistant/triage/route.ts");
+  assert.match(
+    triageRoute,
+    /import \{ validateGmailMessageId \} from ["'][^"']*lib\/google-gmail["']/,
   );
   assert.match(taskExtractionRoute, /import \{ noStoreJson as noStore, noStoreResponse \} from "\.\.\/\.\.\/\.\.\/\.\.\/lib\/no-store-json"/);
   assert.doesNotMatch(taskExtractionRoute, /function noStore(?:Response)?\(/);
@@ -90,6 +100,12 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     taskExtractionRoute,
     /\bcreateTask\b|\bINSERT\b|\bUPDATE\b|\bDELETE\b/,
   );
+  assert.match(triageRoute, /client\.getMessageSummary\(messageId\)/);
+  assert.doesNotMatch(
+    triageRoute,
+    /\b(?:applyFiledLabel|createReplyDraft|sendTestMessage|getMessageArchive|modify|send)\s*\(/,
+  );
+  assert.doesNotMatch(triageRoute, /\bfetch\s*\(/);
 });
 
 test("the OpenAI adapter has one exact Responses API outbound call site", async () => {

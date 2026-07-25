@@ -601,18 +601,22 @@ export class GoogleGmailClient {
       { idempotent: true },
     );
     const references = (response.messages ?? []).slice(0, MAX_MESSAGE_RESULTS);
-    const messages = await Promise.all(references.map((reference) => this.getMessageMetadata(reference.id)));
+    const messages = await Promise.all(references.map((reference) => this.getMessageSummary(reference.id)));
     return messages;
   }
 
-  private async getMessageMetadata(messageId: string) {
+  async getMessageSummary(messageId: string) {
+    const safeMessageId = validateGmailMessageId(messageId);
     const parameters = new URLSearchParams({ format: "metadata" });
     for (const headerName of ["From", "To", "Subject", "Date"]) parameters.append("metadataHeaders", headerName);
     const message = await this.request<GmailMessage>(
-      `messages/${encodeURIComponent(validateGmailMessageId(messageId))}?${parameters.toString()}`,
+      `messages/${encodeURIComponent(safeMessageId)}?${parameters.toString()}`,
       {},
       { idempotent: true },
     );
+    if (message.id !== safeMessageId) {
+      throw archiveResponseError("Gmail returned an unexpected message summary.");
+    }
     return mapMessage(message);
   }
 

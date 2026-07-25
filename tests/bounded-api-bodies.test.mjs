@@ -37,6 +37,7 @@ const [
   assistantRoute,
   assistantConfigRoute,
   assistantTaskExtractionRoute,
+  assistantTriageRoute,
   clientsRoute,
   projectsRoute,
   filingRuleRoute,
@@ -58,6 +59,7 @@ const [
     vite.ssrLoadModule("/app/api/v1/assistant/route.ts"),
     vite.ssrLoadModule("/app/api/v1/assistant/config/route.ts"),
     vite.ssrLoadModule("/app/api/v1/assistant/extract-tasks/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/assistant/triage/route.ts"),
     vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
     vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
     vite.ssrLoadModule("/app/api/v1/filing-rules/[ruleId]/route.ts"),
@@ -115,6 +117,12 @@ const cases = [
     maximumBytes: 8_000,
     error: "Task extraction request is too large.",
     invoke: (request) => assistantTaskExtractionRoute.POST(request),
+  },
+  {
+    name: "assistant inbox triage",
+    maximumBytes: 8_000,
+    error: "AI triage request is too large.",
+    invoke: (request) => assistantTriageRoute.POST(request),
   },
   {
     name: "client creation",
