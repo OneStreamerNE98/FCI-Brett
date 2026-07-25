@@ -318,7 +318,7 @@ removal breaks no test; `npm test` green.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-04 · Phone polish: testing-launch overflow, 44px control tier, 8px control gaps (small)
-**Status:** In progress — `codex/nfix04-phone-polish`, July 25, 2026. Source-only and undeployed. Guide impact: none.
+**Status:** In review — PR #203, July 25, 2026. Source-only and undeployed. Guide impact: none.
 
 **Why:** N1-1 — the app's only page-level horizontal overflow (testing-launch
 at 360–390: unbreakable OIDC requirement names + a heading-stack rule scoped
