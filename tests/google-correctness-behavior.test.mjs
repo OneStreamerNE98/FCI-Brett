@@ -117,14 +117,17 @@ test("standard Google integration error responses preserve typed and fallback bo
     "Fallback",
   );
   assert.equal(typed.status, 404);
-  assert.deepEqual(await typed.json(), {
-    error: "The configured drive was not found.",
-    code: "drive_not_found",
-  });
+  assert.equal(typed.headers.get("content-type"), "application/json");
+  assert.equal(typed.headers.get("cache-control"), null);
+  assert.equal(
+    await typed.text(),
+    '{"error":"The configured drive was not found.","code":"drive_not_found"}',
+  );
 
   const fallback = googleIntegrationErrorResponse(new Error("private detail"), "Safe fallback");
   assert.equal(fallback.status, 503);
-  assert.deepEqual(await fallback.json(), { error: "Safe fallback" });
+  assert.equal(fallback.headers.get("content-type"), "application/json");
+  assert.equal(await fallback.text(), '{"error":"Safe fallback"}');
 });
 
 test("Gmail readiness requires the intake mailbox to be the single approved connection account", () => {
