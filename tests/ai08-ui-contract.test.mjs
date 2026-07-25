@@ -81,7 +81,8 @@ test("pins the AI-08 settings and help copy to the canonical section-9 contract"
   assert.match(card, /<dt>Model<\/dt>/u);
   assert.match(card, /keyState: "Configured" \| "Missing"/u);
   assert.match(card, /\{ key: "orgQa", label: "Organization-wide answers", state: "In development" \}/u);
-  for (const key of ["triage", "replyDrafts", "taskExtraction"]) {
+  assert.match(card, /\{ key: "triage", label: "Inbox filing suggestions", state: "In development" \}/u);
+  for (const key of ["replyDrafts", "taskExtraction"]) {
     assert.match(
       card,
       new RegExp(`\\{ key: "${key}", label: "[^"]+", state: "Planned" \\}`, "u"),
