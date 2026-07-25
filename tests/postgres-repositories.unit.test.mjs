@@ -588,18 +588,20 @@ test("generated project-number collisions return a retryable typed outcome", asy
   client.assertComplete();
 });
 
-test("project creation safely parses numeric and bigint values before storing its accepted response", async () => {
+test("project creation mirrors D1 exact-choice segment fallback and safely parses returned values", async () => {
+  const directSegmentIntent = projectIntent();
+  directSegmentIntent.project.segment = " Residential ";
   const client = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
     step(/INSERT INTO idempotency_requests/, result([{ id: projectRequest().idempotencyRequestId }], 1), {
       inspect: ({ values }) => assert.equal(
         values[4],
-        calculatePostgresProjectCreationFingerprint(projectIntent()),
+        calculatePostgresProjectCreationFingerprint(directSegmentIntent),
       ),
     }),
     step(
       /SELECT id::text AS id, industry[\s\S]*FOR KEY SHARE/,
-      result([{ id: CLIENT_ID, industry: " Residential " }], 1),
+      result([{ id: CLIENT_ID, industry: "Commercial" }], 1),
     ),
     step(
       /INSERT INTO projects[\s\S]*flooring_category, square_feet, contract_value, segment[\s\S]*VALUES \(\$1, \$2, \$3[\s\S]*estimated_value::text/,
@@ -608,8 +610,8 @@ test("project creation safely parses numeric and bigint values before storing it
         inspect: ({ values }) => {
           assert.deepEqual(
             values.slice(8, 12),
-            ["tile-stone", 2_500, 130_000, "residential"],
-            "a null stored choice derives from the locked client industry",
+            ["tile-stone", 2_500, 130_000, "commercial"],
+            "a non-canonical direct choice derives from the locked client industry exactly like D1",
           );
         },
       },
@@ -626,7 +628,7 @@ test("project creation safely parses numeric and bigint values before storing it
   });
   let providerCalls = 0;
 
-  const creation = await repository.create(projectIntent(), () => {
+  const creation = await repository.create(directSegmentIntent, () => {
     providerCalls += 1;
   });
 

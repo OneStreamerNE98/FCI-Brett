@@ -51,7 +51,9 @@ test(
         ),
       ]);
       assert.deepEqual(
-        concurrentResults.flatMap(({ appliedVersions }) => appliedVersions).sort(),
+        concurrentResults
+          .flatMap(({ appliedVersions }) => appliedVersions)
+          .sort((left, right) => left - right),
         MIGRATION_VERSIONS,
       );
       assert.deepEqual(

@@ -1,5 +1,8 @@
 import { FLOORING_CATEGORIES } from "../../domain/project-creation";
-import { resolveProjectSegment } from "../../domain/project-segment";
+import {
+  PROJECT_SEGMENTS,
+  resolveProjectSegment,
+} from "../../domain/project-segment";
 import type {
   AcceptedProjectCreation,
   ProjectCreationIntent,
@@ -267,8 +270,14 @@ export function createPostgresProjectRepository(
           }
           throw new Error("PostgreSQL project parent lookup returned an invalid result");
         }
+        // The D1 INSERT CASE treats only byte-exact catalog values as explicit.
+        // Keep direct-adapter inputs aligned even though normal HTTP creation
+        // already canonicalizes valid user input before reaching this port.
+        const explicitSegment = PROJECT_SEGMENTS.find(
+          (candidate) => candidate === intent.project.segment,
+        ) ?? null;
         const segment = resolveProjectSegment(
-          intent.project.segment,
+          explicitSegment,
           parentClient.rows[0].industry,
         );
 
