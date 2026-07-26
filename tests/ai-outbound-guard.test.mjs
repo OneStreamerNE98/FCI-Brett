@@ -440,7 +440,7 @@ test("AI-09 documentation has one source-verified account, explicit Tier-2 gates
   const ai09 = sectionFromHeading(plan, "### AI-09 ·", /^### /mu);
   assert.match(
     ai09,
-    /\*\*Status:\*\* (?:In progress — `codex\/ai09-ai-reconcile`|In review — PR #\d+)/u,
+    /\*\*Status:\*\* In review — PR #\d+/u,
   );
   assert.match(
     rateLimitGuide,
