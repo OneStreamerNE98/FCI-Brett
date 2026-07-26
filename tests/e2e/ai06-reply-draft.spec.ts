@@ -206,8 +206,10 @@ test("Draft with AI is honestly disabled when the key is Missing or the toggle i
   await expect(missingNote).toBeVisible();
   await expect(draftButton).toHaveAttribute("aria-describedby", (await missingNote.getAttribute("id")) ?? "");
   await expect(dialog.getByText("Sending remains a separate, deliberate action.", { exact: false })).toBeVisible();
-  // Clicking the gated action is a no-op, not a request.
-  await draftButton.click();
+  // Clicking the gated action is a no-op, not a request. force: true bypasses
+  // Playwright's actionability wait, which treats aria-disabled as not enabled —
+  // clicking anyway is exactly what this assertion needs to prove.
+  await draftButton.click({ force: true });
 
   assistant.keyState = "Configured";
   assistant.replyDrafts = false;
@@ -216,7 +218,7 @@ test("Draft with AI is honestly disabled when the key is Missing or the toggle i
   draftButton = dialog.getByRole("button", { name: "Draft with AI" });
   await expect(draftButton).toHaveAttribute("aria-disabled", "true");
   await expect(dialog.getByText("AI reply drafting is turned off in AI settings.", { exact: true })).toBeVisible();
-  await draftButton.click();
+  await draftButton.click({ force: true });
 
   expect(replyDraftCalls).toBe(0);
 });
