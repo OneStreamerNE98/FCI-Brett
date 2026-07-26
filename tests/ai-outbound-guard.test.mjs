@@ -433,15 +433,14 @@ test("AI-09 documentation has one source-verified account, explicit Tier-2 gates
   assert.match(meetings, /Assistant and automation boundary \(reconciled July 26, 2026\)/u);
   assert.match(meetings, /proposals are not task\s+rows until an office user presses \*\*Accept\*\*/u);
 
-  for (let index = 1; index <= 8; index += 1) {
+  for (let index = 1; index <= 9; index += 1) {
     const packet = sectionFromHeading(plan, `### AI-0${index} ·`, /^### /mu);
     assert.match(packet, /\*\*Status:\*\* Complete — PR #/u, `AI-0${index} must remain Complete`);
   }
-  const ai09 = sectionFromHeading(plan, "### AI-09 ·", /^### /mu);
-  assert.match(
-    ai09,
-    /\*\*Status:\*\* In review — PR #\d+/u,
-  );
+  // AI-10 is filed but unclaimed: an unstarted packet carries no Status line at all, so the
+  // only regression worth pinning is that it cannot acquire a Complete claim without a PR.
+  const ai10 = sectionFromHeading(plan, "### AI-10 ·", /^### /mu);
+  assert.doesNotMatch(ai10, /\*\*Status:\*\* Complete/u);
   assert.match(
     rateLimitGuide,
     /\/assistant\/triage`, `\/assistant\/reply-draft`/u,
