@@ -83,18 +83,28 @@ test("pins the exact keyless directions URL and direct satellite Embed v1 URL", 
 });
 
 test("resolves no-address, simulation, missing-key, and live states fail closed", () => {
-  const simulationRuntime = maps.resolveJobSiteMapsRuntimeConfig({
+  const simulationKeyedRuntime = maps.resolveJobSiteMapsRuntimeConfig({
     simulation: true,
-    browserApiKey: "must-not-render",
+    browserApiKey: "sim-configured-key",
+  });
+  const simulationNoKeyRuntime = maps.resolveJobSiteMapsRuntimeConfig({
+    simulation: true,
+    browserApiKey: "   ",
   });
   const missingKeyRuntime = maps.resolveJobSiteMapsRuntimeConfig({
     simulation: false,
     browserApiKey: "   ",
   });
 
-  assert.deepEqual(simulationRuntime, { simulation: true, browserApiKey: null });
+  // Maps is a Cloud browser embed, not a Workspace data operation: a
+  // configured key renders live embeds even while Workspace runs in
+  // simulation (owner decision, July 25, 2026).
+  assert.deepEqual(simulationKeyedRuntime, { simulation: true, browserApiKey: "sim-configured-key" });
+  assert.deepEqual(simulationNoKeyRuntime, { simulation: true, browserApiKey: null });
   assert.equal(maps.resolveJobSiteMapState(null, liveRuntime).kind, "no-address");
-  assert.equal(maps.resolveJobSiteMapState(addressLocation, simulationRuntime).kind, "simulation");
+  assert.equal(maps.resolveJobSiteMapState(addressLocation, simulationKeyedRuntime).kind, "live");
+  assert.equal(maps.resolveJobSiteMapState(addressLocation, simulationNoKeyRuntime).kind, "simulation");
+  assert.equal(maps.resolveJobSiteMapState(addressLocation, simulationNoKeyRuntime).embedUrl, null);
   assert.equal(maps.resolveJobSiteMapState(addressLocation, missingKeyRuntime).kind, "missing-key");
   assert.equal(maps.resolveJobSiteMapState(addressLocation, liveRuntime).kind, "live");
   assert.equal(maps.resolveJobSiteMapState(addressLocation, missingKeyRuntime).embedUrl, null);
@@ -117,12 +127,19 @@ test("renders address, no-address, simulation, and missing-key cards without fal
 
   const simulation = renderCard(
     addressLocation,
-    maps.resolveJobSiteMapsRuntimeConfig({ simulation: true, browserApiKey: "must-not-render" }),
+    maps.resolveJobSiteMapsRuntimeConfig({ simulation: true, browserApiKey: "   " }),
   );
   assert.match(simulation, /data-map-state="simulation"/);
   assert.match(simulation, /Simulation shows this placeholder without loading Google Maps/);
   assert.match(simulation, /Open directions/);
-  assert.doesNotMatch(simulation, /<iframe|must-not-render/);
+  assert.doesNotMatch(simulation, /<iframe/);
+
+  const simulationKeyed = renderCard(
+    addressLocation,
+    maps.resolveJobSiteMapsRuntimeConfig({ simulation: true, browserApiKey: "sim-configured-key" }),
+  );
+  assert.match(simulationKeyed, /data-map-state="live"/);
+  assert.match(simulationKeyed, /<iframe/);
 
   const missingKey = renderCard(
     addressLocation,
