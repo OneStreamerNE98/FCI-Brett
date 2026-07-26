@@ -1257,7 +1257,7 @@ endpoints beyond one presence read; no secret or env values in markup; non-admin
 variant informational only. **Effort:** small. **Cost:** $0.
 
 ### SET-25 · First-run data import: clients AND projects (medium-large, after SET-16) — OWNER PRIORITY (July 21)
-**Status:** In review — PR #213, July 25, 2026. Source-only and undeployed; real-data import remains blocked behind WS-11. Guide impact: `docs/settings-guide.md` updated.
+**Status:** Complete — PR #213, July 26, 2026. Fable fleet (2 lenses + adversarial verify) confirmed the review-first contract by construction: `/confirm` is the only writer (preview builds its repository without the write lease, so any insert throws — zero-write assertion), every preview rowKey embeds a SHA-256 of that row's cells so an edited or swapped source 409s as stale instead of importing unreviewed data, projects provably cannot create clients (the insert selects `FROM clients c WHERE c.id = ?`), ambiguity is surfaced rather than guessed, and idempotency is real (durable-duplicate replay plus SQL NOT EXISTS guards inside the fenced batch). Review fixes on-branch (9f5ed6a): the red CI test was an APP bug — the post-confirm focus handoff used a single `requestAnimationFrame` that fired before React committed the reopen button, dropping keyboard focus to `document.body`; replaced with the `pendingFocusRef` + commit-effect idiom (jsdom/React 19.2.6 repro proved animation-frame → unfocused, commit-effect → focused). Also fixed: the gate notice is now the rendered constant (the acceptance test had asserted a string no user saw), over-long emails and control-character phones raise explicit `*_invalid` issues instead of importing blank, the "irreversible fingerprint" wording is corrected in both the guide and the UI (it is an unsalted SHA-256 of a low-entropy address), and the counts list uses real list semantics. Recorded residual: spreadsheet cells beginning with `=`, `+`, `-`, `@` are stored verbatim — inert today (React escapes on render, the Sheets client writes RAW, no CSV export exists) but must be revisited if a CSV export or a USER_ENTERED Sheets write is ever added. Source-only and undeployed; real-data import remains blocked behind WS-11. Guide impact: `docs/settings-guide.md` updated.
 
 **Why:** Day-one onboarding gap: nothing loads the company's existing client and
 project lists when real use begins — without this, launch starts with manual re-entry.
@@ -2409,7 +2409,7 @@ suggestions; simulation e2e suggests and files one message through review;
 **Effort:** medium. **Cost:** $0.
 
 ### AI-06 · Reply with AI (small-medium, after AI-02 + AI-03; inbox components only; admin-gated)
-**Status:** In review — PR #212, July 25, 2026. Source-only and undeployed.
+**Status:** Complete — PR #212, July 26, 2026. Implemented by a delegated Claude agent during a Codex quota outage, then reviewed with extra independence (2 Fable lenses + adversarial verify). The no-send guarantee is mutation-hard: injecting a `createReplyDraft` call into the route fails 4 tests, stripping the UNTRUSTED fence label fails 1, stripping the no-send prompt line fails 2; within the AI reply flow the only Gmail write remains the pre-existing save-draft route (AI-06 adds no Gmail mutation). Repo-wide, Gmail writes also exist outside this flow and are unchanged by AI-06: `applyFiledLabel` (`messages/{id}/modify`, the human-confirmed filing path) and `sendTestMessage` (`messages/send`, the administrator-only connection test) — AI-09's outbound inventory must count those. Review fixes on-branch: 64fc476 added a request-id + AbortController staleness guard (closing modal mid-flight and opening a reply for a DIFFERENT message could land message A's draft in message B's composer), made the signature pre-fill count as untouched text so the first click stops falsely asking to replace, defined the three new class names in globals.css using `.project-operation-error`'s existing palette, and added `aria-busy`/`aria-describedby`/`aria-disabled`-with-no-op so keyboard users can reach the gated button and hear why. d441f44 fixed a bot-caught P1 the review fleet MISSED: the records join used a digits-only project-number pattern that could not match the real `CF-<year>-<8 alphanumerics>` format (generated at create-project.ts:75, enforced at postgres/project-repository.ts:160), so records were always null and every draft fell back to `[...]` placeholders — the join now goes through `evaluateInboxFilingRules` as the packet always specified (which also maps known contacts with no number at all), with bounded reads mirroring existing call sites and a source assertion pinning that the untrusted body never enters rule matching; the regression test uses a genuine generated number and asserts the retired pattern fails it. d441f44 also bounds the MIME payload on a 4-char quantum boundary before `atob` (3-bytes-per-char budget so multibyte bodies keep identical visible output). a9a762f force-clicks the now-`aria-disabled` button in e2e, since Playwright treats aria-disabled as non-actionable. Source-only and undeployed.
 **Why:** explicit owner ask — a button on an email that generates the reply
 draft; the human triggers, edits, and sends; the AI never sends.
 **Do:** `POST /api/v1/assistant/reply-draft` (admin + same-origin + bounded):
@@ -2667,14 +2667,14 @@ merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED. NFIX-03 (PR #197) and BE-16 (PR #198)
 both MERGED July 25, 2026. AI-04 (PR #201), AI-05 (PR #205), and FIX-15
 (PR #206, with the N7-7/N7-8 folds) and FIX-17 (PR #208) are COMPLETE —
-**SET-22 is now the dispatchable head of the FloorOpsApp fix-tail** (SET-26
-remains gated on SET-23, open). **AI-06 and SET-25 are dispatchable in
-parallel** (kickoff pastes with the owner; claims recorded on their packet
-status lines when their `codex/*` branches open; SET-25 must serialize any
-`workspace-simulation.ts` merge with FIX-17's calendar/folder-id hunks; both
-additive on `tests/rendered-html.test.mjs` — serialize merges
-only; it builds on AI-05's public `getMessageSummary`). AI-09 closes the
-workstream after AI-06. DES-08's
+AI-06 (PR #212) and SET-25 (PR #213) are COMPLETE as of July 26, 2026, so the
+AI feature series AI-01→AI-08 is fully merged and **AI-09 is the only AI packet
+left** — it closes the workstream by reconciling one truthful account of what
+the AI does, what is production-gated, and every residual the series recorded.
+**SET-22 is the dispatchable head of the FloorOpsApp fix-tail** (SET-26 remains
+gated on SET-23, open); SET-18 was drafted as a paste and is dispatchable in
+parallel with it. `tests/rendered-html.test.mjs` stays additive across all
+lanes — serialize merges only. DES-08's
 remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
 attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
