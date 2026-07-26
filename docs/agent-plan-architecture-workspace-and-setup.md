@@ -513,6 +513,277 @@ snapshot→import; no runtime path assumes v10 applied (source-only law);
 
 ---
 
+# Record editing (EDIT)
+
+Filed July 26, 2026 after the owner reported that project fields — and most
+fields on every other record — cannot be changed once created. Research
+settled it as an **unbuilt gap, not a design boundary**: no repo document
+states a read-only or immutability principle, record editing appears under no
+"Deliberately omitted" list, and it is documented as missing in eight-plus
+docs (`docs/ui-and-product-readiness-review.md:111` carries it as prioritized
+step 7; `docs/development-section-audit.md:24` rates projects **Critical**,
+leads and clients **High**). KPI-03 says it outright — the audited,
+admin-only "Assign to me" drawer action is named an **interim pattern**, not
+a policy. The only roadmap owner is row 17 of
+`docs/complete-product-and-google-cloud-architecture-audit.md:327`, marked
+"Unassigned domain work."
+
+The data layer was built expecting edits that were never wired: every core
+production PostgreSQL table already carries `version bigint NOT NULL DEFAULT
+1`, clients/projects/leads carry `updated_by`, and `activity_events` is
+trigger-enforced append-only
+(`app/platform/postgres/production-schema-migrations.ts:170-176`). The series
+sits at the tail of Workstream A because EDIT-03 extends exactly that data
+layer; the four surface packets follow it so the series stays readable as one
+unit.
+
+**Sequence:** EDIT-01 and EDIT-02 are independent defect fixes assignable
+now. EDIT-03 is the foundation and gates EDIT-04…EDIT-07. Order after that
+follows the cost of the gap: leads (cheapest — the API already accepts the
+fields), projects (largest gap), clients + contacts, tasks UI. **Meetings
+editing is deliberately sequenced last and is NOT yet filed** — create
+coverage is complete and no update or delete route exists, so a meeting saved
+with a wrong date is permanent; it earns its own packet once EDIT-03 has
+shipped through at least one surface.
+
+**Three scope decisions remain open and belong to the owner** — recorded here
+so no packet decides them by default:
+
+1. **Who may edit.** Office-wide or admin-only? Recommendation: office-wide
+   for descriptive fields, admin for money and status.
+2. **Archive vs delete.** Every status enum already carries `archived` and no
+   delete endpoint exists anywhere. Recommendation: archive-only, no deletes.
+3. **Conflict UX.** On a 409, show the conflict and let the user re-apply
+   rather than auto-merging — `docs/task-checklists/09-frontend-and-multi-
+   user-hardening.md:52` asks for exactly this.
+
+### EDIT-01 · Lead PATCH capability enforcement (small, no deps)
+**Why:** `PATCH /api/v1/leads/[leadId]` gates on `requireOfficeUser` alone
+(`app/api/v1/leads/[leadId]/route.ts:16-22`), so any office user may change
+any lead field regardless of role. `AUTHORIZATION_CAPABILITIES.leadsUpdate`
+already exists (`app/application/authorization-capabilities.ts:4`) and is
+role-mapped (`app/application/authorization-policy.ts:48,80`) with **zero
+consumers** — the check was built and never wired.
+**Do:** require `leadsUpdate` in the lead PATCH handler using the call shape
+an existing capability-gated route already uses; return 403 with the standard
+error body, never 404, keeping the `requireOfficeUser` authentication step
+ahead of it. Change no field validation, no response shape, and no audit
+string — this packet is authorization only, so the EDIT-04 form work lands on
+an already-gated route. Record the capability wherever route capabilities are
+listed.
+**Files:** `app/api/v1/leads/[leadId]/route.ts`,
+`app/application/authorization-policy.ts` (verify only — the mapping already
+exists), tests.
+**Accept:** an office user without `leadsUpdate` gets 403 from lead PATCH and
+the lead row is unchanged; an authorized user's PATCH is byte-identical to
+today in fields accepted, audit rows written, and response shape;
+`advanceLead` keeps working for authorized roles with its existing audit
+string; a source assertion proves `leadsUpdate` now has a consumer so it
+cannot silently regress to unused; `npm test` green.
+**Effort:** small. **Cost:** $0.
+
+### EDIT-02 · `phone-call` meeting type PostgreSQL parity (small, no deps; BE-16 pattern)
+**Why:** the meeting-type enum (`app/domain/project-meeting.ts:7`) and the UI
+picker (`app/FloorOpsApp.tsx:1845`) both offer `phone-call`, but the
+production PostgreSQL CHECK omits it
+(`app/platform/postgres/lead-project-meeting-schema.ts:128-130`), so a
+phone-call meeting that saves in development is rejected by the production
+adapter the moment that path is exercised. AI-01 added the type to D1 only,
+per the KPI-04/BE-16 precedent of deferring PostgreSQL parity to its own
+packet.
+**Do:** register a checksummed production PostgreSQL migration as the next
+contiguous version — prior definitions AND checksums byte-untouched — that
+replaces the meeting-type CHECK with one byte-equal to the D1 domain catalog
+including `phone-call`. Follow BE-16 exactly: additive only, no runtime path
+may assume it applied, least-privilege grants reviewed, and the rehearsal
+inventory (`app/platform/migration/core-record-rehearsal.ts`) extended so a
+`phone-call` meeting round-trips instead of being rejected or silently
+dropped.
+**Files:** `app/platform/postgres/production-schema-migrations.ts`,
+`app/platform/postgres/lead-project-meeting-schema.ts`,
+`app/platform/migration/core-record-rehearsal.ts`, tests.
+**Accept:** the migration is contiguous with every prior checksum unchanged;
+the CHECK is byte-equal to the D1 catalog; a real-PG round trip stores and
+reads back a `phone-call` meeting and still rejects an out-of-catalog value;
+a rehearsal test proves a `phone-call` meeting survives snapshot→import; no
+runtime path assumes the migration applied (source-only law); `npm test`
+green.
+**Effort:** small. **Cost:** $0.
+
+### EDIT-03 · Optimistic concurrency + edit auditing foundation (medium; gates EDIT-04…EDIT-07)
+**Why:** production PostgreSQL updates do `version = version + 1 WHERE id =
+$n` — a counter with no guard
+(`app/adapters/postgres/lead-repository.ts:346-352`;
+`app/adapters/postgres/project-repository.ts:371-377,411-419,466-473`) — and
+D1 has no `version` column at all, so two concurrent editors silently
+overwrite each other the moment any edit form ships. Auditing has a matching
+hole: lead PATCH accepts 13 fields but writes activity rows for stage and
+next-action only (`app/api/v1/leads/[leadId]/route.ts:57-78`), so an email or
+estimated-value change lands today with no evidence it happened.
+**Do:** (1) add `version` to the D1 core tables as an additive drizzle
+migration after `drizzle/0019_demonic_lady_vermin.sql`, existing rows
+defaulting to 1. (2) Change every core update on BOTH adapters to `WHERE id =
+? AND version = ?`, returning a typed 409 carrying the current version when
+zero rows change — reuse the proven in-repo pattern rather than inventing
+one: `app/adapters/d1/workspace-blueprints.ts:115-144` already implements
+`expectedVersion` and states the law, *"A zero-change result is an
+optimistic-concurrency conflict, never a retry."* (3) Add one field-update
+member to each entity's closed `action` catalog
+(`app/ports/lead-repository.ts:6`;
+`app/ports/project-repository.ts:25,57,79,87`) and write exactly one audit
+row per edit inside the same batch/transaction as the write, so a failed
+write cannot leave an audit row — the D1 adapters' `WHERE EXISTS`
+composition already gives this. Detail strings follow the only before→after
+diff in the codebase today (`app/api/v1/leads/[leadId]/route.ts:64`,
+`${current.stage} → ${values.stage}`). (4) Build the partial-update
+validators on the one true template, `normalizeTaskPatch`
+(`app/domain/task.ts:210-253`): `Object.hasOwn` per field, a `Partial<{...}>`
+validated type, a separately exported patch-key list, per-field errors. Leads
+currently fake patch semantics by merging over the current row inside the
+route — move that into the domain. No UI in this packet.
+**Files:** `db/schema.ts`, a new `drizzle/` migration,
+`app/platform/postgres/production-schema-migrations.ts`,
+`app/adapters/d1/{lead,project,client,task}-repository.ts`,
+`app/adapters/postgres/{lead,project,client,task}-repository.ts`,
+`app/ports/{lead,project,client}-repository.ts`, `app/domain/lead.ts`,
+`app/api/v1/leads/[leadId]/route.ts`,
+`app/platform/google-cloud/database-readiness.ts`,
+`app/platform/migration/core-record-rehearsal.ts`, tests.
+**Accept:** two updates against the same `version` — the second returns 409
+with the current version and writes nothing — proven on BOTH adapters,
+mirroring the existing blueprint concurrency suite; exactly one
+`activity_events` row per successful edit carrying a before→after detail, and
+zero audit rows when the write fails or conflicts; all 13 lead PATCH fields
+produce an audit row, closing the stage-and-next-action hole; the four
+project operations and `advanceLead` keep their behavior and audit strings
+byte-for-byte; the D1 migration is additive and no runtime path assumes it
+applied; golden hashes untouched; `npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+### EDIT-04 · Lead editing (small-medium, after EDIT-01 + EDIT-03)
+**Why:** the lead PATCH route already accepts all 13 fields
+(`app/api/v1/leads/[leadId]/route.ts:14`) while the UI sends only `stage`
+through `advanceLead` (`app/FloorOpsApp.tsx:948-986`). `nextAction` is
+displayed at `app/FloorOpsApp.tsx:1608` and can never be changed; a typo in a
+name, email, or address is permanent; a lead cannot be reassigned or marked
+`converted`, `lost`, or `archived` by hand.
+**Do:** add an edit surface for an existing lead reusing the Add-lead modal's
+markup and field validation with values pre-filled — note `LeadModal`
+(`app/FloorOpsApp.tsx:1572-1574`) is an **uncontrolled `FormData` form with
+no `defaultValue`s** and needs an `initialValues` prop before it can be
+pre-filled at all. Submit only changed keys as a partial patch against the
+EDIT-03 validator, send the row's `version`, and on 409 show the conflict and
+let the user re-apply rather than auto-merging. Leave `advanceLead` exactly
+as it is — it stays the fast path for stage moves. Honor the owner's
+who-may-edit decision above once recorded; until then gate money and status
+fields to admin and descriptive fields to office users.
+**Files:** `app/FloorOpsApp.tsx` (`LeadModal` — the merge-conflict hotspot;
+takes one queue slot), `app/api/v1/leads/[leadId]/route.ts`,
+`app/domain/lead.ts`, tests + simulation e2e.
+**Accept:** every editable lead field round-trips through the form and
+persists; each edit writes exactly one audit row with a before→after detail;
+a stale `version` returns 409, changes nothing, and the UI surfaces the
+conflict for re-apply; a user without `leadsUpdate` gets 403 and is offered
+no edit control; `advanceLead` behavior and audit strings unchanged; golden
+hashes untouched (the form lives in a modal, outside the byte-pinned
+dashboard markup); `npm test` green.
+**Effort:** small-medium. **Cost:** $0.
+
+### EDIT-05 · Project editing (medium-large, after EDIT-03)
+**Why:** nine project columns have **no mutation route at all** — `name`,
+`status`, `site`, `clientId`, `estimatedValue`, `flooringCategory`,
+`squareFeet`, `contractValue`, `segment` — so a project cannot move
+`planning` → `installation` → `completed` from anywhere in the product, and
+`projects.status.update` is role-mapped with no endpoint behind it. Mutations
+today go through a collection-level PATCH with an action discriminator
+(`app/api/v1/projects/route.ts:89-135`) exposing four named operations only.
+This is the owner's original report and the audit rates it **Critical**.
+**Do:** add a NEW per-project route `app/api/v1/projects/[projectId]/route.ts`
+— none exists — whose PATCH takes a partial body validated by an
+EDIT-03-style patch validator and fenced by `version`. Keep `contractValue`
+admin-gated exactly as the create route does
+(`app/api/v1/projects/route.ts:65-67`) and route `status` through the owner's
+who-may-edit decision. Leave the four existing collection-level operations
+untouched and do NOT re-route them through the new handler, so their audit
+strings cannot drift. UI: an edit surface on the project detail view sending
+only changed keys, with the 409 conflict shown for re-apply. Meetings editing
+is deliberately sequenced last and is not yet filed — add no meeting mutation
+here.
+**Files:** `app/api/v1/projects/[projectId]/route.ts` (new),
+`app/api/v1/projects/route.ts` (behavior unchanged; verify), a new project
+patch validator beside `app/domain/project-creation.ts`,
+`app/adapters/d1/project-repository.ts`,
+`app/adapters/postgres/project-repository.ts`,
+`app/ports/project-repository.ts`, `app/FloorOpsApp.tsx`, tests + simulation
+e2e.
+**Accept:** each of the nine columns is editable end-to-end and persists on
+both adapters; `contractValue` returns 403 for a non-admin and is absent from
+the non-admin form; a non-authorized office user gets 403 from the new route;
+a stale `version` returns 409 with no write; one audit row per edit with a
+before→after detail; the four existing project operations and their audit
+strings stay byte-identical; a `planning` → `installation` → `completed` move
+is proven in one test; golden hashes untouched; `npm test` green.
+**Effort:** medium-large. **Cost:** $0.
+
+### EDIT-06 · Client and contact editing (medium, after EDIT-03)
+**Why:** clients have no update endpoint, no edit control, and no domain
+update validator, and there is **no contacts route of any kind** — so a
+client rename or an address correction is impossible after creation. Three
+fields are additionally unreachable even at create time:
+`primaryContact.phone`, `primaryContact.role`, and `status: "archived"`.
+`docs/development-section-audit.md:24` rates clients **High**.
+**Do:** add a per-client PATCH route and a contacts route, both fenced by
+`version` and validated by an EDIT-03-style patch validator; make the three
+unreachable fields reachable on both the create and the edit path so the two
+accept the same shape. Archive is a `status` transition, never a delete — no
+delete endpoint exists anywhere in the product and none is added here. UI: an
+edit surface on the client detail view with the 409 conflict shown for
+re-apply. Meetings editing remains deliberately sequenced last and is not yet
+filed.
+**Files:** `app/api/v1/clients/[clientId]/route.ts` (new), a contacts route
+(new), `app/domain/client-creation.ts` plus a new client patch validator,
+`app/adapters/d1/client-repository.ts`,
+`app/adapters/postgres/client-repository.ts`,
+`app/ports/client-repository.ts`, `app/FloorOpsApp.tsx`, tests + simulation
+e2e.
+**Accept:** client fields and primary-contact `phone`/`role` round-trip on
+create and on edit; `status: "archived"` is reachable and reversible per the
+owner's archive-only decision; a stale `version` returns 409 with no write;
+one audit row per edit with a before→after detail; a non-authorized office
+user gets 403 on every new route; a source assertion proves no delete
+endpoint was introduced; golden hashes untouched; `npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+### EDIT-07 · Task management UI (medium, after EDIT-03)
+**Why:** both task endpoints are live and validated (`app/api/v1/tasks/
+route.ts`, `app/api/v1/tasks/[taskId]/route.ts` behind `normalizeTaskPatch`),
+but **no task list, form, or detail view exists anywhere in the product**.
+The only reachable mutation is `status: "done"` from the Today panel
+(`app/assistant/components/TodayPanel.tsx:286`), so a task completed by
+accident can never be reopened. Pure UI against a finished API.
+**Do:** build the task list, create form, and detail/edit view against the
+existing endpoints, reusing the shared actionable-list pattern rather than
+forcing interactive rows into table semantics. Every field
+`normalizeTaskPatch` accepts becomes editable, including reopening a `done`
+task; send only changed keys plus `version` and show the 409 conflict for
+re-apply. Add no new endpoint and no new table — if a field cannot be edited
+the gap is in the UI, not the API. Meetings editing stays deliberately last
+and unfiled.
+**Files:** new task components under `app/assistant/components/`,
+`app/assistant/components/TodayPanel.tsx`, `app/FloorOpsApp.tsx`, tests +
+simulation e2e.
+**Accept:** a task can be created, listed, edited, completed, and
+**reopened** from the UI; every `normalizeTaskPatch` field is reachable; a
+source assertion proves the task API surface gained no route and no table; a
+non-authorized office user gets 403 from the task mutations; a stale
+`version` returns 409 with no write and the UI shows the conflict for
+re-apply; one audit row per edit with a before→after detail; the Today
+panel's existing complete action keeps its behavior; golden hashes untouched;
+`npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+---
+
 # Workstream B — Google Workspace connection & data flows (WS)
 
 Goal: from `GOOGLE_INTEGRATION_MODE=simulation` to a verified live connection for the FCI
