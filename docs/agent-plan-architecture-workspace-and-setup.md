@@ -1257,6 +1257,8 @@ endpoints beyond one presence read; no secret or env values in markup; non-admin
 variant informational only. **Effort:** small. **Cost:** $0.
 
 ### SET-25 · First-run data import: clients AND projects (medium-large, after SET-16) — OWNER PRIORITY (July 21)
+**Status:** In review — PR #213, July 25, 2026. Source-only and undeployed; real-data import remains blocked behind WS-11. Guide impact: `docs/settings-guide.md` updated.
+
 **Why:** Day-one onboarding gap: nothing loads the company's existing client and
 project lists when real use begins — without this, launch starts with manual re-entry.
 **Do:** Admin-gated, review-first import for BOTH entities, spreadsheet-first (the way
@@ -1272,6 +1274,7 @@ re-runnable safely (idempotent on the duplicate check); the import surface hides
 records exist unless explicitly reopened. Respects the test-data boundary: importing
 REAL client data remains blocked behind the WS-11 acceptance gate — until then the
 importer works on test data and says so.
+**Known residual (July 26, 2026):** imported cells beginning with `=`, `+`, `-`, or `@` are stored verbatim — inert today because React escapes on render, the Sheets client writes `RAW`, and no CSV export exists; this MUST be revisited if a CSV export or a `USER_ENTERED` Sheets write is ever added.
 **Accept:** preview/confirm/duplicate branches tested; idempotent re-run; provenance
 rows written; the real-data gate notice asserted; simulation e2e imports a fixture
 sheet. **Effort:** medium. **Cost:** $0.
