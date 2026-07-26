@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { FIRST_RUN_IMPORT_GATE_NOTICE } from "../../app/domain/first-run-import";
 
 const TEST_CLIENT = "FCI TEST — DO NOT USE — Imported Client";
 const TEST_PROJECT = "FCI TEST — DO NOT USE — Imported Project";
@@ -176,7 +177,7 @@ test("SET-25 simulation UI reviews clients before projects and confirms only sel
   const card = page.getByRole("region", { name: "First-run data import" });
   await expect(card).toBeVisible();
   await expect(card.getByText("Development test data only", { exact: true })).toBeVisible();
-  await expect(card.getByText(/Real client and project data stays blocked until the WS-11 production acceptance gate passes/u)).toBeVisible();
+  await expect(card.getByText(FIRST_RUN_IMPORT_GATE_NOTICE, { exact: true })).toBeVisible();
   await expect(card.getByText("Batch limit: 10 rows per confirmation.", {
     exact: true,
   })).toBeVisible();

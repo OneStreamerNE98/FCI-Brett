@@ -84,9 +84,12 @@
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.countList span {
+.countList li {
   display: inline-flex;
   align-items: center;
   min-height: 30px;

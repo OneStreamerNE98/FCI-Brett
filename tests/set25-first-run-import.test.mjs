@@ -2279,3 +2279,174 @@ test("SET-25 saved-client lookup is admin-only, bounded, no-store, and finds cli
   assert.equal(database.writes.length, 0);
   assert.equal(providerCalls, 0);
 });
+
+test("SET-25 raises issues for contact values rejected for length or control characters", async () => {
+  const overLongEmail = `${"e".repeat(250)}@example.test`;
+  // Control characters (BEL, SOH) are rejected outright by the shared text normalizer.
+  const controlEmail = `control${String.fromCharCode(7)}contact@example.test`;
+  const controlPhone = `856-555${String.fromCharCode(1)}-0111`;
+  const clients = await domain.previewFirstRunImport({
+    entity: "clients",
+    expectedHeaders: CLIENT_HEADERS,
+    snapshot: emptySnapshot(),
+    values: [
+      CLIENT_HEADERS,
+      [
+        "LEN-EMAIL",
+        "FCI TEST — DO NOT USE — over-long email",
+        "active",
+        "Commercial",
+        "Length Contact",
+        overLongEmail,
+        "",
+        "",
+      ],
+      [
+        "CTRL-EMAIL",
+        "FCI TEST — DO NOT USE — control-character email",
+        "active",
+        "Commercial",
+        "Control Contact",
+        controlEmail,
+        "",
+        "",
+      ],
+      [
+        "LEN-PHONE",
+        "FCI TEST — DO NOT USE — over-long phone",
+        "active",
+        "Commercial",
+        "Phone Contact",
+        "",
+        "8".repeat(41),
+        "",
+      ],
+      [
+        "CTRL-PHONE",
+        "FCI TEST — DO NOT USE — control-character phone",
+        "active",
+        "Commercial",
+        "Phone Contact",
+        "",
+        controlPhone,
+        "",
+      ],
+      [
+        "BLANK-CONTACT",
+        "FCI TEST — DO NOT USE — whitespace contact cells",
+        "active",
+        "Commercial",
+        "Whitespace Contact",
+        "   ",
+        "   ",
+        "",
+      ],
+    ],
+  });
+
+  assert.deepEqual(clients.rows.map(({ state }) => state), [
+    "invalid",
+    "invalid",
+    "invalid",
+    "invalid",
+    "ready",
+  ]);
+  assert.deepEqual(
+    clients.rows.map(({ issues }) => issues.map(({ code }) => code)),
+    [
+      ["contact_email_invalid"],
+      ["contact_email_invalid"],
+      ["contact_phone_invalid"],
+      ["contact_phone_invalid"],
+      [],
+    ],
+  );
+  assert.equal(clients.confirmable, 1);
+
+  const savedClient = storedClient({
+    id: "client-contact-issues",
+    code: "CL-CONTACT1",
+    name: "FCI TEST — DO NOT USE — Contact issue client",
+    email: "contact-issue@example.test",
+  });
+  const projects = await domain.previewFirstRunImport({
+    entity: "projects",
+    expectedHeaders: PROJECT_HEADERS,
+    snapshot: emptySnapshot([savedClient]),
+    values: [
+      PROJECT_HEADERS,
+      [
+        "FCI TEST — DO NOT USE — over-long client email",
+        savedClient.clientCode,
+        savedClient.name,
+        overLongEmail,
+        "",
+        "planning",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ],
+      [
+        "FCI TEST — DO NOT USE — control-character client email",
+        savedClient.clientCode,
+        savedClient.name,
+        controlEmail,
+        "",
+        "planning",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ],
+    ],
+  });
+  assert.deepEqual(projects.rows.map(({ state }) => state), ["invalid", "invalid"]);
+  assert.deepEqual(
+    projects.rows.map(({ issues }) => issues.map(({ code }) => code)),
+    [["project_client_email_invalid"], ["project_client_email_invalid"]],
+  );
+  assert.equal(projects.confirmable, 0);
+});
+
+test("SET-25 hands reopen focus over from a commit effect, not an animation frame", async () => {
+  const cardSource = await readFile(
+    new URL("../app/import/components/FirstRunImportCard.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    cardSource,
+    /pendingReopenFocusRef\.current = generation;\n\s*setOpened\(false\);/u,
+  );
+  assert.match(
+    cardSource,
+    /useEffect\(\(\) => \{\n\s*const generation = pendingReopenFocusRef\.current;[\s\S]*?const button = reopenButtonRef\.current;\n\s*if \(!button\) return;\n\s*pendingReopenFocusRef\.current = null;\n\s*button\.focus\(\);\n\s*\}\);/u,
+  );
+  assert.doesNotMatch(
+    cardSource,
+    /requestAnimationFrame\([\s\S]{0,120}?reopenButtonRef/u,
+  );
+});
+
+test("SET-25 renders the exported real-data gate notice rather than restating it", async () => {
+  const cardSource = await readFile(
+    new URL("../app/import/components/FirstRunImportCard.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    cardSource,
+    /import \{\n\s*FIRST_RUN_IMPORT_GATE_NOTICE,\n\s*FIRST_RUN_IMPORT_TEST_MARKER,\n\} from "\.\.\/\.\.\/domain\/first-run-import";/u,
+  );
+  assert.match(cardSource, /<span>\{FIRST_RUN_IMPORT_GATE_NOTICE\}<\/span>/u);
+  assert.doesNotMatch(
+    cardSource,
+    /Real client and project data stays blocked until the WS-11 production acceptance gate passes/u,
+  );
+  assert.doesNotMatch(cardSource, /irreversible duplicate-check fingerprint/u);
+  assert.match(
+    cardSource,
+    /<ul className=\{styles\.countList\} aria-label="Existing saved record counts">/u,
+  );
+});

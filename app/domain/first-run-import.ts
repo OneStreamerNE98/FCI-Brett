@@ -148,9 +148,16 @@ function optionalText(value: unknown, maximum: number) {
   return normalizedText(value, maximum);
 }
 
+function suppliedText(value: unknown) {
+  return typeof value === "string" && Boolean(value.trim());
+}
+
 function emailValue(value: unknown) {
+  // A cell rejected for length or control characters must surface an issue like its
+  // address/industry siblings — blanking it silently imports an empty contact field.
+  const supplied = suppliedText(value);
   const normalized = optionalText(value, 254)?.toLowerCase() ?? null;
-  if (!normalized) return { value: null, valid: true } as const;
+  if (!normalized) return { value: null, valid: !supplied } as const;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized)) {
     return { value: null, valid: false } as const;
   }
@@ -158,8 +165,9 @@ function emailValue(value: unknown) {
 }
 
 function phoneValue(value: unknown) {
+  const supplied = suppliedText(value);
   const normalized = optionalText(value, 40);
-  if (!normalized) return { value: null, key: null, valid: true } as const;
+  if (!normalized) return { value: null, key: null, valid: !supplied } as const;
   const key = normalized.replace(/\D/gu, "");
   if (key.length < 7 || key.length > 18) {
     return { value: null, key: null, valid: false } as const;

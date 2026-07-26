@@ -1274,6 +1274,7 @@ re-runnable safely (idempotent on the duplicate check); the import surface hides
 records exist unless explicitly reopened. Respects the test-data boundary: importing
 REAL client data remains blocked behind the WS-11 acceptance gate — until then the
 importer works on test data and says so.
+**Known residual (July 26, 2026):** imported cells beginning with `=`, `+`, `-`, or `@` are stored verbatim — inert today because React escapes on render, the Sheets client writes `RAW`, and no CSV export exists; this MUST be revisited if a CSV export or a `USER_ENTERED` Sheets write is ever added.
 **Accept:** preview/confirm/duplicate branches tested; idempotent re-run; provenance
 rows written; the real-data gate notice asserted; simulation e2e imports a fixture
 sheet. **Effort:** medium. **Cost:** $0.

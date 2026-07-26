@@ -22,6 +22,10 @@ import {
   OperationsDataTableCell,
   type OperationsDataTableColumn,
 } from "../../components/operations/OperationsDataTable";
+import {
+  FIRST_RUN_IMPORT_GATE_NOTICE,
+  FIRST_RUN_IMPORT_TEST_MARKER,
+} from "../../domain/first-run-import";
 import styles from "./FirstRunImportCard.module.css";
 
 const IMPORT_STATUS_PATH = "/api/v1/settings/first-run-import";
@@ -481,6 +485,7 @@ export function FirstRunImportCard({
   const sourceHeadingRef = useRef<HTMLDivElement>(null);
   const previewHeadingRef = useRef<HTMLDivElement>(null);
   const reopenButtonRef = useRef<HTMLButtonElement>(null);
+  const pendingReopenFocusRef = useRef<number | null>(null);
   const requestGenerationRef = useRef(0);
   const clientSearchGenerationRef = useRef(0);
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -503,6 +508,23 @@ export function FirstRunImportCard({
   const [error, setError] = useState("");
   const [liveMessage, setLiveMessage] = useState("");
   const [lastConfirmation, setLastConfirmation] = useState<ConfirmationResult | null>(null);
+
+  // "Reopen import tools" only mounts in the commit that collapses the card, and a
+  // requestAnimationFrame callback carries no ordering guarantee against that commit
+  // under concurrent React — the focus call would silently no-op and never retry.
+  // Queue the handoff before the state change and complete it after a commit instead.
+  useEffect(() => {
+    const generation = pendingReopenFocusRef.current;
+    if (generation === null) return;
+    if (requestGenerationRef.current !== generation) {
+      pendingReopenFocusRef.current = null;
+      return;
+    }
+    const button = reopenButtonRef.current;
+    if (!button) return;
+    pendingReopenFocusRef.current = null;
+    button.focus();
+  });
 
   function invalidatePendingRequests() {
     requestGenerationRef.current += 1;
@@ -884,10 +906,8 @@ export function FirstRunImportCard({
         || parsed.created > 0
       );
       if (requestEntity === "projects" && refreshedStatus?.recordsExist) {
+        pendingReopenFocusRef.current = generation;
         setOpened(false);
-        requestAnimationFrame(() => {
-          if (requestGenerationRef.current === generation) reopenButtonRef.current?.focus();
-        });
       } else if (requestEntity === "clients" && projectStepNowReady) {
         const nextGeneration = invalidatePendingRequests();
         setEntity("projects");
@@ -934,7 +954,8 @@ export function FirstRunImportCard({
 
     <Notice kind="gate" icon={<ShieldCheck size={18} aria-hidden="true" />}>
       <strong>Development test data only</strong>
-      <span>Real client and project data stays blocked until the WS-11 production acceptance gate passes. Use records whose names begin with FCI TEST — DO NOT USE.</span>
+      <span>{FIRST_RUN_IMPORT_GATE_NOTICE}</span>
+      <span>Use records whose names begin with {FIRST_RUN_IMPORT_TEST_MARKER}.</span>
     </Notice>
 
     {loadState === "loading" && <Notice kind="source" icon={<RefreshCw size={18} aria-hidden="true" />}>
@@ -954,10 +975,10 @@ export function FirstRunImportCard({
         <p>{lastConfirmation.created} created · {lastConfirmation.duplicates} duplicates skipped · {lastConfirmation.rejected} rejected</p>
       </>}
       <p>The first-run tools are hidden because saved records already exist. Reopen them only when you intend to review another test-data batch.</p>
-      <div className={styles.countList} aria-label="Existing saved record counts">
-        <span>{status.counts.clients} client{status.counts.clients === 1 ? "" : "s"}</span>
-        <span>{status.counts.projects} project{status.counts.projects === 1 ? "" : "s"}</span>
-      </div>
+      <ul className={styles.countList} aria-label="Existing saved record counts">
+        <li>{status.counts.clients} client{status.counts.clients === 1 ? "" : "s"}</li>
+        <li>{status.counts.projects} project{status.counts.projects === 1 ? "" : "s"}</li>
+      </ul>
       <div><button ref={reopenButtonRef} className="soft-button" type="button" onClick={() => {
         setOpened(true);
         requestAnimationFrame(() => sourceHeadingRef.current?.focus());
@@ -991,7 +1012,7 @@ export function FirstRunImportCard({
 
       {entity === "clients" && <Notice kind="source" icon={<ShieldCheck size={18} aria-hidden="true" />}>
         <strong>Client address is used for duplicate review only</strong>
-        <span>The importer does not save the readable Client Address on the client record. It records only an irreversible duplicate-check fingerprint for safe re-runs.</span>
+        <span>The importer does not save the readable Client Address on the client record. It records only a one-way duplicate-check fingerprint for safe re-runs — it cannot be read back by inspection, but a low-entropy address stays a stable identifier, so treat it as one.</span>
       </Notice>}
 
       <fieldset className={styles.sourceFieldset} aria-labelledby={sourceHeadingId}>
