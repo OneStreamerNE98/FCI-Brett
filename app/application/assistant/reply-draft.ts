@@ -1,14 +1,24 @@
 import type { D1Database } from "../../adapters/d1/d1-database";
+import { normalizeStoredFilingRule } from "../../domain/filing-rule";
+import {
+  DEFAULT_FILING_RULES,
+  evaluateInboxFilingRules,
+  type FilingRuleDraft,
+  type InboxRuleClient,
+  type InboxRuleMessage,
+  type InboxRuleProject,
+} from "../../lib/google-workspace";
 import type { AssistantProvider } from "../../ports/assistant-provider";
 import { compact } from "./evidence";
 
 export const ASSISTANT_REPLY_DRAFT_BODY_LIMIT = 4_000;
 export const ASSISTANT_REPLY_BODY_INPUT_LIMIT = 10_000;
-export const ASSISTANT_REPLY_PROJECT_LOOKUP_LIMIT = 5;
+// Matches the AI-05 triage candidate bound so one reply can never pull an
+// unbounded record set into memory.
+export const ASSISTANT_REPLY_PROJECT_CANDIDATE_LIMIT = 100;
+export const ASSISTANT_REPLY_CLIENT_CANDIDATE_LIMIT = 200;
+export const ASSISTANT_REPLY_RULE_LIMIT = 200;
 
-// Project numbers look like CF-2026-041 or FCI-2026-014. Bounded and anchored so a
-// hostile body cannot smuggle an unbounded token through the lookup.
-const PROJECT_NUMBER_PATTERN = /\b[A-Z]{2,6}-\d{4}-\d{1,6}\b/g;
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 export type ReplyDraftContext = Readonly<{
@@ -24,13 +34,36 @@ export type ReplyProjectRecords = Readonly<{
   projectManager: string | null;
 }>;
 
-type ProjectRecordRow = {
+/**
+ * A filing-rule project candidate carrying the two extra fields the reply draft
+ * cites. The evaluator only reads id/clientId/number/client/status.
+ */
+export type ReplyProjectCandidate = InboxRuleProject & {
+  name: string;
+  projectManager: string | null;
+};
+
+export type ReplyFilingInputs = Readonly<{
+  projects: ReplyProjectCandidate[];
+  clients: InboxRuleClient[];
+  rules: FilingRuleDraft[];
+}>;
+
+type ProjectCandidateRow = {
   id: string;
   project_number: string;
+  client_id: string;
   name: string;
-  status: string;
+  status: string | null;
   project_manager: string | null;
   client_name: string;
+};
+
+type ClientCandidateRow = {
+  id: string;
+  name: string;
+  primary_contact_name: string | null;
+  primary_contact_email: string | null;
 };
 
 export const REPLY_DRAFT_SCHEMA = {
@@ -80,49 +113,119 @@ export function parseReplyDraftBody(value: unknown): string | null {
 }
 
 /**
- * Extracts distinct project-number candidates from server-derived and untrusted
- * text, bounded so one message can never trigger an unbounded set of lookups.
+ * Merges the built-in filing rules with their saved overrides exactly as
+ * GET /api/v1/filing-rules does, so the reply draft evaluates the same enabled
+ * set and priority order the inbox shows. Custom policies are appended; only
+ * the three built-in names carry a deterministic matcher.
  */
-export function extractReplyProjectNumbers(
-  ...texts: readonly (string | null | undefined)[]
-): string[] {
-  const found = new Set<string>();
-  for (const text of texts) {
-    if (typeof text !== "string" || !text) continue;
-    for (const match of text.toUpperCase().matchAll(PROJECT_NUMBER_PATTERN)) {
-      found.add(match[0]);
-      if (found.size >= ASSISTANT_REPLY_PROJECT_LOOKUP_LIMIT) return [...found];
-    }
-  }
-  return [...found];
+export function mergeReplyFilingRules(
+  storedRules: readonly Record<string, unknown>[],
+): FilingRuleDraft[] {
+  const builtInNames = new Set(DEFAULT_FILING_RULES.map((rule) => rule.name.toLowerCase()));
+  const overrides = new Map(
+    storedRules
+      .filter((rule) => builtInNames.has(String(rule.name ?? "").toLowerCase()))
+      .map((rule) => [String(rule.name ?? "").toLowerCase(), rule]),
+  );
+  return [
+    ...DEFAULT_FILING_RULES.map((rule) => ({
+      ...rule,
+      ...overrides.get(rule.name.toLowerCase()),
+    })) as FilingRuleDraft[],
+    ...storedRules.filter(
+      (rule) => !builtInNames.has(String(rule.name ?? "").toLowerCase()),
+    ) as FilingRuleDraft[],
+  ].sort((left, right) => Number(left.priority) - Number(right.priority));
 }
 
 /**
- * Reads the saved project/client records the message maps to (first match wins),
- * so the draft can cite real records instead of inventing them. Read-only.
+ * Reads the bounded project, client, and filing-rule inputs the shared inbox
+ * filing-rules evaluator needs. Read-only, and deliberately narrow: no
+ * financial column, note, or free-text field is selected here.
  */
-export async function readReplyProjectContext(
+export async function readReplyFilingInputs(
   database: D1Database,
-  projectNumbers: readonly string[],
-): Promise<ReplyProjectRecords | null> {
-  for (const number of projectNumbers.slice(0, ASSISTANT_REPLY_PROJECT_LOOKUP_LIMIT)) {
-    const row = await database
+): Promise<ReplyFilingInputs> {
+  const [projectRows, clientRows, ruleRows] = await Promise.all([
+    database
       .prepare(
-        "SELECT p.id, p.project_number, p.name, p.status, p.project_manager, c.name AS client_name FROM projects p JOIN clients c ON c.id = p.client_id WHERE p.project_number = ? LIMIT 1",
+        "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.project_manager, c.name AS client_name FROM projects p JOIN clients c ON c.id = p.client_id ORDER BY p.updated_at DESC LIMIT 100",
       )
-      .bind(number)
-      .first<ProjectRecordRow>();
-    if (row && IDENTIFIER_PATTERN.test(row.id)) {
-      return Object.freeze({
-        number: compact(row.project_number, 80),
-        name: compact(row.name, 160),
-        client: compact(row.client_name, 160),
-        status: compact(row.status, 80),
-        projectManager: compact(row.project_manager, 160) || null,
-      });
-    }
-  }
-  return null;
+      .all<ProjectCandidateRow>(),
+    database
+      .prepare(
+        "SELECT c.id, c.name, (SELECT name FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_name, (SELECT email FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_email FROM clients c ORDER BY c.name ASC LIMIT 200",
+      )
+      .all<ClientCandidateRow>(),
+    database
+      .prepare(
+        "SELECT * FROM filing_rules ORDER BY priority ASC, created_at ASC LIMIT 200",
+      )
+      .all<Record<string, unknown>>(),
+  ]);
+  const projects = projectRows.results
+    .slice(0, ASSISTANT_REPLY_PROJECT_CANDIDATE_LIMIT)
+    .filter((row) => IDENTIFIER_PATTERN.test(row.id))
+    .map((row) => ({
+      id: row.id,
+      clientId: String(row.client_id ?? ""),
+      number: compact(row.project_number, 80),
+      client: compact(row.client_name, 160),
+      status: compact(row.status, 80),
+      name: compact(row.name, 160),
+      projectManager: compact(row.project_manager, 160) || null,
+    }));
+  const clients = clientRows.results
+    .slice(0, ASSISTANT_REPLY_CLIENT_CANDIDATE_LIMIT)
+    .filter((row) => IDENTIFIER_PATTERN.test(row.id))
+    .map((row) => ({
+      id: row.id,
+      name: compact(row.name, 160),
+      contact: compact(row.primary_contact_name, 160),
+      email: compact(row.primary_contact_email, 254),
+    }));
+  return Object.freeze({
+    projects,
+    clients,
+    rules: mergeReplyFilingRules(
+      ruleRows.results
+        .slice(0, ASSISTANT_REPLY_RULE_LIMIT)
+        .map((row) => normalizeStoredFilingRule(row) as unknown as Record<string, unknown>),
+    ),
+  });
+}
+
+/**
+ * Joins the saved project/client record through the same filing-rules evaluator
+ * the inbox and Gmail filing surfaces use, so an exact project number OR a known
+ * contact with a single eligible project both resolve. Anything the evaluator
+ * cannot pin to one project (needs-review, ignored, intake) returns null so the
+ * draft keeps honest [...] placeholders instead of inventing a project.
+ *
+ * Only the bounded record fields below reach the prompt: number, name, client,
+ * status, and PM email — never a financial column or a note.
+ */
+export function resolveReplyProjectRecords(input: {
+  message: InboxRuleMessage;
+  filing: ReplyFilingInputs;
+}): ReplyProjectRecords | null {
+  const decision = evaluateInboxFilingRules({
+    message: input.message,
+    projects: input.filing.projects,
+    clients: input.filing.clients,
+    rules: input.filing.rules,
+  });
+  const matchedId = decision.kind === "project" ? decision.project?.id : undefined;
+  if (!matchedId) return null;
+  const project = input.filing.projects.find((candidate) => candidate.id === matchedId);
+  if (!project) return null;
+  return Object.freeze({
+    number: compact(project.number, 80),
+    name: compact(project.name, 160),
+    client: compact(project.client, 160),
+    status: compact(project.status, 80),
+    projectManager: compact(project.projectManager, 160) || null,
+  });
 }
 
 /**

@@ -4,9 +4,9 @@ import type { D1Database } from "../../../../adapters/d1/d1-database";
 import { createD1UserPreferencesRepository } from "../../../../adapters/d1/user-preferences-repository";
 import { OpenAIResponsesProvider } from "../../../../adapters/openai/responses-provider";
 import {
-  extractReplyProjectNumbers,
   generateReplyDraft,
-  readReplyProjectContext,
+  readReplyFilingInputs,
+  resolveReplyProjectRecords,
 } from "../../../../application/assistant/reply-draft";
 import {
   assistantRuntimeConfiguration,
@@ -95,16 +95,28 @@ export async function POST(request: NextRequest) {
     // uses the separate Save draft action for the only Gmail write.
     const context = await client.getReplyContext(messageId);
     const emailBody = await client.getMessageBodyText(messageId);
+    // The same bounded {from, subject, snippet} view the inbox filing surfaces
+    // evaluate. The full untrusted body is deliberately NOT fed into rule
+    // matching — the existing call sites match on the snippet only.
+    const summary = await client.getMessageSummary(messageId);
     if (request.signal.aborted) {
       throw request.signal.reason ?? new Error("AI reply draft request aborted.");
     }
-    const [preferences, records] = await Promise.all([
+    const [preferences, filing] = await Promise.all([
       createD1UserPreferencesRepository(database).findByEmail(auth.user.email),
-      readReplyProjectContext(
-        database,
-        extractReplyProjectNumbers(context.subject, emailBody),
-      ),
+      readReplyFilingInputs(database),
     ]);
+    // Saved records are joined through the shared filing-rules evaluator: an
+    // exact project number or a known contact with one eligible project. Any
+    // ambiguous message yields null, and the draft keeps [...] placeholders.
+    const records = resolveReplyProjectRecords({
+      message: {
+        from: summary.from,
+        subject: summary.subject,
+        snippet: summary.snippet,
+      },
+      filing,
+    });
     const runtime = assistantRuntimeConfiguration(environment);
     const apiKey = runtimeValue("OPENAI_API_KEY");
     if (!apiKey) {

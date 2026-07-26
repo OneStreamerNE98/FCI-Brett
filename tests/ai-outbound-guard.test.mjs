@@ -131,10 +131,13 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
   assert.doesNotMatch(replyDraftRoute, /NextResponse\.json/);
   assert.match(replyDraftRoute, /if \(originError\) return noStoreResponse\(originError\)/);
   assert.match(replyDraftRoute, /if \("response" in auth\) return noStoreResponse\(auth\.response\)/);
-  // Single-client-call accounting: exactly the two allowed read-only methods.
+  // Single-client-call accounting: exactly the three allowed read-only methods.
+  // getMessageSummary is the same read-only metadata call AI-05 triage already
+  // makes, and it is what feeds the shared filing-rules evaluator here.
   assert.match(replyDraftRoute, /client\.getReplyContext\(messageId\)/);
   assert.match(replyDraftRoute, /client\.getMessageBodyText\(messageId\)/);
-  assert.equal(replyDraftRoute.match(/client\.[A-Za-z]+/gu)?.length, 2);
+  assert.match(replyDraftRoute, /client\.getMessageSummary\(messageId\)/);
+  assert.equal(replyDraftRoute.match(/client\.[A-Za-z]+/gu)?.length, 3);
   // Deny + count: neither the route nor its application module may reach a Gmail
   // mutation, draft, archive fetch, label, or send.
   assert.doesNotMatch(

@@ -320,11 +320,34 @@ function collectAttachmentCandidates(payload: GmailMessagePart | undefined) {
   return candidates;
 }
 
+// A JavaScript string character costs at most three UTF-8 bytes: a 4-byte code
+// point arrives as a surrogate pair, so it is two bytes per character. Decoding
+// three bytes per wanted character therefore always yields at least that many
+// characters, which is what keeps the truncation below invisible at the cap.
+const MAX_UTF8_BYTES_PER_TEXT_CHARACTER = 3;
+
+/**
+ * Trims a base64url payload to the most it could need to produce `maximumCharacters`
+ * of text, on a four-character quantum boundary so no encoded byte is split. The
+ * sibling `decodeGmailBase64Url` rejects oversized base64 outright; a body part is
+ * best-effort instead, so it is bounded rather than refused. Without this a
+ * Gmail-sized text/plain part would allocate the whole base64 string, a full
+ * Uint8Array, and the decoded string before the caller's cap ever applied.
+ */
+function boundedGmailBase64UrlText(value: string, maximumCharacters: number) {
+  const maximumBytes = Math.max(1, maximumCharacters) * MAX_UTF8_BYTES_PER_TEXT_CHARACTER;
+  // Four base64 characters carry three bytes; one extra quantum covers padding.
+  const maximumEncoded = (Math.ceil(maximumBytes / 3) + 1) * 4;
+  return value.length > maximumEncoded ? value.slice(0, maximumEncoded) : value;
+}
+
 /** Best-effort base64url text decode for a single MIME part; never throws. */
-function decodeGmailBase64UrlText(value: unknown) {
+function decodeGmailBase64UrlText(value: unknown, maximumCharacters: number) {
   if (typeof value !== "string" || !value || !/^[A-Za-z0-9_-]*={0,2}$/.test(value)) return "";
   try {
-    const unpadded = value.replace(/=+$/g, "").replace(/-/g, "+").replace(/_/g, "/");
+    // Bound the encoded input BEFORE any allocation, not the decoded output after.
+    const bounded = boundedGmailBase64UrlText(value, maximumCharacters);
+    const unpadded = bounded.replace(/=+$/g, "").replace(/-/g, "+").replace(/_/g, "/");
     const padding = "=".repeat((4 - (unpadded.length % 4)) % 4);
     const binary = atob(`${unpadded}${padding}`);
     const bytes = new Uint8Array(binary.length);
@@ -354,7 +377,10 @@ function collectGmailPlainTextBody(payload: GmailMessagePart | undefined, maximu
     for (const child of part.parts ?? []) pending.push(child);
     if (part.filename && part.filename.trim()) continue;
     if ((part.mimeType?.toLowerCase() ?? "") !== "text/plain") continue;
-    const text = decodeGmailBase64UrlText(part.body?.data);
+    // Each part is decoded to at least `maximum` characters, never more than it
+    // could need, so the joined result's first `maximum` characters — all the
+    // caller keeps — are byte-for-byte what an unbounded decode produced.
+    const text = decodeGmailBase64UrlText(part.body?.data, maximum);
     if (!text) continue;
     chunks.push(text);
     total += text.length;
