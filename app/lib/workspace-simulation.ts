@@ -197,6 +197,19 @@ export class WorkspaceSimulationGmailClient {
     };
   }
 
+  async getMessageBodyText(messageId: string) {
+    const state = await getSimulationState();
+    const message = state.messages.find((item) => item.id === messageId);
+    if (!message) throw new Error("Simulated message not found.");
+    // Mirror the live client bounded, plain-text, read-only body view. The 10k
+    // cap matches GMAIL_REPLY_TEXT_LIMIT; simulation never contacts Google.
+    return (message.body ?? "")
+      .replace(/\r\n/g, "\n")
+      .replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+      .slice(0, 10_000)
+      .trim();
+  }
+
   async getMessageArchive(messageId: string): Promise<GmailMessageArchive> {
     const state = await getSimulationState();
     const message = state.messages.find((item) => item.id === messageId);

@@ -20,6 +20,11 @@ const limitedRoutes = [
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
+    path: "app/api/v1/assistant/reply-draft/route.ts",
+    scope: "assistant",
+    firstWork: "await parseBoundedJsonObject(request",
+  },
+  {
     path: "app/api/v1/assistant/extract-tasks/route.ts",
     scope: "assistant",
     firstWork: "await parseBoundedJsonObject(request",
