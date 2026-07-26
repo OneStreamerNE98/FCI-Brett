@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
+const rootPath = fileURLToPath(root).replaceAll("\\", "/");
 
 async function nestedTypeScriptFiles(directory) {
   const files = [];
@@ -35,17 +38,175 @@ function assertOpenAIAdapterBoundary(source) {
   );
 }
 
-test("AI-03 exposes only read-only tools and no outbound messaging path", async () => {
+function sourcePath(file) {
+  return fileURLToPath(file).replaceAll("\\", "/").slice(rootPath.length);
+}
+
+function assertAssistantOutboundBoundary(source, label) {
+  assert.doesNotMatch(
+    source,
+    /\b(?:sendTestMessage|createReplyDraft|applyFiledLabel|prepareFciLabels)\s*\(/u,
+    `${label} must not call a Gmail mutation`,
+  );
+  assert.doesNotMatch(
+    source,
+    /from\s+["'][^"']*google-chat|GOOGLE_CHAT_|googleChat|webhook/iu,
+    `${label} must not call or configure Google Chat delivery`,
+  );
+  assert.doesNotMatch(
+    source,
+    /(?:messages\/send|messages\/[^"'`\s]+\/modify|["']drafts["'])/u,
+    `${label} must not embed a Gmail write endpoint`,
+  );
+  assert.doesNotMatch(
+    source,
+    /\bfetch\s*\(/u,
+    `${label} must not add an unreviewed outbound fetch`,
+  );
+}
+
+function assertReviewedGmailClientCalls(source, allowedMethods, label) {
+  const actual = [...source.matchAll(/\bclient\.([A-Za-z][A-Za-z0-9]*)\s*\(/gu)]
+    .map((match) => match[1])
+    .sort();
+  assert.deepEqual(
+    actual,
+    [...allowedMethods].sort(),
+    `${label} may use only its reviewed read-only Gmail client methods`,
+  );
+}
+
+function assertNoStoreRoute(source, label) {
+  const sourceFile = ts.createSourceFile(
+    label,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  assert.equal(
+    sourceFile.parseDiagnostics.length,
+    0,
+    `${label} must remain parseable TypeScript`,
+  );
+  const noStoreHelpers = new Set();
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement)
+      || !ts.isStringLiteral(statement.moduleSpecifier)
+      || !statement.moduleSpecifier.text.endsWith("no-store-json")
+    ) {
+      continue;
+    }
+    const bindings = statement.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+    for (const binding of bindings.elements) {
+      noStoreHelpers.add(binding.name.text);
+    }
+  }
+  assert.ok(
+    noStoreHelpers.size > 0,
+    `${label} must import the shared no-store response helper`,
+  );
+  const handlerNames = new Set(["GET", "POST", "PATCH", "PUT", "DELETE"]);
+  const handlers = sourceFile.statements.filter((statement) =>
+    ts.isFunctionDeclaration(statement)
+    && statement.name
+    && handlerNames.has(statement.name.text)
+    && statement.modifiers?.some(
+      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+    )
+  );
+  assert.ok(handlers.length > 0, `${label} must expose a reviewed route handler`);
+  for (const handler of handlers) {
+    const invalidReturns = [];
+    const visit = (node) => {
+      if (node !== handler && ts.isFunctionLike(node)) return;
+      if (ts.isReturnStatement(node)) {
+        let expression = node.expression;
+        if (expression && ts.isAwaitExpression(expression)) {
+          expression = expression.expression;
+        }
+        if (
+          !expression
+          || !ts.isCallExpression(expression)
+          || !ts.isIdentifier(expression.expression)
+          || !noStoreHelpers.has(expression.expression.text)
+        ) {
+          invalidReturns.push(sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(handler);
+    assert.deepEqual(
+      invalidReturns,
+      [],
+      `${label} ${handler.name.text} must return through a shared no-store helper`,
+    );
+  }
+  assert.doesNotMatch(
+    source,
+    /\bNextResponse\b|Response\.json\s*\(|new\s+Response\s*\(/u,
+    `${label} must not bypass the shared no-store response helper`,
+  );
+  assert.doesNotMatch(
+    source,
+    /return\s+(?:auth\.response|originError|rateLimitResponse|gmailErrorResponse\s*\()/u,
+    `${label} must wrap delegated responses with noStoreResponse`,
+  );
+}
+
+function sectionFromHeading(markdown, heading, nextHeadingPattern = /^## /mu) {
+  const start = markdown.indexOf(heading);
+  assert.notEqual(start, -1, `missing ${heading}`);
+  const tail = markdown.slice(start + heading.length);
+  const next = nextHeadingPattern.exec(tail);
+  return markdown.slice(
+    start,
+    next ? start + heading.length + next.index : markdown.length,
+  );
+}
+
+function assertTierTwoGates(markdown) {
+  for (let index = 1; index <= 6; index += 1) {
+    const heading = `- **AI-T2-${index} ·`;
+    const start = markdown.indexOf(heading);
+    assert.notEqual(start, -1, `missing AI-T2-${index}`);
+    const next = markdown.indexOf("- **AI-T2-", start + heading.length);
+    const item = markdown.slice(start, next === -1 ? markdown.length : next);
+    assert.match(item, /\*\*Current source:\*\*/u, `AI-T2-${index} lacks current source truth`);
+    assert.match(item, /\*\*Gate:\*\*/u, `AI-T2-${index} lacks an explicit gate`);
+  }
+}
+
+function assertResidualRegister(markdown) {
+  for (let index = 1; index <= 14; index += 1) {
+    const residualId = `AI-R${String(index).padStart(2, "0")}`;
+    assert.equal(
+      markdown.split(residualId).length - 1,
+      1,
+      `${residualId} must appear exactly once in the reconciled account`,
+    );
+  }
+}
+
+test("every assistant route is no-store and the AI boundary has no outbound messaging path", async () => {
   const applicationFiles = (await readdir(new URL("app/application/assistant/", root)))
     .filter((name) => name.endsWith(".ts"))
     .map((name) => `app/application/assistant/${name}`);
+  const assistantRouteFiles = (await nestedTypeScriptFiles(
+    new URL("app/api/v1/assistant/", root),
+  )).filter((file) => file.pathname.endsWith("/route.ts"));
+  const routeSources = await Promise.all(assistantRouteFiles.map(async (file) => ({
+    path: sourcePath(file),
+    source: await readFile(file, "utf8"),
+  })));
+  assert.ok(routeSources.length > 0, "the assistant route tree must not be empty");
+  const routeSourceByPath = new Map(routeSources.map((entry) => [entry.path, entry.source]));
+
   const guardedFiles = [
     ...applicationFiles,
-    "app/api/v1/assistant/route.ts",
-    "app/api/v1/assistant/config/route.ts",
-    "app/api/v1/assistant/extract-tasks/route.ts",
-    "app/api/v1/assistant/triage/route.ts",
-    "app/api/v1/assistant/reply-draft/route.ts",
     "app/domain/assistant-config.ts",
     "app/lib/assistant-config-sites.ts",
     "app/ports/assistant-provider.ts",
@@ -58,16 +219,68 @@ test("AI-03 exposes only read-only tools and no outbound messaging path", async 
     "app/api/v1/assistant/reply-draft/route.ts",
   ]);
   const sources = await Promise.all(guardedFiles.map(read));
-  const combined = sources.join("\n");
-  const guardedWithoutGmailReaders = sources
-    .filter((_source, index) => !gmailReaderRoutes.has(guardedFiles[index]))
+  const routePaths = routeSources.map(({ path }) => path);
+  const allGuardedPaths = [...guardedFiles, ...routePaths];
+  const allGuardedSources = [
+    ...sources,
+    ...routeSources.map(({ source }) => source),
+  ];
+  const combined = allGuardedSources.join("\n");
+  const guardedWithoutGmailReaders = allGuardedSources
+    .filter((_source, index) => !gmailReaderRoutes.has(allGuardedPaths[index]))
     .join("\n");
+
+  for (const { path, source } of routeSources) {
+    assertNoStoreRoute(source, path);
+    assertAssistantOutboundBoundary(source, path);
+  }
+  assertReviewedGmailClientCalls(
+    routeSourceByPath.get("app/api/v1/assistant/triage/route.ts") ?? "",
+    ["getMessageSummary"],
+    "app/api/v1/assistant/triage/route.ts",
+  );
+  assertReviewedGmailClientCalls(
+    routeSourceByPath.get("app/api/v1/assistant/reply-draft/route.ts") ?? "",
+    ["getMessageBodyText", "getMessageSummary", "getReplyContext"],
+    "app/api/v1/assistant/reply-draft/route.ts",
+  );
+  for (const { path, source } of routeSources) {
+    if (gmailReaderRoutes.has(path)) continue;
+    assertReviewedGmailClientCalls(source, [], path);
+  }
+
+  assertAssistantOutboundBoundary(combined, "the assistant source boundary");
+  assert.throws(
+    () => assertAssistantOutboundBoundary(
+      `${combined}\nclient.sendTestMessage({ recipient: "test@example.test" });`,
+      "synthetic assistant mutation",
+    ),
+    /must not call a Gmail mutation/u,
+  );
+  assert.throws(
+    () => assertReviewedGmailClientCalls(
+      `${routeSourceByPath.get("app/api/v1/assistant/triage/route.ts")}\nclient.writeMessage();`,
+      ["getMessageSummary"],
+      "synthetic assistant Gmail client",
+    ),
+    /reviewed read-only Gmail client methods/u,
+  );
+  assert.throws(
+    () => assertNoStoreRoute(
+      (routeSourceByPath.get("app/api/v1/assistant/today/route.ts") ?? "")
+        .replace(
+          "return noStoreJson(today);",
+          "return new globalThis.Response(JSON.stringify(today));",
+        ),
+      "synthetic assistant route",
+    ),
+    /must return through a shared no-store helper/u,
+  );
 
   assert.doesNotMatch(combined, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/);
   assert.doesNotMatch(guardedWithoutGmailReaders, /from\s+["'][^"']*(?:google-gmail|google-chat)/i);
   assert.doesNotMatch(combined, /from\s+["'][^"']*google-chat/i);
   assert.doesNotMatch(combined, /\.\s*(?:send|createDraft|createMessage)\s*\(/i);
-  assert.doesNotMatch(combined, /\bfetch\s*\(/);
 
   const tools = await read("app/application/assistant/tools.ts");
   assert.match(tools, /"search_records"/);
@@ -176,4 +389,61 @@ test("the Worker remains fetch-only with no scheduled AI handler", async () => {
   const worker = await read("worker/index.ts");
   assert.match(worker, /const worker = \{\s*async fetch\(/);
   assert.doesNotMatch(worker, /\bscheduled\s*[:(]/);
+});
+
+test("AI-09 documentation has one source-verified account, explicit Tier-2 gates, and one residual register", async () => {
+  const [spec, guide, meetings, plan, rateLimitGuide] = await Promise.all([
+    read("docs/ai-assistant-spec.md"),
+    read("docs/settings-guide.md"),
+    read("docs/meeting-notes-and-otter.md"),
+    read("docs/agent-plan-architecture-workspace-and-setup.md"),
+    read("docs/request-rate-limiting.md"),
+  ]);
+
+  const tierTwo = sectionFromHeading(
+    spec,
+    "## 8. Tier 2 — production-gated designs (build at launch, not before)",
+  );
+  assertTierTwoGates(tierTwo);
+  assert.throws(
+    () => assertTierTwoGates(tierTwo.replace("**Gate:**", "**Deferred:**")),
+    /AI-T2-1 lacks an explicit gate/u,
+  );
+
+  const residuals = sectionFromHeading(
+    spec,
+    "## 11. Reconciled residual register (source-verified July 26, 2026)",
+    /$(?![\s\S])/u,
+  );
+  assertResidualRegister(residuals);
+  assert.throws(
+    () => assertResidualRegister(`${residuals}\nAI-R01`),
+    /AI-R01 must appear exactly once/u,
+  );
+
+  assert.match(spec, /first-party Ask form (?:always supplies a project|is\s+selected-project only)/u);
+  assert.match(spec, /route does not compose `drive_search`/u);
+  assert.match(spec, /three\s+message\/draft mutations/u);
+  assert.match(spec, /Stage 4 can provision missing FCI labels/u);
+
+  assert.match(guide, /The \*\*AI Assistant\*\* page opens on \*\*Today\*\*/u);
+  assert.match(guide, /current route has not composed the\s+optional `drive_search`\s+service/u);
+  assert.match(guide, /\*\*Phone call\*\*/u);
+  assert.doesNotMatch(guide, /there is no separate "phone call" choice/u);
+  assert.match(meetings, /Assistant and automation boundary \(reconciled July 26, 2026\)/u);
+  assert.match(meetings, /proposals are not task\s+rows until an office user presses \*\*Accept\*\*/u);
+
+  for (let index = 1; index <= 8; index += 1) {
+    const packet = sectionFromHeading(plan, `### AI-0${index} ·`, /^### /mu);
+    assert.match(packet, /\*\*Status:\*\* Complete — PR #/u, `AI-0${index} must remain Complete`);
+  }
+  const ai09 = sectionFromHeading(plan, "### AI-09 ·", /^### /mu);
+  assert.match(
+    ai09,
+    /\*\*Status:\*\* In review — PR #\d+/u,
+  );
+  assert.match(
+    rateLimitGuide,
+    /\/assistant\/triage`, `\/assistant\/reply-draft`/u,
+  );
 });

@@ -9,7 +9,7 @@ This guide is for two kinds of reader, and it is split so you only need your hal
 
 A short **Glossary** at the end defines the few special terms this guide uses (Shared Drive, blueprint, simulation, and others). Words in the glossary are written in plain language the first time they appear.
 
-> **How current this guide is.** Describes the app as built in source on 2026-07-25; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
+> **How current this guide is.** Describes the app as built in source on 2026-07-26; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
 
 ---
 
@@ -47,7 +47,8 @@ The left side of the screen is the main navigation. On a phone, tap the menu but
 - **Projects** — active and finished jobs, each managed on its own.
 - **Schedule** — crews and field scheduling (a planned future page).
 - **Inbox** — the Gmail project inbox for reviewing and filing emails.
-- **AI Assistant** — ask questions about one selected project's saved records.
+- **AI Assistant** — review today's saved work, ask about one selected
+  project's records, and review task proposals from a saved meeting.
 - **Reports** — current totals and flooring performance numbers.
 - **Settings** — your personal preferences, and (for admins) company setup.
 
@@ -132,9 +133,12 @@ Meeting notes live inside each project, on the project drawer's **Meetings** tab
 - **Internal huddle**
 - **Pre-install meeting**
 - **Closeout review**
+- **Phone call**
 - **Other**
 
-Phone calls are captured the same way — add a meeting and pick the closest type (there is no separate "phone call" choice in the meeting-type menu). Record who was on the call in the **Attendees** box, one name or email per line.
+Phone calls are captured the same way — add a meeting and choose **Phone
+call**. Record who was on the call in the **Attendees** box, one name or email
+per line.
 
 **The Otter workflow.** The recommended way to capture a meeting is: copy the private Otter conversation link, paste in the **Summary** and **Action items**, and add the exported **Transcript** when you need the full searchable detail later. Paste the link into the **Otter conversation link** field. Note: the app only stores the link as a reference — it does not change who can see the recording in Otter, so keep the Otter link restricted to approved people.
 
@@ -154,6 +158,23 @@ The Inbox is the **Gmail project inbox** — where you review emails and file th
 **Filing is review-first — nothing happens automatically.** Rules can *suggest* a destination, but you always choose the exact project and approve every copy yourself. To file an email, use **Review & copy**, pick the exact project, review the preview (nothing is copied at the preview step), then confirm. Only then is the email and its attachments copied into that project's Drive folder. Your Inbox is never emptied or archived — the original email stays put; filing adds a copy.
 
 **Reply drafts are never sent for you.** Use **Draft reply** to write a response. Saving it stores an **unsent draft** in Gmail (or a local draft in simulation mode). Actually sending it is always a separate, deliberate action you take yourself.
+
+Administrators with the company AI key configured may also see **Suggest with
+AI** and **Draft with AI**:
+
+- **Suggest with AI** reads only the loaded message summaries and proposes a
+  project beside the ordinary filing-rule suggestion. **Accept** merely
+  preselects the existing Review & copy window; the administrator still
+  previews and confirms the filing.
+- **Draft with AI** reads one message and limited saved project context, then
+  places proposed text in the reply composer. It does not save or send
+  anything. **Save draft** remains the separate human action.
+
+In simulation these features read the local sample mailbox and never contact
+Google. In live mode they require the approved Workspace Gmail connection.
+Both modes still require `OPENAI_API_KEY`; if it is Missing, these AI controls
+are absent or disabled while the ordinary Inbox and manual draft flows keep
+working.
 
 > [SCREENSHOT 4 — see Screenshot index]
 
@@ -293,7 +314,7 @@ If the mirror is not configured, the card links directly to **Google Workspace �
 Simple office defaults — independent client- and crew-reminder hours, and an office notification email — plus two things worth knowing. All three defaults are marked **Planned**: they remain editable and persist separately, but the upcoming reminder worker does not send anything yet. An older saved appointment-reminder value remains the appointment default only; it is not copied into the newer client-reminder field.
 
 - **Google Chat notification routing.** You can review which five event types are allowed to notify which approved Google Chat space, and switch each on individually. It is off by default. Webhook addresses are secrets that live in the hosting environment and never appear in the app or the browser.
-- **The AI assistant card.** Administrators see the provider (**OpenAI**), the company API-key state (**Configured** or **Missing**), and the configured model name — never the key value. Four switches control **Organization-wide answers**, **Inbox filing suggestions**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured. Organization-wide answers are marked **In development** because the server gate is wired but the current Assistant screen still asks for one selected project; the other three switches are visibly **Planned** until their later AI consumers ship. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
+- **The AI assistant card.** Administrators see the provider (**OpenAI**), the company API-key state (**Configured** or **Missing**), and the configured model name — never the key value. Four switches control **Organization-wide answers**, **Inbox filing suggestions**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured, and all four now have server consumers. The current card still shows **In development** on organization-wide answers and Inbox suggestions, and the older **Planned** badge on Reply drafting and Task extraction; those last two badges lag their shipped, review-first consumers and are recorded for a presentation follow-up. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
 
 > [SCREENSHOT 7 — see Screenshot index]
 
@@ -420,9 +441,42 @@ Administrators can review the source readiness for that change under **Settings 
 
 Because it is a secret, the app never shows the key itself. The **AI assistant** Settings card shows only whether it is **Configured** or **Missing**, together with **OpenAI** as the provider and the model name. Administrators find the editable card in **Settings → Workflow & notifications**; office users see the same information and feature states read-only in **My settings**. When the key is Missing, the feature controls are unavailable and the app says plainly to add the company key to the hosting environment — it never fakes a ready state.
 
-The four company-wide feature switches are **Organization-wide answers**, **Inbox filing suggestions**, **Reply drafting**, and **Task extraction from meetings**. They are on by default when the key is Configured. The organization-wide server gate works now, but its row stays **In development** until the Assistant page exposes the broader Ask flow. The later Inbox, drafting, and task-extraction packets consume their saved switches, so those three rows stay marked **Planned**; storing a switch does not make an unfinished feature operational.
+The four company-wide feature switches are **Organization-wide answers**,
+**Inbox filing suggestions**, **Reply drafting**, and **Task extraction from
+meetings**. They are on by default when the key is Configured. Here is the
+source-verified behavior:
 
-On the **AI Assistant** page, **What you can ask** starts collapsed so it does not crowd the question workspace. Expand it for five examples:
+- **Organization-wide answers** gates the project-ID-absent server API. When
+  it is off—or the key is Missing—the API returns a bounded records-only
+  result with the cause instead of calling OpenAI. The current **Ask** form
+  always sends a selected project, so there is no first-party organization-
+  wide Ask control yet.
+- **Inbox filing suggestions** gates the Administrator-only **Suggest with
+  AI** action. A Missing key removes the button; an off switch returns an
+  honest denial. Accepting a suggestion opens the ordinary filing review.
+- **Reply drafting** gates the Administrator-only **Draft with AI** action. A
+  Missing key disables it; an off switch returns an honest denial. Generated
+  text stays in the composer until the human separately saves an unsent
+  Gmail draft.
+- **Task extraction from meetings** gates provider-generated proposals when
+  the key exists. With a Missing key, the app deliberately offers literal
+  saved action items as records-only proposals even if that stored switch is
+  off. Nothing becomes a task until a person presses **Accept**.
+
+The card's current **Planned** badges for Reply drafting and Task extraction
+are stale presentation labels; the consumers above are implemented. That
+mismatch is documented rather than pretending either the badge or the
+behavior says something it does not.
+
+The **AI Assistant** page opens on **Today**, a deterministic list of overdue
+and due-today tasks, today's meetings, overdue lead follow-ups, closeout
+follow-ups, and a link to the Inbox review bucket. It is computed from saved
+records when opened, uses your display timezone, and never searches Gmail or
+calls OpenAI. Completing a task is an explicit checkbox action.
+
+The second tab is **Ask**. It currently requires one selected project. Its
+**What you can ask** panel starts collapsed so it does not crowd the question
+workspace. Expand it for five examples:
 
 - **Which projects have open callbacks?**
 - **What did we decide in the last Hendricks meeting?**
@@ -430,12 +484,29 @@ On the **AI Assistant** page, **What you can ask** starts collapsed so it does n
 - **Show installation dates for active commercial projects.**
 - **Find the change order document for project 2026-014.**
 
-The help also explains that answers come only from saved records and Drive files, every answer cites its sources, and the assistant never sends anything. Email bodies become searchable only after they are filed as Drive copies; phone calls are saved as meetings.
+The help currently says answers can use saved records and Drive files.
+However, the current route has not composed the optional `drive_search`
+service, so Ask answers use saved app records only. The change-order/Drive
+example is approved end-state copy, not a working document-search promise
+today. Phone calls are saved as meetings, and automated phone-provider intake
+remains production-gated.
 
 What the assistant does and does not do, so you can set expectations:
-- It is **read-only**. The current screen answers about one selected project, and every grounded answer shows its sources for you to open and check. The broader organization-wide route is wired behind its saved feature switch, but the page does not expose that Ask flow yet.
+- It opens with a deterministic, provider-free **Today** view. **Ask** answers
+  about one selected project, and every grounded answer shows its sources for
+  you to open and check. The broader organization-wide route is wired behind
+  its saved feature switch, but the page does not expose that Ask flow yet.
 - It will tell you when evidence is missing rather than guess.
-- It never sends email, changes records, or takes any action on its own.
+- It can propose Inbox filing destinations, reply text, and meeting tasks,
+  but each proposal stays behind the existing human review/confirm surface.
+- It never sends email or files a message. Saving an unsent Gmail draft,
+  confirming a filing, or accepting a task is always a separate human action.
+
+Simulation changes only the Google side: triage and reply drafting read the
+local sample mailbox and never contact Google. Saved-record Q&A, Today, and
+task extraction use the same D1 records in both modes. When configured, those
+click-driven features may still call OpenAI; simulation is not a free or
+offline AI provider.
 
 *(Aside on app identity: sign-in is ChatGPT-Sites login today and will become Google Workspace sign-in at production. That is separate from the OpenAI key, which is only about the assistant.)*
 

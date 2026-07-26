@@ -2498,6 +2498,7 @@ buttons honor toggles in rendered tests; the eight-section pins in
 **Effort:** small-medium. **Cost:** $0.
 
 ### AI-09 · Guardrail tests, Tier-2 reconciliation, ledger closure (small; docs/tests only, last)
+**Status:** In review — PR #216, July 26, 2026. Source-only and undeployed. AI guides and guardrails reconciled against merged source; no data, configuration, or migration change.
 **Why:** leave one truth — what the AI does now, what is production-gated,
 and machine-enforced outbound law.
 **Do:** new `tests/ai-outbound-guard.test.mjs`: no `app/api/v1/assistant/**`
@@ -2669,7 +2670,8 @@ both MERGED July 25, 2026. AI-04 (PR #201), AI-05 (PR #205), and FIX-15
 (PR #206, with the N7-7/N7-8 folds) and FIX-17 (PR #208) are COMPLETE —
 AI-06 (PR #212) and SET-25 (PR #213) are COMPLETE as of July 26, 2026, so the
 AI feature series AI-01→AI-08 is fully merged and **AI-09 is the only AI packet
-left** — it closes the workstream by reconciling one truthful account of what
+left**. AI-09 is In review in PR #216; it closes the workstream by
+reconciling one truthful account of what
 the AI does, what is production-gated, and every residual the series recorded.
 **SET-22 is the dispatchable head of the FloorOpsApp fix-tail** (SET-26 remains
 gated on SET-23, open); SET-18 was drafted as a paste and is dispatchable in
@@ -2694,6 +2696,8 @@ SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 → KPI-02 / PR #52 → 
 PR #75 → GI-03 / PR #80 → SET-35 / PR #107 are complete in source. The reconciled
 queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-04 →
 DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI → SET-26 UI.
+AI-02 is complete in PRs #182/#187/#193 and released the slot; AI-09 is a
+docs/tests-only closure packet and does not claim `app/FloorOpsApp.tsx`.
 Interleave other SET items only in extracted modules that do not
 touch `FloorOpsApp.tsx`. Workstream D's KPI packets are
 otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
