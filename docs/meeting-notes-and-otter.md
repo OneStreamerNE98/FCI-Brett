@@ -14,6 +14,21 @@ The app stores the meeting against exactly one project, records an activity even
 
 **Meeting types (updated July 24, 2026; AI-02c landed the same day):** each meeting is saved with one of the types `client`, `site-walk`, `internal`, `pre-install`, `closeout`, `phone-call`, or `other`, and the **Add meeting** form offers all seven — including **Phone call** (added by AI-02c). Phone calls are captured as meetings against a project, with call summaries and action items flowing into the same project record and assistant evidence.
 
+### Assistant and automation boundary (reconciled July 26, 2026)
+
+The Assistant can search the saved meeting fields as project evidence. Its
+review panel can also propose tasks from one saved meeting: with
+`OPENAI_API_KEY` configured and **Task extraction from meetings** enabled, the
+provider returns bounded proposals; without the key, the panel offers the
+meeting's literal saved action items. In either mode, proposals are not task
+rows until an office user presses **Accept** on each one.
+
+This is manual capture, not phone-system or Otter ingestion. Neither
+simulation nor live mode pulls a transcript from Otter, a VoIP provider,
+Calendar, or Google automatically. A signed provider intake remains AI-T2-6
+and is gated on the accepted production platform, an owner-chosen provider
+and plan, and a review-first intake queue.
+
 ## Recommended first-release workflow
 
 1. Record the meeting with Otter and review speaker names before sharing it.
@@ -56,7 +71,8 @@ After matching, show a preview and require approval before creating project task
 
 - Edit and archive meeting records with version history.
 - Upload exported TXT, DOCX, or PDF transcripts directly into the project.
-- Convert approved action items into durable tasks with an owner and due date.
+- Link accepted tasks back to their source meeting and add edit/archive
+  history for those task records.
 - Associate Calendar appointments with the resulting meeting record.
 - Add a signed Otter/Zapier webhook intake and a review queue.
 - Store the canonical transcript file in Shared Drive while keeping searchable metadata and approved excerpts in the app.
