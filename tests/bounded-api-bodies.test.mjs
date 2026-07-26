@@ -55,6 +55,7 @@ const [
   meetingsRoute,
   tasksRoute,
   taskRoute,
+  projectDriveFilesRoute,
 ] =
   await Promise.all([
     vite.ssrLoadModule("/app/api/v1/assistant/route.ts"),
@@ -78,6 +79,7 @@ const [
     vite.ssrLoadModule("/app/api/v1/projects/[projectId]/meetings/route.ts"),
     vite.ssrLoadModule("/app/api/v1/tasks/route.ts"),
     vite.ssrLoadModule("/app/api/v1/tasks/[taskId]/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/projects/[projectId]/drive/files/route.ts"),
   ]);
 
 after(async () => {
@@ -157,6 +159,14 @@ const cases = [
     maximumBytes: 8_000,
     error: "Task details are too large.",
     invoke: (request) => tasksRoute.POST(request),
+  },
+  {
+    name: "project drive-file creation",
+    maximumBytes: 2_000,
+    error: "The new-document request is too large.",
+    invoke: (request) => projectDriveFilesRoute.POST(request, {
+      params: Promise.resolve({ projectId: "project-1" }),
+    }),
   },
   {
     name: "task update",

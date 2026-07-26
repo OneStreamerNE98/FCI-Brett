@@ -1,0 +1,237 @@
+.panel {
+  display: grid;
+  gap: 14px;
+}
+
+.heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heading > div {
+  min-width: 0;
+}
+
+.kicker {
+  margin: 0 0 3px;
+  color: #397056;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.heading h3 {
+  margin: 0 0 5px;
+  font: 700 17px var(--font-display);
+}
+
+.heading p:not(.kicker) {
+  max-width: 370px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.newDocumentButton {
+  flex: 0 0 auto;
+}
+
+.state {
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 24px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  color: #66756c;
+  text-align: center;
+}
+
+.state strong {
+  color: var(--ink);
+  font: 700 13px var(--font-display);
+}
+
+.state span {
+  max-width: 340px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.state button {
+  margin-top: 5px;
+}
+
+.error {
+  border-color: #ead8c5;
+  background: #fffaf4;
+  color: #8a613d;
+}
+
+.unprovisioned {
+  border-style: solid;
+  background: #faf8f5;
+  color: #6f655f;
+}
+
+.sessionFiles {
+  display: grid;
+  gap: 12px;
+}
+
+.sessionFiles h4 {
+  margin: 0 0 4px;
+  font: 700 13px var(--font-display);
+}
+
+.sessionFiles > div > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.empty {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.sessionFiles ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sessionFiles a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: #fff;
+  color: #397056;
+  text-decoration: none;
+}
+
+.sessionFiles a:hover {
+  background: #f4f8f5;
+}
+
+.sessionFiles a:focus-visible {
+  outline: 2px solid #397056;
+  outline-offset: 2px;
+}
+
+.sessionFiles a span {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessionFiles a small {
+  grid-column: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sessionFiles a svg {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.modal {
+  width: min(590px, calc(100vw - 28px));
+}
+
+.formError {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #ead8c5;
+  border-radius: var(--radius-control);
+  background: #fff9f1;
+  color: #8a4e24;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.success {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px 8px;
+  padding: 23px;
+}
+
+.success > div {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #d6e9db;
+  border-radius: var(--radius-control);
+  background: #f4f9f5;
+  color: #397056;
+}
+
+.success h3 {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font: 700 14px var(--font-display);
+}
+
+.success p {
+  margin: 0;
+  color: #607369;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.success > a,
+.success > button {
+  justify-content: center;
+}
+
+.success > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
+}
+
+@media (max-width: 520px) {
+  .heading {
+    display: grid;
+  }
+
+  .newDocumentButton {
+    width: 100%;
+  }
+
+  .success {
+    grid-template-columns: 1fr;
+  }
+
+  .success > a,
+  .success > button {
+    width: 100%;
+  }
+}

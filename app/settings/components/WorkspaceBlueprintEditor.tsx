@@ -338,10 +338,10 @@ export function WorkspaceBlueprintEditor({
       </div>
 
       <fieldset className="workspace-blueprint-list">
-        <legend>Templates</legend><p>Define starter Docs or Sheets and the folder that will receive each one.</p>
+        <legend>Templates</legend><p>Define starter Docs, Sheets, or Slides and the folder that will receive each one.</p>
         {draft.templates.map((template, index) => <div className="workspace-blueprint-list-row" key={template.key}>
           <label>Template name<input aria-label={`${template.key} template name`} value={template.name} onChange={(event) => updateDraft((next) => { next.templates[index].name = event.target.value; })} /></label>
-          <label>Kind<select aria-label={`${template.key} template kind`} value={template.kind} onChange={(event) => updateDraft((next) => { next.templates[index].kind = event.target.value as "doc" | "sheet"; })}><option value="doc">Google Doc</option><option value="sheet">Google Sheet</option></select></label>
+          <label>Kind<select aria-label={`${template.key} template kind`} value={template.kind} onChange={(event) => updateDraft((next) => { next.templates[index].kind = event.target.value as "doc" | "sheet" | "slides"; })}><option value="doc">Google Doc</option><option value="sheet">Google Sheet</option><option value="slides">Google Slides</option></select></label>
           <label>Target folder<select aria-label={`${template.key} template target folder`} value={template.targetFolderKey} onChange={(event) => updateDraft((next) => { next.templates[index].targetFolderKey = event.target.value; })}>{folderOptions.map((folder) => <option value={folder.key} key={folder.key}>{folder.path}</option>)}</select></label>
           <code>{template.key}</code><button type="button" className="icon-button workspace-blueprint-remove" aria-label={`Remove ${template.name} template`} onClick={() => updateDraft((next) => { next.templates.splice(index, 1); })}><Trash2 size={14} /></button>
         </div>)}

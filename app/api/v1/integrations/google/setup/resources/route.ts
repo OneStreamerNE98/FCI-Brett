@@ -44,7 +44,11 @@ function resourcePresentation(blueprint: WorkspaceBlueprint) {
   ...blueprint.templates.map((template) => ({
     key: template.key,
     resourceType: "drive.file" as const,
-    label: template.kind === "sheet" ? "Spreadsheet template" : "Document template",
+    label: template.kind === "sheet"
+      ? "Spreadsheet template"
+      : template.kind === "slides"
+        ? "Presentation template"
+        : "Document template",
     name: template.name,
     blueprintName: template.name,
     management: template.management,

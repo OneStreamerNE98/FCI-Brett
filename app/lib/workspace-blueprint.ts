@@ -1,5 +1,5 @@
 export type WorkspaceBlueprintManagement = "owner" | "system";
-export type WorkspaceBlueprintTemplateKind = "doc" | "sheet";
+export type WorkspaceBlueprintTemplateKind = "doc" | "sheet" | "slides";
 export type WorkspaceBlueprintSpreadsheetRole = "system-mirror" | "import" | "reference";
 export type WorkspaceBlueprintWeekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
 
@@ -404,7 +404,7 @@ function sanitizeSpreadsheet(value: unknown, path: string): WorkspaceBlueprintSp
 
 function sanitizeTemplate(value: unknown, path: string): WorkspaceBlueprintTemplate {
   const record = object(value, path, ["key", "name", "kind", "targetFolderKey", "management"]);
-  if (record.kind !== "doc" && record.kind !== "sheet") invalid(`${path}.kind`, "must be doc or sheet.");
+  if (record.kind !== "doc" && record.kind !== "sheet" && record.kind !== "slides") invalid(`${path}.kind`, "must be doc, sheet, or slides.");
   if (record.management !== "owner") invalid(`${path}.management`, "templates must be owner-managed.");
   return {
     key: key(record.key, `${path}.key`),

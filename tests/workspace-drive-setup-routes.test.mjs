@@ -581,6 +581,21 @@ function installTemplateProvider({ rootId, parentFolderId, templateFolderId }) {
       const matchesName = name === undefined || templateFolder.name === name;
       return Response.json({ files: matchesIdentity && matchesName ? [templateFolder] : [] });
     }
+    if (url.pathname === "/drive/v3/files" && method === "POST") {
+      const metadata = JSON.parse(String(init.body));
+      const key = metadata.appProperties.fciTemplateKey;
+      const file = {
+        id: `provider-template-${key}`,
+        name: metadata.name,
+        mimeType: metadata.mimeType,
+        parents: metadata.parents,
+        trashed: false,
+        webViewLink: `https://docs.google.test/${key}`,
+        appProperties: metadata.appProperties,
+      };
+      files.set(key, file);
+      return Response.json(file);
+    }
     if (url.pathname === `/drive/v3/files/${templateFolderId}` && method === "PATCH") {
       const body = JSON.parse(String(init.body));
       templateFolder.appProperties = { ...templateFolder.appProperties, ...body.appProperties };
@@ -1068,8 +1083,16 @@ test("live template ensure adopts and stamps one Templates folder, then avoids r
   const rootId = "app-shared-drive-123";
   const parentFolderId = "company-admin-folder-123";
   const templateFolderId = "manual-templates-folder-123";
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.templates.push({
+    key: "project-presentation",
+    name: "Project Presentation",
+    kind: "slides",
+    targetFolderKey: "templates",
+    management: "owner",
+  });
   const database = fakeDatabase({
-    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprint,
     blueprintConnectionKey: "google-workspace",
   });
   await workspaceEnvironment(database);
@@ -1084,30 +1107,44 @@ test("live template ensure adopts and stamps one Templates folder, then avoids r
   assert.equal(firstResponse.status, 201, JSON.stringify(first));
   assert.equal(first.simulated, false);
   assert.equal(first.folder.outcome, "adopted");
-  assert.deepEqual(first.counts, { found: 0, created: 5, adopted: 0 });
+  assert.deepEqual(first.counts, { found: 0, created: 6, adopted: 0 });
   assert.deepEqual(provider.templateFolder.appProperties, {
     fciRootKey: "templates",
     fciFolderKind: "templates",
   });
   assert.equal(provider.calls.filter((call) => call.url.pathname === `/drive/v3/files/${templateFolderId}` && call.method === "PATCH").length, 1);
   assert.equal(provider.calls.filter((call) => call.url.pathname === "/upload/drive/v3/files" && call.method === "POST").length, 5);
+  assert.equal(provider.calls.filter((call) => call.url.pathname === "/drive/v3/files" && call.method === "POST").length, 1);
   assert.deepEqual([...provider.files.keys()], [
     "estimate-proposal",
     "installation-work-order",
     "change-order",
     "pre-install-checklist",
     "project-budget",
+    "project-presentation",
   ]);
-  assert.equal(database.state.resources.filter((row) => row.resource_type === "drive.file").length, 5);
+  assert.equal(database.state.resources.filter((row) => row.resource_type === "drive.file").length, 6);
   assert.ok(database.state.resources.filter((row) => row.resource_type === "drive.file").every((row) => row.parent_external_id === templateFolderId));
+  assert.deepEqual(
+    JSON.parse(database.state.resources.find((row) => row.resource_key === "project-presentation").metadata_json),
+    {
+      name: "Project Presentation",
+      kind: "slides",
+      management: "owner",
+      metadataMimeType: "application/vnd.google-apps.presentation",
+      sourceFolderKey: "templates",
+      targetFolderKey: "templates",
+    },
+  );
 
   const secondResponse = await templateEnsureRoute.POST(routeRequest("/api/v1/integrations/google/drive/templates/ensure"));
   const second = await secondResponse.json();
   assert.equal(secondResponse.status, 200, JSON.stringify(second));
   assert.equal(second.folder.outcome, "found");
-  assert.deepEqual(second.counts, { found: 5, created: 0, adopted: 0 });
+  assert.deepEqual(second.counts, { found: 6, created: 0, adopted: 0 });
   assert.equal(provider.calls.filter((call) => call.url.pathname === `/drive/v3/files/${templateFolderId}` && call.method === "PATCH").length, 1);
   assert.equal(provider.calls.filter((call) => call.url.pathname === "/upload/drive/v3/files" && call.method === "POST").length, 5);
+  assert.equal(provider.calls.filter((call) => call.url.pathname === "/drive/v3/files" && call.method === "POST").length, 1);
   assert.match(database.state.events.find((event) => event.eventType === "setup.templates_ensured").detail, /folder=adopted/u);
 });
 

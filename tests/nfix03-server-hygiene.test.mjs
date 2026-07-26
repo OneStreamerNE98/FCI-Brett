@@ -28,6 +28,7 @@ const noStoreRoutes = [
   "app/api/v1/integrations/google/sheets/ensure/route.ts",
   "app/api/v1/leads/[leadId]/route.ts",
   "app/api/v1/projects/[projectId]/drive/route.ts",
+  "app/api/v1/projects/[projectId]/drive/files/route.ts",
   "app/api/v1/settings/launch-checklist/route.ts",
   "app/api/v1/tasks/[taskId]/route.ts",
   "app/api/v1/tasks/route.ts",
@@ -43,6 +44,7 @@ const googleErrorRoutes = [
   "app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts",
   "app/api/v1/integrations/google/sheets/ensure/route.ts",
   "app/api/v1/projects/[projectId]/drive/route.ts",
+  "app/api/v1/projects/[projectId]/drive/files/route.ts",
 ];
 
 test("NFIX-03 routes share one no-store JSON implementation", async () => {
@@ -60,7 +62,7 @@ test("NFIX-03 routes share one no-store JSON implementation", async () => {
   }
 });
 
-test("all eight Google error routes use the shared response builder without changing cache policy", async () => {
+test("Google error routes use the shared response builder without changing cache policy", async () => {
   for (const path of googleErrorRoutes) {
     const source = await read(path);
     assert.match(source, /\bgoogleIntegrationErrorResponse\(/, path);

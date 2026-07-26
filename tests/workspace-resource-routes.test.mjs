@@ -474,6 +474,13 @@ test("resources include blueprint templates as centrally stored Drive files with
     targetFolderKey: "client-profile",
     management: "owner",
   });
+  blueprint.templates.push({
+    key: "project-presentation",
+    name: "Project Presentation",
+    kind: "slides",
+    targetFolderKey: "templates",
+    management: "owner",
+  });
   const database = fakeDatabase({
     blueprint,
     resources: [{
@@ -504,8 +511,9 @@ test("resources include blueprint templates as centrally stored Drive files with
     { key: "pre-install-checklist", label: "Document template", parentKey: "templates", state: "Not configured" },
     { key: "project-budget", label: "Spreadsheet template", parentKey: "templates", state: "Not configured" },
     { key: "site-measurement", label: "Document template", parentKey: "templates", state: "Created" },
+    { key: "project-presentation", label: "Presentation template", parentKey: "templates", state: "Not configured" },
   ]);
-  assert.equal(templateRows.at(-1).url, "https://docs.google.com/document/d/app-site-measurement-template/edit");
+  assert.equal(templateRows.find((resource) => resource.key === "site-measurement").url, "https://docs.google.com/document/d/app-site-measurement-template/edit");
 });
 
 test("resources identity compares the actual stored connection account to the intake mailbox", async () => {
