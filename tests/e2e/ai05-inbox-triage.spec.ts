@@ -212,20 +212,22 @@ test("simulation suggests one message and preserves the existing human filing re
   // while window.innerWidth has already shrunk to 390. Poll the settled layout
   // instead of taking a single-shot getBoundingClientRect that races the reflow
   // (a genuinely clipped button would still fail once the layout settles).
-  await expect
-    .poll(() => page.evaluate(() => (
-      document.documentElement.scrollWidth <= document.documentElement.clientWidth
-    )))
-    .toBe(true);
   const acceptButton = aiSuggestion.getByRole("button", {
     name: `Accept AI suggestion for ${message.subject}: ${project.project_number} — ${project.name}; high confidence; The exact project number appears in the saved subject.`,
   });
+  // Both predicates are polled TOGETHER so each is judged on the same settled
+  // 390px layout: polling document overflow alone could pass on the pre-resize
+  // layout and never be re-evaluated, hiding a real mobile overflow.
   await expect
     .poll(() => acceptButton.evaluate((button) => {
       const bounds = button.getBoundingClientRect();
-      return bounds.left >= 0 && bounds.right <= window.innerWidth;
+      return {
+        noDocumentOverflow:
+          document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        buttonWithinViewport: bounds.left >= 0 && bounds.right <= window.innerWidth,
+      };
     }))
-    .toBe(true);
+    .toEqual({ noDocumentOverflow: true, buttonWithinViewport: true });
 
   await acceptButton.click();
   const filingDialog = page.getByRole("dialog", {
