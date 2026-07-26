@@ -30,6 +30,8 @@ const message = {
 
 const draftText = "Hi [...],\n\nThanks for reaching out about CF-2026-041 — Westport Medical Center. The project is mobilizing. [...]\n\nJordan Vega, FCI Operations";
 
+const replySignature = "Jordan Vega, FCI Operations";
+
 const settingsPreferences = {
   displayTimezone: "America/New_York",
   replySignature: "",
@@ -57,10 +59,11 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 async function mockInboxFoundation(
   page: Page,
   assistant: { keyState: "Configured" | "Missing"; replyDrafts: boolean },
+  signature = "",
 ) {
   await page.route("**/api/v1/settings/me", (route) => fulfillJson(route, {
     isAdmin: true,
-    preferences: settingsPreferences,
+    preferences: { ...settingsPreferences, replySignature: signature },
   }));
   await page.route("**/api/v1/assistant/config", (route) => fulfillJson(route, {
     provider: "openai",
@@ -196,16 +199,55 @@ test("Draft with AI is honestly disabled when the key is Missing or the toggle i
   });
 
   let dialog = await openReplyModal(page);
-  await expect(dialog.getByRole("button", { name: "Draft with AI" })).toBeDisabled();
-  await expect(dialog.getByText("AI reply drafting is unavailable until OPENAI_API_KEY is configured for the workspace.", { exact: true })).toBeVisible();
+  let draftButton = dialog.getByRole("button", { name: "Draft with AI" });
+  // aria-disabled, not disabled: the reason must stay reachable by keyboard.
+  await expect(draftButton).toHaveAttribute("aria-disabled", "true");
+  const missingNote = dialog.getByText("AI reply drafting is unavailable until OPENAI_API_KEY is configured for the workspace.", { exact: true });
+  await expect(missingNote).toBeVisible();
+  await expect(draftButton).toHaveAttribute("aria-describedby", (await missingNote.getAttribute("id")) ?? "");
   await expect(dialog.getByText("Sending remains a separate, deliberate action.", { exact: false })).toBeVisible();
+  // Clicking the gated action is a no-op, not a request.
+  await draftButton.click();
 
   assistant.keyState = "Configured";
   assistant.replyDrafts = false;
   await page.reload();
   dialog = await openReplyModal(page);
-  await expect(dialog.getByRole("button", { name: "Draft with AI" })).toBeDisabled();
+  draftButton = dialog.getByRole("button", { name: "Draft with AI" });
+  await expect(draftButton).toHaveAttribute("aria-disabled", "true");
   await expect(dialog.getByText("AI reply drafting is turned off in AI settings.", { exact: true })).toBeVisible();
+  await draftButton.click();
 
   expect(replyDraftCalls).toBe(0);
+});
+
+test("a saved reply signature is not text the human wrote, so the first draft never asks to replace", async ({ page }) => {
+  await mockInboxFoundation(page, { keyState: "Configured", replyDrafts: true }, replySignature);
+  const replyDraftBodies: unknown[] = [];
+  await page.route("**/api/v1/assistant/reply-draft", async (route) => {
+    replyDraftBodies.push(route.request().postDataJSON());
+    await fulfillJson(route, { draft: draftText });
+  });
+
+  const dialog = await openReplyModal(page);
+  const textarea = dialog.getByRole("textbox", { name: "Reply message" });
+  // The composer opens pre-filled with the configured signature.
+  await expect(textarea).toHaveValue(`\n\n${replySignature}`);
+
+  const draftButton = dialog.getByRole("button", { name: "Draft with AI" });
+  await expect(draftButton).not.toHaveAttribute("aria-disabled", "true");
+  await draftButton.click();
+
+  // The draft is applied straight away: nothing the human wrote was at risk.
+  await expect(textarea).toHaveValue(draftText);
+  expect(replyDraftBodies).toEqual([{ messageId: message.id }]);
+  await expect(dialog.getByText("Replace your current reply text with an AI draft?", { exact: false })).toHaveCount(0);
+
+  // Once the human actually writes, the confirm comes back.
+  await textarea.fill("Sarah — the install starts on the 4th.");
+  await draftButton.click();
+  await expect(dialog.getByText("Replace your current reply text with an AI draft?", { exact: false })).toBeVisible();
+  expect(replyDraftBodies.length).toBe(1);
+  await dialog.getByRole("button", { name: "Keep my text" }).click();
+  await expect(textarea).toHaveValue("Sarah — the install starts on the 4th.");
 });

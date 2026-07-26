@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 
 const root = new URL("../", import.meta.url);
@@ -206,6 +208,35 @@ const { GoogleGmailClient } = await vite.ssrLoadModule(
 const route = await vite.ssrLoadModule(
   "/app/api/v1/assistant/reply-draft/route.ts",
 );
+const { GmailReplyModal } = await vite.ssrLoadModule(
+  "/app/inbox/components/GmailReplyModal.tsx",
+);
+
+const readRepositoryFile = (relativePath) => readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
+
+function sourceSection(source, start, end, label) {
+  const from = source.indexOf(start);
+  assert.ok(from >= 0, `${label} start not found`);
+  const to = source.indexOf(end, from + start.length);
+  assert.ok(to > from, `${label} end not found`);
+  return source.slice(from, to);
+}
+
+function renderReplyModal(overrides = {}) {
+  return renderToStaticMarkup(createElement(GmailReplyModal, {
+    message: {
+      id: SAFE_MESSAGE_ID,
+      subject: SAFE_SUBJECT,
+      from: "Sarah Kim <sarah.kim@atlas.example>",
+    },
+    body: "",
+    saving: false,
+    onBody: () => {},
+    onSave: () => {},
+    onClose: () => {},
+    ...overrides,
+  }));
+}
 
 after(async () => {
   delete globalThis.__FCI_TEST_CLOUDFLARE_ENV__;
@@ -538,4 +569,127 @@ test("AI-06 body bounds and the read-only source contract prohibit Gmail mutatio
   assert.match(routeSource, /client\.getMessageBodyText\(messageId\)/u);
   assert.equal(routeSource.match(/client\.[A-Za-z]+/gu)?.length, 2);
   assert.doesNotMatch(applicationSource, /from\s+["'][^"']*google-gmail/u);
+});
+
+test("AI-06 discards a superseded or message-mismatched draft response instead of applying it", async () => {
+  const modal = await readRepositoryFile("app/inbox/components/GmailReplyModal.tsx");
+
+  // The AI-05 request-id idiom, carried alongside the composed message id.
+  assert.match(modal, /const draftRequestIdRef = useRef\(0\);/u);
+  assert.match(modal, /const requestId = \+\+draftRequestIdRef\.current;/u);
+  assert.match(modal, /const requestMessageId = message\.id;/u);
+  assert.match(modal, /composingMessageIdRef\.current = message\.id;/u);
+
+  const guard = sourceSection(
+    modal,
+    "function isCurrentDraftRequest(",
+    "\n  }",
+    "isCurrentDraftRequest",
+  );
+  // All three conditions are load-bearing: unmounted, superseded, re-targeted.
+  assert.match(guard, /mountedRef\.current/u);
+  assert.match(guard, /requestId === draftRequestIdRef\.current/u);
+  assert.match(guard, /requestMessageId === composingMessageIdRef\.current/u);
+
+  const requestDraft = sourceSection(
+    modal,
+    "async function requestDraft()",
+    "function onDraftWithAi()",
+    "requestDraft",
+  );
+  // The success, failure, and busy-flag paths are each gated, and the guard runs
+  // before anything is written into the composer.
+  assert.equal(requestDraft.match(/isCurrentDraftRequest\(requestId, requestMessageId\)/gu)?.length, 3);
+  assert.ok(
+    requestDraft.indexOf("if (!isCurrentDraftRequest(requestId, requestMessageId)) return;")
+      < requestDraft.indexOf("onBody(data.draft)"),
+    "the staleness guard must run before the draft reaches the composer",
+  );
+  assert.match(requestDraft, /signal: controller\.signal/u);
+  // A discarded response is silent: no error surface, no busy-flag reset.
+  assert.doesNotMatch(
+    sourceSection(requestDraft, "if (!isCurrentDraftRequest(requestId, requestMessageId)) return;", "if (!response.ok", "discard branch"),
+    /setDraftError|notify/u,
+  );
+  // Mid-flight typing is held for the same confirm rather than clobbered.
+  assert.match(requestDraft, /bodyRef\.current !== requestBody && !bodyIsUntouched\(bodyRef\.current\)/u);
+  assert.match(requestDraft, /setPendingDraft\(data\.draft\);/u);
+
+  // Closing the modal supersedes the in-flight request and abandons its fetch,
+  // so message A's draft can never land in message B's composer.
+  const unmount = sourceSection(modal, "mountedRef.current = true;", "}, []);", "unmount cleanup");
+  assert.match(unmount, /mountedRef\.current = false;/u);
+  assert.match(unmount, /draftRequestIdRef\.current \+= 1;/u);
+  assert.match(unmount, /draftAbortRef\.current\?\.abort\(\);/u);
+
+  // onBody is only reachable from the guarded apply path and the human confirm.
+  assert.equal(modal.match(/onBody\(/gu)?.length, 3);
+});
+
+test("AI-06 treats the saved-signature pre-fill as an untouched body for the replace confirm", async () => {
+  const [modal, inbox] = await Promise.all([
+    readRepositoryFile("app/inbox/components/GmailReplyModal.tsx"),
+    readRepositoryFile("app/inbox/components/InboxView.tsx"),
+  ]);
+
+  // The comparison is exact against what InboxView pre-fills, never fuzzy.
+  assert.ok(
+    inbox.includes('setReplyBody(replySignature ? `\\n\\n${replySignature}` : "")'),
+    "InboxView must keep the pre-fill this comparison is pinned to",
+  );
+  assert.match(modal, /const prefilledBodyRef = useRef\(body\);/u);
+  assert.match(modal, /const prefilledMessageIdRef = useRef\(message\.id\);/u);
+  assert.match(
+    sourceSection(modal, "function bodyIsUntouched(", "\n  }", "bodyIsUntouched"),
+    /return value\.trim\(\) === "" \|\| value === prefilledBodyRef\.current;/u,
+  );
+
+  // The click-time decision goes through that check, not a bare body.trim().
+  assert.match(
+    sourceSection(modal, "function onDraftWithAi()", "\n  }", "onDraftWithAi"),
+    /if \(!bodyIsUntouched\(body\)\) \{/u,
+  );
+  assert.doesNotMatch(modal, /if \(body\.trim\(\)\) \{ setConfirmingReplace\(true\); return; \}/u);
+  // The pinned no-send guarantee and the human Save-draft path are untouched.
+  assert.match(modal, /Sending remains a separate, deliberate action\./u);
+  assert.match(modal, /onSubmit=\{\(event\) => \{ event\.preventDefault\(\); onSave\(\); \}\}/u);
+});
+
+test("AI-06 reply-draft styling and accessibility are defined, not implied", async () => {
+  const [modal, css] = await Promise.all([
+    readRepositoryFile("app/inbox/components/GmailReplyModal.tsx"),
+    readRepositoryFile("app/globals.css"),
+  ]);
+
+  // Every class the block renders is a real rule in globals.css.
+  for (const className of ["reply-ai-draft", "reply-ai-confirm", "reply-ai-confirm-actions", "reply-ai-error"]) {
+    assert.match(modal, new RegExp(`className="${className}"`, "u"));
+    assert.match(css, new RegExp(`\\.${className}\\{[^}]+\\}`, "u"), `.${className} must be styled`);
+  }
+  // The error text matches the repository's existing error treatment.
+  assert.match(
+    css,
+    /\.reply-ai-error\{[^}]*border:1px solid #e7cbc4;[^}]*background:#fff7f5;color:#8b4338/u,
+  );
+  assert.match(
+    css,
+    /\.project-operation-error\{[^}]*border:1px solid #e7cbc4;[^}]*background:#fff7f5;color:#8b4338/u,
+  );
+  assert.match(css, /\.reply-ai-draft>\.soft-button\[aria-disabled="true"\]\{[^}]*cursor:not-allowed/u);
+
+  // Accessibility: busy state, a reachable gate reason, and a focused confirm.
+  assert.match(modal, /aria-busy=\{drafting \|\| undefined\}/u);
+  assert.match(modal, /aria-disabled=\{draftBlocked \|\| undefined\}/u);
+  assert.match(modal, /if \(draftBlocked\) return;/u);
+  assert.match(modal, /focusConfirmRef\.current = false;\s*confirmRef\.current\?\.focus\(\);/u);
+  assert.match(modal, /className="reply-ai-confirm" ref=\{confirmRef\} tabIndex=\{-1\}/u);
+
+  // The rendered gate note is actually wired to the button that it explains.
+  const markup = renderReplyModal();
+  const describedBy = markup.match(/aria-describedby="([^"]+)"/u)?.[1];
+  assert.ok(describedBy, "the Draft with AI button must reference its gate note");
+  assert.match(markup, new RegExp(`<span class="form-help" id="${describedBy}">Checking whether AI reply drafting is available`, "u"));
+  assert.match(markup, /class="reply-ai-draft"><button type="button" class="soft-button" aria-disabled="true"/u);
+  // A disabled attribute would make that reason unreachable by keyboard.
+  assert.doesNotMatch(markup, /class="soft-button" aria-disabled="true"[^>]*disabled/u);
 });
