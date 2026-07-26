@@ -62,8 +62,9 @@ and registers the blueprint spreadsheets after the Shared Drive is adopted.
 > **Dashboard-driven setup (SET-13 onward):** Settings → Google Workspace can now
 > adopt the manually created Shared Drive, verify its read-only sharing restrictions,
 > create or reuse the blueprint-defined root folder tree, ensure every blueprint-defined
-> spreadsheet, and rename owner-managed root folders. Later packets add calendars and
-> starter templates — see the
+> spreadsheet, ensure the starter document templates, and rename owner-managed root
+> folders. **Ensuring templates is a required step, not an optional one** — the stage
+> counts it toward "ready" and the Calendars row stays locked until it completes. See the
 > [dashboard workspace setup design](dashboard-workspace-setup-design.md). The manual
 > path below remains valid, and remains required for Shared Drive creation and every
 > Admin-console/DNS/OAuth/secret step.

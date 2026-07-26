@@ -70,15 +70,22 @@ below, which also covers the state of GitHub itself (issues/PRs).
    `cutoverReady:false` in the rehearsal are deliberate. "Fixing" them without the gate
    passing is an unauthorized production change.
 3. **PostgreSQL migrations are append-only and checksummed.** `app/platform/postgres/
-   production-schema-migrations.ts` locks v1–v6 with SHA-256 checksums verified by
-   readiness probes and source-contract tests. Never edit an existing migration; append
-   v7+. **All six migrations are unapplied everywhere — no Cloud SQL instance exists.**
+   production-schema-migrations.ts` locks **every version it defines** with SHA-256
+   checksums verified by readiness probes and source-contract tests. Never edit an
+   existing migration. To add one, **read that file and append one past its highest
+   `version:` — do not trust any number quoted in a document, including this one**, which
+   is exactly how this guardrail rotted before (it said "append v7+" for three days after
+   v7 shipped). Snapshot for sanity-checking only, July 26, 2026: the high-water mark is
+   **v10** (`project_segment`, BE-16 / PR #198), so the next is v11.
+   **No migration is applied anywhere — no Cloud SQL instance exists.**
    (Do not read "migrations 4–5 remain unapplied" in the audit doc as implying 1–3 are
    applied; BE-01 fixes that phrasing.)
-4. **The deployed D1 drizzle sequence (0000–0011) is append-only.** PR #52 added
-   source-only migration 0012 to `main`, but it has not been applied to Sites. Never
-   drop or alter existing D1 tables; the dev environment is the only live
-   environment.
+4. **The D1 drizzle sequence is append-only.** Never drop or alter existing D1 tables; the
+   dev environment is the only live environment. To add a migration, **list `drizzle/` and
+   append one past the highest-numbered file** — again, read the directory rather than a
+   quoted number. Snapshot for sanity-checking only, July 26, 2026: the highest is
+   **0019** (`0019_demonic_lady_vermin.sql`), so the next is 0020. Files ahead of what the
+   Sites environment has applied are source-only until deployed.
 5. **Single-user / test-data boundary holds.** Only `FCI TEST — DO NOT USE` records in any
    live Workspace step; no second user and no real client data until the development
    acceptance run (WS-11) passes.
@@ -2164,11 +2171,29 @@ not become a separate task source of truth.
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
 
-1. Items without a status line remain **Open**. When an agent starts an item, it appends a
-   dated status line to that item in this file in its own PR
-   (`Status: In progress — <branch>`), and on merge updates it to
-   `Status: Complete — PR #NN, <date>`. Owner-blocked items use
-   `Status: Blocked — waiting on <checklist 00 input>`.
+1. Items without a status line remain **Open**. When an agent starts an item it adds a status
+   line in its own PR and updates that line on merge.
+   **The shape below is mechanically enforced by `tests/task-tracking-docs.test.mjs` — an
+   invalid line fails the build, so copy it exactly.** Two structural rules first:
+   - The marker is **`**Status:**`** in bold. A bare `Status:` is explicitly rejected.
+   - The status line must sit on the line **directly below the packet heading**, with no
+     blank line between them.
+
+   The six legal forms are exactly:
+
+   | Form | Example |
+   |---|---|
+   | Complete | `**Status:** Complete — PR #216, July 26, 2026.` |
+   | Complete, multi-PR | `**Status:** Complete — PR #185 + PR #195, July 25, 2026.` |
+   | In review | `**Status:** In review — PR #217` |
+   | In progress | ``**Status:** In progress — `codex/set22-create-drive-files` `` |
+   | Blocked | `**Status:** Blocked — awaiting owner prioritization` |
+   | Resolved / superseded | `**Status:** Resolved in PR #197` · `**Status:** Superseded — absorbed into SET-06` |
+
+   Notes the guard enforces that are easy to miss: an **In progress** branch must be
+   backticked and must start `codex/` or `claude/`; **Blocked** takes free text (it is *not*
+   restricted to checklist-00 inputs); and for packets the guard knows are merged, **Complete**
+   additionally requires the full `, Month D, YYYY.` date with the trailing period.
 2. An item is marked Complete **only** when its Acceptance line passes — never from a
    visual or partial change.
 3. Every packet that changes behavior also updates the docs that describe that behavior
@@ -2952,11 +2977,19 @@ BE-12 is complete in source in PR #53 and remains undeployed.
 KPI-02 is complete in source in PR #52 and remains undeployed. SET-10 is complete in
 source in PR #56 and remains undeployed. The application-logo refresh is complete in
 merged source in PR #57 and remains undeployed; the reviewed PR #51–#57 merge train is
-complete. KPI-03 and SET-13 have since completed (PRs #75/#76), and the Workstream E starters GI-01,
-GI-02, and GI-05 are assignable in parallel with the SET track once their listed
-dependencies are met (GI-02 immediately). The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
-SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
-apply, deployment, live login, another user, or real data.
+complete. KPI-03 and SET-13 have since completed (PRs #75/#76). Of the Workstream E starters, GI-02
+completed in PR #79 (July 21, 2026); GI-01 and GI-05 remain assignable in parallel with the
+SET track once their listed dependencies are met.
+
+> **Dispatch authority — read this before picking work.** Do **not** treat any
+> "unclaimed packets" sentence in this document as a list of available work. Those lists are
+> historical narrative and have gone stale repeatedly — they have named merged packets
+> (BE-07, SET-11, WS-13, GI-02) as available for days. **A packet is available if and only
+> if it has no status line.** The status lines are the single dispatch authority, and they
+> are the only part of this file a test enforces.
+
+All work here is source-only; none authorizes external configuration, apply, deployment,
+live login, another user, or real data.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
@@ -3002,7 +3035,7 @@ are green.
 The dashboard-setup track starts now: SET-13 → SET-14 (SET-19 parallel), then
 SET-15 → {SET-16, SET-17, SET-05} → SET-18 → SET-21, with SET-23…SET-26 following
 their listed dependencies. Workstream E runs in parallel where dependencies allow:
-GI-02 immediately; GI-01/GI-05 after their SET dependencies; GI-03/GI-04 after the
+GI-01/GI-05 after their SET dependencies (GI-02 completed in PR #79); GI-03/GI-04 after the
 WS-15 owner step; GI-06 after WS-16's edition confirmation; GI-07 after live employee
 login. **Owner priority (July 21): maps and validation on the client and project
 screens (GI-03/GI-04) and first-run data import (SET-25) jump the queue.** The
@@ -3012,10 +3045,10 @@ SET-27 and SET-28 following their listed dependencies. WS-15 (Maps billing/keys)
 the owner step that unblocks GI-03/GI-04 — do it early.
 BE-10 was assignable because PR #51 merged and has since completed (PR #82); BE-14 has
 since completed too (PR #178, July 24, 2026). KPI-03 was assignable because PR #52
-merged and has since completed (PR #75). SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. The
-unclaimed parallel-safe tracks are
-BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
-broad primitive/CSS consolidation tracks.
+merged and has since completed (PR #75). SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. BE-07 (PR #140),
+SET-11 (PR #162) and WS-13 (PR #144) have since completed. **For what is actually available
+now, read the status lines — see the dispatch-authority note above; do not dispatch from this
+paragraph.**
 
 **Design-remediation wave order (approved July 21, 2026 — anti-rework):** the
 full-codebase review and the settings redesign run in four waves so nothing is built
@@ -3059,8 +3092,10 @@ attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDe
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
 AI-07b's (released at the PR #195 merge); `tests/rendered-html.test.mjs` is
 touched additively by the AI packets — serialize merges. DES-10 (brand refinement, not priority) takes the globals
-lock only for its `.brand` edit, in a free window after DES-04/05/07. Migration numbers are assigned at merge time (coordinate
-with open BE-07's reserved PostgreSQL v7, KPI-04, and DES-08 a-T2).
+lock only for its `.brand` edit, in a free window after DES-04/05/07. Migration numbers are assigned at merge time by reading
+the current high-water mark, never by quoting one from a document — see global guardrail 3.
+The three packets this line used to name as open (BE-07's reserved v7, KPI-04, DES-08 a-T2)
+have all merged; as of July 26, 2026 the marks are **PostgreSQL v10** and **D1 0019**.
 
 **Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
 inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only

@@ -72,6 +72,11 @@ FCI_EMPLOYEE_OIDC_ALLOWED_HOSTED_DOMAIN=
 FCI_CLOUD_SQL_INSTANCE_CONNECTION_NAME=
 FCI_CLOUD_SQL_IP_TYPE=
 
+# ── Migration-rehearsal command (production-runtime/ CLI, not the app) ──────
+FCI_REHEARSAL_ACKNOWLEDGMENT=                  # required by `npm run db:rehearse:postgres-core`;
+                                               # run-core-rehearsal.ts throws
+                                               # missing_rehearsal_configuration without it
+
 # PostgreSQL runtime (production only). loadProductionConfig FAILS CLOSED without
 # the required names below — the Cloud Run runtime will not start.
 FCI_POSTGRES_ACCESS_MODE=                      # required
