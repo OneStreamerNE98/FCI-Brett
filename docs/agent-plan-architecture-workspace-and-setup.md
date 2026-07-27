@@ -660,7 +660,8 @@ already-audited route.
 `action` union), the D1 and PostgreSQL lead adapters, `docs/authorization-simulation.md`, tests.
 **Accept:** every one of the 13 mutable fields produces an audit row with a before→after detail;
 a failed update writes **no** audit row; `advanceLead` keeps its existing behavior and audit
-string byte-identical; the authorization doc names the seven self-granted capabilities and the
+string byte-identical; the authorization doc records the six/one split (six capabilities
+self-granted at nine call sites; `leadsUpdate` unconsumed) and the
 `isAdmin`-only reality; a source assertion pins that the lead PATCH route does **not** call
 `creationAuthorizationFor`, so nobody re-adds the decorative check believing it enforces
 something; `npm test` green.
