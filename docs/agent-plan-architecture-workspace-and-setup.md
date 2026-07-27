@@ -1601,7 +1601,7 @@ resolves (existing Gmail file-route tests green); simulation e2e provisioning wa
 **Effort:** medium (touches live provisioning — sequenced last deliberately).
 
 ### SET-22 · Create Google files in project folders from the app (medium, after SET-17; KPI-02/#52 UI dependency satisfied)
-**Status:** In review — PR #217, with the review-fix follow-up PR #221 stacked on its branch.
+**Status:** In review — PR #217, July 26, 2026, with the review-fix follow-up PR #221 merged into its branch July 27. Source-only and undeployed; no live Google operation or hosted configuration change. Google Docs API enablement remains an owner gate for live Doc-template merges; no new consent scope. Guide impact: none.
 **Why:** Owner request: from the projects dashboard, create a Google Doc, Sheet, or
 Slides file (the Word/Excel/PowerPoint equivalents) inside the project's Drive folder —
 blank or from a blueprint template — so the provisioned folder structure and template

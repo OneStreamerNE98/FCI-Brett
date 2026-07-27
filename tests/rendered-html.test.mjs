@@ -22,6 +22,7 @@ const appSurfacePaths = [
   "app/assistant/components/TodayPanel.tsx",
   "app/inbox/components/GmailReplyModal.tsx",
   "app/inbox/components/InboxView.tsx",
+  "app/projects/components/ProjectFilesPanel.tsx",
   "app/settings/components/AiAssistantSettingsCard.tsx",
   "app/settings/components/ChatNotificationSettingsCard.tsx",
   "app/settings/components/DataSecurityPanel.tsx",
@@ -834,7 +835,7 @@ test("labels unfinished features without presenting placeholder controls", async
   for (const retiredLabel of [["pi", "lot"], ["proto", "type"]].map((parts) => parts.join(""))) {
     assert.doesNotMatch(`${app}\n${badge}`, new RegExp(retiredLabel, "i"));
   }
-  assert.match(app, /\(\["Overview", "Meetings"\] as const\)/);
+  assert.match(app, /\(\["Overview", "Files", "Meetings"\] as const\)/);
   assert.match(app, /Planned project capabilities/);
   assert.match(app, /planned-project-updates/);
   assert.doesNotMatch(app, /EmptyProjectTab|Project updates planned|disabled title="Project updates/);
@@ -1046,4 +1047,50 @@ test("captures durable project meetings and bounded Otter evidence", async () =>
   assert.match(assistantEvidence, /Source: \$\{meeting\.source_provider\}/);
   assert.match(assistantEvidence, /Transcript excerpt: \$\{compact\(meeting\.transcript, 900\)\}/);
   assert.match(assistantEvidence, /SELECT COUNT\(\*\) AS total FROM project_meetings/);
+});
+
+test("SET-22 provides an office-safe Project Files tab with honest catalog states and focused success", async () => {
+  const [app, projectFiles, projectFilesCss, editor, resourcesRoute, workspaceStepper] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
+    read("app/projects/components/ProjectFilesPanel.tsx"),
+    read("app/projects/components/ProjectFilesPanel.module.css"),
+    read("app/settings/components/WorkspaceBlueprintEditor.tsx"),
+    read("app/api/v1/integrations/google/setup/resources/route.ts"),
+    read("tests/e2e/workspace-setup-stepper.spec.ts"),
+  ]);
+
+  assert.match(app, /import \{ ProjectFileCreationModal, ProjectFilesPanel, useProjectFilesController \} from "\.\/projects\/components\/ProjectFilesPanel"/);
+  assert.match(app, /\(\["Overview", "Files", "Meetings"\] as const\)/);
+  assert.match(app, /tab === "Files"[\s\S]*?<ProjectFilesPanel controller=\{projectFiles\} newDocumentTriggerRef=\{projectFilesTriggerRef\}/);
+  assert.match(app, /<ProjectFileCreationModal catalog=\{projectFiles\.catalogState\.catalog\}/);
+  assert.doesNotMatch(app, /onCreateDocument=\{createProjectDocument\}/);
+
+  assert.match(projectFiles, /method: "POST"/);
+  assert.match(projectFiles, /cache: "no-store"/);
+  assert.match(projectFiles, /`\/api\/v1\/projects\/\$\{encodeURIComponent\(projectId\)\}\/drive\/files`/);
+  assert.doesNotMatch(projectFiles, /\/api\/v1\/integrations\/google\/setup\/blueprint/);
+  assert.match(projectFiles, /Loading project files…/);
+  assert.match(projectFiles, /Project files are unavailable/);
+  assert.match(projectFiles, /Drive folder required/);
+  assert.match(projectFiles, /Created in this session/);
+  assert.match(projectFiles, /Use Open Drive folder below for the complete file list/);
+  assert.match(projectFiles, /aria-label="Document type"/);
+  // The template select takes its accessible name from the visible wrapping label
+  // (WCAG 2.5.3 fix in the SET-22 review follow-up): an aria-label="Template" would
+  // override the visible "Start from" text and break Label in Name again.
+  assert.match(projectFiles, /<label>Start from/);
+  assert.doesNotMatch(projectFiles, /aria-label="Template"/);
+  assert.match(projectFiles, /aria-label="Destination folder"/);
+  assert.match(projectFiles, /<option value="">Project root<\/option>/);
+  assert.match(projectFiles, /\{ value: "slides" as const, label: "Google Slides"/);
+  assert.match(projectFiles, /successLinkRef\.current\?\.focus\(\)/);
+  assert.match(projectFiles, /Open file/);
+  assert.match(projectFiles, /target="_blank" rel="noopener noreferrer"/);
+  assert.match(projectFilesCss, /\.panel \{/);
+  assert.match(projectFilesCss, /@media \(max-width: 520px\)/);
+
+  assert.match(editor, /Define starter Docs, Sheets, or Slides/);
+  assert.match(editor, /<option value="doc">Google Doc<\/option><option value="sheet">Google Sheet<\/option><option value="slides">Google Slides<\/option>/);
+  assert.match(resourcesRoute, /template\.kind === "slides"[\s\S]*?"Presentation template"/);
+  assert.match(workspaceStepper, /template\.kind === "slides"[\s\S]*?"Presentation template"/);
 });

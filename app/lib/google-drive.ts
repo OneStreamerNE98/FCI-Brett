@@ -5,12 +5,19 @@ import {
   type GoogleFetchResilienceDependencies,
 } from "./google-fetch-resilience";
 import type { WorkspaceBlueprint, WorkspaceBlueprintFolder } from "./workspace-blueprint";
+import {
+  WORKSPACE_TEMPLATE_TOKEN_LEGEND,
+  type WorkspaceTemplateTokenValues,
+} from "./workspace-templates";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
+const DOCS_API = "https://docs.googleapis.com/v1";
 const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const SPREADSHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet";
+const DOCUMENT_MIME_TYPE = "application/vnd.google-apps.document";
+const PRESENTATION_MIME_TYPE = "application/vnd.google-apps.presentation";
 const MAX_MANAGED_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_MANAGED_APP_PROPERTIES = 12;
 const LEGACY_WORKSPACE_FOLDER_IDENTITY = "fciWorkspaceFolder";
@@ -164,6 +171,79 @@ export function resolveSimulatedManagedProjectFolderPath(
   });
 }
 
+/** The three Google-native file types the app can create inside a project folder. */
+export type ProjectFileKind = "doc" | "sheet" | "slides";
+
+/** Maps a project-file kind to the Google-native MIME type Drive creates or copies. */
+export const PROJECT_FILE_KIND_MIME_TYPES: Readonly<Record<ProjectFileKind, string>> = Object.freeze({
+  doc: DOCUMENT_MIME_TYPE,
+  sheet: SPREADSHEET_MIME_TYPE,
+  slides: PRESENTATION_MIME_TYPE,
+});
+
+export type DriveCreatedFile = Readonly<{ id: string; name: string; url: string }>;
+export type ProjectFolderCatalogItem = Readonly<{ key: string; name: string; path: string }>;
+
+/**
+ * Returns the leaf destinations from the blueprint project-folder tree. Internal
+ * grouping nodes are intentionally omitted: provisioning creates only leaf paths,
+ * so accepting an internal key could target an unprovisioned or ambiguous folder.
+ */
+export function projectFolderCatalog(blueprint: WorkspaceBlueprint): readonly ProjectFolderCatalogItem[] {
+  const output: ProjectFolderCatalogItem[] = [];
+  const walk = (folders: readonly WorkspaceBlueprintFolder[], prefix: readonly string[]) => {
+    for (const folder of folders) {
+      const path = Object.freeze([...prefix, folder.name]);
+      if (folder.children.length === 0) {
+        output.push(Object.freeze({ key: folder.key, name: folder.name, path: path.join(" / ") }));
+      } else walk(folder.children, path);
+    }
+  };
+  walk(blueprint.drive.projectFolders, []);
+  return Object.freeze(output);
+}
+
+/**
+ * Returns the name-path from the project root to the blueprint leaf folder named
+ * by `folderKey`, or null when that key is absent or represents a grouping node.
+ */
+export function projectFolderPathForKey(
+  blueprint: WorkspaceBlueprint,
+  folderKey: string,
+): readonly string[] | null {
+  const item = projectFolderCatalog(blueprint).find((folder) => folder.key === folderKey);
+  return item ? Object.freeze(item.path.split(" / ")) : null;
+}
+
+/**
+ * Resolves a managed project subfolder by its blueprint key without contacting
+ * Google, mirroring the live containment guarantees for the simulation path. An
+ * unknown key fails closed instead of fabricating a folder id for a folder the
+ * blueprint never defines.
+ */
+export function resolveSimulatedManagedProjectFolderByKey(
+  projectFolderId: string,
+  blueprint: WorkspaceBlueprint,
+  folderKey: string,
+): DriveFolder {
+  const path = projectFolderPathForKey(blueprint, folderKey);
+  if (!path) {
+    throw new GoogleIntegrationError(
+      "project_drive_folder_missing",
+      `The managed project folder ${folderKey} is not part of this project workspace.`,
+      400,
+    );
+  }
+  const virtualId = (parts: readonly string[]) => (
+    `sim-project-folder-${encodeURIComponent(projectFolderId)}-${parts.map((segment) => encodeURIComponent(segment)).join("--")}`
+  );
+  return Object.freeze({
+    id: virtualId(path),
+    name: path.at(-1)!,
+    parents: path.length === 1 ? [projectFolderId] : [virtualId(path.slice(0, -1))],
+  });
+}
+
 function driveQueryString(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
@@ -251,7 +331,12 @@ export function sanitizeDriveFileName(value: string, fallback = "file") {
     .replace(/^\.+|\.+$/g, "")
     .slice(0, 180)
     .replace(/[.\s]+$/g, "");
-  return clean(value) || clean(fallback) || "file";
+  const sanitized = clean(value);
+  if (sanitized) return sanitized;
+  // Callers that validate user input can opt out of the convenience fallback
+  // and fail closed when the supplied name contains no meaningful characters.
+  if (fallback === "") return "";
+  return clean(fallback) || "file";
 }
 
 function normalizedMimeType(value: string) {
@@ -378,6 +463,98 @@ export class GoogleDriveClient {
     if (response.status === 429) throw new GoogleIntegrationError("drive_rate_limited", "Google Drive is temporarily rate-limited. Try again shortly.", 429);
     if (response.status >= 400 && response.status < 500) throw new GoogleIntegrationError("drive_upload_rejected", "Google Drive rejected that file upload.", 400);
     throw new GoogleIntegrationError("drive_request_failed", "Google Drive could not complete that operation. Try again.", 503);
+  }
+
+  /**
+   * Replaces the complete SET-17 token catalog in one Google Docs batchUpdate.
+   * This reuses the same Drive OAuth token and adds no consent scope. Callers
+   * invoke it only after files.copy has returned a native Google Document.
+   */
+  async replaceDocumentTemplateTokens(
+    documentId: string,
+    values: WorkspaceTemplateTokenValues,
+  ): Promise<void> {
+    const normalizedDocumentId = ensureNonEmptyString(documentId, "The Google document id", 200);
+    const requests = WORKSPACE_TEMPLATE_TOKEN_LEGEND.map(({ token }) => {
+      const replaceText = values[token];
+      if (
+        typeof replaceText !== "string"
+        || replaceText.length > 10_000
+        || replaceText.includes("\u0000")
+      ) {
+        throw new GoogleIntegrationError(
+          "invalid_document_template_values",
+          "The project values for this Google document are invalid.",
+          400,
+        );
+      }
+      return {
+        replaceAllText: {
+          containsText: { text: token, matchCase: true },
+          replaceText,
+        },
+      };
+    });
+
+    let response: Response;
+    try {
+      response = await fetchGoogleProvider(
+        this.fetcher,
+        `${DOCS_API}/documents/${encodeURIComponent(normalizedDocumentId)}:batchUpdate`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.accessToken}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ requests }),
+        },
+        {},
+        this.resilience,
+      );
+    } catch {
+      throw new GoogleIntegrationError(
+        "docs_unavailable",
+        "Google Docs is temporarily unavailable. The copied file was not deleted; inspect it before retrying.",
+        503,
+      );
+    }
+    const data = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!response.ok || !data) {
+      if (response.status === 401) {
+        throw new GoogleIntegrationError("drive_reauthorization_required", "Google authorization needs to be reconnected.", 409);
+      }
+      if (response.status === 403) {
+        throw new GoogleIntegrationError(
+          "docs_api_unavailable",
+          "Enable the Google Docs API for the approved Google project, then retry. The copied file was not deleted.",
+          409,
+        );
+      }
+      if (response.status === 404) {
+        throw new GoogleIntegrationError(
+          "docs_document_not_found",
+          "Google Docs could not find the copied document. The copied file was not deleted; inspect Drive before retrying.",
+          404,
+        );
+      }
+      if (response.status === 429) {
+        throw new GoogleIntegrationError("docs_rate_limited", "Google Docs is temporarily rate-limited. Try again shortly.", 429);
+      }
+      throw new GoogleIntegrationError(
+        "docs_merge_failed",
+        "Google Docs could not merge the project values. The copied file was not deleted; inspect it before retrying.",
+        503,
+      );
+    }
+    if (data.documentId !== normalizedDocumentId) {
+      throw new GoogleIntegrationError(
+        "docs_merge_invalid_response",
+        "Google Docs did not confirm the copied document merge. The copied file was not deleted; inspect it before retrying.",
+        503,
+      );
+    }
   }
 
   private async getFolder(fileId: string) {
@@ -676,20 +853,52 @@ export class GoogleDriveClient {
    * Resolves an already-provisioned path beneath a managed project root. This is
    * deliberately read-only: email filing cannot create a project folder by typo.
    */
-  async resolveManagedProjectFolderPath(projectFolderId: string, path: string | readonly string[]): Promise<DriveFolder> {
-    const segments = normalizedProjectFolderPath(path);
-    await this.assertContained(projectFolderId);
-    const projectRoot = await this.getFolder(projectFolderId);
+  private async getManagedProjectRoot(projectFolderId: string, expectedProjectId?: string): Promise<DriveFile> {
+    const normalizedFolderId = ensureNonEmptyString(projectFolderId, "The project folder id", 200);
+    const normalizedProjectId = expectedProjectId === undefined
+      ? undefined
+      : ensureNonEmptyString(expectedProjectId, "The project id", 200);
+    await this.assertContained(normalizedFolderId);
+    const projectRoot = await this.getFolder(normalizedFolderId);
     const projectId = projectRoot.appProperties?.fciProjectId;
-    if (projectRoot.mimeType !== FOLDER_MIME_TYPE || projectRoot.trashed || projectRoot.appProperties?.fciFolderKind !== "project" || !projectId) {
+    if (
+      projectRoot.id !== normalizedFolderId
+      || projectRoot.mimeType !== FOLDER_MIME_TYPE
+      || projectRoot.trashed
+      || projectRoot.appProperties?.fciFolderKind !== "project"
+      || !projectId
+      || (normalizedProjectId !== undefined && projectId !== normalizedProjectId)
+    ) {
       throw new GoogleIntegrationError("invalid_project_drive_folder", "The project does not have a managed Google Drive workspace.", 409);
     }
+    return projectRoot;
+  }
+
+  /** Verifies that a persisted mapping points to this exact managed project root. */
+  async resolveManagedProjectRoot(projectFolderId: string, expectedProjectId: string): Promise<DriveFolder> {
+    const projectRoot = await this.getManagedProjectRoot(projectFolderId, expectedProjectId);
+    return {
+      id: projectRoot.id,
+      name: projectRoot.name,
+      parents: projectRoot.parents,
+      webViewLink: projectRoot.webViewLink,
+    };
+  }
+
+  async resolveManagedProjectFolderPath(
+    projectFolderId: string,
+    path: string | readonly string[],
+    expectedProjectId?: string,
+  ): Promise<DriveFolder> {
+    const segments = normalizedProjectFolderPath(path);
+    const projectRoot = await this.getManagedProjectRoot(projectFolderId, expectedProjectId);
+    const projectId = projectRoot.appProperties!.fciProjectId;
 
     let current = projectRoot;
     for (const segment of segments) {
       const matches = await this.childFolders(current.id, segment);
       if (matches.length === 0) {
-        throw new GoogleIntegrationError("project_drive_folder_missing", `The managed project folder ${segment} is missing. Re-provision the project workspace before filing email.`, 409);
+        throw new GoogleIntegrationError("project_drive_folder_missing", `The managed project folder ${segment} is missing. Ask an administrator to restore the project workspace before trying again.`, 409);
       }
       if (matches.length > 1) {
         throw new GoogleIntegrationError("duplicate_drive_folder", `More than one managed Google Drive folder matched ${segment}.`, 409);
@@ -701,6 +910,96 @@ export class GoogleDriveClient {
       current = child;
     }
     return { id: current.id, name: current.name, parents: current.parents, webViewLink: current.webViewLink };
+  }
+
+  /**
+   * Creates a blank Google-native file (Doc, Sheet, or Slides) directly inside an
+   * already-managed project folder. The parent is asserted contained before the
+   * write so a project document can never be created outside the workspace root.
+   */
+  async createProjectFile(input: { parentId: string; name: string; kind: ProjectFileKind }): Promise<DriveCreatedFile> {
+    const name = sanitizeDriveFileName(ensureNonEmptyString(input.name, "The document name", 300));
+    const mimeType = PROJECT_FILE_KIND_MIME_TYPES[input.kind];
+    if (!mimeType) {
+      throw new GoogleIntegrationError("invalid_project_file_kind", "Choose a document, spreadsheet, or slides file.", 400);
+    }
+    await this.assertContained(input.parentId);
+    const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink" }));
+    const created = await this.request<DriveFile>(`files?${parameters.toString()}`, {
+      method: "POST",
+      body: JSON.stringify({ name, mimeType, parents: [input.parentId] }),
+    });
+    if (
+      !created.id
+      || created.name !== name
+      || created.mimeType !== mimeType
+      || created.trashed
+      || created.parents?.length !== 1
+      || created.parents[0] !== input.parentId
+    ) {
+      throw new GoogleIntegrationError("drive_create_invalid_response", "Google Drive did not confirm the new project file. Check Drive before retrying.", 503);
+    }
+    return Object.freeze({ id: created.id, name: created.name, url: fileUrl(created) });
+  }
+
+  /**
+   * Copies a registered template file into an already-managed project folder with
+   * a new name via files.copy. The destination parent is asserted contained first;
+   * nothing about the source file is mutated or deleted.
+   */
+  async copyTemplateFile(input: {
+    templateFileId: string;
+    templateKey: string;
+    parentId: string;
+    name: string;
+    kind: ProjectFileKind;
+  }): Promise<DriveCreatedFile> {
+    const templateFileId = ensureNonEmptyString(input.templateFileId, "The template file id", 200);
+    const templateKey = ensureNonEmptyString(input.templateKey, "The template key", 64);
+    const name = sanitizeDriveFileName(ensureNonEmptyString(input.name, "The document name", 300));
+    const mimeType = PROJECT_FILE_KIND_MIME_TYPES[input.kind];
+    if (!mimeType) {
+      throw new GoogleIntegrationError("invalid_project_file_kind", "Choose a document, spreadsheet, or slides file.", 400);
+    }
+    const sourceParameters = this.addFileOptions(new URLSearchParams({
+      fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties",
+    }));
+    const source = await this.request<DriveFile>(
+      `files/${encodeURIComponent(templateFileId)}?${sourceParameters.toString()}`,
+      {},
+      { idempotent: true },
+    );
+    if (
+      source.id !== templateFileId
+      || source.mimeType !== mimeType
+      || source.trashed
+      || source.appProperties?.fciTemplateKey !== templateKey
+      || source.parents?.length !== 1
+    ) {
+      throw new GoogleIntegrationError(
+        "invalid_blueprint_template",
+        "The registered template no longer identifies an active Google file of the expected type.",
+        409,
+      );
+    }
+    await this.assertContained(source.parents[0]);
+    await this.assertContained(input.parentId);
+    const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink" }));
+    const copied = await this.request<DriveFile>(`files/${encodeURIComponent(templateFileId)}/copy?${parameters.toString()}`, {
+      method: "POST",
+      body: JSON.stringify({ name, parents: [input.parentId] }),
+    });
+    if (
+      !copied.id
+      || copied.name !== name
+      || copied.mimeType !== mimeType
+      || copied.trashed
+      || copied.parents?.length !== 1
+      || copied.parents[0] !== input.parentId
+    ) {
+      throw new GoogleIntegrationError("drive_copy_invalid_response", "Google Drive did not confirm the copied template. Check Drive before retrying.", 503);
+    }
+    return Object.freeze({ id: copied.id, name: copied.name, url: fileUrl(copied) });
   }
 
   /** Finds one source-tagged file beneath the exact managed folder, or returns null. */
@@ -727,6 +1026,79 @@ export class GoogleDriveClient {
       throw new GoogleIntegrationError("duplicate_drive_file", "More than one managed Google Drive file has the same source identity.", 409);
     }
     return matches.length === 1 ? asManagedFile(matches[0]) : null;
+  }
+
+  /**
+   * Ensures a metadata-only Google-native file by a stable source identity.
+   * This is the valid creation path for Slides templates: Drive supports native
+   * presentation creation, but it does not support HTML-to-Slides conversion.
+   */
+  async findOrCreateManagedNativeFile(input: {
+    parentId: string;
+    name: string;
+    mimeType: string;
+    appProperties: Record<string, string>;
+  }): Promise<DriveManagedFileUploadResult> {
+    const name = sanitizeDriveFileName(ensureNonEmptyString(input.name, "The Drive file name", 300));
+    const mimeType = normalizedMimeType(input.mimeType);
+    if (!Object.values(PROJECT_FILE_KIND_MIME_TYPES).includes(mimeType)) {
+      throw new GoogleIntegrationError(
+        "invalid_drive_native_type",
+        "Choose a Google-native document, spreadsheet, or presentation type.",
+        400,
+      );
+    }
+    const appProperties = normalizedAppProperties(input.appProperties);
+    const existing = await this.findManagedFile({ parentId: input.parentId, appProperties });
+    if (existing) {
+      const identityConfirmed = Object.entries(appProperties)
+        .every(([key, value]) => existing.appProperties[key] === value);
+      if (
+        existing.mimeType !== mimeType
+        || existing.parents.length !== 1
+        || existing.parents[0] !== input.parentId
+        || !identityConfirmed
+      ) {
+        throw new GoogleIntegrationError(
+          "invalid_blueprint_template",
+          "The managed template identity belongs to a file with the wrong Google type or parent.",
+          409,
+        );
+      }
+      return { created: false, file: existing };
+    }
+
+    await this.assertContained(input.parentId);
+    const parameters = this.addFileOptions(new URLSearchParams({
+      fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties",
+    }));
+    const created = await this.request<DriveFile>(`files?${parameters.toString()}`, {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        mimeType,
+        parents: [input.parentId],
+        appProperties,
+      }),
+    });
+    const identityConfirmed = Object.entries(appProperties)
+      .every(([key, value]) => created.appProperties?.[key] === value);
+    if (
+      !created.id
+      || created.name !== name
+      || created.mimeType !== mimeType
+      || created.trashed
+      || created.parents?.length !== 1
+      || created.parents[0] !== input.parentId
+      || !identityConfirmed
+    ) {
+      throw new GoogleIntegrationError(
+        "drive_create_invalid_response",
+        "Google Drive did not confirm the managed native template identity. Check Drive before retrying.",
+        503,
+      );
+    }
+    return { created: true, file: asManagedFile(created) };
   }
 
   /**

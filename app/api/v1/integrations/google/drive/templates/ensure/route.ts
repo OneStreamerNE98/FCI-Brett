@@ -8,7 +8,10 @@ import {
 } from "../../../../../../../adapters/d1/workspace-setup-leases";
 import { upsertWorkspaceResource } from "../../../../../../../adapters/d1/workspace-resources";
 import { parseBoundedJsonObject } from "../../../../../../../lib/api-json-body";
-import { GoogleDriveClient } from "../../../../../../../lib/google-drive";
+import {
+  GoogleDriveClient,
+  PROJECT_FILE_KIND_MIME_TYPES,
+} from "../../../../../../../lib/google-drive";
 import { googleIntegrationErrorResponse } from "../../../../../../../lib/google-integration-error";
 import {
   getEffectiveGoogleRuntimeSetup,
@@ -24,9 +27,9 @@ import { noStoreJson as response, noStoreResponse } from "../../../../../../../l
 
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
-  if (originError) return originError;
+  if (originError) return noStoreResponse(originError);
   const auth = requireOfficeUser(request, { admin: true });
-  if ("response" in auth) return auth.response;
+  if ("response" in auth) return noStoreResponse(auth.response);
   await ensureWorkspaceSchema();
 
   if (request.body) {
@@ -137,7 +140,7 @@ export async function POST(request: NextRequest) {
     const results: Array<{
       key: string;
       name: string;
-      kind: "doc" | "sheet";
+      kind: "doc" | "sheet" | "slides";
       management: "owner";
       targetFolderKey: string;
       outcome: "found" | "created" | "adopted";
@@ -145,31 +148,41 @@ export async function POST(request: NextRequest) {
       url: string;
     }> = [];
     for (const template of blueprint.templates) {
-      const rendered = renderWorkspaceTemplate(template, blueprint.business.displayName);
+      const expectedMimeType = PROJECT_FILE_KIND_MIME_TYPES[template.kind];
+      const rendered = template.kind === "slides"
+        ? null
+        : renderWorkspaceTemplate(template, blueprint.business.displayName);
       const existing = existingTemplatesByKey.get(template.key);
       const ensured = drive
-        ? await drive.findOrUploadManagedFile({
-          parentId: ensuredFolder.folder.id,
-          name: template.name,
-          mimeType: rendered.metadataMimeType,
-          mediaMimeType: rendered.mediaMimeType,
-          bytes: rendered.bytes,
-          appProperties: { fciTemplateKey: template.key },
-        })
+        ? template.kind === "slides"
+          ? await drive.findOrCreateManagedNativeFile({
+            parentId: ensuredFolder.folder.id,
+            name: template.name,
+            mimeType: expectedMimeType,
+            appProperties: { fciTemplateKey: template.key },
+          })
+          : await drive.findOrUploadManagedFile({
+            parentId: ensuredFolder.folder.id,
+            name: template.name,
+            mimeType: rendered!.metadataMimeType,
+            mediaMimeType: rendered!.mediaMimeType,
+            bytes: rendered!.bytes,
+            appProperties: { fciTemplateKey: template.key },
+          })
         : {
           created: !existing,
           file: {
             id: existing?.externalId ?? `workspace-simulation-template-${template.key}`,
             name: template.name,
-            mimeType: rendered.metadataMimeType,
+            mimeType: expectedMimeType,
             parents: [ensuredFolder.folder.id],
             url: existing?.externalUrl ?? `/settings?section=google-workspace&workspace-simulation=template-${encodeURIComponent(template.key)}`,
             appProperties: { fciTemplateKey: template.key },
             checksum: null,
-            size: rendered.bytes.byteLength,
+            size: rendered?.bytes.byteLength ?? null,
           },
         };
-      if (ensured.file.mimeType !== rendered.metadataMimeType) {
+      if (ensured.file.mimeType !== expectedMimeType) {
         throw new GoogleIntegrationError(
           "invalid_blueprint_template",
           `The blueprint identity ${template.key} belongs to a file with the wrong Google template type.`,
@@ -197,8 +210,8 @@ export async function POST(request: NextRequest) {
           management: template.management,
           targetFolderKey: template.targetFolderKey,
           sourceFolderKey: "templates",
-          metadataMimeType: rendered.metadataMimeType,
-          mediaMimeType: rendered.mediaMimeType,
+          metadataMimeType: expectedMimeType,
+          ...(rendered ? { mediaMimeType: rendered.mediaMimeType } : {}),
         },
         createdBy: existing?.createdBy ?? auth.user.email,
         createdAt: existing?.createdAt ?? completedAt,

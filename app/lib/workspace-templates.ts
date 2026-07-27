@@ -1,3 +1,4 @@
+import { formatUsd } from "./format-usd.ts";
 import type { WorkspaceBlueprintTemplate } from "./workspace-blueprint";
 
 const GOOGLE_DOCUMENT_MIME_TYPE = "application/vnd.google-apps.document" as const;
@@ -14,6 +15,35 @@ export const WORKSPACE_TEMPLATE_TOKEN_LEGEND = Object.freeze([
   Object.freeze({ token: "{{site_address}}", label: "Project site address" }),
   Object.freeze({ token: "{{total}}", label: "Project total" }),
 ] as const);
+
+export type WorkspaceTemplateToken = (typeof WORKSPACE_TEMPLATE_TOKEN_LEGEND)[number]["token"];
+export type WorkspaceTemplateTokenValues = Readonly<Record<WorkspaceTemplateToken, string>>;
+
+/**
+ * Builds the complete closed token set used by the Docs API merge. Project total
+ * deliberately uses the office-visible estimate; contract value is admin-only
+ * and must never be exposed through routine office-user document creation.
+ */
+export function workspaceTemplateTokenValues(input: {
+  clientName: string;
+  siteAddress: string | null;
+  estimatedValue: number | null;
+}): WorkspaceTemplateTokenValues {
+  if (typeof input.clientName !== "string" || (input.siteAddress !== null && typeof input.siteAddress !== "string")) {
+    throw new TypeError("Workspace template text values are invalid.");
+  }
+  if (
+    input.estimatedValue !== null
+    && (!Number.isSafeInteger(input.estimatedValue) || input.estimatedValue < 0)
+  ) {
+    throw new TypeError("Workspace template estimated value is invalid.");
+  }
+  return Object.freeze({
+    "{{client_name}}": input.clientName.trim(),
+    "{{site_address}}": input.siteAddress?.trim() ?? "",
+    "{{total}}": input.estimatedValue === null ? "" : formatUsd(input.estimatedValue),
+  });
+}
 
 /** The five starter identities are pinned so growing the shipped catalog is explicit. */
 export const WORKSPACE_TEMPLATE_SEED_KEYS = Object.freeze([
@@ -165,7 +195,9 @@ function ownerSheetShell(title: string, businessDisplayName: string) {
 /**
  * Renders upload-conversion source bytes for one sanitized blueprint template.
  * Owner-added entries intentionally receive only a titled shell; content remains
- * owner-authored in Google after setup creates the native file.
+ * owner-authored in Google after setup creates the native file. Slides templates
+ * are created metadata-only by GoogleDriveClient because Drive cannot convert
+ * HTML into a native Google Slides presentation.
  */
 export function renderWorkspaceTemplate(
   template: WorkspaceBlueprintTemplate,
@@ -192,7 +224,7 @@ export function renderWorkspaceTemplate(
       ? projectBudgetBody(title, businessName)
       : ownerSheetShell(title, businessName);
   } else {
-    throw new Error(`Unsupported Workspace template kind: ${String(template.kind)}.`);
+    throw new Error("Slides templates must be created as native Google presentations.");
   }
 
   return Object.freeze({

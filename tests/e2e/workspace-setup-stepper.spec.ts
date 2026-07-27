@@ -3113,7 +3113,11 @@ test("simulation creation journey adopts Drive, ensures roots, spreadsheets, and
   const templateResources: WorkspaceResourcesPayload["resources"] = blueprint.templates.map((template) => ({
     key: template.key,
     resourceType: "drive.file",
-    label: template.kind === "sheet" ? "Spreadsheet template" : "Document template",
+    label: template.kind === "sheet"
+      ? "Spreadsheet template"
+      : template.kind === "slides"
+        ? "Presentation template"
+        : "Document template",
     name: template.name,
     blueprintName: template.name,
     management: template.management,
