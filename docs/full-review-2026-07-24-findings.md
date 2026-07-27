@@ -576,6 +576,30 @@ packets cover other cards; DES-06/08d own the Overview layout editor). New.
 
 ---
 
+### FIX-20 · Wrap-insensitive documentation pins (small; from the July 27 devils-advocate review)
+**Why:** several CI suites pin documentation prose at line-wrap granularity, so an innocent
+reflow of a guide sentence turns CI red with an error naming an unrelated feature:
+`tests/set11-directory-sync.test.mjs:59-62` and
+`tests/set24-employee-login-readiness.test.mjs:235-237` match settings-guide sentences with
+literal spaces (one pin requires a hard wrap between two specific words; another requires a
+single ~430-char unwrapped line), and `tests/ai-outbound-guard.test.mjs` pins two
+ai-assistant-spec headings verbatim **including their dates**, so re-dating the residual
+register breaks the build. Global guardrail 0 makes settings-guide edits mandatory per
+settings packet — the mandatory edit is the one most likely to fail CI. Wrap-sensitivity is a
+regex artifact, not a contract.
+**Do:** rewrite the prose pins as wrap-insensitive fact assertions — `\s+` for inter-word
+whitespace in the set11/set24 sentence pins; the two spec heading pins match the title
+date-insensitively (the guard's own §11 slice logic is untouched). Keep byte-exact pins only
+where byte layout IS the contract (golden hashes, status-line grammar, SQL strings). Each
+loosened pin still asserts the same fact.
+**Accept:** re-wrapping any pinned settings-guide sentence at a different column passes CI;
+re-dating the spec's §11 heading with the pin updated in the same commit is no longer
+required — the pin matches any date; every loosened assertion still fails when its FACT
+changes (mutation-check each by altering a load-bearing word); `npm test` green.
+**Dedup:** DOC-04 (PR #220) added the warning banners; this packet reduces the underlying
+fragility the banners warn about. New — no other packet owns pin granularity.
+**Effort:** small. **Cost:** $0.
+
 ## KNOWN appendix — notable already-owned items reviewers surfaced
 
 Surfaced during the walk but owned by an open packet; listed for the owner's
