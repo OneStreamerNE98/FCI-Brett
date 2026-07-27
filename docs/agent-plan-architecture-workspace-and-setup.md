@@ -1518,6 +1518,7 @@ deliberate; template content contains no secrets or env values; simulation e2e.
 **Effort:** medium.
 
 ### SET-18 · Reconcile & drift maintenance (medium, after SET-15+16+17)
+**Status:** In progress — `codex/set18-reconcile-drift`, built and pushed (lint + `npm test` 1,084 pass + focused e2e green); PR deliberately withheld at a real ownership collision — the branch touches `app/api/v1/integrations/google/drive/templates/ensure/route.ts`, owned by SET-22's open PR #217/#221. After #217 merges, rebase onto main, reverify, open the draft PR.
 **Why:** Owner requirement: blueprint edits after resources exist must drive a drift
 view — defined-but-missing offers create; removed-from-blueprint is shown unmanaged and
 is **never deleted**.
