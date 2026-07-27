@@ -88,6 +88,7 @@ export async function createLead(
     created_by: authorization.actorId,
     created_at: createdAt,
     updated_at: createdAt,
+    version: "1",
   };
   const result = await dependencies.repository.create({
     lead,

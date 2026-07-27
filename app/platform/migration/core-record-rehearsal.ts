@@ -195,7 +195,7 @@ type PreparedClient = {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
-  version: "1";
+  version: string;
 };
 
 type PreparedContact = {
@@ -208,7 +208,7 @@ type PreparedContact = {
   isPrimary: boolean;
   createdAt: string;
   updatedAt: string;
-  version: "1";
+  version: string;
 };
 
 type PreparedProject = {
@@ -235,7 +235,7 @@ type PreparedProject = {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
-  version: "1";
+  version: string;
 };
 
 type PreparedLead = {
@@ -258,7 +258,7 @@ type PreparedLead = {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
-  version: "1";
+  version: string;
 };
 
 type PreparedProjectMeeting = {
@@ -284,7 +284,7 @@ type PreparedProjectMeeting = {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
-  version: "1";
+  version: string;
 };
 
 type PreparedActivityEvent = {
@@ -737,9 +737,15 @@ function databaseTimestamp(value: unknown, label: string): string {
   return canonicalTimestamp(value, label);
 }
 
-function versionOne(value: unknown, label: string): "1" {
-  if (value !== "1") fail("invalid_version", `${label} must be the explicit migration baseline version`);
-  return "1";
+function canonicalRecordVersion(value: unknown, label: string): string {
+  if (
+    typeof value !== "string"
+    || !/^[1-9][0-9]{0,18}$/.test(value)
+    || BigInt(value) > BigInt("9223372036854775807")
+  ) {
+    fail("invalid_version", `${label} must be a canonical positive 64-bit version`);
+  }
+  return value;
 }
 
 function nonnegativeSafeInteger(value: unknown, label: string): number {
@@ -976,7 +982,7 @@ function prepareSnapshot(value: unknown): {
       updatedBy: requiredText(row.updatedBy, `clients[${index}].updatedBy`),
       createdAt,
       updatedAt,
-      version: versionOne(row.version, `clients[${index}].version`),
+      version: canonicalRecordVersion(row.version, `clients[${index}].version`),
     } satisfies PreparedClient;
   });
 
@@ -1006,7 +1012,7 @@ function prepareSnapshot(value: unknown): {
       isPrimary: row.isPrimary,
       createdAt,
       updatedAt,
-      version: versionOne(row.version, `contacts[${index}].version`),
+      version: canonicalRecordVersion(row.version, `contacts[${index}].version`),
     } satisfies PreparedContact;
   });
 
@@ -1068,7 +1074,7 @@ function prepareSnapshot(value: unknown): {
       updatedBy: requiredText(row.updatedBy, `leads[${index}].updatedBy`),
       createdAt,
       updatedAt,
-      version: versionOne(row.version, `leads[${index}].version`),
+      version: canonicalRecordVersion(row.version, `leads[${index}].version`),
     } satisfies PreparedLead;
   });
 
@@ -1140,7 +1146,7 @@ function prepareSnapshot(value: unknown): {
       updatedBy: requiredText(row.updatedBy, `projects[${index}].updatedBy`),
       createdAt,
       updatedAt,
-      version: versionOne(row.version, `projects[${index}].version`),
+      version: canonicalRecordVersion(row.version, `projects[${index}].version`),
     } satisfies PreparedProject;
   });
 
@@ -1241,7 +1247,7 @@ function prepareSnapshot(value: unknown): {
       createdBy: requiredText(row.createdBy, `projectMeetings[${index}].createdBy`),
       createdAt,
       updatedAt,
-      version: versionOne(row.version, `projectMeetings[${index}].version`),
+      version: canonicalRecordVersion(row.version, `projectMeetings[${index}].version`),
     } satisfies PreparedProjectMeeting;
   });
 

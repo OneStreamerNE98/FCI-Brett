@@ -6,8 +6,11 @@ import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 import {
   MAX_LEAD_BODY_BYTES,
+  LEAD_PATCH_KEYS,
+  leadValues,
   leadResponse,
-  validateLeadValues,
+  mergeLeadPatch,
+  normalizeLeadPatch,
   type ValidatedLeadValues,
 } from "../../../../domain/lead";
 import type { LeadActivityIntent } from "../../../../ports/lead-repository";
@@ -32,9 +35,7 @@ const LEAD_ACTIVITY_ACTIONS = {
   status: "Lead status changed",
 } as const satisfies Record<keyof ValidatedLeadValues, LeadActivityIntent["action"]>;
 
-const MUTABLE_KEYS = new Set<keyof ValidatedLeadValues>(
-  Object.keys(LEAD_ACTIVITY_ACTIONS) as (keyof ValidatedLeadValues)[],
-);
+const MUTABLE_KEYS = new Set<keyof ValidatedLeadValues>(LEAD_PATCH_KEYS);
 
 function leadActivityValue(key: keyof ValidatedLeadValues, value: string | number | null) {
   if (value === null) return "Not set";
@@ -55,39 +56,26 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     tooLargeMessage: "Lead details are too large.",
   });
   if (!parsed.ok) return noStore({ error: parsed.error }, { status: parsed.status });
-  const suppliedKeys = Object.keys(parsed.body);
-  if (
-    suppliedKeys.length === 0
-    || suppliedKeys.some((key) => !MUTABLE_KEYS.has(key as keyof ValidatedLeadValues))
-  ) {
-    return noStore({ error: "Only supported lead fields can be updated." }, { status: 400 });
-  }
+  const normalized = normalizeLeadPatch(parsed.body);
+  if (!normalized.ok) return noStore({ error: normalized.message }, { status: 400 });
 
   await ensureWorkspaceSchema();
   const repository = createD1LeadRepository(env.DB as unknown as D1Database);
   const current = await repository.findById(leadId);
   if (!current) return noStore({ error: "Lead not found." }, { status: 404 });
-  const currentValues = {
-    company: current.company,
-    contactName: current.contact_name,
-    contactEmail: current.contact_email,
-    contactPhone: current.contact_phone,
-    projectName: current.project_name,
-    source: current.source,
-    stage: current.stage,
-    site: current.site,
-    estimatedValue: current.estimated_value,
-    nextAction: current.next_action,
-    nextActionAt: current.next_action_at,
-    ownerEmail: current.owner_email,
-    status: current.status,
-  } satisfies Record<keyof ValidatedLeadValues, string | number | null>;
-  const values = validateLeadValues({ ...currentValues, ...parsed.body });
-  if (!values) return noStore({ error: "One or more lead fields are invalid." }, { status: 400 });
+  if (normalized.value.version && normalized.value.version !== current.version) {
+    return noStore(
+      { error: "Lead changed since it was loaded.", currentVersion: current.version },
+      { status: 409 },
+    );
+  }
+  const currentValues = leadValues(current);
+  const values = mergeLeadPatch(currentValues, normalized.value);
 
   const now = Date.now();
   const activities: LeadActivityIntent[] = [];
   for (const key of MUTABLE_KEYS) {
+    if (!Object.hasOwn(normalized.value, key)) continue;
     if (values[key] === currentValues[key]) continue;
     activities.push({
       id: crypto.randomUUID(),
@@ -98,8 +86,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       createdAt: now,
     });
   }
+  if (activities.length === 0) return noStore({ lead: leadResponse(current) });
   const result = await repository.update({
     leadId,
+    expectedVersion: normalized.value.version ?? current.version,
     values,
     updatedAt: now,
     updatedBy: auth.user.email,
@@ -107,6 +97,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   });
   if (result.outcome === "lead-not-found") {
     return noStore({ error: "Lead not found." }, { status: 404 });
+  }
+  if (result.outcome === "conflict") {
+    return noStore(
+      { error: "Lead changed since it was loaded.", currentVersion: result.currentVersion },
+      { status: 409 },
+    );
   }
   return noStore({ lead: leadResponse(result.value) });
 }

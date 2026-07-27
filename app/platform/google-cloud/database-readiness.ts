@@ -88,6 +88,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "project_segment",
       checksum: "sha256:9fe7e63bb2f266636164f20436753189938cd9c47a21b2a5e565e8faa79b87b9",
     }),
+    Object.freeze({
+      version: 11,
+      name: "core_record_concurrency",
+      checksum: "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
+    }),
   ]);
 
 /**
@@ -195,7 +200,16 @@ function runtimeColumnUpdateAccess(
 export const EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS: readonly ExpectedRuntimeColumnUpdateAccess[] =
   Object.freeze([
     runtimeColumnUpdateAccess("projects", [
+      "client_id",
+      "name",
+      "status",
+      "site",
       "project_manager",
+      "estimated_value",
+      "flooring_category",
+      "square_feet",
+      "contract_value",
+      "segment",
       "installation_started_at",
       "installation_completed_at",
       "had_callback",

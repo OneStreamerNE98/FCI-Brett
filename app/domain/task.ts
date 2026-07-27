@@ -1,3 +1,5 @@
+import { normalizeRecordVersion } from "./record-version.ts";
+
 export const MAX_TASK_BODY_BYTES = 8_000;
 export const MAX_TASK_LIST_RESULTS = 200;
 
@@ -27,6 +29,7 @@ export type TaskRow = {
   created_at: number;
   updated_at: number;
   completed_at: number | null;
+  version: string;
 };
 
 export type ValidatedTaskCreation = {
@@ -41,6 +44,18 @@ export type ValidatedTaskCreation = {
   sourceRef: string | null;
 };
 
+export const TASK_PATCH_KEYS = [
+  "title",
+  "details",
+  "status",
+  "dueDate",
+  "projectId",
+  "leadId",
+  "assigneeEmail",
+] as const;
+
+export type TaskPatchKey = typeof TASK_PATCH_KEYS[number];
+
 export type ValidatedTaskPatch = Partial<{
   title: string;
   details: string | null;
@@ -49,7 +64,9 @@ export type ValidatedTaskPatch = Partial<{
   projectId: string | null;
   leadId: string | null;
   assigneeEmail: string | null;
-}>;
+}> & {
+  version?: string;
+};
 
 export type TaskListFilters = {
   status?: TaskStatus;
@@ -76,15 +93,7 @@ const TASK_CREATE_KEYS = new Set([
   "sourceRef",
 ]);
 
-const TASK_PATCH_KEYS = new Set([
-  "title",
-  "details",
-  "status",
-  "dueDate",
-  "projectId",
-  "leadId",
-  "assigneeEmail",
-]);
+const TASK_PATCH_KEY_SET = new Set<string>([...TASK_PATCH_KEYS, "version"]);
 
 const TASK_LIST_KEYS = new Set([
   "status",
@@ -210,10 +219,18 @@ export function normalizeTaskCreation(
 export function normalizeTaskPatch(
   body: Record<string, unknown>,
 ): TaskValidation<ValidatedTaskPatch> {
-  if (!hasOnlyKeys(body, TASK_PATCH_KEYS) || Object.keys(body).length === 0) {
+  if (
+    !hasOnlyKeys(body, TASK_PATCH_KEY_SET)
+    || !TASK_PATCH_KEYS.some((key) => Object.hasOwn(body, key))
+  ) {
     return { ok: false, message: "Task update must contain at least one supported field." };
   }
   const patch: ValidatedTaskPatch = {};
+  if (Object.hasOwn(body, "version")) {
+    const value = normalizeRecordVersion(body.version);
+    if (!value) return { ok: false, message: "Task version must be a positive whole number." };
+    patch.version = value;
+  }
   if (Object.hasOwn(body, "title")) {
     const value = singleLineText(body.title, 200);
     if (!value) return { ok: false, message: "Task title must be 200 characters or fewer." };
@@ -317,5 +334,6 @@ export function taskResponse(row: TaskRow) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
+    version: row.version,
   };
 }

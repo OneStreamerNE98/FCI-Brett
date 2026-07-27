@@ -25,6 +25,7 @@ import {
 } from "../app/platform/postgres/project-segment-schema.ts";
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "../app/platform/postgres/settings-persistence-schema.ts";
 import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts";
+import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "../app/platform/postgres/core-record-concurrency-schema.ts";
 
 const MIGRATION_VERSIONS = PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version);
 const CURRENT_MIGRATION_VERSION = MIGRATION_VERSIONS.at(-1);
@@ -150,7 +151,7 @@ function queryIndex(client, pattern) {
 test("keeps production migration declarations immutable and line-ending independent", () => {
   validateProductionMigrationRegistry(PRODUCTION_SCHEMA_MIGRATIONS);
   assert.deepEqual(
-    PRODUCTION_SCHEMA_MIGRATIONS.slice(0, 9).map(({ checksum }) => checksum),
+    PRODUCTION_SCHEMA_MIGRATIONS.slice(0, 10).map(({ checksum }) => checksum),
     [
       "sha256:b3aab0addffeb3e8b4efc58373f359f56489778be9d0ec16dc098ab183beb9f6",
       "sha256:18e19555f53bc5f7f793e0fc5a2960ead8124cc67debff1db24785732bea5aea",
@@ -161,6 +162,7 @@ test("keeps production migration declarations immutable and line-ending independ
       "sha256:cb468b7237bc478ebe7f35f93ccc97611c94b66fc870e61258b6762297e7d63a",
       "sha256:e7df1a997fabf3aab599dbeefc7629e8d987a9152b0620a1372ebc0a57074951",
       "sha256:c3f3dc194ce5a92aabc172db7bc136d886a6f2900136cdf53fb30720f5d711d1",
+      "sha256:9fe7e63bb2f266636164f20436753189938cd9c47a21b2a5e565e8faa79b87b9",
     ],
   );
 
@@ -376,7 +378,7 @@ test("registers project segment parity as contiguous migration ten with the exac
   assert.equal(migration.name, "project_segment");
   assert.equal(migration.statements, PROJECT_SEGMENT_SCHEMA_STATEMENTS);
   assert.deepEqual([...PRODUCTION_PROJECT_SEGMENTS], [...PROJECT_SEGMENTS]);
-  assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
+  assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.slice(0, 10).map(({ version }) => version), [
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
   ]);
 
@@ -387,6 +389,38 @@ test("registers project segment parity as contiguous migration ten with the exac
     /projects_segment_check CHECK \(\s*segment IS NULL\s*OR segment IN \('commercial', 'residential'\)\s*\)/,
   );
   assert.doesNotMatch(sql, /\b(?:DROP TABLE|TRUNCATE|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/i);
+});
+
+test("registers the non-structural core-record concurrency law as contiguous migration eleven", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 11);
+  assert.ok(migration);
+  assert.equal(migration.name, "core_record_concurrency");
+  assert.equal(migration.statements, CORE_RECORD_CONCURRENCY_STATEMENTS);
+  assert.equal(
+    migration.checksum,
+    "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
+  );
+  assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+  ]);
+  assert.deepEqual(
+    migration.statements.map((statement) => {
+      const match = statement.match(/^COMMENT ON COLUMN ([a-z_]+)\.version IS /u);
+      return match?.[1];
+    }),
+    ["clients", "contacts", "leads", "projects", "project_meetings", "tasks"],
+  );
+  assert.equal(
+    migration.statements.every((statement) =>
+      statement.endsWith(
+        "'Optimistic concurrency token: update only the expected version and increment once.'",
+      )),
+    true,
+  );
+  assert.doesNotMatch(
+    migration.statements.map((statement) => statement.split(" IS ")[0]).join("\n"),
+    /\b(?:ALTER|CREATE|DROP|TRUNCATE|UPDATE|INSERT|DELETE)\b/iu,
+  );
 });
 
 test("rejects gaps, duplicate names, transaction control, and concurrent indexes", () => {

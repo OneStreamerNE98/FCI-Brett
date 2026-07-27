@@ -55,7 +55,7 @@ test("both project adapters implement the shared operation outcome contract", ()
   );
   assert.match(
     repositoryPort,
-    /ProjectOperationRepositoryResult = \{ outcome: "updated" \} \| \{ outcome: "project-not-found" \}/,
+    /ProjectOperationRepositoryResult =[\s\S]*\{ outcome: "updated" \}[\s\S]*\{ outcome: "project-not-found" \}[\s\S]*VersionConflict/,
   );
   for (const method of ["recordInstallationDates", "recordFollowUpResult"]) {
     assert.match(d1Adapter, new RegExp(`async ${method}\\(`));

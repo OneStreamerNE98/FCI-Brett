@@ -554,6 +554,7 @@ function capResolver(kind, sql) {
       created_at: 1,
       updated_at: 1,
       completed_at: null,
+      version: 1,
     }));
   }
   if (sql.startsWith("SELECT id, lead_number, company, project_name")) {

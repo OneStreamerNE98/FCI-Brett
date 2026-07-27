@@ -1,6 +1,12 @@
-import { FLOORING_CATEGORIES } from "../../domain/project-creation";
+import {
+  FLOORING_CATEGORIES,
+  PROJECT_STATUSES,
+  type FlooringCategory,
+  type ProjectStatus,
+} from "../../domain/project-creation";
 import {
   PROJECT_SEGMENTS,
+  normalizeProjectSegment,
   resolveProjectSegment,
 } from "../../domain/project-segment";
 import type {
@@ -10,6 +16,7 @@ import type {
   ProjectInstallationDatesIntent,
   ProjectOperationsRepository,
   ProjectRepository,
+  ProjectRow,
 } from "../../ports/project-repository";
 import {
   bindPostgresCreationRequest,
@@ -20,7 +27,11 @@ import {
   POSTGRES_CREATION_OPERATIONS,
   type PostgresCreationRequestMetadata,
 } from "./creation-idempotency";
-import { withPostgresTransaction, type PostgresPool } from "./postgres-database";
+import {
+  withPostgresTransaction,
+  type PostgresClient,
+  type PostgresPool,
+} from "./postgres-database";
 import {
   isPostgresUuid,
   parsePostgresJsonObject,
@@ -41,6 +52,25 @@ type ProjectInsertRow = Record<string, unknown> & {
   version: unknown;
 };
 
+type ProjectDatabaseRow = ProjectInsertRow & {
+  client_id: unknown;
+  name: unknown;
+  status: unknown;
+  site: unknown;
+  flooring_category: unknown;
+  square_feet: unknown;
+  contract_value: unknown;
+  segment: unknown;
+  updated_at: unknown;
+};
+
+const PROJECT_SELECT = `SELECT id::text AS id, project_number,
+       client_id::text AS client_id, name, status, site, project_manager,
+       estimated_value::text AS estimated_value, flooring_category,
+       square_feet::text AS square_feet, contract_value::text AS contract_value,
+       segment, updated_at, version::text AS version
+FROM projects`;
+
 const PROJECT_IDENTIFIER_CONSTRAINTS = [
   "projects_pkey",
   "projects_project_number_key",
@@ -49,6 +79,7 @@ const PROJECT_IDENTIFIER_CONSTRAINTS = [
   "outbox_events_event_key_key",
   "idempotency_requests_pkey",
 ] as const;
+const PROJECT_CLIENT_REFERENCE_CONSTRAINTS = ["projects_client_id_fkey"] as const;
 
 export type PostgresProjectRepositoryOptions = {
   schema?: string;
@@ -199,11 +230,162 @@ function projectFromRow(row: ProjectInsertRow): AcceptedProjectCreation {
   };
 }
 
+function nullableText(value: unknown, label: string) {
+  if (value === null) return null;
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is invalid`);
+  return value;
+}
+
+function projectRowFromPostgres(row: ProjectDatabaseRow): ProjectRow {
+  if (
+    !isPostgresUuid(row.id)
+    || typeof row.project_number !== "string"
+    || !isPostgresUuid(row.client_id)
+    || typeof row.name !== "string"
+    || typeof row.status !== "string"
+    || !PROJECT_STATUSES.includes(row.status as ProjectStatus)
+  ) {
+    throw new Error("PostgreSQL project row is invalid");
+  }
+  const flooringCategory = nullableText(
+    row.flooring_category,
+    "PostgreSQL project flooring category",
+  );
+  if (
+    flooringCategory !== null
+    && !FLOORING_CATEGORIES.includes(flooringCategory as FlooringCategory)
+  ) {
+    throw new Error("PostgreSQL project flooring category is unsupported");
+  }
+  const segmentText = nullableText(row.segment, "PostgreSQL project segment");
+  const segment = normalizeProjectSegment(segmentText);
+  if (segmentText !== null && segment === null) {
+    throw new Error("PostgreSQL project segment is unsupported");
+  }
+  return {
+    id: row.id,
+    projectNumber: row.project_number,
+    clientId: row.client_id,
+    name: row.name,
+    status: row.status as ProjectStatus,
+    site: nullableText(row.site, "PostgreSQL project site"),
+    projectManagerId: nullableText(row.project_manager, "PostgreSQL project manager"),
+    estimatedValue: parsePostgresNumericSafeInteger(
+      row.estimated_value,
+      "PostgreSQL project estimated value",
+      { nullable: true },
+    ),
+    flooringCategory: flooringCategory as FlooringCategory | null,
+    squareFeet: parsePostgresNumericSafeInteger(
+      row.square_feet,
+      "PostgreSQL project square feet",
+      { nullable: true },
+    ),
+    contractValue: parsePostgresNumericSafeInteger(
+      row.contract_value,
+      "PostgreSQL project contract value",
+      { nullable: true },
+    ),
+    segment,
+    updatedAt: parsePostgresTimestamp(row.updated_at, "PostgreSQL project updated_at"),
+    version: parsePostgresPositiveBigint(row.version, "PostgreSQL project version"),
+  };
+}
+
+async function currentProjectVersion(client: PostgresClient, projectId: string) {
+  const current = await client.query<{ version: unknown }>(
+    "SELECT version::text AS version FROM projects WHERE id = $1",
+    [projectId],
+  );
+  if (current.rowCount === 0) return null;
+  if (current.rowCount !== 1 || !current.rows[0]) {
+    throw new Error("PostgreSQL project version lookup returned an invalid result");
+  }
+  return parsePostgresPositiveBigint(
+    current.rows[0].version,
+    "PostgreSQL current project version",
+  );
+}
+
+async function projectUpdateFailure(client: PostgresClient, projectId: string) {
+  const currentVersion = await currentProjectVersion(client, projectId);
+  return currentVersion
+    ? { outcome: "conflict" as const, currentVersion }
+    : { outcome: "project-not-found" as const };
+}
+
+async function projectOperationExpectedVersion(
+  client: PostgresClient,
+  projectId: string,
+  supplied: string | undefined,
+) {
+  if (supplied !== undefined) {
+    return parsePostgresPositiveBigint(supplied, "Expected PostgreSQL project version");
+  }
+  return currentProjectVersion(client, projectId);
+}
+
+async function insertProjectUpdateActivity(
+  client: PostgresClient,
+  activity: {
+    id: string;
+    recordId: string;
+    action: string;
+    actor: string;
+    detail: string;
+    createdAt: number;
+  },
+  prefix: string,
+  resultingVersion: string,
+) {
+  const audit = await client.query(
+    `INSERT INTO activity_events (
+       id, project_id, action, actor_id, correlation_id, result, detail, occurred_at
+     )
+     SELECT $1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7
+     WHERE EXISTS (
+       SELECT 1 FROM projects WHERE id = $2 AND version = $8::bigint
+     )`,
+    [
+      activity.id,
+      activity.recordId,
+      activity.action,
+      activity.actor,
+      `${prefix}:${activity.id}`,
+      JSON.stringify({ message: activity.detail }),
+      new Date(activity.createdAt),
+      resultingVersion,
+    ],
+  );
+  if (audit.rowCount !== 1) {
+    throw new Error("PostgreSQL project update evidence was not inserted exactly once");
+  }
+}
+
 export function createPostgresProjectRepository(
   pool: PostgresPool,
   options: PostgresProjectRepositoryOptions = {},
 ): ProjectRepository & ProjectOperationsRepository {
   return {
+    async findById(projectId) {
+      if (!isPostgresUuid(projectId)) return null;
+      return withPostgresTransaction(
+        pool,
+        { schema: options.schema, readOnly: true },
+        async (client) => {
+          const result = await client.query<ProjectDatabaseRow>(
+            `${PROJECT_SELECT}\nWHERE id = $1`,
+            [projectId],
+          );
+          if (result.rowCount === 0) return null;
+          if (result.rowCount !== 1 || !result.rows[0]) {
+            throw new Error("PostgreSQL project lookup returned an invalid result");
+          }
+          return projectRowFromPostgres(result.rows[0]);
+        },
+      );
+    },
+
     async create(intent) {
       assertProjectIntent(intent);
       if (!options.request) {
@@ -363,6 +545,76 @@ export function createPostgresProjectRepository(
       });
     },
 
+    async update(intent) {
+      if (!isPostgresUuid(intent.projectId)) return { outcome: "project-not-found" };
+      if (!isPostgresUuid(intent.values.clientId)) return { outcome: "client-not-found" };
+      assertUuid(intent.activity.id, "PostgreSQL project activity ID");
+      if (
+        intent.activity.recordId !== intent.projectId
+        || intent.activity.actor !== intent.updatedBy
+        || intent.activity.createdAt !== intent.updatedAt
+        || !intent.updatedBy.trim()
+        || !Number.isSafeInteger(intent.updatedAt)
+      ) {
+        throw new TypeError("PostgreSQL project update evidence must match the project and actor");
+      }
+      const expectedVersion = parsePostgresPositiveBigint(
+        intent.expectedVersion,
+        "Expected PostgreSQL project version",
+      );
+      try {
+        return await withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
+          const values = intent.values;
+          const updated = await client.query<ProjectDatabaseRow>(
+            `UPDATE projects
+             SET client_id = $1, name = $2, status = $3, site = $4,
+                 estimated_value = $5, flooring_category = $6, square_feet = $7,
+                 contract_value = $8, segment = $9, updated_by = $10,
+                 updated_at = $11, version = version + 1
+             WHERE id = $12 AND version = $13::bigint
+             RETURNING id::text AS id, project_number,
+                       client_id::text AS client_id, name, status, site,
+                       project_manager, estimated_value::text AS estimated_value,
+                       flooring_category, square_feet::text AS square_feet,
+                       contract_value::text AS contract_value, segment,
+                       updated_at, version::text AS version`,
+            [
+              values.clientId,
+              values.name,
+              values.status,
+              values.site,
+              values.estimatedValue,
+              values.flooringCategory,
+              values.squareFeet,
+              values.contractValue,
+              values.segment,
+              intent.updatedBy,
+              new Date(intent.updatedAt),
+              intent.projectId,
+              expectedVersion,
+            ],
+          );
+          if (updated.rowCount === 0) return projectUpdateFailure(client, intent.projectId);
+          if (updated.rowCount !== 1 || !updated.rows[0]) {
+            throw new Error("PostgreSQL project update returned an invalid result");
+          }
+          const value = projectRowFromPostgres(updated.rows[0]);
+          await insertProjectUpdateActivity(
+            client,
+            intent.activity,
+            "project-update",
+            value.version,
+          );
+          return { outcome: "updated" as const, value };
+        });
+      } catch (error) {
+        if (postgresConstraint(error, "23503", PROJECT_CLIENT_REFERENCE_CONSTRAINTS)) {
+          return { outcome: "client-not-found" as const };
+        }
+        throw error;
+      }
+    },
+
     async assignManager(intent) {
       if (!isPostgresUuid(intent.projectId)) return { outcome: "project-not-found" };
       assertUuid(intent.activity.id, "PostgreSQL project activity ID");
@@ -371,29 +623,39 @@ export function createPostgresProjectRepository(
       }
 
       return withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
+        const expectedVersion = await projectOperationExpectedVersion(
+          client,
+          intent.projectId,
+          intent.expectedVersion,
+        );
+        if (!expectedVersion) return { outcome: "project-not-found" as const };
         const updated = await client.query<Record<string, unknown> & { version: unknown }>(
           `UPDATE projects
            SET project_manager = $1, updated_by = $2, updated_at = $3,
                version = version + 1
-           WHERE id = $4
+           WHERE id = $4 AND version = $5::bigint
            RETURNING version::text AS version`,
-          [intent.projectManagerId, intent.activity.actor, new Date(intent.updatedAt), intent.projectId],
-        );
-        if (updated.rowCount !== 1) return { outcome: "project-not-found" as const };
-        parsePostgresPositiveBigint(updated.rows[0]?.version, "PostgreSQL project-manager version");
-        await client.query(
-          `INSERT INTO activity_events (
-             id, project_id, action, actor_id, correlation_id, result, detail, occurred_at
-           ) VALUES ($1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7)`,
           [
-            intent.activity.id,
-            intent.projectId,
-            intent.activity.action,
+            intent.projectManagerId,
             intent.activity.actor,
-            `project-manager:${intent.activity.id}`,
-            JSON.stringify({ message: intent.activity.detail }),
-            new Date(intent.activity.createdAt),
+            new Date(intent.updatedAt),
+            intent.projectId,
+            expectedVersion,
           ],
+        );
+        if (updated.rowCount === 0) return projectUpdateFailure(client, intent.projectId);
+        if (updated.rowCount !== 1 || !updated.rows[0]) {
+          throw new Error("PostgreSQL project-manager update returned an invalid result");
+        }
+        const resultingVersion = parsePostgresPositiveBigint(
+          updated.rows[0].version,
+          "PostgreSQL project-manager version",
+        );
+        await insertProjectUpdateActivity(
+          client,
+          intent.activity,
+          "project-manager",
+          resultingVersion,
         );
         return { outcome: "updated" as const };
       });
@@ -417,11 +679,17 @@ export function createPostgresProjectRepository(
       }
 
       return withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
+        const expectedVersion = await projectOperationExpectedVersion(
+          client,
+          intent.projectId,
+          intent.expectedVersion,
+        );
+        if (!expectedVersion) return { outcome: "project-not-found" as const };
         const updated = await client.query<Record<string, unknown> & { version: unknown }>(
           `UPDATE projects
            SET installation_started_at = $1, installation_completed_at = $2,
                updated_by = $3, updated_at = $4, version = version + 1
-           WHERE id = $5
+           WHERE id = $5 AND version = $6::bigint
            RETURNING version::text AS version`,
           [
             new Date(intent.installationStartedAt),
@@ -429,26 +697,22 @@ export function createPostgresProjectRepository(
             intent.activity.actor,
             new Date(intent.updatedAt),
             intent.projectId,
+            expectedVersion,
           ],
         );
-        if (updated.rowCount !== 1) return { outcome: "project-not-found" as const };
-        parsePostgresPositiveBigint(
-          updated.rows[0]?.version,
+        if (updated.rowCount === 0) return projectUpdateFailure(client, intent.projectId);
+        if (updated.rowCount !== 1 || !updated.rows[0]) {
+          throw new Error("PostgreSQL installation-date update returned an invalid result");
+        }
+        const resultingVersion = parsePostgresPositiveBigint(
+          updated.rows[0].version,
           "PostgreSQL installation-date project version",
         );
-        await client.query(
-          `INSERT INTO activity_events (
-             id, project_id, action, actor_id, correlation_id, result, detail, occurred_at
-           ) VALUES ($1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7)`,
-          [
-            intent.activity.id,
-            intent.projectId,
-            intent.activity.action,
-            intent.activity.actor,
-            `project-installation:${intent.activity.id}`,
-            JSON.stringify({ message: intent.activity.detail }),
-            new Date(intent.activity.createdAt),
-          ],
+        await insertProjectUpdateActivity(
+          client,
+          intent.activity,
+          "project-installation",
+          resultingVersion,
         );
         return { outcome: "updated" as const };
       });
@@ -469,11 +733,17 @@ export function createPostgresProjectRepository(
       }
 
       return withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
+        const expectedVersion = await projectOperationExpectedVersion(
+          client,
+          intent.projectId,
+          intent.expectedVersion,
+        );
+        if (!expectedVersion) return { outcome: "project-not-found" as const };
         const updated = await client.query<Record<string, unknown> & { version: unknown }>(
           `UPDATE projects
            SET had_callback = $1, callback_note = $2, updated_by = $3,
                updated_at = $4, version = version + 1
-           WHERE id = $5
+           WHERE id = $5 AND version = $6::bigint
            RETURNING version::text AS version`,
           [
             intent.hadCallback,
@@ -481,26 +751,22 @@ export function createPostgresProjectRepository(
             intent.activity.actor,
             new Date(intent.updatedAt),
             intent.projectId,
+            expectedVersion,
           ],
         );
-        if (updated.rowCount !== 1) return { outcome: "project-not-found" as const };
-        parsePostgresPositiveBigint(
-          updated.rows[0]?.version,
+        if (updated.rowCount === 0) return projectUpdateFailure(client, intent.projectId);
+        if (updated.rowCount !== 1 || !updated.rows[0]) {
+          throw new Error("PostgreSQL follow-up update returned an invalid result");
+        }
+        const resultingVersion = parsePostgresPositiveBigint(
+          updated.rows[0].version,
           "PostgreSQL follow-up project version",
         );
-        await client.query(
-          `INSERT INTO activity_events (
-             id, project_id, action, actor_id, correlation_id, result, detail, occurred_at
-           ) VALUES ($1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7)`,
-          [
-            intent.activity.id,
-            intent.projectId,
-            intent.activity.action,
-            intent.activity.actor,
-            `project-follow-up:${intent.activity.id}`,
-            JSON.stringify({ message: intent.activity.detail }),
-            new Date(intent.activity.createdAt),
-          ],
+        await insertProjectUpdateActivity(
+          client,
+          intent.activity,
+          "project-follow-up",
+          resultingVersion,
         );
         return { outcome: "updated" as const };
       });

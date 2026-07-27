@@ -97,7 +97,16 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
   assert.deepEqual(
     EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(({ table }) => table === "projects")?.columns,
     [
+      "client_id",
+      "name",
+      "status",
+      "site",
       "project_manager",
+      "estimated_value",
+      "flooring_category",
+      "square_feet",
+      "contract_value",
+      "segment",
       "installation_started_at",
       "installation_completed_at",
       "had_callback",
@@ -107,17 +116,9 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
       "version",
     ],
   );
-  assert.equal(
-    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS
-      .find(({ table }) => table === "projects")
-      ?.columns.includes("segment"),
-    false,
-    "the creation-only v10 segment must not gain runtime UPDATE",
-  );
-  assert.match(sql, /v10 project segment [^\n]*creation-only/);
   assert.match(
     sql,
-    /GRANT UPDATE \(project_manager, installation_started_at, installation_completed_at, had_callback, callback_note, updated_by, updated_at, version\) ON TABLE fci_app\.projects TO fci_runtime;/,
+    /GRANT UPDATE \(client_id, name, status, site, project_manager, estimated_value, flooring_category, square_feet, contract_value, segment, installation_started_at, installation_completed_at, had_callback, callback_note, updated_by, updated_at, version\) ON TABLE fci_app\.projects TO fci_runtime;/,
   );
   assert.doesNotMatch(
     sql,

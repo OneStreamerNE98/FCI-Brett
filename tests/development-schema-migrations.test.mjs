@@ -16,6 +16,7 @@ const productionMigrationModules = new Set([
   join(appRoot, "platform", "postgres", "lead-project-meeting-schema.ts"),
   join(appRoot, "platform", "postgres", "settings-persistence-schema.ts"),
   join(appRoot, "platform", "postgres", "task-schema.ts"),
+  join(appRoot, "platform", "postgres", "core-record-concurrency-schema.ts"),
 ]);
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
@@ -26,6 +27,7 @@ const userSettingsMigrationPrefix = "0016_";
 const pageLayoutsMigrationPrefix = "0017_";
 const tasksMigrationPrefix = "0018_";
 const projectSegmentMigrationPrefix = "0019_";
+const coreRecordConcurrencyMigrationPrefix = "0020_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -512,11 +514,64 @@ test("keeps DES-08 a-T2 project segments in one nullable additive migration", as
     Object.entries(snapshot.tables.projects.columns).filter(([column]) => column !== "segment"),
   );
   assert.deepEqual(unchangedProjectColumns, previousSnapshot.tables.projects.columns);
-  assert.deepEqual(journal.entries.at(-1), {
+  const journalEntry = journal.entries.find(({ tag }) => tag === "0019_demonic_lady_vermin");
+  assert.deepEqual(journalEntry, {
     idx: 19,
     version: "6",
-    when: journal.entries.at(-1).when,
+    when: journalEntry.when,
     tag: "0019_demonic_lady_vermin",
+    breakpoints: true,
+  });
+});
+
+test("adds one generated D1 version column to each core record table in migration 0020", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(coreRecordConcurrencyMigrationPrefix));
+  assert.equal(migration, "0020_core_record_concurrency.sql");
+  assert.equal(files.filter((file) => file.startsWith(coreRecordConcurrencyMigrationPrefix)).length, 1);
+
+  const [migrationSql, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0019_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0020_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+
+  const versionedTables = [
+    "clients",
+    "contacts",
+    "leads",
+    "projects",
+    "project_meetings",
+    "tasks",
+  ];
+  assert.equal(
+    [...migrationSql.matchAll(/ALTER TABLE `([^`]+)` ADD `version` integer DEFAULT 1 NOT NULL;/gu)]
+      .map((match) => match[1]).sort().join(","),
+    [...versionedTables].sort().join(","),
+  );
+  assert.doesNotMatch(migrationSql, /\b(?:DROP|UPDATE|INSERT|DELETE|TRUNCATE|RENAME)\b/iu);
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.deepEqual(Object.keys(snapshot.tables).sort(), Object.keys(previousSnapshot.tables).sort());
+  for (const table of versionedTables) {
+    assert.deepEqual(snapshot.tables[table].columns.version, {
+      name: "version",
+      type: "integer",
+      primaryKey: false,
+      notNull: true,
+      autoincrement: false,
+      default: 1,
+    });
+    const unchangedColumns = Object.fromEntries(
+      Object.entries(snapshot.tables[table].columns).filter(([column]) => column !== "version"),
+    );
+    assert.deepEqual(unchangedColumns, previousSnapshot.tables[table].columns);
+  }
+  assert.deepEqual(journal.entries.at(-1), {
+    idx: 20,
+    version: "6",
+    when: journal.entries.at(-1).when,
+    tag: "0020_core_record_concurrency",
     breakpoints: true,
   });
 });

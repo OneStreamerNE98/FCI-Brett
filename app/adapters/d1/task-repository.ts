@@ -5,6 +5,21 @@ import type {
   TaskUpdateIntent,
 } from "../../ports/task-repository";
 import type { D1Database, D1PreparedStatement } from "./d1-database";
+import { d1RecordVersion, nextD1RecordVersion } from "./record-version.ts";
+
+type D1TaskRow = Omit<TaskRow, "version"> & { version: unknown };
+
+function taskRow(row: D1TaskRow): TaskRow {
+  return { ...row, version: d1RecordVersion(row.version, "D1 task version") };
+}
+
+async function currentTaskVersion(database: D1Database, taskId: string) {
+  const row = await database
+    .prepare("SELECT version FROM tasks WHERE id = ?")
+    .bind(taskId)
+    .first<{ version: unknown }>();
+  return row ? d1RecordVersion(row.version, "D1 task version") : null;
+}
 
 type TaskReferenceFailure = "project-not-found" | "lead-not-found";
 
@@ -67,12 +82,13 @@ export function createD1TaskRepository(database: D1Database): TaskRepository {
           `SELECT * FROM tasks${where} ORDER BY due_date IS NULL, due_date, updated_at DESC, id LIMIT ?`,
         )
         .bind(...values, filters.limit)
-        .all<TaskRow>();
-      return result.results;
+        .all<D1TaskRow>();
+      return result.results.map(taskRow);
     },
 
     findById(taskId) {
-      return database.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<TaskRow>();
+      return database.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<D1TaskRow>()
+        .then((row) => row ? taskRow(row) : null);
     },
 
     async create(intent: TaskCreationIntent) {
@@ -82,7 +98,7 @@ export function createD1TaskRepository(database: D1Database): TaskRepository {
       const existing = await database
         .prepare("SELECT * FROM tasks WHERE id = ?")
         .bind(task.id)
-        .first<TaskRow>();
+        .first<D1TaskRow>();
       if (existing) return { outcome: "identifier-collision" };
 
       const statements: D1PreparedStatement[] = [
@@ -104,39 +120,48 @@ export function createD1TaskRepository(database: D1Database): TaskRepository {
       const created = await database
         .prepare("SELECT * FROM tasks WHERE id = ?")
         .bind(task.id)
-        .first<TaskRow>();
+        .first<D1TaskRow>();
       if (!created) throw new Error("D1 task creation did not return the inserted task");
-      return { outcome: "created", value: created };
+      return { outcome: "created", value: taskRow(created) };
     },
 
     async update(intent: TaskUpdateIntent) {
       const { task } = intent;
+      const expectedVersion = d1RecordVersion(intent.expectedVersion, "Expected D1 task version");
+      const resultingVersion = nextD1RecordVersion(expectedVersion);
       const existing = await database
         .prepare("SELECT * FROM tasks WHERE id = ?")
         .bind(task.id)
-        .first<TaskRow>();
+        .first<D1TaskRow>();
       if (!existing) return { outcome: "task-not-found" };
+      const currentVersion = d1RecordVersion(existing.version, "D1 task version");
+      if (currentVersion !== expectedVersion) {
+        return { outcome: "conflict", currentVersion };
+      }
       const referenceFailure = await missingTaskReference(database, task);
       if (referenceFailure) return { outcome: referenceFailure };
 
       const statements: D1PreparedStatement[] = [
-        database.prepare("UPDATE tasks SET title = ?, details = ?, status = ?, due_date = ?, project_id = ?, lead_id = ?, assignee_email = ?, updated_at = ?, completed_at = ? WHERE id = ?")
-          .bind(task.title, task.details, task.status, task.due_date, task.project_id, task.lead_id, task.assignee_email, task.updated_at, task.completed_at, task.id),
+        database.prepare("UPDATE tasks SET title = ?, details = ?, status = ?, due_date = ?, project_id = ?, lead_id = ?, assignee_email = ?, updated_at = ?, completed_at = ?, version = version + 1 WHERE id = ? AND version = ?")
+          .bind(task.title, task.details, task.status, task.due_date, task.project_id, task.lead_id, task.assignee_email, task.updated_at, task.completed_at, task.id, expectedVersion),
       ];
-      if (intent.activity) {
-        statements.push(
-          database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ? AND status = ? AND updated_at = ?)")
-            .bind(intent.activity.id, intent.activity.recordId, intent.activity.action, intent.activity.actor, intent.activity.detail, intent.activity.createdAt, task.id, task.status, task.updated_at),
-        );
-      }
+      statements.push(
+        database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1 AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND version = ? AND updated_at = ?)")
+          .bind(intent.activity.id, intent.activity.recordId, intent.activity.action, intent.activity.actor, intent.activity.detail, intent.activity.createdAt, task.id, resultingVersion, task.updated_at),
+      );
       const results = await database.batch(statements);
-      if (results[0]?.meta.changes !== 1) return { outcome: "task-not-found" };
+      if (results[0]?.meta.changes !== 1) {
+        const latestVersion = await currentTaskVersion(database, task.id);
+        return latestVersion
+          ? { outcome: "conflict", currentVersion: latestVersion }
+          : { outcome: "task-not-found" };
+      }
       const updated = await database
         .prepare("SELECT * FROM tasks WHERE id = ?")
         .bind(task.id)
-        .first<TaskRow>();
+        .first<D1TaskRow>();
       if (!updated) throw new Error("D1 task update did not return the updated task");
-      return { outcome: "updated", value: updated };
+      return { outcome: "updated", value: taskRow(updated) };
     },
   };
 }

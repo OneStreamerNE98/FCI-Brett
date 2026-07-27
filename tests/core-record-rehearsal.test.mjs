@@ -103,6 +103,39 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
   assert.deepEqual(createCoreRecordRehearsalPlan(reordered, options).sourceEvidence, plan.sourceEvidence);
 });
 
+test("bounded core rehearsal preserves canonical positive record versions beyond one", () => {
+  const versioned = clone(fixture);
+  versioned.clients[0].version = "2";
+  versioned.contacts[0].version = "3";
+  versioned.leads[0].version = "9007199254740992";
+  versioned.projects[0].version = "9223372036854775806";
+  versioned.projectMeetings[0].version = "9223372036854775807";
+  const plan = createCoreRecordRehearsalPlan(versioned, options);
+
+  assert.deepEqual(
+    {
+      clients: plan.rows.clients[0].version,
+      contacts: plan.rows.contacts[0].version,
+      leads: plan.rows.leads[0].version,
+      projects: plan.rows.projects[0].version,
+      projectMeetings: plan.rows.projectMeetings[0].version,
+    },
+    {
+      clients: "2",
+      contacts: "3",
+      leads: "9007199254740992",
+      projects: "9223372036854775806",
+      projectMeetings: "9223372036854775807",
+    },
+  );
+
+  for (const invalid of ["0", "01", "9223372036854775808", 2]) {
+    const invalidVersion = clone(fixture);
+    invalidVersion.clients[0].version = invalid;
+    expectRefusal(() => createCoreRecordRehearsalPlan(invalidVersion, options), "invalid_version");
+  }
+});
+
 test("bounded core rehearsal inventory exactly classifies every D1 table plus R2 without a runtime D1 import", async () => {
   const schemaTables = discoverD1TableNames(d1Schema);
   assert.equal(schemaTables.length, 24);

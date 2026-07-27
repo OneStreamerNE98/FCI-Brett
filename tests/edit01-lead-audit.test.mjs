@@ -34,10 +34,16 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24780 } },
 });
 
-const [leadRoute, d1LeadModule] = await Promise.all([
+const [leadRoute, d1LeadModule, leadDomainModule] = await Promise.all([
   vite.ssrLoadModule("/app/api/v1/leads/[leadId]/route.ts"),
   vite.ssrLoadModule("/app/adapters/d1/lead-repository.ts"),
+  vite.ssrLoadModule("/app/domain/lead.ts"),
 ]);
+const {
+  LEAD_PATCH_KEYS,
+  mergeLeadPatch,
+  normalizeLeadPatch,
+} = leadDomainModule;
 
 after(async () => {
   delete globalThis.__FCI_TEST_CLOUDFLARE_ENV__;
@@ -92,7 +98,8 @@ class LeadD1Database {
         status TEXT NOT NULL,
         created_by TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1
       );
       CREATE TABLE activity_events (
         id TEXT PRIMARY KEY,
@@ -159,6 +166,12 @@ class LeadD1Database {
       .map((row) => ({ ...row }));
   }
 
+  lead() {
+    return this.database
+      .prepare("SELECT site, stage, version FROM leads WHERE id = ?")
+      .get("lead-edit-fixture");
+  }
+
   close() {
     this.database.close();
   }
@@ -184,6 +197,85 @@ const fieldCases = [
   ["ownerEmail", "new-owner@example.test", "Lead owner changed", "owner@example.test → new-owner@example.test"],
   ["status", "converted", "Lead status changed", "active → converted"],
 ];
+
+test("lead patch normalization is closed, field-specific, and preserves explicit null and zero", () => {
+  assert.deepEqual([...LEAD_PATCH_KEYS], fieldCases.map(([field]) => field));
+  assert.deepEqual(normalizeLeadPatch({ stage: " Proposal ", version: "7" }), {
+    ok: true,
+    value: { version: "7", stage: "Proposal" },
+  });
+  assert.deepEqual(normalizeLeadPatch({ version: "1" }), {
+    ok: false,
+    message: "Only supported lead fields can be updated.",
+  });
+  assert.deepEqual(normalizeLeadPatch({ stage: "Proposal", future: true }), {
+    ok: false,
+    message: "Only supported lead fields can be updated.",
+  });
+  assert.deepEqual(normalizeLeadPatch({ stage: "Proposal", version: "01" }), {
+    ok: false,
+    message: "Lead version must be a positive whole number.",
+  });
+
+  for (const [field, value, message] of [
+    ["company", "", "Lead company must be 180 characters or fewer."],
+    ["contactName", "", "Lead contact name must be 160 characters or fewer."],
+    ["contactEmail", 42, "Lead contact email is invalid."],
+    ["contactPhone", 42, "Lead contact phone must be 40 characters or fewer."],
+    ["projectName", "", "Lead project name must be 180 characters or fewer."],
+    ["source", "", "Lead source must be 80 characters or fewer."],
+    ["stage", "", "Lead stage must be 80 characters or fewer."],
+    ["site", "", "Lead site must be 300 characters or fewer."],
+    ["estimatedValue", -1, "Lead estimated value must be a non-negative whole number."],
+    ["nextAction", "", "Lead next action must be 500 characters or fewer."],
+    ["nextActionAt", "not-a-time", "Lead next action due date is invalid."],
+    ["ownerEmail", "not-an-email", "Lead owner email is invalid."],
+    ["status", "future", "Lead status is invalid."],
+  ]) {
+    assert.deepEqual(normalizeLeadPatch({ [field]: value }), { ok: false, message }, field);
+  }
+
+  assert.deepEqual(normalizeLeadPatch({
+    contactEmail: null,
+    contactPhone: null,
+    estimatedValue: 0,
+    nextActionAt: null,
+  }), {
+    ok: true,
+    value: {
+      contactEmail: null,
+      contactPhone: null,
+      estimatedValue: 0,
+      nextActionAt: null,
+    },
+  });
+
+  const current = {
+    company: "FCI TEST — DO NOT USE",
+    contactName: "Test Contact",
+    contactEmail: "contact@example.test",
+    contactPhone: "555-0100",
+    projectName: "Test Flooring",
+    source: "Referral",
+    stage: "Qualified",
+    site: "Old site",
+    estimatedValue: 125_000,
+    nextAction: "Schedule site walk",
+    nextActionAt: Date.UTC(2026, 6, 28, 14, 0, 0),
+    ownerEmail: "owner@example.test",
+    status: "active",
+  };
+  assert.deepEqual(mergeLeadPatch(current, {
+    contactEmail: null,
+    estimatedValue: 0,
+    stage: "Proposal",
+  }), {
+    ...current,
+    contactEmail: null,
+    estimatedValue: 0,
+    stage: "Proposal",
+  });
+});
 
 test("lead PATCH writes one before-to-after audit row for every mutable field", async () => {
   assert.equal(fieldCases.length, 13);
@@ -257,6 +349,7 @@ test("D1 failed lead update cannot leave an audit row", async () => {
     const repository = d1LeadModule.createD1LeadRepository(database);
     const result = await repository.update({
       leadId: "missing-lead",
+      expectedVersion: "1",
       values: {
         company: "FCI TEST — DO NOT USE",
         contactName: "Test Contact",
@@ -291,8 +384,128 @@ test("D1 failed lead update cannot leave an audit row", async () => {
     );
     assert.match(
       guardedInsert,
-      /SELECT \?, \?, \?, \?, \?, \? WHERE EXISTS \(SELECT 1 FROM leads WHERE id = \? AND updated_at = \?\)/u,
+      /SELECT \?, \?, \?, \?, \?, \? WHERE changes\(\) = 1 AND EXISTS \(SELECT 1 FROM leads WHERE id = \? AND version = \?\)/u,
     );
+  } finally {
+    database.close();
+  }
+});
+
+test("D1 lead adapter rejects a second same-version update and audits only the winner", async () => {
+  const database = new LeadD1Database();
+  database.seedLead();
+  try {
+    const repository = d1LeadModule.createD1LeadRepository(database);
+    const values = {
+      company: "FCI TEST — DO NOT USE",
+      contactName: "Test Contact",
+      contactEmail: "contact@example.test",
+      contactPhone: "555-0100",
+      projectName: "Test Flooring",
+      source: "Referral",
+      stage: "Proposal",
+      site: "Old site",
+      estimatedValue: 125_000,
+      nextAction: "Schedule site walk",
+      nextActionAt: Date.UTC(2026, 6, 28, 14, 0, 0),
+      ownerEmail: "owner@example.test",
+      status: "active",
+    };
+    const first = await repository.update({
+      leadId: "lead-edit-fixture",
+      expectedVersion: "1",
+      values,
+      updatedAt: Date.UTC(2026, 6, 27, 13, 0, 0),
+      updatedBy: "owner@example.test",
+      activities: [{
+        id: "lead-direct-first",
+        recordId: "lead-edit-fixture",
+        action: "Lead stage changed",
+        actor: "owner@example.test",
+        detail: "Qualified → Proposal",
+        createdAt: Date.UTC(2026, 6, 27, 13, 0, 0),
+      }],
+    });
+    assert.equal(first.outcome, "updated");
+    assert.equal(first.value.version, "2");
+
+    const stale = await repository.update({
+      leadId: "lead-edit-fixture",
+      expectedVersion: "1",
+      values: { ...values, site: "Must not persist" },
+      updatedAt: Date.UTC(2026, 6, 27, 13, 1, 0),
+      updatedBy: "owner@example.test",
+      activities: [{
+        id: "lead-direct-stale",
+        recordId: "lead-edit-fixture",
+        action: "Lead site changed",
+        actor: "owner@example.test",
+        detail: "Old site → Must not persist",
+        createdAt: Date.UTC(2026, 6, 27, 13, 1, 0),
+      }],
+    });
+    assert.deepEqual(stale, { outcome: "conflict", currentVersion: "2" });
+    assert.deepEqual({ ...database.lead() }, {
+      site: "Old site",
+      stage: "Proposal",
+      version: 2,
+    });
+    assert.deepEqual(database.activities(), [{
+      action: "Lead stage changed",
+      actor: "owner@example.test",
+      detail: "Qualified → Proposal",
+    }]);
+    const updateSql = database.preparedSql.find((sql) => /^UPDATE leads SET/u.test(sql));
+    assert.match(updateSql, /WHERE id = \? AND version = \?$/u);
+  } finally {
+    database.close();
+  }
+});
+
+test("lead PATCH returns the current version and no audit for a stale write", async () => {
+  const database = new LeadD1Database();
+  database.seedLead();
+  cloudflareEnv.DB = database;
+  try {
+    const first = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({ stage: "Proposal", version: "1" }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(first.status, 200);
+    assert.equal((await first.json()).lead.version, "2");
+
+    const stale = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({ site: "Must not persist", version: "1" }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(stale.status, 409);
+    assert.equal(stale.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await stale.json(), {
+      error: "Lead changed since it was loaded.",
+      currentVersion: "2",
+    });
+    assert.deepEqual({ ...database.lead() }, {
+      site: "Old site",
+      stage: "Proposal",
+      version: 2,
+    });
+    assert.equal(database.activities().length, 1);
   } finally {
     database.close();
   }

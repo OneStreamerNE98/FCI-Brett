@@ -157,6 +157,7 @@ function leadIntent({ actorId, createdAt, id = randomUUID(), activityId = random
       created_by: actorId,
       created_at: createdAt,
       updated_at: createdAt,
+      version: "1",
     },
     activity: {
       id: activityId,
@@ -1247,6 +1248,7 @@ test(
       const leadUpdateActivityId = randomUUID();
       const leadUpdate = await readingLeads.update({
         leadId: acceptedLeadIntent.lead.id,
+        expectedVersion: acceptedLead.value.row.version,
         values: {
           company: acceptedLeadIntent.lead.company,
           contactName: acceptedLeadIntent.lead.contact_name,
@@ -1275,9 +1277,50 @@ test(
       });
       assert.equal(leadUpdate.outcome, "updated");
       assert.equal(leadUpdate.value.stage, "Proposal");
+      assert.equal(leadUpdate.value.version, "2");
       assert.equal(
         (await oneRow(pool, `SELECT count(*)::integer AS count FROM ${schema}.activity_events WHERE id = $1`, [leadUpdateActivityId])).count,
         1,
+      );
+      const staleLeadUpdateActivityId = randomUUID();
+      assert.deepEqual(await readingLeads.update({
+        leadId: acceptedLeadIntent.lead.id,
+        expectedVersion: acceptedLead.value.row.version,
+        values: {
+          company: acceptedLeadIntent.lead.company,
+          contactName: acceptedLeadIntent.lead.contact_name,
+          contactEmail: acceptedLeadIntent.lead.contact_email,
+          contactPhone: acceptedLeadIntent.lead.contact_phone,
+          projectName: acceptedLeadIntent.lead.project_name,
+          source: acceptedLeadIntent.lead.source,
+          stage: "Lost",
+          site: acceptedLeadIntent.lead.site,
+          estimatedValue: acceptedLeadIntent.lead.estimated_value,
+          nextAction: "Must not persist",
+          nextActionAt: acceptedLeadIntent.lead.next_action_at,
+          ownerEmail: acceptedLeadIntent.lead.owner_email,
+          status: "lost",
+        },
+        updatedAt: leadCreatedAt + 2_000,
+        updatedBy: actorA,
+        activities: [{
+          id: staleLeadUpdateActivityId,
+          recordId: acceptedLeadIntent.lead.id,
+          action: "Lead stage changed",
+          actor: actorA,
+          detail: "Proposal → Lost",
+          createdAt: leadCreatedAt + 2_000,
+        }],
+      }), { outcome: "conflict", currentVersion: "2" });
+      assert.deepEqual(
+        await oneRow(
+          pool,
+          `SELECT stage, version::text AS version,
+                  (SELECT count(*)::integer FROM ${schema}.activity_events WHERE id = $2) AS stale_activities
+           FROM ${schema}.leads WHERE id = $1`,
+          [acceptedLeadIntent.lead.id, staleLeadUpdateActivityId],
+        ),
+        { stage: "Proposal", version: "2", stale_activities: 0 },
       );
 
       const missingMeetingCreatedAt = Date.now();

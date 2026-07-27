@@ -2,6 +2,7 @@ import {
   normalizeTaskCreation,
   normalizeTaskListFilters,
   normalizeTaskPatch,
+  TASK_PATCH_KEYS,
   taskResponse,
   type TaskRow,
 } from "../domain/task";
@@ -37,6 +38,7 @@ export type UpdateTaskResult =
         | "lead-not-found";
       message: string;
     }
+  | { ok: false; kind: "conflict"; message: string; currentVersion: string }
   | { ok: true; value: ReturnType<typeof taskResponse> };
 
 type TaskOperationDependencies = {
@@ -98,6 +100,7 @@ export async function createTask(
     created_at: createdAt,
     updated_at: createdAt,
     completed_at: values.status === "done" ? createdAt : null,
+    version: "1",
   };
   const activities: TaskActivityIntent[] = [{
     id: dependencies.newId(),
@@ -157,6 +160,14 @@ export async function updateTask(
   const current = await dependencies.repository.findById(taskId);
   if (!current) return { ok: false, kind: "task-not-found", message: "Task not found." };
   const patch = validation.value;
+  if (patch.version && patch.version !== current.version) {
+    return {
+      ok: false,
+      kind: "conflict",
+      message: "Task changed since it was loaded.",
+      currentVersion: current.version,
+    };
+  }
   const updatedAt = dependencies.now();
   const nextStatus = patch.status ?? current.status;
   const task: TaskRow = {
@@ -174,21 +185,47 @@ export async function updateTask(
     completed_at: nextStatus === "done"
       ? current.completed_at ?? updatedAt
       : null,
+    version: current.version,
   };
-  const completing = current.status !== "done" && nextStatus === "done";
+  const responseKey = {
+    title: "title",
+    details: "details",
+    status: "status",
+    dueDate: "due_date",
+    projectId: "project_id",
+    leadId: "lead_id",
+    assigneeEmail: "assignee_email",
+  } as const;
+  const label = {
+    title: "Title",
+    details: "Details",
+    status: "Status",
+    dueDate: "Due date",
+    projectId: "Project",
+    leadId: "Lead",
+    assigneeEmail: "Assignee",
+  } as const;
+  const display = (value: unknown) => value === null || value === "" ? "Not set" : String(value);
+  const changes = TASK_PATCH_KEYS.flatMap((key) => {
+    if (!Object.hasOwn(patch, key)) return [];
+    const column = responseKey[key];
+    return current[column] === task[column]
+      ? []
+      : [`${label[key]}: ${display(current[column])} → ${display(task[column])}`];
+  });
+  if (changes.length === 0) return { ok: true, value: taskResponse(current) };
   const result = await dependencies.repository.update({
     task,
+    expectedVersion: patch.version ?? current.version,
     updatedBy: authorization.actorId,
-    activity: completing
-      ? {
-          id: dependencies.newId(),
-          recordId: taskId,
-          action: "Task completed",
-          actor: authorization.actorId,
-          detail: task.title,
-          createdAt: updatedAt,
-        }
-      : null,
+    activity: {
+      id: dependencies.newId(),
+      recordId: taskId,
+      action: "Task fields updated",
+      actor: authorization.actorId,
+      detail: changes.join("; "),
+      createdAt: updatedAt,
+    },
   });
   if (result.outcome === "task-not-found") {
     return { ok: false, kind: result.outcome, message: "Task not found." };
@@ -198,6 +235,14 @@ export async function updateTask(
   }
   if (result.outcome === "lead-not-found") {
     return { ok: false, kind: result.outcome, message: "Lead not found." };
+  }
+  if (result.outcome === "conflict") {
+    return {
+      ok: false,
+      kind: result.outcome,
+      message: "Task changed since it was loaded.",
+      currentVersion: result.currentVersion,
+    };
   }
   return { ok: true, value: taskResponse(result.value) };
 }

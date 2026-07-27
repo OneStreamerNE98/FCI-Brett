@@ -33,7 +33,16 @@ export type CreateProjectDependencies = {
 };
 
 export type AssignProjectManagerResult =
-  | { ok: false; kind: "forbidden" | "invalid" | "project-manager-not-authorized" | "project-not-found"; message: string }
+  | {
+      ok: false;
+      kind:
+        | "forbidden"
+        | "invalid"
+        | "project-manager-not-authorized"
+        | "project-not-found";
+      message: string;
+    }
+  | { ok: false; kind: "conflict"; message: string; currentVersion: string }
   | { ok: true; value: { projectId: string; projectManagerId: string; updatedAt: number } };
 
 export type AssignProjectManagerAuthorization = {
@@ -170,6 +179,14 @@ export async function assignProjectManager(
   });
   if (repositoryResult.outcome === "project-not-found") {
     return { ok: false, kind: "project-not-found", message: "project not found" };
+  }
+  if (repositoryResult.outcome === "conflict") {
+    return {
+      ok: false,
+      kind: "conflict",
+      message: "Project changed since it was loaded.",
+      currentVersion: repositoryResult.currentVersion,
+    };
   }
   return {
     ok: true,
