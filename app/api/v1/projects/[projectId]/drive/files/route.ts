@@ -63,6 +63,10 @@ function optionalKey(value: unknown): { ok: true; value: string | null } | { ok:
 
 function registeredTemplates(setup: EffectiveSetup) {
   return setup.blueprint.templates.flatMap((template) => {
+    // Template token merging currently supports Google Docs only. Do not offer
+    // Sheets or Slides templates until their native merge path is implemented;
+    // copying the seeded budget Sheet would otherwise preserve literal tokens.
+    if (template.kind !== "doc") return [];
     const resource = setup.resources.find((candidate) => (
       candidate.resourceType === "drive.file"
       && candidate.resourceKey === template.key
@@ -206,6 +210,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     templateFileId = registered.fileId;
   }
 
+  let providerFileCreated = false;
   try {
     let file: { id: string; name: string; url: string };
 
@@ -239,6 +244,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           name,
           kind: kind as ProjectFileKind,
         });
+        providerFileCreated = true;
         if (kind === "doc") {
           await drive.replaceDocumentTemplateTokens(
             file.id,
@@ -255,6 +261,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
           name,
           kind: kind as ProjectFileKind,
         });
+        providerFileCreated = true;
       }
     }
 
@@ -292,6 +299,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
       environment: config.environment,
     }, { status: 201 });
   } catch (error) {
+    if (providerFileCreated) {
+      const code = error instanceof GoogleIntegrationError ? error.code : "project_file_create_failed";
+      await env.DB.prepare("INSERT INTO google_integration_events (id, connection_key, event_type, actor, entity_type, entity_id, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(
+          crypto.randomUUID(),
+          config.connectionKey,
+          "drive.file_create_failed",
+          auth.user.email,
+          "project",
+          project.id,
+          `mode=workspace;kind=${kind};source=${templateKey ? `template:${templateKey}` : "blank"};code=${code};provider_file_preserved=true`,
+          Date.now(),
+        )
+        .run();
+    }
     return noStoreResponse(googleIntegrationErrorResponse(error, "The document could not be created in the project folder. Try again."));
   }
 }

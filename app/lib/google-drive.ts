@@ -898,7 +898,7 @@ export class GoogleDriveClient {
     for (const segment of segments) {
       const matches = await this.childFolders(current.id, segment);
       if (matches.length === 0) {
-        throw new GoogleIntegrationError("project_drive_folder_missing", `The managed project folder ${segment} is missing. Re-provision the project workspace before filing email.`, 409);
+        throw new GoogleIntegrationError("project_drive_folder_missing", `The managed project folder ${segment} is missing. Ask an administrator to restore the project workspace before trying again.`, 409);
       }
       if (matches.length > 1) {
         throw new GoogleIntegrationError("duplicate_drive_folder", `More than one managed Google Drive folder matched ${segment}.`, 409);

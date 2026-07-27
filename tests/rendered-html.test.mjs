@@ -1075,7 +1075,11 @@ test("SET-22 provides an office-safe Project Files tab with honest catalog state
   assert.match(projectFiles, /Created in this session/);
   assert.match(projectFiles, /Use Open Drive folder below for the complete file list/);
   assert.match(projectFiles, /aria-label="Document type"/);
-  assert.match(projectFiles, /aria-label="Template"/);
+  // The template select takes its accessible name from the visible wrapping label
+  // (WCAG 2.5.3 fix in the SET-22 review follow-up): an aria-label="Template" would
+  // override the visible "Start from" text and break Label in Name again.
+  assert.match(projectFiles, /<label>Start from/);
+  assert.doesNotMatch(projectFiles, /aria-label="Template"/);
   assert.match(projectFiles, /aria-label="Destination folder"/);
   assert.match(projectFiles, /<option value="">Project root<\/option>/);
   assert.match(projectFiles, /\{ value: "slides" as const, label: "Google Slides"/);

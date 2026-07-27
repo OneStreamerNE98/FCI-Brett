@@ -134,8 +134,10 @@ test("provisions a project, then an Office user creates a blank Sheet and a temp
     const kindSelect = modal.getByLabel("Document type", { exact: true });
     await expect(kindSelect).toBeFocused();
     await kindSelect.selectOption("sheet");
-    await expect(modal.getByLabel("Template", { exact: true })).toHaveValue("");
-    await expect(modal.getByLabel("Template", { exact: true }).locator("option:checked")).toHaveText("Blank Google Sheet");
+    const startFrom = modal.getByLabel("Start from", { exact: true });
+    await expect(startFrom).toHaveValue("");
+    await expect(startFrom.locator("option:checked")).toHaveText("Blank Google Sheet");
+    await expect(startFrom.locator("option")).toHaveCount(1);
     await expect(modal.getByLabel("Destination folder", { exact: true })).toHaveValue("");
     await modal.getByLabel("Document name", { exact: true }).fill(SHEET_NAME);
 
@@ -144,7 +146,8 @@ test("provisions a project, then an Office user creates a blank Sheet and a temp
     const sheetResponse = await sheetResponsePromise;
     expect(sheetResponse.status()).toBe(201);
     expect(sheetResponse.request().postDataJSON()).toEqual({ kind: "sheet", name: SHEET_NAME });
-    const sheetLink = modal.getByRole("link", { name: "Open file", exact: true });
+    await expect(modal.getByText("Simulation only — no Google file was created.", { exact: true })).toBeVisible();
+    const sheetLink = modal.getByRole("link", { name: "View simulation", exact: true });
     await expect(sheetLink).toHaveAttribute("href", /workspace-simulation=project-file/u);
     await expect(sheetLink).toHaveAttribute("target", "_blank");
     await expect(sheetLink).toBeFocused();
@@ -155,7 +158,7 @@ test("provisions a project, then an Office user creates a blank Sheet and a temp
     // Copy the ensured Estimate Proposal template into a configured leaf folder.
     await newDocumentButton.click();
     modal = page.getByRole("dialog", { name: `Create a project file in ${PROJECT_NUMBER}`, exact: true });
-    await modal.getByLabel("Template", { exact: true }).selectOption("estimate-proposal");
+    await modal.getByLabel("Start from", { exact: true }).selectOption("estimate-proposal");
     const destination = modal.getByLabel("Destination folder", { exact: true });
     expect(await destination.locator("option").count()).toBeGreaterThan(1);
     await destination.selectOption({ index: 1 });
@@ -173,7 +176,8 @@ test("provisions a project, then an Office user creates a blank Sheet and a temp
       templateKey: "estimate-proposal",
       folderKey: selectedFolderKey,
     });
-    const templateLink = modal.getByRole("link", { name: "Open file", exact: true });
+    await expect(modal.getByText("Simulation only — no Google file was created.", { exact: true })).toBeVisible();
+    const templateLink = modal.getByRole("link", { name: "View simulation", exact: true });
     await expect(templateLink).toHaveAttribute("href", /workspace-simulation=project-file/u);
     await expect(templateLink).toBeFocused();
     const templateHref = await templateLink.getAttribute("href");
@@ -185,6 +189,7 @@ test("provisions a project, then an Office user creates a blank Sheet and a temp
     const sessionTemplateLink = sessionFiles.getByRole("link").filter({ hasText: TEMPLATE_NAME });
     await expect(sessionSheetLink).toHaveAttribute("href", sheetHref!);
     await expect(sessionTemplateLink).toHaveAttribute("href", templateHref!);
+    await expect(sessionFiles).toContainText("no Google file created");
     await expect(sessionFiles).toContainText("Use Open Drive folder below for the complete file list.");
 
     const accessibility = await new AxeBuilder({ page })
