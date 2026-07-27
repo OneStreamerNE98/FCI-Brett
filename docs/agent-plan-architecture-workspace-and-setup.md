@@ -796,6 +796,7 @@ dashboard markup); `npm test` green.
 **Effort:** small-medium. **Cost:** $0.
 
 ### EDIT-05 · Project editing (medium-large, after EDIT-03)
+**Status:** In progress — `codex/edit05-project-editing`
 **Why:** nine project columns have **no mutation route at all** — `name`,
 `status`, `site`, `clientId`, `estimatedValue`, `flooringCategory`,
 `squareFeet`, `contractValue`, `segment` — so a project cannot move
