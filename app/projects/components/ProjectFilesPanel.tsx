@@ -372,7 +372,10 @@ export function ProjectFileCreationModal({
           </select>
         </label>
         <label>Start from
-          <select value={templateKey} onChange={(event) => setTemplateKey(event.target.value)} disabled={saving}>
+          {/* aria-label matches the visible label text exactly: WCAG 2.5.3 (Label in
+              Name) holds, and the accessible name stays deterministic — the wrapping
+              label's computed text would otherwise include the option text. */}
+          <select aria-label="Start from" value={templateKey} onChange={(event) => setTemplateKey(event.target.value)} disabled={saving}>
             <option value="">{kindOption.blankLabel}</option>
             {kindTemplates.map((template) => <option key={template.key} value={template.key}>{template.name}</option>)}
           </select>
