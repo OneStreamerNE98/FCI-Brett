@@ -28,6 +28,15 @@ The application role and the person’s direct Google Workspace access must be a
 - [x] Project Managers may update status, tasks, meetings, and notes and view/upload nonfinancial files only for assigned projects; related client/contact context is read-only.
 - [ ] Decide the phased employee rollout order. Naming two initial Administrators does not authorize either account, exclude Office Operations or Project Managers from a later rollout, or relax the existing one-live-user development gate.
 
+### Record editing (decided July 26, 2026 — gates the EDIT-01…EDIT-07 series)
+
+Recorded here because the EDIT packets deferred to these answers while naming no surface where they would be written. EDIT-05 and EDIT-06 were unbuildable until they existed. Design detail lives in the ledger's [`# Record editing (EDIT)`](../agent-plan-architecture-workspace-and-setup.md) preamble.
+
+- [x] **Who may edit saved records: everyone edits; money and status are Administrator-only ON EDIT.** Any office user may change descriptive fields (names, sites, contacts, next actions, notes). `contractValue`, `estimatedValue`, and project `status` are Administrator-only when *editing*. Creation behavior is deliberately unchanged — lead create currently requires `estimatedValue` from any office creator, and only `contractValue` is admin-gated at create; the create/edit asymmetry is accepted, not an oversight.
+- [x] **Archive only — core records are never deleted.** `archived` exists today on the client, lead, and project enums; **tasks (`open`/`done`) and contacts (no status column) need an explicit additive change in their own packet before archive can apply to them.** No delete endpoint exists for core records; two pre-existing *configuration* DELETE routes (filing rules, Google connection) stay and are out of scope. Preserves the audit trail, filed-email links, and project history, matching the append-only posture on records.
+- [x] **Conflict handling: on a 409, show the conflict and let the user re-apply** rather than auto-merging, as [checklist 09](09-frontend-and-multi-user-hardening.md) asks.
+- [x] **The authorization gap is recorded, not fixed, for now.** Six capabilities (`recordsRead`, `leadsCreate`, `tasksUpdate`, `meetingsUpdate`, `createClient`, `createProject`) are **self-granted** at nine route call sites — each route hands in the permission it then checks — and `leadsUpdate` is **unconsumed** (zero call sites). Either way nothing enforces. Roles exist only on the unbuilt Cloud Run path. **`isAdmin` is the only authorization primitive that works today**, so "Administrator-only" above is enforceable and any finer role distinction is not. Real enforcement is blocked on durable user identity — the same prerequisite as per-user Gmail.
+
 ## Approved application roles and rollout status
 
 | Role/access type | Scope used by authorization simulation | Current status |

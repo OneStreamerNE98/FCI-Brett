@@ -1,5 +1,11 @@
 # Google Workspace rollout guide for FCI Operations
 
+> **Editors note — parts of this page are pinned by automated tests.** Some sentences and section
+> headings here are matched exactly by the CI suite (`tests/task-tracking-docs.test.mjs` enforces
+> the one-account boundary tokens; `tests/workspace-sync-contracts.test.mjs` anchors section
+> heading slugs). If a doc edit turns CI red, search those files for a phrase from your change
+> before assuming a code problem.
+
 This guide is written for a first-time Google Workspace administrator. It describes the current one-user development environment and the later company rollout separately.
 
 ## Read this distinction first

@@ -437,8 +437,9 @@ test("AI-09 documentation has one source-verified account, explicit Tier-2 gates
     const packet = sectionFromHeading(plan, `### AI-0${index} ·`, /^### /mu);
     assert.match(packet, /\*\*Status:\*\* Complete — PR #/u, `AI-0${index} must remain Complete`);
   }
-  // AI-10 is filed but unclaimed: an unstarted packet carries no Status line at all, so the
-  // only regression worth pinning is that it cannot acquire a Complete claim without a PR.
+  // AI-10 is filed but not yet merged, so ANY Complete claim on it is premature — including a
+  // well-formed "Complete — PR #N" line. When AI-10 legitimately merges, re-point this pin into
+  // the Complete loop above (extend the loop bound), exactly as AI-09's pin was re-pointed.
   const ai10 = sectionFromHeading(plan, "### AI-10 ·", /^### /mu);
   assert.doesNotMatch(ai10, /\*\*Status:\*\* Complete/u);
   assert.match(
