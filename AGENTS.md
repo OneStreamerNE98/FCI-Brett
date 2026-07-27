@@ -60,7 +60,9 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   add itself there in the same PR.
 - **A packet is available if and only if it has no status line.** Prose lists of
   "unclaimed packets" are historical narrative and have gone stale repeatedly; the status
-  lines are the only dispatch authority and the only part of the ledger a test enforces.
+  lines are the only dispatch authority. (The ledger guard also enforces heading grammar
+  and rejects stale merged-PR references, but nothing makes prose availability lists true —
+  which is exactly why they must not be dispatched from.)
 - **The status-line grammar is mechanically enforced** by `tests/task-tracking-docs.test.mjs`
   across five packet ledgers — the marker is bold `**Status:**`, it sits on the line directly
   below the heading, and only six forms are legal. An invalid line fails CI with a message
@@ -116,7 +118,7 @@ Packet Acceptance lines frequently require e2e evidence ("simulation e2e", "prov
 
 If a command cannot run, record the exact blocker rather than treating unverified work as complete. Known environment blocker: `npm test` requires Node ≥ 22.13.0 (`vinext` uses `node:fs/promises.glob`); on Node 20 it fails during the build, which is a toolchain problem, not a code failure.
 
-**Golden hashes.** Two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup. Only `npm run test:e2e` evaluates them. If one mismatches, that is a signal, not a chore — regenerating them is a sanctioned event restricted to packets that explicitly say so. Never paste a new digest in to make a suite pass.
+**Golden hashes.** The definition lives in the plan ledger's Global guardrail 7b — read that, not a summary. Short form: two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup; `npm run test:e2e` evaluates them against the live DOM, **and three Node suites additionally pin the digest constants byte-for-byte** (`ai04-today-view`, `fix15-toast-and-folds`, `nfix04-phone-polish`), so editing a digest also fails `npm test`. A mismatch is a signal, not a chore; regeneration is a sanctioned event restricted to packets that explicitly say so, and it must update the three pinning suites in the same commit. Never paste a new digest in to make a suite pass.
 
 ## Security and data rules
 

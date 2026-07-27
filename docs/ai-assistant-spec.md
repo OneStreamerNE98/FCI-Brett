@@ -306,10 +306,14 @@ packet corrects the help/presentation mismatch.
   including the parenthetical dates** — retitling either section, or updating
   §11's "source-verified" date, fails the build unless the pin moves in the same
   commit. It also requires each residual id AI-R01…AI-R14 to appear **exactly
-  once** inside §11, so a cross-reference like "see AI-R07" elsewhere in that
-  section is illegal. The same suite pins sentences in `docs/settings-guide.md`
-  and `docs/meeting-notes-and-otter.md`. Prose and pin move together,
-  deliberately, or not at all.
+  once in the region from the §11 heading to the END OF FILE** — the guard's
+  slice has no lower boundary, so a residual id mentioned in §12 or any later
+  section double-counts and fails, not just one inside §11. The same suite pins
+  sentences in `docs/settings-guide.md` and `docs/meeting-notes-and-otter.md`,
+  the `### AI-0N ·` heading grammar and Complete statuses for AI-01…09 in the
+  plan ledger (plus a no-Complete pin on AI-10), and the assistant scope row in
+  `docs/request-rate-limiting.md`. Prose and pin move together, deliberately,
+  or not at all.
 
 ## 11. Reconciled residual register (source-verified July 26, 2026)
 
@@ -378,9 +382,11 @@ written down as such rather than absorbed silently.
    message that arrived and was archived before any sweep ran. Only Gmail History closes that,
    and it stays deferred.
 
-2. **Persistence — analyses are STORED. This overrides §1 principle 1 and §7.**
-   §1 principle 1 says "No infrastructure that needs feeding … in Tier 1" and §7 says no new
-   telemetry tables in v1. The owner has decided AI analysis results are persisted anyway.
+2. **Persistence — analyses are STORED. This overrides §1 principle 1 and §6 item 2.**
+   §1 principle 1 says "No infrastructure that needs feeding … in Tier 1" and §6 item 2 says
+   "no new telemetry tables in v1" (the honest-chrome rule — §7 is the cost model and says no
+   such thing; an earlier version of this line miscited it). The owner has decided AI analysis
+   results are persisted anyway.
    Why it was chosen: analyze-once economics, so reopening the inbox never re-bills the same
    email; the accept/dismiss history the transparency requirement depends on; the §6
    calibration evidence this spec **already requires** before any auto-apply may even be
@@ -409,15 +415,21 @@ written down as such rather than absorbed silently.
    never-delete reconcile rule) and the pinned PostgreSQL `DELETE` grant list.
 
 5. **AI configuration gets its own Settings section.** This deviates from the Workstream G
-   constraint of no new Settings sections in Tier 1, and re-points
-   `tests/ai08-ui-contract.test.mjs:113-126`, which currently asserts an exact 8-section
-   catalog and that navigation does not mention "AI assistant". That pin encodes AI-08's
-   choice to nest the card; it is a recorded design decision, not a safety rail, and the owner
-   — who could not find the AI settings himself — has chosen to change it. The read-only mirror
-   in *My settings* stays so office users can still see what is on without changing it.
+   constraint of no new Settings sections in Tier 1, and re-points **three** recorded surfaces,
+   all deliberately: `tests/ai08-ui-contract.test.mjs:113-126` (exact 8-section catalog +
+   navigation must not mention "AI assistant"); **§9 of this spec**, whose canonical placement
+   line puts `AiAssistantSettingsCard` inside *Workflow & notifications* and must be amended in
+   the same change; and the ledger's Workstream G house rule. The pin encodes AI-08's choice to
+   nest the card; it is a recorded design decision, not a safety rail, and the owner — who could
+   not find the AI settings himself — has chosen to change it. The read-only mirror in
+   *My settings* stays so office users can still see what is on without changing it.
+   **Implementing packet: AI-11, not AI-10.** AI-10's Files touch no `app/settings/**`
+   component; the section, the re-points above, and decision 6's settings-card statement all
+   land with AI-11. Until then this decision is recorded, not shipped.
 
 6. **Data at rest.** A minimal display snapshot (subject, sender, received date) persists on
    each analysis row so the queue renders without a per-message Gmail round-trip and survives a
    message being moved in Gmail. This places customer names and subject lines in the app
-   database — a new fact for this app, stated here, in the settings card, and in the settings
-   guide, exactly as the bounded-body-read decision already is.
+   database — a new fact for this app, stated here, in the settings guide (AI-10), and in the
+   settings card **when AI-11 builds it** (see decision 5's implementing-packet note), exactly
+   as the bounded-body-read decision already is.
