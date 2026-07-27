@@ -3,7 +3,21 @@ import type { LeadRow, ValidatedLeadValues } from "../domain/lead";
 export type LeadActivityIntent = {
   id: string;
   recordId: string;
-  action: "Lead created" | "Lead stage changed" | "Lead next action changed";
+  action:
+    | "Lead created"
+    | "Lead company changed"
+    | "Lead contact name changed"
+    | "Lead contact email changed"
+    | "Lead contact phone changed"
+    | "Lead project name changed"
+    | "Lead source changed"
+    | "Lead stage changed"
+    | "Lead site changed"
+    | "Lead estimated value changed"
+    | "Lead next action changed"
+    | "Lead next action due date changed"
+    | "Lead owner changed"
+    | "Lead status changed";
   actor: string;
   detail: string;
   createdAt: number;
