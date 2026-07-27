@@ -619,7 +619,7 @@ as owner-decision rows in
    order.
 
 ### EDIT-01 · Lead edit auditing, and recording the authorization gap honestly (small, no deps)
-**Status:** In review — PR #222
+**Status:** Complete — PR #222, July 27, 2026. Source-only and undeployed. All 13 lead fields audited with before→after details via a type-pinned action map (`satisfies Record<keyof ValidatedLeadValues, …>` — a 14th field breaks the compile until audited); audit INSERTs guarded by `WHERE EXISTS (id, updated_at)` so a stale write leaves zero audit rows; the six/one capability split recorded in `docs/authorization-simulation.md`; the no-`creationAuthorizationFor` pin shipped. Bot clean, CI green, orchestrator line-review passed. EDIT-03 upgrades the guard token to `version` (named exception).
 **Why:** this packet replaces an earlier EDIT-01 that would have produced security theater.
 The original said to wire `AUTHORIZATION_CAPABILITIES.leadsUpdate` into the lead PATCH route "using
 the call shape an existing capability-gated route already uses". That instruction was executable —
