@@ -705,7 +705,7 @@ out-of-catalog value is rejected. Requires `TEST_POSTGRES_URL`, which is unset l
 CI.
 
 ### EDIT-03 · Optimistic concurrency + edit auditing foundation (medium; gates EDIT-04…EDIT-07)
-**Status:** In progress — `codex/edit03-concurrency-audit-foundation`
+**Status:** In review — PR #225
 **Why:** production PostgreSQL updates do `version = version + 1 WHERE id =
 $n` — a counter with no guard
 (`app/adapters/postgres/lead-repository.ts:346-352`;
