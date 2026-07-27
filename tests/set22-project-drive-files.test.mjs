@@ -528,7 +528,7 @@ test("GET returns an office-safe current template and leaf-folder catalog", asyn
       resourceType: "drive.file",
       resourceKey: "project-budget",
       externalId: "workspace-simulation-template-project-budget",
-      metadata: { kind: "sheet", metadataMimeType: PROJECT_FILE_KIND_MIME_TYPES.doc },
+      metadata: templateMetadata("sheet"),
     }),
     resourceRow({
       connectionKey: "workspace-simulation",
@@ -544,6 +544,7 @@ test("GET returns an office-safe current template and leaf-folder catalog", asyn
   assert.equal(response.status, 200);
   assert.equal(body.provisioned, true);
   assert.deepEqual(body.templates, [{ key: "estimate-proposal", name: "Estimate Proposal", kind: "doc" }]);
+  assert.equal(body.templates.some((template) => template.key === "project-budget"), false);
   assert.ok(body.folders.some((folder) => folder.key === "lead-proposal" && folder.path === "01_Lead & Proposal"));
   assert.ok(body.folders.some((folder) => folder.key === "email-archive" && folder.path === "05_Correspondence / Email Archive"));
   assert.equal(body.folders.some((folder) => folder.key === "correspondence"), false);
@@ -907,6 +908,44 @@ test("route copies a registered template with a files.copy request pinned to par
   assert.equal(database.state.events.length, 1);
   assert.equal(database.state.events[0].values[2], "drive.file_created");
   assert.equal(calls.some((call) => call.method === "DELETE"), false);
+});
+
+test("route audits a preserved template copy when the Docs merge fails", async () => {
+  const database = fakeDatabase();
+  const rootId = "app-shared-drive-live";
+  const projectFolderId = "project-root-folder";
+  await workspaceEnvironment(database, rootId);
+  database.state.project = sampleProject();
+  database.state.mapping = { drive_file_id: projectFolderId, drive_url: `https://drive.google.test/${projectFolderId}` };
+  database.state.resources.push(resourceRow({
+    connectionKey: "google-workspace",
+    resourceType: "drive.file",
+    resourceKey: "estimate-proposal",
+    externalId: "template-estimate-file",
+    metadata: templateMetadata("doc"),
+  }));
+  const calls = installWorkspaceProvider({
+    rootId,
+    projectFolderId,
+    templateFileId: "template-estimate-file",
+    templateKey: "estimate-proposal",
+    onCopy: (_url, body) => Response.json({ id: "orphaned-copy", name: body.name, mimeType: PROJECT_FILE_KIND_MIME_TYPES.doc, parents: body.parents, trashed: false, webViewLink: "https://docs.google.test/orphaned-copy/edit" }),
+    onDocsMerge: () => Response.json({ error: { message: "Google Docs API is disabled" } }, { status: 403 }),
+  });
+
+  const response = await invokeRoute("project-1", { body: { kind: "doc", name: "Retry Risk", templateKey: "estimate-proposal" } });
+  const body = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(body.code, "docs_api_unavailable");
+  assert.match(body.error, /copied file was not deleted/u);
+  assert.equal(calls.some((call) => /\/copy$/u.test(call.pathname)), true);
+  assert.equal(calls.some((call) => call.method === "DELETE"), false);
+  assert.equal(database.state.activities.length, 0);
+  assert.equal(database.state.events.length, 1);
+  assert.equal(database.state.events[0].values[2], "drive.file_create_failed");
+  assert.equal(database.state.events[0].values[4], "project");
+  assert.equal(database.state.events[0].values[5], "project-1");
+  assert.match(database.state.events[0].values[6], /source=template:estimate-proposal;code=docs_api_unavailable;provider_file_preserved=true/u);
 });
 
 test("route denies a mapped folder owned by another project before creating a file", async () => {

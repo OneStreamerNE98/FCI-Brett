@@ -31,6 +31,8 @@ type CreatedProjectFile = Readonly<{
   name: string;
   url: string;
   kind: ProjectFileKind;
+  simulated: boolean;
+  environment?: string;
 }>;
 
 type ProjectFileCatalogState =
@@ -92,7 +94,7 @@ function normalizeCatalog(value: unknown): ProjectFileCatalog {
   return { provisioned: record.provisioned, templates, folders };
 }
 
-function normalizeCreatedFile(value: unknown): CreatedProjectFile {
+function normalizeCreatedFile(value: unknown, simulated: unknown, environment: unknown): CreatedProjectFile {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("The project file was created, but its link was not returned.");
   }
@@ -114,7 +116,14 @@ function normalizeCreatedFile(value: unknown): CreatedProjectFile {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("The project file was created, but its link was not returned.");
   }
-  return { id: record.id, name: record.name, url: record.url, kind: record.kind };
+  return {
+    id: record.id,
+    name: record.name,
+    url: record.url,
+    kind: record.kind,
+    simulated: simulated === true,
+    ...(typeof environment === "string" && environment.trim() ? { environment } : {}),
+  };
 }
 
 async function responseError(response: Response, fallback: string) {
@@ -241,7 +250,9 @@ export function ProjectFilesPanel({
         : <ul>{controller.createdFiles.map((file) => <li key={file.id}>
           <a href={file.url} target="_blank" rel="noopener noreferrer">
             <span>{file.name}</span>
-            <small>{PROJECT_FILE_KINDS.find((option) => option.value === file.kind)?.label ?? "Google file"}</small>
+            <small>{file.simulated
+              ? `Simulated ${PROJECT_FILE_KINDS.find((option) => option.value === file.kind)?.label ?? "Google file"} — no Google file created`
+              : PROJECT_FILE_KINDS.find((option) => option.value === file.kind)?.label ?? "Google file"}</small>
             <ExternalLink size={14} aria-hidden="true" />
           </a>
         </li>)}</ul>}
@@ -303,8 +314,8 @@ export function ProjectFileCreationModal({
       if (!response.ok) {
         throw new Error(await responseError(response, "The project file could not be created."));
       }
-      const data = await response.json() as { file?: unknown };
-      const file = normalizeCreatedFile(data.file);
+      const data = await response.json() as { file?: unknown; simulated?: unknown; environment?: unknown };
+      const file = normalizeCreatedFile(data.file, data.simulated, data.environment);
       controller.recordCreatedFile(file);
       setCreated(file);
     } catch (createError) {
@@ -332,10 +343,15 @@ export function ProjectFileCreationModal({
       ? <div className={styles.success}>
         <div role="status" aria-live="polite">
           <CheckCircle2 size={21} aria-hidden="true" />
-          <div><h3>{created.name} is ready</h3><p>The file was created in the selected project folder.</p></div>
+          <div>
+            <h3>{created.name} is ready</h3>
+            <p>{created.simulated
+              ? `Simulation only${created.environment ? ` (${created.environment})` : ""} — no Google file was created.`
+              : "The file was created in the selected project folder."}</p>
+          </div>
         </div>
         <a ref={successLinkRef} className="primary-button" href={created.url} target="_blank" rel="noopener noreferrer">
-          Open file <ExternalLink size={16} aria-hidden="true" />
+          {created.simulated ? "View simulation" : "Open file"} <ExternalLink size={16} aria-hidden="true" />
         </a>
         <button type="button" className="soft-button" onClick={controller.closeModal}>Done</button>
       </div>
@@ -356,7 +372,7 @@ export function ProjectFileCreationModal({
           </select>
         </label>
         <label>Start from
-          <select aria-label="Template" value={templateKey} onChange={(event) => setTemplateKey(event.target.value)} disabled={saving}>
+          <select value={templateKey} onChange={(event) => setTemplateKey(event.target.value)} disabled={saving}>
             <option value="">{kindOption.blankLabel}</option>
             {kindTemplates.map((template) => <option key={template.key} value={template.key}>{template.name}</option>)}
           </select>
