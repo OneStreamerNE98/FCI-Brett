@@ -1,4 +1,5 @@
 import type { LeadRow, ValidatedLeadValues } from "../domain/lead";
+import type { VersionConflict } from "../domain/record-version";
 
 export type LeadActivityIntent = {
   id: string;
@@ -43,6 +44,7 @@ export type LeadCreationRepositoryResult =
 
 export type LeadUpdateIntent = {
   leadId: string;
+  expectedVersion: string;
   values: ValidatedLeadValues;
   updatedAt: number;
   updatedBy: string;
@@ -51,7 +53,8 @@ export type LeadUpdateIntent = {
 
 export type LeadUpdateRepositoryResult =
   | { outcome: "updated"; value: LeadRow }
-  | { outcome: "lead-not-found" };
+  | { outcome: "lead-not-found" }
+  | VersionConflict;
 
 export interface LeadRepository {
   list(): Promise<LeadRow[]>;

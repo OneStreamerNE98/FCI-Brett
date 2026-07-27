@@ -62,6 +62,18 @@ test("project creation validates string and numeric JSON fields before use", asy
   assert.match(domain, /Project details must be valid JSON/);
 });
 
+test("client and project GET payloads expose canonical text versions for future editors", async () => {
+  const [clientsRoute, projectsRoute] = await Promise.all([
+    read("app/api/v1/clients/route.ts"),
+    read("app/api/v1/projects/route.ts"),
+  ]);
+  assert.match(clientsRoute, /CAST\(c\.version AS TEXT\) AS version/u);
+  assert.match(projectsRoute, /CAST\(p\.version AS TEXT\) AS version/u);
+  assert.equal(projectsRoute.match(/result\.kind === "conflict"/gu)?.length, 4);
+  assert.equal(projectsRoute.match(/\? 409/gu)?.length, 2);
+  assert.equal(projectsRoute.match(/currentVersion: result\.currentVersion/gu)?.length, 2);
+});
+
 test("project creation makes the project and activity one conditional D1 batch", async () => {
   const adapter = await read("app/adapters/d1/project-repository.ts");
 
@@ -72,7 +84,8 @@ test("project creation makes the project and activity one conditional D1 batch",
   assert.match(adapter, /INSERT INTO activity_events[\s\S]*WHERE EXISTS \(SELECT 1 FROM projects WHERE id = \? AND project_number = \?/);
   assert.match(adapter, /results\[0\]\?\.meta\.changes === 1/);
   assert.match(adapter, /outcome: "client-not-found"/);
-  assert.match(adapter, /UPDATE projects SET project_manager = \?, updated_at = \? WHERE id = \?/);
+  assert.match(adapter, /UPDATE projects SET project_manager = \?, updated_at = \?, version = version \+ 1 WHERE id = \? AND version = \?/);
+  assert.match(adapter, /WHERE changes\(\) = 1 AND EXISTS \(SELECT 1 FROM projects WHERE id = \? AND version = \? AND project_manager = \? AND updated_at = \?\)/);
   assert.match(adapter, /Project manager assigned|activity\.action/);
   assert.match(adapter, /outcome: "project-not-found"/);
 });
@@ -89,17 +102,17 @@ test("project operation D1 updates and their activity evidence stay in condition
   const followUp = adapter.slice(followUpStart);
 
   assert.match(installation, /database\.batch\(\[/);
-  assert.match(installation, /UPDATE projects SET installation_started_at = \?, installation_completed_at = \?, updated_at = \? WHERE id = \?/);
-  assert.match(installation, /INSERT INTO activity_events[\s\S]*WHERE EXISTS \(SELECT 1 FROM projects WHERE id = \? AND installation_started_at = \? AND installation_completed_at = \? AND updated_at = \?\)/);
+  assert.match(installation, /UPDATE projects SET installation_started_at = \?, installation_completed_at = \?, updated_at = \?, version = version \+ 1 WHERE id = \? AND version = \?/);
+  assert.match(installation, /INSERT INTO activity_events[\s\S]*WHERE changes\(\) = 1 AND EXISTS \(SELECT 1 FROM projects WHERE id = \? AND version = \? AND installation_started_at = \? AND installation_completed_at = \? AND updated_at = \?\)/);
   assert.match(installation, /activity\.id, activity\.recordId, activity\.action, activity\.actor, activity\.detail, activity\.createdAt/);
-  assert.match(installation, /intent\.projectId, intent\.installationStartedAt, intent\.installationCompletedAt, intent\.updatedAt/);
+  assert.match(installation, /intent\.projectId, resultingVersion, intent\.installationStartedAt, intent\.installationCompletedAt, intent\.updatedAt/);
 
   assert.match(followUp, /const hadCallback = intent\.hadCallback \? 1 : 0/);
   assert.match(followUp, /database\.batch\(\[/);
-  assert.match(followUp, /UPDATE projects SET had_callback = \?, callback_note = \?, updated_at = \? WHERE id = \?/);
-  assert.match(followUp, /INSERT INTO activity_events[\s\S]*WHERE EXISTS \(SELECT 1 FROM projects WHERE id = \? AND had_callback = \? AND callback_note IS \? AND updated_at = \?\)/);
+  assert.match(followUp, /UPDATE projects SET had_callback = \?, callback_note = \?, updated_at = \?, version = version \+ 1 WHERE id = \? AND version = \?/);
+  assert.match(followUp, /INSERT INTO activity_events[\s\S]*WHERE changes\(\) = 1 AND EXISTS \(SELECT 1 FROM projects WHERE id = \? AND version = \? AND had_callback = \? AND callback_note IS \? AND updated_at = \?\)/);
   assert.match(followUp, /activity\.id, activity\.recordId, activity\.action, activity\.actor, activity\.detail, activity\.createdAt/);
-  assert.match(followUp, /intent\.projectId, hadCallback, intent\.callbackNote, intent\.updatedAt/);
+  assert.match(followUp, /intent\.projectId, resultingVersion, hadCallback, intent\.callbackNote, intent\.updatedAt/);
 
   assert.match(application, /action: "Installation dates recorded"/);
   assert.match(application, /action: "Follow-up result recorded"/);

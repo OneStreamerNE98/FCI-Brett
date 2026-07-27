@@ -45,6 +45,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (!result.ok) {
     const status = result.kind === "forbidden"
       ? 403
+      : result.kind === "conflict"
+        ? 409
       : (
           result.kind === "task-not-found"
           || result.kind === "project-not-found"
@@ -52,7 +54,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         )
         ? 404
         : 400;
-    return json({ error: result.message }, status);
+    return json(
+      result.kind === "conflict"
+        ? { error: result.message, currentVersion: result.currentVersion }
+        : { error: result.message },
+      status,
+    );
   }
   return json({ task: result.value });
 }

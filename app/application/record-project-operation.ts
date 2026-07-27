@@ -28,7 +28,12 @@ export type RecordProjectOperationDependencies = {
 };
 
 export type RecordProjectOperationResult =
-  | { ok: false; kind: "forbidden" | "invalid" | "project-not-found"; message: string }
+  | {
+      ok: false;
+      kind: "forbidden" | "invalid" | "project-not-found";
+      message: string;
+    }
+  | { ok: false; kind: "conflict"; message: string; currentVersion: string }
   | {
       ok: true;
       value:
@@ -67,6 +72,14 @@ export async function recordProjectOperation(
     if (result.outcome === "project-not-found") {
       return { ok: false, kind: "project-not-found", message: "project not found" };
     }
+    if (result.outcome === "conflict") {
+      return {
+        ok: false,
+        kind: "conflict",
+        message: "Project changed since it was loaded.",
+        currentVersion: result.currentVersion,
+      };
+    }
     return { ok: true, value: { ...normalized.value, updatedAt } };
   }
 
@@ -86,6 +99,14 @@ export async function recordProjectOperation(
   });
   if (result.outcome === "project-not-found") {
     return { ok: false, kind: "project-not-found", message: "project not found" };
+  }
+  if (result.outcome === "conflict") {
+    return {
+      ok: false,
+      kind: "conflict",
+      message: "Project changed since it was loaded.",
+      currentVersion: result.currentVersion,
+    };
   }
   return { ok: true, value: { ...normalized.value, updatedAt } };
 }

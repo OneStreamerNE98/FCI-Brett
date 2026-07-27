@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { ADMIN_AUDIT_ACTIVITY_STATEMENTS } from "./admin-audit-activity-schema.ts";
 import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-schema.ts";
+import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "./core-record-concurrency-schema.ts";
 import { FLOORING_KPI_SCHEMA_STATEMENTS } from "./flooring-kpi-schema.ts";
 import { LEAD_PROJECT_MEETING_STATEMENTS } from "./lead-project-meeting-schema.ts";
 import { PROJECT_SEGMENT_SCHEMA_STATEMENTS } from "./project-segment-schema.ts";
@@ -452,6 +453,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "project_segment",
     checksum: "sha256:9fe7e63bb2f266636164f20436753189938cd9c47a21b2a5e565e8faa79b87b9",
     statements: PROJECT_SEGMENT_SCHEMA_STATEMENTS,
+  },
+  {
+    version: 11,
+    name: "core_record_concurrency",
+    checksum: "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
+    statements: CORE_RECORD_CONCURRENCY_STATEMENTS,
   },
 ];
 

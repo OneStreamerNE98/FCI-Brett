@@ -1,4 +1,6 @@
 import type { ProjectStatus } from "../domain/project-creation";
+import type { FlooringCategory } from "../domain/project-creation";
+import type { VersionConflict } from "../domain/record-version";
 import type { ProjectSegment } from "../domain/project-segment";
 
 export type ProjectCreationIntent = {
@@ -49,6 +51,7 @@ export type ProjectCreationRepositoryResult =
 
 export type ProjectManagerAssignmentIntent = {
   projectId: string;
+  expectedVersion?: string;
   projectManagerId: string;
   updatedAt: number;
   activity: {
@@ -61,7 +64,10 @@ export type ProjectManagerAssignmentIntent = {
   };
 };
 
-export type ProjectManagerAssignmentRepositoryResult = { outcome: "updated" } | { outcome: "project-not-found" };
+export type ProjectManagerAssignmentRepositoryResult =
+  | { outcome: "updated" }
+  | { outcome: "project-not-found" }
+  | VersionConflict;
 
 type ProjectOperationActivity = {
   id: string;
@@ -73,6 +79,7 @@ type ProjectOperationActivity = {
 
 export type ProjectInstallationDatesIntent = {
   projectId: string;
+  expectedVersion?: string;
   installationStartedAt: number;
   installationCompletedAt: number;
   updatedAt: number;
@@ -81,20 +88,70 @@ export type ProjectInstallationDatesIntent = {
 
 export type ProjectFollowUpResultIntent = {
   projectId: string;
+  expectedVersion?: string;
   hadCallback: boolean;
   callbackNote: string | null;
   updatedAt: number;
   activity: ProjectOperationActivity & { action: "Follow-up result recorded" };
 };
 
-export type ProjectOperationRepositoryResult = { outcome: "updated" } | { outcome: "project-not-found" };
+export type ProjectOperationRepositoryResult =
+  | { outcome: "updated" }
+  | { outcome: "project-not-found" }
+  | VersionConflict;
+
+export type ProjectRow = {
+  id: string;
+  projectNumber: string;
+  clientId: string;
+  name: string;
+  status: ProjectStatus;
+  site: string | null;
+  projectManagerId: string | null;
+  estimatedValue: number | null;
+  flooringCategory: FlooringCategory | null;
+  squareFeet: number | null;
+  contractValue: number | null;
+  segment: ProjectSegment | null;
+  updatedAt: number;
+  version: string;
+};
+
+export type ProjectFieldUpdateIntent = {
+  projectId: string;
+  expectedVersion: string;
+  values: Pick<
+    ProjectRow,
+    | "clientId"
+    | "name"
+    | "status"
+    | "site"
+    | "estimatedValue"
+    | "flooringCategory"
+    | "squareFeet"
+    | "contractValue"
+    | "segment"
+  >;
+  updatedAt: number;
+  updatedBy: string;
+  activity: ProjectOperationActivity & { action: "Project fields updated" };
+};
+
+export type ProjectFieldUpdateRepositoryResult =
+  | { outcome: "updated"; value: ProjectRow }
+  | { outcome: "project-not-found" }
+  | { outcome: "client-not-found" }
+  | VersionConflict;
 
 export interface ProjectRepository {
+  findById(projectId: string): Promise<ProjectRow | null>;
   create(intent: ProjectCreationIntent): Promise<ProjectCreationRepositoryResult>;
+  update(intent: ProjectFieldUpdateIntent): Promise<ProjectFieldUpdateRepositoryResult>;
   assignManager(intent: ProjectManagerAssignmentIntent): Promise<ProjectManagerAssignmentRepositoryResult>;
 }
 
 export interface ProjectOperationsRepository {
+  findById(projectId: string): Promise<ProjectRow | null>;
   recordInstallationDates(intent: ProjectInstallationDatesIntent): Promise<ProjectOperationRepositoryResult>;
   recordFollowUpResult(intent: ProjectFollowUpResultIntent): Promise<ProjectOperationRepositoryResult>;
 }

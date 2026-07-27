@@ -5,18 +5,34 @@ import type {
   LeadUpdateIntent,
 } from "../../ports/lead-repository";
 import type { D1Database, D1PreparedStatement } from "./d1-database";
+import { d1RecordVersion, nextD1RecordVersion } from "./record-version.ts";
+
+type D1LeadRow = Omit<LeadRow, "version"> & { version: unknown };
+
+function leadRow(row: D1LeadRow): LeadRow {
+  return { ...row, version: d1RecordVersion(row.version, "D1 lead version") };
+}
+
+async function currentLeadVersion(database: D1Database, leadId: string) {
+  const row = await database
+    .prepare("SELECT version FROM leads WHERE id = ?")
+    .bind(leadId)
+    .first<{ version: unknown }>();
+  return row ? d1RecordVersion(row.version, "D1 lead version") : null;
+}
 
 export function createD1LeadRepository(database: D1Database): LeadRepository {
   return {
     async list() {
       const result = await database
         .prepare("SELECT * FROM leads ORDER BY updated_at DESC, created_at DESC LIMIT 500")
-        .all<LeadRow>();
-      return result.results;
+        .all<D1LeadRow>();
+      return result.results.map(leadRow);
     },
 
     findById(leadId) {
-      return database.prepare("SELECT * FROM leads WHERE id = ?").bind(leadId).first<LeadRow>();
+      return database.prepare("SELECT * FROM leads WHERE id = ?").bind(leadId).first<D1LeadRow>()
+        .then((row) => row ? leadRow(row) : null);
     },
 
     async create(intent: LeadCreationIntent) {
@@ -30,20 +46,22 @@ export function createD1LeadRepository(database: D1Database): LeadRepository {
       const created = await database
         .prepare("SELECT * FROM leads WHERE id = ?")
         .bind(lead.id)
-        .first<LeadRow>();
+        .first<D1LeadRow>();
       if (!created) throw new Error("D1 lead creation did not return the inserted lead");
-      return { outcome: "created", value: created };
+      return { outcome: "created", value: leadRow(created) };
     },
 
     async update(intent: LeadUpdateIntent) {
       const { values } = intent;
+      const expectedVersion = d1RecordVersion(intent.expectedVersion, "Expected D1 lead version");
+      const resultingVersion = nextD1RecordVersion(expectedVersion);
       const statements: D1PreparedStatement[] = [
-        database.prepare("UPDATE leads SET company = ?, contact_name = ?, contact_email = ?, contact_phone = ?, project_name = ?, source = ?, stage = ?, site = ?, estimated_value = ?, next_action = ?, next_action_at = ?, owner_email = ?, status = ?, updated_at = ? WHERE id = ?")
-          .bind(values.company, values.contactName, values.contactEmail, values.contactPhone, values.projectName, values.source, values.stage, values.site, values.estimatedValue, values.nextAction, values.nextActionAt, values.ownerEmail, values.status, intent.updatedAt, intent.leadId),
+        database.prepare("UPDATE leads SET company = ?, contact_name = ?, contact_email = ?, contact_phone = ?, project_name = ?, source = ?, stage = ?, site = ?, estimated_value = ?, next_action = ?, next_action_at = ?, owner_email = ?, status = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?")
+          .bind(values.company, values.contactName, values.contactEmail, values.contactPhone, values.projectName, values.source, values.stage, values.site, values.estimatedValue, values.nextAction, values.nextActionAt, values.ownerEmail, values.status, intent.updatedAt, intent.leadId, expectedVersion),
       ];
       for (const activity of intent.activities) {
         statements.push(
-          database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM leads WHERE id = ? AND updated_at = ?)")
+          database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1 AND EXISTS (SELECT 1 FROM leads WHERE id = ? AND version = ?)")
             .bind(
               activity.id,
               activity.recordId,
@@ -52,18 +70,23 @@ export function createD1LeadRepository(database: D1Database): LeadRepository {
               activity.detail,
               activity.createdAt,
               intent.leadId,
-              intent.updatedAt,
+              resultingVersion,
             ),
         );
       }
       const results = await database.batch(statements);
-      if (results[0]?.meta.changes !== 1) return { outcome: "lead-not-found" };
+      if (results[0]?.meta.changes !== 1) {
+        const currentVersion = await currentLeadVersion(database, intent.leadId);
+        return currentVersion
+          ? { outcome: "conflict", currentVersion }
+          : { outcome: "lead-not-found" };
+      }
       const updated = await database
         .prepare("SELECT * FROM leads WHERE id = ?")
         .bind(intent.leadId)
-        .first<LeadRow>();
+        .first<D1LeadRow>();
       if (!updated) throw new Error("D1 lead update did not return the updated lead");
-      return { outcome: "updated", value: updated };
+      return { outcome: "updated", value: leadRow(updated) };
     },
   };
 }

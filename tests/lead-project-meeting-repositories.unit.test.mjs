@@ -58,6 +58,7 @@ function leadIntent(overrides = {}) {
     created_by: "owner@example.test",
     created_at: CREATED_AT,
     updated_at: UPDATED_AT,
+    version: "1",
     ...overrides,
   };
   return {
@@ -183,6 +184,7 @@ test("D1 lead updates keep stage evidence before next-action evidence", async ()
   const repository = createD1LeadRepository(database);
   const result = await repository.update({
     leadId: LEAD_ID,
+    expectedVersion: "1",
     values: {
       company: intent.lead.company,
       contactName: intent.lead.contact_name,
@@ -289,15 +291,15 @@ class ScriptedPostgresPool {
   }
 }
 
-function postgresLeadRow() {
-  const { lead } = leadIntent();
+function postgresLeadRow(overrides = {}) {
+  const { lead } = leadIntent(overrides);
   return {
     ...lead,
     estimated_value: String(lead.estimated_value),
     next_action_at: new Date(lead.next_action_at),
     created_at: new Date(lead.created_at),
     updated_at: new Date(lead.updated_at),
-    version: "1",
+    version: lead.version,
   };
 }
 
@@ -367,6 +369,117 @@ test("PostgreSQL lead fingerprints exclude generated IDs and timestamps", () => 
     calculatePostgresLeadCreationFingerprint(first),
     calculatePostgresLeadCreationFingerprint(second),
   );
+});
+
+test("PostgreSQL lead update uses version CAS and writes one guarded audit row", async () => {
+  const intent = leadIntent();
+  const updatedLead = {
+    ...intent.lead,
+    stage: "Proposal",
+    updated_at: UPDATED_AT + 1_000,
+    version: "2",
+  };
+  const activity = {
+    id: LEAD_ACTIVITY_ID,
+    recordId: LEAD_ID,
+    action: "Lead stage changed",
+    actor: "owner@example.test",
+    detail: "Qualified → Proposal",
+    createdAt: updatedLead.updated_at,
+  };
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    step(/UPDATE leads SET[\s\S]*WHERE id = \$16 AND version = \$17::bigint/, result([
+      postgresLeadRow(updatedLead),
+    ], 1), ({ values }) => {
+      assert.equal(values[15], LEAD_ID);
+      assert.equal(values[16], "1");
+    }),
+    step(/INSERT INTO activity_events[\s\S]*WHERE EXISTS[\s\S]*version = \$8::bigint/, result([], 1), ({ values }) => {
+      assert.equal(values[2], "Lead stage changed");
+      assert.equal(values[5], JSON.stringify({ message: "Qualified → Proposal" }));
+      assert.equal(values[7], "2");
+    }),
+    step(/^COMMIT$/),
+  ]);
+  const repository = createPostgresLeadRepository(new ScriptedPostgresPool(client), {
+    schema: "repository_test",
+  });
+
+  const resultValue = await repository.update({
+    leadId: LEAD_ID,
+    expectedVersion: "1",
+    values: {
+      company: updatedLead.company,
+      contactName: updatedLead.contact_name,
+      contactEmail: updatedLead.contact_email,
+      contactPhone: updatedLead.contact_phone,
+      projectName: updatedLead.project_name,
+      source: updatedLead.source,
+      stage: updatedLead.stage,
+      site: updatedLead.site,
+      estimatedValue: updatedLead.estimated_value,
+      nextAction: updatedLead.next_action,
+      nextActionAt: updatedLead.next_action_at,
+      ownerEmail: updatedLead.owner_email,
+      status: updatedLead.status,
+    },
+    updatedAt: updatedLead.updated_at,
+    updatedBy: activity.actor,
+    activities: [activity],
+  });
+
+  assert.equal(resultValue.outcome, "updated");
+  assert.equal(resultValue.value.version, "2");
+  client.assertComplete();
+});
+
+test("PostgreSQL lead stale version returns current version and writes no audit", async () => {
+  const intent = leadIntent();
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    step(/UPDATE leads SET[\s\S]*WHERE id = \$16 AND version = \$17::bigint/, result([], 0)),
+    step(/SELECT version::text AS version FROM leads WHERE id = \$1/, result([
+      { version: "2" },
+    ], 1)),
+    step(/^COMMIT$/),
+  ]);
+  const repository = createPostgresLeadRepository(new ScriptedPostgresPool(client), {
+    schema: "repository_test",
+  });
+  const resultValue = await repository.update({
+    leadId: LEAD_ID,
+    expectedVersion: "1",
+    values: {
+      company: intent.lead.company,
+      contactName: intent.lead.contact_name,
+      contactEmail: intent.lead.contact_email,
+      contactPhone: intent.lead.contact_phone,
+      projectName: intent.lead.project_name,
+      source: intent.lead.source,
+      stage: "Proposal",
+      site: intent.lead.site,
+      estimatedValue: intent.lead.estimated_value,
+      nextAction: intent.lead.next_action,
+      nextActionAt: intent.lead.next_action_at,
+      ownerEmail: intent.lead.owner_email,
+      status: intent.lead.status,
+    },
+    updatedAt: UPDATED_AT + 1_000,
+    updatedBy: "owner@example.test",
+    activities: [{
+      id: LEAD_ACTIVITY_ID,
+      recordId: LEAD_ID,
+      action: "Lead stage changed",
+      actor: "owner@example.test",
+      detail: "Qualified → Proposal",
+      createdAt: UPDATED_AT + 1_000,
+    }],
+  });
+
+  assert.deepEqual(resultValue, { outcome: "conflict", currentVersion: "2" });
+  assert.equal(client.queries.some(({ sql }) => sql.startsWith("INSERT INTO activity_events")), false);
+  client.assertComplete();
 });
 
 test("PostgreSQL meeting create records a replayable missing-project result", async () => {

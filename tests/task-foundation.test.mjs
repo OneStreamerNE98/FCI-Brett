@@ -4,6 +4,7 @@ import { after, test } from "node:test";
 import { createServer } from "vite";
 
 const OFFICE_EMAIL = "admincrm@cherryhillfci.com";
+const SECOND_OFFICE_EMAIL = "task-editor@example.test";
 const PROJECT_ID = "33333333-3333-4333-8333-333333333333";
 const LEAD_ID = "55555555-5555-4555-8555-555555555555";
 const MISSING_PROJECT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -11,6 +12,7 @@ const MISSING_LEAD_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const TASK_ID = "11111111-1111-4111-8111-111111111111";
 const CREATE_ACTIVITY_ID = "22222222-2222-4222-8222-222222222222";
 const COMPLETE_ACTIVITY_ID = "44444444-4444-4444-8444-444444444444";
+const REOPEN_ACTIVITY_ID = "77777777-7777-4777-8777-777777777777";
 const CREATED_AT = Date.UTC(2026, 6, 23, 12, 0, 0);
 const COMPLETED_AT = CREATED_AT + 60_000;
 
@@ -50,6 +52,18 @@ class StatefulD1Database {
     this.prepared = [];
     this.projectIds = new Set(projectIds);
     this.leadIds = new Set(leadIds);
+    this.taskReadBarrier = null;
+  }
+
+  armConcurrentTaskReads() {
+    const waiting = [];
+    this.taskReadBarrier = (row) => new Promise((resolve) => {
+      waiting.push(() => resolve(row ? { ...row } : null));
+      if (waiting.length === 2) {
+        this.taskReadBarrier = null;
+        for (const release of waiting) release();
+      }
+    });
   }
 
   prepare(sql) {
@@ -60,7 +74,12 @@ class StatefulD1Database {
 
   first(statement) {
     if (statement.sql === "SELECT * FROM tasks WHERE id = ?") {
-      return this.tasks.get(statement.values[0]) ?? null;
+      const row = this.tasks.get(statement.values[0]) ?? null;
+      return this.taskReadBarrier ? this.taskReadBarrier(row) : row;
+    }
+    if (statement.sql === "SELECT version FROM tasks WHERE id = ?") {
+      const task = this.tasks.get(statement.values[0]);
+      return task ? { version: task.version } : null;
     }
     if (statement.sql === "SELECT id FROM projects WHERE id = ?") {
       return this.projectIds.has(statement.values[0]) ? { id: statement.values[0] } : null;
@@ -119,7 +138,9 @@ class StatefulD1Database {
   }
 
   async batch(statements) {
-    return statements.map((statement) => {
+    const results = [];
+    let previousChanges = 0;
+    for (const statement of statements) {
       if (statement.sql.startsWith("INSERT INTO tasks ")) {
         const [
           id,
@@ -155,13 +176,22 @@ class StatefulD1Database {
           created_at: createdAt,
           updated_at: updatedAt,
           completed_at: completedAt,
+          version: 1,
         });
-        return { meta: { changes: 1 } };
+        previousChanges = 1;
+        results.push({ meta: { changes: 1 } });
+        continue;
       }
       if (statement.sql.startsWith("UPDATE tasks SET ")) {
         const id = statement.values[9];
         const current = this.tasks.get(id);
-        if (!current) return { meta: { changes: 0 } };
+        const expectedVersion = String(statement.values[10]);
+        const versionGuarded = statement.sql.includes("WHERE id = ? AND version = ?");
+        if (!current || versionGuarded && String(current.version) !== expectedVersion) {
+          previousChanges = 0;
+          results.push({ meta: { changes: 0 } });
+          continue;
+        }
         const [
           title,
           details,
@@ -184,8 +214,11 @@ class StatefulD1Database {
           assignee_email: assigneeEmail,
           updated_at: updatedAt,
           completed_at: completedAt,
+          version: current.version + 1,
         });
-        return { meta: { changes: 1 } };
+        previousChanges = 1;
+        results.push({ meta: { changes: 1 } });
+        continue;
       }
       if (statement.sql.startsWith("INSERT INTO project_meetings ")) {
         const [
@@ -224,15 +257,33 @@ class StatefulD1Database {
           created_at: createdAt,
           updated_at: updatedAt,
         });
-        return { meta: { changes: 1 } };
+        previousChanges = 1;
+        results.push({ meta: { changes: 1 } });
+        continue;
       }
       if (statement.sql.startsWith("INSERT INTO activity_events ")) {
         const [id, recordId, action, actor, detail, createdAt] = statement.values;
+        if (statement.sql.includes("changes() = 1")) {
+          const task = this.tasks.get(statement.values[6]);
+          if (
+            previousChanges !== 1
+            || !task
+            || String(task.version) !== String(statement.values[7])
+            || task.updated_at !== statement.values[8]
+          ) {
+            previousChanges = 0;
+            results.push({ meta: { changes: 0 } });
+            continue;
+          }
+        }
         this.activities.push({ id, recordId, action, actor, detail, createdAt });
-        return { meta: { changes: 1 } };
+        previousChanges = 1;
+        results.push({ meta: { changes: 1 } });
+        continue;
       }
       throw new Error(`Unexpected D1 batch statement: ${statement.sql}`);
-    });
+    }
+    return results;
   }
 }
 
@@ -240,7 +291,7 @@ const database = new StatefulD1Database();
 const originalNodeEnvironment = process.env.NODE_ENV;
 process.env.NODE_ENV = "test";
 const workerEnvironment = {
-  FCI_OFFICE_EMAILS: OFFICE_EMAIL,
+  FCI_OFFICE_EMAILS: `${OFFICE_EMAIL},${SECOND_OFFICE_EMAIL}`,
   FCI_ADMIN_EMAILS: OFFICE_EMAIL,
   DB: database,
 };
@@ -311,20 +362,21 @@ const {
   normalizeTaskPatch,
   TASK_SOURCES,
   TASK_STATUSES,
+  TASK_PATCH_KEYS,
 } = taskDomainModule;
 
 function taskAuthorization(...capabilities) {
   return creationAuthorizationFor({ actorId: OFFICE_EMAIL, capabilities });
 }
 
-function taskRequest(path, method, body) {
+function taskRequest(path, method, body, officeEmail = OFFICE_EMAIL) {
   const url = new URL(path, "https://fci.example.test");
   const request = new Request(url, {
     method,
     headers: {
       "content-type": "application/json",
       origin: url.origin,
-      "oai-authenticated-user-email": OFFICE_EMAIL,
+      "oai-authenticated-user-email": officeEmail,
     },
     body: JSON.stringify(body),
   });
@@ -335,6 +387,15 @@ function taskRequest(path, method, body) {
 test("task validation pins bounded text, closed enums, closed bodies, and filter limits", () => {
   assert.deepEqual([...TASK_STATUSES], ["open", "done"]);
   assert.deepEqual([...TASK_SOURCES], ["manual", "meeting", "email", "ai"]);
+  assert.deepEqual([...TASK_PATCH_KEYS], [
+    "title",
+    "details",
+    "status",
+    "dueDate",
+    "projectId",
+    "leadId",
+    "assigneeEmail",
+  ]);
   assert.equal(normalizeTaskCreation({
     title: "x".repeat(200),
     details: "y".repeat(4_000),
@@ -373,6 +434,12 @@ test("task validation pins bounded text, closed enums, closed bodies, and filter
     ok: true,
     value: { status: "done" },
   });
+  assert.deepEqual(normalizeTaskPatch({ status: "done", version: "7" }), {
+    ok: true,
+    value: { version: "7", status: "done" },
+  });
+  assert.equal(normalizeTaskPatch({ status: "done", version: 0 }).ok, false);
+  assert.equal(normalizeTaskPatch({ version: "1" }).ok, false);
   assert.equal(normalizeTaskPatch({ source: "ai" }).ok, false);
   assert.equal(normalizeTaskListFilters({ limit: "200" }).ok, true);
   assert.equal(normalizeTaskListFilters({ limit: "201" }).ok, false);
@@ -381,7 +448,7 @@ test("task validation pins bounded text, closed enums, closed bodies, and filter
 
 test("memory task adapter round-trips create, filtered read, completion, and reopen", async () => {
   const repository = new MemoryTaskRepository({ projectIds: [PROJECT_ID] });
-  const ids = [TASK_ID, CREATE_ACTIVITY_ID, COMPLETE_ACTIVITY_ID];
+  const ids = [TASK_ID, CREATE_ACTIVITY_ID, COMPLETE_ACTIVITY_ID, REOPEN_ACTIVITY_ID];
   let now = CREATED_AT;
   const dependencies = {
     repository,
@@ -416,6 +483,7 @@ test("memory task adapter round-trips create, filtered read, completion, and reo
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
     completedAt: null,
+    version: "1",
   });
 
   const listed = await listTasks(
@@ -449,8 +517,27 @@ test("memory task adapter round-trips create, filtered read, completion, and reo
   assert.equal(reopened.value.completedAt, null);
   assert.deepEqual(
     repository.activityIntents().map(({ action }) => action),
-    ["Task created", "Task completed"],
+    ["Task created", "Task fields updated", "Task fields updated"],
   );
+  assert.equal(repository.activityIntents()[1].detail, "Details: Check the FCI TEST — DO NOT USE project. → Not set; Status: open → done");
+  assert.equal(repository.activityIntents()[2].detail, "Status: done → open");
+  const current = await repository.findById(TASK_ID);
+  const activityCount = repository.activityIntents().length;
+  assert.deepEqual(await repository.update({
+    task: { ...current, title: "Stale memory editor must lose" },
+    expectedVersion: "1",
+    updatedBy: OFFICE_EMAIL,
+    activity: {
+      id: "88888888-8888-4888-8888-888888888888",
+      recordId: TASK_ID,
+      action: "Task fields updated",
+      actor: OFFICE_EMAIL,
+      detail: "Title: Confirm material delivery → Stale memory editor must lose",
+      createdAt: now + 1_000,
+    },
+  }), { outcome: "conflict", currentVersion: "3" });
+  assert.equal((await repository.findById(TASK_ID)).title, "Confirm material delivery");
+  assert.equal(repository.activityIntents().length, activityCount);
 });
 
 test("memory task adapter rejects orphan project and lead relationships on create and update", async () => {
@@ -478,16 +565,32 @@ test("memory task adapter rejects orphan project and lead relationships on creat
   assert.deepEqual(
     await repository.update({
       task: { ...validIntent.task, project_id: MISSING_PROJECT_ID },
+      expectedVersion: "1",
       updatedBy: OFFICE_EMAIL,
-      activity: null,
+      activity: {
+        id: COMPLETE_ACTIVITY_ID,
+        recordId: TASK_ID,
+        action: "Task fields updated",
+        actor: OFFICE_EMAIL,
+        detail: `${PROJECT_ID} → ${MISSING_PROJECT_ID}`,
+        createdAt: COMPLETED_AT,
+      },
     }),
     { outcome: "project-not-found" },
   );
   assert.deepEqual(
     await repository.update({
       task: { ...validIntent.task, lead_id: MISSING_LEAD_ID },
+      expectedVersion: "1",
       updatedBy: OFFICE_EMAIL,
-      activity: null,
+      activity: {
+        id: REOPEN_ACTIVITY_ID,
+        recordId: TASK_ID,
+        action: "Task fields updated",
+        actor: OFFICE_EMAIL,
+        detail: `${LEAD_ID} → ${MISSING_LEAD_ID}`,
+        createdAt: COMPLETED_AT,
+      },
     }),
     { outcome: "lead-not-found" },
   );
@@ -534,15 +637,101 @@ test("D1 task routes round-trip create, list, and completion with activity evide
   const completed = (await updateResponse.json()).task;
   assert.equal(completed.status, "done");
   assert.equal(typeof completed.completedAt, "number");
+  assert.equal(completed.version, "2");
   assert.deepEqual(
     database.activities.map(({ action }) => action),
-    ["Task created", "Task completed"],
+    ["Task created", "Task fields updated"],
   );
+  assert.equal(database.activities[1].detail, "Status: open → done");
   assert.equal(
     database.prepared
-      .filter(({ sql }) => sql.startsWith("INSERT INTO activity_events "))
-      .every(({ sql }) => sql.includes("WHERE EXISTS (SELECT 1 FROM tasks")),
+      .filter(({ sql }) =>
+        sql.startsWith("INSERT INTO activity_events ") && sql.includes("changes() = 1"))
+      .every(({ sql }) => sql.includes("AND EXISTS (SELECT 1 FROM tasks")),
     true,
+  );
+});
+
+test("D1 task route rejects a second write at the same version without audit evidence", async () => {
+  database.reset();
+  const createResponse = await tasksRoute.POST(taskRequest("/api/v1/tasks", "POST", {
+    title: "Versioned task",
+    source: "manual",
+  }, SECOND_OFFICE_EMAIL));
+  assert.equal(createResponse.status, 201);
+  const created = (await createResponse.json()).task;
+  assert.equal(created.version, "1");
+
+  const first = await taskRoute.PATCH(
+    taskRequest(`/api/v1/tasks/${created.id}`, "PATCH", {
+      title: "First editor won",
+      version: "1",
+    }, SECOND_OFFICE_EMAIL),
+    { params: Promise.resolve({ taskId: created.id }) },
+  );
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).task.version, "2");
+  const auditCount = database.activities.length;
+
+  const stale = await taskRoute.PATCH(
+    taskRequest(`/api/v1/tasks/${created.id}`, "PATCH", {
+      title: "Stale editor must lose",
+      version: "1",
+    }, SECOND_OFFICE_EMAIL),
+    { params: Promise.resolve({ taskId: created.id }) },
+  );
+  assert.equal(stale.status, 409);
+  assert.equal(stale.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await stale.json(), {
+    error: "Task changed since it was loaded.",
+    currentVersion: "2",
+  });
+  assert.equal(database.tasks.get(created.id).title, "First editor won");
+  assert.equal(database.tasks.get(created.id).version, 2);
+  assert.equal(database.activities.length, auditCount);
+});
+
+test("D1 task adapter serializes two concurrent writes at one version and audits only the winner", async () => {
+  database.reset();
+  database.tasks.set(TASK_ID, { ...taskRow(), version: 1 });
+  database.armConcurrentTaskReads();
+  const repository = createD1TaskRepository(database);
+  const updateIntent = (title, activityId) => ({
+    task: taskRow({
+      title,
+      updated_at: COMPLETED_AT,
+    }),
+    expectedVersion: "1",
+    updatedBy: OFFICE_EMAIL,
+    activity: {
+      id: activityId,
+      recordId: TASK_ID,
+      action: "Task fields updated",
+      actor: OFFICE_EMAIL,
+      detail: `Title: Review project notes → ${title}`,
+      createdAt: COMPLETED_AT,
+    },
+  });
+
+  const results = await Promise.all([
+    repository.update(updateIntent("Concurrent editor A", COMPLETE_ACTIVITY_ID)),
+    repository.update(updateIntent("Concurrent editor B", REOPEN_ACTIVITY_ID)),
+  ]);
+  assert.equal(results.filter(({ outcome }) => outcome === "updated").length, 1);
+  assert.deepEqual(
+    results.filter(({ outcome }) => outcome === "conflict"),
+    [{ outcome: "conflict", currentVersion: "2" }],
+  );
+  assert.equal(database.tasks.get(TASK_ID).version, 2);
+  assert.equal(database.activities.length, 1);
+  const updateStatement = database.prepared.find(({ sql }) =>
+    sql.startsWith("UPDATE tasks SET "));
+  assert.match(updateStatement.sql, /WHERE id = \? AND version = \?$/u);
+  const auditStatement = database.prepared.find(({ sql }) =>
+    sql.startsWith("INSERT INTO activity_events ") && sql.includes("changes() = 1"));
+  assert.match(
+    auditStatement.sql,
+    /WHERE changes\(\) = 1 AND EXISTS \(SELECT 1 FROM tasks WHERE id = \? AND version = \? AND updated_at = \?\)/u,
   );
 });
 
@@ -735,6 +924,7 @@ function taskRow(overrides = {}) {
     created_at: CREATED_AT,
     updated_at: CREATED_AT,
     completed_at: null,
+    version: "1",
     ...overrides,
   };
 }
@@ -761,7 +951,7 @@ function postgresTaskRow(overrides = {}) {
     created_at: new Date(task.created_at),
     updated_at: new Date(task.updated_at),
     completed_at: task.completed_at === null ? null : new Date(task.completed_at),
-    version: "1",
+    version: task.version,
   };
 }
 
@@ -805,18 +995,19 @@ test("PostgreSQL task create atomically stores the row and activity evidence", a
   client.assertComplete();
 });
 
-test("PostgreSQL task completion updates the row and appends completion evidence", async () => {
+test("PostgreSQL task completion uses version CAS and appends guarded field-update evidence", async () => {
   const task = taskRow({
     status: "done",
     updated_at: COMPLETED_AT,
     completed_at: COMPLETED_AT,
+    version: "2",
   });
   const activity = {
     id: COMPLETE_ACTIVITY_ID,
     recordId: TASK_ID,
-    action: "Task completed",
+    action: "Task fields updated",
     actor: OFFICE_EMAIL,
-    detail: task.title,
+    detail: "Status: open → done",
     createdAt: COMPLETED_AT,
   };
   const client = new ScriptedPostgresClient([
@@ -828,9 +1019,12 @@ test("PostgreSQL task completion updates the row and appends completion evidence
       assert.equal(values[5], LEAD_ID);
       assert.equal(values[7], OFFICE_EMAIL);
       assert.equal(values[10], TASK_ID);
+      assert.equal(values[11], "1");
     }),
-    pgStep(/INSERT INTO activity_events[\s\S]*task_id/u, pgResult([], 1), ({ values }) => {
-      assert.equal(values[2], "Task completed");
+    pgStep(/INSERT INTO activity_events[\s\S]*WHERE EXISTS[\s\S]*version = \$8::bigint/u, pgResult([], 1), ({ values }) => {
+      assert.equal(values[2], "Task fields updated");
+      assert.equal(values[5], JSON.stringify({ message: "Status: open → done" }));
+      assert.equal(values[7], "2");
     }),
     pgStep(/^COMMIT$/u),
   ]);
@@ -840,12 +1034,53 @@ test("PostgreSQL task completion updates the row and appends completion evidence
 
   assert.deepEqual(await repository.update({
     task,
+    expectedVersion: "1",
     updatedBy: OFFICE_EMAIL,
     activity,
   }), {
     outcome: "updated",
     value: task,
   });
+  client.assertComplete();
+});
+
+test("PostgreSQL task stale version returns current version and writes no audit", async () => {
+  const task = taskRow({
+    title: "Stale editor must lose",
+    updated_at: COMPLETED_AT,
+  });
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    pgStep(/UPDATE tasks SET[\s\S]*WHERE id = \$11 AND version = \$12::bigint/u, pgResult([], 0)),
+    pgStep(/SELECT version::text AS version FROM tasks WHERE id = \$1/u, pgResult([
+      { version: "2" },
+    ], 1)),
+    pgStep(/^COMMIT$/u),
+  ]);
+  const repository = createPostgresTaskRepository(new ScriptedPostgresPool(client), {
+    schema: "task_test",
+  });
+
+  assert.deepEqual(await repository.update({
+    task,
+    expectedVersion: "1",
+    updatedBy: OFFICE_EMAIL,
+    activity: {
+      id: COMPLETE_ACTIVITY_ID,
+      recordId: TASK_ID,
+      action: "Task fields updated",
+      actor: OFFICE_EMAIL,
+      detail: "Title: Review project notes → Stale editor must lose",
+      createdAt: COMPLETED_AT,
+    },
+  }), {
+    outcome: "conflict",
+    currentVersion: "2",
+  });
+  assert.equal(
+    client.queries.some(({ sql }) => sql.startsWith("INSERT INTO activity_events")),
+    false,
+  );
   client.assertComplete();
 });
 
@@ -878,8 +1113,16 @@ test("PostgreSQL task writes map project and lead FK violations to the shared po
         ? await repository.create(taskCreationIntent())
         : await repository.update({
             task: taskRow(),
+            expectedVersion: "1",
             updatedBy: OFFICE_EMAIL,
-            activity: null,
+            activity: {
+              id: COMPLETE_ACTIVITY_ID,
+              recordId: TASK_ID,
+              action: "Task fields updated",
+              actor: OFFICE_EMAIL,
+              detail: "Title: Before → After",
+              createdAt: CREATED_AT,
+            },
           });
 
       assert.deepEqual(result, { outcome });

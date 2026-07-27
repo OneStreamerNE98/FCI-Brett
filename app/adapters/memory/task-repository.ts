@@ -4,6 +4,7 @@ import type {
   TaskRepository,
   TaskUpdateIntent,
 } from "../../ports/task-repository";
+import { nextRecordVersion, normalizeRecordVersion } from "../../domain/record-version.ts";
 
 type MemoryTaskRepositoryOptions = {
   projectIds?: Iterable<string>;
@@ -79,15 +80,25 @@ export class MemoryTaskRepository implements TaskRepository {
   }
 
   async update(intent: TaskUpdateIntent) {
-    if (!this.#tasks.has(intent.task.id)) return { outcome: "task-not-found" as const };
+    const existing = this.#tasks.get(intent.task.id);
+    if (!existing) return { outcome: "task-not-found" as const };
+    const expectedVersion = normalizeRecordVersion(intent.expectedVersion);
+    if (!expectedVersion) throw new TypeError("Expected memory task version is invalid.");
+    if (existing.version !== expectedVersion) {
+      return { outcome: "conflict" as const, currentVersion: existing.version };
+    }
     if (intent.task.project_id && !this.#projectIds.has(intent.task.project_id)) {
       return { outcome: "project-not-found" as const };
     }
     if (intent.task.lead_id && !this.#leadIds.has(intent.task.lead_id)) {
       return { outcome: "lead-not-found" as const };
     }
-    this.#tasks.set(intent.task.id, snapshot(intent.task));
-    if (intent.activity) this.#activities.push(snapshotActivity(intent.activity));
-    return { outcome: "updated" as const, value: snapshot(intent.task) };
+    const updated = {
+      ...intent.task,
+      version: nextRecordVersion(expectedVersion),
+    };
+    this.#tasks.set(intent.task.id, snapshot(updated));
+    this.#activities.push(snapshotActivity(intent.activity));
+    return { outcome: "updated" as const, value: snapshot(updated) };
   }
 }

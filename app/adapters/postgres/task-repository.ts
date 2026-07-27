@@ -14,6 +14,7 @@ import { withPostgresTransaction, type PostgresPool } from "./postgres-database"
 import {
   isPostgresUuid,
   parsePostgresTimestamp,
+  parsePostgresPositiveBigint,
 } from "./postgres-values";
 
 type PostgresTaskRepositoryOptions = {
@@ -98,6 +99,7 @@ function taskRowFromPostgres(row: TaskDatabaseRow): TaskRow {
     created_at: parsePostgresTimestamp(row.created_at, "PostgreSQL task created_at"),
     updated_at: parsePostgresTimestamp(row.updated_at, "PostgreSQL task updated_at"),
     completed_at: nullableTimestamp(row.completed_at, "PostgreSQL task completed_at"),
+    version: parsePostgresPositiveBigint(row.version, "PostgreSQL task version"),
   };
   assertNormalizedTask(task);
   return task;
@@ -157,15 +159,14 @@ function assertUpdateIntent(intent: TaskUpdateIntent) {
   assertUuid(intent.task.id, "PostgreSQL task ID");
   assertNormalizedTask(intent.task);
   if (!intent.updatedBy.trim()) throw new TypeError("PostgreSQL task updater is required");
-  if (intent.activity) {
-    assertUuid(intent.activity.id, "PostgreSQL task activity ID");
-    if (
-      intent.activity.recordId !== intent.task.id
-      || intent.activity.actor !== intent.updatedBy
-      || intent.activity.createdAt !== intent.task.updated_at
-    ) {
-      throw new TypeError("PostgreSQL task completion evidence must match the task and updater");
-    }
+  parsePostgresPositiveBigint(intent.expectedVersion, "Expected PostgreSQL task version");
+  assertUuid(intent.activity.id, "PostgreSQL task activity ID");
+  if (
+    intent.activity.recordId !== intent.task.id
+    || intent.activity.actor !== intent.updatedBy
+    || intent.activity.createdAt !== intent.task.updated_at
+  ) {
+    throw new TypeError("PostgreSQL task update evidence must match the task and updater");
   }
 }
 
@@ -225,6 +226,35 @@ async function insertActivity(
       new Date(activity.createdAt),
     ],
   );
+}
+
+async function insertGuardedUpdateActivity(
+  client: { query(sql: string, values?: readonly unknown[]): Promise<{ rowCount?: number | null }> },
+  activity: TaskUpdateIntent["activity"],
+  resultingVersion: string,
+) {
+  const result = await client.query(
+    `INSERT INTO activity_events (
+       id, task_id, action, actor_id, correlation_id, result, detail, occurred_at
+     )
+     SELECT $1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7
+     WHERE EXISTS (
+       SELECT 1 FROM tasks WHERE id = $2 AND version = $8::bigint
+     )`,
+    [
+      activity.id,
+      activity.recordId,
+      activity.action,
+      activity.actor,
+      `task-update:${activity.id}`,
+      JSON.stringify({ message: activity.detail }),
+      new Date(activity.createdAt),
+      resultingVersion,
+    ],
+  );
+  if (result.rowCount !== 1) {
+    throw new Error("PostgreSQL task update evidence was not inserted exactly once");
+  }
 }
 
 export function createPostgresTaskRepository(
@@ -335,13 +365,17 @@ LIMIT ${limit}`,
           { schema: options.schema },
           async (client) => {
             const task = intent.task;
+            const expectedVersion = parsePostgresPositiveBigint(
+              intent.expectedVersion,
+              "Expected PostgreSQL task version",
+            );
             const updated = await client.query<TaskDatabaseRow>(
               `UPDATE tasks SET
                  title = $1, details = $2, status = $3, due_date = $4::date,
                  project_id = $5, lead_id = $6, assignee_email = $7,
                  updated_by = $8, updated_at = $9, completed_at = $10,
                  version = version + 1
-               WHERE id = $11
+               WHERE id = $11 AND version = $12::bigint
                RETURNING id::text AS id, title, details, status,
                  due_date::text AS due_date, project_id::text AS project_id,
                  lead_id::text AS lead_id, assignee_email, source, source_ref,
@@ -359,13 +393,34 @@ LIMIT ${limit}`,
                 new Date(task.updated_at),
                 task.completed_at === null ? null : new Date(task.completed_at),
                 task.id,
+                expectedVersion,
               ],
             );
-            if (updated.rowCount === 0) return { outcome: "task-not-found" as const };
+            if (updated.rowCount === 0) {
+              const current = await client.query<{ version: unknown }>(
+                "SELECT version::text AS version FROM tasks WHERE id = $1",
+                [task.id],
+              );
+              if (current.rowCount === 0) return { outcome: "task-not-found" as const };
+              if (current.rowCount !== 1 || !current.rows[0]) {
+                throw new Error("PostgreSQL task conflict lookup returned an invalid result");
+              }
+              return {
+                outcome: "conflict" as const,
+                currentVersion: parsePostgresPositiveBigint(
+                  current.rows[0].version,
+                  "PostgreSQL current task version",
+                ),
+              };
+            }
             if (updated.rowCount !== 1 || !updated.rows[0]) {
               throw new Error("PostgreSQL task update returned an invalid result");
             }
-            if (intent.activity) await insertActivity(client, intent.activity, "task-update");
+            const resultingVersion = parsePostgresPositiveBigint(
+              updated.rows[0].version,
+              "PostgreSQL updated task version",
+            );
+            await insertGuardedUpdateActivity(client, intent.activity, resultingVersion);
             return { outcome: "updated" as const, value: taskRowFromPostgres(updated.rows[0]) };
           },
         );

@@ -108,6 +108,7 @@ function leadRowFromPostgres(row: LeadDatabaseRow): LeadRow {
     created_by: requiredText(row.created_by, "PostgreSQL lead creator"),
     created_at: parsePostgresTimestamp(row.created_at, "PostgreSQL lead created_at"),
     updated_at: parsePostgresTimestamp(row.updated_at, "PostgreSQL lead updated_at"),
+    version: parsePostgresPositiveBigint(row.version, "PostgreSQL lead version"),
   };
 }
 
@@ -117,6 +118,7 @@ function acceptedLead(value: unknown): AcceptedLeadCreation {
   return {
     row: leadRowFromPostgres({
       ...row,
+      version: row.version ?? record.version,
       created_at: new Date(requiredEpoch(row.created_at, "PostgreSQL stored lead created_at")),
       updated_at: new Date(requiredEpoch(row.updated_at, "PostgreSQL stored lead updated_at")),
       next_action_at: row.next_action_at === null
@@ -199,6 +201,7 @@ function assertLeadUpdateIntent(intent: LeadUpdateIntent) {
   if (!intent.updatedBy.trim() || !Number.isSafeInteger(intent.updatedAt)) {
     throw new TypeError("PostgreSQL lead update actor and timestamp are required");
   }
+  parsePostgresPositiveBigint(intent.expectedVersion, "Expected PostgreSQL lead version");
   for (const activity of intent.activities) {
     assertUuid(activity.id, "PostgreSQL lead activity ID");
     if (
@@ -343,6 +346,10 @@ export function createPostgresLeadRepository(
       assertLeadUpdateIntent(intent);
       return withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
         const values = intent.values;
+        const expectedVersion = parsePostgresPositiveBigint(
+          intent.expectedVersion,
+          "Expected PostgreSQL lead version",
+        );
         const updated = await client.query<LeadDatabaseRow>(
           `UPDATE leads SET
              company = $1, contact_name = $2, contact_email = $3, contact_phone = $4,
@@ -350,7 +357,7 @@ export function createPostgresLeadRepository(
              estimated_value = $9, next_action = $10, next_action_at = $11,
              owner_email = $12, status = $13, updated_by = $14, updated_at = $15,
              version = version + 1
-           WHERE id = $16
+           WHERE id = $16 AND version = $17::bigint
            RETURNING id::text AS id, lead_number, company, contact_name,
              contact_email, contact_phone, project_name, source, stage, site,
              estimated_value::text AS estimated_value, next_action, next_action_at,
@@ -362,24 +369,51 @@ export function createPostgresLeadRepository(
             values.estimatedValue, values.nextAction,
             values.nextActionAt === null ? null : new Date(values.nextActionAt),
             values.ownerEmail, values.status, intent.updatedBy, new Date(intent.updatedAt),
-            intent.leadId,
+            intent.leadId, expectedVersion,
           ],
         );
-        if (updated.rowCount === 0) return { outcome: "lead-not-found" as const };
+        if (updated.rowCount === 0) {
+          const current = await client.query<{ version: unknown }>(
+            "SELECT version::text AS version FROM leads WHERE id = $1",
+            [intent.leadId],
+          );
+          if (current.rowCount === 0) return { outcome: "lead-not-found" as const };
+          if (current.rowCount !== 1 || !current.rows[0]) {
+            throw new Error("PostgreSQL lead conflict lookup returned an invalid result");
+          }
+          return {
+            outcome: "conflict" as const,
+            currentVersion: parsePostgresPositiveBigint(
+              current.rows[0].version,
+              "PostgreSQL current lead version",
+            ),
+          };
+        }
         if (updated.rowCount !== 1 || !updated.rows[0]) {
           throw new Error("PostgreSQL lead update returned an invalid result");
         }
+        const resultingVersion = parsePostgresPositiveBigint(
+          updated.rows[0].version,
+          "PostgreSQL updated lead version",
+        );
         for (const activity of intent.activities) {
-          await client.query(
+          const audit = await client.query(
             `INSERT INTO activity_events (
                id, lead_id, action, actor_id, correlation_id, result, detail, occurred_at
-             ) VALUES ($1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7)`,
+             )
+             SELECT $1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7
+             WHERE EXISTS (
+               SELECT 1 FROM leads WHERE id = $2 AND version = $8::bigint
+             )`,
             [
               activity.id, intent.leadId, activity.action, activity.actor,
               `lead-update:${activity.id}`, JSON.stringify({ message: activity.detail }),
-              new Date(activity.createdAt),
+              new Date(activity.createdAt), resultingVersion,
             ],
           );
+          if (audit.rowCount !== 1) {
+            throw new Error("PostgreSQL lead update evidence was not inserted exactly once");
+          }
         }
         return { outcome: "updated" as const, value: leadRowFromPostgres(updated.rows[0]) };
       });

@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   const clientId = request.nextUrl.searchParams.get("clientId");
   // Resolve links only from the active provider. Simulation and the company
   // Shared Drive keep independent mappings for the same project.
-  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.segment, p.installation_started_at, p.installation_completed_at, p.had_callback, p.callback_note, p.created_by, p.created_at, p.updated_at, c.name AS client_name, c.client_code, c.industry AS client_industry, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
+  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.segment, p.installation_started_at, p.installation_completed_at, p.had_callback, p.callback_note, p.created_by, p.created_at, p.updated_at, CAST(p.version AS TEXT) AS version, c.name AS client_name, c.client_code, c.industry AS client_industry, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
   const statement = env.DB.prepare(query);
   const result = clientId ? await statement.bind(config.connectionKey, clientId).all() : await statement.bind(config.connectionKey).all();
   const projects = result.results.map((row: unknown) => {
@@ -111,8 +111,19 @@ export async function PATCH(request: NextRequest) {
       },
     );
     if (!result.ok) {
-      const status = result.kind === "project-not-found" ? 404 : result.kind === "forbidden" ? 403 : 400;
-      return NextResponse.json({ error: result.message }, { status });
+      const status = result.kind === "project-not-found"
+        ? 404
+        : result.kind === "forbidden"
+          ? 403
+          : result.kind === "conflict"
+            ? 409
+            : 400;
+      return NextResponse.json(
+        result.kind === "conflict"
+          ? { error: result.message, currentVersion: result.currentVersion }
+          : { error: result.message },
+        { status },
+      );
     }
     return NextResponse.json(result.value);
   }
@@ -128,8 +139,19 @@ export async function PATCH(request: NextRequest) {
     },
   );
   if (!result.ok) {
-    const status = result.kind === "project-not-found" ? 404 : result.kind === "forbidden" ? 403 : 400;
-    return NextResponse.json({ error: result.message }, { status });
+    const status = result.kind === "project-not-found"
+      ? 404
+      : result.kind === "forbidden"
+        ? 403
+        : result.kind === "conflict"
+          ? 409
+          : 400;
+    return NextResponse.json(
+      result.kind === "conflict"
+        ? { error: result.message, currentVersion: result.currentVersion }
+        : { error: result.message },
+      { status },
+    );
   }
   return NextResponse.json(result.value);
 }

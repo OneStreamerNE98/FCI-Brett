@@ -1,9 +1,10 @@
 import type { TaskListFilters, TaskRow } from "../domain/task";
+import type { VersionConflict } from "../domain/record-version";
 
 export type TaskActivityIntent = {
   id: string;
   recordId: string;
-  action: "Task created" | "Task completed";
+  action: "Task created" | "Task completed" | "Task fields updated";
   actor: string;
   detail: string;
   createdAt: number;
@@ -22,15 +23,17 @@ export type TaskCreationRepositoryResult =
 
 export type TaskUpdateIntent = {
   task: TaskRow;
+  expectedVersion: string;
   updatedBy: string;
-  activity: TaskActivityIntent | null;
+  activity: TaskActivityIntent;
 };
 
 export type TaskUpdateRepositoryResult =
   | { outcome: "updated"; value: TaskRow }
   | { outcome: "task-not-found" }
   | { outcome: "project-not-found" }
-  | { outcome: "lead-not-found" };
+  | { outcome: "lead-not-found" }
+  | VersionConflict;
 
 export interface TaskRepository {
   list(filters: TaskListFilters): Promise<TaskRow[]>;

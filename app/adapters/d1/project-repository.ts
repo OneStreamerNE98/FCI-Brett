@@ -1,8 +1,112 @@
-import type { ProjectCreationIntent, ProjectOperationsRepository, ProjectRepository } from "../../ports/project-repository";
+import {
+  FLOORING_CATEGORIES,
+  PROJECT_STATUSES,
+  type FlooringCategory,
+  type ProjectStatus,
+} from "../../domain/project-creation";
+import { normalizeProjectSegment } from "../../domain/project-segment";
+import type {
+  ProjectCreationIntent,
+  ProjectOperationsRepository,
+  ProjectRepository,
+  ProjectRow,
+} from "../../ports/project-repository";
 import type { D1Database } from "./d1-database";
+import { d1RecordVersion, nextD1RecordVersion } from "./record-version.ts";
+
+type D1ProjectRow = {
+  id: string;
+  project_number: string;
+  client_id: string;
+  name: string;
+  status: string;
+  site: string | null;
+  project_manager: string | null;
+  estimated_value: number | null;
+  flooring_category: string | null;
+  square_feet: number | null;
+  contract_value: number | null;
+  segment: string | null;
+  updated_at: number;
+  version: unknown;
+};
+
+function projectRow(row: D1ProjectRow): ProjectRow {
+  if (!PROJECT_STATUSES.includes(row.status as ProjectStatus)) {
+    throw new Error("D1 project status is unsupported.");
+  }
+  if (
+    row.flooring_category !== null
+    && !FLOORING_CATEGORIES.includes(row.flooring_category as FlooringCategory)
+  ) {
+    throw new Error("D1 project flooring category is unsupported.");
+  }
+  const segment = normalizeProjectSegment(row.segment);
+  if (row.segment !== null && segment === null) {
+    throw new Error("D1 project segment is unsupported.");
+  }
+  return {
+    id: row.id,
+    projectNumber: row.project_number,
+    clientId: row.client_id,
+    name: row.name,
+    status: row.status as ProjectStatus,
+    site: row.site,
+    projectManagerId: row.project_manager,
+    estimatedValue: row.estimated_value,
+    flooringCategory: row.flooring_category as FlooringCategory | null,
+    squareFeet: row.square_feet,
+    contractValue: row.contract_value,
+    segment,
+    updatedAt: row.updated_at,
+    version: d1RecordVersion(row.version, "D1 project version"),
+  };
+}
+
+async function currentProjectVersion(database: D1Database, projectId: string) {
+  const row = await database
+    .prepare("SELECT version FROM projects WHERE id = ?")
+    .bind(projectId)
+    .first<{ version: unknown }>();
+  return row ? d1RecordVersion(row.version, "D1 project version") : null;
+}
+
+async function operationExpectedVersion(
+  database: D1Database,
+  projectId: string,
+  supplied: string | undefined,
+) {
+  const currentVersion = await currentProjectVersion(database, projectId);
+  if (!currentVersion) return { outcome: "project-not-found" as const };
+  if (supplied === undefined) return { outcome: "ready" as const, expectedVersion: currentVersion };
+  const expectedVersion = d1RecordVersion(supplied, "Expected D1 project version");
+  return expectedVersion === currentVersion
+    ? { outcome: "ready" as const, expectedVersion }
+    : { outcome: "conflict" as const, currentVersion };
+}
+
+async function projectUpdateFailure(database: D1Database, projectId: string) {
+  const currentVersion = await currentProjectVersion(database, projectId);
+  return currentVersion
+    ? { outcome: "conflict" as const, currentVersion }
+    : { outcome: "project-not-found" as const };
+}
+
+const PROJECT_SELECT = `SELECT id, project_number, client_id, name, status, site,
+  project_manager, estimated_value, flooring_category, square_feet,
+  contract_value, segment, updated_at, version
+FROM projects`;
 
 export function createD1ProjectRepository(database: D1Database): ProjectRepository & ProjectOperationsRepository {
   return {
+    async findById(projectId) {
+      const row = await database
+        .prepare(`${PROJECT_SELECT} WHERE id = ?`)
+        .bind(projectId)
+        .first<D1ProjectRow>();
+      return row ? projectRow(row) : null;
+    },
+
     async create(intent: ProjectCreationIntent) {
       const { project, activity } = intent;
       const results = await database.batch([
@@ -13,36 +117,116 @@ export function createD1ProjectRepository(database: D1Database): ProjectReposito
       ]);
       return results[0]?.meta.changes === 1 ? { outcome: "created" } : { outcome: "client-not-found" };
     },
+
+    async update(intent) {
+      const expectedVersion = d1RecordVersion(intent.expectedVersion, "Expected D1 project version");
+      const resultingVersion = nextD1RecordVersion(expectedVersion);
+      const currentVersion = await currentProjectVersion(database, intent.projectId);
+      if (!currentVersion) return { outcome: "project-not-found" };
+      if (currentVersion !== expectedVersion) return { outcome: "conflict", currentVersion };
+      const parent = await database
+        .prepare("SELECT id FROM clients WHERE id = ?")
+        .bind(intent.values.clientId)
+        .first<{ id: string }>();
+      if (!parent) return { outcome: "client-not-found" };
+      const { activity, values } = intent;
+      const results = await database.batch([
+        database.prepare("UPDATE projects SET client_id = ?, name = ?, status = ?, site = ?, estimated_value = ?, flooring_category = ?, square_feet = ?, contract_value = ?, segment = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?")
+          .bind(
+            values.clientId,
+            values.name,
+            values.status,
+            values.site,
+            values.estimatedValue,
+            values.flooringCategory,
+            values.squareFeet,
+            values.contractValue,
+            values.segment,
+            intent.updatedAt,
+            intent.projectId,
+            expectedVersion,
+          ),
+        database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1 AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND version = ? AND updated_at = ?)")
+          .bind(
+            activity.id,
+            activity.recordId,
+            activity.action,
+            activity.actor,
+            activity.detail,
+            activity.createdAt,
+            intent.projectId,
+            resultingVersion,
+            intent.updatedAt,
+          ),
+      ]);
+      if (results[0]?.meta.changes !== 1) {
+        return projectUpdateFailure(database, intent.projectId);
+      }
+      const updated = await database
+        .prepare(`${PROJECT_SELECT} WHERE id = ?`)
+        .bind(intent.projectId)
+        .first<D1ProjectRow>();
+      if (!updated) throw new Error("D1 project update did not return the updated project");
+      return { outcome: "updated", value: projectRow(updated) };
+    },
+
     async assignManager(intent) {
+      const readiness = await operationExpectedVersion(
+        database,
+        intent.projectId,
+        intent.expectedVersion,
+      );
+      if (readiness.outcome !== "ready") return readiness;
+      const resultingVersion = nextD1RecordVersion(readiness.expectedVersion);
       const { activity } = intent;
       const results = await database.batch([
-        database.prepare("UPDATE projects SET project_manager = ?, updated_at = ? WHERE id = ?")
-          .bind(intent.projectManagerId, intent.updatedAt, intent.projectId),
-        database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM projects WHERE id = ? AND project_manager = ? AND updated_at = ?)")
-          .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt, intent.projectId, intent.projectManagerId, intent.updatedAt),
+        database.prepare("UPDATE projects SET project_manager = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?")
+          .bind(intent.projectManagerId, intent.updatedAt, intent.projectId, readiness.expectedVersion),
+        database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1 AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND version = ? AND project_manager = ? AND updated_at = ?)")
+          .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt, intent.projectId, resultingVersion, intent.projectManagerId, intent.updatedAt),
       ]);
-      return results[0]?.meta.changes === 1 ? { outcome: "updated" } : { outcome: "project-not-found" };
+      return results[0]?.meta.changes === 1
+        ? { outcome: "updated" }
+        : projectUpdateFailure(database, intent.projectId);
     },
     async recordInstallationDates(intent) {
+      const readiness = await operationExpectedVersion(
+        database,
+        intent.projectId,
+        intent.expectedVersion,
+      );
+      if (readiness.outcome !== "ready") return readiness;
+      const resultingVersion = nextD1RecordVersion(readiness.expectedVersion);
       const { activity } = intent;
       const results = await database.batch([
-        database.prepare("UPDATE projects SET installation_started_at = ?, installation_completed_at = ?, updated_at = ? WHERE id = ?")
-          .bind(intent.installationStartedAt, intent.installationCompletedAt, intent.updatedAt, intent.projectId),
-        database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM projects WHERE id = ? AND installation_started_at = ? AND installation_completed_at = ? AND updated_at = ?)")
-          .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt, intent.projectId, intent.installationStartedAt, intent.installationCompletedAt, intent.updatedAt),
+        database.prepare("UPDATE projects SET installation_started_at = ?, installation_completed_at = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?")
+          .bind(intent.installationStartedAt, intent.installationCompletedAt, intent.updatedAt, intent.projectId, readiness.expectedVersion),
+        database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1 AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND version = ? AND installation_started_at = ? AND installation_completed_at = ? AND updated_at = ?)")
+          .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt, intent.projectId, resultingVersion, intent.installationStartedAt, intent.installationCompletedAt, intent.updatedAt),
       ]);
-      return results[0]?.meta.changes === 1 ? { outcome: "updated" } : { outcome: "project-not-found" };
+      return results[0]?.meta.changes === 1
+        ? { outcome: "updated" }
+        : projectUpdateFailure(database, intent.projectId);
     },
     async recordFollowUpResult(intent) {
+      const readiness = await operationExpectedVersion(
+        database,
+        intent.projectId,
+        intent.expectedVersion,
+      );
+      if (readiness.outcome !== "ready") return readiness;
+      const resultingVersion = nextD1RecordVersion(readiness.expectedVersion);
       const { activity } = intent;
       const hadCallback = intent.hadCallback ? 1 : 0;
       const results = await database.batch([
-        database.prepare("UPDATE projects SET had_callback = ?, callback_note = ?, updated_at = ? WHERE id = ?")
-          .bind(hadCallback, intent.callbackNote, intent.updatedAt, intent.projectId),
-        database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM projects WHERE id = ? AND had_callback = ? AND callback_note IS ? AND updated_at = ?)")
-          .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt, intent.projectId, hadCallback, intent.callbackNote, intent.updatedAt),
+        database.prepare("UPDATE projects SET had_callback = ?, callback_note = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?")
+          .bind(hadCallback, intent.callbackNote, intent.updatedAt, intent.projectId, readiness.expectedVersion),
+        database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE changes() = 1 AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND version = ? AND had_callback = ? AND callback_note IS ? AND updated_at = ?)")
+          .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt, intent.projectId, resultingVersion, hadCallback, intent.callbackNote, intent.updatedAt),
       ]);
-      return results[0]?.meta.changes === 1 ? { outcome: "updated" } : { outcome: "project-not-found" };
+      return results[0]?.meta.changes === 1
+        ? { outcome: "updated" }
+        : projectUpdateFailure(database, intent.projectId);
     },
   };
 }

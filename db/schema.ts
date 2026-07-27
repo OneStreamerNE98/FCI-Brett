@@ -39,6 +39,7 @@ export const clients = sqliteTable("clients", {
   createdBy: text("created_by").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  version: integer("version").notNull().default(1),
 }, (table) => [
   uniqueIndex("clients_code_unique_idx").on(table.clientCode),
   uniqueIndex("clients_name_idx").on(table.name),
@@ -54,6 +55,7 @@ export const contacts = sqliteTable("contacts", {
   isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  version: integer("version").notNull().default(1),
 }, (table) => [
   index("contacts_client_idx").on(table.clientId),
 ]);
@@ -78,6 +80,7 @@ export const leads = sqliteTable("leads", {
   createdBy: text("created_by").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  version: integer("version").notNull().default(1),
 }, (table) => [
   uniqueIndex("leads_number_unique").on(table.leadNumber),
   index("leads_status_updated_idx").on(table.status, table.updatedAt),
@@ -106,6 +109,7 @@ export const projects = sqliteTable("projects", {
   createdBy: text("created_by").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  version: integer("version").notNull().default(1),
 }, (table) => [
   uniqueIndex("projects_number_unique_idx").on(table.projectNumber),
   index("projects_client_idx").on(table.clientId, table.updatedAt),
@@ -129,6 +133,7 @@ export const projectMeetings = sqliteTable("project_meetings", {
   createdBy: text("created_by").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  version: integer("version").notNull().default(1),
 }, (table) => [
   index("project_meetings_project_date_idx").on(table.projectId, table.meetingAt),
 ]);
@@ -149,6 +154,7 @@ export const tasks = sqliteTable("tasks", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+  version: integer("version").notNull().default(1),
 }, (table) => [
   index("tasks_status_due_date_idx").on(table.status, table.dueDate),
   index("tasks_project_status_idx").on(table.projectId, table.status),

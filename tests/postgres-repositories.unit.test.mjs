@@ -352,6 +352,80 @@ test("client creation keeps record, optional contact, activity, outbox, and acce
   client.assertComplete();
 });
 
+test("client update CAS writes one guarded audit and a stale peer writes nothing", async () => {
+  const updateIntent = {
+    clientId: CLIENT_ID,
+    expectedVersion: "1",
+    values: {
+      name: "FCI TEST — DO NOT USE updated",
+      status: "active",
+      industry: "Flooring",
+    },
+    updatedAt: UPDATED_AT,
+    updatedBy: "actor@example.test",
+    activity: {
+      id: CLIENT_ACTIVITY_ID,
+      recordId: CLIENT_ID,
+      action: "Client fields updated",
+      actor: "actor@example.test",
+      detail: "Name: FCI TEST — DO NOT USE → FCI TEST — DO NOT USE updated",
+      createdAt: UPDATED_AT,
+    },
+  };
+  const successfulClient = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/UPDATE clients[\s\S]*WHERE id = \$7 AND version = \$8::bigint/, result([{
+      id: CLIENT_ID,
+      client_code: "CL-AB12CD34",
+      name: updateIntent.values.name,
+      status: updateIntent.values.status,
+      industry: updateIntent.values.industry,
+      updated_at: new Date(UPDATED_AT),
+      version: "2",
+    }], 1), {
+      inspect: ({ values }) => assert.deepEqual(values.slice(-2), [CLIENT_ID, "1"]),
+    }),
+    step(/INSERT INTO activity_events[\s\S]*WHERE EXISTS[\s\S]*version = \$8::bigint/, result([], 1), {
+      inspect: ({ values }) => {
+        assert.equal(values[2], "Client fields updated");
+        assert.equal(values[5], JSON.stringify({ message: updateIntent.activity.detail }));
+        assert.equal(values[7], "2");
+      },
+    }),
+    step(/^COMMIT$/),
+  ]);
+  const successfulRepository = createPostgresClientRepository(
+    new ScriptedPostgresPool(successfulClient),
+    { schema: "repository_test", request: clientRequest() },
+  );
+  const first = await successfulRepository.update(updateIntent);
+  assert.equal(first.outcome, "updated");
+  assert.equal(first.value.version, "2");
+  successfulClient.assertComplete();
+
+  const staleClient = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/UPDATE clients[\s\S]*WHERE id = \$7 AND version = \$8::bigint/, result([], 0)),
+    step(/SELECT version::text AS version FROM clients WHERE id = \$1/, result([
+      { version: "2" },
+    ], 1)),
+    step(/^COMMIT$/),
+  ]);
+  const staleRepository = createPostgresClientRepository(
+    new ScriptedPostgresPool(staleClient),
+    { schema: "repository_test", request: clientRequest() },
+  );
+  assert.deepEqual(await staleRepository.update({
+    ...updateIntent,
+    values: { ...updateIntent.values, name: "Stale editor must lose" },
+  }), { outcome: "conflict", currentVersion: "2" });
+  assert.equal(
+    staleClient.queries.some(({ sql }) => sql.startsWith("INSERT INTO activity_events")),
+    false,
+  );
+  staleClient.assertComplete();
+});
+
 test("client creation skips the optional contact statement when no contact is supplied", async () => {
   const client = new ScriptedPostgresClient(clientCreationSteps({ withContact: false }));
   const pool = new ScriptedPostgresPool(client);
@@ -650,10 +724,97 @@ test("project creation mirrors D1 exact-choice segment fallback and safely parse
   client.assertComplete();
 });
 
+test("project update CAS writes one guarded audit and a stale peer writes nothing", async () => {
+  const updateIntent = {
+    projectId: PROJECT_ID,
+    expectedVersion: "1",
+    values: {
+      clientId: CLIENT_ID,
+      name: "FCI TEST — DO NOT USE updated project",
+      status: "planning",
+      site: "Cherry Hill, NJ",
+      estimatedValue: 125_000,
+      flooringCategory: "tile-stone",
+      squareFeet: 2_500,
+      contractValue: 130_000,
+      segment: "commercial",
+    },
+    updatedAt: UPDATED_AT,
+    updatedBy: "actor@example.test",
+    activity: {
+      id: PROJECT_ACTIVITY_ID,
+      recordId: PROJECT_ID,
+      action: "Project fields updated",
+      actor: "actor@example.test",
+      detail: "Name: FCI TEST — DO NOT USE → FCI TEST — DO NOT USE updated project",
+      createdAt: UPDATED_AT,
+    },
+  };
+  const successfulClient = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/UPDATE projects[\s\S]*WHERE id = \$12 AND version = \$13::bigint/, result([{
+      id: PROJECT_ID,
+      project_number: "CF-2026-AB12CD34",
+      client_id: CLIENT_ID,
+      name: updateIntent.values.name,
+      status: updateIntent.values.status,
+      site: updateIntent.values.site,
+      project_manager: "manager@example.test",
+      estimated_value: String(updateIntent.values.estimatedValue),
+      flooring_category: updateIntent.values.flooringCategory,
+      square_feet: String(updateIntent.values.squareFeet),
+      contract_value: String(updateIntent.values.contractValue),
+      segment: updateIntent.values.segment,
+      updated_at: new Date(UPDATED_AT),
+      version: "2",
+    }], 1), {
+      inspect: ({ values }) => assert.deepEqual(values.slice(-2), [PROJECT_ID, "1"]),
+    }),
+    step(/INSERT INTO activity_events[\s\S]*WHERE EXISTS[\s\S]*version = \$8::bigint/, result([], 1), {
+      inspect: ({ values }) => {
+        assert.equal(values[2], "Project fields updated");
+        assert.equal(values[5], JSON.stringify({ message: updateIntent.activity.detail }));
+        assert.equal(values[7], "2");
+      },
+    }),
+    step(/^COMMIT$/),
+  ]);
+  const successfulRepository = createPostgresProjectRepository(
+    new ScriptedPostgresPool(successfulClient),
+    { schema: "repository_test" },
+  );
+  const first = await successfulRepository.update(updateIntent);
+  assert.equal(first.outcome, "updated");
+  assert.equal(first.value.version, "2");
+  successfulClient.assertComplete();
+
+  const staleClient = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/UPDATE projects[\s\S]*WHERE id = \$12 AND version = \$13::bigint/, result([], 0)),
+    step(/SELECT version::text AS version FROM projects WHERE id = \$1/, result([
+      { version: "2" },
+    ], 1)),
+    step(/^COMMIT$/),
+  ]);
+  const staleRepository = createPostgresProjectRepository(
+    new ScriptedPostgresPool(staleClient),
+    { schema: "repository_test" },
+  );
+  assert.deepEqual(await staleRepository.update({
+    ...updateIntent,
+    values: { ...updateIntent.values, name: "Stale editor must lose" },
+  }), { outcome: "conflict", currentVersion: "2" });
+  assert.equal(
+    staleClient.queries.some(({ sql }) => sql.startsWith("INSERT INTO activity_events")),
+    false,
+  );
+  staleClient.assertComplete();
+});
+
 test("assignManager updates the project and activity in one transaction while invalid UUIDs avoid the pool", async () => {
   const client = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
-    step(/UPDATE projects[\s\S]*version = version \+ 1[\s\S]*RETURNING version::text/, result([{
+    step(/UPDATE projects[\s\S]*version = version \+ 1[\s\S]*WHERE id = \$4 AND version = \$5::bigint[\s\S]*RETURNING version::text/, result([{
       version: "9223372036854775807",
     }], 1)),
     step(/INSERT INTO activity_events/, result([], 1)),
@@ -663,6 +824,7 @@ test("assignManager updates the project and activity in one transaction while in
   const repository = createPostgresProjectRepository(pool, { schema: "repository_test" });
   const intent = {
     projectId: PROJECT_ID,
+    expectedVersion: "9223372036854775806",
     projectManagerId: "new-manager@example.test",
     updatedAt: UPDATED_AT,
     activity: {
@@ -712,7 +874,7 @@ test("installation dates update PostgreSQL with the D1 outcome contract and appe
   const client = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
     step(
-      /UPDATE projects[\s\S]*installation_started_at = \$1, installation_completed_at = \$2[\s\S]*updated_by = \$3[\s\S]*version = version \+ 1[\s\S]*RETURNING version::text/,
+      /UPDATE projects[\s\S]*installation_started_at = \$1, installation_completed_at = \$2[\s\S]*updated_by = \$3[\s\S]*version = version \+ 1[\s\S]*WHERE id = \$5 AND version = \$6::bigint[\s\S]*RETURNING version::text/,
       result([{ version: "2" }], 1),
       {
         inspect: ({ values }) => {
@@ -722,6 +884,7 @@ test("installation dates update PostgreSQL with the D1 outcome contract and appe
             "actor@example.test",
             new Date(updatedAt),
             PROJECT_ID,
+            "1",
           ]);
         },
       },
@@ -739,6 +902,7 @@ test("installation dates update PostgreSQL with the D1 outcome contract and appe
   );
   const intent = {
     projectId: PROJECT_ID,
+    expectedVersion: "1",
     installationStartedAt,
     installationCompletedAt,
     updatedAt,
@@ -766,6 +930,7 @@ test("installation dates update PostgreSQL with the D1 outcome contract and appe
   const missingClient = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
     step(/UPDATE projects[\s\S]*installation_started_at = \$1/, result([], 0)),
+    step(/SELECT version::text AS version FROM projects WHERE id = \$1/, result([], 0)),
     step(/^COMMIT$/),
   ]);
   const missingRepository = createPostgresProjectRepository(
@@ -785,7 +950,7 @@ test("follow-up results update PostgreSQL with boolean/text parity and append ac
   const client = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
     step(
-      /UPDATE projects[\s\S]*had_callback = \$1, callback_note = \$2[\s\S]*updated_by = \$3[\s\S]*version = version \+ 1[\s\S]*RETURNING version::text/,
+      /UPDATE projects[\s\S]*had_callback = \$1, callback_note = \$2[\s\S]*updated_by = \$3[\s\S]*version = version \+ 1[\s\S]*WHERE id = \$5 AND version = \$6::bigint[\s\S]*RETURNING version::text/,
       result([{ version: "3" }], 1),
       {
         inspect: ({ values }) => {
@@ -795,6 +960,7 @@ test("follow-up results update PostgreSQL with boolean/text parity and append ac
             "actor@example.test",
             new Date(updatedAt),
             PROJECT_ID,
+            "2",
           ]);
         },
       },
@@ -812,6 +978,7 @@ test("follow-up results update PostgreSQL with boolean/text parity and append ac
   );
   const intent = {
     projectId: PROJECT_ID,
+    expectedVersion: "2",
     hadCallback: true,
     callbackNote: "FCI TEST — DO NOT USE — Callback complete",
     updatedAt,
@@ -850,4 +1017,90 @@ test("follow-up results update PostgreSQL with boolean/text parity and append ac
     { outcome: "project-not-found" },
   );
   assert.equal(unusedPool.connectCount, 0);
+});
+
+test("legacy PostgreSQL project operations return current version and no audit on stale writes", async () => {
+  const updatedAt = UPDATED_AT + 10_000;
+  const cases = [
+    {
+      method: "assignManager",
+      update: /UPDATE projects[\s\S]*WHERE id = \$4 AND version = \$5::bigint/,
+      intent: {
+        projectId: PROJECT_ID,
+        expectedVersion: "1",
+        projectManagerId: "new-manager@example.test",
+        updatedAt,
+        activity: {
+          id: ASSIGNMENT_ACTIVITY_ID,
+          recordId: PROJECT_ID,
+          action: "Project manager assigned",
+          actor: "actor@example.test",
+          detail: "Assigned test project manager",
+          createdAt: updatedAt,
+        },
+      },
+    },
+    {
+      method: "recordInstallationDates",
+      update: /UPDATE projects[\s\S]*WHERE id = \$5 AND version = \$6::bigint/,
+      intent: {
+        projectId: PROJECT_ID,
+        expectedVersion: "1",
+        installationStartedAt: updatedAt - 2_000,
+        installationCompletedAt: updatedAt - 1_000,
+        updatedAt,
+        activity: {
+          id: INSTALLATION_ACTIVITY_ID,
+          recordId: PROJECT_ID,
+          action: "Installation dates recorded",
+          actor: "actor@example.test",
+          detail: "Installation dates recorded for parity",
+          createdAt: updatedAt,
+        },
+      },
+    },
+    {
+      method: "recordFollowUpResult",
+      update: /UPDATE projects[\s\S]*WHERE id = \$5 AND version = \$6::bigint/,
+      intent: {
+        projectId: PROJECT_ID,
+        expectedVersion: "1",
+        hadCallback: false,
+        callbackNote: null,
+        updatedAt,
+        activity: {
+          id: FOLLOW_UP_ACTIVITY_ID,
+          recordId: PROJECT_ID,
+          action: "Follow-up result recorded",
+          actor: "actor@example.test",
+          detail: "Post-installation callback: No",
+          createdAt: updatedAt,
+        },
+      },
+    },
+  ];
+
+  for (const { method, update, intent } of cases) {
+    const client = new ScriptedPostgresClient([
+      ...transactionSetupSteps(),
+      step(update, result([], 0)),
+      step(/SELECT version::text AS version FROM projects WHERE id = \$1/, result([
+        { version: "2" },
+      ], 1)),
+      step(/^COMMIT$/),
+    ]);
+    const repository = createPostgresProjectRepository(
+      new ScriptedPostgresPool(client),
+      { schema: "repository_test" },
+    );
+    assert.deepEqual(await repository[method](intent), {
+      outcome: "conflict",
+      currentVersion: "2",
+    });
+    assert.equal(
+      client.queries.some(({ sql }) => sql.startsWith("INSERT INTO activity_events")),
+      false,
+    );
+    client.assertComplete();
+  }
 });
