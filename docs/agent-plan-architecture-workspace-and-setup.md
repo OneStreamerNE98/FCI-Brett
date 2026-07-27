@@ -1518,7 +1518,7 @@ deliberate; template content contains no secrets or env values; simulation e2e.
 **Effort:** medium.
 
 ### SET-18 · Reconcile & drift maintenance (medium, after SET-15+16+17)
-**Status:** In progress — `codex/set18-reconcile-drift`, built and pushed (lint + `npm test` 1,084 pass + focused e2e green); PR deliberately withheld at a real ownership collision — the branch touches `app/api/v1/integrations/google/drive/templates/ensure/route.ts`, owned by SET-22's open PR #217/#221. After #217 merges, rebase onto main, reverify, open the draft PR.
+**Status:** In progress — `codex/set18-reconcile-drift`, built and pushed (lint + `npm test` 1,084 pass + focused e2e green); PR was deliberately withheld while SET-22's #217/#221 owned the templates/ensure route. **That collision cleared July 27 (#217 merged)** — the resume path is: rebase onto main, resolve the templates/ensure route additively over SET-22's merged version, reverify all three gates, open the draft PR.
 **Why:** Owner requirement: blueprint edits after resources exist must drive a drift
 view — defined-but-missing offers create; removed-from-blueprint is shown unmanaged and
 is **never deleted**.
@@ -1601,7 +1601,7 @@ resolves (existing Gmail file-route tests green); simulation e2e provisioning wa
 **Effort:** medium (touches live provisioning — sequenced last deliberately).
 
 ### SET-22 · Create Google files in project folders from the app (medium, after SET-17; KPI-02/#52 UI dependency satisfied)
-**Status:** In review — PR #217, July 26, 2026, with the review-fix follow-up PR #221 merged into its branch July 27. Source-only and undeployed; no live Google operation or hosted configuration change. Google Docs API enablement remains an owner gate for live Doc-template merges; no new consent scope. Guide impact: none.
+**Status:** Complete — PR #217 + PR #221, July 27, 2026. Source-only and undeployed; no live Google operation or hosted configuration change. Google Docs API enablement remains an owner gate for live Doc-template merges; no new consent scope. Review record: 6-lens fleet found 11 confirmed P2s → 5 distinct defects (simulation honesty raised to P1); all addressed in #221 plus three orchestrator CI fixes on-branch (stale aria-label pin; accessible-name determinism for the Start-from select; the impossible "(development)" environment tag — `config.environment` is only `workspace|simulation`); one PostgreSQL lock-timeout flake cleared on the single permitted rerun; bot clean on the fix stack, silent on the final window. The sheet-template picker is deliberately limited to Doc templates until Sheets-native token merging exists. Guide impact: none.
 **Why:** Owner request: from the projects dashboard, create a Google Doc, Sheet, or
 Slides file (the Word/Excel/PowerPoint equivalents) inside the project's Drive folder —
 blank or from a blueprint template — so the provisioned folder structure and template
