@@ -643,10 +643,19 @@ test("D1 task routes round-trip create, list, and completion with activity evide
     ["Task created", "Task fields updated"],
   );
   assert.equal(database.activities[1].detail, "Status: open → done");
+  // EVERY task activity INSERT stays existence-guarded — creation-path included, not
+  // only the changes()-guarded update path. Main pinned all of them; narrowing the
+  // filter to changes() left the create guard unpinned (review finding, PR #225).
+  const taskActivityInserts = database.prepared
+    .filter(({ sql }) => sql.startsWith("INSERT INTO activity_events "));
+  assert.equal(taskActivityInserts.length > 0, true);
   assert.equal(
-    database.prepared
-      .filter(({ sql }) =>
-        sql.startsWith("INSERT INTO activity_events ") && sql.includes("changes() = 1"))
+    taskActivityInserts.every(({ sql }) => sql.includes("EXISTS (SELECT 1 FROM tasks")),
+    true,
+  );
+  assert.equal(
+    taskActivityInserts
+      .filter(({ sql }) => sql.includes("changes() = 1"))
       .every(({ sql }) => sql.includes("AND EXISTS (SELECT 1 FROM tasks")),
     true,
   );

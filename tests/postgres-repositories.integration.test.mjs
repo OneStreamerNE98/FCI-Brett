@@ -157,6 +157,7 @@ function leadIntent({ actorId, createdAt, id = randomUUID(), activityId = random
       created_by: actorId,
       created_at: createdAt,
       updated_at: createdAt,
+      version: "1",
     },
     activity: {
       id: activityId,
