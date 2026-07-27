@@ -350,6 +350,8 @@ test("actual setup provider clients record only bounded non-delete calls", async
           sheets: [
             { properties: { sheetId: 1, title: "Client Directory", gridProperties: { rowCount: 1000, columnCount: 11 } } },
             { properties: { sheetId: 2, title: "Project Register", gridProperties: { rowCount: 1000, columnCount: 12 } } },
+            { properties: { sheetId: 3, title: "Clients Import", gridProperties: { rowCount: 1000, columnCount: 8 } } },
+            { properties: { sheetId: 4, title: "Projects Import", gridProperties: { rowCount: 1000, columnCount: 11 } } },
           ],
         });
       }
@@ -373,6 +375,13 @@ test("actual setup provider clients record only bounded non-delete calls", async
       && url.pathname.includes("/calendar/v3/calendars/")
       && url.pathname.endsWith("/events")
     ) {
+      if (method === "GET" && url.searchParams.get("fields")?.includes("summary")) {
+        return Response.json({
+          summary: "FCI Appointments",
+          timeZone: "America/New_York",
+          items: [],
+        });
+      }
       if (method === "GET") return Response.json({ items: [] });
       return Response.json({
         id: "test-hold",

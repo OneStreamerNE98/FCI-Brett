@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 function simulationReadiness() {
   return {
@@ -237,7 +238,7 @@ test("review-first reconcile creates a newly defined folder and never deletes a 
     await expect(page.locator(".toast.toast-success")).toContainText(
       "FCI TEST Reconcile Folder was reviewed and the matching setup ensure action completed.",
     );
-    await expect(driftCard.getByText("Blueprint and Drive are in sync.", { exact: true })).toBeVisible();
+    await expect(driftCard.getByText("Blueprint and Google resources are in sync.", { exact: true })).toBeVisible();
 
     await page.evaluate(() => {
       window.location.hash = "workspace-stage-3";
@@ -259,6 +260,22 @@ test("review-first reconcile creates a newly defined folder and never deletes a 
     const unmanaged = driftCard.locator('[data-workspace-reconcile-row][data-workspace-reconcile-state="unmanaged"]');
     await expect(unmanaged).toContainText("FCI TEST Reconcile Folder");
     await expect(unmanaged).toContainText("Informational only — nothing will be deleted.");
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileGeometry = await driftCard.evaluate((card) => {
+      const action = card.querySelector("button");
+      return {
+        cardContained: card.scrollWidth <= card.clientWidth,
+        documentContained: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        actionHeight: action?.getBoundingClientRect().height ?? 0,
+      };
+    });
+    expect(mobileGeometry.cardContained).toBe(true);
+    expect(mobileGeometry.documentContained).toBe(true);
+    expect(mobileGeometry.actionHeight).toBeGreaterThanOrEqual(44);
+    const accessibility = await new AxeBuilder({ page })
+      .include('[data-stage-four-upkeep="drift"]')
+      .analyze();
+    expect(accessibility.violations.filter(({ impact }) => impact === "serious" || impact === "critical")).toEqual([]);
     expect(providerMutationRequests.some(({ method, url }) => (
       method === "DELETE"
       || /(?:\/delete|:delete)(?:[/?]|$)/u.test(url)
@@ -266,6 +283,94 @@ test("review-first reconcile creates a newly defined folder and never deletes a 
   } finally {
     await resetAndProvisionSimulationWorkspace(page);
   }
+});
+
+test("renamed rows expose the owner/system action matrix and send the exact reviewed Drive identity", async ({ page }) => {
+  await installWorkspaceFrameMocks(page);
+  let reconcileCalls = 0;
+  let renameBody: unknown = null;
+  await page.route("**/api/v1/integrations/google/setup/reconcile", async (route) => {
+    reconcileCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(reconcileCalls === 1
+        ? {
+          reconciled: true,
+          simulated: true,
+          blueprintVersion: 7,
+          checkedAt: Date.now(),
+          counts: { missing: 0, renamed: 2, unmanaged: 0, inSync: 0 },
+          drift: [
+            {
+              id: "renamed-owner-folder",
+              state: "renamed",
+              resourceType: "drive.folder",
+              key: "projects",
+              label: "Root folder",
+              management: "owner",
+              expectedName: "02_Projects",
+              actualName: "Projects from Drive",
+              externalId: "projects-folder",
+              url: "https://drive.google.test/projects-folder",
+              detail: "Google uses “Projects from Drive”; the blueprint expects “02_Projects”.",
+              actions: ["rename-drive", "adopt-blueprint-name"],
+            },
+            {
+              id: "renamed-system-folder",
+              state: "renamed",
+              resourceType: "drive.folder",
+              key: "unsorted-intake",
+              label: "Root folder",
+              management: "system",
+              expectedName: "99_Unsorted Intake",
+              actualName: "Manual intake name",
+              externalId: "intake-folder",
+              url: "https://drive.google.test/intake-folder",
+              detail: "Google uses “Manual intake name”; the blueprint expects “99_Unsorted Intake”.",
+              actions: ["rename-drive"],
+            },
+          ],
+        }
+        : {
+          reconciled: true,
+          simulated: true,
+          blueprintVersion: 7,
+          checkedAt: Date.now(),
+          counts: { missing: 0, renamed: 0, unmanaged: 0, inSync: 2 },
+          drift: [],
+        }),
+    });
+  });
+  await page.route("**/api/v1/integrations/google/drive/folders/rename", async (route) => {
+    renameBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ renamed: true }),
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-4");
+  await expandStage(page, 4);
+  const driftCard = page.locator('[data-stage-four-upkeep="drift"]');
+  await driftCard.getByRole("button", { name: "Check for drift", exact: true }).click();
+  const ownerRow = driftCard.locator('[data-workspace-reconcile-row="renamed-owner-folder"]');
+  const systemRow = driftCard.locator('[data-workspace-reconcile-row="renamed-system-folder"]');
+  await expect(ownerRow.getByRole("button", { name: "Rename in Drive", exact: true })).toBeVisible();
+  await expect(ownerRow.getByRole("button", { name: "Use Drive name in blueprint", exact: true })).toBeVisible();
+  await expect(systemRow.getByRole("button", { name: "Rename in Drive", exact: true })).toBeVisible();
+  await expect(systemRow.getByRole("button", { name: "Use Drive name in blueprint", exact: true })).toHaveCount(0);
+
+  await systemRow.getByRole("button", { name: "Rename in Drive", exact: true }).click();
+  await expect(driftCard.getByText("Blueprint and Google resources are in sync.", { exact: true })).toBeVisible();
+  expect(renameBody).toEqual({
+    key: "unsorted-intake",
+    mode: "reconcile-drive-name",
+    expectedVersion: 7,
+    externalId: "intake-folder",
+    actualName: "Manual intake name",
+  });
 });
 
 test("reconcile failures state the no-mutation guarantee once and never contradict a completed repair", async ({ page }) => {
@@ -313,7 +418,12 @@ test("reconcile failures state the no-mutation guarantee once and never contradi
     await route.fulfill({
       status: 201,
       contentType: "application/json",
-      body: JSON.stringify({ ensured: true }),
+      body: JSON.stringify({
+        ensured: true,
+        reconciled: true,
+        resourceKey: "fci-test-reconcile",
+        version: 1,
+      }),
     });
   });
 
@@ -389,6 +499,8 @@ test("registered Calendar drift stays unavailable when the live connection canno
   const drift = page.locator('[data-stage-four-upkeep="drift"]');
   await expect(drift).toContainText("UNAVAILABLE");
   await expect(drift.getByRole("button", { name: "Check for drift", exact: true })).toBeDisabled();
+  await expect(drift.getByRole("button", { name: "Check for drift", exact: true }))
+    .toHaveAttribute("aria-describedby", "workspace-reconcile-unavailable-description");
   await expect(drift).toContainText(
     "Calendar is registered but unavailable to this connection. Enable Calendar before checking all registered Workspace resources.",
   );

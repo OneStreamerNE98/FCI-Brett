@@ -246,26 +246,20 @@ test("provider discovery covers managed listings, registered resources, duplicat
     appProperties: { fciFolderKind: "project-child" },
   });
 
-  const identityMatches = new Map([
-    ["fciRootKey:company-admin", [companyAdmin]],
-    ["fciRootKey:templates", [templates]],
-    ["fciRootKey:client-accounts", [clientAccountsA, clientAccountsB]],
-    ["fciWorkspaceFolder:client-accounts", []],
-    ["fciRootKey:system-root", [movedSystemRoot]],
-    ["fciResourceKind:client-directory", [directorySheet]],
-    ["fciResourceKind:missing-import", []],
-    ["fciTemplateKey:estimate-proposal", [proposalTemplate]],
-  ]);
   const calls = [];
   const drive = {
-    async findSetupItemsByIdentity(property, value) {
-      calls.push(["identity", property, value]);
-      return identityMatches.get(`${property}:${value}`) ?? [];
-    },
     async listSetupChildren(parentId) {
       calls.push(["children", parentId]);
       if (parentId === "workspace-root") {
-        return [companyAdmin, proposalTemplate, removedRoot, unstampedRootItem, operationalProjectFolder];
+        return [
+          companyAdmin,
+          clientAccountsA,
+          clientAccountsB,
+          proposalTemplate,
+          removedRoot,
+          unstampedRootItem,
+          operationalProjectFolder,
+        ];
       }
       if (parentId === templates.id) {
         return [unstampedTemplateItem, operationalTemplateChild];
@@ -274,6 +268,9 @@ test("provider discovery covers managed listings, registered resources, duplicat
     },
     async getSetupItem(externalId) {
       calls.push(["registered", externalId]);
+      if (externalId === templates.id) return templates;
+      if (externalId === movedSystemRoot.id) return movedSystemRoot;
+      if (externalId === directorySheet.id) return directorySheet;
       if (externalId === "sheet-removed") return removedSheet;
       if (externalId === environmentRegisteredSheet.id) return environmentRegisteredSheet;
       throw new Error(`Unexpected registered resource read for ${externalId}`);
@@ -301,10 +298,28 @@ test("provider discovery covers managed listings, registered resources, duplicat
   ]);
   const resources = Object.freeze([
     resource({
+      resourceType: "drive.folder",
+      resourceKey: "templates",
+      externalId: templates.id,
+      parentExternalId: companyAdmin.id,
+    }),
+    resource({
+      resourceType: "drive.folder",
+      resourceKey: "system-root",
+      externalId: movedSystemRoot.id,
+      parentExternalId: "workspace-root",
+    }),
+    resource({
       resourceType: "sheets.spreadsheet",
       resourceKey: "client-directory",
       externalId: directorySheet.id,
       parentExternalId: companyAdmin.id,
+    }),
+    resource({
+      resourceType: "drive.file",
+      resourceKey: "estimate-proposal",
+      externalId: proposalTemplate.id,
+      parentExternalId: templates.id,
     }),
     resource({
       resourceType: "sheets.spreadsheet",
@@ -336,8 +351,14 @@ test("provider discovery covers managed listings, registered resources, duplicat
   );
   assert.deepEqual(
     calls.filter(([kind]) => kind === "registered"),
-    [["registered", "sheet-removed"], ["registered", "sheet-env-import"]],
-    "identity-discovered registry rows must not be fetched a second time",
+    [
+      ["registered", "folder-templates"],
+      ["registered", "folder-system-moved"],
+      ["registered", "sheet-client-directory"],
+      ["registered", "sheet-removed"],
+      ["registered", "sheet-env-import"],
+    ],
+    "root-listed resources must not be fetched twice and every other resource is read by its retained ID",
   );
   assert.deepEqual(calendarCalls, ["calendar-client", "calendar-field-missing"]);
   assert.equal(actualById.get(companyAdmin.id).key, "company-admin");
@@ -414,6 +435,74 @@ test("provider discovery covers managed listings, registered resources, duplicat
   assert.equal(result.drift.some(({ actualName }) => actualName === operationalTemplateChild.name), true);
 });
 
+test("provider discovery bounds direct registry reads and treats a missing or trashed registered item as missing drift", async () => {
+  const calls = [];
+  const drive = {
+    async listSetupChildren(parentId) {
+      calls.push(["children", parentId]);
+      return [];
+    },
+    async getSetupItem(externalId) {
+      calls.push(["registered", externalId]);
+      return null;
+    },
+  };
+  const registration = Object.freeze({
+    resourceType: "sheets.spreadsheet",
+    key: "missing-import",
+    externalId: "trashed-import-sheet",
+  });
+  const actual = await discoverWorkspaceReconcileActual({
+    blueprint,
+    rootExternalId: "workspace-root",
+    resources: Object.freeze([]),
+    driveRegistrations: Object.freeze([registration]),
+    calendarRegistrations: Object.freeze([]),
+    drive,
+    calendar: null,
+  });
+  const result = deriveWorkspaceReconcileDrift(
+    workspaceReconcileDesiredResources(blueprint),
+    actual,
+  );
+  assert.equal(result.drift.find(({ key }) => key === "missing-import").state, "missing");
+  assert.deepEqual(calls, [
+    ["children", "workspace-root"],
+    ["registered", "trashed-import-sheet"],
+  ]);
+
+  let providerCalled = false;
+  await assert.rejects(
+    () => discoverWorkspaceReconcileActual({
+      blueprint,
+      rootExternalId: "workspace-root",
+      resources: Object.freeze([]),
+      driveRegistrations: Object.freeze(Array.from({ length: 201 }, (_, index) => Object.freeze({
+        resourceType: "drive.file",
+        key: `removed-${index}`,
+        externalId: `registered-${index}`,
+      }))),
+      calendarRegistrations: Object.freeze([]),
+      drive: {
+        async listSetupChildren() {
+          providerCalled = true;
+          return [];
+        },
+        async getSetupItem() {
+          providerCalled = true;
+          return null;
+        },
+      },
+      calendar: null,
+    }),
+    (error) => {
+      assert.equal(error.code, "drive_reconcile_read_limit");
+      return true;
+    },
+  );
+  assert.equal(providerCalled, false, "an oversized registry must fail before any provider request");
+});
+
 test("Google Drive setup readers paginate exact read-only queries and treat files.get 404 as absence", async () => {
   const requests = [];
   const fetcher = async (input, init = {}) => {
@@ -482,6 +571,19 @@ test("Google Drive setup readers paginate exact read-only queries and treat file
         mimeType: SHEET,
         parents: ["workspace-root"],
         trashed: false,
+        appProperties: {
+          fciResourceKind: "client-directory",
+          ignoredProviderData: "not retained by reconcile",
+        },
+      });
+    }
+    if (url.pathname === "/drive/v3/files/trashed-sheet") {
+      return Response.json({
+        id: "trashed-sheet",
+        name: "Trashed registered sheet",
+        mimeType: SHEET,
+        parents: ["workspace-root"],
+        trashed: true,
         appProperties: { fciResourceKind: "client-directory" },
       });
     }
@@ -498,11 +600,14 @@ test("Google Drive setup readers paginate exact read-only queries and treat file
   const identities = await client.findSetupItemsByIdentity("fciRootKey", "client's-root");
   const registered = await client.getSetupItem("registered-sheet");
   const missing = await client.getSetupItem("missing-sheet");
+  const trashed = await client.getSetupItem("trashed-sheet");
 
   assert.deepEqual(children.map(({ id }) => id), ["child-one", "child-two"]);
   assert.deepEqual(identities.map(({ id }) => id), ["identity-one", "identity-two"]);
   assert.equal(registered.id, "registered-sheet");
+  assert.deepEqual(registered.appProperties, { fciResourceKind: "client-directory" });
   assert.equal(missing, null);
+  assert.equal(trashed, null, "a well-formed trashed registry row is honest absence, not a provider abort");
   const listRequests = requests.filter(({ url }) => url.pathname === "/drive/v3/files");
   assert.equal(listRequests.length, 4);
   for (const { url } of listRequests) {
@@ -533,18 +638,107 @@ test("Google Drive setup readers paginate exact read-only queries and treat file
   assert.equal(requests.every(({ method, body }) => method === "GET" && body === undefined), true);
 });
 
-test("Google Calendar metadata uses one bounded GET and maps provider 404 to null", async () => {
+test("Google Drive setup readers fail closed on page, total-item, provider-name, and recognized-identity bounds", async () => {
+  const config = {
+    drive: { mode: "shared-drive", rootFolderId: "workspace-root" },
+  };
+
+  let pageRequest = 0;
+  const tooManyPages = new GoogleDriveClient("test-token", config, async () => {
+    pageRequest += 1;
+    return Response.json({
+      files: [],
+      nextPageToken: `page-${pageRequest + 1}`,
+    });
+  });
+  await assert.rejects(
+    () => tooManyPages.listSetupChildren("workspace-root"),
+    (error) => {
+      assert.equal(error.code, "drive_list_incomplete");
+      return true;
+    },
+  );
+  assert.equal(pageRequest, 10, "the provider page bound must fail without reading an eleventh page");
+
+  let itemPage = 0;
+  const totalItemBound = new GoogleDriveClient("test-token", config, async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/drive/v3/files") {
+      itemPage += 1;
+      const files = Array.from({ length: 100 }, (_, index) => ({
+        id: `bounded-${itemPage}-${index}`,
+        name: `Bounded item ${itemPage}-${index}`,
+        mimeType: DOC,
+        parents: ["workspace-root"],
+        trashed: false,
+        appProperties: {},
+      }));
+      return Response.json({
+        files,
+        ...(itemPage % 5 === 0 ? {} : { nextPageToken: `items-${itemPage + 1}` }),
+      });
+    }
+    if (url.pathname === "/drive/v3/files/one-more") {
+      return Response.json({
+        id: "one-more",
+        name: "One more registered item",
+        mimeType: DOC,
+        parents: ["workspace-root"],
+        trashed: false,
+        appProperties: {},
+      });
+    }
+    throw new Error(`Unexpected Drive request: ${url}`);
+  });
+  assert.equal((await totalItemBound.listSetupChildren("workspace-root")).length, 500);
+  assert.equal((await totalItemBound.listSetupChildren("workspace-root")).length, 500);
+  await assert.rejects(
+    () => totalItemBound.getSetupItem("one-more"),
+    (error) => {
+      assert.equal(error.code, "drive_reconcile_read_limit");
+      return true;
+    },
+  );
+
+  const invalidMetadata = new GoogleDriveClient("test-token", config, async (input) => {
+    const id = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    return Response.json({
+      id,
+      name: id === "long-name" ? "x".repeat(181) : "Provider item",
+      mimeType: DOC,
+      parents: ["workspace-root"],
+      trashed: false,
+      appProperties: id === "bad-identity" ? { fciTemplateKey: " padded-key " } : {},
+    });
+  });
+  await assert.rejects(
+    () => invalidMetadata.getSetupItem("long-name"),
+    (error) => {
+      assert.equal(error.code, "drive_invalid_response");
+      return true;
+    },
+  );
+  await assert.rejects(
+    () => invalidMetadata.getSetupItem("bad-identity"),
+    (error) => {
+      assert.equal(error.code, "drive_invalid_response");
+      return true;
+    },
+  );
+});
+
+test("Google Calendar metadata uses one bounded events GET allowed by the existing scope and maps provider 404 to null", async () => {
   const requests = [];
   const fetcher = async (input, init = {}) => {
     const url = new URL(String(input));
     requests.push({ url, method: init.method ?? "GET", body: init.body });
-    if (url.pathname.endsWith("/calendars/missing%40example.com")) {
+    if (url.pathname.endsWith("/calendars/missing%40example.com/events")) {
       return Response.json({ error: { message: "not found" } }, { status: 404 });
     }
     return Response.json({
-      id: "appointments@example.com",
       summary: "FCI Appointments",
       timeZone: "America/New_York",
+      items: [],
     });
   };
   const client = new GoogleCalendarClient("test-token", {
@@ -570,6 +764,9 @@ test("Google Calendar metadata uses one bounded GET and maps provider 404 to nul
     assert.equal(method, "GET");
     assert.equal(body, undefined);
     assert.equal(url.origin, "https://www.googleapis.com");
-    assert.equal(url.searchParams.get("fields"), "id,summary,timeZone");
+    assert.match(url.pathname, /\/calendars\/[^/]+\/events$/u);
+    assert.equal(url.searchParams.get("maxResults"), "1");
+    assert.equal(url.searchParams.get("showDeleted"), "false");
+    assert.equal(url.searchParams.get("fields"), "summary,timeZone,items(id)");
   }
 });

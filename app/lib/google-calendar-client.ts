@@ -50,10 +50,10 @@ type CalendarApiEvent = {
   };
 };
 
-type CalendarApiCalendar = {
-  id?: string;
+type CalendarApiEventList = {
   summary?: string;
   timeZone?: string;
+  items?: CalendarApiEvent[];
 };
 
 export type CalendarEventSummary = {
@@ -193,17 +193,25 @@ export class GoogleCalendarClient {
     return data as T;
   }
 
-  /** Reads one registered Calendar's display metadata without listing events. */
+  /**
+   * Reads one registered Calendar through its events collection. That response
+   * includes the Calendar summary and time zone while remaining within the
+   * existing calendar.events grant; reconcile must not widen OAuth consent.
+   */
   async getCalendarMetadata(calendarId: string): Promise<GoogleCalendarResource | null> {
     const normalizedId = calendarId.trim();
     if (!normalizedId || normalizedId.length > 1_024 || /[\u0000-\u001f\u007f]/.test(normalizedId)) {
       throw new GoogleIntegrationError("calendar_configuration_required", "The registered Workspace calendar ID is invalid.", 409);
     }
-    const query = new URLSearchParams({ fields: "id,summary,timeZone" });
-    let result: CalendarApiCalendar;
+    const query = new URLSearchParams({
+      maxResults: "1",
+      showDeleted: "false",
+      fields: "summary,timeZone,items(id)",
+    });
+    let result: CalendarApiEventList;
     try {
-      result = await this.request<CalendarApiCalendar>(
-        `calendars/${encodeURIComponent(normalizedId)}?${query.toString()}`,
+      result = await this.request<CalendarApiEventList>(
+        `calendars/${encodeURIComponent(normalizedId)}/events?${query.toString()}`,
         {},
         { idempotent: true },
       );
@@ -211,7 +219,7 @@ export class GoogleCalendarClient {
       if (error instanceof GoogleIntegrationError && error.code === "calendar_not_found") return null;
       throw error;
     }
-    if (result.id !== normalizedId || typeof result.summary !== "string" || !result.summary.trim()) {
+    if (typeof result.summary !== "string" || !result.summary.trim()) {
       throw new GoogleIntegrationError(
         "calendar_invalid_response",
         "Google Calendar returned incomplete registered-calendar details.",

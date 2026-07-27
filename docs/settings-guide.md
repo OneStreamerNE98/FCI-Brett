@@ -16,7 +16,7 @@ This guide is for two kinds of reader, and it is split so you only need your hal
 
 A short **Glossary** at the end defines the few special terms this guide uses (Shared Drive, blueprint, simulation, and others). Words in the glossary are written in plain language the first time they appear.
 
-> **How current this guide is.** Describes the app as built in source on 2026-07-26; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
+> **How current this guide is.** Describes the app as built in source on 2026-07-27; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
 
 ---
 
@@ -410,6 +410,14 @@ This stage proves each service actually works, then stays available as your ongo
 
 Each row reads **READY TO VERIFY**, then **VERIFIED** once it passes. The stage shows **READY** when all three are verified.
 
+The **Drift check** under **Ongoing upkeep** compares the saved blueprint with the
+registered Google folders, templates, spreadsheets, and calendars. The check itself
+reads Google metadata only. A missing resource offers the matching existing setup
+action; a renamed owner-managed folder offers either **Rename in Drive** or **Use Drive
+name in blueprint**; a renamed system folder offers **Rename in Drive** only. Unmanaged
+or removed resources stay visible as informational rows and are never deleted. Every
+repair waits for an Administrator to click it.
+
 > [SCREENSHOT 11 — see Screenshot index]
 
 **A note on how email filing feels.** When you press **Review & copy** on a message, a window opens where you pick the exact project and press **Review destination**. The app shows you precisely where the email and attachments would go — the original email becomes an `.eml` in the project's *05_Correspondence / Email Archive* folder, and attachments go to *05_Correspondence / Email Attachments* — and **nothing is copied until you press Copy email to project**. Your Gmail Inbox is always left intact.
@@ -429,7 +437,9 @@ Most of the time, FCI Operations looks after itself. Here is what actually needs
 **Use as needed, from Stage 4's "Ongoing upkeep" tools:**
 - **Renames** — if you need to rename an app-managed folder, do it here, not directly in Drive. The app updates Drive and its own records together so filing keeps working. (This shows *AVAILABLE* once the Shared Drive is set up, otherwise *WAITING*.)
 - **Notification routing** — opens the Google Chat routing page described earlier.
-- **Drift check** — labeled **PLANNED** (packet SET-18). There is no reconcile action yet; it is shown so you know it is coming.
+- **Drift check** — press **Check for drift** after changing the blueprint or whenever a
+  managed Google resource looks out of place. Review each Missing or Renamed action
+  before applying it. Unmanaged rows are informational and never trigger deletion.
 
 **Essentially never (leave it alone):**
 - The system filing folder names — they are locked because filing depends on them.

@@ -62,10 +62,9 @@ async function compensateDriveName(
 
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
-  if (originError) return originError;
+  if (originError) return noStoreResponse(originError);
   const auth = requireOfficeUser(request, { admin: true });
-  if ("response" in auth) return auth.response;
-  await ensureWorkspaceSchema();
+  if ("response" in auth) return noStoreResponse(auth.response);
 
   const parsed = await parseBoundedJsonObject(request, {
     maximumBytes: 8_000,
@@ -106,6 +105,7 @@ export async function POST(request: NextRequest) {
   ) {
     return response({ error: "Provide a valid blueprint folder key and rename action." }, 400);
   }
+  await ensureWorkspaceSchema();
 
   const setup = await getEffectiveGoogleRuntimeSetup();
   const { config, resources, blueprint, blueprintVersion } = setup;

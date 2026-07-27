@@ -23,6 +23,7 @@ type ReconcileState = "idle" | "loading" | "ready" | "error";
 type ReconcileError = Readonly<{ message: string; noMutation: boolean }>;
 
 const NO_MUTATION_SUFFIX = "No Google resource was changed.";
+const UNAVAILABLE_DESCRIPTION_ID = "workspace-reconcile-unavailable-description";
 
 function withoutNoMutationSuffix(message: string) {
   const normalized = message.trim();
@@ -125,6 +126,18 @@ export function WorkspaceReconcileCard({
           body: JSON.stringify({}),
         },
       );
+      if (
+        data.reconciled !== true
+        || !Number.isSafeInteger(data.blueprintVersion)
+        || !Array.isArray(data.drift)
+        || !data.counts
+        || !["missing", "renamed", "unmanaged", "inSync"].every((key) => (
+          Number.isSafeInteger(data.counts[key as keyof typeof data.counts])
+          && data.counts[key as keyof typeof data.counts] >= 0
+        ))
+      ) {
+        throw new Error("The Workspace drift check returned an incomplete result. Try the check again.");
+      }
       setResult(data);
       setState("ready");
       if (announce) {
@@ -165,14 +178,31 @@ export function WorkspaceReconcileCard({
 
   async function ensureMissing(item: WorkspaceReconcileDrift, action: WorkspaceReconcileAction) {
     const endpoint = MISSING_ENDPOINTS[action as keyof typeof MISSING_ENDPOINTS];
-    if (!endpoint) return;
+    if (!endpoint || !item.key || !result) return;
     setWorkingId(item.id);
     try {
-      await readJson<{ ensured: boolean }>(endpoint, {
+      const ensured = await readJson<{
+        ensured: boolean;
+        reconciled?: boolean;
+        resourceKey?: string;
+        version?: number;
+      }>(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          mode: "reconcile-missing",
+          resourceKey: item.key,
+          expectedVersion: result.blueprintVersion,
+        }),
       });
+      if (
+        ensured.ensured !== true
+        || ensured.reconciled !== true
+        || ensured.resourceKey !== item.key
+        || ensured.version !== result.blueprintVersion
+      ) {
+        throw new Error("The setup ensure action returned an incomplete result. Check Workspace status before retrying.");
+      }
       notify(`${item.expectedName ?? item.label} was reviewed and the matching setup ensure action completed.`, "success");
       await refreshAfterMutation({});
     } catch (caught) {
@@ -186,7 +216,7 @@ export function WorkspaceReconcileCard({
     if (!item.key || !item.externalId || !item.actualName || !result) return;
     setWorkingId(item.id);
     try {
-      await readJson<{ renamed: boolean }>("/api/v1/integrations/google/drive/folders/rename", {
+      const renamed = await readJson<{ renamed: boolean }>("/api/v1/integrations/google/drive/folders/rename", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -197,6 +227,9 @@ export function WorkspaceReconcileCard({
           actualName: item.actualName,
         }),
       });
+      if (renamed.renamed !== true) {
+        throw new Error("The Drive rename returned an incomplete result. Check Workspace drift before retrying.");
+      }
       notify(`Google Drive now uses the blueprint name “${item.expectedName}”.`, "success");
       await refreshAfterMutation({});
     } catch (caught) {
@@ -207,7 +240,7 @@ export function WorkspaceReconcileCard({
   }
 
   async function adoptDriveName(item: WorkspaceReconcileDrift) {
-    if (!item.key || !item.actualName || item.management !== "owner" || !result) return;
+    if (!item.key || !item.externalId || !item.actualName || item.management !== "owner" || !result) return;
     setWorkingId(item.id);
     try {
       const current = await readJson<WorkspaceBlueprintPayload>(
@@ -223,14 +256,27 @@ export function WorkspaceReconcileCard({
         item.key,
         item.actualName,
       );
-      await readJson<WorkspaceBlueprintPayload>(
+      const saved = await readJson<WorkspaceBlueprintPayload>(
         "/api/v1/integrations/google/setup/blueprint",
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blueprint, expectedVersion: current.version }),
+          body: JSON.stringify({
+            blueprint,
+            expectedVersion: current.version,
+            reconcileReview: {
+              resourceType: "drive.folder",
+              key: item.key,
+              expectedExternalId: item.externalId,
+              expectedActualName: item.actualName,
+              expectedVersion: result.blueprintVersion,
+            },
+          }),
         },
       );
+      if (!saved.blueprint || saved.version !== current.version + 1) {
+        throw new Error("The blueprint update returned an incomplete result. Reload the blueprint before retrying.");
+      }
       notify(`The blueprint now uses the reviewed Drive name “${item.actualName}”.`, "success");
       await refreshAfterMutation({ blueprintChanged: true });
     } catch (caught) {
@@ -289,18 +335,19 @@ export function WorkspaceReconcileCard({
       <AdministratorActionButton
         className="primary-button"
         isAdmin={isAdmin}
+        aria-describedby={!enabled ? UNAVAILABLE_DESCRIPTION_ID : undefined}
         onClick={() => void checkForDrift()}
         disabled={!enabled || state === "loading" || workingId !== null}
       >{state === "loading" ? "Checking…" : result ? "Check again" : "Check for drift"}</AdministratorActionButton>
       {result && <span className={styles.checkedAt}>Last checked {new Date(result.checkedAt).toLocaleString()}</span>}
     </div>
     {!isAdmin && <p className={styles.readonly}>An Administrator can run the provider read and review each repair.</p>}
-    {!enabled && isAdmin && <p className={styles.readonly}>{unavailableMessage}</p>}
+    {!enabled && <p id={UNAVAILABLE_DESCRIPTION_ID} className={styles.readonly}>{unavailableMessage}</p>}
     {state === "loading" && <p className={styles.status} role="status">Reading managed Google resource identities…</p>}
     {error && <p className={styles.error} role="alert">
       {error.message}{error.noMutation ? " No Google resource was changed." : ""}
     </p>}
-    {result && result.drift.length === 0 && state !== "loading" && <p className={styles.inSync}>Blueprint and Drive are in sync.</p>}
+    {result && result.drift.length === 0 && state !== "loading" && <p className={styles.inSync} role="status">Blueprint and Google resources are in sync.</p>}
     {result && result.drift.length > 0 && <>
       <p className={styles.status} role="status">
         {result.counts.missing} missing · {result.counts.renamed} renamed · {result.counts.unmanaged} unmanaged

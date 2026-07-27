@@ -106,6 +106,38 @@ test("desired resources cover the bounded root tree, registered sheets/templates
   assert.ok(resources.every(Object.isFrozen));
 });
 
+test("desired resources recognize the additive Slides template kind without changing existing template MIME mappings", () => {
+  const blueprint = structuredClone(seedWorkspaceBlueprint());
+  blueprint.templates.push({
+    key: "presentation-template",
+    name: "Presentation Template",
+    kind: "slides",
+    targetFolderKey: "client-profile",
+    management: "owner",
+  });
+
+  const resources = workspaceReconcileDesiredResources(blueprint);
+
+  assert.deepEqual(
+    resources
+      .filter(({ resourceType }) => resourceType === "drive.file")
+      .map(({ key, label, expectedMimeType }) => ({ key, label, expectedMimeType }))
+      .slice(-2),
+    [
+      {
+        key: "project-budget",
+        label: "Spreadsheet template",
+        expectedMimeType: "application/vnd.google-apps.spreadsheet",
+      },
+      {
+        key: "presentation-template",
+        label: "Slides template",
+        expectedMimeType: "application/vnd.google-apps.presentation",
+      },
+    ],
+  );
+});
+
 test("simulation uses only persisted provider metadata and fails closed on missing names or moved parents", () => {
   const blueprint = seedWorkspaceBlueprint();
   const resources = [

@@ -9,6 +9,7 @@ import type { WorkspaceResourceType } from "./workspace-effective-config";
 const GOOGLE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const GOOGLE_DOCUMENT_MIME_TYPE = "application/vnd.google-apps.document";
 const GOOGLE_SPREADSHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet";
+const GOOGLE_PRESENTATION_MIME_TYPE = "application/vnd.google-apps.presentation";
 
 export const WORKSPACE_RECONCILE_ACTIONS = [
   "ensure-folders",
@@ -108,6 +109,25 @@ function renamedActions(resource: WorkspaceReconcileDesiredResource) {
   return [] as const;
 }
 
+function templatePresentation(kind: string) {
+  if (kind === "sheet") {
+    return {
+      label: "Spreadsheet template",
+      expectedMimeType: GOOGLE_SPREADSHEET_MIME_TYPE,
+    } as const;
+  }
+  if (kind === "slides") {
+    return {
+      label: "Slides template",
+      expectedMimeType: GOOGLE_PRESENTATION_MIME_TYPE,
+    } as const;
+  }
+  return {
+    label: "Document template",
+    expectedMimeType: GOOGLE_DOCUMENT_MIME_TYPE,
+  } as const;
+}
+
 export function workspaceReconcileDesiredResources(
   blueprint: WorkspaceBlueprint,
   registeredCalendarKeys: ReadonlySet<string> = new Set(),
@@ -135,17 +155,18 @@ export function workspaceReconcileDesiredResources(
       parentKey: spreadsheet.targetFolderKey,
       expectedMimeType: GOOGLE_SPREADSHEET_MIME_TYPE,
     })),
-    ...blueprint.templates.map((template) => Object.freeze({
-      resourceType: "drive.file" as const,
-      key: template.key,
-      label: template.kind === "sheet" ? "Spreadsheet template" : "Document template",
-      name: template.name,
-      management: template.management,
-      parentKey: "templates",
-      expectedMimeType: template.kind === "sheet"
-        ? GOOGLE_SPREADSHEET_MIME_TYPE
-        : GOOGLE_DOCUMENT_MIME_TYPE,
-    })),
+    ...blueprint.templates.map((template) => {
+      const presentation = templatePresentation(template.kind);
+      return Object.freeze({
+        resourceType: "drive.file" as const,
+        key: template.key,
+        label: presentation.label,
+        name: template.name,
+        management: template.management,
+        parentKey: "templates",
+        expectedMimeType: presentation.expectedMimeType,
+      });
+    }),
     ...blueprint.calendars
       .filter((calendar) => registeredCalendarKeys.has(calendar.key))
       .map((calendar) => Object.freeze({

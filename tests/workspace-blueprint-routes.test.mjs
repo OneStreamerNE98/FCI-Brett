@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { createServer } from "vite";
@@ -13,6 +14,10 @@ const workerEnvironment = {};
 globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = workerEnvironment;
 
 const rootUrl = new URL("../", import.meta.url);
+const blueprintRouteSource = readFileSync(
+  fileURLToPath(new URL("../app/api/v1/integrations/google/setup/blueprint/route.ts", import.meta.url)),
+  "utf8",
+);
 const vite = await createServer({
   root: fileURLToPath(rootUrl),
   cacheDir: fileURLToPath(new URL("../node_modules/.vite-workspace-blueprint-routes", import.meta.url)),
@@ -56,7 +61,7 @@ function routeRequest(path, email, method = "GET", body, extraHeaders = {}) {
   return request;
 }
 
-function fakeDatabase(initialRow = null, { failEvent = false } = {}) {
+function fakeDatabase(initialRow = null, { failEvent = false, resources = [] } = {}) {
   const queries = [];
   const events = [];
   const batches = [];
@@ -82,6 +87,17 @@ function fakeDatabase(initialRow = null, { failEvent = false } = {}) {
           }
           if (/FROM workspace_simulation_state/u.test(sql)) return null;
           return null;
+        },
+        async all() {
+          query.kind = "all";
+          if (/FROM workspace_resources WHERE connection_key = \?/u.test(sql)) {
+            return {
+              results: resources
+                .filter((resource) => resource.connection_key === query.values[0])
+                .map((resource) => structuredClone(resource)),
+            };
+          }
+          return { results: [] };
         },
         async run() {
           query.kind = "run";
@@ -159,6 +175,50 @@ function fakeDatabase(initialRow = null, { failEvent = false } = {}) {
     },
   };
   return database;
+}
+
+function workspaceResourceRow({
+  id,
+  resourceType,
+  resourceKey,
+  externalId,
+  parentExternalId = null,
+  name,
+}) {
+  return {
+    id,
+    connection_key: "workspace-simulation",
+    resource_type: resourceType,
+    resource_key: resourceKey,
+    external_id: externalId,
+    parent_external_id: parentExternalId,
+    external_url: `https://drive.google.com/open?id=${externalId}`,
+    origin: "created",
+    metadata_json: JSON.stringify({ name, management: "owner" }),
+    created_by: ADMIN_EMAIL,
+    created_at: 1_790_000_000_000,
+    updated_at: 1_790_000_000_000,
+  };
+}
+
+function reviewedFolderResources(actualName = "Projects from Drive") {
+  return [
+    workspaceResourceRow({
+      id: "shared-drive-row",
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: "shared-drive-1",
+      name: "FCI Operations",
+    }),
+    workspaceResourceRow({
+      id: "projects-row",
+      resourceType: "drive.folder",
+      resourceKey: "projects",
+      externalId: "projects-folder-1",
+      parentExternalId: "shared-drive-1",
+      name: actualName,
+    }),
+  ];
 }
 
 function workspaceEnvironment(database, overrides = {}) {
@@ -309,6 +369,234 @@ test("blueprint PUT rejects stale or impossible expected versions without overwr
   assert.equal(impossible.status, 409);
   assert.equal((await impossible.json()).currentVersion, 0);
   assert.equal(emptyDatabase.row, null);
+});
+
+test("blueprint reconcile PUT revalidates the simulation registry before adopting one owner folder name", async () => {
+  const seed = blueprintModule.seedWorkspaceBlueprint();
+  const resources = reviewedFolderResources();
+  const database = fakeDatabase(persistedRow(seed, 4), { resources });
+  workspaceEnvironment(database);
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("Simulation reconciliation must not contact Google.");
+  };
+  const blueprint = blueprintModule.renameWorkspaceRootFolder(seed, "projects", "Projects from Drive");
+
+  const response = await blueprintRoute.PUT(routeRequest(
+    "/api/v1/integrations/google/setup/blueprint",
+    ADMIN_EMAIL,
+    "PUT",
+    {
+      blueprint,
+      expectedVersion: 4,
+      reconcileReview: {
+        resourceType: "drive.folder",
+        key: "projects",
+        expectedExternalId: "projects-folder-1",
+        expectedActualName: "Projects from Drive",
+        expectedVersion: 4,
+      },
+    },
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(body.version, 5);
+  assert.equal(body.blueprint.drive.roots.find((folder) => folder.key === "projects").name, "Projects from Drive");
+  assert.equal(JSON.parse(database.row.blueprint_json).drive.roots.find((folder) => folder.key === "projects").name, "Projects from Drive");
+  assert.equal(database.events.length, 1);
+  assert.equal(providerCalls, 0);
+});
+
+test("blueprint reconcile PUT rejects stale, moved, replaced, and conflicting simulation reviews before CAS", async (context) => {
+  const seed = blueprintModule.seedWorkspaceBlueprint();
+  const blueprint = blueprintModule.renameWorkspaceRootFolder(seed, "projects", "Projects from Drive");
+  const cases = [
+    {
+      name: "provider name changed",
+      resources: reviewedFolderResources("Provider changed again"),
+      review: {},
+    },
+    {
+      name: "folder moved",
+      resources: reviewedFolderResources().map((resource) => (
+        resource.resource_key === "projects"
+          ? { ...resource, parent_external_id: "somewhere-else" }
+          : resource
+      )),
+      review: {},
+    },
+    {
+      name: "folder identity was replaced",
+      resources: reviewedFolderResources(),
+      review: { expectedExternalId: "reviewed-old-id" },
+    },
+    {
+      name: "external identity conflicts with another registry row",
+      resources: [
+        ...reviewedFolderResources(),
+        workspaceResourceRow({
+          id: "conflict-row",
+          resourceType: "drive.folder",
+          resourceKey: "archive",
+          externalId: "projects-folder-1",
+          parentExternalId: "shared-drive-1",
+          name: "Projects from Drive",
+        }),
+      ],
+      review: {},
+    },
+  ];
+
+  for (const scenario of cases) {
+    await context.test(scenario.name, async () => {
+      const database = fakeDatabase(persistedRow(seed, 4), { resources: scenario.resources });
+      workspaceEnvironment(database);
+      const response = await blueprintRoute.PUT(routeRequest(
+        "/api/v1/integrations/google/setup/blueprint",
+        ADMIN_EMAIL,
+        "PUT",
+        {
+          blueprint,
+          expectedVersion: 4,
+          reconcileReview: {
+            resourceType: "drive.folder",
+            key: "projects",
+            expectedExternalId: "projects-folder-1",
+            expectedActualName: "Projects from Drive",
+            expectedVersion: 4,
+            ...scenario.review,
+          },
+        },
+      ));
+      const body = await response.json();
+
+      assert.equal(response.status, 409);
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.equal(body.code, "workspace_reconcile_review_stale");
+      assert.equal(database.row.version, 4);
+      assert.equal(JSON.parse(database.row.blueprint_json).drive.roots.find((folder) => folder.key === "projects").name, "02_Projects");
+      assert.equal(database.batches.length, 0);
+      assert.equal(database.events.length, 0);
+    });
+  }
+});
+
+test("blueprint reconcile PUT is closed, version-fenced, and limited to exactly one owner folder name", async () => {
+  const seed = blueprintModule.seedWorkspaceBlueprint();
+  const resources = reviewedFolderResources();
+  const renamed = blueprintModule.renameWorkspaceRootFolder(seed, "projects", "Projects from Drive");
+
+  const closedDatabase = fakeDatabase(persistedRow(seed, 4), { resources });
+  workspaceEnvironment(closedDatabase);
+  const closed = await blueprintRoute.PUT(routeRequest(
+    "/api/v1/integrations/google/setup/blueprint",
+    ADMIN_EMAIL,
+    "PUT",
+    {
+      blueprint: renamed,
+      expectedVersion: 4,
+      reconcileReview: {
+        resourceType: "drive.folder",
+        key: "projects",
+        expectedExternalId: "projects-folder-1",
+        expectedActualName: "Projects from Drive",
+        expectedVersion: 4,
+        unreviewed: true,
+      },
+    },
+  ));
+  assert.equal(closed.status, 400);
+  assert.equal(closedDatabase.batches.length, 0);
+
+  const staleDatabase = fakeDatabase(persistedRow(seed, 4), { resources });
+  workspaceEnvironment(staleDatabase);
+  const stale = await blueprintRoute.PUT(routeRequest(
+    "/api/v1/integrations/google/setup/blueprint",
+    ADMIN_EMAIL,
+    "PUT",
+    {
+      blueprint: renamed,
+      expectedVersion: 4,
+      reconcileReview: {
+        resourceType: "drive.folder",
+        key: "projects",
+        expectedExternalId: "projects-folder-1",
+        expectedActualName: "Projects from Drive",
+        expectedVersion: 3,
+      },
+    },
+  ));
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).code, "workspace_blueprint_version_conflict");
+  assert.equal(staleDatabase.batches.length, 0);
+
+  const widenedDraft = structuredClone(renamed);
+  widenedDraft.business.displayName = "Unreviewed sibling edit";
+  const widenedDatabase = fakeDatabase(persistedRow(seed, 4), { resources });
+  workspaceEnvironment(widenedDatabase);
+  const widened = await blueprintRoute.PUT(routeRequest(
+    "/api/v1/integrations/google/setup/blueprint",
+    ADMIN_EMAIL,
+    "PUT",
+    {
+      blueprint: widenedDraft,
+      expectedVersion: 4,
+      reconcileReview: {
+        resourceType: "drive.folder",
+        key: "projects",
+        expectedExternalId: "projects-folder-1",
+        expectedActualName: "Projects from Drive",
+        expectedVersion: 4,
+      },
+    },
+  ));
+  assert.equal(widened.status, 400);
+  assert.equal(widenedDatabase.batches.length, 0);
+
+  const systemDatabase = fakeDatabase(persistedRow(seed, 4), { resources });
+  workspaceEnvironment(systemDatabase);
+  const system = await blueprintRoute.PUT(routeRequest(
+    "/api/v1/integrations/google/setup/blueprint",
+    ADMIN_EMAIL,
+    "PUT",
+    {
+      blueprint: seed,
+      expectedVersion: 4,
+      reconcileReview: {
+        resourceType: "drive.folder",
+        key: "unsorted-intake",
+        expectedExternalId: "unsorted-intake-folder",
+        expectedActualName: "99_Unsorted Intake",
+        expectedVersion: 4,
+      },
+    },
+  ));
+  assert.equal(system.status, 400);
+  assert.match((await system.json()).error, /owner-managed/u);
+  assert.equal(systemDatabase.batches.length, 0);
+});
+
+test("blueprint reconcile source re-reads exact Drive identity, type, parent, name, and id before the CAS save", () => {
+  const providerFence = blueprintRouteSource.slice(
+    blueprintRouteSource.indexOf("async function assertLiveReconcileReview"),
+    blueprintRouteSource.indexOf("function assertSimulationReconcileReview"),
+  );
+  assert.match(providerFence, /findSetupItemsByIdentity\("fciRootKey", folder\.key\)/u);
+  assert.match(providerFence, /findSetupItemsByIdentity\("fciWorkspaceFolder", folder\.key\)/u);
+  assert.match(providerFence, /match\.mimeType !== GOOGLE_FOLDER_MIME_TYPE/u);
+  assert.match(providerFence, /match\.parents\.length !== 1/u);
+  assert.match(providerFence, /match\.parents\[0\] !== expectedParentId/u);
+  assert.match(providerFence, /driveIdentityIsExact\(match, folder\.key\)/u);
+  assert.match(providerFence, /reviewed\.id !== review\.expectedExternalId/u);
+  assert.match(providerFence, /reviewed\.name !== review\.expectedActualName/u);
+
+  const reviewCall = blueprintRouteSource.indexOf("await assertLiveReconcileReview(");
+  const saveCall = blueprintRouteSource.indexOf("const result = await saveWorkspaceBlueprint");
+  assert.ok(reviewCall > 0);
+  assert.ok(saveCall > reviewCall, "provider review must finish immediately before the version-CAS save");
 });
 
 test("blueprint PUT returns exact sanitizer paths and rejects oversized or cross-origin bodies", async () => {

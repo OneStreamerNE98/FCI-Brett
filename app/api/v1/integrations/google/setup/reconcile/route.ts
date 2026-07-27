@@ -22,10 +22,9 @@ import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
-  if (originError) return originError;
+  if (originError) return noStoreResponse(originError);
   const auth = requireOfficeUser(request, { admin: true });
-  if ("response" in auth) return auth.response;
-  await ensureWorkspaceSchema();
+  if ("response" in auth) return noStoreResponse(auth.response);
 
   if (request.body) {
     const parsed = await parseBoundedJsonObject(request, {
@@ -38,6 +37,7 @@ export async function POST(request: NextRequest) {
       return response({ error: "Provide no fields when checking Workspace drift." }, 400);
     }
   }
+  await ensureWorkspaceSchema();
 
   const setup = await getEffectiveGoogleRuntimeSetup();
   const { config, blueprint, blueprintVersion, resources, effectiveResources } = setup;

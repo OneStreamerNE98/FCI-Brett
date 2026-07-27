@@ -70,7 +70,7 @@
   display: block;
   margin-top: 5px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
@@ -80,7 +80,7 @@
   min-height: 26px;
   padding: 4px 8px;
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 850;
   line-height: 1.2;
   letter-spacing: 0.03em;
@@ -111,7 +111,7 @@
 
 .names dt {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -128,7 +128,7 @@
 }
 
 .actionList button {
-  min-height: 34px;
+  min-height: var(--target-min);
   white-space: normal;
 }
 

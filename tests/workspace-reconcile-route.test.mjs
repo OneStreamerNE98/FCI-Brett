@@ -271,6 +271,7 @@ test("simulation reconcile is admin/origin/bounded and emits a no-store count au
     simulationEnvironment(database);
     const response = await route.POST(routeRequest({ email: OFFICE_EMAIL }));
     assert.equal(response.status, 403);
+    assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(database.state.queries.length, 0);
   });
 
@@ -279,6 +280,7 @@ test("simulation reconcile is admin/origin/bounded and emits a no-store count au
     simulationEnvironment(database);
     const response = await route.POST(routeRequest({ origin: "https://attacker.example" }));
     assert.equal(response.status, 403);
+    assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(database.state.queries.length, 0);
   });
 

@@ -3,6 +3,7 @@ import {
   type GoogleDriveClient,
 } from "./google-drive";
 import type { GoogleCalendarClient } from "./google-calendar-client";
+import { GoogleIntegrationError } from "./google-oauth";
 import type { WorkspaceBlueprint } from "./workspace-blueprint";
 import type { WorkspaceResource } from "./workspace-effective-config";
 import {
@@ -14,6 +15,7 @@ import {
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const SPREADSHEET_MIME_TYPE = "application/vnd.google-apps.spreadsheet";
 const LEGACY_ROOT_KEYS = new Set(["client-accounts", "projects"]);
+const MAX_REGISTERED_DRIVE_RESOURCES = 200;
 
 export type WorkspaceCalendarRegistration = Readonly<{
   key: string;
@@ -28,7 +30,7 @@ export type WorkspaceDriveRegistration = Readonly<{
 
 type WorkspaceReconcileDriveReader = Pick<
   GoogleDriveClient,
-  "findSetupItemsByIdentity" | "getSetupItem" | "listSetupChildren"
+  "getSetupItem" | "listSetupChildren"
 >;
 
 type WorkspaceReconcileCalendarReader = Pick<GoogleCalendarClient, "getCalendarMetadata">;
@@ -72,20 +74,25 @@ function actualFromDrive(
     fallbackKey?: string | null;
     expectedParentId?: string | null;
     expectedMimeType?: string | null;
+    preferFallbackIdentity?: boolean;
   }> = {},
 ): WorkspaceReconcileActualResource | null {
   const uniqueIdentities = new Map(
     workspaceReconcileDriveIdentities(item).map((identity) => [`${identity.resourceType}:${identity.key}`, identity]),
   );
   const identity = uniqueIdentities.size === 1 ? [...uniqueIdentities.values()][0] : null;
-  const resourceType = identity?.resourceType
+  const resourceType = (options.preferFallbackIdentity ? options.fallbackResourceType : identity?.resourceType)
+    ?? identity?.resourceType
     ?? options.fallbackResourceType
     ?? (item.mimeType === FOLDER_MIME_TYPE
       ? "drive.folder"
       : item.mimeType === SPREADSHEET_MIME_TYPE
         ? "sheets.spreadsheet"
         : "drive.file");
-  const key = identity?.key ?? options.fallbackKey ?? null;
+  const key = (options.preferFallbackIdentity ? options.fallbackKey : identity?.key)
+    ?? identity?.key
+    ?? options.fallbackKey
+    ?? null;
   const expectedParentId = options.expectedParentId;
   const parentValid = expectedParentId === undefined
     || (expectedParentId !== null && item.parents.length === 1 && item.parents[0] === expectedParentId);
@@ -108,13 +115,6 @@ function actualFromDrive(
   });
 }
 
-function resourceIdentityProperty(resourceType: WorkspaceReconcileDesiredResource["resourceType"]) {
-  if (resourceType === "drive.folder") return "fciRootKey" as const;
-  if (resourceType === "drive.file") return "fciTemplateKey" as const;
-  if (resourceType === "sheets.spreadsheet") return "fciResourceKind" as const;
-  return null;
-}
-
 function addActual(
   records: Map<string, WorkspaceReconcileActualResource>,
   discoveredExternalIds: Set<string>,
@@ -132,6 +132,77 @@ function addActual(
   discoveredExternalIds.add(resource.externalId);
 }
 
+type RegisteredDriveClaim = Readonly<{
+  resourceType: "drive.folder" | "drive.file" | "sheets.spreadsheet";
+  key: string;
+  externalId: string;
+}>;
+
+function expectedParentExternalId(
+  resource: WorkspaceReconcileDesiredResource,
+  folderExternalIds: ReadonlyMap<string, string>,
+  rootExternalId: string,
+) {
+  return resource.parentKey
+    ? folderExternalIds.get(resource.parentKey) ?? null
+    : rootExternalId;
+}
+
+function exactDriveIdentity(
+  item: DriveSetupItem,
+  resourceType: RegisteredDriveClaim["resourceType"],
+  key: string,
+) {
+  const identities = new Map(
+    workspaceReconcileDriveIdentities(item).map((identity) => [`${identity.resourceType}:${identity.key}`, identity]),
+  );
+  if (identities.size !== 1) return false;
+  const [identity] = [...identities.values()];
+  return identity.resourceType === resourceType && identity.key === key;
+}
+
+function providerIdentityActual(
+  item: DriveSetupItem,
+  desired: readonly WorkspaceReconcileDesiredResource[],
+  folderExternalIds: ReadonlyMap<string, string>,
+  rootExternalId: string,
+  listedParentId?: string,
+) {
+  const identities = new Map(
+    workspaceReconcileDriveIdentities(item).map((identity) => [`${identity.resourceType}:${identity.key}`, identity]),
+  );
+  const identity = identities.size === 1 ? [...identities.values()][0] : null;
+  const desiredResource = identity
+    ? desired.find((candidate) => (
+      candidate.resourceType === identity.resourceType && candidate.key === identity.key
+    ))
+    : null;
+  return actualFromDrive(item, {
+    expectedParentId: desiredResource
+      ? expectedParentExternalId(desiredResource, folderExternalIds, rootExternalId)
+      : listedParentId,
+    expectedMimeType: desiredResource?.expectedMimeType,
+  });
+}
+
+function retainProviderItem(
+  items: Map<string, DriveSetupItem | null>,
+  item: DriveSetupItem,
+) {
+  const existing = items.get(item.id);
+  if (existing === undefined || existing === null) {
+    items.set(item.id, item);
+    return;
+  }
+  if (JSON.stringify(existing) !== JSON.stringify(item)) {
+    throw new GoogleIntegrationError(
+      "drive_reconcile_changed",
+      "Google Drive setup metadata changed while reconciliation was reading it. Retry the check.",
+      409,
+    );
+  }
+}
+
 export async function discoverWorkspaceReconcileActual(input: Readonly<{
   blueprint: WorkspaceBlueprint;
   rootExternalId: string;
@@ -146,137 +217,127 @@ export async function discoverWorkspaceReconcileActual(input: Readonly<{
   const records = new Map<string, WorkspaceReconcileActualResource>();
   const discoveredExternalIds = new Set<string>();
   const folderExternalIds = new Map<string, string>();
-
-  // Folder order is parent-before-child, so expected-parent checks can use only
-  // identities that were already confirmed in their own managed location.
-  for (const resource of desired.filter((candidate) => candidate.resourceType === "drive.folder")) {
-    const canonical = await input.drive.findSetupItemsByIdentity("fciRootKey", resource.key);
-    const legacy = LEGACY_ROOT_KEYS.has(resource.key)
-      ? await input.drive.findSetupItemsByIdentity("fciWorkspaceFolder", resource.key)
-      : [];
-    const matches = new Map([...canonical, ...legacy].map((item) => [item.id, item]));
-    const expectedParentId = resource.parentKey
-      ? folderExternalIds.get(resource.parentKey) ?? null
-      : input.rootExternalId;
-    for (const item of matches.values()) {
-      addActual(records, discoveredExternalIds, actualFromDrive(item, {
-        fallbackResourceType: "drive.folder",
-        fallbackKey: resource.key,
-        expectedParentId,
-        expectedMimeType: resource.expectedMimeType,
-      }));
-    }
-    if (matches.size === 1) {
-      const [item] = [...matches.values()];
-      const identities = new Map(
-        workspaceReconcileDriveIdentities(item).map((identity) => [`${identity.resourceType}:${identity.key}`, identity]),
-      );
-      const identity = identities.size === 1 ? [...identities.values()][0] : null;
-      if (
-        identity?.resourceType === "drive.folder"
-        && identity.key === resource.key
-        && item.mimeType === FOLDER_MIME_TYPE
-        && expectedParentId !== null
-        && item.parents.length === 1
-        && item.parents[0] === expectedParentId
-      ) {
-        folderExternalIds.set(resource.key, item.id);
-      }
-    }
-  }
-
-  for (const resource of desired.filter((candidate) => (
-    candidate.resourceType === "drive.file" || candidate.resourceType === "sheets.spreadsheet"
-  )) as Array<WorkspaceReconcileDesiredResource & {
-    resourceType: "drive.file" | "sheets.spreadsheet";
-  }>) {
-    const property = resourceIdentityProperty(resource.resourceType)!;
-    const expectedParentId = resource.parentKey
-      ? folderExternalIds.get(resource.parentKey) ?? null
-      : input.rootExternalId;
-    const matches = await input.drive.findSetupItemsByIdentity(property, resource.key);
-    for (const item of matches) {
-      addActual(records, discoveredExternalIds, actualFromDrive(item, {
-        fallbackResourceType: resource.resourceType,
-        fallbackKey: resource.key,
-        expectedParentId,
-        expectedMimeType: resource.expectedMimeType,
-      }));
-    }
-  }
-
-  // Root and Templates directory listings are the bounded unmanaged-item
-  // surfaces named by SET-18. Do not recurse into client/project operational
-  // trees, where normal business folders would otherwise become false drift.
-  for (const item of await input.drive.listSetupChildren(input.rootExternalId)) {
-    addActual(records, discoveredExternalIds, actualFromDrive(item));
-  }
-  const templatesExternalId = folderExternalIds.get("templates");
-  if (templatesExternalId) {
-    for (const item of await input.drive.listSetupChildren(templatesExternalId)) {
-      addActual(records, discoveredExternalIds, actualFromDrive(item));
-    }
-  }
-
-  // Registry reads retain removed-from-blueprint identities and catch resources
-  // that were manually moved outside their expected managed parent.
-  for (const resource of input.resources.filter((candidate) => (
+  const claims = [
+    ...input.resources.filter((candidate) => (
     candidate.resourceType === "drive.folder"
     || candidate.resourceType === "drive.file"
     || candidate.resourceType === "sheets.spreadsheet"
-  )) as Array<WorkspaceResource & {
-    resourceType: "drive.folder" | "drive.file" | "sheets.spreadsheet";
-  }>) {
-    if (discoveredExternalIds.has(resource.externalId)) continue;
-    const item = await input.drive.getSetupItem(resource.externalId);
+    )).map((resource) => Object.freeze({
+      resourceType: resource.resourceType as RegisteredDriveClaim["resourceType"],
+      key: resource.resourceKey,
+      externalId: resource.externalId,
+    })),
+    ...(input.driveRegistrations ?? []),
+  ];
+  const uniqueClaims = [...new Map(
+    claims.map((claim) => [`${claim.resourceType}:${claim.key}:${claim.externalId}`, claim]),
+  ).values()];
+  if (uniqueClaims.length > MAX_REGISTERED_DRIVE_RESOURCES) {
+    throw new GoogleIntegrationError(
+      "drive_reconcile_read_limit",
+      "Workspace reconciliation has too many registered Google Drive resources to read safely.",
+      503,
+    );
+  }
+
+  // SET-18 deliberately inventories only two provider-owned collections:
+  // direct Shared Drive root children and direct Templates children. Every
+  // other active or removed resource is reached by its retained registry ID;
+  // this prevents one global appProperties search per blueprint key.
+  const providerItems = new Map<string, DriveSetupItem | null>();
+  const rootItems = await input.drive.listSetupChildren(input.rootExternalId);
+  for (const item of rootItems) retainProviderItem(providerItems, item);
+  for (const externalId of new Set(uniqueClaims.map((claim) => claim.externalId))) {
+    if (providerItems.has(externalId)) continue;
+    providerItems.set(externalId, await input.drive.getSetupItem(externalId));
+  }
+
+  // Folder order is parent-before-child. Only an exact, unique provider stamp
+  // in the expected parent can become authority for a child listing/parent
+  // check; a registry claim alone never turns an unstamped object into a match.
+  const providerValues = () => [...providerItems.values()].filter(
+    (item): item is DriveSetupItem => item !== null,
+  );
+  for (const resource of desired.filter((candidate) => candidate.resourceType === "drive.folder")) {
+    const expectedParentId = expectedParentExternalId(resource, folderExternalIds, input.rootExternalId);
+    const matches = providerValues().filter((item) => (
+      exactDriveIdentity(item, "drive.folder", resource.key)
+      && item.mimeType === FOLDER_MIME_TYPE
+      && expectedParentId !== null
+      && item.parents.length === 1
+      && item.parents[0] === expectedParentId
+    ));
+    if (matches.length === 1) folderExternalIds.set(resource.key, matches[0].id);
+  }
+
+  const templatesExternalId = folderExternalIds.get("templates");
+  const templateItems = templatesExternalId
+    ? await input.drive.listSetupChildren(templatesExternalId)
+    : [];
+  for (const item of templateItems) retainProviderItem(providerItems, item);
+
+  // Claim-specific records preserve strict key/type/parent validity. They also
+  // keep a missing or changed stamp from becoming a duplicate-creating Create
+  // action merely because a registry ID still points at a physical file.
+  for (const claim of uniqueClaims) {
+    const item = providerItems.get(claim.externalId);
     if (!item) continue;
     const desiredResource = desired.find((candidate) => (
-      candidate.resourceType === resource.resourceType && candidate.key === resource.resourceKey
+      candidate.resourceType === claim.resourceType && candidate.key === claim.key
     ));
-    const expectedParentId = desiredResource?.parentKey
-      ? folderExternalIds.get(desiredResource.parentKey) ?? null
-      : desiredResource
-        ? input.rootExternalId
-        : undefined;
     addActual(records, discoveredExternalIds, actualFromDrive(item, {
-      fallbackResourceType: resource.resourceType,
-      fallbackKey: resource.resourceKey,
-      expectedParentId,
+      fallbackResourceType: claim.resourceType,
+      fallbackKey: claim.key,
+      expectedParentId: desiredResource
+        ? expectedParentExternalId(desiredResource, folderExternalIds, input.rootExternalId)
+        : undefined,
       expectedMimeType: desiredResource?.expectedMimeType,
+      preferFallbackIdentity: true,
     }));
   }
 
-  for (const registration of input.driveRegistrations ?? []) {
-    if (discoveredExternalIds.has(registration.externalId)) continue;
-    const item = await input.drive.getSetupItem(registration.externalId);
-    if (!item) continue;
-    const desiredResource = desired.find((candidate) => (
-      candidate.resourceType === registration.resourceType && candidate.key === registration.key
+  for (const item of rootItems) {
+    addActual(records, discoveredExternalIds, providerIdentityActual(
+      item,
+      desired,
+      folderExternalIds,
+      input.rootExternalId,
+      input.rootExternalId,
     ));
-    const expectedParentId = desiredResource?.parentKey
-      ? folderExternalIds.get(desiredResource.parentKey) ?? null
-      : desiredResource
-        ? input.rootExternalId
-        : undefined;
-    addActual(records, discoveredExternalIds, actualFromDrive(item, {
-      fallbackResourceType: registration.resourceType,
-      fallbackKey: registration.key,
-      expectedParentId,
-      expectedMimeType: desiredResource?.expectedMimeType,
-    }));
+  }
+  for (const item of templateItems) {
+    addActual(records, discoveredExternalIds, providerIdentityActual(
+      item,
+      desired,
+      folderExternalIds,
+      input.rootExternalId,
+      templatesExternalId,
+    ));
+  }
+  for (const item of providerValues()) {
+    addActual(records, discoveredExternalIds, providerIdentityActual(
+      item,
+      desired,
+      folderExternalIds,
+      input.rootExternalId,
+    ));
   }
 
   if (input.calendar) {
     for (const registration of input.calendarRegistrations) {
-      const calendar = await input.calendar.getCalendarMetadata(registration.externalId);
-      if (!calendar) continue;
+      const metadata = await input.calendar.getCalendarMetadata(registration.externalId);
+      if (!metadata) continue;
+      const desiredCalendar = desired.find((candidate) => (
+        candidate.resourceType === "calendar.calendar" && candidate.key === registration.key
+      ));
+      if (!desiredCalendar) continue;
       addActual(records, discoveredExternalIds, Object.freeze({
         resourceType: "calendar.calendar",
         key: registration.key,
-        name: calendar.name,
-        externalId: calendar.id,
+        name: metadata.name,
+        externalId: registration.externalId,
         parentExternalId: null,
-        url: calendar.url,
+        url: metadata.url,
         validType: true,
         validParent: true,
         validIdentity: true,
