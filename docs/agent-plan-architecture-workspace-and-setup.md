@@ -705,7 +705,7 @@ out-of-catalog value is rejected. Requires `TEST_POSTGRES_URL`, which is unset l
 CI.
 
 ### EDIT-03 · Optimistic concurrency + edit auditing foundation (medium; gates EDIT-04…EDIT-07)
-**Status:** In review — PR #225
+**Status:** Complete — PR #225, July 27, 2026. Source-only and undeployed. PG v11 + D1 0020 additive with all prior checksums byte-untouched; CAS (`WHERE id AND version`, 409 with current version) proven on both adapters for all four entities; guarded audit INSERTs with zero rows on conflict; the EDIT-01 named exception executed exactly (lead guard token upgraded `updated_at`→`version`, nothing respecified); `patch.version` optional with current-version fallback so version-less clients (TodayPanel) keep working while echoing clients get true 409s. Review: 6-lens fleet, 11 raw → 4 confirmed, 7 refuted; P1 CI-red fixture fix + a narrowed test pin restored on-branch by the orchestrator; two P2s dispositioned into EDIT-05/EDIT-06 (recorded in their packet text). Bot silent through the final window.
 **Why:** production PostgreSQL updates do `version = version + 1 WHERE id =
 $n` — a counter with no guard
 (`app/adapters/postgres/lead-repository.ts:346-352`;
@@ -817,6 +817,13 @@ strings cannot drift. UI: an edit surface on the project detail view sending
 only changed keys, with the 409 conflict shown for re-apply. Meetings editing
 is deliberately sequenced last and is not yet filed — add no meeting mutation
 here.
+**Carried disposition from the EDIT-03 review (PR #225):** D1 creation
+responses omit `version` while PG's accepted path includes it
+(`app/application/create-project.ts` — the port's `created` outcome carries no
+payload). This packet's edit flow must NOT assume the 201 body carries
+`version` on D1: either normalize the created-response shape (preferred,
+additive) or GET-after-create before opening the edit surface, and say which
+in the PR.
 **Files:** `app/api/v1/projects/[projectId]/route.ts` (new),
 `app/api/v1/projects/route.ts` (behavior unchanged; verify), a new project
 patch validator beside `app/domain/project-creation.ts`,
@@ -845,10 +852,20 @@ fields are additionally unreachable even at create time:
 `version` and validated by an EDIT-03-style patch validator; make the three
 unreachable fields reachable on both the create and the edit path so the two
 accept the same shape. Archive is a `status` transition, never a delete — no
-delete endpoint exists anywhere in the product and none is added here. UI: an
-edit surface on the client detail view with the 409 conflict shown for
-re-apply. Meetings editing remains deliberately sequenced last and is not yet
-filed.
+**core-record** delete endpoint exists (the filing-rules and Google-connection
+DELETE routes are pre-existing configuration deletes; see the settled archive
+decision) and none is added here. UI: an edit surface on the client detail
+view with the 409 conflict shown for re-apply. Meetings editing remains
+deliberately sequenced last and is not yet filed.
+**Carried dispositions from the EDIT-03 review (PR #225):** (a) type the
+**duplicate outcome on the client update port** before wiring the edit
+surface — `normalized_name_key` is UNIQUE on PG and `name` is unique on D1,
+but `ClientFieldUpdateRepositoryResult` has no `duplicate` member and update
+has no 23505/constraint handling (create does), so a rename-to-existing-name
+currently surfaces as an untyped 500; the Accept below gains "renaming to an
+existing client name returns a typed 409/duplicate on both adapters, never an
+unhandled exception". (b) The D1-vs-PG created-response `version` divergence
+recorded under EDIT-05 applies to client creation identically.
 **Files:** `app/api/v1/clients/[clientId]/route.ts` (new), a contacts route
 (new), `app/domain/client-creation.ts` plus a new client patch validator,
 `app/adapters/d1/client-repository.ts`,
