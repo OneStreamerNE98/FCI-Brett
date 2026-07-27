@@ -39,6 +39,26 @@ Office and Project Manager cannot create projects, change assignments, file Gmai
 
 The source policy intersects the ceiling with persisted same-role grants. It rejects zero, duplicate, unknown, or multiple employee roles, preventing a company-wide scope from one role from being combined with a capability from another.
 
+## Development API authorization gap (recorded July 27, 2026)
+
+The active Sites/Workers `app/api/v1` transport does not yet derive capabilities from
+the authenticated actor. Six distinct capabilities are self-granted at nine route call
+sites by constructing an authorization context with the exact capability the operation
+then checks: `records.read` at three call sites, `tasks.update` at two, and
+`leads.create`, `meetings.update`, `clients.create`, and `projects.create` at one each.
+Those checks therefore do not distinguish roles. The cataloged `leads.update`
+capability has the separate problem that it has zero API call sites, so it is
+unconsumed and enforces nothing.
+
+For this development transport, `requireOfficeUser({ admin: true })` and its
+server-derived `isAdmin` result are the only working per-operation authorization
+primitive today. Real capability enforcement remains blocked on durable employee
+identity and role context (owner decision, July 26, 2026). The capability scaffolding
+is retained for that future composition; adding another self-granted call would only
+hide the gap. This limitation does not describe the source-only Cloud Run employee
+router below, which resolves and rechecks persisted role capabilities but remains
+unapplied and undeployed.
+
 ## Implemented source controls
 
 ### Admission, sessions, and transport

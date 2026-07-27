@@ -4,14 +4,43 @@ import type { D1Database } from "../../../../adapters/d1/d1-database";
 import { createD1LeadRepository } from "../../../../adapters/d1/lead-repository";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
-import { MAX_LEAD_BODY_BYTES, leadResponse, validateLeadValues } from "../../../../domain/lead";
+import {
+  MAX_LEAD_BODY_BYTES,
+  leadResponse,
+  validateLeadValues,
+  type ValidatedLeadValues,
+} from "../../../../domain/lead";
 import type { LeadActivityIntent } from "../../../../ports/lead-repository";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { noStoreJson as noStore } from "../../../../lib/no-store-json";
 
 type RouteContext = { params: Promise<{ leadId: string }> };
 
-const MUTABLE_KEYS = new Set(["company", "contactName", "contactEmail", "contactPhone", "projectName", "source", "stage", "site", "estimatedValue", "nextAction", "nextActionAt", "ownerEmail", "status"]);
+const LEAD_ACTIVITY_ACTIONS = {
+  company: "Lead company changed",
+  contactName: "Lead contact name changed",
+  contactEmail: "Lead contact email changed",
+  contactPhone: "Lead contact phone changed",
+  projectName: "Lead project name changed",
+  source: "Lead source changed",
+  stage: "Lead stage changed",
+  site: "Lead site changed",
+  estimatedValue: "Lead estimated value changed",
+  nextAction: "Lead next action changed",
+  nextActionAt: "Lead next action due date changed",
+  ownerEmail: "Lead owner changed",
+  status: "Lead status changed",
+} as const satisfies Record<keyof ValidatedLeadValues, LeadActivityIntent["action"]>;
+
+const MUTABLE_KEYS = new Set<keyof ValidatedLeadValues>(
+  Object.keys(LEAD_ACTIVITY_ACTIONS) as (keyof ValidatedLeadValues)[],
+);
+
+function leadActivityValue(key: keyof ValidatedLeadValues, value: string | number | null) {
+  if (value === null) return "Not set";
+  if (key === "nextActionAt") return new Date(value as number).toISOString();
+  return String(value);
+}
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const originError = requireSameOrigin(request);
@@ -27,7 +56,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   });
   if (!parsed.ok) return noStore({ error: parsed.error }, { status: parsed.status });
   const suppliedKeys = Object.keys(parsed.body);
-  if (suppliedKeys.length === 0 || suppliedKeys.some((key) => !MUTABLE_KEYS.has(key))) {
+  if (
+    suppliedKeys.length === 0
+    || suppliedKeys.some((key) => !MUTABLE_KEYS.has(key as keyof ValidatedLeadValues))
+  ) {
     return noStore({ error: "Only supported lead fields can be updated." }, { status: 400 });
   }
 
@@ -35,7 +67,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const repository = createD1LeadRepository(env.DB as unknown as D1Database);
   const current = await repository.findById(leadId);
   if (!current) return noStore({ error: "Lead not found." }, { status: 404 });
-  const currentValues: Record<string, unknown> = {
+  const currentValues = {
     company: current.company,
     contactName: current.contact_name,
     contactEmail: current.contact_email,
@@ -49,30 +81,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     nextActionAt: current.next_action_at,
     ownerEmail: current.owner_email,
     status: current.status,
-  };
+  } satisfies Record<keyof ValidatedLeadValues, string | number | null>;
   const values = validateLeadValues({ ...currentValues, ...parsed.body });
   if (!values) return noStore({ error: "One or more lead fields are invalid." }, { status: 400 });
 
   const now = Date.now();
   const activities: LeadActivityIntent[] = [];
-  if (values.stage !== current.stage) {
+  for (const key of MUTABLE_KEYS) {
+    if (values[key] === currentValues[key]) continue;
     activities.push({
       id: crypto.randomUUID(),
       recordId: leadId,
-      action: "Lead stage changed",
+      action: LEAD_ACTIVITY_ACTIONS[key],
       actor: auth.user.email,
-      detail: `${current.stage} → ${values.stage}`,
-      createdAt: now,
-    });
-  }
-  if (values.nextAction !== current.next_action || values.nextActionAt !== current.next_action_at) {
-    const due = values.nextActionAt ? ` · due ${new Date(values.nextActionAt).toISOString()}` : "";
-    activities.push({
-      id: crypto.randomUUID(),
-      recordId: leadId,
-      action: "Lead next action changed",
-      actor: auth.user.email,
-      detail: `${values.nextAction}${due}`,
+      detail: `${leadActivityValue(key, currentValues[key])} → ${leadActivityValue(key, values[key])}`,
       createdAt: now,
     });
   }

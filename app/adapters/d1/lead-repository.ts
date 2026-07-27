@@ -43,8 +43,17 @@ export function createD1LeadRepository(database: D1Database): LeadRepository {
       ];
       for (const activity of intent.activities) {
         statements.push(
-          database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-            .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt),
+          database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM leads WHERE id = ? AND updated_at = ?)")
+            .bind(
+              activity.id,
+              activity.recordId,
+              activity.action,
+              activity.actor,
+              activity.detail,
+              activity.createdAt,
+              intent.leadId,
+              intent.updatedAt,
+            ),
         );
       }
       const results = await database.batch(statements);

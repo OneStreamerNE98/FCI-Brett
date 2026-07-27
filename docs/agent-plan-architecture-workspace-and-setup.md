@@ -52,7 +52,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
 - IDs: `BE-*` backend architecture & data storage · `WS-*` Google Workspace connection ·
   `SET-*` Settings/Setup UI · `TRK-*` task tracking/doc reconciliation · `KPI-*` flooring
   KPIs & reporting · `GI-*` Google-native integrations · `DES-*` dashboard design ·
-  `AI-*` AI assistant & automation · `OIDC-*` BE-04 post-merge security follow-ups (in
+  `AI-*` AI assistant & automation · `EDIT-*` record editing (see
+  [`# Record editing (EDIT)`](#record-editing-edit)) · `HINT-*` in-app guidance ·
+  `OIDC-*` BE-04 post-merge security follow-ups (in
   [`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
   Dependencies are listed per item.
 
@@ -61,6 +63,13 @@ below, which also covers the state of GitHub itself (issues/PRs).
 0. **Guide currency (added July 23, 2026).** Any packet touching `app/settings/**`
    or the FloorOpsApp settings surfaces must update `docs/settings-guide.md` or
    state "Guide impact: none" in its Status line on completion.
+   **Pinned-prose warning (added July 27, 2026):** parts of the guide (and of the
+   rollout guide) are matched by exact pattern in CI — `ai-outbound-guard`,
+   `set11-directory-sync`, `set24-employee-login-readiness`,
+   `workspace-sync-contracts`, and `task-tracking-docs` all read them. The mandatory
+   guide edit is therefore the edit most likely to turn CI red: when it does, search
+   those suites for a phrase from your change before assuming a code problem, and
+   update the pin and the prose together, deliberately.
 1. **Secrets never touch the repo or an agent.** OAuth client secrets, token-encryption
    keys, and passwords go only into ChatGPT Sites runtime environment settings marked as
    secrets (development) or Secret Manager (production). Items that need them are OWNER
@@ -70,15 +79,22 @@ below, which also covers the state of GitHub itself (issues/PRs).
    `cutoverReady:false` in the rehearsal are deliberate. "Fixing" them without the gate
    passing is an unauthorized production change.
 3. **PostgreSQL migrations are append-only and checksummed.** `app/platform/postgres/
-   production-schema-migrations.ts` locks v1–v6 with SHA-256 checksums verified by
-   readiness probes and source-contract tests. Never edit an existing migration; append
-   v7+. **All six migrations are unapplied everywhere — no Cloud SQL instance exists.**
+   production-schema-migrations.ts` locks **every version it defines** with SHA-256
+   checksums verified by readiness probes and source-contract tests. Never edit an
+   existing migration. To add one, **read that file and append one past its highest
+   `version:` — do not trust any number quoted in a document, including this one**, which
+   is exactly how this guardrail rotted before (it said "append v7+" for three days after
+   v7 shipped). Snapshot for sanity-checking only, July 26, 2026: the high-water mark is
+   **v10** (`project_segment`, BE-16 / PR #198), so the next is v11.
+   **No migration is applied anywhere — no Cloud SQL instance exists.**
    (Do not read "migrations 4–5 remain unapplied" in the audit doc as implying 1–3 are
    applied; BE-01 fixes that phrasing.)
-4. **The deployed D1 drizzle sequence (0000–0011) is append-only.** PR #52 added
-   source-only migration 0012 to `main`, but it has not been applied to Sites. Never
-   drop or alter existing D1 tables; the dev environment is the only live
-   environment.
+4. **The D1 drizzle sequence is append-only.** Never drop or alter existing D1 tables; the
+   dev environment is the only live environment. To add a migration, **list `drizzle/` and
+   append one past the highest-numbered file** — again, read the directory rather than a
+   quoted number. Snapshot for sanity-checking only, July 26, 2026: the highest is
+   **0019** (`0019_demonic_lady_vermin.sql`), so the next is 0020. Files ahead of what the
+   Sites environment has applied are source-only until deployed.
 5. **Single-user / test-data boundary holds.** Only `FCI TEST — DO NOT USE` records in any
    live Workspace step; no second user and no real client data until the development
    acceptance run (WS-11) passes.
@@ -90,6 +106,17 @@ below, which also covers the state of GitHub itself (issues/PRs).
    real endpoint; backend-planned capabilities appear only as clearly-badged "Planned"
    placeholders. Server-side `requireOfficeUser({admin:true})` gates stay untouched — UI
    admin-gating is honesty, not security.
+7b. **Golden hashes (THE canonical definition — AGENTS.md and the AI spec §10 point here).**
+   Two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports
+   section markup byte-for-byte. `npm run test:e2e` evaluates them against the live DOM;
+   **three Node suites additionally pin the digest constants byte-for-byte** —
+   `tests/ai04-today-view.test.mjs:529-530`, `tests/fix15-toast-and-folds.test.mjs:141-145`,
+   `tests/nfix04-phone-polish.test.mjs:278-287` — so editing a digest also fails `npm test`.
+   "Golden hashes untouched" in an Accept line means all of the above pass with the digests
+   unchanged. A mismatch is a signal, not a chore: regeneration is a sanctioned,
+   diff-reviewed event restricted to packets that explicitly say so (historically DES-05
+   and DES-07), and it updates the three pinning suites in the same commit. Never paste a
+   new digest in to make a suite pass.
 8. Visual/design remediation through PR #30 is included in private Sites development
    version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
    `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
@@ -513,6 +540,364 @@ snapshot→import; no runtime path assumes v10 applied (source-only law);
 
 ---
 
+# Record editing (EDIT)
+
+Filed July 26, 2026 after the owner reported that project fields — and most
+fields on every other record — cannot be changed once created. Research
+settled it as an **unbuilt gap, not a design boundary**: no repo document
+states a read-only or immutability principle, record editing appears under no
+"Deliberately omitted" list, and it is documented as missing in eight-plus
+docs (`docs/ui-and-product-readiness-review.md:111` carries it as prioritized
+step 7; `docs/development-section-audit.md:24` rates projects **Critical**,
+leads and clients **High**). KPI-03 says it outright — the audited,
+admin-only "Assign to me" drawer action is named an **interim pattern**, not
+a policy. The only roadmap owner is row 17 of
+`docs/complete-product-and-google-cloud-architecture-audit.md:327`, marked
+"Unassigned domain work."
+
+The data layer was built expecting edits that were never wired: every core
+production PostgreSQL table already carries `version bigint NOT NULL DEFAULT
+1`, clients/projects/leads carry `updated_by`, and `activity_events` is
+trigger-enforced append-only
+(`app/platform/postgres/production-schema-migrations.ts:170-176`). The series
+sits at the tail of Workstream A because EDIT-03 extends exactly that data
+layer; the four surface packets follow it so the series stays readable as one
+unit.
+
+**Sequence:** EDIT-01 is an independent fix assignable now (EDIT-02 is
+retired — Resolved in PR #135; see its status line, which is the dispatch
+authority, not this sentence). EDIT-03 is the foundation and gates
+EDIT-04…EDIT-07. Order after that
+follows the cost of the gap: leads (cheapest — the API already accepts the
+fields), projects (largest gap), clients + contacts, tasks UI. **Meetings
+editing is deliberately sequenced last and is NOT yet filed** — create
+coverage is complete and no update or delete route exists, so a meeting saved
+with a wrong date is permanent; it earns its own packet once EDIT-03 has
+shipped through at least one surface.
+
+**SETTLED — owner decisions, July 26, 2026.** These were previously recorded here as
+"Recommendations" with no decision surface anywhere in the repo, which made EDIT-05 and EDIT-06
+unbuildable: EDIT-05 deferred project `status` to a who-may-edit answer that did not exist, and
+EDIT-06's Accept criterion cited an archive-only decision that had never been made. Also recorded
+as owner-decision rows in
+[`task-checklists/06-20-user-operating-model-and-access.md`](task-checklists/06-20-user-operating-model-and-access.md).
+
+1. **Who may edit — everyone edits; money and status are Administrator-only.** Any office user may
+   change descriptive fields (names, sites, contacts, next actions, notes). **Administrator-only on
+   EDIT:** `contractValue`, `estimatedValue`, and project `status`. The precedent is create's
+   `contractValue` gate (`app/api/v1/projects/route.ts:65-67`) — but note the precedent covers only
+   that one field: lead create currently **requires** `estimatedValue` from any office creator
+   (`app/domain/lead.ts:117`), and project create leaves `estimatedValue` open. This decision gates
+   the *edit* path only and deliberately leaves creation behavior unchanged; the asymmetry (an
+   office user can set `estimatedValue` at creation but not change it later) is accepted, not an
+   oversight.
+   **Enforcement caveat every EDIT packet must honor:** with the capability system self-granted
+   (EDIT-01), **`isAdmin` is the only authorization primitive that actually works today.**
+   "Administrator-only" is therefore real and enforceable now; any finer role distinction is not,
+   and no packet may pretend otherwise.
+2. **Archive vs delete — archive only; core records are never deleted.** Precisely scoped, because
+   the earlier wording here overstated twice: **(a)** `archived` exists today on three of the five
+   core enums — clients, leads, projects. **Tasks are `["open","done"]`** (`app/domain/task.ts:4`)
+   and **contacts have no status column at all** (`db/schema.ts:47-59`), so applying archive to
+   either needs an explicit additive change in its packet, not an assumption. **(b)** "No delete
+   endpoint" is true for **core records** (leads, clients, contacts, projects, meetings, tasks) —
+   but two *configuration* DELETE routes exist and stay: filing rules
+   (`app/api/v1/filing-rules/[ruleId]/route.ts:38-48`, with the matching PostgreSQL grant) and the
+   Google connection (`integrations/google/connection/route.ts:15`). Any "no delete endpoint"
+   source assertion in an EDIT Accept line must therefore be scoped to core-record routes, not
+   repo-wide. The decision itself stands: archive-only for records, preserving the audit trail,
+   filed-email links, and project history, matching append-only migrations, the trigger-enforced
+   append-only `activity_events`, and SET-18's never-delete reconcile rule.
+3. **Conflict UX.** On a 409, show the conflict and let the user re-apply
+   rather than auto-merging — `docs/task-checklists/09-frontend-and-multi-
+   user-hardening.md:52` asks for exactly this.
+4. **Sequencing (owner decision, July 27, 2026): projects before leads.**
+   EDIT-05 ships before EDIT-04. The previous cheapest-first order optimized
+   for implementation cost; the owner's original report was project fields,
+   and `docs/development-section-audit.md` rates projects Critical vs leads
+   High. The FloorOpsApp queue appendix carries the full reordered claim
+   order.
+
+### EDIT-01 · Lead edit auditing, and recording the authorization gap honestly (small, no deps)
+**Status:** Complete — PR #222, July 27, 2026. Source-only and undeployed. All 13 lead fields audited with before→after details via a type-pinned action map (`satisfies Record<keyof ValidatedLeadValues, …>` — a 14th field breaks the compile until audited); audit INSERTs guarded by `WHERE EXISTS (id, updated_at)` so a stale write leaves zero audit rows; the six/one capability split recorded in `docs/authorization-simulation.md`; the no-`creationAuthorizationFor` pin shipped. Bot clean, CI green, orchestrator line-review passed. EDIT-03 upgrades the guard token to `version` (named exception).
+**Why:** this packet replaces an earlier EDIT-01 that would have produced security theater.
+The original said to wire `AUTHORIZATION_CAPABILITIES.leadsUpdate` into the lead PATCH route "using
+the call shape an existing capability-gated route already uses". That instruction was executable —
+nine such call sites exist across six routes, including a near-identical PATCH-by-id at
+`app/api/v1/tasks/[taskId]/route.ts:32-44` — **but the pattern it points at enforces nothing.**
+Every route hard-codes the capability array it then checks:
+`creationAuthorizationFor({ actorId, capabilities: [AUTHORIZATION_CAPABILITIES.x] })`, and
+`canCreate` merely tests `capabilities.has(x)` on that same set
+(`app/application/creation-authorization.ts:25-34`) — **always true by construction**. No route
+derives capabilities from the actor's role: `requireOfficeUser` returns only `{ email, isAdmin }`
+(`app/lib/workspace-auth.ts:4-7`), and `authorization-policy.ts` reaches the request path only
+through the Cloud Run runtime — its five non-test importers are `employee-oidc.ts`,
+`employee-request-router.ts`, `app/application/authorization-service.ts`, and the two Postgres
+identity/admin-access adapters, and the latter three are themselves consumed only from the Cloud
+Run composition, never from `app/api/**` on the Sites transport. Shipping the original would have
+closed a security finding on paper while changing nothing, which is worse than leaving the gap
+visible.
+Two real, independent things remain, and this packet does the first.
+**Do (a) — close the audit hole, which needs no identity work.** Lead PATCH accepts 13 fields
+(`MUTABLE_KEYS`) but audits only `stage` and `nextAction`
+(`app/api/v1/leads/[leadId]/route.ts:57-78`), so changing an email, owner, or estimated value
+lands with **no evidence at all**. Write one `activity_events` row per edit with a before→after
+detail, following the existing form at `:64` (`${current.stage} → ${values.stage}`) — the only
+before/after diff in the codebase. **Atomicity is new work, not existing behavior:** the D1 lead
+adapter's activity INSERTs are plain unguarded statements batched with the UPDATE
+(`app/adapters/d1/lead-repository.ts:40-51`) — a zero-row UPDATE still commits the INSERTs and
+only then reports lead-not-found, so "same batch" alone does NOT stop an audit row outliving a
+failed update. Guard each audit INSERT with a `WHERE EXISTS` predicate matching the update's own
+row-identity condition — **`id` + `updated_at` today**, since leads have no `version` column
+until EDIT-03 adds one (PR #222 implements exactly this shape) — and add a test in which a
+stale-`updated_at` PATCH leaves **zero** audit rows.
+This packet owns the **lead** audit closure exclusively — EDIT-03 builds the shared
+audit/validator pattern for the *other* entities and must not respecify lead fields, with one
+named exception: **EDIT-03 upgrades this guard's token from `updated_at` to `version`** in the
+same change that adds the column.
+**Do (b) — record the authorization gap, do not paper over it.** Add a short subsection to
+`docs/authorization-simulation.md` (or the nearest authorization doc) stating plainly, with the
+precise split: **six capabilities are handed in self-granted** at the nine route call sites —
+`recordsRead` (×3), `leadsCreate`, `tasksUpdate` (×3), `meetingsUpdate`, `createClient`, and
+`createProject` — while **`leadsUpdate` is simply unconsumed** (zero call sites; it enforces
+nothing for the different reason that nothing checks it). Both facts land in the same place:
+`isAdmin` is the only working authorization primitive today, and real enforcement is blocked on
+durable identity (owner decision, July 26, 2026 — record it, defer the fix). Do **not** delete the
+capability scaffolding and do **not** build roles here.
+**Do NOT:** wire `leadsUpdate` into the route. It would pass unconditionally and make the gap
+invisible. When durable identity lands, that wiring becomes a one-line change on an
+already-audited route.
+**Files:** `app/api/v1/leads/[leadId]/route.ts`, `app/ports/lead-repository.ts` (the audit
+`action` union), the D1 and PostgreSQL lead adapters, `docs/authorization-simulation.md`, tests.
+**Accept:** every one of the 13 mutable fields produces an audit row with a before→after detail;
+a failed update writes **no** audit row; `advanceLead` keeps its existing behavior and audit
+string byte-identical; the authorization doc records the six/one split (six capabilities
+self-granted at nine call sites; `leadsUpdate` unconsumed) and the
+`isAdmin`-only reality; a source assertion pins that the lead PATCH route does **not** call
+`creationAuthorizationFor`, so nobody re-adds the decorative check believing it enforces
+something; `npm test` green.
+**Effort:** small. **Cost:** $0.
+
+### EDIT-02 · `phone-call` meeting type PostgreSQL parity (RETIRED — filed on a false premise)
+**Status:** Resolved in PR #135, July 23, 2026. The premise was wrong; no work is needed.
+**Why it was withdrawn:** this packet claimed the production CHECK omits `phone-call`, citing
+`app/platform/postgres/lead-project-meeting-schema.ts:128-130`. That omission is real but
+**historical**: it is the v6 baseline `CREATE TABLE`. Migration **v8**
+(`app/platform/postgres/task-schema.ts:74-75`, `TASK_SCHEMA_STATEMENTS`, added by commit
+`4256a2d` "Build AI-01 task foundation" in **PR #135**) then does
+`ALTER TABLE project_meetings DROP CONSTRAINT project_meetings_type_check` and re-adds it
+**including `'phone-call'`**. Migrations apply cumulatively and are checksum-immutable, so the
+last writer wins and earlier DDL is unpatchable by design — a v11 rewriting the same constraint
+would be a no-op.
+The packet was also internally incoherent: its **Files** named
+`lead-project-meeting-schema.ts` for editing while its **Do** required prior checksums stay
+byte-untouched — editing that file changes v6's checksum and throws at validation.
+**The lesson, recorded so it is not repeated:** "the constraint omits X" says nothing about the
+applied schema in a cumulative migration system. Always follow the chain to the last migration
+that touches the constraint, never read a single schema file as the live state.
+**Residual worth keeping (small, optional, no deps):** nothing exercises this constraint against
+real PostgreSQL. `tests/production-postgres.integration.test.mjs` runs every migration on a live
+instance and asserts two other `project_meetings` constraints, but only ever inserts `'client'`
+and `'internal'` — never a `phone-call` row, and never an out-of-catalog rejection. The only
+existing proofs are a source-regex assertion and a plan-level rehearsal assertion. If refiled,
+the scope is **regression coverage only**: insert a `phone-call` meeting on real PG and assert an
+out-of-catalog value is rejected. Requires `TEST_POSTGRES_URL`, which is unset locally and set in
+CI.
+
+### EDIT-03 · Optimistic concurrency + edit auditing foundation (medium; gates EDIT-04…EDIT-07)
+**Why:** production PostgreSQL updates do `version = version + 1 WHERE id =
+$n` — a counter with no guard
+(`app/adapters/postgres/lead-repository.ts:346-352`;
+`app/adapters/postgres/project-repository.ts:371-377,411-419,466-473`) — and
+D1 has no `version` column at all, so two concurrent editors silently
+overwrite each other the moment any edit form ships. Auditing has a matching
+hole: lead PATCH accepts 13 fields but writes activity rows for stage and
+next-action only (`app/api/v1/leads/[leadId]/route.ts:57-78`), so an email or
+estimated-value change lands today with no evidence it happened.
+**Do:** (1) add `version` to the D1 core tables as an additive drizzle
+migration after `drizzle/0019_demonic_lady_vermin.sql`, existing rows
+defaulting to 1. (2) Change every core update on BOTH adapters to `WHERE id =
+? AND version = ?`, returning a typed 409 carrying the current version when
+zero rows change — reuse the proven in-repo pattern rather than inventing
+one: `app/adapters/d1/workspace-blueprints.ts:115-144` already implements
+`expectedVersion` and states the law, *"A zero-change result is an
+optimistic-concurrency conflict, never a retry."* (3) Add one field-update
+member to each entity's closed `action` catalog
+(`app/ports/project-repository.ts:25,57,79,87` and the client/task ports) and
+write exactly one audit row per edit, **guarded so a failed or conflicted
+write leaves zero audit rows**. Do not assume the batch gives this: the
+existing D1 lead adapter's activity INSERTs are plain unguarded statements
+(`app/adapters/d1/lead-repository.ts:40-51`) — a zero-row UPDATE still
+commits them — so each audit INSERT needs a `WHERE EXISTS` predicate matching
+the update's own row-and-version condition, per adapter, as new work (for the
+lead adapter this means upgrading EDIT-01's shipped `updated_at` token to the
+new `version` column — the one named exception to "adopts, never respecifies"). Detail
+strings follow the only before→after diff in the codebase today
+(`app/api/v1/leads/[leadId]/route.ts:64`, `${current.stage} → ${values.stage}`).
+**Lead-field audit closure is EDIT-01's scope, not this packet's** — EDIT-03
+builds the shared pattern for projects, clients, and tasks, and adopts (never
+respecifies) whatever EDIT-01 shipped for leads. (4) Build the partial-update
+validators on the one true template, `normalizeTaskPatch`
+(`app/domain/task.ts:210-253`): `Object.hasOwn` per field, a `Partial<{...}>`
+validated type, a separately exported patch-key list, per-field errors. Leads
+currently fake patch semantics by merging over the current row inside the
+route — move that into the domain. No UI in this packet.
+**Files:** `db/schema.ts`, a new `drizzle/` migration,
+`app/platform/postgres/production-schema-migrations.ts`,
+`app/adapters/d1/{lead,project,client,task}-repository.ts`,
+`app/adapters/postgres/{lead,project,client,task}-repository.ts`,
+`app/ports/{lead,project,client}-repository.ts`, `app/domain/lead.ts`,
+`app/api/v1/leads/[leadId]/route.ts`,
+`app/platform/google-cloud/database-readiness.ts`,
+`app/platform/migration/core-record-rehearsal.ts`, tests.
+**Accept:** two updates against the same `version` — the second returns 409
+with the current version and writes nothing — proven on BOTH adapters,
+mirroring the existing blueprint concurrency suite; exactly one
+`activity_events` row per successful edit carrying a before→after detail, and
+zero audit rows when the write fails or conflicts — proven per adapter with a
+stale-version test; lead-field auditing is covered by EDIT-01 and merely
+re-verified here, not respecified; the four
+project operations and `advanceLead` keep their behavior and audit strings
+byte-for-byte; the D1 migration is additive and no runtime path assumes it
+applied; golden hashes untouched; `npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+### EDIT-04 · Lead editing (small-medium, after EDIT-01 + EDIT-03)
+**Why:** the lead PATCH route already accepts all 13 fields
+(`app/api/v1/leads/[leadId]/route.ts:14`) while the UI sends only `stage`
+through `advanceLead` (`app/FloorOpsApp.tsx:948-986`). `nextAction` is
+displayed at `app/FloorOpsApp.tsx:1608` and can never be changed; a typo in a
+name, email, or address is permanent; a lead cannot be reassigned or marked
+`converted`, `lost`, or `archived` by hand.
+**Do:** add an edit surface for an existing lead reusing the Add-lead modal's
+markup and field validation with values pre-filled — note `LeadModal`
+(`app/FloorOpsApp.tsx:1572-1574`) is an **uncontrolled `FormData` form with
+no `defaultValue`s** and needs an `initialValues` prop before it can be
+pre-filled at all. Submit only changed keys as a partial patch against the
+EDIT-03 validator, send the row's `version`, and on 409 show the conflict and
+let the user re-apply rather than auto-merging. Leave `advanceLead` exactly
+as it is — it stays the fast path for stage moves. Apply the settled
+who-may-edit decision above: `estimatedValue` is Administrator-only via
+`isAdmin`; every descriptive field is open to office users.
+**Files:** `app/FloorOpsApp.tsx` (`LeadModal` — the merge-conflict hotspot;
+takes one queue slot), `app/api/v1/leads/[leadId]/route.ts`,
+`app/domain/lead.ts`, tests + simulation e2e.
+**Accept:** every editable lead field round-trips through the form and
+persists; each edit writes exactly one audit row with a before→after detail;
+a stale `version` returns 409, changes nothing, and the UI surfaces the
+conflict for re-apply; a non-admin's edit of `estimatedValue` returns 403
+via `isAdmin` (the only enforceable primitive — see the settled decisions
+and EDIT-01) and the field is read-only in the non-admin form, while
+descriptive-field edits succeed for any office user; `advanceLead` behavior
+and audit strings unchanged; golden
+hashes untouched (the form lives in a modal, outside the byte-pinned
+dashboard markup); `npm test` green.
+**Effort:** small-medium. **Cost:** $0.
+
+### EDIT-05 · Project editing (medium-large, after EDIT-03)
+**Why:** nine project columns have **no mutation route at all** — `name`,
+`status`, `site`, `clientId`, `estimatedValue`, `flooringCategory`,
+`squareFeet`, `contractValue`, `segment` — so a project cannot move
+`planning` → `installation` → `completed` from anywhere in the product, and
+`projects.status.update` is role-mapped with no endpoint behind it. Mutations
+today go through a collection-level PATCH with an action discriminator
+(`app/api/v1/projects/route.ts:89-135`) exposing four named operations only.
+This is the owner's original report and the audit rates it **Critical**.
+**Do:** add a NEW per-project route `app/api/v1/projects/[projectId]/route.ts`
+— none exists — whose PATCH takes a partial body validated by an
+EDIT-03-style patch validator and fenced by `version`. Keep `contractValue`
+admin-gated exactly as the create route does
+(`app/api/v1/projects/route.ts:65-67`). Per the settled who-may-edit decision,
+**`status` and `estimatedValue` are Administrator-only too, enforced via
+`isAdmin`** — the only authorization primitive that works today (EDIT-01);
+every other project field is open to office users. Leave the four existing collection-level operations
+untouched and do NOT re-route them through the new handler, so their audit
+strings cannot drift. UI: an edit surface on the project detail view sending
+only changed keys, with the 409 conflict shown for re-apply. Meetings editing
+is deliberately sequenced last and is not yet filed — add no meeting mutation
+here.
+**Files:** `app/api/v1/projects/[projectId]/route.ts` (new),
+`app/api/v1/projects/route.ts` (behavior unchanged; verify), a new project
+patch validator beside `app/domain/project-creation.ts`,
+`app/adapters/d1/project-repository.ts`,
+`app/adapters/postgres/project-repository.ts`,
+`app/ports/project-repository.ts`, `app/FloorOpsApp.tsx`, tests + simulation
+e2e.
+**Accept:** each of the nine columns is editable end-to-end and persists on
+both adapters; `contractValue` returns 403 for a non-admin and is absent from
+the non-admin form; `status` and `estimatedValue` likewise return 403 for a
+non-admin via `isAdmin` while descriptive fields succeed for any office user;
+a stale `version` returns 409 with no write; one audit row per edit with a
+before→after detail; the four existing project operations and their audit
+strings stay byte-identical; a `planning` → `installation` → `completed` move
+is proven in one test; golden hashes untouched; `npm test` green.
+**Effort:** medium-large. **Cost:** $0.
+
+### EDIT-06 · Client and contact editing (medium, after EDIT-03)
+**Why:** clients have no update endpoint, no edit control, and no domain
+update validator, and there is **no contacts route of any kind** — so a
+client rename or an address correction is impossible after creation. Three
+fields are additionally unreachable even at create time:
+`primaryContact.phone`, `primaryContact.role`, and `status: "archived"`.
+`docs/development-section-audit.md:24` rates clients **High**.
+**Do:** add a per-client PATCH route and a contacts route, both fenced by
+`version` and validated by an EDIT-03-style patch validator; make the three
+unreachable fields reachable on both the create and the edit path so the two
+accept the same shape. Archive is a `status` transition, never a delete — no
+delete endpoint exists anywhere in the product and none is added here. UI: an
+edit surface on the client detail view with the 409 conflict shown for
+re-apply. Meetings editing remains deliberately sequenced last and is not yet
+filed.
+**Files:** `app/api/v1/clients/[clientId]/route.ts` (new), a contacts route
+(new), `app/domain/client-creation.ts` plus a new client patch validator,
+`app/adapters/d1/client-repository.ts`,
+`app/adapters/postgres/client-repository.ts`,
+`app/ports/client-repository.ts`, `app/FloorOpsApp.tsx`, tests + simulation
+e2e.
+**Accept:** client fields and primary-contact `phone`/`role` round-trip on
+create and on edit; `status: "archived"` is reachable and reversible per the
+owner's archive-only decision; a stale `version` returns 409 with no write;
+one audit row per edit with a before→after detail; every new route keeps the
+`requireOfficeUser` gate ahead of all work (401/403 for non-office callers —
+the only enforceable boundary; client fields carry no admin-only gate under
+the settled who-may-edit decision); a source assertion proves no
+**core-record** delete endpoint was introduced (the filing-rules and Google
+connection DELETE routes are pre-existing configuration deletes and stay);
+golden hashes untouched; `npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+### EDIT-07 · Task management UI (medium, after EDIT-03)
+**Why:** both task endpoints are live and validated (`app/api/v1/tasks/
+route.ts`, `app/api/v1/tasks/[taskId]/route.ts` behind `normalizeTaskPatch`),
+but **no task list, form, or detail view exists anywhere in the product**.
+The only reachable mutation is `status: "done"` from the Today panel
+(`app/assistant/components/TodayPanel.tsx:286`), so a task completed by
+accident can never be reopened. Pure UI against a finished API.
+**Do:** build the task list, create form, and detail/edit view against the
+existing endpoints, reusing the shared actionable-list pattern rather than
+forcing interactive rows into table semantics. Every field
+`normalizeTaskPatch` accepts becomes editable, including reopening a `done`
+task; send only changed keys plus `version` and show the 409 conflict for
+re-apply. Add no new endpoint and no new table — if a field cannot be edited
+the gap is in the UI, not the API. Meetings editing stays deliberately last
+and unfiled.
+**Files:** new task components under `app/assistant/components/`,
+`app/assistant/components/TodayPanel.tsx`, `app/FloorOpsApp.tsx`, tests +
+simulation e2e.
+**Accept:** a task can be created, listed, edited, completed, and
+**reopened** from the UI; every `normalizeTaskPatch` field is reachable; a
+source assertion proves the task API surface gained no route and no table;
+task mutations keep their existing `requireOfficeUser` gate (tasks carry no
+admin-only field under the settled who-may-edit decision, so office-level is
+the correct and only enforceable boundary); a stale
+`version` returns 409 with no write and the UI shows the conflict for
+re-apply; one audit row per edit with a before→after detail; the Today
+panel's existing complete action keeps its behavior; golden hashes untouched;
+`npm test` green.
+**Effort:** medium. **Cost:** $0.
+
+---
+
 # Workstream B — Google Workspace connection & data flows (WS)
 
 Goal: from `GOOGLE_INTEGRATION_MODE=simulation` to a verified live connection for the FCI
@@ -765,6 +1150,31 @@ anchors at the `aa8ed8f` baseline: `SettingsView` at `app/FloorOpsApp.tsx:1354`,
 At that baseline, `GET /api/v1/settings/me` returned no `isAdmin`; PR #37 added the
 authenticated flag without weakening any server gate. No integration audit route exists.
 (Anchors drift — locate by symbol name.)
+
+### WS-17 · Google credential severance on employee disable/offboarding (small-medium)
+**Why:** disabling a user never touches their Google credentials: `disableUser`
+(`app/adapters/postgres/admin-access-persistence-repository.ts:1100-1167`) revokes sessions
+and invitations but no Google token, and the production integration-metadata port has **no
+revoke operation at all** (`app/ports/integration-metadata.ts:113-127`). Today, at one shared
+connection, an offboarded admin's knowledge of the connected account outlives their access;
+under per-user Gmail this becomes each departing employee keeping a live mailbox connection.
+Flagged twice by research (July 27) and owned by no packet until now.
+**Do:** add a revoke operation to the integration-metadata port and both adapters
+(delete/invalidate the stored refresh-token credential and mark the connection
+`revoked`, never hard-deleting the connection row — audit history survives); call it from
+`disableUser` in the same transaction; where a Google-side revocation endpoint call is
+appropriate, it is **fire-and-recorded** (an integration event row), never silently assumed.
+Simulation mode short-circuits the Google call and still records the event.
+**Files:** `app/ports/integration-metadata.ts`, the D1 and PostgreSQL integration-metadata
+adapters, `app/adapters/postgres/admin-access-persistence-repository.ts`,
+`infrastructure/postgres/least-privilege.sql` (the credential table needs its missing grant),
+tests.
+**Accept:** disabling a user leaves zero usable stored credentials for them; the connection
+row survives with a `revoked` status and an audit event; re-enabling requires a fresh consent
+flow, not resurrection of the old token; simulation proves the path with no live Google call;
+`npm test` + `npm run test:e2e` + `npm run lint` named with outcomes.
+**Effort:** small-medium. **Sequencing:** independent now; **must land no later than the
+per-user OAuth connect flow** in the per-user Gmail track.
 
 ### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
 **Status:** Complete — PR #35, July 19, 2026. Source-only and not deployed.
@@ -1108,6 +1518,7 @@ deliberate; template content contains no secrets or env values; simulation e2e.
 **Effort:** medium.
 
 ### SET-18 · Reconcile & drift maintenance (medium, after SET-15+16+17)
+**Status:** In progress — `codex/set18-reconcile-drift`, built and pushed (lint + `npm test` 1,084 pass + focused e2e green); PR deliberately withheld at a real ownership collision — the branch touches `app/api/v1/integrations/google/drive/templates/ensure/route.ts`, owned by SET-22's open PR #217/#221. After #217 merges, rebase onto main, reverify, open the draft PR.
 **Why:** Owner requirement: blueprint edits after resources exist must drive a drift
 view — defined-but-missing offers create; removed-from-blueprint is shown unmanaged and
 is **never deleted**.
@@ -1190,7 +1601,7 @@ resolves (existing Gmail file-route tests green); simulation e2e provisioning wa
 **Effort:** medium (touches live provisioning — sequenced last deliberately).
 
 ### SET-22 · Create Google files in project folders from the app (medium, after SET-17; KPI-02/#52 UI dependency satisfied)
-**Status:** In review — PR #217, July 26, 2026. Source-only and undeployed; no live Google operation or hosted configuration change. Google Docs API enablement remains an owner gate for live Doc-template merges; no new consent scope. Guide impact: none.
+**Status:** In review — PR #217, July 26, 2026, with the review-fix follow-up PR #221 merged into its branch July 27. Source-only and undeployed; no live Google operation or hosted configuration change. Google Docs API enablement remains an owner gate for live Doc-template merges; no new consent scope. Guide impact: none.
 **Why:** Owner request: from the projects dashboard, create a Google Doc, Sheet, or
 Slides file (the Word/Excel/PowerPoint equivalents) inside the project's Drive folder —
 blank or from a blueprint template — so the provisioned folder structure and template
@@ -1894,11 +2305,29 @@ not become a separate task source of truth.
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
 
-1. Items without a status line remain **Open**. When an agent starts an item, it appends a
-   dated status line to that item in this file in its own PR
-   (`Status: In progress — <branch>`), and on merge updates it to
-   `Status: Complete — PR #NN, <date>`. Owner-blocked items use
-   `Status: Blocked — waiting on <checklist 00 input>`.
+1. Items without a status line remain **Open**. When an agent starts an item it adds a status
+   line in its own PR and updates that line on merge.
+   **The shape below is mechanically enforced by `tests/task-tracking-docs.test.mjs` — an
+   invalid line fails the build, so copy it exactly.** Two structural rules first:
+   - The marker is **`**Status:**`** in bold. A bare `Status:` is explicitly rejected.
+   - The status line must sit on the line **directly below the packet heading**, with no
+     blank line between them.
+
+   The six legal forms are exactly:
+
+   | Form | Example |
+   |---|---|
+   | Complete | `**Status:** Complete — PR #216, July 26, 2026.` |
+   | Complete, multi-PR | `**Status:** Complete — PR #185 + PR #195, July 25, 2026.` |
+   | In review | `**Status:** In review — PR #217` |
+   | In progress | ``**Status:** In progress — `codex/set22-create-drive-files` `` |
+   | Blocked | `**Status:** Blocked — awaiting owner prioritization` |
+   | Resolved / superseded | `**Status:** Resolved in PR #197` · `**Status:** Superseded — absorbed into SET-06` |
+
+   Notes the guard enforces that are easy to miss: an **In progress** branch must be
+   backticked and must start `codex/` or `claude/`; **Blocked** takes free text (it is *not*
+   restricted to checklist-00 inputs); and for packets the guard knows are merged, **Complete**
+   additionally requires the full `, Month D, YYYY.` date with the trailing period.
 2. An item is marked Complete **only** when its Acceptance line passes — never from a
    visual or partial change.
 3. Every packet that changes behavior also updates the docs that describe that behavior
@@ -2499,6 +2928,7 @@ buttons honor toggles in rendered tests; the eight-section pins in
 **Effort:** small-medium. **Cost:** $0.
 
 ### AI-09 · Guardrail tests, Tier-2 reconciliation, ledger closure (small; docs/tests only, last)
+**Status:** Complete — PR #216, July 26, 2026. Source-only and undeployed. AI guides and guardrails reconciled against merged source; no data, configuration, or migration change.
 **Why:** leave one truth — what the AI does now, what is production-gated,
 and machine-enforced outbound law.
 **Do:** new `tests/ai-outbound-guard.test.mjs`: no `app/api/v1/assistant/**`
@@ -2514,6 +2944,188 @@ statuses, and update Sequencing at a glance + the FloorOpsApp queue appendix.
 **Accept:** guard fails on a synthetic send-call injection; ledgers agree
 with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
+
+### AI-10 · Email intake: durable review queue and review-first lead capture (large; after AI-09)
+**Why:** the owner asked for OpenAI to read inbound email, identify leads, and
+pre-populate a draft lead a person approves, edits, or removes. Two research
+passes (July 26, 2026) established that the app does **not** need a new surface
+to do it — it needs to populate a review queue that already exists and is inert.
+`mail_items` (`db/schema.ts:192-206`) is a finished suggestion→approval table
+with `suggested_project_id`, `approved_project_id`, `status`, and `match_reason`,
+carrying both adapters, production composition wiring
+(`production-composition.ts:86,145,158`), a `SELECT, INSERT, UPDATE`
+least-privilege grant (`infrastructure/postgres/least-privilege.sql:130`), and
+blocking rehearsal coverage — and **no route or component touches it**.
+`gmail.filing_review_needed` is a fully shipped Chat event with a card builder,
+routing, a settings toggle, and a deep link, which cannot fire because, in the
+docs' own words, *"no durable review-queue event exists yet"*. `today.ts:88-92`
+already links to `/inbox?bucket=needs-review` calling it *"the inbox review
+queue"*, and DES-08c is Blocked by owner decision *"until the AI wave lands a
+truthful attention signal"*. One durable row makes all four true at once.
+Owner decisions governing this packet are recorded verbatim in
+`docs/ai-assistant-spec.md` §12; two of them are deliberate deviations from that
+spec's own principles and are written down as such.
+**Do:** (a) **Classify.** New `app/application/assistant/inbox-analysis.ts`: one
+provider pass per email returning party, multi-intent labels, extracted lead
+fields, referenced project ids, confidence, and rationale — one call, so it
+cannot contradict itself. `SELECT` only; **no write** (guard-clean, precedented
+at `triage.ts:148-152`). Reuse the dynamic-enum pattern from
+`triageSuggestionSchema` (`triage.ts:69-102`) with `strict: true`, and the
+two-tier parser from `parseAssistantTriageSuggestion` (`:104-143`): structural
+violations reject the row, out-of-set values degrade to a safe default.
+(b) **Persist, outside the guarded tree.** New route under `app/api/v1/`
+mirroring `app/api/v1/filing-rules/` (**not** under `app/api/v1/assistant/**` —
+the outbound guard rejects the bare token `DELETE` and every SQL write keyword
+there). It imports the classifier and writes the result. Extend `mail_items`
+additively: analysis payload, party, confidence, content hash, label-definition
+version, and a minimal display snapshot (subject, sender, received date); add a
+unique index on `gmail_message_id` and a `findByGmailMessageId` port method.
+**Zero new tables.** Confirm `client_id` is nullable first — an email from an
+unknown sender has no client, and a `NOT NULL` column invalidates the approach.
+(c) **Trigger on inbox load/refresh**, over messages with no stored analysis.
+Add `pageToken`/`nextPageToken` to `listMessages` (`google-gmail.ts:667-678`)
+with a hard page cap (≤5 pages / 100 messages per sweep) and stop-on-known
+termination — the analysis table is the watermark. Additive: every existing
+caller that omits `pageToken` behaves exactly as today.
+(d) **Surface as a queue.** The Inbox `needs-review` bucket stops resolving
+through `labelIdForBucket` and lists stored rows instead; `inbox`/`intake`/`filed`
+keep reading Gmail labels unchanged. **No new component file** —
+`tests/assistant-inbox-component-boundaries.test.mjs:8-21,52` `deepEqual`s those
+directory listings.
+(e) **Notify.** One non-awaited `queueGoogleChatNotification` for
+`gmail.filing_review_needed` after the write succeeds, matching the two existing
+producers. No notifier change, no catalog change, no gate change.
+(f) **Lead capture is the only accept action in this packet.** Client-side
+proposal → the user approves, edits, or dismisses → Accept posts the completed
+form to the existing `POST /api/v1/leads`, exactly as AI-07's review posts to
+`POST /api/v1/tasks`. `LeadModal` (`app/FloorOpsApp.tsx:1572-1574`) is an
+uncontrolled `FormData` form with no `defaultValue`s and needs an
+`initialValues` prop — **this is the packet's only `FloorOpsApp.tsx` change and
+it takes the single-file queue slot.** Do **not** add a `proposed` lead status:
+`LEAD_STATUSES` is closed (`app/domain/lead.ts:3`), the board routes unknown stages
+out of the main pipeline columns into the separate "Custom pipeline stages" panel
+(visible, but not where a proposed lead belongs — `FloorOpsApp.tsx:1391,1405`) and sidelines
+unknown stages, and creating a real lead would fire a false `lead.created` Chat
+notification (`leads/route.ts:58-68`). The classifier still emits all four
+intents and stores them, so calibration evidence accrues for every intent from
+day one; the project-filing, schedule, and warranty accept actions are AI-11.
+**Do NOT:** auto-apply any Gmail label (that is AI-T2-3, gated on production
+acceptance + §6 calibration evidence + recorded owner acceptance, and
+mutation-tested at `tests/ai05-inbox-triage.test.mjs:807-812`); add a page, nav
+item, modal, or new component file; add a Today section
+(`tests/ai04-today-view.test.mjs:467-526` pins the panel line by line);
+regenerate any golden hash (the spec's §10 "Golden hashes" bullet — cite the
+section, not a line number, which has already drifted once); or weaken the
+no-write guards — they stay unmodified because the write lives outside the
+assistant boundary.
+**Files:** `app/application/assistant/inbox-analysis.ts` (new), a new route
+directory under `app/api/v1/`, `app/lib/google-gmail.ts`,
+`app/inbox/components/InboxView.tsx`, `app/adapters/d1/mail-item-repository.ts`,
+`app/adapters/postgres/mail-item-repository.ts`, `app/ports/mail-item-repository.ts`,
+`app/domain/mail-item.ts`, `db/schema.ts` + a D1 migration,
+`app/platform/postgres/settings-persistence-schema.ts`,
+`app/FloorOpsApp.tsx` (`initialValues` on `LeadModal` only — queue slot),
+`docs/ai-assistant-spec.md`, `docs/settings-guide.md`, tests.
+**Accept:** analyzing a seeded inbox writes `mail_items` rows with
+`status='needs-review'`, and reloading the Inbox makes **zero** additional
+provider calls for already-analyzed messages (analyze-once economics measured,
+not asserted); the `needs-review` bucket renders those rows and its count is
+readable for DES-08c; `gmail.filing_review_needed` fires exactly once per new
+row, is never awaited, and is suppressed while the gate is off; a lead Accept
+creates through `POST /api/v1/leads` and neither the classifier nor the analysis
+route creates a lead; `tests/ai-outbound-guard.test.mjs` and
+`tests/ai05-inbox-triage.test.mjs:726` pass **unmodified**, plus a new positive
+assertion that the classifier module contains no SQL write keyword and the
+analysis route is the only writer; a hostile email body cannot change the
+assigned project, the server-derived confidence, or the no-send/no-file
+guarantees; sweep-coverage copy states what was actually covered ("Analyzed the
+40 newest messages in Inbox") rather than implying total coverage; the settings
+guide records that subjects and senders now persist at rest;
+`tests/assistant-inbox-component-boundaries.test.mjs` unchanged; golden hashes
+untouched; `npm test` green.
+**Effort:** large — file as sub-PRs (a+b+c engine and persistence; d+e queue and
+notification; f lead capture and the queue slot) so the `FloorOpsApp.tsx` slot is
+held only for the last one. **Cost:** provider spend only; the spec's ≤200
+emails/day budget (`docs/ai-assistant-spec.md:186-194`) is the ceiling, and
+analyze-once is what keeps it there.
+
+**ADDENDUM (July 27, 2026 — devils-advocate review; binding, part of this packet).**
+Ten judged attacks landed on this packet before dispatch. The corrections:
+
+1. **Multi-mailbox-proof storage.** The `mail_items` migration adds
+   `connection_key TEXT NOT NULL DEFAULT 'google-workspace'` and the unique index is
+   **composite `(connection_key, gmail_message_id)`**, mirroring `gmail_file_archives`
+   (Gmail message ids are per-mailbox). `findByGmailMessageId` takes
+   `(connectionKey, gmailMessageId)`; the sole caller passes the existing literal. Zero
+   behavior change at one mailbox; removes the retrofit the per-user-Gmail work would
+   otherwise force.
+2. **Kill switch.** Add an `inboxAnalysis` key to `ASSISTANT_FEATURE_KEYS` and one entry in
+   `AiAssistantSettingsCard`'s feature list; the sweep trigger and the analysis route are both
+   gated on it. New Accept line: **with `inboxAnalysis` off, an inbox load makes zero provider
+   calls and zero `mail_items` writes.** This is the day-one off switch if classification
+   quality disappoints; it does not pre-empt spec §12 decision 5.
+3. **Status vocabulary, defined here:** `needs-review · accepted · dismissed · skipped-noise ·
+   failed`. Invariant that makes the watermark claim true: **every swept message gets exactly
+   one row, whatever the outcome.** `failed` rows persist with bounded retries and are excluded
+   from queue counts; `skipped-noise` records the deterministic pre-filter's verdict (the
+   pre-filter is reinstated, not dropped). Accept adds: a seeded `List-Unsubscribe` message
+   produces a `skipped-noise` row and no provider call.
+4. **Terminal states for every intent.** Lead Accept/Dismiss transitions the row out of
+   `needs-review`; the existing filing route sets `approved_project_id` + a filed status; a
+   manual **"mark reviewed"** action clears schedule/warranty/project-update rows until AI-11
+   ships typed accepts. Without this the count only grows. The DES-08c count re-point is gated
+   on these transitions existing.
+5. **Reviewer named.** The queue's audience is the `FCI_ADMIN_EMAILS` list (1–2 people today);
+   the packet states this and the expected decisions/day. Sub-PR (f) specifies the accept
+   pre-fill contract: extracted fields plus defaults for `source`, `stage`, `ownerEmail`,
+   `nextAction`/`nextActionAt`, and names which fields (`site`, `estimatedValue`) still need
+   typing when absent — accept must be one review pass.
+6. **Coalesced notification.** At most **one** `gmail.filing_review_needed` card per sweep
+   (newest subject + "N more need review"; same payload shape, no catalog change) — not one
+   per row. Under on-load triggering, cards fire only during an admin's visit; a broadcast per
+   row would burst.
+7. **Re-analysis path.** The stored label-definition version gets a consumer: on catalog
+   change, rows still in `needs-review` become eligible for bounded re-analysis on the next
+   sweep. The analyze-once Accept criterion is reworded to "zero provider calls for
+   already-analyzed messages **under an unchanged label catalog**".
+8. **Simulation.** When `config.simulation`, analysis short-circuits to fixture results (no
+   provider call); `mail_items` cleanup joins the simulation reset route; sim rows never
+   appear in the live queue or the DES-08c count.
+9. **Honest coverage copy, corrected shape.** Replace the scan-count string with the sweep's
+   termination reason: stop-on-known renders "You're caught up"; page-cap-with-remaining
+   renders "Older messages not yet analyzed" plus a bounded **Check older** continuation. The
+   e2e pins the two states, not a count string.
+10. **Sub-PR (f) Files, corrected.** Its `FloorOpsApp.tsx` change is `initialValues` **plus
+    prefill state and an opener prop threaded into `InboxView`** (LeadModal is file-local and
+    unexported; InboxView has no lead-modal opener today). EDIT-04 ships the LeadModal rework
+    first per the reordered queue; (f) consumes it.
+Also: archived/terminal-status records are excluded from AI candidate queries and pickers
+(mirroring `isEligibleProject`), with an Accept criterion that an archived record never
+surfaces as a suggestion — shared with EDIT-05/06.
+
+### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
+**Status:** Blocked — awaiting the AI-10 sub-PR (f) merge; filed now so the deferred scope is
+visible to dispatch and unclaimable (the DES-08c precedent for a blocked-but-filed packet).
+**Why:** AI-10 deliberately ships one accept action; three intents accumulate in the queue with
+only a manual "mark reviewed" exit, and spec §12 decisions 5–6 name this packet as their
+implementing packet. Nothing else owns the label catalog editor at all.
+**Do:** (a) the three typed accepts — project-update → the existing filing path; schedule → a
+proposed task via `POST /api/v1/tasks` (`source:"email"`); warranty → the same task path with
+the callback framing. (b) The dedicated **AI assistant Settings section**, executing spec §12
+decision 5's three recorded re-points (`tests/ai08-ui-contract.test.mjs:113-126`, spec §9's
+canonical placement line, the Workstream G house rule) and decision 6's settings-card
+data-at-rest statement. (c) The **label catalog editor**: storage per the plan's Pattern A
+(row per label), opaque-slug enums, the never-delete-once-used lifecycle, description
+versioning consumed by AI-10's re-analysis path, and the full injection-mitigation set the
+plan records (fence-forgery rejection, NFKC + bidi stripping, admin-only write path, count and
+length caps, a hostile-description test proving the no-send/no-file guarantees hold).
+**Files:** named at claim time against merged AI-10 source — this packet must be re-verified
+against main before dispatch, per the amended-before-dispatch rule.
+**Accept:** every queue intent has a typed accept; the AI section exists with the three
+re-points made deliberately; label CRUD round-trips with a used label refusing deletion and a
+retired slug never reissued; a hostile label description cannot alter guard guarantees;
+`npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
+**Effort:** large. **Cost:** provider spend within the existing budget.
 
 # Workstream H — In-app guidance (HINT)
 
@@ -2580,15 +3192,25 @@ BE-12 is complete in source in PR #53 and remains undeployed.
 KPI-02 is complete in source in PR #52 and remains undeployed. SET-10 is complete in
 source in PR #56 and remains undeployed. The application-logo refresh is complete in
 merged source in PR #57 and remains undeployed; the reviewed PR #51–#57 merge train is
-complete. KPI-03 and SET-13 have since completed (PRs #75/#76), and the Workstream E starters GI-01,
-GI-02, and GI-05 are assignable in parallel with the SET track once their listed
-dependencies are met (GI-02 immediately). The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
-SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
-apply, deployment, live login, another user, or real data.
+complete. KPI-03 and SET-13 have since completed (PRs #75/#76). Of the Workstream E starters, GI-02
+completed in PR #79 (July 21, 2026); GI-01 and GI-05 remain assignable in parallel with the
+SET track once their listed dependencies are met.
+
+> **Dispatch authority — read this before picking work.** Do **not** treat any
+> "unclaimed packets" sentence in this document as a list of available work. Those lists are
+> historical narrative and have gone stale repeatedly — they have named merged packets
+> (BE-07, SET-11, WS-13, GI-02) as available for days. **A packet is available if and only
+> if it has no status line.** The status lines are the single dispatch authority, and they
+> are the only part of this file a test enforces.
+
+All work here is source-only; none authorizes external configuration, apply, deployment,
+live login, another user, or real data.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
-SET-03→SET-10 · SET-04→SET-11 · OIDC-01→OIDC-02→OIDC-03. OIDC-04 was the
+SET-03→SET-10 · SET-04→SET-11 · **EDIT-01→EDIT-03→{EDIT-05, EDIT-04, EDIT-06, EDIT-07}**
+(EDIT-01 and EDIT-03 share four lead files — leads route, lead port, both lead adapters — so
+they serialize; EDIT-01→EDIT-04 also holds) · OIDC-01→OIDC-02→OIDC-03. OIDC-04 was the
 documentation/guard reconciliation; it is complete in PRs #49/#50 and does not change
 the runtime dependency chain.
 
@@ -2630,7 +3252,7 @@ are green.
 The dashboard-setup track starts now: SET-13 → SET-14 (SET-19 parallel), then
 SET-15 → {SET-16, SET-17, SET-05} → SET-18 → SET-21, with SET-23…SET-26 following
 their listed dependencies. Workstream E runs in parallel where dependencies allow:
-GI-02 immediately; GI-01/GI-05 after their SET dependencies; GI-03/GI-04 after the
+GI-01/GI-05 after their SET dependencies (GI-02 completed in PR #79); GI-03/GI-04 after the
 WS-15 owner step; GI-06 after WS-16's edition confirmation; GI-07 after live employee
 login. **Owner priority (July 21): maps and validation on the client and project
 screens (GI-03/GI-04) and first-run data import (SET-25) jump the queue.** The
@@ -2640,10 +3262,10 @@ SET-27 and SET-28 following their listed dependencies. WS-15 (Maps billing/keys)
 the owner step that unblocks GI-03/GI-04 — do it early.
 BE-10 was assignable because PR #51 merged and has since completed (PR #82); BE-14 has
 since completed too (PR #178, July 24, 2026). KPI-03 was assignable because PR #52
-merged and has since completed (PR #75). SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. The
-unclaimed parallel-safe tracks are
-BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
-broad primitive/CSS consolidation tracks.
+merged and has since completed (PR #75). SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. BE-07 (PR #140),
+SET-11 (PR #162) and WS-13 (PR #144) have since completed. **For what is actually available
+now, read the status lines — see the dispatch-authority note above; do not dispatch from this
+paragraph.**
 
 **Design-remediation wave order (approved July 21, 2026 — anti-rework):** the
 full-codebase review and the settings redesign run in four waves so nothing is built
@@ -2668,21 +3290,32 @@ merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED. NFIX-03 (PR #197) and BE-16 (PR #198)
 both MERGED July 25, 2026. AI-04 (PR #201), AI-05 (PR #205), and FIX-15
 (PR #206, with the N7-7/N7-8 folds) and FIX-17 (PR #208) are COMPLETE —
-AI-06 (PR #212) and SET-25 (PR #213) are COMPLETE as of July 26, 2026, so the
-AI feature series AI-01→AI-08 is fully merged and **AI-09 is the only AI packet
-left** — it closes the workstream by reconciling one truthful account of what
-the AI does, what is production-gated, and every residual the series recorded.
+AI-06 (PR #212) and SET-25 (PR #213) are COMPLETE as of July 26, 2026, and
+**AI-09 (PR #216) is COMPLETE**, so the original AI feature series AI-01→AI-09 is
+fully merged: AI-09 closed it by reconciling one truthful account of what the AI
+does, what is production-gated, and every residual the series recorded.
+**AI-10 is a new packet opened after that closure**, on a recorded owner decision
+of July 26, 2026 (`docs/ai-assistant-spec.md` §12). Adding a packet after the
+closure packet is a deliberate convention break, called out here rather than made
+silently: AI-09 closed the *reconciliation* of AI-01→AI-08, not the workstream's
+capacity to take new work. AI-10 is **the dispatchable head of the AI lane** and
+is unblocked now that PR #216 has merged.
 **SET-22 is the dispatchable head of the FloorOpsApp fix-tail** (SET-26 remains
 gated on SET-23, open); SET-18 was drafted as a paste and is dispatchable in
 parallel with it. `tests/rendered-html.test.mjs` stays additive across all
 lanes — serialize merges only. DES-08's
-remaining sub-scope c stays owner-deferred awaiting AI-02/AI-04's truthful
-attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
+remaining sub-scope c stays owner-deferred awaiting a truthful attention
+signal — AI-02 and AI-04 completed **without** landing one (the docs' own
+admission: "no durable review-queue event exists yet"); the durable
+needs-review count **AI-10** stores is that signal, so DES-08c unblocks after
+AI-10, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
 AI-07b's (released at the PR #195 merge); `tests/rendered-html.test.mjs` is
 touched additively by the AI packets — serialize merges. DES-10 (brand refinement, not priority) takes the globals
-lock only for its `.brand` edit, in a free window after DES-04/05/07. Migration numbers are assigned at merge time (coordinate
-with open BE-07's reserved PostgreSQL v7, KPI-04, and DES-08 a-T2).
+lock only for its `.brand` edit, in a free window after DES-04/05/07. Migration numbers are assigned at merge time by reading
+the current high-water mark, never by quoting one from a document — see global guardrail 3.
+The three packets this line used to name as open (BE-07's reserved v7, KPI-04, DES-08 a-T2)
+have all merged; as of July 26, 2026 the marks are **PostgreSQL v10** and **D1 0019**.
 
 **Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
 inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only
@@ -2694,7 +3327,37 @@ those inputs; Jason's other open decisions live in checklists 00/06/10.
 SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 → KPI-02 / PR #52 → KPI-03 /
 PR #75 → GI-03 / PR #80 → SET-35 / PR #107 are complete in source. The reconciled
 queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-04 →
-DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI → SET-26 UI.
+DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
+**EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
+SET-26 UI (blocked on SET-23) → HINT-02-B.
+
+> **Reordered July 27, 2026 (owner decision + devils-advocate review).** Three deliberate
+> changes from the previous order: (1) **EDIT-05 (projects) now precedes EDIT-04 (leads)** —
+> owner decision of July 27: the owner's original report was project fields, the audit rates
+> projects Critical vs leads High, and cheapest-first was the wrong sort key. (2) **EDIT-04
+> precedes AI-10 sub-PR (f)**: the "identical change" the implement-once note described is one
+> prop; the real work diverges — EDIT-04 does the LeadModal rework (initialValues, edit mode,
+> conflict UX, isAdmin gating) and AI-10 (f) consumes it, adding prefill state and an InboxView
+> opener prop (LeadModal is file-local and unexported; InboxView has no opener today — AI-10
+> (f)'s Files description undercounted this). (3) **SET-26 UI moved behind the EDIT block**: a
+> queue-head packet with an unmerged prerequisite (SET-23 is unstarted) **yields its slot,
+> recorded here, never silently** — that rule is now standing.
+AI-02 is complete in PRs #182/#187/#193 and released the slot; AI-09 is a
+docs/tests-only closure packet and does not claim `app/FloorOpsApp.tsx`.
+
+> **This list is the claim order, and it must stay complete.** Until July 27, 2026 it ended at
+> `SET-26 UI` and named no packet filed after AI-09 — while AI-10 sub-PR (f) and EDIT-04…07 all
+> list `app/FloorOpsApp.tsx` in their Files and EDIT-04 calls itself "the merge-conflict hotspot;
+> takes one queue slot". Combined with the dispatch law ("a packet is available if and only if it
+> has no status line"), **two agents could legitimately claim this file at the same time** — the
+> exact collision `AGENTS.md:54-58` names as its canonical example. Any packet that adds a
+> `FloorOpsApp.tsx` change must be added here in the same PR that files it.
+>
+> **Implement once, not twice:** AI-10 sub-PR (f) and EDIT-04 both specify the *same* source
+> change — an `initialValues` prop on `LeadModal` (`app/FloorOpsApp.tsx:1572-1574`). Whichever
+> reaches the slot first ships it; the second consumes it and says so. See "Cross-item
+> coordination (implement once)".
+
 Interleave other SET items only in extracted modules that do not
 touch `FloorOpsApp.tsx`. Workstream D's KPI packets are
 otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
@@ -2704,7 +3367,10 @@ version numbers with BE-06).
 BE-08 / PR #45 under WS-04's documented boundary; calendar-ID single authority remains
 SET-05 ↔ BE-07; integration events reader remains SET-09 ↔ WS-10;
 `GOOGLE_WORKSPACE_PUBSUB_TOPIC` removal (WS-03, referenced by BE-02); version-37 doc fixes
-(BE-01, referenced by WS-03; preserve accurate historical release evidence).
+(BE-01, referenced by WS-03; preserve accurate historical release evidence);
+**`LeadModal` `initialValues` prop (`app/FloorOpsApp.tsx:1572-1574`) remains AI-10 sub-PR (f)
+↔ EDIT-04** — both packets specify the identical change, the earlier one through the
+FloorOpsApp queue ships it, and the later one consumes it and records that it did.
 
 ## Verification appendix
 
