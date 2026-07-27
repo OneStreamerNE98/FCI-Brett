@@ -79,7 +79,7 @@ provider-side prompt caching.
 
 | Source | Tool(s) | Searchable | NOT searchable (say so in UI) |
 |---|---|---|---|
-| Projects, clients, contacts | `search_records`, `get_project_evidence`, `get_client_evidence` | names, numbers, status, sites, project managers, contact details, and estimated values where the authorization rule permits them | flooring category, square feet, contract value, and installation dates are not general Ask evidence |
+| Projects, clients, contacts | `search_records`, `get_project_evidence`, `get_client_evidence` | names, numbers, status, sites, project managers, contact details, and estimated values where the authorization rule permits them | flooring category, square feet, and contract value are not general Ask evidence. Installation dates are not searchable through *these* tools, but a completed installation date does reach Ask through the separate `today` tool, whose closeout follow-up evidence reads `Installation completed <ISO>` (`app/application/assistant/today.ts:271-274`) |
 | Leads | `list_leads`, `search_records` | stage, next action, staleness | — |
 | Meetings (incl. phone calls) | `search_meetings` | title, notes, transcript, summary, decisions (LIKE excerpts) | paraphrase/semantic recall (no index — known trade) |
 | Tasks | `list_tasks`, `today` | status, due dates, assignee, project | — |
@@ -347,3 +347,66 @@ Separately, Stage 4 can provision missing FCI labels through `POST labels`;
 `applyFiledLabel` also ensures those labels exist before modifying the
 message. That setup mutation is not an AI action and is listed separately so
 the source inventory does not silently omit it.
+
+## 12. Owner decisions — July 26, 2026 (AI-10 email intake)
+
+Recorded here because §1 states that changes to this spec require an owner decision.
+Decisions 2 and 5 are **deliberate deviations from this spec's own principles** and are
+written down as such rather than absorbed silently.
+
+1. **Trigger — process on inbox load/refresh.** Email analysis runs when the inbox is opened
+   or refreshed, over messages that have no stored analysis yet. Not a manual per-message
+   button, and not Gmail History polling in v1. This adds no `scheduled` handler, no Pub/Sub,
+   no `integration_cursors` adapter, and no runtime grant change, so §5's fetch-only worker
+   rule and the AGENTS.md no-scheduling rule both hold unchanged. The trigger is deliberately
+   separable so WS-12's History polling can replace it later without touching the stored
+   analysis or the review surface.
+   Honest limit to state in the UI: `listMessages` is a fixed top-20 with no pagination
+   (`app/lib/google-gmail.ts:667-678`), so a sweep covers what a load returns, not "every
+   email". AI-10 adds bounded pagination and stop-on-known termination; it still cannot see a
+   message that arrived and was archived before any sweep ran. Only Gmail History closes that,
+   and it stays deferred.
+
+2. **Persistence — analyses are STORED. This overrides §1 principle 1 and §7.**
+   §1 principle 1 says "No infrastructure that needs feeding … in Tier 1" and §7 says no new
+   telemetry tables in v1. The owner has decided AI analysis results are persisted anyway.
+   Why it was chosen: analyze-once economics, so reopening the inbox never re-bills the same
+   email; the accept/dismiss history the transparency requirement depends on; the §6
+   calibration evidence this spec **already requires** before any auto-apply may even be
+   proposed; and an enforceable answer to "has this label ever been used?", without which
+   decision 4's never-delete rule cannot be applied.
+   Storage target: extend the existing **`mail_items`** table (`db/schema.ts:192-206`) rather
+   than create a new one. It already carries both adapters, production composition wiring, a
+   `SELECT, INSERT, UPDATE` least-privilege grant, and blocking migration-rehearsal coverage,
+   and has no callers today. This keeps the AI tier at **zero** new tables.
+   Guard consequence: **none.** The no-write guards stay unmodified. Classification lives in
+   `app/application/assistant/inbox-analysis.ts` and performs only `SELECT`; the write lives in
+   a route outside `app/api/v1/assistant/**`, exactly as AI-07 already separates proposal from
+   creation.
+
+3. **The Inbox `needs-review` bucket becomes an app-side queue.** That one bucket stops
+   resolving through `labelIdForBucket` and instead lists stored rows with
+   `status='needs-review'`. The other three buckets keep reading Gmail labels. This is what
+   makes the existing `today.ts:88-92` string "Open the inbox review queue" true, and supplies
+   the durable state `gmail.filing_review_needed` has always lacked a producer for. It does
+   **not** auto-apply any Gmail label — that remains AI-T2-3 and stays gated.
+
+4. **Label lifecycle — once a label has been used it can never be deleted; its description can
+   always be updated.** Unused labels may be deleted; used labels are retired, not removed, so
+   every historical classification stays interpretable. Retired slugs are never reused. This
+   matches the repo's existing append-only stance (migrations, `activity_events`, SET-18's
+   never-delete reconcile rule) and the pinned PostgreSQL `DELETE` grant list.
+
+5. **AI configuration gets its own Settings section.** This deviates from the Workstream G
+   constraint of no new Settings sections in Tier 1, and re-points
+   `tests/ai08-ui-contract.test.mjs:113-126`, which currently asserts an exact 8-section
+   catalog and that navigation does not mention "AI assistant". That pin encodes AI-08's
+   choice to nest the card; it is a recorded design decision, not a safety rail, and the owner
+   — who could not find the AI settings himself — has chosen to change it. The read-only mirror
+   in *My settings* stays so office users can still see what is on without changing it.
+
+6. **Data at rest.** A minimal display snapshot (subject, sender, received date) persists on
+   each analysis row so the queue renders without a per-message Gmail round-trip and survives a
+   message being moved in Gmail. This places customer names and subject lines in the app
+   database — a new fact for this app, stated here, in the settings card, and in the settings
+   guide, exactly as the bounded-body-read decision already is.

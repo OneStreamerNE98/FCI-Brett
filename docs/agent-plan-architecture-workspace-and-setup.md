@@ -70,15 +70,22 @@ below, which also covers the state of GitHub itself (issues/PRs).
    `cutoverReady:false` in the rehearsal are deliberate. "Fixing" them without the gate
    passing is an unauthorized production change.
 3. **PostgreSQL migrations are append-only and checksummed.** `app/platform/postgres/
-   production-schema-migrations.ts` locks v1–v6 with SHA-256 checksums verified by
-   readiness probes and source-contract tests. Never edit an existing migration; append
-   v7+. **All six migrations are unapplied everywhere — no Cloud SQL instance exists.**
+   production-schema-migrations.ts` locks **every version it defines** with SHA-256
+   checksums verified by readiness probes and source-contract tests. Never edit an
+   existing migration. To add one, **read that file and append one past its highest
+   `version:` — do not trust any number quoted in a document, including this one**, which
+   is exactly how this guardrail rotted before (it said "append v7+" for three days after
+   v7 shipped). Snapshot for sanity-checking only, July 26, 2026: the high-water mark is
+   **v10** (`project_segment`, BE-16 / PR #198), so the next is v11.
+   **No migration is applied anywhere — no Cloud SQL instance exists.**
    (Do not read "migrations 4–5 remain unapplied" in the audit doc as implying 1–3 are
    applied; BE-01 fixes that phrasing.)
-4. **The deployed D1 drizzle sequence (0000–0011) is append-only.** PR #52 added
-   source-only migration 0012 to `main`, but it has not been applied to Sites. Never
-   drop or alter existing D1 tables; the dev environment is the only live
-   environment.
+4. **The D1 drizzle sequence is append-only.** Never drop or alter existing D1 tables; the
+   dev environment is the only live environment. To add a migration, **list `drizzle/` and
+   append one past the highest-numbered file** — again, read the directory rather than a
+   quoted number. Snapshot for sanity-checking only, July 26, 2026: the highest is
+   **0019** (`0019_demonic_lady_vermin.sql`), so the next is 0020. Files ahead of what the
+   Sites environment has applied are source-only until deployed.
 5. **Single-user / test-data boundary holds.** Only `FCI TEST — DO NOT USE` records in any
    live Workspace step; no second user and no real client data until the development
    acceptance run (WS-11) passes.
@@ -2164,11 +2171,29 @@ not become a separate task source of truth.
 **This document is the status ledger for these three workstreams** (the same pattern as
 `docs/design-critique-fix-plan.md` for the UI critique). Rules for every agent packet:
 
-1. Items without a status line remain **Open**. When an agent starts an item, it appends a
-   dated status line to that item in this file in its own PR
-   (`Status: In progress — <branch>`), and on merge updates it to
-   `Status: Complete — PR #NN, <date>`. Owner-blocked items use
-   `Status: Blocked — waiting on <checklist 00 input>`.
+1. Items without a status line remain **Open**. When an agent starts an item it adds a status
+   line in its own PR and updates that line on merge.
+   **The shape below is mechanically enforced by `tests/task-tracking-docs.test.mjs` — an
+   invalid line fails the build, so copy it exactly.** Two structural rules first:
+   - The marker is **`**Status:**`** in bold. A bare `Status:` is explicitly rejected.
+   - The status line must sit on the line **directly below the packet heading**, with no
+     blank line between them.
+
+   The six legal forms are exactly:
+
+   | Form | Example |
+   |---|---|
+   | Complete | `**Status:** Complete — PR #216, July 26, 2026.` |
+   | Complete, multi-PR | `**Status:** Complete — PR #185 + PR #195, July 25, 2026.` |
+   | In review | `**Status:** In review — PR #217` |
+   | In progress | ``**Status:** In progress — `codex/set22-create-drive-files` `` |
+   | Blocked | `**Status:** Blocked — awaiting owner prioritization` |
+   | Resolved / superseded | `**Status:** Resolved in PR #197` · `**Status:** Superseded — absorbed into SET-06` |
+
+   Notes the guard enforces that are easy to miss: an **In progress** branch must be
+   backticked and must start `codex/` or `claude/`; **Blocked** takes free text (it is *not*
+   restricted to checklist-00 inputs); and for packets the guard knows are merged, **Complete**
+   additionally requires the full `, Month D, YYYY.` date with the trailing period.
 2. An item is marked Complete **only** when its Acceptance line passes — never from a
    visual or partial change.
 3. Every packet that changes behavior also updates the docs that describe that behavior
@@ -2769,7 +2794,7 @@ buttons honor toggles in rendered tests; the eight-section pins in
 **Effort:** small-medium. **Cost:** $0.
 
 ### AI-09 · Guardrail tests, Tier-2 reconciliation, ledger closure (small; docs/tests only, last)
-**Status:** In review — PR #216, July 26, 2026. Source-only and undeployed. AI guides and guardrails reconciled against merged source; no data, configuration, or migration change.
+**Status:** Complete — PR #216, July 26, 2026. Source-only and undeployed. AI guides and guardrails reconciled against merged source; no data, configuration, or migration change.
 **Why:** leave one truth — what the AI does now, what is production-gated,
 and machine-enforced outbound law.
 **Do:** new `tests/ai-outbound-guard.test.mjs`: no `app/api/v1/assistant/**`
@@ -2785,6 +2810,107 @@ statuses, and update Sequencing at a glance + the FloorOpsApp queue appendix.
 **Accept:** guard fails on a synthetic send-call injection; ledgers agree
 with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
+
+### AI-10 · Email intake: durable review queue and review-first lead capture (large; after AI-09)
+**Why:** the owner asked for OpenAI to read inbound email, identify leads, and
+pre-populate a draft lead a person approves, edits, or removes. Two research
+passes (July 26, 2026) established that the app does **not** need a new surface
+to do it — it needs to populate a review queue that already exists and is inert.
+`mail_items` (`db/schema.ts:192-206`) is a finished suggestion→approval table
+with `suggested_project_id`, `approved_project_id`, `status`, and `match_reason`,
+carrying both adapters, production composition wiring
+(`production-composition.ts:86,145,158`), a `SELECT, INSERT, UPDATE`
+least-privilege grant (`infrastructure/postgres/least-privilege.sql:130`), and
+blocking rehearsal coverage — and **no route or component touches it**.
+`gmail.filing_review_needed` is a fully shipped Chat event with a card builder,
+routing, a settings toggle, and a deep link, which cannot fire because, in the
+docs' own words, *"no durable review-queue event exists yet"*. `today.ts:88-92`
+already links to `/inbox?bucket=needs-review` calling it *"the inbox review
+queue"*, and DES-08c is Blocked by owner decision *"until the AI wave lands a
+truthful attention signal"*. One durable row makes all four true at once.
+Owner decisions governing this packet are recorded verbatim in
+`docs/ai-assistant-spec.md` §12; two of them are deliberate deviations from that
+spec's own principles and are written down as such.
+**Do:** (a) **Classify.** New `app/application/assistant/inbox-analysis.ts`: one
+provider pass per email returning party, multi-intent labels, extracted lead
+fields, referenced project ids, confidence, and rationale — one call, so it
+cannot contradict itself. `SELECT` only; **no write** (guard-clean, precedented
+at `triage.ts:148-152`). Reuse the dynamic-enum pattern from
+`triageSuggestionSchema` (`triage.ts:69-102`) with `strict: true`, and the
+two-tier parser from `parseAssistantTriageSuggestion` (`:104-143`): structural
+violations reject the row, out-of-set values degrade to a safe default.
+(b) **Persist, outside the guarded tree.** New route under `app/api/v1/`
+mirroring `app/api/v1/filing-rules/` (**not** under `app/api/v1/assistant/**` —
+the outbound guard rejects the bare token `DELETE` and every SQL write keyword
+there). It imports the classifier and writes the result. Extend `mail_items`
+additively: analysis payload, party, confidence, content hash, label-definition
+version, and a minimal display snapshot (subject, sender, received date); add a
+unique index on `gmail_message_id` and a `findByGmailMessageId` port method.
+**Zero new tables.** Confirm `client_id` is nullable first — an email from an
+unknown sender has no client, and a `NOT NULL` column invalidates the approach.
+(c) **Trigger on inbox load/refresh**, over messages with no stored analysis.
+Add `pageToken`/`nextPageToken` to `listMessages` (`google-gmail.ts:667-678`)
+with a hard page cap (≤5 pages / 100 messages per sweep) and stop-on-known
+termination — the analysis table is the watermark. Additive: every existing
+caller that omits `pageToken` behaves exactly as today.
+(d) **Surface as a queue.** The Inbox `needs-review` bucket stops resolving
+through `labelIdForBucket` and lists stored rows instead; `inbox`/`intake`/`filed`
+keep reading Gmail labels unchanged. **No new component file** —
+`tests/assistant-inbox-component-boundaries.test.mjs:8-21,52` `deepEqual`s those
+directory listings.
+(e) **Notify.** One non-awaited `queueGoogleChatNotification` for
+`gmail.filing_review_needed` after the write succeeds, matching the two existing
+producers. No notifier change, no catalog change, no gate change.
+(f) **Lead capture is the only accept action in this packet.** Client-side
+proposal → the user approves, edits, or dismisses → Accept posts the completed
+form to the existing `POST /api/v1/leads`, exactly as AI-07's review posts to
+`POST /api/v1/tasks`. `LeadModal` (`app/FloorOpsApp.tsx:1572-1574`) is an
+uncontrolled `FormData` form with no `defaultValue`s and needs an
+`initialValues` prop — **this is the packet's only `FloorOpsApp.tsx` change and
+it takes the single-file queue slot.** Do **not** add a `proposed` lead status:
+`LEAD_STATUSES` is closed (`app/domain/lead.ts:3`), the board silently sidelines
+unknown stages, and creating a real lead would fire a false `lead.created` Chat
+notification (`leads/route.ts:58-68`). The classifier still emits all four
+intents and stores them, so calibration evidence accrues for every intent from
+day one; the project-filing, schedule, and warranty accept actions are AI-11.
+**Do NOT:** auto-apply any Gmail label (that is AI-T2-3, gated on production
+acceptance + §6 calibration evidence + recorded owner acceptance, and
+mutation-tested at `tests/ai05-inbox-triage.test.mjs:807-812`); add a page, nav
+item, modal, or new component file; add a Today section
+(`tests/ai04-today-view.test.mjs:467-526` pins the panel line by line);
+regenerate any golden hash (`docs/ai-assistant-spec.md:261`); or weaken the
+no-write guards — they stay unmodified because the write lives outside the
+assistant boundary.
+**Files:** `app/application/assistant/inbox-analysis.ts` (new), a new route
+directory under `app/api/v1/`, `app/lib/google-gmail.ts`,
+`app/inbox/components/InboxView.tsx`, `app/adapters/d1/mail-item-repository.ts`,
+`app/adapters/postgres/mail-item-repository.ts`, `app/ports/mail-item-repository.ts`,
+`app/domain/mail-item.ts`, `db/schema.ts` + a D1 migration,
+`app/platform/postgres/settings-persistence-schema.ts`,
+`app/FloorOpsApp.tsx` (`initialValues` on `LeadModal` only — queue slot),
+`docs/ai-assistant-spec.md`, `docs/settings-guide.md`, tests.
+**Accept:** analyzing a seeded inbox writes `mail_items` rows with
+`status='needs-review'`, and reloading the Inbox makes **zero** additional
+provider calls for already-analyzed messages (analyze-once economics measured,
+not asserted); the `needs-review` bucket renders those rows and its count is
+readable for DES-08c; `gmail.filing_review_needed` fires exactly once per new
+row, is never awaited, and is suppressed while the gate is off; a lead Accept
+creates through `POST /api/v1/leads` and neither the classifier nor the analysis
+route creates a lead; `tests/ai-outbound-guard.test.mjs` and
+`tests/ai05-inbox-triage.test.mjs:726` pass **unmodified**, plus a new positive
+assertion that the classifier module contains no SQL write keyword and the
+analysis route is the only writer; a hostile email body cannot change the
+assigned project, the server-derived confidence, or the no-send/no-file
+guarantees; sweep-coverage copy states what was actually covered ("Analyzed the
+40 newest messages in Inbox") rather than implying total coverage; the settings
+guide records that subjects and senders now persist at rest;
+`tests/assistant-inbox-component-boundaries.test.mjs` unchanged; golden hashes
+untouched; `npm test` green.
+**Effort:** large — file as sub-PRs (a+b+c engine and persistence; d+e queue and
+notification; f lead capture and the queue slot) so the `FloorOpsApp.tsx` slot is
+held only for the last one. **Cost:** provider spend only; the spec's ≤200
+emails/day budget (`docs/ai-assistant-spec.md:186-194`) is the ceiling, and
+analyze-once is what keeps it there.
 
 # Workstream H — In-app guidance (HINT)
 
@@ -2851,11 +2977,19 @@ BE-12 is complete in source in PR #53 and remains undeployed.
 KPI-02 is complete in source in PR #52 and remains undeployed. SET-10 is complete in
 source in PR #56 and remains undeployed. The application-logo refresh is complete in
 merged source in PR #57 and remains undeployed; the reviewed PR #51–#57 merge train is
-complete. KPI-03 and SET-13 have since completed (PRs #75/#76), and the Workstream E starters GI-01,
-GI-02, and GI-05 are assignable in parallel with the SET track once their listed
-dependencies are met (GI-02 immediately). The unclaimed independent packets are coordinated BE-07+SET-05, SET-11,
-SET-09+WS-10, and WS-13. All are source-only; none authorizes external configuration,
-apply, deployment, live login, another user, or real data.
+complete. KPI-03 and SET-13 have since completed (PRs #75/#76). Of the Workstream E starters, GI-02
+completed in PR #79 (July 21, 2026); GI-01 and GI-05 remain assignable in parallel with the
+SET track once their listed dependencies are met.
+
+> **Dispatch authority — read this before picking work.** Do **not** treat any
+> "unclaimed packets" sentence in this document as a list of available work. Those lists are
+> historical narrative and have gone stale repeatedly — they have named merged packets
+> (BE-07, SET-11, WS-13, GI-02) as available for days. **A packet is available if and only
+> if it has no status line.** The status lines are the single dispatch authority, and they
+> are the only part of this file a test enforces.
+
+All work here is source-only; none authorizes external configuration, apply, deployment,
+live login, another user, or real data.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
@@ -2901,7 +3035,7 @@ are green.
 The dashboard-setup track starts now: SET-13 → SET-14 (SET-19 parallel), then
 SET-15 → {SET-16, SET-17, SET-05} → SET-18 → SET-21, with SET-23…SET-26 following
 their listed dependencies. Workstream E runs in parallel where dependencies allow:
-GI-02 immediately; GI-01/GI-05 after their SET dependencies; GI-03/GI-04 after the
+GI-01/GI-05 after their SET dependencies (GI-02 completed in PR #79); GI-03/GI-04 after the
 WS-15 owner step; GI-06 after WS-16's edition confirmation; GI-07 after live employee
 login. **Owner priority (July 21): maps and validation on the client and project
 screens (GI-03/GI-04) and first-run data import (SET-25) jump the queue.** The
@@ -2911,10 +3045,10 @@ SET-27 and SET-28 following their listed dependencies. WS-15 (Maps billing/keys)
 the owner step that unblocks GI-03/GI-04 — do it early.
 BE-10 was assignable because PR #51 merged and has since completed (PR #82); BE-14 has
 since completed too (PR #178, July 24, 2026). KPI-03 was assignable because PR #52
-merged and has since completed (PR #75). SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. The
-unclaimed parallel-safe tracks are
-BE-07+SET-05, SET-11, SET-09+WS-10, WS-13, and design-ledger Phase 4 guardrails before the
-broad primitive/CSS consolidation tracks.
+merged and has since completed (PR #75). SET-13 is assignable because SET-03, SET-04, and SET-10 are complete. BE-07 (PR #140),
+SET-11 (PR #162) and WS-13 (PR #144) have since completed. **For what is actually available
+now, read the status lines — see the dispatch-authority note above; do not dispatch from this
+paragraph.**
 
 **Design-remediation wave order (approved July 21, 2026 — anti-rework):** the
 full-codebase review and the settings redesign run in four waves so nothing is built
@@ -2939,11 +3073,16 @@ merged sub-PRs). AI-02 is COMPLETE (PRs #182/#187/#193, July 24, 2026) and
 the FloorOpsApp queue slot is RELEASED. NFIX-03 (PR #197) and BE-16 (PR #198)
 both MERGED July 25, 2026. AI-04 (PR #201), AI-05 (PR #205), and FIX-15
 (PR #206, with the N7-7/N7-8 folds) and FIX-17 (PR #208) are COMPLETE —
-AI-06 (PR #212) and SET-25 (PR #213) are COMPLETE as of July 26, 2026, so the
-AI feature series AI-01→AI-08 is fully merged and **AI-09 is the only AI packet
-left**. AI-09 is In review in PR #216; it closes the workstream by
-reconciling one truthful account of what
-the AI does, what is production-gated, and every residual the series recorded.
+AI-06 (PR #212) and SET-25 (PR #213) are COMPLETE as of July 26, 2026, and
+**AI-09 (PR #216) is COMPLETE**, so the original AI feature series AI-01→AI-09 is
+fully merged: AI-09 closed it by reconciling one truthful account of what the AI
+does, what is production-gated, and every residual the series recorded.
+**AI-10 is a new packet opened after that closure**, on a recorded owner decision
+of July 26, 2026 (`docs/ai-assistant-spec.md` §12). Adding a packet after the
+closure packet is a deliberate convention break, called out here rather than made
+silently: AI-09 closed the *reconciliation* of AI-01→AI-08, not the workstream's
+capacity to take new work. AI-10 is **the dispatchable head of the AI lane** and
+is unblocked now that PR #216 has merged.
 **SET-22 is the dispatchable head of the FloorOpsApp fix-tail** (SET-26 remains
 gated on SET-23, open); SET-18 was drafted as a paste and is dispatchable in
 parallel with it. `tests/rendered-html.test.mjs` stays additive across all
@@ -2953,8 +3092,10 @@ attention signal, not the reverse (no cycle). Contended-file flags: `WorkspaceDe
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was
 AI-07b's (released at the PR #195 merge); `tests/rendered-html.test.mjs` is
 touched additively by the AI packets — serialize merges. DES-10 (brand refinement, not priority) takes the globals
-lock only for its `.brand` edit, in a free window after DES-04/05/07. Migration numbers are assigned at merge time (coordinate
-with open BE-07's reserved PostgreSQL v7, KPI-04, and DES-08 a-T2).
+lock only for its `.brand` edit, in a free window after DES-04/05/07. Migration numbers are assigned at merge time by reading
+the current high-water mark, never by quoting one from a document — see global guardrail 3.
+The three packets this line used to name as open (BE-07's reserved v7, KPI-04, DES-08 a-T2)
+have all merged; as of July 26, 2026 the marks are **PostgreSQL v10** and **D1 0019**.
 
 **Owner/Brett track (calendar time — start nudging now):** Brett's read-only GCP
 inventory + Workspace resource verification (WS-01/WS-02, checklists 01/02) are the only

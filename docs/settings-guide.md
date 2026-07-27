@@ -378,7 +378,17 @@ Administrators also get a small **Connection health** expander showing the conne
 ### Stage 3 — "Define & create your workspace"
 *On-screen subtitle: "Decide what exists, then create it — in order."*
 
-Here you adopt the manually created **FCI Operations** Shared Drive, let the app verify its sharing restrictions, create the standard folder tree, and ensure the blueprint spreadsheets — all from buttons in the Resources area, in order. You do **not** hand-build the project folders; the app creates them to a fixed blueprint so filing always lands in the right place. Owner-named folders can be renamed later from the same area; system filing folders stay locked on purpose.
+Here you adopt the manually created **FCI Operations** Shared Drive and then create everything else from buttons in the Resources area, **in order**:
+
+1. **Shared Drive** — adopt it, and let the app verify its sharing restrictions.
+2. **Folder tree** — create the standard folders.
+3. **Spreadsheets** — ensure the blueprint spreadsheets.
+4. **Templates** — *Ensure templates* creates the Templates folder and the starter document templates.
+5. **Calendars** — verify only; this row stays locked until step 4 finishes.
+
+**Do not skip step 4.** Templates is one of the four items the stage counts toward "ready", and Calendars is gated on it — so if you stop after the spreadsheets, Stage 3 sits at *3 of 4 ready*, Calendars stays disabled, and Stage 4 stays **WAITING** with nothing on screen explaining why.
+
+You do **not** hand-build the project folders; the app creates them to a fixed blueprint so filing always lands in the right place. Owner-named folders can be renamed later from the same area; system filing folders stay locked on purpose.
 
 **Updated July 24, 2026.** Stage 3 keeps **Workspace creation** and **Blueprint** in separate disclosure rows. Their status stays visible while collapsed; the first row that still needs work opens automatically on initial load, and both stay collapsed when setup is complete. Expanding or collapsing either row changes presentation for the current session only.
 
