@@ -52,7 +52,9 @@ below, which also covers the state of GitHub itself (issues/PRs).
 - IDs: `BE-*` backend architecture & data storage · `WS-*` Google Workspace connection ·
   `SET-*` Settings/Setup UI · `TRK-*` task tracking/doc reconciliation · `KPI-*` flooring
   KPIs & reporting · `GI-*` Google-native integrations · `DES-*` dashboard design ·
-  `AI-*` AI assistant & automation · `OIDC-*` BE-04 post-merge security follow-ups (in
+  `AI-*` AI assistant & automation · `EDIT-*` record editing (see
+  [`# Record editing (EDIT)`](#record-editing-edit)) · `HINT-*` in-app guidance ·
+  `OIDC-*` BE-04 post-merge security follow-ups (in
   [`docs/be04-oidc-review-and-followups.md`](be04-oidc-review-and-followups.md)).
   Dependencies are listed per item.
 
@@ -61,6 +63,13 @@ below, which also covers the state of GitHub itself (issues/PRs).
 0. **Guide currency (added July 23, 2026).** Any packet touching `app/settings/**`
    or the FloorOpsApp settings surfaces must update `docs/settings-guide.md` or
    state "Guide impact: none" in its Status line on completion.
+   **Pinned-prose warning (added July 27, 2026):** parts of the guide (and of the
+   rollout guide) are matched by exact pattern in CI — `ai-outbound-guard`,
+   `set11-directory-sync`, `set24-employee-login-readiness`,
+   `workspace-sync-contracts`, and `task-tracking-docs` all read them. The mandatory
+   guide edit is therefore the edit most likely to turn CI red: when it does, search
+   those suites for a phrase from your change before assuming a code problem, and
+   update the pin and the prose together, deliberately.
 1. **Secrets never touch the repo or an agent.** OAuth client secrets, token-encryption
    keys, and passwords go only into ChatGPT Sites runtime environment settings marked as
    secrets (development) or Secret Manager (production). Items that need them are OWNER
@@ -97,6 +106,13 @@ below, which also covers the state of GitHub itself (issues/PRs).
    real endpoint; backend-planned capabilities appear only as clearly-badged "Planned"
    placeholders. Server-side `requireOfficeUser({admin:true})` gates stay untouched — UI
    admin-gating is honesty, not security.
+7b. **Golden hashes (defined here because ~20 Accept lines cite them).** Two SHA-256
+   digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports section
+   markup byte-for-byte. Only `npm run test:e2e` evaluates them — `npm test` never does.
+   "Golden hashes untouched" in an Accept line means that suite passes with the digests
+   unchanged. A mismatch is a signal, not a chore: regeneration is a sanctioned,
+   diff-reviewed event restricted to packets that explicitly say so (historically DES-05
+   and DES-07). Never paste a new digest in to make a suite pass.
 8. Visual/design remediation through PR #30 is included in private Sites development
    version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
    `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
@@ -556,66 +572,99 @@ shipped through at least one surface.
 **Three scope decisions remain open and belong to the owner** — recorded here
 so no packet decides them by default:
 
-1. **Who may edit.** Office-wide or admin-only? Recommendation: office-wide
-   for descriptive fields, admin for money and status.
-2. **Archive vs delete.** Every status enum already carries `archived` and no
-   delete endpoint exists anywhere. Recommendation: archive-only, no deletes.
+**SETTLED — owner decisions, July 26, 2026.** These were previously recorded here as
+"Recommendations" with no decision surface anywhere in the repo, which made EDIT-05 and EDIT-06
+unbuildable: EDIT-05 deferred project `status` to a who-may-edit answer that did not exist, and
+EDIT-06's Accept criterion cited an archive-only decision that had never been made. Also recorded
+as owner-decision rows in
+[`task-checklists/06-20-user-operating-model-and-access.md`](task-checklists/06-20-user-operating-model-and-access.md).
+
+1. **Who may edit — everyone edits; money and status are Administrator-only.** Any office user may
+   change descriptive fields (names, sites, contacts, next actions, notes). **Administrator-only:**
+   `contractValue`, `estimatedValue`, and project `status`. This mirrors create, where
+   `contractValue` is already admin-gated (`app/api/v1/projects/route.ts:65-67`), so the edit path
+   inherits an existing precedent rather than inventing a rule.
+   **Enforcement caveat every EDIT packet must honor:** with the capability system self-granted
+   (EDIT-01), **`isAdmin` is the only authorization primitive that actually works today.**
+   "Administrator-only" is therefore real and enforceable now; any finer role distinction is not,
+   and no packet may pretend otherwise.
+2. **Archive vs delete — archive only; records are never deleted.** Every status enum already
+   carries `archived` and no delete endpoint exists anywhere. Keeps the audit trail, filed-email
+   links, and project history intact, and matches the repo's posture everywhere else: append-only
+   migrations, the trigger-enforced append-only `activity_events`, and SET-18's never-delete
+   reconcile rule.
 3. **Conflict UX.** On a 409, show the conflict and let the user re-apply
    rather than auto-merging — `docs/task-checklists/09-frontend-and-multi-
    user-hardening.md:52` asks for exactly this.
 
-### EDIT-01 · Lead PATCH capability enforcement (small, no deps)
-**Why:** `PATCH /api/v1/leads/[leadId]` gates on `requireOfficeUser` alone
-(`app/api/v1/leads/[leadId]/route.ts:16-22`), so any office user may change
-any lead field regardless of role. `AUTHORIZATION_CAPABILITIES.leadsUpdate`
-already exists (`app/application/authorization-capabilities.ts:4`) and is
-role-mapped (`app/application/authorization-policy.ts:48,80`) with **zero
-consumers** — the check was built and never wired.
-**Do:** require `leadsUpdate` in the lead PATCH handler using the call shape
-an existing capability-gated route already uses; return 403 with the standard
-error body, never 404, keeping the `requireOfficeUser` authentication step
-ahead of it. Change no field validation, no response shape, and no audit
-string — this packet is authorization only, so the EDIT-04 form work lands on
-an already-gated route. Record the capability wherever route capabilities are
-listed.
-**Files:** `app/api/v1/leads/[leadId]/route.ts`,
-`app/application/authorization-policy.ts` (verify only — the mapping already
-exists), tests.
-**Accept:** an office user without `leadsUpdate` gets 403 from lead PATCH and
-the lead row is unchanged; an authorized user's PATCH is byte-identical to
-today in fields accepted, audit rows written, and response shape;
-`advanceLead` keeps working for authorized roles with its existing audit
-string; a source assertion proves `leadsUpdate` now has a consumer so it
-cannot silently regress to unused; `npm test` green.
+### EDIT-01 · Lead edit auditing, and recording the authorization gap honestly (small, no deps)
+**Why:** this packet replaces an earlier EDIT-01 that would have produced security theater.
+The original said to wire `AUTHORIZATION_CAPABILITIES.leadsUpdate` into the lead PATCH route "using
+the call shape an existing capability-gated route already uses". That instruction was executable —
+nine such call sites exist across six routes, including a near-identical PATCH-by-id at
+`app/api/v1/tasks/[taskId]/route.ts:32-44` — **but the pattern it points at enforces nothing.**
+Every route hard-codes the capability array it then checks:
+`creationAuthorizationFor({ actorId, capabilities: [AUTHORIZATION_CAPABILITIES.x] })`, and
+`canCreate` merely tests `capabilities.has(x)` on that same set
+(`app/application/creation-authorization.ts:25-34`) — **always true by construction**. No route
+derives capabilities from the actor's role: `requireOfficeUser` returns only `{ email, isAdmin }`
+(`app/lib/workspace-auth.ts:4-7`), and `authorization-policy.ts` is consumed only by
+`app/platform/google-cloud/employee-oidc.ts` and `employee-request-router.ts` — the Cloud Run
+path, not the transport in use. Shipping the original would have closed a security finding on
+paper while changing nothing, which is worse than leaving the gap visible.
+Two real, independent things remain, and this packet does the first.
+**Do (a) — close the audit hole, which needs no identity work.** Lead PATCH accepts 13 fields
+(`MUTABLE_KEYS`) but audits only `stage` and `nextAction`
+(`app/api/v1/leads/[leadId]/route.ts:57-78`), so changing an email, owner, or estimated value
+lands with **no evidence at all**. Write one `activity_events` row per edit with a before→after
+detail, in the same batch as the write so an audit row cannot outlive a failed update, following
+the existing before/after form at `:64` (`${current.stage} → ${values.stage}`) — the only
+before/after diff in the codebase.
+**Do (b) — record the authorization gap, do not paper over it.** Add a short subsection to
+`docs/authorization-simulation.md` (or the nearest authorization doc) stating plainly that
+`recordsRead`, `leadsCreate`, `leadsUpdate`, `tasksUpdate`, `meetingsUpdate`, `createClient` and
+`createProject` are **self-granted and enforce nothing on the Sites transport**, that `isAdmin` is
+the only working authorization primitive today, and that real enforcement is blocked on durable
+identity (owner decision, July 26, 2026 — record it, defer the fix). Do **not** delete the
+capability scaffolding and do **not** build roles here.
+**Do NOT:** wire `leadsUpdate` into the route. It would pass unconditionally and make the gap
+invisible. When durable identity lands, that wiring becomes a one-line change on an
+already-audited route.
+**Files:** `app/api/v1/leads/[leadId]/route.ts`, `app/ports/lead-repository.ts` (the audit
+`action` union), the D1 and PostgreSQL lead adapters, `docs/authorization-simulation.md`, tests.
+**Accept:** every one of the 13 mutable fields produces an audit row with a before→after detail;
+a failed update writes **no** audit row; `advanceLead` keeps its existing behavior and audit
+string byte-identical; the authorization doc names the seven self-granted capabilities and the
+`isAdmin`-only reality; a source assertion pins that the lead PATCH route does **not** call
+`creationAuthorizationFor`, so nobody re-adds the decorative check believing it enforces
+something; `npm test` green.
 **Effort:** small. **Cost:** $0.
 
-### EDIT-02 · `phone-call` meeting type PostgreSQL parity (small, no deps; BE-16 pattern)
-**Why:** the meeting-type enum (`app/domain/project-meeting.ts:7`) and the UI
-picker (`app/FloorOpsApp.tsx:1845`) both offer `phone-call`, but the
-production PostgreSQL CHECK omits it
-(`app/platform/postgres/lead-project-meeting-schema.ts:128-130`), so a
-phone-call meeting that saves in development is rejected by the production
-adapter the moment that path is exercised. AI-01 added the type to D1 only,
-per the KPI-04/BE-16 precedent of deferring PostgreSQL parity to its own
-packet.
-**Do:** register a checksummed production PostgreSQL migration as the next
-contiguous version — prior definitions AND checksums byte-untouched — that
-replaces the meeting-type CHECK with one byte-equal to the D1 domain catalog
-including `phone-call`. Follow BE-16 exactly: additive only, no runtime path
-may assume it applied, least-privilege grants reviewed, and the rehearsal
-inventory (`app/platform/migration/core-record-rehearsal.ts`) extended so a
-`phone-call` meeting round-trips instead of being rejected or silently
-dropped.
-**Files:** `app/platform/postgres/production-schema-migrations.ts`,
-`app/platform/postgres/lead-project-meeting-schema.ts`,
-`app/platform/migration/core-record-rehearsal.ts`, tests.
-**Accept:** the migration is contiguous with every prior checksum unchanged;
-the CHECK is byte-equal to the D1 catalog; a real-PG round trip stores and
-reads back a `phone-call` meeting and still rejects an out-of-catalog value;
-a rehearsal test proves a `phone-call` meeting survives snapshot→import; no
-runtime path assumes the migration applied (source-only law); `npm test`
-green.
-**Effort:** small. **Cost:** $0.
+### EDIT-02 · `phone-call` meeting type PostgreSQL parity (RETIRED — filed on a false premise)
+**Status:** Resolved in PR #135, July 23, 2026. The premise was wrong; no work is needed.
+**Why it was withdrawn:** this packet claimed the production CHECK omits `phone-call`, citing
+`app/platform/postgres/lead-project-meeting-schema.ts:128-130`. That omission is real but
+**historical**: it is the v6 baseline `CREATE TABLE`. Migration **v8**
+(`app/platform/postgres/task-schema.ts:74-75`, `TASK_SCHEMA_STATEMENTS`, added by commit
+`4256a2d` "Build AI-01 task foundation" in **PR #135**) then does
+`ALTER TABLE project_meetings DROP CONSTRAINT project_meetings_type_check` and re-adds it
+**including `'phone-call'`**. Migrations apply cumulatively and are checksum-immutable, so the
+last writer wins and earlier DDL is unpatchable by design — a v11 rewriting the same constraint
+would be a no-op.
+The packet was also internally incoherent: its **Files** named
+`lead-project-meeting-schema.ts` for editing while its **Do** required prior checksums stay
+byte-untouched — editing that file changes v6's checksum and throws at validation.
+**The lesson, recorded so it is not repeated:** "the constraint omits X" says nothing about the
+applied schema in a cumulative migration system. Always follow the chain to the last migration
+that touches the constraint, never read a single schema file as the live state.
+**Residual worth keeping (small, optional, no deps):** nothing exercises this constraint against
+real PostgreSQL. `tests/production-postgres.integration.test.mjs` runs every migration on a live
+instance and asserts two other `project_meetings` constraints, but only ever inserts `'client'`
+and `'internal'` — never a `phone-call` row, and never an out-of-catalog rejection. The only
+existing proofs are a source-regex assertion and a plan-level rehearsal assertion. If refiled,
+the scope is **regression coverage only**: insert a `phone-call` meeting on real PG and assert an
+out-of-catalog value is rejected. Requires `TEST_POSTGRES_URL`, which is unset locally and set in
+CI.
 
 ### EDIT-03 · Optimistic concurrency + edit auditing foundation (medium; gates EDIT-04…EDIT-07)
 **Why:** production PostgreSQL updates do `version = version + 1 WHERE id =
@@ -681,9 +730,9 @@ no `defaultValue`s** and needs an `initialValues` prop before it can be
 pre-filled at all. Submit only changed keys as a partial patch against the
 EDIT-03 validator, send the row's `version`, and on 409 show the conflict and
 let the user re-apply rather than auto-merging. Leave `advanceLead` exactly
-as it is — it stays the fast path for stage moves. Honor the owner's
-who-may-edit decision above once recorded; until then gate money and status
-fields to admin and descriptive fields to office users.
+as it is — it stays the fast path for stage moves. Apply the settled
+who-may-edit decision above: `estimatedValue` is Administrator-only via
+`isAdmin`; every descriptive field is open to office users.
 **Files:** `app/FloorOpsApp.tsx` (`LeadModal` — the merge-conflict hotspot;
 takes one queue slot), `app/api/v1/leads/[leadId]/route.ts`,
 `app/domain/lead.ts`, tests + simulation e2e.
@@ -709,8 +758,10 @@ This is the owner's original report and the audit rates it **Critical**.
 — none exists — whose PATCH takes a partial body validated by an
 EDIT-03-style patch validator and fenced by `version`. Keep `contractValue`
 admin-gated exactly as the create route does
-(`app/api/v1/projects/route.ts:65-67`) and route `status` through the owner's
-who-may-edit decision. Leave the four existing collection-level operations
+(`app/api/v1/projects/route.ts:65-67`). Per the settled who-may-edit decision,
+**`status` and `estimatedValue` are Administrator-only too, enforced via
+`isAdmin`** — the only authorization primitive that works today (EDIT-01);
+every other project field is open to office users. Leave the four existing collection-level operations
 untouched and do NOT re-route them through the new handler, so their audit
 strings cannot drift. UI: an edit surface on the project detail view sending
 only changed keys, with the 409 conflict shown for re-apply. Meetings editing
@@ -2993,7 +3044,8 @@ live login, another user, or real data.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
-SET-03→SET-10 · SET-04→SET-11 · OIDC-01→OIDC-02→OIDC-03. OIDC-04 was the
+SET-03→SET-10 · SET-04→SET-11 · **EDIT-03→{EDIT-04, EDIT-05, EDIT-06, EDIT-07}** (and
+EDIT-01→EDIT-04) · OIDC-01→OIDC-02→OIDC-03. OIDC-04 was the
 documentation/guard reconciliation; it is complete in PRs #49/#50 and does not change
 the runtime dependency chain.
 
@@ -3107,9 +3159,25 @@ those inputs; Jason's other open decisions live in checklists 00/06/10.
 SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 → KPI-02 / PR #52 → KPI-03 /
 PR #75 → GI-03 / PR #80 → SET-35 / PR #107 are complete in source. The reconciled
 queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-04 →
-DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI → SET-26 UI.
+DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI → SET-26 UI →
+**AI-10 sub-PR (f)** → **EDIT-04** → **EDIT-05** → **EDIT-06** → **EDIT-07** →
+HINT-02-B.
 AI-02 is complete in PRs #182/#187/#193 and released the slot; AI-09 is a
 docs/tests-only closure packet and does not claim `app/FloorOpsApp.tsx`.
+
+> **This list is the claim order, and it must stay complete.** Until July 27, 2026 it ended at
+> `SET-26 UI` and named no packet filed after AI-09 — while AI-10 sub-PR (f) and EDIT-04…07 all
+> list `app/FloorOpsApp.tsx` in their Files and EDIT-04 calls itself "the merge-conflict hotspot;
+> takes one queue slot". Combined with the dispatch law ("a packet is available if and only if it
+> has no status line"), **two agents could legitimately claim this file at the same time** — the
+> exact collision `AGENTS.md:54-58` names as its canonical example. Any packet that adds a
+> `FloorOpsApp.tsx` change must be added here in the same PR that files it.
+>
+> **Implement once, not twice:** AI-10 sub-PR (f) and EDIT-04 both specify the *same* source
+> change — an `initialValues` prop on `LeadModal` (`app/FloorOpsApp.tsx:1572-1574`). Whichever
+> reaches the slot first ships it; the second consumes it and says so. See "Cross-item
+> coordination (implement once)".
+
 Interleave other SET items only in extracted modules that do not
 touch `FloorOpsApp.tsx`. Workstream D's KPI packets are
 otherwise independent of the BE/WS tracks (KPI-04 coordinates PostgreSQL migration
@@ -3119,7 +3187,10 @@ version numbers with BE-06).
 BE-08 / PR #45 under WS-04's documented boundary; calendar-ID single authority remains
 SET-05 ↔ BE-07; integration events reader remains SET-09 ↔ WS-10;
 `GOOGLE_WORKSPACE_PUBSUB_TOPIC` removal (WS-03, referenced by BE-02); version-37 doc fixes
-(BE-01, referenced by WS-03; preserve accurate historical release evidence).
+(BE-01, referenced by WS-03; preserve accurate historical release evidence);
+**`LeadModal` `initialValues` prop (`app/FloorOpsApp.tsx:1572-1574`) remains AI-10 sub-PR (f)
+↔ EDIT-04** — both packets specify the identical change, the earlier one through the
+FloorOpsApp queue ships it, and the later one consumes it and records that it did.
 
 ## Verification appendix
 

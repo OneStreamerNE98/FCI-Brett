@@ -1,5 +1,12 @@
 # FCI Operations — Guide for Everyday Users and Administrators
 
+> **Editors note — parts of this page are pinned by automated tests.** Several sentences in this
+> guide are matched by exact pattern in the CI suite (see `tests/ai-outbound-guard.test.mjs`,
+> `tests/set11-directory-sync.test.mjs`, `tests/set24-employee-login-readiness.test.mjs`), so an
+> innocent rewording can fail the build with an error naming an unrelated feature. If a doc edit
+> turns CI red, search those three files for a phrase from your change before assuming a code
+> problem.
+
 ## Who this is for
 
 This guide is for two kinds of reader, and it is split so you only need your half:

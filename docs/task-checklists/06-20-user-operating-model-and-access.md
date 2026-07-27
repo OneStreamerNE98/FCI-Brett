@@ -28,6 +28,15 @@ The application role and the person’s direct Google Workspace access must be a
 - [x] Project Managers may update status, tasks, meetings, and notes and view/upload nonfinancial files only for assigned projects; related client/contact context is read-only.
 - [ ] Decide the phased employee rollout order. Naming two initial Administrators does not authorize either account, exclude Office Operations or Project Managers from a later rollout, or relax the existing one-live-user development gate.
 
+### Record editing (decided July 26, 2026 — gates the EDIT-01…EDIT-07 series)
+
+Recorded here because the EDIT packets deferred to these answers while naming no surface where they would be written. EDIT-05 and EDIT-06 were unbuildable until they existed. Design detail lives in the ledger's [`# Record editing (EDIT)`](../agent-plan-architecture-workspace-and-setup.md) preamble.
+
+- [x] **Who may edit saved records: everyone edits; money and status are Administrator-only.** Any office user may change descriptive fields (names, sites, contacts, next actions, notes). `contractValue`, `estimatedValue`, and project `status` are Administrator-only. Mirrors create, where `contractValue` is already admin-gated.
+- [x] **Archive only — records are never deleted.** Every status enum already carries `archived`; no delete endpoint exists anywhere. Preserves the audit trail, filed-email links, and project history, matching the append-only posture used everywhere else in the app.
+- [x] **Conflict handling: on a 409, show the conflict and let the user re-apply** rather than auto-merging, as [checklist 09](09-frontend-and-multi-user-hardening.md) asks.
+- [x] **The authorization gap is recorded, not fixed, for now.** The capability system (`leadsUpdate`, `tasksUpdate`, `recordsRead`, and four others) is **self-granted and enforces nothing** on the current transport: every route hands in the permission it then checks. Roles exist only on the unbuilt Cloud Run path. **`isAdmin` is the only authorization primitive that works today**, so "Administrator-only" above is enforceable and any finer role distinction is not. Real enforcement is blocked on durable user identity — the same prerequisite as per-user Gmail.
+
 ## Approved application roles and rollout status
 
 | Role/access type | Scope used by authorization simulation | Current status |

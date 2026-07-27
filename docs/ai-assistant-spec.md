@@ -298,7 +298,18 @@ packet corrects the help/presentation mismatch.
   (config PATCH), access-boundaries (office vs admin per §4 table),
   bounded-api-bodies (every new POST/PATCH), and the new
   `assistant-inbox-component-boundaries` test (AI-02).
-- Golden hashes: **no AI packet may regenerate them.**
+- Golden hashes: **no AI packet may regenerate them.** They are the two SHA-256
+  digests in `tests/e2e/page-layouts.spec.ts` freezing the Overview and Reports
+  markup; only `npm run test:e2e` evaluates them.
+- **Doc-side pins on THIS spec (know these before editing it):**
+  `tests/ai-outbound-guard.test.mjs` pins the §8 and §11 headings **verbatim,
+  including the parenthetical dates** — retitling either section, or updating
+  §11's "source-verified" date, fails the build unless the pin moves in the same
+  commit. It also requires each residual id AI-R01…AI-R14 to appear **exactly
+  once** inside §11, so a cross-reference like "see AI-R07" elsewhere in that
+  section is illegal. The same suite pins sentences in `docs/settings-guide.md`
+  and `docs/meeting-notes-and-otter.md`. Prose and pin move together,
+  deliberately, or not at all.
 
 ## 11. Reconciled residual register (source-verified July 26, 2026)
 

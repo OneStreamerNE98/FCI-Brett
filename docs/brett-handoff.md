@@ -40,7 +40,9 @@ displays (copy-paste it — one wrong character and sign-in fails).
 Enable Maps billing on the approved project and create a **restricted browser
 key** (HTTP-referrer locked to the app's domains, Maps APIs only). This is the
 one thing blocking live job-site maps on the client/project screens. Hand the
-key to Jason for hosting configuration — not by email.
+key to Jason for hosting configuration — not by email. Jason: it goes into the
+hosted environment settings under the exact name **`GOOGLE_MAPS_BROWSER_API_KEY`**;
+full detail in [checklist 02, Maps Platform](task-checklists/02-google-cloud-and-oauth.md).
 
 ## Block 4 · Google-native quick wins (~1 hr, no code involved)
 

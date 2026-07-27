@@ -83,6 +83,7 @@ Do not reuse the broad data-connector client for employee sign-in.
 - [ ] Enable Maps Embed API, Address Validation API, and Places API (New); enable Routes API only when crew drive-time work is scheduled.
 - [ ] Create a browser API key restricted by HTTP referrer to the application hostname, and a server API key with IP/application restriction.
 - [ ] Set a Cloud Billing budget with alerts at $10 and $25.
+- [ ] **Paste the browser key's value into the hosted environment settings under the name `GOOGLE_MAPS_BROWSER_API_KEY`** (the name the app reads — `app/features/maps/job-site-map.ts`). Setting it is what turns job-site map embeds live; until then the map card shows its placeholder. The server key has no consumer yet — hold it until a packet names one.
 - [ ] Record the non-secret key names in the configuration inventory; never record key values.
 
 ## Completion result

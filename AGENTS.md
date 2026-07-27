@@ -55,7 +55,17 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   the status lines in the [agent execution plan](docs/agent-plan-architecture-workspace-and-setup.md)
   are the claim mechanism. A packet that is `In progress` or `In review` is owned —
   do not take it, and do not edit the files its branch touches. The
-  `app/FloorOpsApp.tsx` single-file queue rule is the canonical example.
+  `app/FloorOpsApp.tsx` single-file queue rule is the canonical example, and its queue
+  order appendix is the claim list — a packet that adds a `FloorOpsApp.tsx` change must
+  add itself there in the same PR.
+- **A packet is available if and only if it has no status line.** Prose lists of
+  "unclaimed packets" are historical narrative and have gone stale repeatedly; the status
+  lines are the only dispatch authority and the only part of the ledger a test enforces.
+- **The status-line grammar is mechanically enforced** by `tests/task-tracking-docs.test.mjs`
+  across five packet ledgers — the marker is bold `**Status:**`, it sits on the line directly
+  below the heading, and only six forms are legal. An invalid line fails CI with a message
+  that does not name the legal forms, so copy the table in the plan's "Task tracking and doc
+  reconciliation" section rather than guessing.
 - **If your work unexpectedly needs a file another agent's open PR touches**, stop and
   flag it to the owner instead of racing the other agent to a conflict.
 - **After any sibling PR merges**, re-check your open branch's mergeability against
@@ -89,11 +99,24 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
 
 ```powershell
 npm.cmd ci
-npm.cmd test
 npm.cmd run lint
+npm.cmd test
+npm.cmd run test:e2e
 ```
 
-`npm test` includes the production build and the Node test suite. If a command cannot run, record the exact blocker rather than treating unverified work as complete.
+**`npm test` is not the whole gate.** It runs the production build, the Cloud Run build, and the Node test suite (`tests/*.test.mjs`) — it does **not** run Playwright. CI requires three separate jobs on every pull request, and a branch that only passed `npm test` can still fail two of them:
+
+| CI job | What runs it | What it covers |
+|---|---|---|
+| `Node 22 lint, build, and tests` | `npm run lint` then `npm test` | ESLint, both builds, the Node suite — run against a live `postgres:16` service with `TEST_POSTGRES_URL` set, so real-PostgreSQL tests that self-skip locally **do** run in CI |
+| `Chromium rendered regression tests` | `npm run test:e2e` | the Playwright specs in `tests/e2e/`, including the two golden-hash digests in `tests/e2e/page-layouts.spec.ts` |
+| `Terraform source validation` | `terraform fmt -check -recursive`, `validate`, `test` | everything under `infrastructure/google-cloud`, plus an expected-failure activation-lock test |
+
+Packet Acceptance lines frequently require e2e evidence ("simulation e2e", "prove it in the Office e2e journey"); `npm run test:e2e` is how you produce it. Run `npm run e2e:db:prepare` first if the local D1 fixture is stale.
+
+If a command cannot run, record the exact blocker rather than treating unverified work as complete. Known environment blocker: `npm test` requires Node ≥ 22.13.0 (`vinext` uses `node:fs/promises.glob`); on Node 20 it fails during the build, which is a toolchain problem, not a code failure.
+
+**Golden hashes.** Two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup. Only `npm run test:e2e` evaluates them. If one mismatches, that is a signal, not a chore — regenerating them is a sanctioned event restricted to packets that explicitly say so. Never paste a new digest in to make a suite pass.
 
 ## Security and data rules
 
@@ -117,7 +140,9 @@ At the end of a task, report:
 
 - Branch and commit identifiers
 - Files changed and the user-visible outcome
-- Tests/build/lint run and their results
+- Tests/build/lint run and their results — name each of the three CI gates
+  (`npm run lint`, `npm test`, `npm run test:e2e`) and its outcome, or the exact blocker
+  if one could not run. "Tests pass" without naming which suites ran is not a report.
 - Data, security, configuration, and migration impact
 - Remaining blockers or owner actions
 - Whether deployment or external configuration was intentionally left unchanged
