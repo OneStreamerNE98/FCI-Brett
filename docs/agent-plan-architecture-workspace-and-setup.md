@@ -613,6 +613,7 @@ as owner-decision rows in
    user-hardening.md:52` asks for exactly this.
 
 ### EDIT-01 · Lead edit auditing, and recording the authorization gap honestly (small, no deps)
+**Status:** In review — PR #222
 **Why:** this packet replaces an earlier EDIT-01 that would have produced security theater.
 The original said to wire `AUTHORIZATION_CAPABILITIES.leadsUpdate` into the lead PATCH route "using
 the call shape an existing capability-gated route already uses". That instruction was executable —
