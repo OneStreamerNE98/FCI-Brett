@@ -346,7 +346,7 @@ export function ProjectFileCreationModal({
           <div>
             <h3>{created.name} is ready</h3>
             <p>{created.simulated
-              ? `Simulation only${created.environment ? ` (${created.environment})` : ""} — no Google file was created.`
+              ? "Simulation only — no Google file was created."
               : "The file was created in the selected project folder."}</p>
           </div>
         </div>

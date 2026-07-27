@@ -146,7 +146,7 @@ test("provisions a project, then an Office user creates a blank Sheet and a temp
     const sheetResponse = await sheetResponsePromise;
     expect(sheetResponse.status()).toBe(201);
     expect(sheetResponse.request().postDataJSON()).toEqual({ kind: "sheet", name: SHEET_NAME });
-    await expect(modal.getByText("Simulation only (development) — no Google file was created.", { exact: true })).toBeVisible();
+    await expect(modal.getByText("Simulation only — no Google file was created.", { exact: true })).toBeVisible();
     const sheetLink = modal.getByRole("link", { name: "View simulation", exact: true });
     await expect(sheetLink).toHaveAttribute("href", /workspace-simulation=project-file/u);
     await expect(sheetLink).toHaveAttribute("target", "_blank");
@@ -176,7 +176,7 @@ test("provisions a project, then an Office user creates a blank Sheet and a temp
       templateKey: "estimate-proposal",
       folderKey: selectedFolderKey,
     });
-    await expect(modal.getByText("Simulation only (development) — no Google file was created.", { exact: true })).toBeVisible();
+    await expect(modal.getByText("Simulation only — no Google file was created.", { exact: true })).toBeVisible();
     const templateLink = modal.getByRole("link", { name: "View simulation", exact: true });
     await expect(templateLink).toHaveAttribute("href", /workspace-simulation=project-file/u);
     await expect(templateLink).toBeFocused();
