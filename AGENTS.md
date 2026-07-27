@@ -63,6 +63,11 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   lines are the only dispatch authority. (The ledger guard also enforces heading grammar
   and rejects stale merged-PR references, but nothing makes prose availability lists true —
   which is exactly why they must not be dispatched from.)
+- **Owner decisions have exactly one home.** AI-workstream decisions live in
+  `docs/ai-assistant-spec.md` §12; operating-model and record-editing decisions live in
+  `docs/task-checklists/06-20-user-operating-model-and-access.md`. Every other surface
+  (ledger preambles, plan files, packet bodies) **points, never copies** — and on any
+  conflict, the home wins. Copies drift; this session proved it twice.
 - **The status-line grammar is mechanically enforced** by `tests/task-tracking-docs.test.mjs`
   across five packet ledgers — the marker is bold `**Status:**`, it sits on the line directly
   below the heading, and only six forms are legal. An invalid line fails CI with a message

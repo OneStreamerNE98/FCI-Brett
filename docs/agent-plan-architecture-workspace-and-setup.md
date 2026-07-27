@@ -611,6 +611,12 @@ as owner-decision rows in
 3. **Conflict UX.** On a 409, show the conflict and let the user re-apply
    rather than auto-merging — `docs/task-checklists/09-frontend-and-multi-
    user-hardening.md:52` asks for exactly this.
+4. **Sequencing (owner decision, July 27, 2026): projects before leads.**
+   EDIT-05 ships before EDIT-04. The previous cheapest-first order optimized
+   for implementation cost; the owner's original report was project fields,
+   and `docs/development-section-audit.md` rates projects Critical vs leads
+   High. The FloorOpsApp queue appendix carries the full reordered claim
+   order.
 
 ### EDIT-01 · Lead edit auditing, and recording the authorization gap honestly (small, no deps)
 **Why:** this packet replaces an earlier EDIT-01 that would have produced security theater.
@@ -641,9 +647,13 @@ adapter's activity INSERTs are plain unguarded statements batched with the UPDAT
 (`app/adapters/d1/lead-repository.ts:40-51`) — a zero-row UPDATE still commits the INSERTs and
 only then reports lead-not-found, so "same batch" alone does NOT stop an audit row outliving a
 failed update. Guard each audit INSERT with a `WHERE EXISTS` predicate matching the update's own
-row-and-version condition, and add a test in which a stale-version PATCH leaves **zero** audit
-rows. This packet owns the **lead** audit closure exclusively — EDIT-03 builds the shared
-audit/validator pattern for the *other* entities and must not respecify lead fields.
+row-identity condition — **`id` + `updated_at` today**, since leads have no `version` column
+until EDIT-03 adds one (PR #222 implements exactly this shape) — and add a test in which a
+stale-`updated_at` PATCH leaves **zero** audit rows.
+This packet owns the **lead** audit closure exclusively — EDIT-03 builds the shared
+audit/validator pattern for the *other* entities and must not respecify lead fields, with one
+named exception: **EDIT-03 upgrades this guard's token from `updated_at` to `version`** in the
+same change that adds the column.
 **Do (b) — record the authorization gap, do not paper over it.** Add a short subsection to
 `docs/authorization-simulation.md` (or the nearest authorization doc) stating plainly, with the
 precise split: **six capabilities are handed in self-granted** at the nine route call sites —
@@ -718,7 +728,9 @@ write leaves zero audit rows**. Do not assume the batch gives this: the
 existing D1 lead adapter's activity INSERTs are plain unguarded statements
 (`app/adapters/d1/lead-repository.ts:40-51`) — a zero-row UPDATE still
 commits them — so each audit INSERT needs a `WHERE EXISTS` predicate matching
-the update's own row-and-version condition, per adapter, as new work. Detail
+the update's own row-and-version condition, per adapter, as new work (for the
+lead adapter this means upgrading EDIT-01's shipped `updated_at` token to the
+new `version` column — the one named exception to "adopts, never respecifies"). Detail
 strings follow the only before→after diff in the codebase today
 (`app/api/v1/leads/[leadId]/route.ts:64`, `${current.stage} → ${values.stage}`).
 **Lead-field audit closure is EDIT-01's scope, not this packet's** — EDIT-03
@@ -1137,6 +1149,31 @@ anchors at the `aa8ed8f` baseline: `SettingsView` at `app/FloorOpsApp.tsx:1354`,
 At that baseline, `GET /api/v1/settings/me` returned no `isAdmin`; PR #37 added the
 authenticated flag without weakening any server gate. No integration audit route exists.
 (Anchors drift — locate by symbol name.)
+
+### WS-17 · Google credential severance on employee disable/offboarding (small-medium)
+**Why:** disabling a user never touches their Google credentials: `disableUser`
+(`app/adapters/postgres/admin-access-persistence-repository.ts:1100-1167`) revokes sessions
+and invitations but no Google token, and the production integration-metadata port has **no
+revoke operation at all** (`app/ports/integration-metadata.ts:113-127`). Today, at one shared
+connection, an offboarded admin's knowledge of the connected account outlives their access;
+under per-user Gmail this becomes each departing employee keeping a live mailbox connection.
+Flagged twice by research (July 27) and owned by no packet until now.
+**Do:** add a revoke operation to the integration-metadata port and both adapters
+(delete/invalidate the stored refresh-token credential and mark the connection
+`revoked`, never hard-deleting the connection row — audit history survives); call it from
+`disableUser` in the same transaction; where a Google-side revocation endpoint call is
+appropriate, it is **fire-and-recorded** (an integration event row), never silently assumed.
+Simulation mode short-circuits the Google call and still records the event.
+**Files:** `app/ports/integration-metadata.ts`, the D1 and PostgreSQL integration-metadata
+adapters, `app/adapters/postgres/admin-access-persistence-repository.ts`,
+`infrastructure/postgres/least-privilege.sql` (the credential table needs its missing grant),
+tests.
+**Accept:** disabling a user leaves zero usable stored credentials for them; the connection
+row survives with a `revoked` status and an audit event; re-enabling requires a fresh consent
+flow, not resurrection of the old token; simulation proves the path with no live Google call;
+`npm test` + `npm run test:e2e` + `npm run lint` named with outcomes.
+**Effort:** small-medium. **Sequencing:** independent now; **must land no later than the
+per-user OAuth connect flow** in the per-user Gmail track.
 
 ### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
 **Status:** Complete — PR #35, July 19, 2026. Source-only and not deployed.
@@ -3009,6 +3046,84 @@ held only for the last one. **Cost:** provider spend only; the spec's ≤200
 emails/day budget (`docs/ai-assistant-spec.md:186-194`) is the ceiling, and
 analyze-once is what keeps it there.
 
+**ADDENDUM (July 27, 2026 — devils-advocate review; binding, part of this packet).**
+Ten judged attacks landed on this packet before dispatch. The corrections:
+
+1. **Multi-mailbox-proof storage.** The `mail_items` migration adds
+   `connection_key TEXT NOT NULL DEFAULT 'google-workspace'` and the unique index is
+   **composite `(connection_key, gmail_message_id)`**, mirroring `gmail_file_archives`
+   (Gmail message ids are per-mailbox). `findByGmailMessageId` takes
+   `(connectionKey, gmailMessageId)`; the sole caller passes the existing literal. Zero
+   behavior change at one mailbox; removes the retrofit the per-user-Gmail work would
+   otherwise force.
+2. **Kill switch.** Add an `inboxAnalysis` key to `ASSISTANT_FEATURE_KEYS` and one entry in
+   `AiAssistantSettingsCard`'s feature list; the sweep trigger and the analysis route are both
+   gated on it. New Accept line: **with `inboxAnalysis` off, an inbox load makes zero provider
+   calls and zero `mail_items` writes.** This is the day-one off switch if classification
+   quality disappoints; it does not pre-empt spec §12 decision 5.
+3. **Status vocabulary, defined here:** `needs-review · accepted · dismissed · skipped-noise ·
+   failed`. Invariant that makes the watermark claim true: **every swept message gets exactly
+   one row, whatever the outcome.** `failed` rows persist with bounded retries and are excluded
+   from queue counts; `skipped-noise` records the deterministic pre-filter's verdict (the
+   pre-filter is reinstated, not dropped). Accept adds: a seeded `List-Unsubscribe` message
+   produces a `skipped-noise` row and no provider call.
+4. **Terminal states for every intent.** Lead Accept/Dismiss transitions the row out of
+   `needs-review`; the existing filing route sets `approved_project_id` + a filed status; a
+   manual **"mark reviewed"** action clears schedule/warranty/project-update rows until AI-11
+   ships typed accepts. Without this the count only grows. The DES-08c count re-point is gated
+   on these transitions existing.
+5. **Reviewer named.** The queue's audience is the `FCI_ADMIN_EMAILS` list (1–2 people today);
+   the packet states this and the expected decisions/day. Sub-PR (f) specifies the accept
+   pre-fill contract: extracted fields plus defaults for `source`, `stage`, `ownerEmail`,
+   `nextAction`/`nextActionAt`, and names which fields (`site`, `estimatedValue`) still need
+   typing when absent — accept must be one review pass.
+6. **Coalesced notification.** At most **one** `gmail.filing_review_needed` card per sweep
+   (newest subject + "N more need review"; same payload shape, no catalog change) — not one
+   per row. Under on-load triggering, cards fire only during an admin's visit; a broadcast per
+   row would burst.
+7. **Re-analysis path.** The stored label-definition version gets a consumer: on catalog
+   change, rows still in `needs-review` become eligible for bounded re-analysis on the next
+   sweep. The analyze-once Accept criterion is reworded to "zero provider calls for
+   already-analyzed messages **under an unchanged label catalog**".
+8. **Simulation.** When `config.simulation`, analysis short-circuits to fixture results (no
+   provider call); `mail_items` cleanup joins the simulation reset route; sim rows never
+   appear in the live queue or the DES-08c count.
+9. **Honest coverage copy, corrected shape.** Replace the scan-count string with the sweep's
+   termination reason: stop-on-known renders "You're caught up"; page-cap-with-remaining
+   renders "Older messages not yet analyzed" plus a bounded **Check older** continuation. The
+   e2e pins the two states, not a count string.
+10. **Sub-PR (f) Files, corrected.** Its `FloorOpsApp.tsx` change is `initialValues` **plus
+    prefill state and an opener prop threaded into `InboxView`** (LeadModal is file-local and
+    unexported; InboxView has no lead-modal opener today). EDIT-04 ships the LeadModal rework
+    first per the reordered queue; (f) consumes it.
+Also: archived/terminal-status records are excluded from AI candidate queries and pickers
+(mirroring `isEligibleProject`), with an Accept criterion that an archived record never
+surfaces as a suggestion — shared with EDIT-05/06.
+
+### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
+**Status:** Blocked — awaiting the AI-10 sub-PR (f) merge; filed now so the deferred scope is
+visible to dispatch and unclaimable (the DES-08c precedent for a blocked-but-filed packet).
+**Why:** AI-10 deliberately ships one accept action; three intents accumulate in the queue with
+only a manual "mark reviewed" exit, and spec §12 decisions 5–6 name this packet as their
+implementing packet. Nothing else owns the label catalog editor at all.
+**Do:** (a) the three typed accepts — project-update → the existing filing path; schedule → a
+proposed task via `POST /api/v1/tasks` (`source:"email"`); warranty → the same task path with
+the callback framing. (b) The dedicated **AI assistant Settings section**, executing spec §12
+decision 5's three recorded re-points (`tests/ai08-ui-contract.test.mjs:113-126`, spec §9's
+canonical placement line, the Workstream G house rule) and decision 6's settings-card
+data-at-rest statement. (c) The **label catalog editor**: storage per the plan's Pattern A
+(row per label), opaque-slug enums, the never-delete-once-used lifecycle, description
+versioning consumed by AI-10's re-analysis path, and the full injection-mitigation set the
+plan records (fence-forgery rejection, NFKC + bidi stripping, admin-only write path, count and
+length caps, a hostile-description test proving the no-send/no-file guarantees hold).
+**Files:** named at claim time against merged AI-10 source — this packet must be re-verified
+against main before dispatch, per the amended-before-dispatch rule.
+**Accept:** every queue intent has a typed accept; the AI section exists with the three
+re-points made deliberately; label CRUD round-trips with a used label refusing deletion and a
+retired slug never reissued; a hostile label description cannot alter guard guarantees;
+`npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
+**Effort:** large. **Cost:** provider spend within the existing budget.
+
 # Workstream H — In-app guidance (HINT)
 
 Owner-approved July 23, 2026 (forms-only decision). Design authority:
@@ -3090,8 +3205,9 @@ live login, another user, or real data.
 
 **Chains:** BE-02→BE-03 · BE-06→BE-07→(coordinate SET-05) · BE-04+BE-06→BE-09→BE-10 ·
 BE-06→BE-12 · BE-08+BE-09+BE-11→BE-14 · SET-01→SET-02→{SET-03..SET-12} ·
-SET-03→SET-10 · SET-04→SET-11 · **EDIT-03→{EDIT-04, EDIT-05, EDIT-06, EDIT-07}** (and
-EDIT-01→EDIT-04) · OIDC-01→OIDC-02→OIDC-03. OIDC-04 was the
+SET-03→SET-10 · SET-04→SET-11 · **EDIT-01→EDIT-03→{EDIT-05, EDIT-04, EDIT-06, EDIT-07}**
+(EDIT-01 and EDIT-03 share four lead files — leads route, lead port, both lead adapters — so
+they serialize; EDIT-01→EDIT-04 also holds) · OIDC-01→OIDC-02→OIDC-03. OIDC-04 was the
 documentation/guard reconciliation; it is complete in PRs #49/#50 and does not change
 the runtime dependency chain.
 
@@ -3208,9 +3324,21 @@ those inputs; Jason's other open decisions live in checklists 00/06/10.
 SET-01 / PR #35 → SET-02 / PR #37 → KPI-01 / PR #41 → KPI-02 / PR #52 → KPI-03 /
 PR #75 → GI-03 / PR #80 → SET-35 / PR #107 are complete in source. The reconciled
 queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-04 →
-DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI → SET-26 UI →
-**AI-10 sub-PR (f)** → **EDIT-04** → **EDIT-05** → **EDIT-06** → **EDIT-07** →
-HINT-02-B.
+DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
+**EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
+SET-26 UI (blocked on SET-23) → HINT-02-B.
+
+> **Reordered July 27, 2026 (owner decision + devils-advocate review).** Three deliberate
+> changes from the previous order: (1) **EDIT-05 (projects) now precedes EDIT-04 (leads)** —
+> owner decision of July 27: the owner's original report was project fields, the audit rates
+> projects Critical vs leads High, and cheapest-first was the wrong sort key. (2) **EDIT-04
+> precedes AI-10 sub-PR (f)**: the "identical change" the implement-once note described is one
+> prop; the real work diverges — EDIT-04 does the LeadModal rework (initialValues, edit mode,
+> conflict UX, isAdmin gating) and AI-10 (f) consumes it, adding prefill state and an InboxView
+> opener prop (LeadModal is file-local and unexported; InboxView has no opener today — AI-10
+> (f)'s Files description undercounted this). (3) **SET-26 UI moved behind the EDIT block**: a
+> queue-head packet with an unmerged prerequisite (SET-23 is unstarted) **yields its slot,
+> recorded here, never silently** — that rule is now standing.
 AI-02 is complete in PRs #182/#187/#193 and released the slot; AI-09 is a
 docs/tests-only closure packet and does not claim `app/FloorOpsApp.tsx`.
 
