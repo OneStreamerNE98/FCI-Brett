@@ -9,16 +9,19 @@ FCI Operations can prepare one-way Google Chat notifications for five operationa
 | Event type | Notification | FCI destination | Current trigger |
 | --- | --- | --- | --- |
 | `lead.created` | New lead | `/leads?stage=new-inquiry` | Development lead creation |
-| `gmail.filing_review_needed` | Filing review needed | `/inbox?bucket=needs-review` | Newly inserted durable `needs-review` analysis row |
+| `gmail.filing_review_needed` | Filing review needed | `/inbox?bucket=needs-review` | One coalesced card per bounded inbox sweep that produced review arrivals |
 | `calendar.schedule_changed` | Schedule change | `/schedule` | Catalog only; scheduling is not implemented |
 | `project.warranty_follow_up_due` | Warranty follow-up due | `/projects?status=closeout` | Catalog only; warranty follow-up is not implemented |
 | `task.assigned` | Task assigned | `/assistant` | Successful task creation with an assignee |
 
 The remaining catalog-only entries are deliberate integration seams. GI-02
 does not invent scheduling or warranty state to manufacture triggers. AI-10
-supplies the durable Gmail-review state: each newly inserted review row
-schedules one non-awaited notification, while refreshes, re-analysis, failures,
-and skipped noise schedule none.
+supplies the durable Gmail-review state: a bounded sweep schedules **at most one**
+non-awaited notification naming the newest arrival plus a count of the rest, so
+a sweep that moves up to its 100-message ceiling into review still costs one
+card rather than one hundred. An arrival is any row entering `needs-review`,
+including a previously `failed` row that recovers; refreshes of rows already in
+review, skipped noise, and failures schedule none.
 
 ## Hosted configuration
 

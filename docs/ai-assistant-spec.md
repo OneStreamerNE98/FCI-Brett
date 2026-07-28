@@ -303,7 +303,8 @@ packet corrects the help/presentation mismatch.
   (config PATCH), access-boundaries (office vs admin per §4 table),
   bounded-api-bodies (every new POST/PATCH), and the new
   `assistant-inbox-component-boundaries` test (AI-02).
-- AI-10 pins (`tests/ai10-inbox-analysis*.test.mjs`, `ai10-gmail-pagination`):
+- AI-10 pins (`tests/ai10-*.test.mjs` — the analysis route, `ai10-gmail-pagination`,
+  and the d+e `ai10-inbox-review-queue` suite):
   the classifier source contains no SQL write keyword and the analysis route is
   the only `mail_items` writer; the kill switch denies before Gmail, provider,
   and write work; one durable row per swept message across the full status

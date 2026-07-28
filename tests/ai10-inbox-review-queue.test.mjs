@@ -455,10 +455,14 @@ test("Mark reviewed dismisses an orphaned relationship atomically and failures s
   }
 });
 
-test("each new needs-review row schedules one non-awaited Gmail-message notification only once", async () => {
+test("one sweep schedules exactly one coalesced notification naming the newest arrival", async () => {
   const database = new ReviewQueueDatabase();
-  const reviewOne = summary("gmail-review-one");
-  const reviewTwo = summary("gmail-review-two");
+  const reviewOne = summary("gmail-review-one", {
+    date: "2026-07-28T09:00:00.000Z",
+  });
+  const reviewTwo = summary("gmail-review-two", {
+    date: "2026-07-28T11:00:00.000Z",
+  });
   const noise = summary("gmail-noise", { subject: "Vendor newsletter" });
   const failed = summary("gmail-failed");
   const messages = [reviewOne, reviewTwo, noise, failed];
@@ -466,6 +470,7 @@ test("each new needs-review row schedules one non-awaited Gmail-message notifica
     listUnsubscribe: new Set([noise.id]),
   });
   const providerCalls = [];
+
   const provider = {
     async complete(request) {
       const messageId = request.output.schema.properties.messageId.enum[0];
@@ -478,25 +483,20 @@ test("each new needs-review row schedules one non-awaited Gmail-message notifica
   };
   const notifications = [];
   const input = () => sweepInput(database, client, provider, {
-    onNeedsReviewCreated(notification) {
+    onNeedsReviewBatch(notification) {
       notifications.push(notification);
       return new Promise(() => {});
     },
   });
   try {
     await route.runInboxAnalysisSweep(input());
-    assert.deepEqual(notifications.toSorted((left, right) =>
-      left.gmailMessageId.localeCompare(right.gmailMessageId)
-    ), [
-      {
-        gmailMessageId: reviewOne.id,
-        subject: reviewOne.subject,
-      },
+    assert.deepEqual(notifications, [
       {
         gmailMessageId: reviewTwo.id,
-        subject: reviewTwo.subject,
+        subject: `${reviewTwo.subject} · plus 1 more need review`,
+        count: 2,
       },
-    ]);
+    ], "two arrivals share one card that names the newest subject");
     assert.deepEqual(
       database.rows().map(({ gmail_message_id, status }) => [
         gmail_message_id,
@@ -518,7 +518,7 @@ test("each new needs-review row schedules one non-awaited Gmail-message notifica
       "reload must not call the provider for analyzed review rows",
     );
     assert.ok(providerCalls.length >= callsAfterFirstSweep);
-    assert.equal(notifications.length, 2, "reload must not schedule duplicate events");
+    assert.equal(notifications.length, 1, "reload must not schedule duplicate events");
 
     database.database.prepare(
       "UPDATE mail_items SET label_definition_version = 'old-catalog' WHERE status = 'needs-review'",
@@ -531,9 +531,51 @@ test("each new needs-review row schedules one non-awaited Gmail-message notifica
     );
     assert.equal(
       notifications.length,
-      2,
-      "catalog re-analysis must not schedule duplicate events",
+      1,
+      "catalog re-analysis refreshes rows already in review and schedules nothing",
     );
+
+  } finally {
+    database.close();
+  }
+});
+
+test("a failed row schedules its card when it later enters review", async () => {
+  // The bootstrap sweep manufactures failed rows in bulk (deadline, abort,
+  // Gmail read, daily cap), so gating the card on a row's first insert alone
+  // would silently drop every one of those recoveries.
+  const database = new ReviewQueueDatabase();
+  const message = summary("gmail-recovers");
+  const client = gmailClient([message]);
+  let recovers = false;
+  const provider = {
+    async complete(request) {
+      if (!recovers) throw new Error("Injected provider failure");
+      const messageId = request.output.schema.properties.messageId.enum[0];
+      return { kind: "output", value: providerOutput(messageId) };
+    },
+  };
+  const notifications = [];
+  const input = () => sweepInput(database, client, provider, {
+    onNeedsReviewBatch(notification) {
+      notifications.push(notification);
+    },
+  });
+  try {
+    await route.runInboxAnalysisSweep(input());
+    assert.equal(database.rows()[0].status, "failed");
+    assert.deepEqual(notifications, [], "a failed row owes no card");
+
+    recovers = true;
+    await route.runInboxAnalysisSweep(input());
+    assert.equal(database.rows()[0].status, "needs-review");
+    assert.deepEqual(notifications, [
+      {
+        gmailMessageId: message.id,
+        subject: message.subject,
+        count: 1,
+      },
+    ], "the recovery is an arrival and schedules exactly one card");
   } finally {
     database.close();
   }

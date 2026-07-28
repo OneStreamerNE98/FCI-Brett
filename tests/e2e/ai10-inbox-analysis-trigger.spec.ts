@@ -328,7 +328,7 @@ test("Needs review renders the stored queue, continues bounded coverage, and dis
   expect(calls[3]?.method).toBe("GET");
 
   await page.getByRole("button", {
-    name: "Mark FCI TEST stored queue subject reviewed",
+    name: "Mark reviewed: FCI TEST stored queue subject",
   }).click();
   await expect(page.getByText("FCI TEST stored queue subject", { exact: true })).toHaveCount(0);
   await expect(page.getByText("No messages need review", { exact: true })).toBeVisible();
@@ -505,7 +505,7 @@ test("a delayed Mark reviewed response cannot restore the queue after a mailbox 
   await page.goto("/inbox?bucket=needs-review");
   await expect(page.getByText("FCI TEST delayed review row", { exact: true })).toBeVisible();
   await page.getByRole("button", {
-    name: "Mark FCI TEST delayed review row reviewed",
+    name: "Mark reviewed: FCI TEST delayed review row",
   }).click();
   await page.getByLabel("Mailbox").selectOption("inbox");
   await page.getByRole("button", { name: "Load messages", exact: true }).click();

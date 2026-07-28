@@ -51,31 +51,39 @@ test("successful assigned-task creation schedules task.assigned only after persi
   assert.match(invocation, /request\.nextUrl\.origin/);
 });
 
-test("a newly persisted inbox-review row schedules filing review without awaiting it", async () => {
+test("an inbox sweep schedules one coalesced filing-review event without awaiting it", async () => {
   const source = await readFile(
     new URL("app/api/v1/inbox-analysis/route.ts", root),
     "utf8",
   );
   const persistence = source.indexOf("const saved = await saveAnalysis(");
-  const insertedGuard = source.indexOf(
-    "if (saved.inserted && input.onNeedsReviewCreated)",
-    persistence,
-  );
-  const callback = source.indexOf("input.onNeedsReviewCreated({", insertedGuard);
+  const arrivalGuard = source.indexOf("if (saved.enteredReview)", persistence);
+  const accumulate = source.indexOf("needsReviewArrivals.push({", arrivalGuard);
+  const workerJoin = source.indexOf("await Promise.all(workers);", accumulate);
+  const callback = source.indexOf("input.onNeedsReviewBatch({", workerJoin);
   const notification = source.indexOf("queueGoogleChatNotification(", callback);
 
   assert.match(
     source,
     /import \{ queueGoogleChatNotification \} from "\.\.\/\.\.\/\.\.\/lib\/google-chat-notifier-sites"/u,
   );
+  // The emit must sit after the worker join, which is what makes one sweep
+  // cost one card instead of one per analyzed message.
   assert.ok(
     persistence >= 0
-      && insertedGuard > persistence
-      && callback > insertedGuard
+      && arrivalGuard > persistence
+      && accumulate > arrivalGuard
+      && workerJoin > accumulate
+      && callback > workerJoin
       && notification > callback,
   );
+  assert.equal(
+    source.indexOf("input.onNeedsReviewBatch({", persistence),
+    callback,
+    "the sweep body may emit the batch only after joining its workers",
+  );
   assert.doesNotMatch(
-    source.slice(insertedGuard, notification + 500),
+    source.slice(workerJoin, notification + 500),
     /await\s+queueGoogleChatNotification/u,
   );
   const invocation = source.slice(notification, notification + 500);

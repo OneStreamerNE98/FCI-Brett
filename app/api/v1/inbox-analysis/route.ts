@@ -101,10 +101,24 @@ type InboxAnalysisWorkspace = Readonly<{
   client: InboxAnalysisGmailClient;
 }>;
 
+type NeedsReviewArrival = Readonly<{
+  gmailMessageId: string;
+  subject: string;
+  receivedAt: number | null;
+}>;
+
 type NeedsReviewNotification = Readonly<{
   gmailMessageId: string;
   subject: string;
+  count: number;
 }>;
+
+/** Newest subject first, then the remainder as a count, inside the notifier's
+ * 180-character summary budget. One card per sweep, never one per message. */
+export function coalescedReviewSubject(subject: string, count: number) {
+  const newest = subject.length > 120 ? `${subject.slice(0, 119)}…` : subject;
+  return count > 1 ? `${newest} · plus ${count - 1} more need review` : newest;
+}
 
 function runtimeValue(
   environment: Readonly<Record<string, string | undefined>>,
@@ -513,6 +527,12 @@ async function saveAnalysis(input: {
   return Object.freeze({
     item,
     inserted: input.existing === null && saved,
+    // A message "arrives" in the queue whenever a write moves it into
+    // needs-review from anywhere else — a first insert, or a recovery from a
+    // failed row (deadline, abort, Gmail read, daily cap). Only a row that was
+    // already needs-review is a refresh and owes no notification.
+    enteredReview: saved
+      && (input.existing === null || input.existing.status !== "needs-review"),
   });
 }
 
@@ -569,7 +589,7 @@ export async function runInboxAnalysisSweep(input: {
   now?: () => number;
   workspace?: InboxAnalysisWorkspace;
   provider?: AssistantProvider;
-  onNeedsReviewCreated?: (notification: NeedsReviewNotification) => void;
+  onNeedsReviewBatch?: (notification: NeedsReviewNotification) => void;
 }): Promise<SweepResult> {
   // The reusable sweep owns the kill switch as well as the HTTP route. A
   // future trigger cannot accidentally reach Gmail, OpenAI, or mail_items by
@@ -726,6 +746,7 @@ export async function runInboxAnalysisSweep(input: {
   const deadline = AbortSignal.timeout(INBOX_ANALYSIS_SWEEP_DEADLINE_MS);
   const effectiveSignal = AbortSignal.any([input.signal, deadline]);
   let nextWorkIndex = 0;
+  const needsReviewArrivals: NeedsReviewArrival[] = [];
 
   const processWork = async (item: AnalysisWork) => {
     const checkedAt = now();
@@ -851,16 +872,12 @@ export async function runInboxAnalysisSweep(input: {
       contentHash,
       now: checkedAt,
     });
-    if (saved.inserted && input.onNeedsReviewCreated) {
-      try {
-        input.onNeedsReviewCreated({
-          gmailMessageId: saved.item.gmailMessageId,
-          subject: saved.item.subject ?? "Message subject unavailable",
-        });
-      } catch {
-        // Chat delivery is advisory. A notification failure cannot undo or
-        // misreport the durable review row that was already committed.
-      }
+    if (saved.enteredReview) {
+      needsReviewArrivals.push({
+        gmailMessageId: saved.item.gmailMessageId,
+        subject: saved.item.subject ?? "Message subject unavailable",
+        receivedAt: saved.item.receivedAt ?? null,
+      });
     }
     return true;
   };
@@ -913,6 +930,28 @@ export async function runInboxAnalysisSweep(input: {
     },
   );
   await Promise.all(workers);
+
+  // One card per sweep, not one per message: a bootstrap sweep can move up to
+  // MAX_INBOX_ANALYSIS_MESSAGES rows into review at once, and a card apiece
+  // would burst the office space the moment an administrator opens the Inbox.
+  if (needsReviewArrivals.length > 0 && input.onNeedsReviewBatch) {
+    const newest = needsReviewArrivals.reduce((leader, candidate) =>
+      (candidate.receivedAt ?? 0) > (leader.receivedAt ?? 0) ? candidate : leader
+    );
+    try {
+      input.onNeedsReviewBatch({
+        gmailMessageId: newest.gmailMessageId,
+        subject: coalescedReviewSubject(
+          newest.subject,
+          needsReviewArrivals.length,
+        ),
+        count: needsReviewArrivals.length,
+      });
+    } catch {
+      // Chat delivery is advisory. A notification failure cannot undo or
+      // misreport the durable review rows that were already committed.
+    }
+  }
 
   const coverageComplete = !discoveryFailed && (hitWatermark || exhausted);
   if (coverageComplete) {
@@ -1022,7 +1061,7 @@ export async function POST(request: NextRequest) {
         ? { pageToken: sweepRequest.pageToken }
         : {}),
       signal: request.signal,
-      onNeedsReviewCreated: (notification) => {
+      onNeedsReviewBatch: (notification) => {
         queueGoogleChatNotification(
           {
             eventType: "gmail.filing_review_needed",

@@ -3105,9 +3105,10 @@ after a six-lens review (ten confirmed findings), a five-lens follow-up round
 (four more, including a P1 continuation-token starvation), and the review bot's
 v12 totality finding (legacy statuses now backfilled before the closed
 vocabulary constrains). The engine is live behind the default-off
-`inboxAnalysis` toggle with no UI caller yet; sub-PRs (d+e) and (f) remain, and
-this packet stays available for them per the dispatch law (no status line while
-its next sub-PR is unclaimed).
+`inboxAnalysis` toggle. Sub-PRs (d+e) — the app-side review queue, the
+Mark-reviewed exit, and the coalesced Chat trigger — are in review as PR #238,
+which is what the status line above claims; only sub-PR (f), lead capture and
+its `FloorOpsApp.tsx` queue slot, remains unclaimed.
 
 **ADDENDUM (July 27, 2026 — devils-advocate review; binding, part of this packet).**
 Ten judged attacks landed on this packet before dispatch. The corrections:
@@ -3140,10 +3141,17 @@ Ten judged attacks landed on this packet before dispatch. The corrections:
    pre-fill contract: extracted fields plus defaults for `source`, `stage`, `ownerEmail`,
    `nextAction`/`nextActionAt`, and names which fields (`site`, `estimatedValue`) still need
    typing when absent — accept must be one review pass.
-6. **Per-new-row notification (owner amendment, July 28, 2026; supersedes
-   coalescing).** Schedule one non-awaited `gmail.filing_review_needed` event for
-   each newly inserted `needs-review` row. Re-analysis, refreshes,
-   `skipped-noise`, and `failed` rows schedule none; the existing global and
+6. **Coalesced notification (owner-confirmed July 28, 2026, after PR #238 shipped
+   per-row by mistake).** At most **one** non-awaited `gmail.filing_review_needed`
+   card per sweep — newest arrival's subject plus "N more need review", same
+   payload shape, no catalog change — not one per row. A bootstrap sweep can move
+   up to `MAX_INBOX_ANALYSIS_MESSAGES` rows into review at once, so a card apiece
+   would burst the office space the moment an administrator opens the Inbox.
+   An **arrival** is any write that moves a row into `needs-review` from
+   elsewhere, which includes a `failed` row recovering — gating on first insert
+   alone silently drops every recovery, and the bootstrap sweep manufactures
+   failed rows in bulk. Refreshes of rows already in `needs-review`,
+   `skipped-noise`, and `failed` rows schedule nothing; the existing global and
    per-event gates remain off by default.
 7. **Re-analysis path.** The stored label-definition version gets a consumer: on catalog
    change, rows still in `needs-review` become eligible for bounded re-analysis on the next
@@ -3375,8 +3383,9 @@ gated on SET-23, open); SET-18 was drafted as a paste and is dispatchable in
 parallel with it. `tests/rendered-html.test.mjs` stays additive across all
 lanes — serialize merges only. DES-08's
 remaining sub-scope c stays owner-deferred awaiting a truthful attention
-signal — AI-02 and AI-04 completed **without** landing one (the docs' own
-admission: "no durable review-queue event exists yet"); the durable
+signal — AI-02 and AI-04 completed **without** landing one (the Chat
+notification boundary doc recorded that gap as catalog-only until AI-10 d+e
+supplied the trigger); the durable
 needs-review count **AI-10** stores is that signal, so DES-08c unblocks after
 AI-10, not the reverse (no cycle). Contended-file flags: `WorkspaceDefaultsPanel.tsx`
 = AI-08; the Chat notifier/user-settings/ChatNotificationSettingsCard trio was

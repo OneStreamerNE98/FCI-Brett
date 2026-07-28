@@ -225,6 +225,10 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
   const reviewQueueRefreshInFlightRef =
     useRef<Promise<InboxReviewQueue | null> | null>(null);
   const markReviewedInFlightRef = useRef(false);
+  const [analysisFailed, setAnalysisFailed] = useState(false);
+  const [focusReviewRowId, setFocusReviewRowId] = useState<string | null>(null);
+  const emptyReviewQueueRef = useRef<HTMLHeadingElement | null>(null);
+  const restoreEmptyQueueFocusRef = useRef(false);
 
   function clearTriageSuggestions() {
     triageRequestIdRef.current += 1;
@@ -330,11 +334,18 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
         if (!coverage) {
           throw new Error("Inbox analysis returned an invalid coverage result.");
         }
-        if (analysisMountedRef.current) setAnalysisCoverage(coverage);
+        if (analysisMountedRef.current) {
+          setAnalysisCoverage(coverage);
+          setAnalysisFailed(false);
+        }
         return coverage;
       } catch {
         if (analysisMountedRef.current) {
           setAnalysisCoverage(null);
+          // The queue read that follows can still succeed, so without a durable
+          // flag an empty stored queue would render "No messages need review" —
+          // a coverage conclusion this sweep never earned.
+          setAnalysisFailed(true);
           notify("Inbox analysis could not finish. Refresh to retry.", "warning");
         }
         return null;
@@ -502,7 +513,19 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
         throw new Error(body.error ?? "The message could not be marked reviewed.");
       }
       if (requestId !== reviewQueueRequestIdRef.current) return;
-      setReviewRows((current) => current.filter((item) => item.id !== row.id));
+      // The dismissed row unmounts its own focused button, so name the next
+      // focus target before it goes — the neighbour below, else above, else the
+      // empty-state heading. TodayPanel's complete-in-place sets the precedent.
+      setReviewRows((current) => {
+        const index = current.findIndex((item) => item.id === row.id);
+        const remaining = current.filter((item) => item.id !== row.id);
+        const next = index >= 0
+          ? remaining[index] ?? remaining[index - 1] ?? null
+          : null;
+        setFocusReviewRowId(next?.id ?? null);
+        restoreEmptyQueueFocusRef.current = next === null;
+        return remaining;
+      });
       setReviewTotalCount((current) => Math.max(0, current - 1));
       notify("Message marked reviewed and removed from the queue.", "success");
       await loadReviewQueue();
@@ -802,6 +825,9 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
             {(analysisLoading || analysisCoverage) && <span className="gmail-search-help" role="status" aria-live="polite">
               {analysisLoading ? "Checking inbox analysis…" : analysisCoverage?.message}
             </span>}
+            {reviewQueueSelected && analysisFailed && !analysisLoading && <span className="gmail-search-help" role="status" aria-live="polite">
+              Inbox analysis did not finish — this list may be incomplete.
+            </span>}
             {analysisCoverage?.terminationReason === "older-pending" && <button
               className="soft-button"
               type="button"
@@ -870,8 +896,23 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
                   : visibleReviewRows.length === 0
                 ? <OperationsEmptyState variant="inbox">
                     <Inbox size={25} />
-                    <h2>No messages need review</h2>
-                    <p>{analysisCoverage?.message ?? "Refresh to check the newest bounded inbox analysis sweep."}</p>
+                    <h2
+                      tabIndex={-1}
+                      ref={(node) => {
+                        emptyReviewQueueRef.current = node;
+                        if (node && restoreEmptyQueueFocusRef.current) {
+                          node.focus();
+                          restoreEmptyQueueFocusRef.current = false;
+                        }
+                      }}
+                    >
+                      {analysisFailed
+                        ? "Review queue may be incomplete"
+                        : "No messages need review"}
+                    </h2>
+                    <p>{analysisFailed
+                      ? "Inbox analysis did not finish, so Gmail was not swept. Refresh to retry."
+                      : analysisCoverage?.message ?? "Refresh to check the newest bounded inbox analysis sweep."}</p>
                   </OperationsEmptyState>
                 : visibleReviewRows.map((row, index) => <article className="message-row live-message-row" key={row.id}>
                     <div className={`sender-dot s${index % 4}`}>
@@ -893,9 +934,18 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
                       <small>App review queue</small>
                       <button
                         className="soft-button"
-                        onClick={() => void markReviewed(row)}
-                        disabled={markingReviewId !== null}
-                        aria-label={`Mark ${row.subject ?? row.sender ?? "message"} reviewed`}
+                        ref={(node) => {
+                          if (node && focusReviewRowId === row.id) {
+                            node.focus();
+                            setFocusReviewRowId(null);
+                          }
+                        }}
+                        onClick={() => {
+                          if (markingReviewId !== null) return;
+                          void markReviewed(row);
+                        }}
+                        aria-disabled={markingReviewId !== null}
+                        aria-label={`Mark reviewed: ${row.subject ?? row.sender ?? "message"}`}
                       >
                         <ShieldCheck size={14} />
                         {markingReviewId === row.id ? "Marking…" : "Mark reviewed"}
