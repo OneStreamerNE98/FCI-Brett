@@ -438,7 +438,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
       // filed message stays `needs-review` forever: a current review row is
       // never re-swept, so nothing else would ever retire it. Terminal rows
       // (`accepted`, `dismissed`, `skipped-noise`) are left alone.
-      env.DB.prepare(`UPDATE mail_items SET status = 'accepted', approved_project_id = ?, updated_at = ? WHERE connection_key = ? AND gmail_message_id = ? AND status IN ('needs-review', 'failed') AND ${FILING_LEASE_EXISTS}`)
+      // Retry state must be cleared with the transition: a terminal row that
+      // keeps failure_attempts/error_code violates the v12 failure-state CHECK
+      // on PostgreSQL and is rejected by normalizeStoredMailItem on read, which
+      // would make every later sweep throw on this message. The dismissal
+      // transition clears the same three fields for the same reason.
+      env.DB.prepare(`UPDATE mail_items SET status = 'accepted', approved_project_id = ?, attempted_label_definition_version = NULL, failure_attempts = 0, error_code = NULL, updated_at = ? WHERE connection_key = ? AND gmail_message_id = ? AND status IN ('needs-review', 'failed') AND ${FILING_LEASE_EXISTS}`)
         .bind(
           selectedProjectId,
           filedAt,

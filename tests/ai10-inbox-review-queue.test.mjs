@@ -610,6 +610,12 @@ test("filing a message retires its review row inside the lease-guarded batch", a
   );
   const statement = source.slice(mailItemUpdate, mailItemUpdate + 400);
   assert.match(statement, /approved_project_id = \?/u);
+  // A terminal row carrying retry state violates the v12 failure-state CHECK on
+  // PostgreSQL and is rejected by normalizeStoredMailItem on read, so every
+  // later sweep would throw on this message (review-bot P1, second round).
+  assert.match(statement, /attempted_label_definition_version = NULL/u);
+  assert.match(statement, /failure_attempts = 0/u);
+  assert.match(statement, /error_code = NULL/u);
   assert.match(statement, /WHERE connection_key = \? AND gmail_message_id = \?/u);
   // Terminal rows are never resurrected, and the lease guard keeps a lost lease
   // from retiring somebody else's review row.
