@@ -28,6 +28,18 @@ type AssistantToolRegistryOptions = {
   database: D1Database;
   connectionKey: string;
   isAdmin: boolean;
+  // The requesting office user's email. Evidence strings carrying EMPLOYEE emails
+  // (lead owner, project manager, task assignee) apply the same office-identity
+  // disclosure rule as the record routes: the actor's own email or a current office
+  // identity renders; an offboarded identity renders as unavailable. Client contact
+  // emails are office-visible client data and are not filtered (the conscious
+  // distinction pinned by the EDIT-04 suite).
+  actorEmail?: string;
+  // Injected by the route (officeIdentityForEmail) so this platform-free application
+  // module never imports cloudflare-coupled code. When actorEmail is provided the
+  // filter is ACTIVE: a non-actor employee email renders only if the lookup confirms
+  // a current office identity — absent lookup fails CLOSED to "unavailable".
+  officeIdentityLookup?: (email: string) => { email: string } | null;
   timeZone?: string;
   now?: () => number;
   driveSearch?: DriveSearchService;
@@ -145,7 +157,14 @@ function matchingExcerpt(value: string | null, query: string) {
 export function createAssistantToolRegistry(
   options: AssistantToolRegistryOptions,
 ): AssistantTool[] {
-  const { database, connectionKey, isAdmin } = options;
+  const { database, connectionKey, isAdmin, actorEmail, officeIdentityLookup } = options;
+  const officeVisibleEmail = (candidate: string | null | undefined) => {
+    const email = typeof candidate === "string" ? candidate.trim() : "";
+    if (!email) return null;
+    if (!actorEmail) return email;
+    if (email.toLowerCase() === actorEmail.toLowerCase()) return email;
+    return officeIdentityLookup?.(email)?.email ?? "unavailable (not a current office identity)";
+  };
   const now = options.now ?? Date.now;
 
   const searchRecordsTool = tool(
@@ -231,7 +250,7 @@ export function createAssistantToolRegistry(
       evidence.push(...projects.results.map((project) => ({
         id: `project:${project.id}`,
         label: `Project · ${project.project_number} — ${project.name}`,
-        detail: `${project.status}${project.site ? ` · ${project.site}` : ""}${project.project_manager ? ` · Project manager: ${project.project_manager}` : ""}${isAdmin && project.estimated_value !== null ? ` · Estimated value: $${Number(project.estimated_value).toLocaleString()}` : ""}`,
+        detail: `${project.status}${project.site ? ` · ${project.site}` : ""}${project.project_manager ? ` · Project manager: ${officeVisibleEmail(project.project_manager)}` : ""}${isAdmin && project.estimated_value !== null ? ` · Estimated value: $${Number(project.estimated_value).toLocaleString()}` : ""}`,
       })));
       return { evidence: evidence.slice(0, 20) };
     },
@@ -321,7 +340,7 @@ export function createAssistantToolRegistry(
         evidence: tasks.slice(0, 20).map((task) => ({
           id: `task:${task.id}`,
           label: `Task · ${compact(task.title, 160)}`,
-          detail: `${task.status}${task.due_date ? ` · Due ${task.due_date}` : " · No due date"}${task.assignee_email ? ` · ${task.assignee_email}` : " · Unassigned"}${task.project_id ? ` · Project ${task.project_id}` : ""}${task.lead_id ? ` · Lead ${task.lead_id}` : ""}${task.details ? ` · ${compact(task.details, 500)}` : ""}`,
+          detail: `${task.status}${task.due_date ? ` · Due ${task.due_date}` : " · No due date"}${task.assignee_email ? ` · ${officeVisibleEmail(task.assignee_email)}` : " · Unassigned"}${task.project_id ? ` · Project ${task.project_id}` : ""}${task.lead_id ? ` · Lead ${task.lead_id}` : ""}${task.details ? ` · ${compact(task.details, 500)}` : ""}`,
         })),
       };
     },
@@ -364,7 +383,7 @@ export function createAssistantToolRegistry(
         evidence: rows.results.slice(0, 20).map((lead) => ({
           id: `lead:${lead.id}`,
           label: `Lead · ${lead.lead_number} — ${lead.company}`,
-          detail: `${lead.project_name} · ${lead.stage} · ${lead.site} · Next: ${lead.next_action}${lead.next_action_at ? ` (${new Date(lead.next_action_at).toLocaleString()})` : ""} · Owner: ${lead.owner_email}${isAdmin ? ` · Estimated value: $${Number(lead.estimated_value).toLocaleString()}` : ""}`,
+          detail: `${lead.project_name} · ${lead.stage} · ${lead.site} · Next: ${lead.next_action}${lead.next_action_at ? ` (${new Date(lead.next_action_at).toLocaleString()})` : ""} · Owner: ${officeVisibleEmail(lead.owner_email)}${isAdmin ? ` · Estimated value: $${Number(lead.estimated_value).toLocaleString()}` : ""}`,
         })),
       };
     },
