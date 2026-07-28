@@ -87,7 +87,17 @@ export const MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS = [
     )
     AND (
       (status = 'failed' AND failure_attempts >= 1 AND error_code IS NOT NULL)
-      OR (status <> 'failed' AND error_code IS NULL)
+      OR (
+        status = 'needs-review'
+        AND (
+          (failure_attempts = 0 AND error_code IS NULL)
+          OR (failure_attempts >= 1 AND error_code IS NOT NULL)
+        )
+      )
+      OR (
+        status NOT IN ('failed', 'needs-review')
+        AND error_code IS NULL
+      )
     )
   )`,
   "CREATE UNIQUE INDEX mail_items_profile_message_unique ON mail_items (connection_key, gmail_message_id)",

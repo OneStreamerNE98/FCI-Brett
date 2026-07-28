@@ -35,6 +35,11 @@ const limitedRoutes = [
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
+    path: "app/api/v1/inbox-analysis/route.ts",
+    scope: "assistant",
+    firstWork: "await parseBoundedJsonObject(request",
+  },
+  {
     path: "app/api/v1/uploads/route.ts",
     scope: "uploads",
     firstWork: 'const contentType = request.headers.get("content-type")',

@@ -74,6 +74,30 @@ test("sweep pagination accounts for every Gmail reference while ordinary lists r
     /unexpected message summary/u,
   );
 
+  const ordinarySuccess = new GoogleGmailClient(
+    "ordinary-success-token",
+    async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/messages")) {
+        return Response.json({
+          messages: [{ id: "message-one", threadId: "thread-one" }],
+          nextPageToken: "not-exposed-to-ordinary-callers",
+        });
+      }
+      return Response.json(metadata("message-one"));
+    },
+    resilience,
+  );
+  const ordinaryMessages = await ordinarySuccess.listMessages({
+    labelId: "INBOX",
+  });
+  assert.ok(Array.isArray(ordinaryMessages));
+  assert.deepEqual(
+    ordinaryMessages.map((message) => message.id),
+    ["message-one"],
+  );
+  assert.equal(Object.hasOwn(ordinaryMessages, "nextPageToken"), false);
+
   calls.length = 0;
   const sweep = new GoogleGmailClient("sweep-token", fetcher, resilience);
   const page = await sweep.listMessages({

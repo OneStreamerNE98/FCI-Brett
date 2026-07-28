@@ -443,7 +443,7 @@ test("PostgreSQL mail items select retryable work before LIMIT and renew an exha
     labelDefinitionVersion: "catalog-v1",
     attemptedLabelDefinitionVersion: "catalog-v2",
     failureAttempts: 3,
-    errorCode: null,
+    errorCode: "analysis_failed",
   }));
   assert.equal([...currentCatalogRows, retryable].length > 100, true);
 
@@ -451,7 +451,7 @@ test("PostgreSQL mail items select retryable work before LIMIT and renew an exha
     assert.match(sql, /^SELECT id, connection_key/);
     assert.match(
       sql,
-      /failure_attempts < \$2[\s\S]*attempted_label_definition_version IS DISTINCT FROM \$3[\s\S]*status = 'failed'[\s\S]*status = 'needs-review'[\s\S]*label_definition_version IS DISTINCT FROM \$4[\s\S]*ORDER BY updated_at ASC, id ASC[\s\S]*LIMIT \$5/u,
+      /error_code = 'analysis_daily_limit_reached'[\s\S]*failure_attempts < \$2[\s\S]*attempted_label_definition_version IS DISTINCT FROM \$3[\s\S]*status = 'failed'[\s\S]*status = 'needs-review'[\s\S]*label_definition_version IS DISTINCT FROM \$4[\s\S]*ORDER BY updated_at ASC, id ASC[\s\S]*LIMIT \$5/u,
     );
     assert.ok(
       sql.indexOf("failure_attempts") < sql.indexOf("LIMIT"),
@@ -478,6 +478,38 @@ test("PostgreSQL mail items select retryable work before LIMIT and renew an exha
     ).values,
     ["google-workspace", 3, "catalog-v3", "catalog-v3", 100],
   );
+});
+
+test("PostgreSQL mail-item insertIfAbsent preserves any existing analysis row on identity conflict", async () => {
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^INSERT INTO mail_items/);
+    return result([], 0);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+  assert.deepEqual(
+    await repository.insertIfAbsent(mailItem({
+      clientId: null,
+      suggestedProjectId: null,
+      approvedProjectId: null,
+      status: "failed",
+      analysisPayload: null,
+      party: null,
+      confidence: null,
+      contentHash: null,
+      attemptedLabelDefinitionVersion: "catalog-2026-07-27",
+      failureAttempts: 1,
+      errorCode: "analysis_state_read_failed",
+    })),
+    { outcome: "existing-preserved" },
+  );
+  const insert = dataQuery(pool, /^INSERT INTO mail_items/);
+  assert.match(
+    insert.sql,
+    /ON CONFLICT \(connection_key, gmail_message_id\) DO NOTHING$/u,
+  );
+  assert.doesNotMatch(insert.sql, /DO UPDATE/u);
 });
 
 test("PostgreSQL mail items require valid record references and preserve creation time on upsert", async () => {

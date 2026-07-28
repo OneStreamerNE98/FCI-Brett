@@ -2,10 +2,12 @@ import { env } from "cloudflare:workers";
 import {
   FCI_GMAIL_LABELS,
   type GmailListBucket,
+  type GmailMessageListInput,
   type GmailMessageArchive,
   type GmailMessageAnalysisInput,
   type GmailMessageListPage,
   type GmailMessageSummary,
+  type GmailMessageSweepInput,
   type GmailReplyContext,
   type GmailReplyDraft,
   normalizeGmailPageToken,
@@ -260,15 +262,16 @@ export class WorkspaceSimulationGmailClient {
     return bucket === "inbox" || state.labelsPrepared ? labelForBucket(bucket) : null;
   }
 
-  async listMessages(input: {
-    labelId: string;
-    search?: string;
-    pageToken?: string;
-    mode?: "sweep";
-  }): Promise<GmailMessageListPage> {
+  async listMessages(input: GmailMessageListInput): Promise<GmailMessageSummary[]>;
+  async listMessages(input: GmailMessageSweepInput): Promise<GmailMessageListPage>;
+  async listMessages(
+    input: GmailMessageListInput | GmailMessageSweepInput,
+  ): Promise<GmailMessageSummary[] | GmailMessageListPage> {
     const state = await getSimulationState();
     const terms = searchTerms(input.search);
-    const offset = simulationPageOffset(input.pageToken);
+    const offset = simulationPageOffset(
+      "pageToken" in input ? input.pageToken : undefined,
+    );
     const matches = state.messages
       .filter((message) => message.labelIds.includes(input.labelId))
       .filter((message) => {
@@ -280,14 +283,16 @@ export class WorkspaceSimulationGmailClient {
       .slice(offset, offset + SIMULATION_MESSAGE_PAGE_SIZE)
       .map(simulationMessageSummary);
     const nextOffset = offset + messages.length;
-    return Object.freeze({
-      messages,
-      messageIds: messages.map((message) => message.id),
-      failedMessageIds: [],
-      nextPageToken: nextOffset < matches.length
-        ? `${SIMULATION_PAGE_TOKEN_PREFIX}${nextOffset}`
-        : null,
-    });
+    return "mode" in input && input.mode === "sweep"
+      ? Object.freeze({
+          messages,
+          messageIds: messages.map((message) => message.id),
+          failedMessageIds: [],
+          nextPageToken: nextOffset < matches.length
+            ? `${SIMULATION_PAGE_TOKEN_PREFIX}${nextOffset}`
+            : null,
+        })
+      : messages;
   }
 
   async getMessageSummary(messageId: string) {

@@ -431,7 +431,7 @@ test("registers AI-10 mail-item analysis as immutable contiguous migration twelv
   assert.equal(migration.statements, MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS);
   assert.equal(
     migration.checksum,
-    "sha256:8f677c1090eea1723afafb004a6495d930fdbd4a8f7348b368d6842506dc3cd4",
+    "sha256:fb563bec9f0f41c7add4ac61a787d3e47c0cb39a072e00775d0db62c2882097e",
   );
   const sql = migration.statements.join("\n");
   assert.match(
@@ -478,6 +478,10 @@ test("registers AI-10 mail-item analysis as immutable contiguous migration twelv
   assert.match(
     sql,
     /status = 'failed' AND failure_attempts >= 1 AND error_code IS NOT NULL/u,
+  );
+  assert.match(
+    sql,
+    /status = 'needs-review'[\s\S]*failure_attempts >= 1 AND error_code IS NOT NULL/u,
   );
   assert.match(
     sql,

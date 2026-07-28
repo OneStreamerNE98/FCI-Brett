@@ -335,8 +335,16 @@ export function normalizeStoredMailItem(row: Record<string, unknown>): MailItem 
         "Failed mail items require a bounded attempt count and error code",
       );
     }
+  } else if (status === "needs-review" && attempts > 0) {
+    if (errorCode === null) {
+      throw new TypeError(
+        "A failed review-row re-analysis requires an error code",
+      );
+    }
   } else if (errorCode !== null) {
-    throw new TypeError("Only failed mail items may retain an error code");
+    throw new TypeError(
+      "Only failed mail items or failed review-row re-analysis may retain an error code",
+    );
   }
 
   const createdAt = requiredTimestamp(

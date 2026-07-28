@@ -126,7 +126,7 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         normalizeMailItemLabelDefinitionVersion(currentLabelDefinitionVersion);
       const result = await database
         .prepare(
-          "SELECT * FROM mail_items WHERE connection_key = ? AND (failure_attempts < ? OR attempted_label_definition_version IS NOT ?) AND (status = 'failed' OR (status = 'needs-review' AND label_definition_version IS NOT ?)) ORDER BY updated_at ASC, id ASC LIMIT ?",
+          "SELECT * FROM mail_items WHERE connection_key = ? AND (error_code = 'analysis_daily_limit_reached' OR failure_attempts < ? OR attempted_label_definition_version IS NOT ?) AND (status = 'failed' OR (status = 'needs-review' AND label_definition_version IS NOT ?)) ORDER BY updated_at ASC, id ASC LIMIT ?",
         )
         .bind(
           normalizedConnectionKey,
@@ -147,6 +147,64 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         )
         .bind(normalizedConnectionKey)
         .run();
+    },
+
+    async insertIfAbsent(item) {
+      const invalidReferenceResult = invalidReference(item);
+      if (invalidReferenceResult) return invalidReferenceResult;
+      if (typeof item.coverageComplete !== "boolean") {
+        throw new TypeError("Mail item coverage_complete must be boolean");
+      }
+      const normalized = normalizeStoredMailItem(
+        item as unknown as Record<string, unknown>,
+      );
+      for (const reference of REFERENCE_OUTCOMES) {
+        const value = normalized[reference.property];
+        if (
+          value !== null
+          && !await referenceExists(database, reference.table, value)
+        ) {
+          return missingReference(reference.outcome);
+        }
+      }
+      const result = await database
+        .prepare(
+          "INSERT INTO mail_items (id, connection_key, gmail_message_id, gmail_thread_id, client_id, suggested_project_id, approved_project_id, status, match_reason, email_drive_file_id, analysis_payload, party, confidence, content_hash, label_definition_version, attempted_label_definition_version, subject, sender, received_at, failure_attempts, error_code, coverage_complete, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(connection_key, gmail_message_id) DO NOTHING",
+        )
+        .bind(
+          normalized.id,
+          normalized.connectionKey,
+          normalized.gmailMessageId,
+          normalized.gmailThreadId,
+          normalized.clientId,
+          normalized.suggestedProjectId,
+          normalized.approvedProjectId,
+          normalized.status,
+          normalized.matchReason,
+          normalized.emailDriveFileId,
+          serializeMailItemAnalysisPayload(normalized.analysisPayload),
+          normalized.party,
+          normalized.confidence,
+          normalized.contentHash,
+          normalized.labelDefinitionVersion,
+          normalized.attemptedLabelDefinitionVersion,
+          normalized.subject,
+          normalized.sender,
+          normalized.receivedAt,
+          normalized.failureAttempts,
+          normalized.errorCode,
+          normalized.coverageComplete ? 1 : 0,
+          normalized.createdAt,
+          normalized.updatedAt,
+        )
+        .run();
+      if (result.meta.changes === 0) {
+        return Object.freeze({ outcome: "existing-preserved" });
+      }
+      if (result.meta.changes !== 1) {
+        throw new Error("D1 mail item was not inserted exactly once");
+      }
+      return Object.freeze({ outcome: "saved" });
     },
 
     async upsert(item) {

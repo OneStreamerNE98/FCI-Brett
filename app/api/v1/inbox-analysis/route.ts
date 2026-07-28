@@ -32,14 +32,13 @@ import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import {
   normalizeGmailPageToken,
-  type GoogleGmailClient,
   type GmailMessageAnalysisInput,
+  type GmailMessageListPage,
   type GmailMessageSummary,
 } from "../../../lib/google-gmail";
 import { noStoreJson, noStoreResponse } from "../../../lib/no-store-json";
 import {
   simulationInboxAnalysisFixture,
-  type WorkspaceSimulationGmailClient,
 } from "../../../lib/workspace-simulation";
 import type { AssistantProvider } from "../../../ports/assistant-provider";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
@@ -52,6 +51,7 @@ import {
 export const MAX_INBOX_ANALYSIS_BODY_BYTES = 8_000;
 export const MAX_INBOX_ANALYSIS_PAGES = 5;
 export const MAX_INBOX_ANALYSIS_MESSAGES = 100;
+export const MAX_INBOX_ANALYSIS_PROVIDER_CALLS_PER_DAY = 200;
 export const INBOX_ANALYSIS_PROVIDER_CONCURRENCY = 4;
 export const INBOX_ANALYSIS_SWEEP_DEADLINE_MS = 55_000;
 
@@ -71,6 +71,7 @@ type AnalysisWork = Readonly<{
   messageId: string;
   summary: GmailMessageSummary | null;
   existing: MailItem | null;
+  discoveryError?: "analysis_state_read_failed";
 }>;
 
 type SweepResult = Readonly<{
@@ -79,10 +80,16 @@ type SweepResult = Readonly<{
   nextPageToken?: string;
 }>;
 
-type InboxAnalysisGmailClient = Pick<
-  GoogleGmailClient | WorkspaceSimulationGmailClient,
-  "listMessages" | "getMessageAnalysisInput"
->;
+type InboxAnalysisGmailClient = Readonly<{
+  listMessages(input: {
+    labelId: string;
+    pageToken?: string;
+    mode: "sweep";
+  }): Promise<GmailMessageListPage>;
+  getMessageAnalysisInput(
+    messageId: string,
+  ): Promise<GmailMessageAnalysisInput>;
+}>;
 
 type InboxAnalysisWorkspace = Readonly<{
   config: Readonly<{
@@ -133,6 +140,52 @@ function receivedAt(value: string | null) {
   if (!value) return null;
   const parsed = Date.parse(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export async function reserveInboxAnalysisProviderCall(
+  database: D1Database,
+  input: {
+    connectionKey: string;
+    messageId: string;
+    actor: string;
+    now: number;
+  },
+) {
+  const dayStart = Math.floor(input.now / 86_400_000) * 86_400_000;
+  const dayEnd = dayStart + 86_400_000;
+  const action = "assistant.inbox_analysis_provider_call";
+  const detail = JSON.stringify({
+    connectionKey: singleLineSnapshot(input.connectionKey, 512),
+    gmailMessageId: singleLineSnapshot(input.messageId, 512),
+  });
+  const result = await database
+    .prepare(
+      `INSERT INTO activity_events (
+         id, record_id, action, actor, detail, created_at
+       )
+       SELECT ?, ?, ?, ?, ?, ?
+       WHERE (
+         SELECT COUNT(*)
+         FROM activity_events
+         WHERE action = ?
+           AND created_at >= ?
+           AND created_at < ?
+       ) < ?`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      `inbox-analysis:${input.messageId}`,
+      action,
+      input.actor,
+      detail,
+      input.now,
+      action,
+      dayStart,
+      dayEnd,
+      MAX_INBOX_ANALYSIS_PROVIDER_CALLS_PER_DAY,
+    )
+    .run();
+  return result.meta.changes === 1;
 }
 
 async function sha256(value: string) {
@@ -341,9 +394,46 @@ async function saveFailure(input: {
     attemptedLabelDefinitionVersion:
       INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
     failureAttempts: attempts,
-    errorCode: preservesReview ? null : input.errorCode,
+    errorCode: input.errorCode,
   }));
   return attempts;
+}
+
+async function saveDiscoveryFailure(input: {
+  repository: ReturnType<typeof createD1MailItemRepository>;
+  connectionKey: string;
+  messageId: string;
+  summary: GmailMessageSummary | null;
+  now: number;
+}) {
+  const item = normalizeStoredMailItem({
+    ...rowBase({
+      ...input,
+      existing: null,
+    }),
+    clientId: null,
+    suggestedProjectId: null,
+    status: "failed",
+    matchReason: "Inbox analysis state could not be read.",
+    analysisPayload: null,
+    party: null,
+    confidence: null,
+    contentHash: null,
+    labelDefinitionVersion: INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+    attemptedLabelDefinitionVersion:
+      INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+    failureAttempts: 1,
+    errorCode: "analysis_state_read_failed",
+  });
+  const result = await input.repository.insertIfAbsent(item);
+  if (
+    result.outcome !== "saved"
+    && result.outcome !== "existing-preserved"
+  ) {
+    throw new Error(
+      "Inbox analysis could not preserve an unread watermark row.",
+    );
+  }
 }
 
 async function saveAnalysis(input: {
@@ -491,6 +581,7 @@ export async function runInboxAnalysisSweep(input: {
   let continuationToken: string | null = pageToken ?? null;
   let hitWatermark = false;
   let exhausted = false;
+  let discoveryFailed = false;
   let pagesRead = 0;
   const pageBudget = Math.max(
     0,
@@ -505,21 +596,45 @@ export async function runInboxAnalysisSweep(input: {
     && work.length < MAX_INBOX_ANALYSIS_MESSAGES
     && !hitWatermark
   ) {
-    const page = await client.listMessages({
-      labelId: "INBOX",
-      ...(pageToken ? { pageToken } : {}),
-      mode: "sweep",
-    });
+    let page: GmailMessageListPage;
+    try {
+      page = await client.listMessages({
+        labelId: "INBOX",
+        ...(pageToken ? { pageToken } : {}),
+        mode: "sweep",
+      });
+    } catch {
+      // Work discovered on earlier pages is still durable even when the next
+      // Gmail page cannot be read. Return its token for one bounded retry.
+      discoveryFailed = true;
+      continuationToken = pageToken ?? continuationToken;
+      break;
+    }
     pagesRead += 1;
     const summaries = new Map(page.messages.map((message) => [message.id, message]));
 
     for (const messageId of page.messageIds) {
       if (work.length >= MAX_INBOX_ANALYSIS_MESSAGES) break;
       if (scheduled.has(messageId)) continue;
-      const existing = await repository.findByGmailMessageId(
-        config.connectionKey,
-        messageId,
-      );
+      let existing: MailItem | null;
+      try {
+        existing = await repository.findByGmailMessageId(
+          config.connectionKey,
+          messageId,
+        );
+      } catch {
+        // This message was returned by Gmail and therefore crossed the sweep
+        // watermark. Give it its own durable failed row instead of aborting
+        // previously discovered work.
+        scheduled.add(messageId);
+        work.push({
+          messageId,
+          summary: summaries.get(messageId) ?? null,
+          existing: null,
+          discoveryError: "analysis_state_read_failed",
+        });
+        continue;
+      }
       if (existing) {
         if (
           (needsReanalysis(existing) || needsRetry(existing))
@@ -575,6 +690,16 @@ export async function runInboxAnalysisSweep(input: {
       });
       return;
     }
+    if (item.discoveryError) {
+      await saveDiscoveryFailure({
+        repository,
+        connectionKey: config.connectionKey,
+        messageId: item.messageId,
+        summary: item.summary,
+        now: checkedAt,
+      });
+      return;
+    }
 
     let analysisInput: GmailMessageAnalysisInput;
     try {
@@ -615,14 +740,37 @@ export async function runInboxAnalysisSweep(input: {
     };
     let analysis: InboxAnalysis | null = null;
     try {
-      analysis = config.simulation
-        ? simulationAnalysis(message, projects)
-        : await analyzeInboxMessage({
-            message,
-            projects,
-            provider: provider!,
-            signal: effectiveSignal,
+      if (config.simulation) {
+        analysis = simulationAnalysis(message, projects);
+      } else {
+        const reserved = await reserveInboxAnalysisProviderCall(
+          input.database,
+          {
+            connectionKey: config.connectionKey,
+            messageId: item.messageId,
+            actor: input.actor,
+            now: checkedAt,
+          },
+        );
+        if (!reserved) {
+          await saveFailure({
+            repository,
+            connectionKey: config.connectionKey,
+            messageId: item.messageId,
+            summary: analysisInput.summary,
+            existing: item.existing,
+            errorCode: "analysis_daily_limit_reached",
+            now: checkedAt,
           });
+          return;
+        }
+        analysis = await analyzeInboxMessage({
+          message,
+          projects,
+          provider: provider!,
+          signal: effectiveSignal,
+        });
+      }
     } catch {
       analysis = null;
     }
@@ -695,7 +843,7 @@ export async function runInboxAnalysisSweep(input: {
   );
   await Promise.all(workers);
 
-  const coverageComplete = hitWatermark || exhausted;
+  const coverageComplete = !discoveryFailed && (hitWatermark || exhausted);
   if (coverageComplete) {
     await repository.markCoverageComplete(config.connectionKey);
   }
@@ -743,10 +891,7 @@ export async function POST(request: NextRequest) {
   if (originError) return noStoreResponse(originError);
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return noStoreResponse(auth.response);
-  const rateLimitResponse = enforceDevelopmentRequestRateLimit(
-    "assistant",
-    auth.user.email,
-  );
+  const rateLimitResponse = enforceDevelopmentRequestRateLimit("assistant", auth.user.email);
   if (rateLimitResponse) return noStoreResponse(rateLimitResponse);
 
   const parsed = await parseBoundedJsonObject(request, {

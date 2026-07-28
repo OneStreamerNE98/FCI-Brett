@@ -435,6 +435,32 @@ const baseMailItem = Object.freeze({
   updatedAt: 41,
 });
 
+test("mail-item insertIfAbsent preserves any existing analysis row on identity conflict", async () => {
+  const database = new FakeDatabase({ run: () => 0 });
+  const repository = mailModule.createD1MailItemRepository(database);
+  assert.deepEqual(
+    await repository.insertIfAbsent({
+      ...baseMailItem,
+      status: "failed",
+      analysisPayload: null,
+      party: null,
+      confidence: null,
+      contentHash: null,
+      attemptedLabelDefinitionVersion: "catalog-2026-07-27",
+      failureAttempts: 1,
+      errorCode: "analysis_state_read_failed",
+    }),
+    { outcome: "existing-preserved" },
+  );
+  const write = database.statements.at(-1);
+  assert.match(write.sql, /^INSERT INTO mail_items/u);
+  assert.match(
+    write.sql,
+    /ON CONFLICT\(connection_key, gmail_message_id\) DO NOTHING$/u,
+  );
+  assert.doesNotMatch(write.sql, /DO UPDATE/u);
+});
+
 function d1MailItemRow(overrides = {}) {
   const item = { ...baseMailItem, ...overrides };
   return {
@@ -497,6 +523,24 @@ test("mail-item domain closes party and confidence to the shipped catalogs", () 
     }),
     /confidence.*catalog/iu,
   );
+  assert.equal(
+    mailDomain.normalizeStoredMailItem({
+      ...baseMailItem,
+      attemptedLabelDefinitionVersion: "catalog-2026-07-27",
+      failureAttempts: 1,
+      errorCode: "analysis_daily_limit_reached",
+    }).errorCode,
+    "analysis_daily_limit_reached",
+  );
+  assert.throws(
+    () => mailDomain.normalizeStoredMailItem({
+      ...baseMailItem,
+      attemptedLabelDefinitionVersion: "catalog-2026-07-27",
+      failureAttempts: 1,
+      errorCode: null,
+    }),
+    /re-analysis requires an error code/iu,
+  );
 });
 
 test("mail-item adapter filters retryable analysis rows before LIMIT so a current backlog cannot starve work", async () => {
@@ -515,6 +559,7 @@ test("mail-item adapter filters retryable analysis rows before LIMIT so a curren
     labelDefinitionVersion: "catalog-v1",
     attemptedLabelDefinitionVersion: "catalog-v2",
     failureAttempts: 3,
+    errorCode: "analysis_failed",
     createdAt: 10,
     updatedAt: 10,
   });
@@ -524,7 +569,7 @@ test("mail-item adapter filters retryable analysis rows before LIMIT so a curren
     all(statement) {
       assert.match(
         statement.sql,
-        /^SELECT \* FROM mail_items WHERE connection_key = \? AND \(failure_attempts < \? OR attempted_label_definition_version IS NOT \?\) AND \(status = 'failed' OR \(status = 'needs-review' AND label_definition_version IS NOT \?\)\) ORDER BY updated_at ASC, id ASC LIMIT \?$/u,
+        /^SELECT \* FROM mail_items WHERE connection_key = \? AND \(error_code = 'analysis_daily_limit_reached' OR failure_attempts < \? OR attempted_label_definition_version IS NOT \?\) AND \(status = 'failed' OR \(status = 'needs-review' AND label_definition_version IS NOT \?\)\) ORDER BY updated_at ASC, id ASC LIMIT \?$/u,
       );
       assert.ok(
         statement.sql.indexOf("failure_attempts") < statement.sql.indexOf("LIMIT"),

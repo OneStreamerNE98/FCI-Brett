@@ -102,6 +102,14 @@ class InboxAnalysisDatabase {
         gmail_message_id TEXT NOT NULL,
         status TEXT NOT NULL
       );
+      CREATE TABLE activity_events (
+        id TEXT PRIMARY KEY,
+        record_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        detail TEXT,
+        created_at INTEGER NOT NULL
+      );
       CREATE TABLE mail_items (
         id TEXT PRIMARY KEY,
         connection_key TEXT NOT NULL DEFAULT 'google-workspace',
@@ -525,6 +533,247 @@ test("AI-10 failed rows retry only to the durable bound and stay outside the rev
   }
 });
 
+test("AI-10 enforces the durable 200-provider-call UTC-day ceiling and retries capped rows on the next day", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-daily-ceiling", {
+      subject: "CF-2026-041 daily ceiling",
+    });
+    const gmail = gmailClient([message]);
+    const provider = fixtureProvider();
+    const withinDay = 1_775_000_000_000;
+    const dayStart = Math.floor(withinDay / 86_400_000) * 86_400_000;
+    const insert = database.database.prepare(
+      `INSERT INTO activity_events
+         (id, record_id, action, actor, detail, created_at)
+       VALUES (?, ?, 'assistant.inbox_analysis_provider_call', ?, '{}', ?)`,
+    );
+    for (
+      let index = 0;
+      index < route.MAX_INBOX_ANALYSIS_PROVIDER_CALLS_PER_DAY;
+      index += 1
+    ) {
+      insert.run(
+        `daily-reservation-${index}`,
+        `daily-message-${index}`,
+        ADMIN_EMAIL,
+        dayStart + index,
+      );
+    }
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const result = await route.runInboxAnalysisSweep(
+        sweepInput(database, gmail, provider, { now: () => withinDay }),
+      );
+      assert.equal(result.terminationReason, "older-pending");
+    }
+    assert.equal(provider.requests.length, 0);
+    assert.equal(database.rows()[0].status, "failed");
+    assert.equal(
+      database.rows()[0].error_code,
+      "analysis_daily_limit_reached",
+    );
+    assert.equal(database.rows()[0].failure_attempts, 3);
+    assert.equal(
+      database.database.prepare(
+        "SELECT COUNT(*) AS count FROM activity_events WHERE action = 'assistant.inbox_analysis_provider_call'",
+      ).get().count,
+      200,
+    );
+
+    const nextDay = dayStart + 86_400_000 + 1_000;
+    const recovered = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider, { now: () => nextDay }),
+    );
+    assert.equal(recovered.terminationReason, "caught-up");
+    assert.equal(provider.requests.length, 1);
+    assert.equal(database.rows()[0].status, "needs-review");
+    assert.equal(database.rows()[0].failure_attempts, 0);
+    assert.equal(
+      database.database.prepare(
+        "SELECT COUNT(*) AS count FROM activity_events WHERE action = 'assistant.inbox_analysis_provider_call'",
+      ).get().count,
+      201,
+    );
+
+    const preservedPayload = database.rows()[0].analysis_payload;
+    database.database.prepare(
+      `UPDATE mail_items
+       SET label_definition_version = 'prior-catalog'
+       WHERE connection_key = ? AND gmail_message_id = ?`,
+    ).run(CONNECTION_KEY, message.id);
+    for (let index = 0; index < 199; index += 1) {
+      insert.run(
+        `second-day-reservation-${index}`,
+        `second-day-message-${index}`,
+        ADMIN_EMAIL,
+        nextDay + index + 1,
+      );
+    }
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const cappedReanalysis = await route.runInboxAnalysisSweep(
+        sweepInput(database, gmail, provider, { now: () => nextDay + 500 }),
+      );
+      assert.equal(cappedReanalysis.terminationReason, "older-pending");
+    }
+    const cappedReview = database.rows()[0];
+    assert.equal(provider.requests.length, 1);
+    assert.equal(cappedReview.status, "needs-review");
+    assert.equal(cappedReview.failure_attempts, 3);
+    assert.equal(
+      cappedReview.error_code,
+      "analysis_daily_limit_reached",
+    );
+    assert.equal(cappedReview.analysis_payload, preservedPayload);
+
+    const thirdDay = dayStart + (2 * 86_400_000) + 1_000;
+    const reanalyzed = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider, { now: () => thirdDay }),
+    );
+    assert.equal(reanalyzed.terminationReason, "caught-up");
+    assert.equal(provider.requests.length, 2);
+    assert.equal(database.rows()[0].failure_attempts, 0);
+    assert.equal(database.rows()[0].error_code, null);
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 persists earlier-page work when a later Gmail page fails", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-before-page-failure", {
+      subject: "CF-2026-041 first page survives",
+    });
+    let listCalls = 0;
+    const gmail = gmailClient([message]);
+    gmail.listMessages = async ({ pageToken }) => {
+      listCalls += 1;
+      if (pageToken === "page-two") {
+        throw new Error("Injected second-page failure.");
+      }
+      return {
+        messages: [message],
+        messageIds: [message.id],
+        failedMessageIds: [],
+        nextPageToken: "page-two",
+      };
+    };
+    const provider = fixtureProvider();
+
+    const result = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.deepEqual(result, {
+      terminationReason: "older-pending",
+      message: "Older messages not yet analyzed",
+      nextPageToken: "page-two",
+    });
+    assert.equal(listCalls, 2);
+    assert.equal(provider.requests.length, 1);
+    assert.equal(database.rows().length, 1);
+    assert.equal(database.rows()[0].gmail_message_id, message.id);
+    assert.equal(database.rows()[0].status, "needs-review");
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 gives a message its own failed row when its watermark lookup fails", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-watermark-read-failure");
+    const gmail = gmailClient([message]);
+    const provider = fixtureProvider();
+    const prepare = database.prepare.bind(database);
+    let injected = false;
+    database.prepare = (sql) => {
+      if (
+        !injected
+        && sql === "SELECT * FROM mail_items WHERE connection_key = ? AND gmail_message_id = ?"
+      ) {
+        injected = true;
+        throw new Error("Injected watermark lookup failure.");
+      }
+      return prepare(sql);
+    };
+
+    const result = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.equal(result.terminationReason, "older-pending");
+    assert.equal(provider.requests.length, 0);
+    assert.equal(database.rows().length, 1);
+    assert.equal(database.rows()[0].gmail_message_id, message.id);
+    assert.equal(database.rows()[0].status, "failed");
+    assert.equal(
+      database.rows()[0].error_code,
+      "analysis_state_read_failed",
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 preserves a hidden existing review row when its watermark lookup fails", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-hidden-existing-analysis");
+    const repository = mailItemModule.createD1MailItemRepository(database);
+    assert.deepEqual(await repository.upsert({
+      id: "existing-review-row",
+      connectionKey: CONNECTION_KEY,
+      gmailMessageId: message.id,
+      gmailThreadId: message.threadId,
+      clientId: CLIENT_ID,
+      suggestedProjectId: PROJECT_ID,
+      approvedProjectId: null,
+      status: "needs-review",
+      matchReason: "Preserve this reviewed analysis.",
+      emailDriveFileId: null,
+      analysisPayload: Object.freeze({ preserved: true }),
+      party: "client",
+      confidence: "high",
+      contentHash: "c".repeat(64),
+      labelDefinitionVersion:
+        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      attemptedLabelDefinitionVersion: null,
+      subject: message.subject,
+      sender: message.from,
+      receivedAt: Date.parse(message.date),
+      failureAttempts: 0,
+      errorCode: null,
+      coverageComplete: true,
+      createdAt: 1_775_000_000_000,
+      updatedAt: 1_775_000_000_001,
+    }), { outcome: "saved" });
+    const before = database.rows()[0];
+    const gmail = gmailClient([message]);
+    const provider = fixtureProvider();
+    const prepare = database.prepare.bind(database);
+    let injected = false;
+    database.prepare = (sql) => {
+      if (
+        !injected
+        && sql === "SELECT * FROM mail_items WHERE connection_key = ? AND gmail_message_id = ?"
+      ) {
+        injected = true;
+        throw new Error("Injected hidden-row lookup failure.");
+      }
+      return prepare(sql);
+    };
+
+    const result = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.equal(result.terminationReason, "caught-up");
+    assert.equal(provider.requests.length, 0);
+    assert.deepEqual(database.rows(), [before]);
+  } finally {
+    database.close();
+  }
+});
+
 test("AI-10 contains one item-level prefilter failure and still persists a bounded failed row", async () => {
   const database = new InboxAnalysisDatabase();
   try {
@@ -731,11 +980,20 @@ test("AI-10 writer placement, request bounds, and Gmail read-only surface stay m
     /\b(?:insert\s+into|update\s+[\w"`.[\]-]+\s+set|delete\s+from|create\s+table|alter\s+table|drop\s+table)\b/iu,
   );
   assert.match(routeSource, /MAX_INBOX_ANALYSIS_BODY_BYTES = 8_000/u);
+  assert.match(
+    routeSource,
+    /MAX_INBOX_ANALYSIS_PROVIDER_CALLS_PER_DAY = 200/u,
+  );
   assert.match(routeSource, /parseBoundedJsonObject\(request,/u);
   assert.match(routeSource, /requireSameOrigin\(request\)/u);
   assert.match(routeSource, /requireOfficeUser\(request, \{ admin: true \}\)/u);
   assert.match(routeSource, /noStoreJson/u);
   assert.match(routeSource, /repository\.upsert\(/u);
+  assert.match(routeSource, /repository\.insertIfAbsent\(/u);
+  assert.match(
+    routeSource,
+    /const reserved = await reserveInboxAnalysisProviderCall\([\s\S]*if \(!reserved\)[\s\S]*analysis = await analyzeInboxMessage\(/u,
+  );
   assert.doesNotMatch(
     routeSource,
     /\b(?:applyFiledLabel|createReplyDraft|sendTestMessage|prepareFciLabels|modifyMessage|sendMessage)\s*\(/u,

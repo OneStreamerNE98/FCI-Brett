@@ -276,7 +276,8 @@ LIMIT $3`,
             `${MAIL_ITEM_SELECT}
 WHERE connection_key = $1
   AND (
-    failure_attempts < $2
+    error_code = 'analysis_daily_limit_reached'
+    OR failure_attempts < $2
     OR attempted_label_definition_version IS DISTINCT FROM $3
   )
   AND (
@@ -311,6 +312,74 @@ WHERE connection_key = $1 AND coverage_complete = false`,
           [normalizedConnectionKey],
         );
       });
+    },
+
+    async insertIfAbsent(item) {
+      const invalidReferenceResult = invalidReference(item);
+      if (invalidReferenceResult) return invalidReferenceResult;
+      const values = validateMailItem(item);
+      const normalized = values.normalized;
+      try {
+        const rowCount = await withPostgresTransaction(
+          pool,
+          transactionOptions,
+          async (client) => {
+            const result = await client.query(
+              `INSERT INTO mail_items (
+               id, connection_key, gmail_message_id, gmail_thread_id, client_id,
+               suggested_project_id, approved_project_id, status, match_reason,
+               email_drive_file_id, analysis_payload, party, confidence, content_hash,
+               label_definition_version, attempted_label_definition_version,
+               subject, sender, received_at,
+               failure_attempts, error_code, coverage_complete, created_at, updated_at
+             ) VALUES (
+               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+               $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+             )
+             ON CONFLICT (connection_key, gmail_message_id) DO NOTHING`,
+              [
+                normalized.id,
+                normalized.connectionKey,
+                normalized.gmailMessageId,
+                normalized.gmailThreadId,
+                normalized.clientId,
+                normalized.suggestedProjectId,
+                normalized.approvedProjectId,
+                normalized.status,
+                normalized.matchReason,
+                normalized.emailDriveFileId,
+                serializeMailItemAnalysisPayload(normalized.analysisPayload),
+                normalized.party,
+                normalized.confidence,
+                normalized.contentHash,
+                normalized.labelDefinitionVersion,
+                normalized.attemptedLabelDefinitionVersion,
+                normalized.subject,
+                normalized.sender,
+                values.receivedAt,
+                normalized.failureAttempts,
+                normalized.errorCode,
+                normalized.coverageComplete,
+                values.createdAt,
+                values.updatedAt,
+              ],
+            );
+            if (result.rowCount !== 0 && result.rowCount !== 1) {
+              throw new Error(
+                "PostgreSQL mail item was not inserted exactly once",
+              );
+            }
+            return result.rowCount;
+          },
+        );
+        return Object.freeze({
+          outcome: rowCount === 0 ? "existing-preserved" : "saved",
+        });
+      } catch (error) {
+        const missing = referenceConstraintOutcome(error);
+        if (missing) return missing;
+        throw error;
+      }
     },
 
     async upsert(item) {

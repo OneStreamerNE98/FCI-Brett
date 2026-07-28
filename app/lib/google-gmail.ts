@@ -94,6 +94,18 @@ export type GmailMessageListPage = Readonly<{
   nextPageToken: string | null;
 }>;
 
+export type GmailMessageListInput = Readonly<{
+  labelId: string;
+  search?: string;
+}>;
+
+export type GmailMessageSweepInput = Readonly<{
+  labelId: string;
+  search?: string;
+  pageToken?: string;
+  mode: "sweep";
+}>;
+
 export type GmailMessageAnalysisInput = Readonly<{
   summary: GmailMessageSummary;
   bodyText: string;
@@ -732,15 +744,16 @@ export class GoogleGmailClient {
     return label?.id ?? null;
   }
 
-  async listMessages(input: {
-    labelId: string;
-    search?: string;
-    pageToken?: string;
-    mode?: "sweep";
-  }): Promise<GmailMessageListPage> {
+  async listMessages(input: GmailMessageListInput): Promise<GmailMessageSummary[]>;
+  async listMessages(input: GmailMessageSweepInput): Promise<GmailMessageListPage>;
+  async listMessages(
+    input: GmailMessageListInput | GmailMessageSweepInput,
+  ): Promise<GmailMessageSummary[] | GmailMessageListPage> {
     const parameters = new URLSearchParams({ maxResults: String(MAX_MESSAGE_RESULTS), labelIds: input.labelId });
     if (input.search) parameters.set("q", input.search);
-    const pageToken = normalizeGmailPageToken(input.pageToken);
+    const pageToken = normalizeGmailPageToken(
+      "pageToken" in input ? input.pageToken : undefined,
+    );
     if (pageToken) parameters.set("pageToken", pageToken);
     const response = await this.request<{
       messages?: Array<Pick<GmailMessage, "id" | "threadId">>;
@@ -754,7 +767,7 @@ export class GoogleGmailClient {
     const messageIds = references.map((reference) => validateGmailMessageId(reference.id));
     let messages: GmailMessageSummary[];
     let failedMessageIds: string[];
-    if (input.mode === "sweep") {
+    if ("mode" in input && input.mode === "sweep") {
       const summaries = await Promise.allSettled(
         messageIds.map((messageId) => this.getMessageSummary(messageId)),
       );
@@ -771,12 +784,14 @@ export class GoogleGmailClient {
       );
       failedMessageIds = [];
     }
-    return Object.freeze({
-      messages,
-      messageIds,
-      failedMessageIds,
-      nextPageToken: returnedGmailPageToken(response.nextPageToken),
-    });
+    return "mode" in input && input.mode === "sweep"
+      ? Object.freeze({
+          messages,
+          messageIds,
+          failedMessageIds,
+          nextPageToken: returnedGmailPageToken(response.nextPageToken),
+        })
+      : messages;
   }
 
   async getMessageSummary(messageId: string) {

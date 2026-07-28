@@ -190,9 +190,12 @@ Volumes assumed: ≤200 emails/day triage, ≤50 Q&A questions/day, Today views
 (deterministic, $0). Dominant cost is agentic Q&A (multi-round tool calls).
 Published-pricing band at these volumes: **~$10–80/month** depending on model
 (cheap-tier ≈ $10–25, Haiku-class ≈ $70, premium Q&A models higher), reduced
-30–60% by prompt caching on the stable prefix. The §2 loop budgets are the
-enforcement mechanism — cost scales linearly with clicks, and nothing runs
-unattended. Model choice is one env var (`OPENAI_MODEL`).
+30–60% by prompt caching on the stable prefix. AI-10 reserves every live Inbox
+analysis provider call in `activity_events` before transmission and atomically
+enforces a 200-call UTC-day ceiling; a capped message keeps a durable failed
+row and becomes retryable the next day. The §2 loop budgets separately enforce
+the Q&A ceiling — cost scales linearly with clicks, and nothing runs unattended.
+Model choice is one env var (`OPENAI_MODEL`).
 
 ## 8. Tier 2 — production-gated designs (build at launch, not before)
 
