@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { createServer } from "vite";
@@ -343,6 +344,50 @@ test("org tools redact financial values before non-admin provider evidence", asy
   assert.match(JSON.stringify(adminLeads), /Estimated value: \$765,432/);
   assert.doesNotMatch(JSON.stringify(nonAdminDashboard), /654[,\d]*321|pipeline value/i);
   assert.match(JSON.stringify(adminDashboard), /Estimated pipeline value/);
+});
+
+test("employee emails in evidence pass the office-identity filter; client contacts stay visible", async () => {
+  // Same disclosure rule as the record routes (EDIT-04/05 precedent): the actor's
+  // own email and current office identities render; an offboarded owner/manager/
+  // assignee renders as unavailable. The registry receives the lookup by injection
+  // so the platform-free module never imports cloudflare-coupled code.
+  const registry = createAssistantToolRegistry({
+    database: new FakeDatabase(evidenceResolver),
+    connectionKey: "workspace",
+    isAdmin: false,
+    actorEmail: "asker@example.test",
+    officeIdentityLookup: (email) =>
+      email === "office@example.test" ? { email: "office@example.test" } : null,
+  });
+  const leads = await byName(registry, "list_leads").execute({
+    stage: null,
+    staleOnly: null,
+  });
+  const rendered = JSON.stringify(leads);
+  assert.doesNotMatch(rendered, /owner@example\.test/u);
+  assert.match(rendered, /Owner: unavailable \(not a current office identity\)/u);
+
+  // Absent actorEmail (legacy construction), behavior is unchanged — the filter
+  // activates only when the route supplies the actor.
+  const legacy = createAssistantToolRegistry({
+    database: new FakeDatabase(evidenceResolver),
+    connectionKey: "workspace",
+    isAdmin: false,
+  });
+  const legacyLeads = await byName(legacy, "list_leads").execute({
+    stage: null,
+    staleOnly: null,
+  });
+  assert.match(JSON.stringify(legacyLeads), /owner@example\.test/u);
+
+  // The route itself must thread both the actor and the lookup — pinned at source
+  // so a future registry call cannot silently drop the filter.
+  const routeSource = await readFile(
+    new URL("../app/api/v1/assistant/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(routeSource, /actorEmail: auth\.user\.email/u);
+  assert.match(routeSource, /officeIdentityLookup: officeIdentityForEmail/u);
 });
 
 test("non-admin financial sentinel never crosses the provider boundary", async () => {

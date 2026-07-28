@@ -29,7 +29,7 @@ import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-req
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { noStoreJson as noStore, noStoreResponse } from "../../../lib/no-store-json";
 import { defaultUserSettingsPreferences } from "../../../lib/user-settings";
-import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
+import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 
 function runtimeValue(name: string) {
@@ -171,6 +171,8 @@ export async function POST(request: NextRequest) {
     database: env.DB,
     connectionKey: google.connectionKey,
     isAdmin: auth.user.isAdmin,
+    actorEmail: auth.user.email,
+    officeIdentityLookup: officeIdentityForEmail,
     timeZone,
   });
   const modelOutcome = assistantProvider
