@@ -329,17 +329,15 @@ test(
         coverageComplete: false,
         updatedAt: NOW + 8_000,
       };
-      assert.deepEqual(await mailItems.upsert(reanalyzed), { outcome: "saved" });
+      assert.deepEqual(await mailItems.upsert(reanalyzed), {
+        outcome: "terminal-preserved",
+      });
       assert.deepEqual(
         await mailItems.findByGmailMessageId(
           "google-workspace",
           item.gmailMessageId,
         ),
-        {
-          ...reanalyzed,
-          id: item.id,
-          createdAt: item.createdAt,
-        },
+        item,
       );
 
       const simulationItem = {
