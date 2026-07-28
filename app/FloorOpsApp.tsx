@@ -69,13 +69,47 @@ import { SettingsAudienceNavigation } from "./settings/components/SettingsAudien
 import { TestingLaunchPanel } from "./settings/components/TestingLaunchPanel";
 import { WorkspaceDefaultsPanel } from "./settings/components/WorkspaceDefaultsPanel";
 import { ProjectFileCreationModal, ProjectFilesPanel, useProjectFilesController } from "./projects/components/ProjectFilesPanel";
-import { FLOORING_CATEGORIES, type FlooringCategory } from "./domain/project-creation";
+import { FLOORING_CATEGORIES, PROJECT_STATUSES, type FlooringCategory } from "./domain/project-creation";
 import { CALLBACK_NOTE_MAX_LENGTH } from "./domain/project-operations";
+import { normalizeRecordVersion } from "./domain/record-version";
 import { normalizeProjectSegment, resolveProjectSegment, type ProjectSegment } from "./domain/project-segment";
 
 type Lead = { id: string; number: string; company: string; contact: string; project: string; value: string; estimatedValue: number; stage: string; source: string; next: string; site: string; status: string; initials: string; color: string; createdAt?: number | null; updatedAt?: number | null };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; industryRaw?: string | null; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; jobSite: JobSiteLocation | null; driveFolderId?: string; driveUrl?: string };
-type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; driveFolderId?: string; driveUrl?: string };
+type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; version?: string; driveFolderId?: string; driveUrl?: string };
+type ProjectEditPatch = Partial<{
+  name: string;
+  status: string;
+  site: string | null;
+  clientId: string;
+  estimatedValue: number | null;
+  flooringCategory: FlooringCategory | null;
+  squareFeet: number | null;
+  contractValue: number | null;
+  segment: ProjectSegment | null;
+}>;
+type ProjectConflictValues = ProjectEditPatch;
+type ProjectUpdatePayload = {
+  project?: {
+    id: string;
+    projectNumber: string;
+    clientId: string;
+    name: string;
+    status: string;
+    site: string | null;
+    projectManagerId: string | null;
+    estimatedValue: number | null;
+    flooringCategory: FlooringCategory | null;
+    squareFeet: number | null;
+    contractValue: number | null;
+    segment: ProjectSegment | null;
+    updatedAt: number;
+    version: string;
+  };
+  error?: string;
+  currentVersion?: string;
+  currentValues?: ProjectConflictValues;
+};
 type DashboardSummary = {
   generatedAt: number;
   metrics: { activeLeads: number; estimatedPipelineValue: number; activeProjects: number; clientCount: number; meetingCount: number; filedEmailCount: number };
@@ -134,6 +168,22 @@ const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp[] = [
   /^Workspace readiness refreshed\. Current status is shown above\.$/u,
   /^Loaded \d+ messages? from .+\.$/u,
 ];
+
+class ProjectEditConflictError extends Error {
+  currentVersion: string;
+  currentValues: ProjectConflictValues;
+
+  constructor(
+    message: string,
+    currentVersion: string,
+    currentValues: ProjectConflictValues,
+  ) {
+    super(message);
+    this.name = "ProjectEditConflictError";
+    this.currentVersion = currentVersion;
+    this.currentValues = currentValues;
+  }
+}
 const focusableControlSelector = [
   "a[href]",
   "button:not([disabled])",
@@ -390,7 +440,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         const installationCompletedAt = optionalProjectTimestamp(project.installation_completed_at);
         const callbackNote = typeof project.callback_note === "string" && project.callback_note.trim() ? project.callback_note.trim() : null;
         const jobSite = normalizeJobSiteLocation({ address: project.site, latitude: project.latitude, longitude: project.longitude });
-        return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory: optionalFlooringCategory(project.flooring_category), squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0 ? squareFeet : null, contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0 ? contractValue : null, segment: resolveProjectSegment(project.segment), installationStartedAt, installationCompletedAt, hadCallback: project.had_callback === true || project.had_callback === 1, callbackNote, site: jobSite?.address ?? "Site pending", jobSite, managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
+        return { id: String(project.id), clientId: String(project.client_id), number: String(project.project_number), client: String(project.client_name), name: String(project.name), status: displayStatus(project.status, "Planning"), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory: optionalFlooringCategory(project.flooring_category), squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0 ? squareFeet : null, contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0 ? contractValue : null, segment: resolveProjectSegment(project.segment), installationStartedAt, installationCompletedAt, hadCallback: project.had_callback === true || project.had_callback === 1, callbackNote, site: jobSite?.address ?? "Site pending", jobSite, managerId, lead: projectManagerLabel(managerId, userEmail, userName), date: "Not scheduled", accent: "sage", createdAt: optionalRecordNumber(project.created_at), updatedAt: optionalRecordNumber(project.updated_at), version: normalizeRecordVersion(project.version) ?? undefined, driveFolderId: project.drive_folder_id ? String(project.drive_folder_id) : undefined, driveUrl: project.drive_url ? String(project.drive_url) : undefined };
       }));
       if (dashboardLoadId > dashboardAppliedLoadIdRef.current) {
         dashboardAppliedLoadIdRef.current = dashboardLoadId;
@@ -757,6 +807,65 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     } catch (error) {
       notify(error instanceof Error ? error.message : "Project could not be saved.", "error");
     }
+  }
+
+  async function saveProjectEdits(
+    project: Project,
+    patch: ProjectEditPatch,
+    version: string,
+  ) {
+    const response = await fetch(`/api/v1/projects/${encodeURIComponent(project.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...patch, version }),
+    });
+    const data = await response.json().catch(() => ({})) as ProjectUpdatePayload;
+    if (response.status === 409 && typeof data.currentVersion === "string") {
+      throw new ProjectEditConflictError(
+        data.error ?? "Project changed since it was loaded.",
+        data.currentVersion,
+        data.currentValues ?? {},
+      );
+    }
+    if (!response.ok || !data.project) {
+      throw new Error(data.error ?? "Project changes could not be saved.");
+    }
+    const saved = data.project;
+    const client = clients.find((item) => item.id === saved.clientId);
+    const estimatedValue = optionalRecordNumber(saved.estimatedValue);
+    const squareFeet = optionalRecordNumber(saved.squareFeet);
+    const contractValue = optionalRecordNumber(saved.contractValue);
+    const jobSite = normalizeJobSiteLocation({ address: saved.site });
+    const savedSegment = saved.segment === null
+      ? resolveProjectSegment(null, client?.industryRaw ?? client?.industry)
+      : resolveProjectSegment(saved.segment);
+    const update = (item: Project): Project => item.id === project.id
+      ? {
+          ...item,
+          clientId: saved.clientId,
+          client: client?.name ?? item.client,
+          name: saved.name,
+          status: displayStatus(saved.status, saved.status),
+          site: jobSite?.address ?? "Site pending",
+          jobSite,
+          estimatedValue,
+          value: estimatedValue === null ? "TBD" : money(estimatedValue),
+          flooringCategory: optionalFlooringCategory(saved.flooringCategory),
+          squareFeet: squareFeet !== null && Number.isSafeInteger(squareFeet) && squareFeet > 0
+            ? squareFeet
+            : null,
+          contractValue: contractValue !== null && Number.isSafeInteger(contractValue) && contractValue >= 0
+            ? contractValue
+            : null,
+          segment: savedSegment,
+          managerId: saved.projectManagerId,
+          updatedAt: optionalRecordNumber(saved.updatedAt) ?? item.updatedAt,
+          version: normalizeRecordVersion(saved.version) ?? item.version,
+        }
+      : item;
+    setProjectItems((current) => current.map(update));
+    setSelectedProject((current) => current ? update(current) : current);
+    notify(`${saved.projectNumber} project details updated`, "success");
   }
 
   async function syncGoogleSheet() {
@@ -1241,7 +1350,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} managerId={userEmail.trim().toLowerCase()} managerLabel={userName.trim() || userEmail} isAdmin={isAdmin} onClose={closeNewProject} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
       {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} returnFocusRef={leadDrawerReturnFocusRef} />}
-      {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} jobSiteMaps={jobSiteMaps} onClose={() => setProjectOpen(false)} notify={notify} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} onMeetingRecorded={() => void refreshDashboardSnapshot().catch(() => {})} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
+      {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} clients={clients} jobSiteMaps={jobSiteMaps} onClose={() => setProjectOpen(false)} notify={notify} onSaveProject={saveProjectEdits} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} onMeetingRecorded={() => void refreshDashboardSnapshot().catch(() => {})} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
       {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} jobSiteMaps={jobSiteMaps} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
       {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"} aria-atomic="true">
         {toast.kind === "success" ? <CheckCircle2 size={18} aria-hidden="true" /> : toast.kind === "info" ? <Info size={18} aria-hidden="true" /> : <CircleAlert size={18} aria-hidden="true" />}
@@ -1613,8 +1722,9 @@ function LeadDrawer({ lead, onClose, onAdvance, returnFocusRef }: { lead: Lead; 
   </AccessibleOverlay>;
 }
 
-function ProjectDrawer({ project, jobSiteMaps, onClose, notify, onProvisionDrive, onAssignToMe, onRecordInstallationDates, onRecordFollowUpResult, onMeetingRecorded, isAdmin, currentUserEmail, returnFocusRef }: { project: Project; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; notify: Notify; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; onRecordInstallationDates: (project: Project, installationStartedAt: number, installationCompletedAt: number) => Promise<void>; onRecordFollowUpResult: (project: Project, hadCallback: boolean, callbackNote: string | null) => Promise<void>; onMeetingRecorded: () => void; isAdmin: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
+function ProjectDrawer({ project, clients, jobSiteMaps, onClose, notify, onSaveProject, onProvisionDrive, onAssignToMe, onRecordInstallationDates, onRecordFollowUpResult, onMeetingRecorded, isAdmin, currentUserEmail, returnFocusRef }: { project: Project; clients: Client[]; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; notify: Notify; onSaveProject: (project: Project, patch: ProjectEditPatch, version: string) => Promise<void>; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; onRecordInstallationDates: (project: Project, installationStartedAt: number, installationCompletedAt: number) => Promise<void>; onRecordFollowUpResult: (project: Project, hadCallback: boolean, callbackNote: string | null) => Promise<void>; onMeetingRecorded: () => void; isAdmin: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {
   const [tab, setTab] = useState<"Overview" | "Files" | "Meetings">("Overview");
+  const [editing, setEditing] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
   const [assigningManager, setAssigningManager] = useState(false);
   const [installationDatesOpen, setInstallationDatesOpen] = useState(false);
@@ -1658,14 +1768,125 @@ function ProjectDrawer({ project, jobSiteMaps, onClose, notify, onProvisionDrive
           : <ProjectMeetings project={project} notify={notify} onMeetingRecorded={onMeetingRecorded} />}
       </div>
       <footer>
-        <span className="planned-project-updates"><FeatureStateBadge state="Planned" /> Project updates</span>
+        <button className="soft-button" type="button" onClick={() => setEditing(true)} disabled={busy}><Settings size={16} /> Edit project</button>
         <button className="soft-button" onClick={handleDrive} disabled={busy}><FolderOpen size={16} /> {provisioning ? "Creating folder…" : project.driveUrl ? "Open Drive folder" : "Create Drive folder"}</button>
       </footer>
   </AccessibleOverlay>
+    {editing && <ProjectEditModal project={project} clients={clients} isAdmin={isAdmin} onClose={() => setEditing(false)} onSave={(patch, version) => onSaveProject(project, patch, version)} />}
     {installationDatesOpen && <InstallationDatesModal project={project} onClose={() => setInstallationDatesOpen(false)} onSave={(installationStartedAt, installationCompletedAt) => onRecordInstallationDates(project, installationStartedAt, installationCompletedAt)} />}
     {followUpResultOpen && <FollowUpResultModal project={project} onClose={() => setFollowUpResultOpen(false)} onSave={(hadCallback, callbackNote) => onRecordFollowUpResult(project, hadCallback, callbackNote)} />}
     {projectFiles.modalOpen && projectFiles.catalogState.status === "ready" && projectFiles.catalogState.catalog.provisioned && <ProjectFileCreationModal catalog={projectFiles.catalogState.catalog} controller={projectFiles} projectId={project.id} projectNumber={project.number} returnFocusRef={projectFilesTriggerRef} />}
   </>;
+}
+
+function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { project: Project; clients: Client[]; isAdmin: boolean; onClose: () => void; onSave: (patch: ProjectEditPatch, version: string) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [conflictVersion, setConflictVersion] = useState<string | null>(null);
+  const [conflictValues, setConflictValues] = useState<ProjectConflictValues>({});
+  const site = project.site === "Site pending" ? null : project.site;
+
+  function savedValue(key: keyof ProjectConflictValues) {
+    if (!Object.hasOwn(conflictValues, key)) return null;
+    const value = conflictValues[key];
+    let displayValue: string;
+    if (key === "clientId") {
+      const client = clients.find((item) => item.id === value);
+      displayValue = client ? `${client.name} · ${client.code}` : String(value);
+    } else if (key === "estimatedValue" || key === "contractValue") {
+      displayValue = typeof value === "number" ? money(value) : "Not set";
+    } else if (key === "squareFeet") {
+      displayValue = typeof value === "number"
+        ? new Intl.NumberFormat("en-US").format(value)
+        : "Not set";
+    } else if (key === "segment") {
+      displayValue = value === null
+        ? "Derived from client industry"
+        : displayStatus(String(value), String(value));
+    } else if (key === "flooringCategory") {
+      displayValue = value === null
+        ? "Not yet captured"
+        : displayStatus(String(value), String(value));
+    } else if (key === "status") {
+      displayValue = displayStatus(String(value), String(value));
+    } else {
+      displayValue = value === null || value === "" ? "Not set" : String(value);
+    }
+    return <small className="project-edit-saved-value">Saved value: {displayValue}</small>;
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const version = conflictVersion ?? project.version;
+    if (!version) {
+      setError("Refresh live project records before editing this project.");
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name") ?? "").trim();
+    const clientId = String(form.get("clientId") ?? "").trim();
+    const nextSite = String(form.get("site") ?? "").trim() || null;
+    const flooringCategory = optionalFlooringCategory(form.get("flooringCategory"));
+    const squareFeetText = String(form.get("squareFeet") ?? "").trim();
+    const squareFeet = squareFeetText ? Number(squareFeetText) : null;
+    const segment = normalizeProjectSegment(form.get("segment"));
+    const patch: ProjectEditPatch = {};
+
+    if (name !== project.name) patch.name = name;
+    if (clientId !== project.clientId) patch.clientId = clientId;
+    if (nextSite !== site) patch.site = nextSite;
+    if (flooringCategory !== project.flooringCategory) patch.flooringCategory = flooringCategory;
+    if (squareFeet !== project.squareFeet) patch.squareFeet = squareFeet;
+    if (segment !== project.segment) patch.segment = segment;
+
+    if (isAdmin) {
+      const status = String(form.get("status") ?? "").trim().toLowerCase();
+      const estimatedValueText = String(form.get("estimatedValue") ?? "").trim();
+      const estimatedValue = estimatedValueText ? Number(estimatedValueText) : null;
+      const contractValueText = String(form.get("contractValue") ?? "").trim();
+      const contractValue = contractValueText ? Number(contractValueText) : null;
+      if (status !== project.status.toLowerCase()) patch.status = status;
+      if (estimatedValue !== project.estimatedValue) patch.estimatedValue = estimatedValue;
+      if (contractValue !== project.contractValue) patch.contractValue = contractValue;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      setError("Change at least one project field before saving.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(patch, version);
+      onClose();
+    } catch (saveError) {
+      if (saveError instanceof ProjectEditConflictError) {
+        setConflictVersion(saveError.currentVersion);
+        setConflictValues(saveError.currentValues);
+        setError("This project changed while you were editing. Review your entries, then choose Re-apply changes.");
+      } else {
+        setError(saveError instanceof Error ? saveError.message : "Project changes could not be saved.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <AccessibleOverlay ariaLabel={`Edit ${project.number}`} contentClassName="modal project-edit-modal" onClose={onClose} busy={saving}>
+    <header><div><p className="eyebrow">{project.number}</p><h2>Edit project</h2></div><button type="button" onClick={onClose} aria-label="Close project editor" disabled={saving}><X size={20} /></button></header>
+    <form onSubmit={submit}>
+      {error && <p className="project-operation-error" role="alert">{error}</p>}
+      <label>Client<select data-overlay-initial-focus name="clientId" defaultValue={project.clientId} required disabled={saving}>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select>{savedValue("clientId")}</label>
+      <label>Project name<input name="name" required maxLength={180} defaultValue={project.name} disabled={saving} />{savedValue("name")}</label>
+      <label>Site <span className="optional-label">Optional</span><input name="site" defaultValue={site ?? ""} placeholder="Address or city and state" disabled={saving} />{savedValue("site")}</label>
+      {isAdmin ? <div className="form-row"><label>Status<select name="status" defaultValue={project.status.toLowerCase()} disabled={saving}>{PROJECT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select>{savedValue("status")}</label><label>Estimated value <span className="optional-label">Optional</span><input name="estimatedValue" type="number" min="0" step="1" inputMode="numeric" defaultValue={project.estimatedValue ?? ""} disabled={saving} />{savedValue("estimatedValue")}</label></div> : <><div className="drawer-stats" aria-label="Admin-only project fields"><div><span>Status</span><strong>{project.status}</strong></div><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Contract value</span><strong>{FINANCIAL_RESTRICTION_LABEL}</strong></div></div><p className="form-help"><ShieldCheck size={14} /> Status and financial fields are read-only here. An admin can edit them.</p></>}
+      <div className="form-row"><label>Flooring category <span className="optional-label">Optional</span><select name="flooringCategory" defaultValue={project.flooringCategory ?? ""} disabled={saving}><option value="">Not yet captured</option>{FLOORING_CATEGORIES.map((category) => <option key={category} value={category}>{displayStatus(category, category)}</option>)}</select>{savedValue("flooringCategory")}</label><label>Square feet <span className="optional-label">Optional</span><input name="squareFeet" type="number" min="1" step="1" inputMode="numeric" defaultValue={project.squareFeet ?? ""} disabled={saving} />{savedValue("squareFeet")}</label></div>
+      <label>Project segment <span className="optional-label">Optional</span><select name="segment" defaultValue={project.segment ?? ""} disabled={saving}><option value="">Derived from client industry</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select>{savedValue("segment")}</label>
+      {isAdmin && <label>Contract value <span className="optional-label">Optional</span><input name="contractValue" type="number" min="0" step="1" inputMode="numeric" defaultValue={project.contractValue ?? ""} disabled={saving} />{savedValue("contractValue")}</label>}
+      <p className="form-help"><ShieldCheck size={14} /> Saving appends one before-and-after activity record. A newer saved version is never overwritten automatically.</p>
+      <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : conflictVersion ? "Re-apply changes" : "Save changes"}</button></footer>
+    </form>
+  </AccessibleOverlay>;
 }
 
 function InstallationDatesModal({ project, onClose, onSave }: { project: Project; onClose: () => void; onSave: (installationStartedAt: number, installationCompletedAt: number) => Promise<void> }) {

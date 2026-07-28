@@ -28,6 +28,7 @@ const noStoreRoutes = [
   "app/api/v1/integrations/google/setup/reconcile/route.ts",
   "app/api/v1/integrations/google/sheets/ensure/route.ts",
   "app/api/v1/leads/[leadId]/route.ts",
+  "app/api/v1/projects/[projectId]/route.ts",
   "app/api/v1/projects/[projectId]/drive/route.ts",
   "app/api/v1/projects/[projectId]/drive/files/route.ts",
   "app/api/v1/settings/launch-checklist/route.ts",

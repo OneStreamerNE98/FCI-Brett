@@ -56,6 +56,7 @@ const [
   meetingsRoute,
   tasksRoute,
   taskRoute,
+  projectRoute,
   projectDriveFilesRoute,
 ] =
   await Promise.all([
@@ -81,6 +82,7 @@ const [
     vite.ssrLoadModule("/app/api/v1/projects/[projectId]/meetings/route.ts"),
     vite.ssrLoadModule("/app/api/v1/tasks/route.ts"),
     vite.ssrLoadModule("/app/api/v1/tasks/[taskId]/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/projects/[projectId]/route.ts"),
     vite.ssrLoadModule("/app/api/v1/projects/[projectId]/drive/files/route.ts"),
   ]);
 
@@ -185,6 +187,15 @@ const cases = [
     maximumBytes: 64_000,
     error: "Project action is too large.",
     invoke: (request) => projectsRoute.PATCH(request),
+  },
+  {
+    name: "project field update",
+    method: "PATCH",
+    maximumBytes: 64_000,
+    error: "Project update is too large.",
+    invoke: (request) => projectRoute.PATCH(request, {
+      params: Promise.resolve({ projectId: "project-1" }),
+    }),
   },
   {
     name: "filing-rule update",
