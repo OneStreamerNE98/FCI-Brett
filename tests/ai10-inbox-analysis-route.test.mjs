@@ -645,6 +645,42 @@ test("AI-10 repeated Gmail read failures do not consume the provider-attempt bud
   }
 });
 
+test("AI-10 request-aborted sweeps do not consume the provider-attempt budget", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-request-abort");
+    const gmail = gmailClient([message]);
+    const provider = fixtureProvider();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await route.runInboxAnalysisSweep(
+        sweepInput(database, gmail, provider, { signal: AbortSignal.abort() }),
+      );
+      assert.equal(result.terminationReason, "older-pending");
+    }
+
+    assert.equal(provider.requests.length, 0);
+    const pending = database.rows();
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].status, "failed");
+    assert.equal(pending[0].error_code, "analysis_request_aborted");
+    assert.equal(
+      pending[0].failure_attempts,
+      1,
+      "client disconnects reach neither Gmail nor the provider and must not advance the durable attempt budget",
+    );
+
+    const recovered = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.equal(recovered.terminationReason, "caught-up");
+    assert.equal(provider.requests.length, 1);
+    assert.equal(database.rows()[0].status, "needs-review");
+  } finally {
+    database.close();
+  }
+});
+
 test("AI-10 provider-consuming deadline failures remain bounded to three attempts", async () => {
   const database = new InboxAnalysisDatabase();
   const originalTimeout = AbortSignal.timeout;
@@ -721,7 +757,11 @@ test("AI-10 enforces the durable 200-provider-call UTC-day ceiling and retries c
       database.rows()[0].error_code,
       "analysis_daily_limit_reached",
     );
-    assert.equal(database.rows()[0].failure_attempts, 3);
+    assert.equal(
+      database.rows()[0].failure_attempts,
+      1,
+      "capped sweeps consume no provider budget and must not advance attempts",
+    );
     assert.equal(
       database.database.prepare(
         "SELECT COUNT(*) AS count FROM activity_events WHERE action = 'assistant.inbox_analysis_provider_call'",
@@ -767,7 +807,7 @@ test("AI-10 enforces the durable 200-provider-call UTC-day ceiling and retries c
     const cappedReview = database.rows()[0];
     assert.equal(provider.requests.length, 1);
     assert.equal(cappedReview.status, "needs-review");
-    assert.equal(cappedReview.failure_attempts, 3);
+    assert.equal(cappedReview.failure_attempts, 1);
     assert.equal(
       cappedReview.error_code,
       "analysis_daily_limit_reached",
@@ -782,6 +822,71 @@ test("AI-10 enforces the durable 200-provider-call UTC-day ceiling and retries c
     assert.equal(provider.requests.length, 2);
     assert.equal(database.rows()[0].failure_attempts, 0);
     assert.equal(database.rows()[0].error_code, null);
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 capped rows do not poison the attempt budget of a later transient failure", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-capped-then-transient");
+    const gmail = gmailClient([message]);
+    const provider = fixtureProvider();
+    const withinDay = 1_775_000_000_000;
+    const dayStart = Math.floor(withinDay / 86_400_000) * 86_400_000;
+    const insert = database.database.prepare(
+      `INSERT INTO activity_events
+         (id, record_id, action, actor, detail, created_at)
+       VALUES (?, ?, 'assistant.inbox_analysis_provider_call', ?, '{}', ?)`,
+    );
+    for (
+      let index = 0;
+      index < route.MAX_INBOX_ANALYSIS_PROVIDER_CALLS_PER_DAY;
+      index += 1
+    ) {
+      insert.run(
+        `poison-reservation-${index}`,
+        `poison-message-${index}`,
+        ADMIN_EMAIL,
+        dayStart + index,
+      );
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await route.runInboxAnalysisSweep(
+        sweepInput(database, gmail, provider, { now: () => withinDay }),
+      );
+    }
+    assert.equal(
+      database.rows()[0].error_code,
+      "analysis_daily_limit_reached",
+    );
+
+    const readGmail = gmail.getMessageAnalysisInput;
+    gmail.getMessageAnalysisInput = async () => {
+      throw new Error("Injected Gmail read failure.");
+    };
+    const nextDay = dayStart + 86_400_000 + 1_000;
+    await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider, { now: () => nextDay }),
+    );
+    const overwritten = database.rows()[0];
+    assert.equal(overwritten.status, "failed");
+    assert.equal(overwritten.error_code, "gmail_read_failed");
+    assert.equal(
+      overwritten.failure_attempts,
+      1,
+      "a transient failure overwriting a capped row must not inherit an exhausted budget",
+    );
+
+    gmail.getMessageAnalysisInput = readGmail;
+    const recovered = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider, { now: () => nextDay + 500 }),
+    );
+    assert.equal(recovered.terminationReason, "caught-up");
+    assert.equal(provider.requests.length, 1);
+    assert.equal(database.rows()[0].status, "needs-review");
   } finally {
     database.close();
   }
@@ -849,6 +954,87 @@ test("AI-10 does not expose a continuation token when every item on the page fai
     assert.equal(provider.requests.length, 1);
     assert.equal(database.rows().length, 1);
     assert.equal(database.rows()[0].status, "failed");
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 keeps the continuation token when a page holds only already-analyzed messages", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-analyzed-prefix");
+    const gmail = gmailClient([message], { nextPageToken: "older-page" });
+    const provider = fixtureProvider();
+
+    const first = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.equal(first.terminationReason, "older-pending");
+    assert.equal(first.nextPageToken, "older-page");
+    assert.equal(database.rows()[0].status, "needs-review");
+
+    const resumed = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.equal(resumed.terminationReason, "older-pending");
+    assert.equal(
+      resumed.nextPageToken,
+      "older-page",
+      "a resumed bootstrap must be able to advance past its analyzed prefix",
+    );
+    assert.equal(provider.requests.length, 1);
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 preserves the caller's continuation token when the backlog leaves no page budget", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-full-backlog");
+    const gmail = gmailClient([message]);
+    const provider = fixtureProvider(() => {
+      throw new Error("Injected provider failure.");
+    });
+
+    const seeded = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.equal(seeded.terminationReason, "older-pending");
+    assert.equal(database.rows()[0].error_code, "analysis_failed");
+    const templateId = database.rows()[0].id;
+
+    const cloneRow = database.database.prepare(
+      `INSERT INTO mail_items (
+         id, connection_key, gmail_message_id, gmail_thread_id, client_id,
+         suggested_project_id, approved_project_id, status, match_reason,
+         email_drive_file_id, analysis_payload, party, confidence, content_hash,
+         label_definition_version, attempted_label_definition_version,
+         subject, sender, received_at,
+         failure_attempts, error_code, coverage_complete, created_at, updated_at
+       ) SELECT ?, connection_key, ?, gmail_thread_id, client_id,
+         suggested_project_id, approved_project_id, status, match_reason,
+         email_drive_file_id, analysis_payload, party, confidence, content_hash,
+         label_definition_version, attempted_label_definition_version,
+         subject, sender, received_at,
+         failure_attempts, error_code, coverage_complete, created_at, updated_at
+       FROM mail_items WHERE id = ?`,
+    );
+    for (let index = 0; index < 80; index += 1) {
+      cloneRow.run(`backlog-${index}`, `backlog-message-${index}`, templateId);
+    }
+    const listCallsBefore = gmail.calls.list;
+
+    const resumed = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider, { pageToken: "resume-token" }),
+    );
+    assert.equal(gmail.calls.list, listCallsBefore);
+    assert.equal(resumed.terminationReason, "older-pending");
+    assert.equal(
+      resumed.nextPageToken,
+      "resume-token",
+      "a sweep that read no page must hand back the caller's token unchanged",
+    );
   } finally {
     database.close();
   }

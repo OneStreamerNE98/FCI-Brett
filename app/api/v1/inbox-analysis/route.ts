@@ -586,6 +586,7 @@ export async function runInboxAnalysisSweep(input: {
   let pageToken = input.pageToken;
   let continuationToken: string | null = pageToken ?? null;
   let continuationMessageIds: ReadonlySet<string> | null = null;
+  const durableProgressMessageIds = new Set<string>();
   let hitWatermark = false;
   let exhausted = false;
   let discoveryFailed = false;
@@ -659,6 +660,9 @@ export async function runInboxAnalysisSweep(input: {
           hitWatermark = true;
           break;
         }
+        // An already-current row is durable state for this page, so a sweep
+        // resuming an interrupted bootstrap can still advance past it.
+        durableProgressMessageIds.add(messageId);
         continue;
       }
       scheduled.add(messageId);
@@ -684,7 +688,6 @@ export async function runInboxAnalysisSweep(input: {
   const deadline = AbortSignal.timeout(INBOX_ANALYSIS_SWEEP_DEADLINE_MS);
   const effectiveSignal = AbortSignal.any([input.signal, deadline]);
   let nextWorkIndex = 0;
-  const durableProgressMessageIds = new Set<string>();
 
   const processWork = async (item: AnalysisWork) => {
     const checkedAt = now();
@@ -773,6 +776,7 @@ export async function runInboxAnalysisSweep(input: {
             existing: item.existing,
             errorCode: "analysis_daily_limit_reached",
             now: checkedAt,
+            countsAgainstAttemptBudget: false,
           });
           return false;
         }
@@ -831,7 +835,9 @@ export async function runInboxAnalysisSweep(input: {
               ? "analysis_request_aborted"
               : "analysis_deadline_exceeded",
             now: now(),
-            countsAgainstAttemptBudget: input.signal.aborted,
+            // Neither abort kind reached Gmail or the provider for this item,
+            // so it must not consume the three durable analysis attempts.
+            countsAgainstAttemptBudget: false,
           });
           continue;
         }
@@ -879,11 +885,15 @@ export async function runInboxAnalysisSweep(input: {
   const result = Object.freeze({
     terminationReason: "older-pending",
     message: OLDER_PENDING_MESSAGE,
+    // Withhold the token only for a fetched page that produced no durable
+    // outcome, so an all-failed page cannot spin. A sweep that read no page
+    // (a full backlog or a first-page discovery failure) keeps the caller's
+    // token, and a page of already-analyzed rows still advances.
     ...(continuationToken
-      && continuationMessageIds
-      && [...continuationMessageIds].some((messageId) =>
-        durableProgressMessageIds.has(messageId)
-      )
+      && (continuationMessageIds === null
+        || [...continuationMessageIds].some((messageId) =>
+          durableProgressMessageIds.has(messageId)
+        ))
       ? { nextPageToken: continuationToken }
       : {}),
   } as const);
