@@ -74,7 +74,84 @@ import { CALLBACK_NOTE_MAX_LENGTH } from "./domain/project-operations";
 import { normalizeRecordVersion } from "./domain/record-version";
 import { normalizeProjectSegment, resolveProjectSegment, type ProjectSegment } from "./domain/project-segment";
 
-type Lead = { id: string; number: string; company: string; contact: string; project: string; value: string; estimatedValue: number; stage: string; source: string; next: string; site: string; status: string; initials: string; color: string; createdAt?: number | null; updatedAt?: number | null };
+type Lead = {
+  id: string;
+  number: string;
+  company: string;
+  contact: string;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  project: string;
+  value: string;
+  estimatedValue: number;
+  stage: string;
+  source: string;
+  next: string;
+  nextActionAt: string | null;
+  ownerEmail: string | null;
+  site: string;
+  status: string;
+  initials: string;
+  color: string;
+  createdAt?: number | null;
+  updatedAt?: number | null;
+  version?: string;
+};
+type LeadEditPatch = Partial<{
+  company: string;
+  contactName: string;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  projectName: string;
+  source: string;
+  stage: string;
+  site: string;
+  estimatedValue: number;
+  nextAction: string;
+  nextActionAt: string | null;
+  ownerEmail: string;
+  status: string;
+}>;
+type LeadConflictValues = Partial<{
+  company: string;
+  contactName: string;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  projectName: string;
+  source: string;
+  stage: string;
+  site: string;
+  estimatedValue: number;
+  nextAction: string;
+  nextActionAt: number | null;
+  ownerEmail: string | null;
+  status: string;
+}>;
+type LeadUpdatePayload = {
+  lead?: Record<string, unknown>;
+  error?: string;
+  currentVersion?: string;
+  currentValues?: LeadConflictValues;
+};
+type LeadModalProps =
+  | {
+      mode: "create";
+      // Optional prefill for create mode: AI-10 sub-PR (f) accepts an email-derived
+      // lead proposal by opening THIS modal pre-filled and posting through the
+      // ordinary create path — the implement-once contract this packet ships so the
+      // modal is never reworked a second time (review finding, PR #231).
+      initialValues?: Partial<Lead>;
+      isAdmin: boolean;
+      onClose: () => void;
+      onSave: (lead: Lead) => Promise<void>;
+    }
+  | {
+      mode: "edit";
+      initialValues: Lead;
+      isAdmin: boolean;
+      onClose: () => void;
+      onSave: (patch: LeadEditPatch, version: string) => Promise<void>;
+    };
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; industryRaw?: string | null; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; jobSite: JobSiteLocation | null; driveFolderId?: string; driveUrl?: string };
 type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; version?: string; driveFolderId?: string; driveUrl?: string };
 type ProjectEditPatch = Partial<{
@@ -184,6 +261,22 @@ class ProjectEditConflictError extends Error {
     this.currentValues = currentValues;
   }
 }
+
+class LeadEditConflictError extends Error {
+  currentVersion: string;
+  currentValues: LeadConflictValues;
+
+  constructor(
+    message: string,
+    currentVersion: string,
+    currentValues: LeadConflictValues,
+  ) {
+    super(message);
+    this.name = "LeadEditConflictError";
+    this.currentVersion = currentVersion;
+    this.currentValues = currentValues;
+  }
+}
 const focusableControlSelector = [
   "a[href]",
   "button:not([disabled])",
@@ -218,6 +311,52 @@ function money(value: number) {
 function optionalRecordNumber(value: unknown) {
   const number = value === null || value === undefined || value === "" ? Number.NaN : Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function optionalRecordText(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function mapLeadRecord(record: Record<string, unknown>): Lead {
+  const estimatedValue = Number(record.estimatedValue ?? 0);
+  const company = String(record.company ?? "");
+  return {
+    id: String(record.id),
+    number: String(record.leadNumber ?? "Lead"),
+    company,
+    contact: String(record.contactName ?? ""),
+    contactEmail: optionalRecordText(record.contactEmail),
+    contactPhone: optionalRecordText(record.contactPhone),
+    project: String(record.projectName ?? ""),
+    value: money(estimatedValue),
+    estimatedValue,
+    stage: String(record.stage ?? ""),
+    source: String(record.source ?? ""),
+    next: String(record.nextAction ?? ""),
+    nextActionAt: optionalRecordText(record.nextActionAt),
+    ownerEmail: optionalRecordText(record.ownerEmail),
+    site: String(record.site ?? ""),
+    status: String(record.status ?? "active"),
+    initials: recordInitials(company),
+    color: "sage",
+    createdAt: optionalRecordNumber(record.createdAt),
+    updatedAt: optionalRecordNumber(record.updatedAt),
+    version: normalizeRecordVersion(record.version) ?? undefined,
+  };
+}
+
+function dateTimeLocalInputValue(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const localTime = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localTime.toISOString().slice(0, 16);
+}
+
+function dateTimeIsoValue(value: string) {
+  if (!value.trim()) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function optionalFlooringCategory(value: unknown): FlooringCategory | null {
@@ -424,10 +563,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const leadRows = Array.isArray(leadData.leads) ? leadData.leads as Record<string, unknown>[] : [];
       const clientRows = Array.isArray(clientData.clients) ? clientData.clients as Record<string, unknown>[] : [];
       const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
-      setLeads(leadRows.map((lead) => {
-        const estimatedValue = Number(lead.estimatedValue ?? 0);
-        return { id: String(lead.id), number: String(lead.leadNumber ?? "Lead"), company: String(lead.company), contact: String(lead.contactName), project: String(lead.projectName), value: money(estimatedValue), estimatedValue, stage: String(lead.stage), source: String(lead.source), next: String(lead.nextAction), site: String(lead.site), status: String(lead.status), initials: recordInitials(String(lead.company)), color: "sage", createdAt: optionalRecordNumber(lead.createdAt), updatedAt: optionalRecordNumber(lead.updatedAt) };
-      }));
+      setLeads(leadRows.map(mapLeadRecord));
       setClients(clientRows.map((client) => ({ id: String(client.id), code: String(client.client_code), name: String(client.name), contact: String(client.primary_contact_name ?? "Primary contact pending"), email: String(client.primary_contact_email ?? ""), industry: String(client.industry ?? "Commercial"), industryRaw: client.industry ? String(client.industry) : null, status: displayStatus(client.status, "Active"), initials: recordInitials(String(client.name)), color: "sage", googleStatus: client.drive_folder_id ? "Ready" as const : "Setup pending" as const, jobSite: normalizeJobSiteLocation({ address: client.site_address ?? client.address, latitude: client.latitude, longitude: client.longitude }), driveFolderId: client.drive_folder_id ? String(client.drive_folder_id) : undefined, driveUrl: client.drive_url ? String(client.drive_url) : undefined })));
       setProjectItems(projectRows.map((project) => {
         const managerId = typeof project.project_manager_id === "string" && project.project_manager_id.trim()
@@ -777,6 +913,36 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     } catch (error) {
       notify(error instanceof Error ? error.message : "Lead could not be saved.", "error");
     }
+  }
+
+  async function saveLeadEdits(
+    lead: Lead,
+    patch: LeadEditPatch,
+    version: string,
+  ) {
+    const response = await fetch(`/api/v1/leads/${encodeURIComponent(lead.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...patch, version }),
+    });
+    const data = await response.json().catch(() => ({})) as LeadUpdatePayload;
+    if (response.status === 409 && typeof data.currentVersion === "string") {
+      throw new LeadEditConflictError(
+        data.error ?? "Lead changed since it was loaded.",
+        data.currentVersion,
+        data.currentValues ?? {},
+      );
+    }
+    if (!response.ok || !data.lead) {
+      throw new Error(data.error ?? "Lead changes could not be saved.");
+    }
+    const saved = mapLeadRecord(data.lead);
+    setLeads((current) => current.map((item) => item.id === saved.id ? saved : item));
+    void refreshDashboardSnapshot().catch(() => {
+      // The lead write already succeeded. Preserve the last honest snapshot
+      // and let the app's shared refresh model try again on its next trigger.
+    });
+    notify(`${saved.number} lead details updated`, "success");
   }
 
   async function addClient(client: Client) {
@@ -1345,11 +1511,11 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} onImportConfirmed={refreshDirectoryData} syncingSheet={sheetSyncing} />}
         </div>
       </main>
-      {leadModal && <LeadModal onClose={() => setLeadModal(false)} onSave={addLead} />}
+      {leadModal && <LeadModal mode="create" isAdmin={isAdmin} onClose={() => setLeadModal(false)} onSave={addLead} />}
       {clientModal && <ClientModal onClose={() => setClientModal(false)} onSave={addClient} />}
       {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} managerId={userEmail.trim().toLowerCase()} managerLabel={userName.trim() || userEmail} isAdmin={isAdmin} onClose={closeNewProject} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
-      {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} returnFocusRef={leadDrawerReturnFocusRef} />}
+      {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} isAdmin={isAdmin} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} onSaveLead={saveLeadEdits} returnFocusRef={leadDrawerReturnFocusRef} fallbackFocusRef={workspaceSearchRef} />}
       {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} clients={clients} jobSiteMaps={jobSiteMaps} onClose={() => setProjectOpen(false)} notify={notify} onSaveProject={saveProjectEdits} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} onMeetingRecorded={() => void refreshDashboardSnapshot().catch(() => {})} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
       {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} jobSiteMaps={jobSiteMaps} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
       {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"} aria-atomic="true">
@@ -1679,8 +1845,157 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, onCurrentU
     </div></>;
 }
 
-function LeadModal({ onClose, onSave }: { onClose: () => void; onSave: (l: Lead) => Promise<void> }) { const [saving, setSaving] = useState(false); async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setSaving(true); const form = new FormData(e.currentTarget); const company = String(form.get("company")); const estimatedValue = Number(form.get("value") ?? 0); try { await onSave({ id: "", number: "", company, contact: String(form.get("contact")), project: String(form.get("project")), value: money(estimatedValue), estimatedValue, stage: "New inquiry", source: String(form.get("source")), next: String(form.get("notes")), site: String(form.get("site")), status: "active", initials: recordInitials(company), color: "sage" }); } finally { setSaving(false); } }
-  return <AccessibleOverlay ariaLabel="Add a lead" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">New opportunity</p><h2>Add a lead</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client company<input data-overlay-initial-focus name="company" required placeholder="Business name" /></label><div className="form-row"><label>Primary contact<input name="contact" required placeholder="Full name" /></label><label>Lead source<select name="source"><option>Website</option><option>Referral</option><option>Bid invite</option><option>Repeat client</option></select></label></div><label>Project / opportunity<input name="project" required placeholder="Project name" /></label><div className="form-row"><label>Estimated value<input name="value" type="number" min="0" step="1" required placeholder="Estimated amount" /></label><label>Project site<input name="site" required placeholder="Address or city and state" /></label></div><label>Next action<textarea name="notes" required placeholder="What needs to happen next?" /></label><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add to pipeline"}</button></footer></form></AccessibleOverlay>;
+function LeadModal(props: LeadModalProps) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [conflictVersion, setConflictVersion] = useState<string | null>(null);
+  const [conflictValues, setConflictValues] = useState<LeadConflictValues>({});
+  const editLead = props.mode === "edit" ? props.initialValues : null;
+  // seed feeds defaultValues in BOTH modes: full row in edit, optional prefill in
+  // create (the AI-10 (f) consumption path). Mode logic stays keyed on editLead.
+  const seed: Partial<Lead> | null = props.mode === "edit" ? props.initialValues : props.initialValues ?? null;
+  const sourceOptions = ["Website", "Referral", "Bid invite", "Repeat client"];
+  if (seed?.source && !sourceOptions.includes(seed.source)) sourceOptions.push(seed.source);
+  const stageOptions = [...leadStages];
+  if (editLead && !stageOptions.includes(editLead.stage)) stageOptions.push(editLead.stage);
+
+  function savedValue(key: keyof LeadConflictValues) {
+    if (!Object.hasOwn(conflictValues, key)) return null;
+    const value = conflictValues[key];
+    let displayValue: string;
+    if (key === "estimatedValue") {
+      displayValue = typeof value === "number" ? money(value) : "Not set";
+    } else if (key === "nextActionAt") {
+      displayValue = typeof value === "number"
+        ? new Date(value).toLocaleString()
+        : "Not set";
+    } else if (key === "status") {
+      displayValue = displayStatus(value, "Not set");
+    } else if (key === "ownerEmail" && value === null) {
+      displayValue = "Unavailable";
+    } else {
+      displayValue = value === null || value === "" ? "Not set" : String(value);
+    }
+    return <small className="project-edit-saved-value">Saved value: {displayValue}</small>;
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const company = String(form.get("company") ?? "").trim();
+    const contactName = String(form.get("contact") ?? "").trim();
+    const projectName = String(form.get("project") ?? "").trim();
+    const source = String(form.get("source") ?? "").trim();
+    const site = String(form.get("site") ?? "").trim();
+    const estimatedValue = Number(form.get("value") ?? editLead?.estimatedValue ?? 0);
+    const nextAction = String(form.get("notes") ?? "").trim();
+
+    if (props.mode === "create") {
+      setSaving(true);
+      try {
+        await props.onSave({
+          id: "",
+          number: "",
+          company,
+          contact: contactName,
+          contactEmail: null,
+          contactPhone: null,
+          project: projectName,
+          value: money(estimatedValue),
+          estimatedValue,
+          stage: "New inquiry",
+          source,
+          next: nextAction,
+          nextActionAt: null,
+          ownerEmail: null,
+          site,
+          status: "active",
+          initials: recordInitials(company),
+          color: "sage",
+        });
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    const version = conflictVersion ?? props.initialValues.version;
+    if (!version) {
+      setError("Refresh live lead records before editing this lead.");
+      return;
+    }
+    const contactEmailText = String(form.get("contactEmail") ?? "").trim().toLowerCase();
+    const contactEmail = contactEmailText || null;
+    const contactPhone = String(form.get("contactPhone") ?? "").trim() || null;
+    const stage = String(form.get("stage") ?? "").trim();
+    const nextActionAtText = String(form.get("nextActionAt") ?? "");
+    const nextActionAt = dateTimeIsoValue(nextActionAtText);
+    const ownerEmail = String(form.get("ownerEmail") ?? "").trim().toLowerCase();
+    const status = String(form.get("status") ?? "").trim().toLowerCase();
+    if (!ownerEmail && props.initialValues.ownerEmail) {
+      setError("Lead owner email cannot be empty.");
+      return;
+    }
+    const patch: LeadEditPatch = {};
+    if (company !== props.initialValues.company) patch.company = company;
+    if (contactName !== props.initialValues.contact) patch.contactName = contactName;
+    if (contactEmail !== props.initialValues.contactEmail) patch.contactEmail = contactEmail;
+    if (contactPhone !== props.initialValues.contactPhone) patch.contactPhone = contactPhone;
+    if (projectName !== props.initialValues.project) patch.projectName = projectName;
+    if (source !== props.initialValues.source) patch.source = source;
+    if (stage !== props.initialValues.stage) patch.stage = stage;
+    if (site !== props.initialValues.site) patch.site = site;
+    if (props.isAdmin && estimatedValue !== props.initialValues.estimatedValue) {
+      patch.estimatedValue = estimatedValue;
+    }
+    if (nextAction !== props.initialValues.next) patch.nextAction = nextAction;
+    if (nextActionAtText !== dateTimeLocalInputValue(props.initialValues.nextActionAt)) {
+      patch.nextActionAt = nextActionAt;
+    }
+    if (ownerEmail && ownerEmail !== props.initialValues.ownerEmail) patch.ownerEmail = ownerEmail;
+    if (status !== props.initialValues.status.toLowerCase()) patch.status = status;
+    if (Object.keys(patch).length === 0) {
+      setError("Change at least one lead field before saving.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await props.onSave(patch, version);
+      props.onClose();
+    } catch (saveError) {
+      if (saveError instanceof LeadEditConflictError) {
+        setConflictVersion(saveError.currentVersion);
+        setConflictValues(saveError.currentValues);
+        setError("This lead changed while you were editing. Review your entries, then choose Re-apply changes.");
+      } else {
+        setError(saveError instanceof Error ? saveError.message : "Lead changes could not be saved.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const editMode = props.mode === "edit";
+  const ariaLabel = editLead ? `Edit ${editLead.number}` : "Add a lead";
+  return <AccessibleOverlay ariaLabel={ariaLabel} contentClassName="modal lead-edit-modal" onClose={props.onClose} busy={saving}>
+    <header><div><p className="eyebrow">{editLead ? editLead.number : "New opportunity"}</p><h2>{editLead ? "Edit lead" : "Add a lead"}</h2></div><button type="button" onClick={props.onClose} aria-label={editLead ? "Close lead editor" : "Close"} disabled={saving}><X size={20} /></button></header>
+    <form onSubmit={submit}>
+      {error && <p className="project-operation-error" role="alert">{error}</p>}
+      <label>Client company<input data-overlay-initial-focus name="company" required maxLength={180} placeholder="Business name" defaultValue={seed?.company ?? ""} disabled={saving} />{savedValue("company")}</label>
+      <div className="form-row"><label>Primary contact<input name="contact" required maxLength={160} placeholder="Full name" defaultValue={seed?.contact ?? ""} disabled={saving} />{savedValue("contactName")}</label><label>Lead source<select name="source" defaultValue={seed?.source ?? "Website"} disabled={saving}>{sourceOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("source")}</label></div>
+      {editMode && <div className="form-row"><label>Contact email <span className="optional-label">Optional</span><input name="contactEmail" type="email" maxLength={254} defaultValue={editLead?.contactEmail ?? ""} disabled={saving} />{savedValue("contactEmail")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="contactPhone" type="tel" maxLength={40} defaultValue={editLead?.contactPhone ?? ""} disabled={saving} />{savedValue("contactPhone")}</label></div>}
+      <label>Project / opportunity<input name="project" required maxLength={180} placeholder="Project name" defaultValue={seed?.project ?? ""} disabled={saving} />{savedValue("projectName")}</label>
+      <div className="form-row"><label>Estimated value<input name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{savedValue("estimatedValue")}</label><label>Project site<input name="site" required maxLength={300} placeholder="Address or city and state" defaultValue={seed?.site ?? ""} disabled={saving} />{savedValue("site")}</label></div>
+      {editMode && !props.isAdmin && <p id="lead-estimated-value-help" className="form-help"><ShieldCheck size={14} /> Estimated value is read-only here. An administrator can edit it.</p>}
+      {editMode && <div className="form-row"><label>Stage<select name="stage" defaultValue={editLead?.stage} disabled={saving}>{stageOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("stage")}</label><label>Lead status<select name="status" defaultValue={editLead?.status.toLowerCase()} disabled={saving}><option value="active">Active</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="archived">Archived</option></select>{savedValue("status")}</label></div>}
+      <label>Next action<textarea name="notes" required maxLength={500} placeholder="What needs to happen next?" defaultValue={seed?.next ?? ""} disabled={saving} />{savedValue("nextAction")}</label>
+      {editMode && <div className="form-row"><label>Next action date <span className="optional-label">Optional</span><input name="nextActionAt" type="datetime-local" defaultValue={dateTimeLocalInputValue(editLead?.nextActionAt ?? null)} disabled={saving} />{savedValue("nextActionAt")}</label><label>Lead owner email<input name="ownerEmail" type="email" maxLength={254} placeholder="Authorized office email" defaultValue={editLead?.ownerEmail ?? ""} disabled={saving} />{savedValue("ownerEmail")}{editLead?.ownerEmail === null && <small>The saved owner is unavailable because it is not a current authorized office identity.</small>}</label></div>}
+      {editMode && <p className="form-help"><ShieldCheck size={14} /> Saving appends before-and-after activity records. A newer saved version is never overwritten automatically.</p>}
+      <footer><button type="button" className="soft-button" onClick={props.onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : editMode ? conflictVersion ? "Re-apply changes" : "Save changes" : "Add to pipeline"}</button></footer>
+    </form>
+  </AccessibleOverlay>;
 }
 
 function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client: Client) => Promise<void> }) {
@@ -1696,8 +2011,9 @@ function NewProjectModal({ clients, initialClientId, managerId, managerLabel, is
   return <AccessibleOverlay ariaLabel="Create a project" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client<select data-overlay-initial-focus name="clientId" required defaultValue={selectedClientId} disabled={clients.length === 0}>{clients.length === 0 && <option value="">Create a client first</option>}{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label><label>Project name<input name="name" required placeholder="Project name" /></label><div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><div className="assigned-manager-field" aria-label={`Project manager: ${managerLabel}, signed-in account`}><span>Project manager</span><strong>{managerLabel}</strong><small>{managerId} · signed-in account</small></div></div><div className="form-row"><label>Status<select name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></label><label>Estimated value <span className="optional-label">Optional</span><input name="value" type="number" min="0" step="1" inputMode="numeric" placeholder="Estimated amount" /></label></div><ProjectSegmentSelector /><div className="form-row"><label>Flooring category <span className="optional-label">Optional</span><select name="flooringCategory" defaultValue=""><option value="">Not yet captured</option>{FLOORING_CATEGORIES.map((category) => <option key={category} value={category}>{displayStatus(category, category)}</option>)}</select></label><label>Square feet <span className="optional-label">Optional</span><input name="squareFeet" type="number" min="1" step="1" inputMode="numeric" placeholder="Project square footage" /></label></div><label>Contract value <span className="optional-label">Optional</span><input name="contractValue" type="number" min="0" step="1" inputMode="numeric" placeholder={isAdmin ? "Sold price at booking" : FINANCIAL_RESTRICTION_LABEL} disabled={!isAdmin} aria-describedby="contract-value-help" /></label><p id="contract-value-help" className="form-help"><ShieldCheck size={14} /> {isAdmin ? "Contract value is a financial field visible to administrators." : "An administrator can record the sold price at booking."}</p><p className="form-help"><ShieldCheck size={14} /> The project is assigned to your authorized signed-in account. An administrator can correct an unassigned legacy project from its project drawer.</p><p className="form-help"><FolderTree size={14} /> This creates an independent project number and Project Register row. Create its Drive folder from the project after saving.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving || clients.length === 0}>{saving ? "Creating…" : clients.length === 0 ? "Add a client first" : "Create project"}</button></footer></form></AccessibleOverlay>;
 }
 
-function LeadDrawer({ lead, onClose, onAdvance, returnFocusRef }: { lead: Lead; onClose: () => void; onAdvance: (id: string) => Promise<void>; returnFocusRef?: RefObject<HTMLElement | null> }) {
+function LeadDrawer({ lead, isAdmin, onClose, onAdvance, onSaveLead, returnFocusRef, fallbackFocusRef }: { lead: Lead; isAdmin: boolean; onClose: () => void; onAdvance: (id: string) => Promise<void>; onSaveLead: (lead: Lead, patch: LeadEditPatch, version: string) => Promise<void>; returnFocusRef?: RefObject<HTMLElement | null>; fallbackFocusRef?: RefObject<HTMLElement | null> }) {
   const [advancing, setAdvancing] = useState(false);
+  const [editing, setEditing] = useState(false);
   const currentIndex = leadStages.findIndex((stage) => stage.toLowerCase() === lead.stage.toLowerCase());
   const canAdvance = lead.status.toLowerCase() === "active" && currentIndex >= 0 && currentIndex < leadStages.length - 1;
 
@@ -1710,16 +2026,18 @@ function LeadDrawer({ lead, onClose, onAdvance, returnFocusRef }: { lead: Lead; 
     }
   }
 
-  return <AccessibleOverlay variant="drawer" ariaLabel={`${lead.number} ${lead.company}`} contentClassName="project-drawer lead-drawer" onClose={onClose} busy={advancing} returnFocusRef={returnFocusRef}>
+  return <><AccessibleOverlay variant="drawer" ariaLabel={`${lead.number} ${lead.company}`} contentClassName="project-drawer lead-drawer" onClose={onClose} busy={advancing} returnFocusRef={returnFocusRef} fallbackFocusRef={fallbackFocusRef}>
     <header><button data-overlay-initial-focus onClick={onClose} aria-label="Close lead details" disabled={advancing}><X size={20} /></button><Status text={lead.stage} /><span>{lead.number}</span></header>
     <div className="drawer-title"><p>Lead opportunity</p><h2>{lead.company}</h2><div><span><BriefcaseBusiness size={14} />{lead.project}</span><span><MapPin size={14} />{lead.site}</span></div></div>
     <div className="drawer-body">
       <div className="drawer-stats"><div><span>Estimated value</span><strong>{lead.value}</strong></div><div><span>Stage</span><strong>{lead.stage}</strong></div><div><span>Primary contact</span><strong>{lead.contact}</strong></div><div><span>Lead source</span><strong>{lead.source}</strong></div></div>
       <section className="lead-next-action"><h3>Next action</h3><p><Clock3 size={15} />{lead.next}</p></section>
-      <section className="lead-record-note"><ShieldCheck size={16} /><p>This drawer is read-only. Stage changes remain a separate deliberate action and can be undone from the confirmation message.</p></section>
+      <section className="lead-record-note"><ShieldCheck size={16} /><p>Edit saved lead details here. Advance stage remains a separate deliberate action and can be undone from the confirmation message.</p></section>
     </div>
-    <footer><button type="button" className="soft-button" onClick={onClose} disabled={advancing}>Close</button>{canAdvance && <button type="button" className="primary-button" onClick={() => void handleAdvance()} disabled={advancing}>{advancing ? "Advancing…" : <><span>Advance stage</span><ChevronRight size={16} /></>}</button>}</footer>
-  </AccessibleOverlay>;
+    <footer><button type="button" className="soft-button" onClick={() => setEditing(true)} disabled={advancing}><Settings size={16} /> Edit lead</button><button type="button" className="soft-button" onClick={onClose} disabled={advancing}>Close</button>{canAdvance && <button type="button" className="primary-button" onClick={() => void handleAdvance()} disabled={advancing}>{advancing ? "Advancing…" : <><span>Advance stage</span><ChevronRight size={16} /></>}</button>}</footer>
+  </AccessibleOverlay>
+    {editing && <LeadModal mode="edit" initialValues={lead} isAdmin={isAdmin} onClose={() => setEditing(false)} onSave={(patch, version) => onSaveLead(lead, patch, version)} />}
+  </>;
 }
 
 function ProjectDrawer({ project, clients, jobSiteMaps, onClose, notify, onSaveProject, onProvisionDrive, onAssignToMe, onRecordInstallationDates, onRecordFollowUpResult, onMeetingRecorded, isAdmin, currentUserEmail, returnFocusRef }: { project: Project; clients: Client[]; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; notify: Notify; onSaveProject: (project: Project, patch: ProjectEditPatch, version: string) => Promise<void>; onProvisionDrive: (project: Project) => Promise<void>; onAssignToMe: (project: Project) => Promise<void>; onRecordInstallationDates: (project: Project, installationStartedAt: number, installationCompletedAt: number) => Promise<void>; onRecordFollowUpResult: (project: Project, hadCallback: boolean, callbackNote: string | null) => Promise<void>; onMeetingRecorded: () => void; isAdmin: boolean; currentUserEmail: string; returnFocusRef?: RefObject<HTMLElement | null> }) {

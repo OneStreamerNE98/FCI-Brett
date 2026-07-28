@@ -10,6 +10,10 @@ import { ensureWorkspaceSchema } from "../_workspace-data";
 import { MAX_LEAD_BODY_BYTES } from "../../../domain/lead";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
+import {
+  authorizedLeadOwnerEmail,
+  authorizedLeadPayload,
+} from "../../../lib/authorized-lead-response";
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -24,7 +28,14 @@ export async function GET(request: NextRequest) {
     repository,
   );
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: 403 });
-  return NextResponse.json({ leads: result.value }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(
+    {
+      leads: result.value.map((lead) =>
+        authorizedLeadPayload(lead, auth.user.email)
+      ),
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -38,6 +49,19 @@ export async function POST(request: NextRequest) {
     tooLargeMessage: "Lead details are too large.",
   });
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  if (
+    Object.hasOwn(parsed.body, "ownerEmail")
+    && parsed.body.ownerEmail !== null
+    && (
+      typeof parsed.body.ownerEmail !== "string"
+      || !authorizedLeadOwnerEmail(parsed.body.ownerEmail, auth.user.email)
+    )
+  ) {
+    return NextResponse.json(
+      { error: "Lead owner must be a current authorized office identity." },
+      { status: 400 },
+    );
+  }
   await ensureWorkspaceSchema();
   const result = await createLead(
     parsed.body,
@@ -66,5 +90,8 @@ export async function POST(request: NextRequest) {
     auth.user.email,
     request.nextUrl.origin,
   );
-  return NextResponse.json({ lead: result.value }, { status: 201 });
+  return NextResponse.json(
+    { lead: authorizedLeadPayload(result.value, auth.user.email) },
+    { status: 201 },
+  );
 }
