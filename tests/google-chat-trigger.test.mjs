@@ -8,7 +8,7 @@ test("successful lead creation schedules the isolated Chat notifier without awai
   const source = await readFile(new URL("app/api/v1/leads/route.ts", root), "utf8");
   const failureBranch = source.indexOf("if (!result.ok)");
   const notification = source.indexOf("queueGoogleChatNotification(");
-  const response = source.indexOf("return NextResponse.json({ lead: result.value }");
+  const response = source.indexOf("return NextResponse.json(", notification);
 
   assert.match(source, /import \{ queueGoogleChatNotification \} from "\.\.\/\.\.\/\.\.\/lib\/google-chat-notifier-sites"/);
   assert.ok(failureBranch >= 0 && notification > failureBranch && response > notification);

@@ -322,7 +322,9 @@ test("keeps the design-critique interaction contracts in the rendered app", asyn
 
   assert.match(app, /<LeadDrawer lead=\{selectedLead\}/);
   assert.match(app, /function LeadDrawer\(/);
-  assert.match(app, /This drawer is read-only/);
+  assert.doesNotMatch(app, /This drawer is read-only/);
+  assert.match(app, /Edit saved lead details here\./);
+  assert.match(app, /> Edit lead<\/button>/);
   assert.match(app, /placeholder="Name, code, or email"/);
   assert.match(app, /visibleClients\.map/);
   assert.equal(inbox.match(/inbox-state-strip/g)?.length, 1);

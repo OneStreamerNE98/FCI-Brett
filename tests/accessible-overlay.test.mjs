@@ -58,8 +58,10 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlayConsumers, /variant="drawer"/);
   assert.match(overlayConsumers, /busy=\{loading \|\| submitting\}/);
   assert.match(overlayConsumers, /busy=\{saving\}/);
-  assert.equal(overlayConsumers.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 8);
-  assert.equal(overlayConsumers.match(/onClick=\{(?:onClose|controller\.closeModal)\} disabled=\{saving\}>Cancel/g)?.length, 10);
+  assert.equal(overlayConsumers.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 7);
+  assert.match(overlayConsumers, /aria-label=\{editLead \? "Close lead editor" : "Close"\} disabled=\{saving\}/);
+  assert.equal(overlayConsumers.match(/onClick=\{(?:onClose|controller\.closeModal)\} disabled=\{saving\}>Cancel/g)?.length, 9);
+  assert.equal(overlayConsumers.match(/onClick=\{props\.onClose\} disabled=\{saving\}>Cancel/g)?.length, 1);
   assert.match(overlayConsumers, /ariaLabel=\{`Record installation dates for \$\{project\.number\}`\}/);
   assert.match(overlayConsumers, /ariaLabel=\{`Record follow-up result for \$\{project\.number\}`\}/);
   assert.match(projectFiles, /returnFocusRef=\{returnFocusRef\}/);

@@ -764,6 +764,7 @@ applied; golden hashes untouched; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### EDIT-04 · Lead editing (small-medium, after EDIT-01 + EDIT-03)
+**Status:** In progress — `codex/edit04-lead-editing`
 **Why:** the lead PATCH route already accepts all 13 fields
 (`app/api/v1/leads/[leadId]/route.ts:14`) while the UI sends only `stage`
 through `advanceLead` (`app/FloorOpsApp.tsx:948-986`). `nextAction` is

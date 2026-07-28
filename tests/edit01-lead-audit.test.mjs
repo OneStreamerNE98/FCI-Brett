@@ -12,7 +12,7 @@ const rootPath = fileURLToPath(root);
 const read = (path) => readFile(new URL(path, root), "utf8");
 const cloudflareEnv = {
   DB: null,
-  FCI_OFFICE_EMAILS: "owner@example.test",
+  FCI_OFFICE_EMAILS: "owner@example.test,office@example.test",
   FCI_OFFICE_DOMAINS: "",
   FCI_ADMIN_EMAILS: "owner@example.test",
 };
@@ -34,8 +34,9 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24780 } },
 });
 
-const [leadRoute, d1LeadModule, leadDomainModule] = await Promise.all([
+const [leadRoute, leadCollectionRoute, d1LeadModule, leadDomainModule] = await Promise.all([
   vite.ssrLoadModule("/app/api/v1/leads/[leadId]/route.ts"),
+  vite.ssrLoadModule("/app/api/v1/leads/route.ts"),
   vite.ssrLoadModule("/app/adapters/d1/lead-repository.ts"),
   vite.ssrLoadModule("/app/domain/lead.ts"),
 ]);
@@ -194,7 +195,7 @@ const fieldCases = [
     "Lead next action due date changed",
     "2026-07-28T14:00:00.000Z → Not set",
   ],
-  ["ownerEmail", "new-owner@example.test", "Lead owner changed", "owner@example.test → new-owner@example.test"],
+  ["ownerEmail", "office@example.test", "Lead owner changed", "owner@example.test → office@example.test"],
   ["status", "converted", "Lead status changed", "active → converted"],
 ];
 
@@ -499,6 +500,9 @@ test("lead PATCH returns the current version and no audit for a stale write", as
     assert.deepEqual(await stale.json(), {
       error: "Lead changed since it was loaded.",
       currentVersion: "2",
+      currentValues: {
+        site: "Old site",
+      },
     });
     assert.deepEqual({ ...database.lead() }, {
       site: "Old site",
@@ -506,6 +510,376 @@ test("lead PATCH returns the current version and no audit for a stale write", as
       version: 2,
     });
     assert.equal(database.activities().length, 1);
+  } finally {
+    database.close();
+  }
+});
+
+test("lead estimated-value authorization runs before conflicts while office users can edit descriptive fields", async () => {
+  const database = new LeadD1Database();
+  database.seedLead();
+  cloudflareEnv.DB = database;
+  try {
+    const winner = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({ stage: "Proposal", version: "1" }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(winner.status, 200);
+
+    const forbidden = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "office@example.test",
+        },
+        body: JSON.stringify({ estimatedValue: 1, version: "1" }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(forbidden.status, 403);
+    assert.deepEqual(await forbidden.json(), {
+      error: "An FCI administrator must update lead estimated value.",
+    });
+    assert.equal(database.activities().length, 1);
+    assert.equal(database.lead().version, 2);
+
+    const descriptive = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "office@example.test",
+        },
+        body: JSON.stringify({ site: "Office-safe edit", version: "2" }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(descriptive.status, 200);
+    assert.equal(database.lead().site, "Office-safe edit");
+    assert.equal(database.activities().length, 2);
+  } finally {
+    database.close();
+  }
+});
+
+test("admin conflicts disclose only attempted lead keys and preserve external contact email", async () => {
+  const database = new LeadD1Database();
+  database.seedLead();
+  database.database.prepare(
+    "UPDATE leads SET owner_email = ?, created_by = ? WHERE id = ?",
+  ).run("offboarded@example.test", "former@example.test", "lead-edit-fixture");
+  cloudflareEnv.DB = database;
+  try {
+    const winner = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({ stage: "Proposal", version: "1" }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(winner.status, 200);
+    const winnerBody = await winner.json();
+    assert.equal(winnerBody.lead.ownerEmail, null);
+    assert.equal(winnerBody.lead.createdBy, null);
+    assert.equal(winnerBody.lead.contactEmail, "contact@example.test");
+
+    const stale = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({
+          ownerEmail: "owner@example.test",
+          estimatedValue: 130_000,
+          version: "1",
+        }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(stale.status, 409);
+    assert.deepEqual(await stale.json(), {
+      error: "Lead changed since it was loaded.",
+      currentVersion: "2",
+      currentValues: {
+        estimatedValue: 125_000,
+        ownerEmail: null,
+      },
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("lead collection responses disclose office identities but preserve external customer contact email", async () => {
+  const database = new LeadD1Database();
+  database.seedLead();
+  cloudflareEnv.DB = database;
+  try {
+    const configured = await leadCollectionRoute.GET(
+      new NextRequest("https://fci.example.test/api/v1/leads", {
+        headers: {
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+      }),
+    );
+    assert.equal(configured.status, 200);
+    const configuredLead = (await configured.json()).leads[0];
+    assert.equal(configuredLead.contactEmail, "contact@example.test");
+    assert.equal(configuredLead.ownerEmail, "owner@example.test");
+    assert.equal(configuredLead.createdBy, "owner@example.test");
+
+    database.database.prepare(
+      "UPDATE leads SET owner_email = ?, created_by = ? WHERE id = ?",
+    ).run("offboarded@example.test", "former@example.test", "lead-edit-fixture");
+    const filtered = await leadCollectionRoute.GET(
+      new NextRequest("https://fci.example.test/api/v1/leads", {
+        headers: {
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+      }),
+    );
+    assert.equal(filtered.status, 200);
+    const filteredLead = (await filtered.json()).leads[0];
+    assert.equal(filteredLead.contactEmail, "contact@example.test");
+    assert.equal(filteredLead.ownerEmail, null);
+    assert.equal(filteredLead.createdBy, null);
+  } finally {
+    database.close();
+  }
+});
+
+test("lead creation and editing reject an external owner without writing rows", async () => {
+  const database = new LeadD1Database();
+  database.seedLead();
+  cloudflareEnv.DB = database;
+  try {
+    const invalidCreate = await leadCollectionRoute.POST(
+      new NextRequest("https://fci.example.test/api/v1/leads", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({
+          company: "FCI TEST — DO NOT USE — owner validation",
+          contactName: "Customer Contact",
+          contactEmail: "customer@example.test",
+          projectName: "Test project",
+          source: "Referral",
+          stage: "New inquiry",
+          site: "Test site",
+          estimatedValue: 1_000,
+          nextAction: "Review",
+          ownerEmail: "outside@example.test",
+          status: "active",
+        }),
+      }),
+    );
+    assert.equal(invalidCreate.status, 400);
+    assert.deepEqual(await invalidCreate.json(), {
+      error: "Lead owner must be a current authorized office identity.",
+    });
+    assert.equal(
+      database.database.prepare("SELECT COUNT(*) AS total FROM leads").get().total,
+      1,
+    );
+    assert.deepEqual(database.activities(), []);
+
+    const invalidEdit = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({
+          ownerEmail: "outside@example.test",
+          version: "1",
+        }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(invalidEdit.status, 400);
+    assert.deepEqual(await invalidEdit.json(), {
+      error: "Lead owner must be a current authorized office identity.",
+    });
+    assert.equal(
+      database.database.prepare("SELECT owner_email FROM leads WHERE id = ?")
+        .get("lead-edit-fixture").owner_email,
+      "owner@example.test",
+    );
+    assert.deepEqual(database.activities(), []);
+  } finally {
+    database.close();
+  }
+});
+
+test("lead creation accepts configured and nullish-default owners with disclosure-safe versioned rows", async () => {
+  const database = new LeadD1Database();
+  cloudflareEnv.DB = database;
+  try {
+    const response = await leadCollectionRoute.POST(
+      new NextRequest("https://fci.example.test/api/v1/leads", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({
+          company: "FCI TEST — DO NOT USE — configured owner",
+          contactName: "Customer Contact",
+          contactEmail: "customer@example.test",
+          contactPhone: "555-0199",
+          projectName: "Test project",
+          source: "Referral",
+          stage: "New inquiry",
+          site: "Test site",
+          estimatedValue: 1_000,
+          nextAction: "Review",
+          nextActionAt: "2026-07-30T13:00:37.500Z",
+          ownerEmail: "office@example.test",
+          status: "active",
+        }),
+      }),
+    );
+    assert.equal(response.status, 201);
+    const createdLead = (await response.json()).lead;
+    assert.equal(createdLead.contactEmail, "customer@example.test");
+    assert.equal(createdLead.ownerEmail, "office@example.test");
+    assert.equal(createdLead.createdBy, "owner@example.test");
+    assert.equal(createdLead.version, "1");
+
+    const nullOwnerResponse = await leadCollectionRoute.POST(
+      new NextRequest("https://fci.example.test/api/v1/leads", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({
+          company: "FCI TEST — DO NOT USE — null owner",
+          contactName: "Customer Contact",
+          projectName: "Second test project",
+          source: "Referral",
+          stage: "New inquiry",
+          site: "Second test site",
+          estimatedValue: 2_000,
+          nextAction: "Review",
+          ownerEmail: null,
+          status: "active",
+        }),
+      }),
+    );
+    assert.equal(nullOwnerResponse.status, 201);
+    const nullOwnerLead = (await nullOwnerResponse.json()).lead;
+    assert.equal(nullOwnerLead.ownerEmail, "owner@example.test");
+    assert.equal(nullOwnerLead.createdBy, "owner@example.test");
+    assert.equal(nullOwnerLead.version, "1");
+    assert.equal(
+      database.database.prepare("SELECT COUNT(*) AS total FROM leads").get().total,
+      2,
+    );
+    assert.deepEqual(
+      database.activities().map(({ action, actor }) => ({ action, actor })),
+      [
+        { action: "Lead created", actor: "owner@example.test" },
+        { action: "Lead created", actor: "owner@example.test" },
+      ],
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("an update-time lead race re-reads one coherent latest row for conflict values", async () => {
+  class RacingLeadD1Database extends LeadD1Database {
+    raced = false;
+
+    async batch(statements) {
+      if (!this.raced) {
+        this.raced = true;
+        this.database.prepare(
+          "UPDATE leads SET site = ?, version = version + 1 WHERE id = ?",
+        ).run("Peer-saved site", "lead-edit-fixture");
+      }
+      return super.batch(statements);
+    }
+  }
+
+  const database = new RacingLeadD1Database();
+  database.seedLead();
+  cloudflareEnv.DB = database;
+  try {
+    const response = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({ site: "My retained draft", version: "1" }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      error: "Lead changed since it was loaded.",
+      currentVersion: "2",
+      currentValues: {
+        site: "Peer-saved site",
+      },
+    });
+    assert.deepEqual(database.activities(), []);
+  } finally {
+    database.close();
+  }
+});
+
+test("a no-op lead PATCH echoes the same version and writes no audit row", async () => {
+  const database = new LeadD1Database();
+  database.seedLead();
+  cloudflareEnv.DB = database;
+  try {
+    const response = await leadRoute.PATCH(
+      new NextRequest("https://fci.example.test/api/v1/leads/lead-edit-fixture", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://fci.example.test",
+          "oai-authenticated-user-email": "owner@example.test",
+        },
+        body: JSON.stringify({ company: "FCI TEST — DO NOT USE", version: "1" }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-edit-fixture" }) },
+    );
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).lead.version, "1");
+    assert.equal(database.lead().version, 1);
+    assert.deepEqual(database.activities(), []);
   } finally {
     database.close();
   }
