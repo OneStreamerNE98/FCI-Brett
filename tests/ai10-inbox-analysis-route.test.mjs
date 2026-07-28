@@ -1048,3 +1048,54 @@ test("AI-10 writer placement, request bounds, and Gmail read-only surface stay m
     }],
   );
 });
+
+test("AI-10 never persists or returns provider error text containing key material", async () => {
+  // Every earlier AI packet pins the secrets-never-in-responses law with an
+  // sk-*-never-return sentinel (ai05:643, ai06:626); AI-10 adds a DURABLE store,
+  // so the pin must also cover persisted rows (review finding, PR #235). The
+  // provider throws a 401-style error echoing the key — nothing of it may reach
+  // the sweep result or any mail_items column.
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-secret-leak", {
+      subject: "Quote request",
+    });
+    const gmail = gmailClient([message]);
+    const provider = {
+      requests: [],
+      async complete() {
+        throw new Error(
+          `401 Unauthorized: invalid api key ${workerEnvironment.OPENAI_API_KEY}`,
+        );
+      },
+    };
+    const result = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    const rows = database.rows();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].status, "failed");
+    assert.doesNotMatch(
+      JSON.stringify({ result, rows }),
+      /sk-ai10-route-fixture-never-return/u,
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 pins the five-page / one-hundred-message sweep cap at source", async () => {
+  // The cap exists and the budget arithmetic is sound, but nothing pinned it
+  // (review finding, PR #235): a future edit could silently raise the Gmail
+  // read amplification per sweep with every suite green.
+  const routeSource = await readFile(
+    join(rootPath, "app/api/v1/inbox-analysis/route.ts"),
+    "utf8",
+  );
+  assert.match(routeSource, /export const MAX_INBOX_ANALYSIS_PAGES = 5;/u);
+  assert.match(routeSource, /export const MAX_INBOX_ANALYSIS_MESSAGES = 100;/u);
+  assert.match(
+    routeSource,
+    /Math\.min\(\s*MAX_INBOX_ANALYSIS_PAGES,\s*Math\.floor\(\(MAX_INBOX_ANALYSIS_MESSAGES - work\.length\) \/ 20\)/u,
+  );
+});

@@ -303,6 +303,15 @@ packet corrects the help/presentation mismatch.
   (config PATCH), access-boundaries (office vs admin per §4 table),
   bounded-api-bodies (every new POST/PATCH), and the new
   `assistant-inbox-component-boundaries` test (AI-02).
+- AI-10 pins (`tests/ai10-inbox-analysis*.test.mjs`, `ai10-gmail-pagination`):
+  the classifier source contains no SQL write keyword and the analysis route is
+  the only `mail_items` writer; the kill switch denies before Gmail, provider,
+  and write work; one durable row per swept message across the full status
+  vocabulary; analyze-once measured by provider-call count under an unchanged
+  catalog; the failure-attempt bound; the 200-call UTC-day provider ceiling;
+  the five-page/100-message sweep cap at source; and the `sk-…-never-return`
+  sentinel asserted absent from sweep results AND persisted rows — the durable
+  store extends the secrets-never-in-responses law to secrets-never-at-rest.
 - Golden hashes: **no AI packet may regenerate them.** They are the two SHA-256
   digests in `tests/e2e/page-layouts.spec.ts` freezing the Overview and Reports
   markup; only `npm run test:e2e` evaluates them.
