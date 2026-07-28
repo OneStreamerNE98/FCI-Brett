@@ -1403,6 +1403,15 @@ test("AI-10 writer placement, request bounds, and Gmail read-only surface stay m
       writesRawMailItems: false,
       mutatesThroughRepository: true,
     }, {
+      // Consciously widened (review bot P1, PR #238): filing is the decision the
+      // review queue waits on, and a current needs-review row is never re-swept,
+      // so only the filing route can retire it. The write is a single guarded
+      // UPDATE inside the existing lease-protected batch — it never inserts a
+      // row, so the analysis route remains the only creator of mail items.
+      path: "gmail/messages/[messageId]/file/route.ts",
+      writesRawMailItems: true,
+      mutatesThroughRepository: false,
+    }, {
       path: "integrations/google/simulation/reset/route.ts",
       writesRawMailItems: true,
       mutatesThroughRepository: false,

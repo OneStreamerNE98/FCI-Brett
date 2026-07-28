@@ -433,6 +433,20 @@ export async function POST(request: NextRequest, context: { params: Promise<{ me
     const finalResults = await env.DB.batch([
       env.DB.prepare(`UPDATE gmail_file_archives SET status = 'filed', filed_at = ?, last_error_code = NULL, updated_at = ? WHERE id = ? AND ${FILING_LEASE_EXISTS}`)
         .bind(filedAt, filedAt, archiveId, lease.operationKey, lease.leaseExpiresAt),
+      // Filing IS the decision the AI-10 review queue is waiting on, and
+      // `mail_items` was built as a suggestion→approval table. Without this the
+      // filed message stays `needs-review` forever: a current review row is
+      // never re-swept, so nothing else would ever retire it. Terminal rows
+      // (`accepted`, `dismissed`, `skipped-noise`) are left alone.
+      env.DB.prepare(`UPDATE mail_items SET status = 'accepted', approved_project_id = ?, updated_at = ? WHERE connection_key = ? AND gmail_message_id = ? AND status IN ('needs-review', 'failed') AND ${FILING_LEASE_EXISTS}`)
+        .bind(
+          selectedProjectId,
+          filedAt,
+          config.connectionKey,
+          safeMessageId,
+          lease.operationKey,
+          lease.leaseExpiresAt,
+        ),
       env.DB.prepare(`INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE ${FILING_LEASE_EXISTS}`)
         .bind(
           crypto.randomUUID(),

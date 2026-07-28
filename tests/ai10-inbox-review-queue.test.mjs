@@ -580,3 +580,40 @@ test("a failed row schedules its card when it later enters review", async () => 
     database.close();
   }
 });
+
+test("filing a message retires its review row inside the lease-guarded batch", async () => {
+  // Review-bot P1 (PR #238): filing is the decision the queue waits on, but a
+  // row already in `needs-review` is never re-swept, so nothing except the
+  // filing route can retire it. Without this the filed message stays in the
+  // queue and inflates its count forever.
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(
+    new URL(
+      "app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts",
+      root,
+    ),
+    "utf8",
+  );
+  const batch = source.indexOf("const finalResults = await env.DB.batch([");
+  assert.ok(batch >= 0);
+  const archiveUpdate = source.indexOf(
+    "UPDATE gmail_file_archives SET status = 'filed'",
+    batch,
+  );
+  const mailItemUpdate = source.indexOf("UPDATE mail_items SET status = 'accepted'", batch);
+  const activityInsert = source.indexOf("INSERT INTO activity_events", batch);
+  assert.ok(
+    archiveUpdate > batch
+      && mailItemUpdate > archiveUpdate
+      && activityInsert > mailItemUpdate,
+    "the review-row transition belongs in the same batch as the archive commit",
+  );
+  const statement = source.slice(mailItemUpdate, mailItemUpdate + 400);
+  assert.match(statement, /approved_project_id = \?/u);
+  assert.match(statement, /WHERE connection_key = \? AND gmail_message_id = \?/u);
+  // Terminal rows are never resurrected, and the lease guard keeps a lost lease
+  // from retiring somebody else's review row.
+  assert.match(statement, /status IN \('needs-review', 'failed'\)/u);
+  assert.match(statement, /AND \$\{FILING_LEASE_EXISTS\}/u);
+  assert.doesNotMatch(statement, /INSERT INTO mail_items/u);
+});
