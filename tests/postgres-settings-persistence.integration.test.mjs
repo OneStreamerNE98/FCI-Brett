@@ -398,6 +398,7 @@ test(
         assert.deepEqual(await mailItems.upsert({
           ...item,
           id,
+          gmailMessageId: `${item.gmailMessageId}-${id}`,
           [property]: randomUUID(),
         }), { outcome });
       }
