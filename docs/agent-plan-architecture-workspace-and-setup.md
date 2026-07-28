@@ -3099,6 +3099,15 @@ notification; f lead capture and the queue slot) so the `FloorOpsApp.tsx` slot i
 held only for the last one. **Cost:** provider spend only; the spec's ≤200
 emails/day budget (`docs/ai-assistant-spec.md:186-194`) is the ceiling, and
 analyze-once is what keeps it there.
+**Progress:** sub-PRs (a+b+c) — the write-free classifier, the only-writer
+persistence route, and the bounded sweep — merged in PR #235, July 28, 2026,
+after a six-lens review (ten confirmed findings), a five-lens follow-up round
+(four more, including a P1 continuation-token starvation), and the review bot's
+v12 totality finding (legacy statuses now backfilled before the closed
+vocabulary constrains). The engine is live behind the default-off
+`inboxAnalysis` toggle with no UI caller yet; sub-PRs (d+e) and (f) remain, and
+this packet stays available for them per the dispatch law (no status line while
+its next sub-PR is unclaimed).
 
 **ADDENDUM (July 27, 2026 — devils-advocate review; binding, part of this packet).**
 Ten judged attacks landed on this packet before dispatch. The corrections:
