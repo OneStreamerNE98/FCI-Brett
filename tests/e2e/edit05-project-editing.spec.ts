@@ -162,6 +162,7 @@ test("a stale project edit stays visible until the user explicitly re-applies it
   const suffix = String(Date.now());
   const created = await createProject(page.request, `conflict ${suffix}`);
   const originalName = `FCI TEST — DO NOT USE — EDIT-05 conflict ${suffix}`;
+  const peerName = `FCI TEST — DO NOT USE — EDIT-05 peer ${suffix}`;
   const reappliedName = `FCI TEST — DO NOT USE — EDIT-05 reapplied ${suffix}`;
 
   await page.goto("/projects");
@@ -173,20 +174,22 @@ test("a stale project edit stays visible until the user explicitly re-applies it
 
   const peer = await page.request.patch(`/api/v1/projects/${created.id}`, {
     headers: { Origin: origin },
-    data: { site: "FCI TEST — DO NOT USE — EDIT-05 peer site", version: "1" },
+    data: { name: peerName, version: "1" },
   });
   expect(peer.status()).toBe(200);
 
   await editor.getByRole("button", { name: "Save changes" }).click();
   await expect(editor.getByRole("alert")).toContainText("changed while you were editing");
   await expect(editor.getByLabel("Project name")).toHaveValue(reappliedName);
+  await expect(editor.getByText(`Saved value: ${peerName}`, { exact: true })).toBeVisible();
+  await expect(editor.getByText(/Saved value:/)).toHaveCount(1);
   await expect(editor.getByRole("button", { name: "Re-apply changes" })).toBeVisible();
 
   let listed = await page.request.get("/api/v1/projects");
   let projects = (await listed.json() as { projects: Array<Record<string, unknown>> }).projects;
   expect(projects.find(({ id }) => id === created.id)).toEqual(expect.objectContaining({
-    name: originalName,
-    site: "FCI TEST — DO NOT USE — EDIT-05 peer site",
+    name: peerName,
+    site: "FCI TEST — DO NOT USE — EDIT-05 original site",
     version: "2",
   }));
 
@@ -196,7 +199,7 @@ test("a stale project edit stays visible until the user explicitly re-applies it
   projects = (await listed.json() as { projects: Array<Record<string, unknown>> }).projects;
   expect(projects.find(({ id }) => id === created.id)).toEqual(expect.objectContaining({
     name: reappliedName,
-    site: "FCI TEST — DO NOT USE — EDIT-05 peer site",
+    site: "FCI TEST — DO NOT USE — EDIT-05 original site",
     version: "3",
   }));
 });

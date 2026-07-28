@@ -48,7 +48,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           : 400;
     return noStoreJson(
       result.kind === "conflict"
-        ? { error: result.message, currentVersion: result.currentVersion }
+        ? {
+            error: result.message,
+            currentVersion: result.currentVersion,
+            currentValues: result.currentValues,
+          }
         : { error: result.message },
       status,
     );

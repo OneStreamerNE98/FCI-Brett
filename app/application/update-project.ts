@@ -38,7 +38,12 @@ export type UpdateProjectResult =
       kind: "conflict";
       message: string;
       currentVersion: string;
+      currentValues: ProjectConflictValues;
     };
+
+export type ProjectConflictValues = Partial<
+  Pick<ProjectFieldUpdateIntent["values"], ProjectPatchKey>
+>;
 
 const PROJECT_FIELD_LABELS = {
   name: "Name",
@@ -81,6 +86,31 @@ function projectValues(row: ProjectRow): ProjectFieldUpdateIntent["values"] {
     squareFeet: row.squareFeet,
     contractValue: row.contractValue,
     segment: row.segment,
+  };
+}
+
+function projectConflictValues(
+  row: ProjectRow,
+  patch: ValidatedProjectPatch,
+): ProjectConflictValues {
+  const values = projectValues(row);
+  return Object.fromEntries(
+    PROJECT_PATCH_KEYS.flatMap((key) =>
+      Object.hasOwn(patch, key) ? [[key, values[key]]] : []
+    ),
+  ) as ProjectConflictValues;
+}
+
+function projectConflict(
+  row: ProjectRow,
+  patch: ValidatedProjectPatch,
+): Extract<UpdateProjectResult, { ok: false; kind: "conflict" }> {
+  return {
+    ok: false,
+    kind: "conflict",
+    message: "Project changed since it was loaded.",
+    currentVersion: row.version,
+    currentValues: projectConflictValues(row, patch),
   };
 }
 
@@ -141,12 +171,7 @@ export async function updateProject(
     return { ok: false, kind: "project-not-found", message: "Project not found." };
   }
   if (normalized.value.version !== current.version) {
-    return {
-      ok: false,
-      kind: "conflict",
-      message: "Project changed since it was loaded.",
-      currentVersion: current.version,
-    };
+    return projectConflict(current, normalized.value);
   }
 
   const currentValues = projectValues(current);
@@ -182,12 +207,11 @@ export async function updateProject(
     return { ok: false, kind: result.outcome, message: "Client not found." };
   }
   if (result.outcome === "conflict") {
-    return {
-      ok: false,
-      kind: result.outcome,
-      message: "Project changed since it was loaded.",
-      currentVersion: result.currentVersion,
-    };
+    const latest = await dependencies.repository.findById(projectId);
+    if (!latest) {
+      return { ok: false, kind: "project-not-found", message: "Project not found." };
+    }
+    return projectConflict(latest, normalized.value);
   }
   return { ok: true, value: result.value };
 }

@@ -88,6 +88,7 @@ type ProjectEditPatch = Partial<{
   contractValue: number | null;
   segment: ProjectSegment | null;
 }>;
+type ProjectConflictValues = ProjectEditPatch;
 type ProjectUpdatePayload = {
   project?: {
     id: string;
@@ -107,6 +108,7 @@ type ProjectUpdatePayload = {
   };
   error?: string;
   currentVersion?: string;
+  currentValues?: ProjectConflictValues;
 };
 type DashboardSummary = {
   generatedAt: number;
@@ -169,11 +171,17 @@ const SUPPRESSIBLE_FOLLOW_UP_INFO: RegExp[] = [
 
 class ProjectEditConflictError extends Error {
   currentVersion: string;
+  currentValues: ProjectConflictValues;
 
-  constructor(message: string, currentVersion: string) {
+  constructor(
+    message: string,
+    currentVersion: string,
+    currentValues: ProjectConflictValues,
+  ) {
     super(message);
     this.name = "ProjectEditConflictError";
     this.currentVersion = currentVersion;
+    this.currentValues = currentValues;
   }
 }
 const focusableControlSelector = [
@@ -816,6 +824,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       throw new ProjectEditConflictError(
         data.error ?? "Project changed since it was loaded.",
         data.currentVersion,
+        data.currentValues ?? {},
       );
     }
     if (!response.ok || !data.project) {
@@ -1774,7 +1783,37 @@ function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { proj
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [conflictVersion, setConflictVersion] = useState<string | null>(null);
+  const [conflictValues, setConflictValues] = useState<ProjectConflictValues>({});
   const site = project.site === "Site pending" ? null : project.site;
+
+  function savedValue(key: keyof ProjectConflictValues) {
+    if (!Object.hasOwn(conflictValues, key)) return null;
+    const value = conflictValues[key];
+    let displayValue: string;
+    if (key === "clientId") {
+      const client = clients.find((item) => item.id === value);
+      displayValue = client ? `${client.name} · ${client.code}` : String(value);
+    } else if (key === "estimatedValue" || key === "contractValue") {
+      displayValue = typeof value === "number" ? money(value) : "Not set";
+    } else if (key === "squareFeet") {
+      displayValue = typeof value === "number"
+        ? new Intl.NumberFormat("en-US").format(value)
+        : "Not set";
+    } else if (key === "segment") {
+      displayValue = value === null
+        ? "Derived from client industry"
+        : displayStatus(String(value), String(value));
+    } else if (key === "flooringCategory") {
+      displayValue = value === null
+        ? "Not yet captured"
+        : displayStatus(String(value), String(value));
+    } else if (key === "status") {
+      displayValue = displayStatus(String(value), String(value));
+    } else {
+      displayValue = value === null || value === "" ? "Not set" : String(value);
+    }
+    return <small className="project-edit-saved-value">Saved value: {displayValue}</small>;
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1823,6 +1862,7 @@ function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { proj
     } catch (saveError) {
       if (saveError instanceof ProjectEditConflictError) {
         setConflictVersion(saveError.currentVersion);
+        setConflictValues(saveError.currentValues);
         setError("This project changed while you were editing. Review your entries, then choose Re-apply changes.");
       } else {
         setError(saveError instanceof Error ? saveError.message : "Project changes could not be saved.");
@@ -1836,13 +1876,13 @@ function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { proj
     <header><div><p className="eyebrow">{project.number}</p><h2>Edit project</h2></div><button type="button" onClick={onClose} aria-label="Close project editor" disabled={saving}><X size={20} /></button></header>
     <form onSubmit={submit}>
       {error && <p className="project-operation-error" role="alert">{error}</p>}
-      <label>Client<select data-overlay-initial-focus name="clientId" defaultValue={project.clientId} required disabled={saving}>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label>
-      <label>Project name<input name="name" required maxLength={180} defaultValue={project.name} disabled={saving} /></label>
-      <label>Site <span className="optional-label">Optional</span><input name="site" defaultValue={site ?? ""} placeholder="Address or city and state" disabled={saving} /></label>
-      {isAdmin ? <div className="form-row"><label>Status<select name="status" defaultValue={project.status.toLowerCase()} disabled={saving}>{PROJECT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select></label><label>Estimated value <span className="optional-label">Optional</span><input name="estimatedValue" type="number" min="0" step="1" inputMode="numeric" defaultValue={project.estimatedValue ?? ""} disabled={saving} /></label></div> : <><div className="drawer-stats" aria-label="Admin-only project fields"><div><span>Status</span><strong>{project.status}</strong></div><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Contract value</span><strong>{FINANCIAL_RESTRICTION_LABEL}</strong></div></div><p className="form-help"><ShieldCheck size={14} /> Status and financial fields are read-only here. An admin can edit them.</p></>}
-      <div className="form-row"><label>Flooring category <span className="optional-label">Optional</span><select name="flooringCategory" defaultValue={project.flooringCategory ?? ""} disabled={saving}><option value="">Not yet captured</option>{FLOORING_CATEGORIES.map((category) => <option key={category} value={category}>{displayStatus(category, category)}</option>)}</select></label><label>Square feet <span className="optional-label">Optional</span><input name="squareFeet" type="number" min="1" step="1" inputMode="numeric" defaultValue={project.squareFeet ?? ""} disabled={saving} /></label></div>
-      <label>Project segment <span className="optional-label">Optional</span><select name="segment" defaultValue={project.segment ?? ""} disabled={saving}><option value="">Derived from client industry</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select></label>
-      {isAdmin && <label>Contract value <span className="optional-label">Optional</span><input name="contractValue" type="number" min="0" step="1" inputMode="numeric" defaultValue={project.contractValue ?? ""} disabled={saving} /></label>}
+      <label>Client<select data-overlay-initial-focus name="clientId" defaultValue={project.clientId} required disabled={saving}>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select>{savedValue("clientId")}</label>
+      <label>Project name<input name="name" required maxLength={180} defaultValue={project.name} disabled={saving} />{savedValue("name")}</label>
+      <label>Site <span className="optional-label">Optional</span><input name="site" defaultValue={site ?? ""} placeholder="Address or city and state" disabled={saving} />{savedValue("site")}</label>
+      {isAdmin ? <div className="form-row"><label>Status<select name="status" defaultValue={project.status.toLowerCase()} disabled={saving}>{PROJECT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select>{savedValue("status")}</label><label>Estimated value <span className="optional-label">Optional</span><input name="estimatedValue" type="number" min="0" step="1" inputMode="numeric" defaultValue={project.estimatedValue ?? ""} disabled={saving} />{savedValue("estimatedValue")}</label></div> : <><div className="drawer-stats" aria-label="Admin-only project fields"><div><span>Status</span><strong>{project.status}</strong></div><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Contract value</span><strong>{FINANCIAL_RESTRICTION_LABEL}</strong></div></div><p className="form-help"><ShieldCheck size={14} /> Status and financial fields are read-only here. An admin can edit them.</p></>}
+      <div className="form-row"><label>Flooring category <span className="optional-label">Optional</span><select name="flooringCategory" defaultValue={project.flooringCategory ?? ""} disabled={saving}><option value="">Not yet captured</option>{FLOORING_CATEGORIES.map((category) => <option key={category} value={category}>{displayStatus(category, category)}</option>)}</select>{savedValue("flooringCategory")}</label><label>Square feet <span className="optional-label">Optional</span><input name="squareFeet" type="number" min="1" step="1" inputMode="numeric" defaultValue={project.squareFeet ?? ""} disabled={saving} />{savedValue("squareFeet")}</label></div>
+      <label>Project segment <span className="optional-label">Optional</span><select name="segment" defaultValue={project.segment ?? ""} disabled={saving}><option value="">Derived from client industry</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select>{savedValue("segment")}</label>
+      {isAdmin && <label>Contract value <span className="optional-label">Optional</span><input name="contractValue" type="number" min="0" step="1" inputMode="numeric" defaultValue={project.contractValue ?? ""} disabled={saving} />{savedValue("contractValue")}</label>}
       <p className="form-help"><ShieldCheck size={14} /> Saving appends one before-and-after activity record. A newer saved version is never overwritten automatically.</p>
       <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : conflictVersion ? "Re-apply changes" : "Save changes"}</button></footer>
     </form>

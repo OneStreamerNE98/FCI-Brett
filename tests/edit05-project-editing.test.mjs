@@ -32,15 +32,17 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24805 } },
 });
 
-const [projectRoute, projectPatchModule] = await Promise.all([
+const [projectRoute, projectPatchModule, updateProjectModule] = await Promise.all([
   vite.ssrLoadModule("/app/api/v1/projects/[projectId]/route.ts"),
   vite.ssrLoadModule("/app/domain/project-patch.ts"),
+  vite.ssrLoadModule("/app/application/update-project.ts"),
 ]);
 const {
   PROJECT_ADMIN_EDIT_KEYS,
   PROJECT_PATCH_KEYS,
   normalizeProjectPatch,
 } = projectPatchModule;
+const { updateProject } = updateProjectModule;
 
 after(async () => {
   delete globalThis.__FCI_TEST_CLOUDFLARE_ENV__;
@@ -392,6 +394,9 @@ test("stale project PATCH returns currentVersion and performs no write or audit"
     assert.deepEqual(await stale.json(), {
       error: "Project changed since it was loaded.",
       currentVersion: "2",
+      currentValues: {
+        site: "Old project site",
+      },
     });
     assert.equal(database.project().site, "Old project site");
     assert.equal(database.project().version, 2);
@@ -399,6 +404,55 @@ test("stale project PATCH returns currentVersion and performs no write or audit"
   } finally {
     database.close();
   }
+});
+
+test("an update-time race re-reads one coherent latest row for requested conflict values", async () => {
+  const initial = {
+    id: PROJECT_ID,
+    projectNumber: "CF-2026-EDIT0001",
+    clientId: CLIENT_ID,
+    name: "Initial name",
+    status: "planning",
+    site: "Initial site",
+    projectManagerId: "manager@example.test",
+    estimatedValue: 125_000,
+    flooringCategory: "tile-stone",
+    squareFeet: 2_500,
+    contractValue: 130_000,
+    segment: "commercial",
+    updatedAt: UPDATED_AT,
+    version: "1",
+  };
+  const latest = {
+    ...initial,
+    name: "Peer-saved name",
+    site: "Peer-only site",
+    version: "2",
+  };
+  let reads = 0;
+  const result = await updateProject(
+    PROJECT_ID,
+    { name: "My retained draft", version: "1" },
+    { actorId: "admin@example.test", isAdmin: true },
+    {
+      repository: {
+        findById: async () => ++reads === 1 ? initial : latest,
+        update: async () => ({ outcome: "conflict", currentVersion: "2" }),
+      },
+      newId: () => "activity-edit-conflict",
+      now: () => UPDATED_AT + 1,
+    },
+  );
+  assert.equal(reads, 2);
+  assert.deepEqual(result, {
+    ok: false,
+    kind: "conflict",
+    message: "Project changed since it was loaded.",
+    currentVersion: "2",
+    currentValues: {
+      name: "Peer-saved name",
+    },
+  });
 });
 
 test("PATCH response applies the same manager-disclosure filter as the collection GET", async () => {
@@ -500,6 +554,7 @@ test("project edit source keeps legacy operations isolated and reloads D1 creati
   );
   assert.match(app, /version: normalizeRecordVersion\(project\.version\) \?\? undefined/u);
   assert.match(app, /Re-apply changes/u);
+  assert.match(app, /Saved value: \{displayValue\}/u);
   assert.match(app, /throw new ProjectEditConflictError/u);
   assert.doesNotMatch(app, /planned-project-updates|Project updates planned/u);
   assert.doesNotMatch(itemRoute, /\bcreationAuthorizationFor\b/u);
