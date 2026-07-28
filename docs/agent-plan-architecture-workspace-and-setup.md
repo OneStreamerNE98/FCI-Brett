@@ -2117,8 +2117,10 @@ break any KPI; full suites pass.
 **Why:** Install cycle time and callback rate are the two operations/quality KPIs every
 installer tracks — and this franchise's post-installation follow-up walkthrough makes the
 callback question a natural existing step. But project editing does not exist yet
-(tracked step-7 roadmap work). The repo already has the right interim pattern: the
-audited, admin-only "Assign to me" drawer action.
+(tracked step-7 roadmap work; **superseded July 28, 2026 — EDIT-05 / PR #228 shipped
+project editing**, so this Why describes the state when KPI-03 was scoped). The repo
+already had the right interim pattern: the audited, admin-only "Assign to me" drawer
+action.
 **Do:** (1) Additive migration 0014, following merged SET-13 migration 0013:
 `installation_started_at` (ms),
 `installation_completed_at` (ms), `had_callback` (integer boolean default 0),
