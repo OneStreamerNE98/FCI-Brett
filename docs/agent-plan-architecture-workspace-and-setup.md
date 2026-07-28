@@ -1196,6 +1196,34 @@ flow, not resurrection of the old token; simulation proves the path with no live
 **Effort:** small-medium. **Sequencing:** independent now; **must land no later than the
 per-user OAuth connect flow** in the per-user Gmail track.
 
+### WS-18 · Decouple filed-email evidence reads from the connection key (small-medium)
+**Why:** the first increment of the per-user Gmail track (owner request, July 27–28: each
+login sees its own mailbox, additional mailboxes attachable to a login), chosen because it is
+useful standalone and is a hard prerequisite for every multi-connection future. Today every
+filed-email evidence read is keyed by the global `connectionKey` constant
+(`app/application/assistant/project-evidence.ts` filed-archive reads; the `filed_email_records`
+assistant tool; the dashboard filed-email count) — correct at one connection, wrong the moment
+a second exists, and the kind of coupling that hardens the longer new readers copy it.
+**Do:** make every filed-email *read* path resolve archives **by project**, treating
+`connection_key` as a stored attribute of each archive row rather than a required filter —
+reads return a project's filed emails regardless of which connection filed them, while writes
+(the filing route) keep stamping the connection that performed the filing. No schema change:
+`gmail_file_archives` already stores the key per row. No behavior change at one connection —
+prove it: the evidence output is byte-identical on the current single-connection fixtures.
+**Do NOT:** touch the filing write path's lease/idempotency, the composite uniqueness
+`(connection_key, gmail_message_id)`, or any Gmail API call; this is a read-side query
+refactor only.
+**Files:** `app/application/assistant/project-evidence.ts`,
+`app/application/assistant/tools.ts` (the `filed_email_records` tool),
+`app/application/dashboard-data.ts`, tests.
+**Accept:** all filed-email reads are project-keyed with `connection_key` no longer a filter
+parameter on any read path (source assertion); evidence output byte-identical on
+single-connection fixtures; a two-connection fixture proves a project's archives from two
+different keys both appear; the filing write path untouched (diff-scoped assertion);
+`npm test` + `npm run test:e2e` + `npm run lint` named with outcomes.
+**Effort:** small-medium. **Sequencing:** dispatch **after AI-10 (a+b+c) merges** — both touch
+assistant-adjacent read modules; zero `FloorOpsApp.tsx`.
+
 ### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
 **Status:** Complete — PR #35, July 19, 2026. Source-only and not deployed.
 
@@ -3141,11 +3169,20 @@ data-at-rest statement. (c) The **label catalog editor**: storage per the plan's
 versioning consumed by AI-10's re-analysis path, and the full injection-mitigation set the
 plan records (fence-forgery rejection, NFKC + bidi stripping, admin-only write path, count and
 length caps, a hostile-description test proving the no-send/no-file guarantees hold).
+(d) **The AI activity view** (owner requirement, July 26 — previously unowned): inside the new
+AI section, a bounded read-only view over the stored analyses answering "what did the AI
+suggest, what was accepted or dismissed, and by whom" — proposals with their rationale,
+outcome status, label-definition version, and per-label accept/dismiss counts. This is the
+transparency layer the persistence decision exists to enable, and it doubles as the §6
+calibration evidence the spec requires before any auto-apply may ever be proposed. Reads only;
+no new table (the analyses rows already carry everything).
 **Files:** named at claim time against merged AI-10 source — this packet must be re-verified
 against main before dispatch, per the amended-before-dispatch rule.
 **Accept:** every queue intent has a typed accept; the AI section exists with the three
 re-points made deliberately; label CRUD round-trips with a used label refusing deletion and a
 retired slug never reissued; a hostile label description cannot alter guard guarantees;
+the activity view renders proposals with outcomes and rationale from stored rows only, with
+honest empty states and zero provider calls;
 `npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
 **Effort:** large. **Cost:** provider spend within the existing budget.
 
@@ -3393,6 +3430,52 @@ SET-05 ↔ BE-07; integration events reader remains SET-09 ↔ WS-10;
 **`LeadModal` `initialValues` prop (`app/FloorOpsApp.tsx:1572-1574`) remains AI-10 sub-PR (f)
 ↔ EDIT-04** — both packets specify the identical change, the earlier one through the
 FloorOpsApp queue ships it, and the later one consumes it and records that it did.
+
+## Enhancement & follow-up backlog (single home — added July 28, 2026, owner request)
+
+The owner's product-level roadmap remains
+[`docs/ui-and-product-readiness-review.md`](ui-and-product-readiness-review.md) (steps 1–13,
+"Next: lead-to-closeout operations", "Later: automation and intelligence") — this section does
+NOT copy it. It is the single home for **review-born and research-born items that would
+otherwise be owned by nobody**. Rules: each item is ONE line + a pointer; when an item gains a
+packet, replace its line with the packet id; nothing here is dispatchable (the status lines
+remain the only dispatch authority).
+
+**Now owned (recently resolved from this list):**
+- AI activity view (owner transparency ask, July 26) → **AI-11 (d)**.
+- Filed-email read decoupling (per-user Gmail increment 1) → **WS-18**.
+- Offboarding credential severance → **WS-17**. Doc-pin fragility → **FIX-20** (findings ledger).
+
+**Unfiled — engineering candidates (source in parentheses):**
+- **Durable employee identity foundation** — the unlock for real capability enforcement,
+  per-user OAuth, and project-level permissions alike (the July 27 research's unifying
+  finding); file as its own wave when the owner green-lights it.
+- Per-user Gmail stages beyond WS-18: per-user OAuth connect, per-mailbox readiness, the
+  mailbox picker, multi-mailbox attach (plan PART 5; blocked on identity).
+- Refresh-token caching — every Gmail request performs a live, non-retryable refresh grant
+  (PART 5 research); a rate-limit problem at ~20 users.
+- Un-file path for a mis-filed email — `gmail_file_archives` has no reversal; misfiles are
+  permanent (July 27 devils-advocate).
+- Lead conversion as one transaction (roadmap step 8) — natural EDIT-08 once EDIT-06/07 land.
+- Meetings editing — filing condition met (EDIT-03 shipped through EDIT-04/05); awaiting the
+  owner's word to file.
+- Client-status semantics (archived clients selectable in pickers; status is display-only
+  everywhere) — enhancement candidate from the EDIT-05 review.
+- Gmail Workspace Add-on ("the flagship",
+  [`docs/google-integration-opportunities.md`](google-integration-opportunities.md)) — filing
+  where staff already read mail; strategic option, not scheduled.
+
+**Orchestrator to-dos (not Codex):**
+- Amend GI-01 before any dispatch — its "existing scheduled Sheets reads" premise is false
+  (July 27 audit).
+- Nightly-review program: nights 2–5 and 9–10 pending the owner's kickoff; its specs live
+  outside the repo — owner to decide enshrine vs retire before the next night runs.
+
+**Open owner decisions (recorded homes only when decided):**
+- Flooring-specific intents: selection/sample decision; change-order/approval (plan PART 1).
+- Party axis: routing signal or display-only (plan PART 1).
+- Cross-mailbox viewing: confirm with counsel before enabling anything beyond
+  attach-by-sign-in (plan PART 5).
 
 ## Verification appendix
 
