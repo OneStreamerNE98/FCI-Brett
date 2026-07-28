@@ -117,6 +117,31 @@ function routeRequest(path, email, method = "GET", body, origin = "https://fci.e
   return request;
 }
 
+test("the global Chat gate suppresses queued inbox-review work before defer", () => {
+  const database = fakeDatabase();
+  setEnvironment(database, {
+    GOOGLE_CHAT_NOTIFICATIONS_ENABLED: "false",
+  });
+  let deferCalls = 0;
+
+  const returned = sites.queueGoogleChatNotification(
+    {
+      eventType: "gmail.filing_review_needed",
+      entityId: "mail-item-gate-off",
+      subject: "FCI TEST review subject",
+    },
+    ADMIN_EMAIL,
+    "https://fci.example.test",
+    () => {
+      deferCalls += 1;
+    },
+  );
+
+  assert.equal(returned, undefined);
+  assert.equal(deferCalls, 0);
+  assert.equal(database.queries.length, 0);
+});
+
 function exactUpdate(overrides = {}) {
   return {
     events: notifier.GOOGLE_CHAT_EVENT_CATALOG.map((entry) => ({

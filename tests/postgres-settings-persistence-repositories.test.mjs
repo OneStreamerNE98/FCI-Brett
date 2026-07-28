@@ -425,6 +425,57 @@ test("PostgreSQL mail items read only within one connection and expose frozen an
   );
 });
 
+test("PostgreSQL mail item status pages carry one snapshot count and are connection scoped", async () => {
+  const stored = mailItem({ status: "needs-review" });
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^SELECT page\.\*, COUNT\(\*\) OVER \(\)::text AS total_count/u);
+    return result([{
+      ...postgresMailItemRow(stored),
+      total_count: "123",
+    }], 1);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+
+  assert.deepEqual(
+    await repository.listByStatusPage("google-workspace", "needs-review", 500),
+    { items: [stored], totalCount: 123 },
+  );
+  assert.deepEqual(
+    dataQuery(pool, /COUNT\(\*\) OVER \(\)::text AS total_count/).values,
+    ["google-workspace", "needs-review", 500],
+  );
+});
+
+test("PostgreSQL dismissal is one guarded status transition with no relationship lookup", async () => {
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^UPDATE mail_items/u);
+    assert.match(
+      sql,
+      /WHERE id = \$2\s+AND connection_key = \$3\s+AND status = 'needs-review'/u,
+    );
+    assert.doesNotMatch(sql, /clients|projects/u);
+    return result([], 1);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+
+  assert.equal(
+    await repository.dismissNeedsReview(
+      "mail-1",
+      "google-workspace",
+      UPDATED_AT,
+    ),
+    true,
+  );
+  assert.deepEqual(
+    dataQuery(pool, /^UPDATE mail_items/u).values,
+    [new Date(UPDATED_AT), "mail-1", "google-workspace"],
+  );
+});
+
 test("PostgreSQL mail items select retryable work before LIMIT and renew an exhausted budget for a new catalog", async () => {
   const currentCatalogRows = Array.from({ length: 101 }, (_, index) =>
     postgresMailItemRow(mailItem({

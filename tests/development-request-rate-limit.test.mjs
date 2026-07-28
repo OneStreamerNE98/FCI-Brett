@@ -16,51 +16,67 @@ const apiRoot = join(root, "app", "api", "v1");
 const limitedRoutes = [
   {
     path: "app/api/v1/assistant/triage/route.ts",
+    method: "POST",
     scope: "assistant",
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
     path: "app/api/v1/assistant/reply-draft/route.ts",
+    method: "POST",
     scope: "assistant",
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
     path: "app/api/v1/assistant/extract-tasks/route.ts",
+    method: "POST",
     scope: "assistant",
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
     path: "app/api/v1/assistant/route.ts",
+    method: "POST",
     scope: "assistant",
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
     path: "app/api/v1/inbox-analysis/route.ts",
+    method: "POST",
+    scope: "inbox-analysis",
+    firstWork: "await parseBoundedJsonObject(request",
+  },
+  {
+    path: "app/api/v1/inbox-analysis/route.ts",
+    method: "PATCH",
     scope: "inbox-analysis",
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
     path: "app/api/v1/uploads/route.ts",
+    method: "POST",
     scope: "uploads",
     firstWork: 'const contentType = request.headers.get("content-type")',
   },
   {
     path: "app/api/v1/integrations/google/sheets/sync/route.ts",
+    method: "POST",
     scope: "google-sheets-sync",
     firstWork: "await ensureWorkspaceSchema()",
   },
   {
     path: "app/api/v1/projects/[projectId]/drive/route.ts",
+    method: "POST",
     scope: "project-drive-provisioning",
     firstWork: "await ensureWorkspaceSchema()",
   },
   {
     path: "app/api/v1/tasks/route.ts",
+    method: "POST",
     scope: "tasks",
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
     path: "app/api/v1/tasks/[taskId]/route.ts",
+    method: "PATCH",
     scope: "tasks",
     firstWork: "await parseBoundedJsonObject(request",
   },
@@ -156,20 +172,44 @@ test("every limited mutation route checks its closed scope after office authoriz
       limitingRoutePaths.push(relative(root, file).replaceAll("\\", "/"));
     }
   }
-  assert.deepEqual(limitingRoutePaths.sort(), limitedRoutes.map((route) => route.path).sort());
+  assert.deepEqual(
+    limitingRoutePaths.sort(),
+    [...new Set(limitedRoutes.map((route) => route.path))].sort(),
+  );
+  assert.equal(
+    new Set(limitedRoutes.map((route) => `${route.method} ${route.path}`)).size,
+    limitedRoutes.length,
+    "the handler census must not contain duplicate route-method entries",
+  );
 
   for (const route of limitedRoutes) {
     const source = await readFile(join(root, route.path), "utf8");
-    const authorization = source.search(
+    const handlerStart = source.indexOf(`export async function ${route.method}(`);
+    const nextHandler = source.indexOf("\nexport async function ", handlerStart + 1);
+    const handler = source.slice(
+      handlerStart,
+      nextHandler === -1 ? source.length : nextHandler,
+    );
+    const authorization = handler.search(
       /if \("response" in auth\) return (?:auth\.response|noStoreResponse\(auth\.response\))/,
     );
-    const limiter = source.indexOf(
-      `enforceDevelopmentRequestRateLimit("${route.scope}", auth.user.email)`,
+    const limiter = handler.search(
+      new RegExp(
+        `enforceDevelopmentRequestRateLimit\\(\\s*"${route.scope}",\\s*auth\\.user\\.email\\s*,?\\s*\\)`,
+        "u",
+      ),
     );
-    const firstWork = source.indexOf(route.firstWork);
+    const firstWork = handler.indexOf(route.firstWork);
 
+    assert.ok(handlerStart >= 0, `${route.method} ${route.path} must exist`);
     assert.ok(authorization >= 0, `${route.path} must retain its office-user authorization response`);
-    assert.ok(limiter > authorization, `${route.path} must limit only after successful authorization`);
-    assert.ok(firstWork > limiter, `${route.path} must limit before body, schema, or provider work`);
+    assert.ok(
+      limiter > authorization,
+      `${route.method} ${route.path} must limit only after successful authorization`,
+    );
+    assert.ok(
+      firstWork > limiter,
+      `${route.method} ${route.path} must limit before body, schema, or provider work`,
+    );
   }
 });

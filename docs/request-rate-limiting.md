@@ -57,7 +57,7 @@ requests per 60-second window for each of six isolated scopes:
 | Scope | Route | Protected cost |
 | --- | --- | --- |
 | `assistant` | `POST /api/v1/assistant`, `/assistant/extract-tasks`, `/assistant/triage`, `/assistant/reply-draft` | Interactive OpenAI request opportunity |
-| `inbox-analysis` | `POST /api/v1/inbox-analysis` | AI-10 inbox sweep opportunity |
+| `inbox-analysis` | `POST/PATCH /api/v1/inbox-analysis` | AI-10 inbox sweep opportunity or review-queue mutation |
 | `uploads` | `POST /api/v1/uploads` | R2 object write opportunity |
 | `google-sheets-sync` | `POST /api/v1/integrations/google/sheets/sync` | Google Sheets reconciliation |
 | `project-drive-provisioning` | `POST /api/v1/projects/:projectId/drive` | Google Drive provisioning |
@@ -89,8 +89,9 @@ requests retain their existing denial behavior and do not consume an office-user
 ## Verification and rollout boundary
 
 Focused tests pin thresholds, refill/reset timing, user and route isolation,
-`Retry-After`, the production audit event, fail-closed audit failure, exact ten-route
-wiring across the six scopes, configuration defaults/bounds, and unchanged
+`Retry-After`, the production audit event, fail-closed audit failure, exact
+eleven-handler wiring across ten route files and the six scopes, configuration
+defaults/bounds, and unchanged
 allowed-response bytes. `npm test`
 continues to build both surfaces and run the complete Node suite.
 

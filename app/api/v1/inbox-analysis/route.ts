@@ -36,6 +36,8 @@ import {
   type GmailMessageListPage,
   type GmailMessageSummary,
 } from "../../../lib/google-gmail";
+import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { noStoreJson, noStoreResponse } from "../../../lib/no-store-json";
 import {
   simulationInboxAnalysisFixture,
@@ -99,6 +101,11 @@ type InboxAnalysisWorkspace = Readonly<{
   client: InboxAnalysisGmailClient;
 }>;
 
+type NeedsReviewNotification = Readonly<{
+  gmailMessageId: string;
+  subject: string;
+}>;
+
 function runtimeValue(
   environment: Readonly<Record<string, string | undefined>>,
   name: string,
@@ -124,6 +131,19 @@ function parseSweepRequest(body: Record<string, unknown>) {
   } catch {
     return null;
   }
+}
+
+function parseMarkReviewedRequest(body: Record<string, unknown>) {
+  if (
+    Object.keys(body).length !== 1
+    || typeof body.id !== "string"
+    || !body.id.trim()
+    || body.id.length > 512
+    || /[\u0000-\u001f\u007f]/.test(body.id)
+  ) {
+    return null;
+  }
+  return Object.freeze({ id: body.id });
 }
 
 function singleLineSnapshot(value: string | null, maximum: number) {
@@ -298,12 +318,16 @@ function rowBase(input: {
 async function saveMailItem(
   repository: ReturnType<typeof createD1MailItemRepository>,
   item: MailItem,
+  mode: "upsert" | "insert-if-absent" = "upsert",
 ) {
-  const result = await repository.upsert(item);
+  const result = mode === "insert-if-absent"
+    ? await repository.insertIfAbsent(item)
+    : await repository.upsert(item);
+  if (result.outcome === "saved") return true;
   if (
-    result.outcome === "saved"
+    result.outcome === "existing-preserved"
     || result.outcome === "terminal-preserved"
-  ) return;
+  ) return false;
   // A project/client can be removed between the candidate SELECT and the
   // guarded repository write. Preserve the analysis row and its watermark,
   // but never retain a relationship the database could not verify.
@@ -315,13 +339,17 @@ async function saveMailItem(
       ? null
       : item.approvedProjectId,
   });
-  const fallback = await repository.upsert(withoutStaleReferences);
+  const fallback = mode === "insert-if-absent"
+    ? await repository.insertIfAbsent(withoutStaleReferences)
+    : await repository.upsert(withoutStaleReferences);
+  if (fallback.outcome === "saved") return true;
   if (
-    fallback.outcome !== "saved"
+    fallback.outcome !== "existing-preserved"
     && fallback.outcome !== "terminal-preserved"
   ) {
     throw new Error("Inbox analysis could not persist a relationship-safe row.");
   }
+  return false;
 }
 
 async function saveSkipped(input: {
@@ -456,7 +484,7 @@ async function saveAnalysis(input: {
   const relationshipClientId = isMailItemRelationshipId(input.analysis.clientId)
     ? input.analysis.clientId
     : null;
-  await saveMailItem(input.repository, normalizeStoredMailItem({
+  const item = normalizeStoredMailItem({
     ...rowBase({
       connectionKey: input.connectionKey,
       messageId: input.analysisInput.summary.id,
@@ -476,7 +504,16 @@ async function saveAnalysis(input: {
     attemptedLabelDefinitionVersion: null,
     failureAttempts: 0,
     errorCode: null,
-  }));
+  });
+  const saved = await saveMailItem(
+    input.repository,
+    item,
+    input.existing ? "upsert" : "insert-if-absent",
+  );
+  return Object.freeze({
+    item,
+    inserted: input.existing === null && saved,
+  });
 }
 
 function needsReanalysis(item: MailItem) {
@@ -532,6 +569,7 @@ export async function runInboxAnalysisSweep(input: {
   now?: () => number;
   workspace?: InboxAnalysisWorkspace;
   provider?: AssistantProvider;
+  onNeedsReviewCreated?: (notification: NeedsReviewNotification) => void;
 }): Promise<SweepResult> {
   // The reusable sweep owns the kill switch as well as the HTTP route. A
   // future trigger cannot accidentally reach Gmail, OpenAI, or mail_items by
@@ -804,7 +842,7 @@ export async function runInboxAnalysisSweep(input: {
       });
       return false;
     }
-    await saveAnalysis({
+    const saved = await saveAnalysis({
       repository,
       connectionKey: config.connectionKey,
       analysisInput,
@@ -813,6 +851,17 @@ export async function runInboxAnalysisSweep(input: {
       contentHash,
       now: checkedAt,
     });
+    if (saved.inserted && input.onNeedsReviewCreated) {
+      try {
+        input.onNeedsReviewCreated({
+          gmailMessageId: saved.item.gmailMessageId,
+          subject: saved.item.subject ?? "Message subject unavailable",
+        });
+      } catch {
+        // Chat delivery is advisory. A notification failure cannot undo or
+        // misreport the durable review row that was already committed.
+      }
+    }
     return true;
   };
 
@@ -973,9 +1022,99 @@ export async function POST(request: NextRequest) {
         ? { pageToken: sweepRequest.pageToken }
         : {}),
       signal: request.signal,
+      onNeedsReviewCreated: (notification) => {
+        queueGoogleChatNotification(
+          {
+            eventType: "gmail.filing_review_needed",
+            entityId: notification.gmailMessageId,
+            subject: notification.subject,
+          },
+          auth.user.email,
+          request.nextUrl.origin,
+        );
+      },
     }));
   } catch (error) {
     if (request.signal.aborted) throw error;
     return noStoreResponse(gmailErrorResponse(error));
+  }
+}
+
+function reviewQueueRow(item: MailItem) {
+  return Object.freeze({
+    id: item.id,
+    subject: item.subject,
+    sender: item.sender,
+    receivedAt: item.receivedAt,
+  });
+}
+
+export async function GET(request: NextRequest) {
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+
+  try {
+    await ensureWorkspaceSchema();
+    const database = env.DB as unknown as D1Database;
+    const repository = createD1MailItemRepository(database);
+    const connectionKey = getGoogleRuntimeConfig().connectionKey;
+    const page = await repository.listByStatusPage(
+      connectionKey,
+      "needs-review",
+      500,
+    );
+    return noStoreJson({
+      rows: page.items.map(reviewQueueRow),
+      totalCount: page.totalCount,
+    });
+  } catch {
+    return noStoreJson(
+      { error: "The inbox review queue could not be loaded." },
+      500,
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return noStoreResponse(originError);
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const rateLimitResponse = enforceDevelopmentRequestRateLimit(
+    "inbox-analysis",
+    auth.user.email,
+  );
+  if (rateLimitResponse) return noStoreResponse(rateLimitResponse);
+
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_INBOX_ANALYSIS_BODY_BYTES,
+    invalidMessage: "Inbox review update must be a valid JSON object.",
+    tooLargeMessage: "Inbox review update is too large.",
+  });
+  if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
+  const update = parseMarkReviewedRequest(parsed.body);
+  if (!update) {
+    return noStoreJson({ error: "Choose one valid inbox review row." }, 400);
+  }
+
+  try {
+    await ensureWorkspaceSchema();
+    const database = env.DB as unknown as D1Database;
+    const repository = createD1MailItemRepository(database);
+    const connectionKey = getGoogleRuntimeConfig().connectionKey;
+    const dismissed = await repository.dismissNeedsReview(
+      update.id,
+      connectionKey,
+      Date.now(),
+    );
+    if (!dismissed) {
+      return noStoreJson({ error: "Inbox review row not found." }, 404);
+    }
+    return noStoreJson({ id: update.id, status: "dismissed" });
+  } catch {
+    return noStoreJson(
+      { error: "Inbox review row could not be marked reviewed." },
+      500,
+    );
   }
 }

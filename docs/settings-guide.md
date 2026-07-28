@@ -163,7 +163,8 @@ The Inbox is the **Gmail project inbox** — where you review emails and file th
 
 - **Inbox** — the regular company mailbox.
 - **FCI/Intake** — messages waiting to be routed.
-- **FCI/Needs Review** — messages a rule flagged for you to check.
+- **Needs review** — the app's stored, Administrator-only analysis queue. It
+  is not a Gmail label filter.
 - **FCI/Filed** — messages already copied into a project.
 
 **Filing is review-first — nothing happens automatically.** Rules can *suggest* a destination, but you always choose the exact project and approve every copy yourself. To file an email, use **Review & copy**, pick the exact project, review the preview (nothing is copied at the preview step), then confirm. Only then is the email and its attachments copied into that project's Drive folder. Your Inbox is never emptied or archived — the original email stays put; filing adds a copy.
@@ -196,7 +197,11 @@ date**. In other words, subjects and senders now persist in the app database;
 turning the switch off stops future sweeps but does not erase results already
 stored. Analysis never sends, files, labels, archives, drafts, or creates a
 lead. The Inbox reports either **You're caught up** or **Older messages not yet
-analyzed**; **Check older** continues another bounded batch.
+analyzed**; **Check older** continues another bounded batch. Opening **Needs
+review** reads those stored rows and their total directly from the app
+database. Rendering the stored rows makes zero per-row Gmail calls; the
+separate bounded sweep may read newly encountered messages. **Mark reviewed**
+dismisses one row from the queue without changing Gmail.
 
 > [SCREENSHOT 4 — see Screenshot index]
 

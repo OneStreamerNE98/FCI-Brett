@@ -326,7 +326,11 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
       }
       return null;
     },
-    all: () => [row],
+    all(statement) {
+      return /COUNT\(\*\) OVER \(\) AS total_count/u.test(statement.sql)
+        ? [{ ...row, total_count: 1 }]
+        : [row];
+    },
   });
   const repository = mailModule.createD1MailItemRepository(database);
   const item = await repository.findById("mail-1");
@@ -356,6 +360,18 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
     501,
   );
   assert.equal(listed.length, 1);
+  assert.deepEqual(database.statements.at(-1).values, [
+    "google-workspace",
+    "needs-review",
+    100,
+  ]);
+  const page = await repository.listByStatusPage(
+    "google-workspace",
+    "needs-review",
+    501,
+  );
+  assert.deepEqual(page.items, [item]);
+  assert.equal(page.totalCount, 1);
   assert.deepEqual(database.statements.at(-1).values, [
     "google-workspace",
     "needs-review",
@@ -403,6 +419,18 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
   );
   assert.deepEqual(coverageWrite.values, ["google-workspace"]);
   assert.equal(database.runs.length, 2);
+
+  assert.equal(
+    await repository.dismissNeedsReview("mail-1", "google-workspace", 33),
+    true,
+  );
+  const dismissal = database.statements.at(-1);
+  assert.match(
+    dismissal.sql,
+    /^UPDATE mail_items SET status = 'dismissed'/u,
+  );
+  assert.deepEqual(dismissal.values, [33, "mail-1", "google-workspace"]);
+  assert.equal(database.runs.length, 3);
 });
 
 const baseMailItem = Object.freeze({

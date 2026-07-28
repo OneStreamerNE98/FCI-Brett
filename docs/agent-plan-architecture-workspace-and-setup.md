@@ -2996,7 +2996,7 @@ with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
 
 ### AI-10 · Email intake: durable review queue and review-first lead capture (large; after AI-09)
-**Status:** In review — PR #235, July 28, 2026. Sub-PRs a+b+c only; source-only and undeployed.
+**Status:** In progress — `codex/ai10-de-review-queue`
 **Why:** the owner asked for OpenAI to read inbound email, identify leads, and
 pre-populate a draft lead a person approves, edits, or removes. Two research
 passes (July 26, 2026) established that the app does **not** need a new surface
@@ -3140,10 +3140,11 @@ Ten judged attacks landed on this packet before dispatch. The corrections:
    pre-fill contract: extracted fields plus defaults for `source`, `stage`, `ownerEmail`,
    `nextAction`/`nextActionAt`, and names which fields (`site`, `estimatedValue`) still need
    typing when absent — accept must be one review pass.
-6. **Coalesced notification.** At most **one** `gmail.filing_review_needed` card per sweep
-   (newest subject + "N more need review"; same payload shape, no catalog change) — not one
-   per row. Under on-load triggering, cards fire only during an admin's visit; a broadcast per
-   row would burst.
+6. **Per-new-row notification (owner amendment, July 28, 2026; supersedes
+   coalescing).** Schedule one non-awaited `gmail.filing_review_needed` event for
+   each newly inserted `needs-review` row. Re-analysis, refreshes,
+   `skipped-noise`, and `failed` rows schedule none; the existing global and
+   per-event gates remain off by default.
 7. **Re-analysis path.** The stored label-definition version gets a consumer: on catalog
    change, rows still in `needs-review` become eligible for bounded re-analysis on the next
    sweep. The analyze-once Accept criterion is reworded to "zero provider calls for

@@ -50,3 +50,38 @@ test("successful assigned-task creation schedules task.assigned only after persi
   assert.match(invocation, /auth\.user\.email/);
   assert.match(invocation, /request\.nextUrl\.origin/);
 });
+
+test("a newly persisted inbox-review row schedules filing review without awaiting it", async () => {
+  const source = await readFile(
+    new URL("app/api/v1/inbox-analysis/route.ts", root),
+    "utf8",
+  );
+  const persistence = source.indexOf("const saved = await saveAnalysis(");
+  const insertedGuard = source.indexOf(
+    "if (saved.inserted && input.onNeedsReviewCreated)",
+    persistence,
+  );
+  const callback = source.indexOf("input.onNeedsReviewCreated({", insertedGuard);
+  const notification = source.indexOf("queueGoogleChatNotification(", callback);
+
+  assert.match(
+    source,
+    /import \{ queueGoogleChatNotification \} from "\.\.\/\.\.\/\.\.\/lib\/google-chat-notifier-sites"/u,
+  );
+  assert.ok(
+    persistence >= 0
+      && insertedGuard > persistence
+      && callback > insertedGuard
+      && notification > callback,
+  );
+  assert.doesNotMatch(
+    source.slice(insertedGuard, notification + 500),
+    /await\s+queueGoogleChatNotification/u,
+  );
+  const invocation = source.slice(notification, notification + 500);
+  assert.match(invocation, /eventType: "gmail\.filing_review_needed"/u);
+  assert.match(invocation, /entityId: notification\.gmailMessageId/u);
+  assert.match(invocation, /subject: notification\.subject/u);
+  assert.match(invocation, /auth\.user\.email/u);
+  assert.match(invocation, /request\.nextUrl\.origin/u);
+});

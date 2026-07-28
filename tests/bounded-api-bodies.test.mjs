@@ -147,6 +147,13 @@ const cases = [
     invoke: (request) => inboxAnalysisRoute.POST(request),
   },
   {
+    name: "inbox review update",
+    method: "PATCH",
+    maximumBytes: 8_000,
+    error: "Inbox review update is too large.",
+    invoke: (request) => inboxAnalysisRoute.PATCH(request),
+  },
+  {
     name: "client creation",
     maximumBytes: 64_000,
     error: "Client details are too large.",
