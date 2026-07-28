@@ -16,7 +16,7 @@ This guide is for two kinds of reader, and it is split so you only need your hal
 
 A short **Glossary** at the end defines the few special terms this guide uses (Shared Drive, blueprint, simulation, and others). Words in the glossary are written in plain language the first time they appear.
 
-> **How current this guide is.** Describes the app as built in source on 2026-07-27; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
+> **How current this guide is.** Describes the app as built in source on 2026-07-28; the installed company version may trail it. The copy your team can open right now is an early development build (private Sites development version 40). Everything newer than that build exists in the source code but has not been switched on yet. Screenshots are simulation captures (see the Glossary for what "simulation" means).
 
 ---
 
@@ -187,6 +187,17 @@ Both modes still require `OPENAI_API_KEY`; if it is Missing, these AI controls
 are absent or disabled while the ordinary Inbox and manual draft flows keep
 working.
 
+When the separate **Inbox analysis** switch is on, opening or refreshing the
+Inbox starts one bounded background sweep for messages that do not yet have a
+stored result. The app stores each result in its database so reloading does not
+pay to analyze the same message again while the label catalog is unchanged.
+The stored display snapshot includes the email **subject, sender, and received
+date**. In other words, subjects and senders now persist in the app database;
+turning the switch off stops future sweeps but does not erase results already
+stored. Analysis never sends, files, labels, archives, drafts, or creates a
+lead. The Inbox reports either **You're caught up** or **Older messages not yet
+analyzed**; **Check older** continues another bounded batch.
+
 > [SCREENSHOT 4 — see Screenshot index]
 
 ---
@@ -284,7 +295,7 @@ Your personal defaults, tied to your own login. Two settings here are **working 
 
 Below those is **My notification preferences**. Those checkboxes are **saved but planned** — they are stored for a future personal-alert feature. Ticking them does not change any alert today, because notifications currently run at the company level only. That is the honest state, and the panel says so.
 
-Office users also see the company **AI assistant** card here in a read-only form. It shows only whether the key is **Configured** or **Missing**, the model name, and the four feature states, but no control for changing them. Administrators use the company sections below for organization-wide settings.
+Office users also see the company **AI assistant** card here in a read-only form. It shows only whether the key is **Configured** or **Missing**, the model name, and the five feature states, but no control for changing them. Administrators use the company sections below for organization-wide settings.
 
 *My settings is the only Settings section a non-administrator sees.*
 
@@ -325,7 +336,7 @@ If the mirror is not configured, the card links directly to **Google Workspace �
 Simple office defaults — independent client- and crew-reminder hours, and an office notification email — plus two things worth knowing. All three defaults are marked **Planned**: they remain editable and persist separately, but the upcoming reminder worker does not send anything yet. An older saved appointment-reminder value remains the appointment default only; it is not copied into the newer client-reminder field.
 
 - **Google Chat notification routing.** You can review which five event types are allowed to notify which approved Google Chat space, and switch each on individually. It is off by default. Webhook addresses are secrets that live in the hosting environment and never appear in the app or the browser.
-- **The AI assistant card.** Administrators see the provider (**OpenAI**), the company API-key state (**Configured** or **Missing**), and the configured model name — never the key value. Four switches control **Organization-wide answers**, **Inbox filing suggestions**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured, and all four now have server consumers. The current card still shows **In development** on organization-wide answers and Inbox suggestions, and the older **Planned** badge on Reply drafting and Task extraction; those last two badges lag their shipped, review-first consumers and are recorded for a presentation follow-up. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
+- **The AI assistant card.** Administrators see the provider (**OpenAI**), the company API-key state (**Configured** or **Missing**), and the configured model name — never the key value. Five switches control **Organization-wide answers**, **Inbox filing suggestions**, **Inbox analysis**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured, and all five have server consumers. The current card shows **In development** on organization-wide answers, Inbox suggestions, and Inbox analysis, and the older **Planned** badge on Reply drafting and Task extraction; those last two badges lag their shipped, review-first consumers and are recorded for a presentation follow-up. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
 
 > [SCREENSHOT 7 — see Screenshot index]
 
@@ -472,10 +483,10 @@ Administrators can review the source readiness for that change under **Settings 
 
 Because it is a secret, the app never shows the key itself. The **AI assistant** Settings card shows only whether it is **Configured** or **Missing**, together with **OpenAI** as the provider and the model name. Administrators find the editable card in **Settings → Workflow & notifications**; office users see the same information and feature states read-only in **My settings**. When the key is Missing, the feature controls are unavailable and the app says plainly to add the company key to the hosting environment — it never fakes a ready state.
 
-The four company-wide feature switches are **Organization-wide answers**,
-**Inbox filing suggestions**, **Reply drafting**, and **Task extraction from
-meetings**. They are on by default when the key is Configured. Here is the
-source-verified behavior:
+The five company-wide feature switches are **Organization-wide answers**,
+**Inbox filing suggestions**, **Inbox analysis**, **Reply drafting**, and
+**Task extraction from meetings**. They are on by default when the key is
+Configured. Here is the source-verified behavior:
 
 - **Organization-wide answers** gates the project-ID-absent server API. When
   it is off—or the key is Missing—the API returns a bounded records-only
@@ -485,6 +496,13 @@ source-verified behavior:
 - **Inbox filing suggestions** gates the Administrator-only **Suggest with
   AI** action. A Missing key removes the button; an off switch returns an
   honest denial. Accepting a suggestion opens the ordinary filing review.
+- **Inbox analysis** gates both the Inbox's automatic bounded sweep and the
+  server route that stores its results. Off means an Inbox load makes no
+  analysis request and therefore no provider call or `mail_items` write.
+  Simulation uses deterministic local fixture analyses and never calls
+  OpenAI. Live results store a bounded subject, sender, and received date with
+  the analysis so the review record remains readable without another Gmail
+  request.
 - **Reply drafting** gates the Administrator-only **Draft with AI** action. A
   Missing key disables it; an off switch returns an honest denial. Generated
   text stays in the composer until the human separately saves an unsent
@@ -533,11 +551,12 @@ What the assistant does and does not do, so you can set expectations:
 - It never sends email or files a message. Saving an unsent Gmail draft,
   confirming a filing, or accepting a task is always a separate human action.
 
-Simulation changes only the Google side: triage and reply drafting read the
-local sample mailbox and never contact Google. Saved-record Q&A, Today, and
-task extraction use the same D1 records in both modes. When configured, those
-click-driven features may still call OpenAI; simulation is not a free or
-offline AI provider.
+Simulation changes the Google side for triage and reply drafting: they read the
+local sample mailbox and never contact Google. Inbox analysis goes further and
+uses deterministic local analysis fixtures, so its sweep calls neither Google
+nor OpenAI. Saved-record Q&A, Today, and task extraction use the same D1
+records in both modes. When configured, those other click-driven features may
+still call OpenAI; simulation is not generally a free or offline AI provider.
 
 *(Aside on app identity: sign-in is ChatGPT-Sites login today and will become Google Workspace sign-in at production. That is separate from the OpenAI key, which is only about the assistant.)*
 

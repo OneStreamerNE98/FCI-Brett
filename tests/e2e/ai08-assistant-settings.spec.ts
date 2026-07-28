@@ -6,6 +6,7 @@ const secretSentinel = "sk-AI08-SECRET-MUST-NEVER-RENDER";
 const configuredFeatures = {
   orgQa: true,
   triage: true,
+  inboxAnalysis: true,
   replyDrafts: false,
   taskExtraction: true,
 };
@@ -72,7 +73,7 @@ async function mockOfficeIdentity(page: Page) {
   });
 }
 
-test("Administrator sees four controls and saves only the closed AI feature payload", async ({ page }) => {
+test("Administrator sees five controls and saves only the closed AI feature payload", async ({ page }) => {
   let patchBody: unknown;
   await page.route("**/api/v1/assistant/config", async (route) => {
     if (route.request().method() === "GET") {
@@ -91,16 +92,17 @@ test("Administrator sees four controls and saves only the closed AI feature payl
   await page.goto("/settings?section=workflow-notifications");
   const card = assistantCard(page);
   await expect(card).toBeVisible();
-  await expect(card.getByRole("checkbox")).toHaveCount(4);
+  await expect(card.getByRole("checkbox")).toHaveCount(5);
   for (const label of [
     "Organization-wide answers",
     "Inbox filing suggestions",
+    "Inbox analysis",
     "Reply drafting",
     "Task extraction from meetings",
   ]) {
     await expect(card.getByRole("checkbox", { name: label })).toBeVisible();
   }
-  await expect(card.getByText("In development", { exact: true })).toHaveCount(2);
+  await expect(card.getByText("In development", { exact: true })).toHaveCount(3);
   await expect(card.getByText("Planned", { exact: true })).toHaveCount(2);
   await expect(card.getByText(footerCopy, { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(secretSentinel);
@@ -112,6 +114,7 @@ test("Administrator sees four controls and saves only the closed AI feature payl
     features: {
       orgQa: true,
       triage: false,
+      inboxAnalysis: true,
       replyDrafts: true,
       taskExtraction: true,
     },
@@ -147,9 +150,9 @@ test("Office identity is redirected to My settings and receives read-only AI sta
   await expect(card.getByRole("checkbox")).toHaveCount(0);
   await expect(card.getByRole("button", { name: "Save AI settings" })).toHaveCount(0);
   const states = card.getByLabel("AI feature states").locator("strong");
-  await expect(states).toHaveCount(4);
-  await expect(states).toHaveText(["On", "On", "Off", "On"]);
-  await expect(card.getByText("In development", { exact: true })).toHaveCount(2);
+  await expect(states).toHaveCount(5);
+  await expect(states).toHaveText(["On", "On", "On", "Off", "On"]);
+  await expect(card.getByText("In development", { exact: true })).toHaveCount(3);
   await expect(card.getByText("Planned", { exact: true })).toHaveCount(2);
   await expect(card.getByText(footerCopy, { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(secretSentinel);
@@ -169,6 +172,7 @@ test("Missing-key state uses the canonical honest copy and disables every contro
       features: {
         orgQa: false,
         triage: false,
+        inboxAnalysis: false,
         replyDrafts: false,
         taskExtraction: false,
       },
@@ -179,7 +183,7 @@ test("Missing-key state uses the canonical honest copy and disables every contro
   await page.goto("/settings?section=workflow-notifications");
   const card = assistantCard(page);
   await expect(card.getByText(missingKeyCopy, { exact: true })).toBeVisible();
-  await expect(card.getByRole("checkbox")).toHaveCount(4);
+  await expect(card.getByRole("checkbox")).toHaveCount(5);
   for (const checkbox of await card.getByRole("checkbox").all()) await expect(checkbox).toBeDisabled();
   await expect(card.getByRole("button", { name: "Save AI settings" })).toBeDisabled();
   await expect(page.locator("body")).not.toContainText(secretSentinel);

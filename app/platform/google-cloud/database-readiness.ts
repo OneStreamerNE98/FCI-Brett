@@ -93,6 +93,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "core_record_concurrency",
       checksum: "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
     }),
+    Object.freeze({
+      version: 12,
+      name: "mail_item_analysis",
+      checksum: "sha256:46904428caf2572fd63079820a5ebf9b5b04e5390bcc7c69a69a8249431430bc",
+    }),
   ]);
 
 /**

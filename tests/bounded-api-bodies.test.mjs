@@ -39,6 +39,7 @@ const [
   assistantTaskExtractionRoute,
   assistantTriageRoute,
   assistantReplyDraftRoute,
+  inboxAnalysisRoute,
   clientsRoute,
   projectsRoute,
   filingRuleRoute,
@@ -65,6 +66,7 @@ const [
     vite.ssrLoadModule("/app/api/v1/assistant/extract-tasks/route.ts"),
     vite.ssrLoadModule("/app/api/v1/assistant/triage/route.ts"),
     vite.ssrLoadModule("/app/api/v1/assistant/reply-draft/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/inbox-analysis/route.ts"),
     vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
     vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
     vite.ssrLoadModule("/app/api/v1/filing-rules/[ruleId]/route.ts"),
@@ -137,6 +139,12 @@ const cases = [
     maximumBytes: 8_000,
     error: "Reply draft request is too large.",
     invoke: (request) => assistantReplyDraftRoute.POST(request),
+  },
+  {
+    name: "inbox analysis continuation",
+    maximumBytes: 8_000,
+    error: "Inbox analysis continuation is too large.",
+    invoke: (request) => inboxAnalysisRoute.POST(request),
   },
   {
     name: "client creation",

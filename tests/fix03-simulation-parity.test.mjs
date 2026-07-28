@@ -36,6 +36,7 @@ function createBehaviorDatabase() {
     connection: null,
     integrationEvents: [],
     loseLeaseBeforeBatch: null,
+    mailItems: [],
     mappings: [{
       id: "simulation-project-root",
       connection_key: SIMULATION_CONNECTION,
@@ -352,6 +353,7 @@ function createBehaviorDatabase() {
         }
 
         const scopedDeletes = [
+          ["mail_items", "mailItems"],
           ["gmail_file_archives", "archives"],
           ["drive_folder_mappings", "mappings"],
           ["google_drive_operations", "operations"],
@@ -689,6 +691,12 @@ function liveResidue() {
       project_id: PROJECT_ID,
       status: "filed",
     },
+    mailItem: {
+      id: "live-mail-item",
+      connection_key: LIVE_CONNECTION,
+      gmail_message_id: "live-message",
+      status: "needs-review",
+    },
     artifact: {
       id: "live-artifact",
       archive_id: "live-archive",
@@ -753,6 +761,40 @@ function liveResidue() {
 function normalizeMode(detail) {
   return detail.replace(/mode=(?:workspace|simulation)/u, "mode=<mode>");
 }
+
+test("AI-10 simulation exposes paged analysis inputs and deterministic provider-shaped fixtures without provider calls", async () => {
+  const providerCallsBefore = providerCalls;
+  await simulation.resetWorkspaceSimulation();
+  const client = new simulation.WorkspaceSimulationGmailClient();
+  const page = await client.listMessages({
+    labelId: "INBOX",
+    mode: "sweep",
+  });
+  const noise = await client.getMessageAnalysisInput("sim-msg-northpoint");
+  const westport = simulation.simulationInboxAnalysisFixture("sim-msg-westport");
+  const harbor = simulation.simulationInboxAnalysisFixture("sim-msg-harbor");
+
+  assert.deepEqual(page.messageIds, [
+    "sim-msg-westport",
+    "sim-msg-harbor",
+    "sim-msg-northpoint",
+  ]);
+  assert.deepEqual(page.failedMessageIds, []);
+  assert.equal(page.nextPageToken, null);
+  assert.equal(
+    noise.listUnsubscribe,
+    "<mailto:unsubscribe@northpoint-news.example>",
+  );
+  assert.equal(noise.bodyText, "The latest finish schedule and room matrix are ready for review.");
+  assert.equal(westport.messageId, "sim-msg-westport");
+  assert.deepEqual(westport.intents, ["project-update", "schedule"]);
+  assert.equal(harbor.messageId, "sim-msg-harbor");
+  assert.equal(
+    simulation.simulationInboxAnalysisFixture("sim-msg-northpoint"),
+    null,
+  );
+  assert.equal(providerCalls, providerCallsBefore);
+});
 
 test("shared integration contracts keep live and simulation event-row shapes equivalent", () => {
   const liveApproved = integrationEvents.gmailArchiveApprovedIntegrationEvent("workspace", PROJECT_ID);
@@ -1469,6 +1511,12 @@ test("FIX-03 local simulation matches durable integration contracts and resets o
     version: 1,
     blueprint_json: "{}",
   });
+  state.mailItems.push({
+    id: "simulation-mail-item",
+    connection_key: SIMULATION_CONNECTION,
+    gmail_message_id: MESSAGE_ID,
+    status: "needs-review",
+  });
 
   const live = liveResidue();
   state.activities.push(live.activity);
@@ -1476,6 +1524,7 @@ test("FIX-03 local simulation matches durable integration contracts and resets o
   state.artifacts.push(live.artifact);
   state.blueprints.push(live.blueprint);
   state.integrationEvents.push(live.event);
+  state.mailItems.push(live.mailItem);
   state.mappings.push(live.mapping);
   state.operations.push(live.operation);
   state.resources.push(live.resource);
@@ -1493,6 +1542,7 @@ test("FIX-03 local simulation matches durable integration contracts and resets o
     state.archives,
     state.blueprints,
     state.integrationEvents,
+    state.mailItems,
     state.mappings,
     state.operations,
     state.resources,
@@ -1505,6 +1555,7 @@ test("FIX-03 local simulation matches durable integration contracts and resets o
   assert.deepEqual(state.artifacts, [live.artifact]);
   assert.deepEqual(state.blueprints, [live.blueprint]);
   assert.deepEqual(state.integrationEvents, [live.event]);
+  assert.deepEqual(state.mailItems, [live.mailItem]);
   assert.deepEqual(state.mappings, [live.mapping]);
   assert.deepEqual(state.operations, [live.operation]);
   assert.deepEqual(state.resources, [live.resource]);
@@ -1529,6 +1580,7 @@ test("FIX-03 local simulation matches durable integration contracts and resets o
     state.queries.filter((query) => query.sql.startsWith("DELETE FROM ")).map((query) => query.sql),
     [
       "DELETE FROM activity_events WHERE action GLOB 'workspace_simulation.*'",
+      "DELETE FROM mail_items WHERE connection_key = ?",
       "DELETE FROM gmail_file_archive_artifacts WHERE archive_id IN (SELECT id FROM gmail_file_archives WHERE connection_key = ?)",
       "DELETE FROM gmail_file_archives WHERE connection_key = ?",
       "DELETE FROM drive_folder_mappings WHERE connection_key = ?",

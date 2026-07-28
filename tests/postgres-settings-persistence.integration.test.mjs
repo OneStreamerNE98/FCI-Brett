@@ -280,31 +280,108 @@ test(
 
       const item = {
         id: "mail-1",
+        connectionKey: "google-workspace",
         gmailMessageId: "gmail-message-1",
         gmailThreadId: "gmail-thread-1",
         clientId,
         suggestedProjectId,
         approvedProjectId,
-        status: "approved",
+        status: "accepted",
         matchReason: "Exact project number.",
         emailDriveFileId: "drive-file-1",
+        analysisPayload: {
+          intents: ["project-update"],
+          rationale: "Exact project number.",
+        },
+        party: "client",
+        confidence: "high",
+        contentHash: "a".repeat(64),
+        labelDefinitionVersion: "catalog-2026-07-27",
+        attemptedLabelDefinitionVersion: null,
+        subject: "FCI TEST — DO NOT USE project update",
+        sender: "Client <client@example.test>",
+        receivedAt: NOW + 5_000,
+        failureAttempts: 0,
+        errorCode: null,
+        coverageComplete: false,
         createdAt: NOW + 6_000,
         updatedAt: NOW + 7_000,
       };
       assert.deepEqual(await mailItems.upsert(item), { outcome: "saved" });
       assert.deepEqual(await mailItems.findById(item.id), item);
-      assert.deepEqual(await mailItems.listByStatus("approved", 10), [item]);
+      assert.deepEqual(
+        await mailItems.findByGmailMessageId(
+          "google-workspace",
+          item.gmailMessageId,
+        ),
+        item,
+      );
+      assert.deepEqual(
+        await mailItems.listByStatus("google-workspace", "accepted", 10),
+        [item],
+      );
+
+      const reanalyzed = {
+        ...item,
+        id: "mail-reanalysis-must-not-replace-id",
+        status: "dismissed",
+        confidence: "medium",
+        coverageComplete: false,
+        updatedAt: NOW + 8_000,
+      };
+      assert.deepEqual(await mailItems.upsert(reanalyzed), {
+        outcome: "terminal-preserved",
+      });
+      assert.deepEqual(
+        await mailItems.findByGmailMessageId(
+          "google-workspace",
+          item.gmailMessageId,
+        ),
+        item,
+      );
+
+      const simulationItem = {
+        ...item,
+        id: "mail-simulation",
+        connectionKey: "workspace-simulation",
+        clientId: null,
+        suggestedProjectId: null,
+        approvedProjectId: null,
+        status: "needs-review",
+        coverageComplete: false,
+      };
+      assert.deepEqual(await mailItems.upsert(simulationItem), { outcome: "saved" });
+      assert.equal(
+        (await pool.query(
+          `SELECT count(*)::integer AS count
+           FROM ${schema}.mail_items
+           WHERE gmail_message_id = $1`,
+          [item.gmailMessageId],
+        )).rows[0].count,
+        2,
+      );
+
+      await mailItems.markCoverageComplete("google-workspace");
+      assert.equal(
+        (await mailItems.findByGmailMessageId(
+          "google-workspace",
+          item.gmailMessageId,
+        )).coverageComplete,
+        true,
+      );
+      assert.equal(
+        (await mailItems.findByGmailMessageId(
+          "workspace-simulation",
+          item.gmailMessageId,
+        )).coverageComplete,
+        false,
+      );
 
       const missingReferenceCases = [
         {
           id: "mail-orphan-client",
           property: "clientId",
           outcome: "client-not-found",
-        },
-        {
-          id: "mail-orphan-suggested",
-          property: "suggestedProjectId",
-          outcome: "suggested-project-not-found",
         },
         {
           id: "mail-orphan-approved",
@@ -316,9 +393,23 @@ test(
         assert.deepEqual(await mailItems.upsert({
           ...item,
           id,
+          gmailMessageId: `${item.gmailMessageId}-${id}`,
           [property]: randomUUID(),
         }), { outcome });
       }
+      const orphanSuggested = {
+        ...item,
+        id: "mail-orphan-suggested",
+        gmailMessageId: `${item.gmailMessageId}-mail-orphan-suggested`,
+        suggestedProjectId: randomUUID(),
+      };
+      assert.deepEqual(await mailItems.upsert(orphanSuggested), {
+        outcome: "saved",
+      });
+      assert.equal(
+        (await mailItems.findById(orphanSuggested.id)).suggestedProjectId,
+        null,
+      );
       const orphanCount = await pool.query(
         `SELECT count(*)::integer AS count
          FROM ${schema}.mail_items
@@ -326,6 +417,59 @@ test(
         [missingReferenceCases.map(({ id }) => id)],
       );
       assert.equal(orphanCount.rows[0].count, 0);
+    } finally {
+      await pool.query(`DROP SCHEMA ${schema} CASCADE`);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "PostgreSQL v12 maps legacy mail-item statuses before constraining the vocabulary",
+  {
+    skip: postgresTestUrl ? false : "TEST_POSTGRES_URL is not configured",
+    timeout: 30_000,
+  },
+  async () => {
+    const { Pool } = await import("pg");
+    const pool = new Pool({
+      connectionString: postgresTestUrl,
+      max: 4,
+      application_name: "fci_mail_item_legacy_migration_integration",
+    });
+    const schema = `fci_mail_legacy_${randomUUID().replaceAll("-", "")}`;
+    await pool.query(`CREATE SCHEMA ${schema}`);
+
+    try {
+      const preAnalysisMigrations = PRODUCTION_SCHEMA_MIGRATIONS.filter(
+        ({ version }) => version < 12,
+      );
+      await runProductionSchemaMigrations(pool, preAnalysisMigrations, { schema });
+
+      const legacyRows = [
+        ["legacy-approved", "gmail-legacy-approved", "approved"],
+        ["legacy-unknown", "gmail-legacy-unknown", "routed-elsewhere"],
+        ["legacy-review", "gmail-legacy-review", "needs-review"],
+      ];
+      for (const [id, gmailMessageId, status] of legacyRows) {
+        await pool.query(
+          `INSERT INTO ${schema}.mail_items (
+             id, gmail_message_id, status, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $4)`,
+          [id, gmailMessageId, status, new Date(NOW)],
+        );
+      }
+
+      await runProductionSchemaMigrations(pool, PRODUCTION_SCHEMA_MIGRATIONS, { schema });
+
+      const migrated = await pool.query(
+        `SELECT id, status FROM ${schema}.mail_items ORDER BY id`,
+      );
+      assert.deepEqual(migrated.rows, [
+        { id: "legacy-approved", status: "accepted" },
+        { id: "legacy-review", status: "needs-review" },
+        { id: "legacy-unknown", status: "dismissed" },
+      ]);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`);
       await pool.end();

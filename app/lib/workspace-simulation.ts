@@ -2,11 +2,17 @@ import { env } from "cloudflare:workers";
 import {
   FCI_GMAIL_LABELS,
   type GmailListBucket,
+  type GmailMessageListInput,
   type GmailMessageArchive,
+  type GmailMessageAnalysisInput,
+  type GmailMessageListPage,
   type GmailMessageSummary,
+  type GmailMessageSweepInput,
   type GmailReplyContext,
   type GmailReplyDraft,
+  normalizeGmailPageToken,
 } from "./google-gmail";
+import { GoogleIntegrationError } from "./google-oauth";
 import {
   CALENDAR_TEST_HOLD_DEDUP_PROPERTY,
   calendarTestHoldDedupKey,
@@ -17,6 +23,8 @@ const STATE_ID = "fci-workspace";
 const SIMULATION_ACCOUNT = "workspace-simulation@fci.example";
 const UPCOMING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_UPCOMING_EVENTS = 20;
+const SIMULATION_MESSAGE_PAGE_SIZE = 20;
+const SIMULATION_PAGE_TOKEN_PREFIX = "simulation-message-page-";
 
 type SimulationAttachment = {
   filename: string;
@@ -27,6 +35,7 @@ type SimulationAttachment = {
 type SimulationMessage = GmailMessageSummary & {
   body: string;
   attachments: SimulationAttachment[];
+  listUnsubscribe?: string | null;
 };
 
 type SimulationEvent = {
@@ -47,6 +56,63 @@ type SimulationState = {
 };
 
 type StateRow = { state_json: string };
+
+type SimulationInboxAnalysisFixture = Readonly<{
+  messageId: string;
+  party: "client" | "prospect" | "vendor" | "employee" | "unknown";
+  intents: readonly ("lead" | "project-update" | "schedule" | "warranty")[];
+  leadFields: Readonly<{
+    company: string | null;
+    contactName: string | null;
+    contactEmail: string | null;
+    contactPhone: string | null;
+    projectName: string | null;
+    site: string | null;
+    estimatedValue: number | null;
+  }>;
+  referencedProjectIds: readonly string[];
+  confidence: "high" | "medium" | "low";
+  rationale: string;
+}>;
+
+const EMPTY_SIMULATION_LEAD_FIELDS = Object.freeze({
+  company: null,
+  contactName: null,
+  contactEmail: null,
+  contactPhone: null,
+  projectName: null,
+  site: null,
+  estimatedValue: null,
+});
+
+export const SIMULATION_INBOX_ANALYSIS_FIXTURES = Object.freeze({
+  "sim-msg-westport": Object.freeze({
+    messageId: "sim-msg-westport",
+    party: "client",
+    intents: Object.freeze(["project-update", "schedule"]),
+    leadFields: EMPTY_SIMULATION_LEAD_FIELDS,
+    referencedProjectIds: Object.freeze([]),
+    confidence: "low",
+    rationale: "Simulation fixture: an existing project update also changes upcoming work timing.",
+  }),
+  "sim-msg-harbor": Object.freeze({
+    messageId: "sim-msg-harbor",
+    party: "client",
+    intents: Object.freeze(["project-update", "schedule"]),
+    leadFields: EMPTY_SIMULATION_LEAD_FIELDS,
+    referencedProjectIds: Object.freeze([]),
+    confidence: "low",
+    rationale: "Simulation fixture: dock access and delivery timing need an office review.",
+  }),
+} satisfies Record<string, SimulationInboxAnalysisFixture>);
+
+export function simulationInboxAnalysisFixture(
+  messageId: string,
+): SimulationInboxAnalysisFixture | null {
+  return SIMULATION_INBOX_ANALYSIS_FIXTURES[
+    messageId as keyof typeof SIMULATION_INBOX_ANALYSIS_FIXTURES
+  ] ?? null;
+}
 
 function atOffset(days: number, hour: number, minute = 0) {
   const value = new Date();
@@ -94,6 +160,7 @@ function seedState(): SimulationState {
         labelIds: ["INBOX"],
         body: "The latest finish schedule and room matrix are ready for review.",
         attachments: [{ filename: "Northpoint-Room-Matrix.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", body: "Simulated workbook attachment" }],
+        listUnsubscribe: "<mailto:unsubscribe@northpoint-news.example>",
       },
     ],
     calendarEvents: [
@@ -149,6 +216,34 @@ function searchTerms(value: string | undefined) {
     .filter(Boolean);
 }
 
+function simulationMessageSummary(message: SimulationMessage): GmailMessageSummary {
+  return {
+    id: message.id,
+    threadId: message.threadId,
+    from: message.from,
+    to: message.to,
+    subject: message.subject,
+    date: message.date,
+    snippet: message.snippet,
+    labelIds: message.labelIds,
+  };
+}
+
+function simulationPageOffset(value: string | undefined) {
+  const token = normalizeGmailPageToken(value);
+  if (!token) return 0;
+  const match = new RegExp(`^${SIMULATION_PAGE_TOKEN_PREFIX}(\\d+)$`, "u").exec(token);
+  const offset = match ? Number(match[1]) : Number.NaN;
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new GoogleIntegrationError(
+      "invalid_gmail_page_token",
+      "The Gmail page token is invalid.",
+      400,
+    );
+  }
+  return offset;
+}
+
 export class WorkspaceSimulationGmailClient {
   async prepareFciLabels() {
     const state = await getSimulationState();
@@ -167,34 +262,44 @@ export class WorkspaceSimulationGmailClient {
     return bucket === "inbox" || state.labelsPrepared ? labelForBucket(bucket) : null;
   }
 
-  async listMessages(input: { labelId: string; search?: string }) {
+  async listMessages(input: GmailMessageListInput): Promise<GmailMessageSummary[]>;
+  async listMessages(input: GmailMessageSweepInput): Promise<GmailMessageListPage>;
+  async listMessages(
+    input: GmailMessageListInput | GmailMessageSweepInput,
+  ): Promise<GmailMessageSummary[] | GmailMessageListPage> {
     const state = await getSimulationState();
     const terms = searchTerms(input.search);
-    return state.messages
+    const offset = simulationPageOffset(
+      "pageToken" in input ? input.pageToken : undefined,
+    );
+    const matches = state.messages
       .filter((message) => message.labelIds.includes(input.labelId))
       .filter((message) => {
         if (!terms.length) return true;
         const searchable = [message.from, message.to, message.subject, message.snippet].join(" ").toLowerCase();
         return terms.every((term) => searchable.includes(term));
-      })
-      .slice(0, 20)
-      .map((message) => ({ id: message.id, threadId: message.threadId, from: message.from, to: message.to, subject: message.subject, date: message.date, snippet: message.snippet, labelIds: message.labelIds }));
+      });
+    const messages = matches
+      .slice(offset, offset + SIMULATION_MESSAGE_PAGE_SIZE)
+      .map(simulationMessageSummary);
+    const nextOffset = offset + messages.length;
+    return "mode" in input && input.mode === "sweep"
+      ? Object.freeze({
+          messages,
+          messageIds: messages.map((message) => message.id),
+          failedMessageIds: [],
+          nextPageToken: nextOffset < matches.length
+            ? `${SIMULATION_PAGE_TOKEN_PREFIX}${nextOffset}`
+            : null,
+        })
+      : messages;
   }
 
   async getMessageSummary(messageId: string) {
     const state = await getSimulationState();
     const message = state.messages.find((item) => item.id === messageId);
     if (!message) throw new Error("Simulated message not found.");
-    return {
-      id: message.id,
-      threadId: message.threadId,
-      from: message.from,
-      to: message.to,
-      subject: message.subject,
-      date: message.date,
-      snippet: message.snippet,
-      labelIds: message.labelIds,
-    };
+    return simulationMessageSummary(message);
   }
 
   async getMessageBodyText(messageId: string) {
@@ -208,6 +313,26 @@ export class WorkspaceSimulationGmailClient {
       .replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
       .slice(0, 10_000)
       .trim();
+  }
+
+  async getMessageAnalysisInput(messageId: string): Promise<GmailMessageAnalysisInput> {
+    const state = await getSimulationState();
+    const message = state.messages.find((item) => item.id === messageId);
+    if (!message) throw new Error("Simulated message not found.");
+    return Object.freeze({
+      summary: simulationMessageSummary(message),
+      bodyText: (message.body ?? "")
+        .replace(/\r\n/g, "\n")
+        .replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+        .slice(0, 10_000)
+        .trim(),
+      listUnsubscribe: typeof message.listUnsubscribe === "string"
+        ? message.listUnsubscribe
+          .replace(/[\u0000-\u001f\u007f]/g, "")
+          .trim()
+          .slice(0, 500) || null
+        : null,
+    });
   }
 
   async getMessageArchive(messageId: string): Promise<GmailMessageArchive> {

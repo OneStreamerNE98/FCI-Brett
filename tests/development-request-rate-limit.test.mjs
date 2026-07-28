@@ -35,6 +35,11 @@ const limitedRoutes = [
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
+    path: "app/api/v1/inbox-analysis/route.ts",
+    scope: "inbox-analysis",
+    firstWork: "await parseBoundedJsonObject(request",
+  },
+  {
     path: "app/api/v1/uploads/route.ts",
     scope: "uploads",
     firstWork: 'const contentType = request.headers.get("content-type")',
@@ -118,6 +123,15 @@ test("development limits isolate office users across the closed route scopes", (
   for (const scope of DEVELOPMENT_RATE_LIMIT_SCOPES.filter((scope) => scope !== "assistant")) {
     assert.equal(limiter.check(scope, "first@example.test"), null, `${scope} must have an isolated window`);
   }
+});
+
+test("the inbox analysis sweep cannot consume the interactive assistant window", () => {
+  const limiter = createDevelopmentRequestRateLimiter({ now: () => 1_000 });
+  for (let request = 1; request <= DEVELOPMENT_RATE_LIMIT_MAX_REQUESTS; request += 1) {
+    assert.equal(limiter.check("inbox-analysis", "office@example.test"), null);
+  }
+  assert.equal(limiter.check("inbox-analysis", "office@example.test")?.status, 429);
+  assert.equal(limiter.check("assistant", "office@example.test"), null);
 });
 
 test("development limits normalize the authenticated office-user email", () => {

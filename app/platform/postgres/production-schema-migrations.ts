@@ -5,6 +5,7 @@ import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-
 import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "./core-record-concurrency-schema.ts";
 import { FLOORING_KPI_SCHEMA_STATEMENTS } from "./flooring-kpi-schema.ts";
 import { LEAD_PROJECT_MEETING_STATEMENTS } from "./lead-project-meeting-schema.ts";
+import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "./mail-item-analysis-schema.ts";
 import { PROJECT_SEGMENT_SCHEMA_STATEMENTS } from "./project-segment-schema.ts";
 import { PRODUCTION_PERSISTENCE_STATEMENTS } from "./production-persistence-schema.ts";
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "./settings-persistence-schema.ts";
@@ -459,6 +460,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "core_record_concurrency",
     checksum: "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
     statements: CORE_RECORD_CONCURRENCY_STATEMENTS,
+  },
+  {
+    version: 12,
+    name: "mail_item_analysis",
+    checksum: "sha256:46904428caf2572fd63079820a5ebf9b5b04e5390bcc7c69a69a8249431430bc",
+    statements: MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS,
   },
 ];
 

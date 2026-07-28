@@ -3,6 +3,7 @@ export const DEVELOPMENT_RATE_LIMIT_WINDOW_MS = 60_000;
 
 export const DEVELOPMENT_RATE_LIMIT_SCOPES = [
   "assistant",
+  "inbox-analysis",
   "uploads",
   "google-sheets-sync",
   "project-drive-provisioning",

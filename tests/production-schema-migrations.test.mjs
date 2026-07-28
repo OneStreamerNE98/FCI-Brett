@@ -26,6 +26,7 @@ import {
 import { SETTINGS_PERSISTENCE_STATEMENTS } from "../app/platform/postgres/settings-persistence-schema.ts";
 import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts";
 import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "../app/platform/postgres/core-record-concurrency-schema.ts";
+import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "../app/platform/postgres/mail-item-analysis-schema.ts";
 
 const MIGRATION_VERSIONS = PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version);
 const CURRENT_MIGRATION_VERSION = MIGRATION_VERSIONS.at(-1);
@@ -401,7 +402,7 @@ test("registers the non-structural core-record concurrency law as contiguous mig
     "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
   );
   assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
   ]);
   assert.deepEqual(
     migration.statements.map((statement) => {
@@ -420,6 +421,100 @@ test("registers the non-structural core-record concurrency law as contiguous mig
   assert.doesNotMatch(
     migration.statements.map((statement) => statement.split(" IS ")[0]).join("\n"),
     /\b(?:ALTER|CREATE|DROP|TRUNCATE|UPDATE|INSERT|DELETE)\b/iu,
+  );
+});
+
+test("registers AI-10 mail-item analysis as immutable contiguous migration twelve", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 12);
+  assert.ok(migration);
+  assert.equal(migration.name, "mail_item_analysis");
+  assert.equal(migration.statements, MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS);
+  assert.equal(
+    migration.checksum,
+    "sha256:46904428caf2572fd63079820a5ebf9b5b04e5390bcc7c69a69a8249431430bc",
+  );
+  const sql = migration.statements.join("\n");
+  assert.match(
+    sql,
+    /ADD COLUMN connection_key text NOT NULL DEFAULT 'google-workspace'/u,
+  );
+  for (const column of [
+    "analysis_payload",
+    "party",
+    "confidence",
+    "content_hash",
+    "label_definition_version",
+    "attempted_label_definition_version",
+    "subject",
+    "sender",
+    "received_at",
+    "failure_attempts",
+    "error_code",
+    "coverage_complete",
+  ]) {
+    assert.match(sql, new RegExp(`ADD COLUMN ${column}\\b`, "u"));
+  }
+  assert.match(
+    sql,
+    /status IN \('needs-review', 'accepted', 'dismissed', 'skipped-noise', 'failed'\)/u,
+  );
+  assert.match(sql, /failure_attempts BETWEEN 0 AND 3/u);
+  assert.match(
+    sql,
+    /party IS NULL OR party IN \('client', 'prospect', 'vendor', 'employee', 'unknown'\)/u,
+  );
+  assert.match(
+    sql,
+    /confidence IS NULL OR confidence IN \('high', 'medium', 'low'\)/u,
+  );
+  assert.match(
+    sql,
+    /failure_attempts = 0 AND attempted_label_definition_version IS NULL/u,
+  );
+  assert.match(
+    sql,
+    /failure_attempts >= 1 AND attempted_label_definition_version IS NOT NULL/u,
+  );
+  assert.match(
+    sql,
+    /status = 'failed' AND failure_attempts >= 1 AND error_code IS NOT NULL/u,
+  );
+  assert.match(
+    sql,
+    /status = 'needs-review'[\s\S]*failure_attempts >= 1 AND error_code IS NOT NULL/u,
+  );
+  assert.match(
+    sql,
+    /CREATE UNIQUE INDEX mail_items_profile_message_unique ON mail_items \(connection_key, gmail_message_id\)/u,
+  );
+  assert.match(
+    sql,
+    /CREATE INDEX mail_items_profile_status_updated_at_idx ON mail_items \(connection_key, status, updated_at DESC, id\)/u,
+  );
+  assert.doesNotMatch(
+    sql,
+    /\b(?:CREATE TABLE|DROP TABLE|DROP COLUMN|TRUNCATE|DELETE|INSERT)\b/iu,
+  );
+  // The only permitted writes are the legacy status backfills: the pre-v12
+  // status column accepted any bounded nonblank text, so the closed vocabulary
+  // must map existing rows before its constraint validates them. Both must
+  // run before the constraint, and nothing else in v12 may write data.
+  assert.deepEqual(
+    migration.statements.filter((statement) => /\bUPDATE\b/iu.test(statement)),
+    [
+      "UPDATE mail_items SET status = 'accepted' WHERE status = 'approved'",
+      `UPDATE mail_items SET status = 'dismissed' WHERE status NOT IN (
+    'needs-review', 'accepted', 'dismissed', 'skipped-noise', 'failed'
+  )`,
+    ],
+  );
+  assert.ok(
+    migration.statements.findIndex((statement) =>
+      statement.includes("WHERE status = 'approved'")
+    ) < migration.statements.findIndex((statement) =>
+      statement.includes("mail_items_analysis_status_check")
+    ),
+    "legacy status backfills must precede the closed-vocabulary constraint",
   );
 });
 

@@ -11,6 +11,7 @@ const SETTINGS_COPY = {
   toggles: [
     "Organization-wide answers",
     "Inbox filing suggestions",
+    "Inbox analysis",
     "Reply drafting",
     "Task extraction from meetings",
   ],
@@ -82,6 +83,7 @@ test("pins the AI-08 settings and help copy to the canonical section-9 contract"
   assert.match(card, /keyState: "Configured" \| "Missing"/u);
   assert.match(card, /\{ key: "orgQa", label: "Organization-wide answers", state: "In development" \}/u);
   assert.match(card, /\{ key: "triage", label: "Inbox filing suggestions", state: "In development" \}/u);
+  assert.match(card, /\{ key: "inboxAnalysis", label: "Inbox analysis", state: "In development" \}/u);
   for (const key of ["replyDrafts", "taskExtraction"]) {
     assert.match(
       card,

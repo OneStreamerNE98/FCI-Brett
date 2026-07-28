@@ -333,19 +333,184 @@ test("PostgreSQL filing rules round-trip booleans and keep bounded CRUD statemen
 function mailItem(overrides = {}) {
   return {
     id: "mail-1",
+    connectionKey: "google-workspace",
     gmailMessageId: "gmail-1",
     gmailThreadId: "thread-1",
     clientId: CLIENT_ID,
     suggestedProjectId: SUGGESTED_PROJECT_ID,
     approvedProjectId: APPROVED_PROJECT_ID,
-    status: "approved",
+    status: "accepted",
     matchReason: "Exact project number.",
     emailDriveFileId: "drive-file-1",
+    analysisPayload: Object.freeze({
+      intents: Object.freeze(["project-update"]),
+      rationale: "Exact project number.",
+    }),
+    party: "client",
+    confidence: "high",
+    contentHash: "a".repeat(64),
+    labelDefinitionVersion: "catalog-2026-07-27",
+    attemptedLabelDefinitionVersion: null,
+    subject: "FCI TEST — DO NOT USE project update",
+    sender: "Client <client@example.test>",
+    receivedAt: CREATED_AT - 1_000,
+    failureAttempts: 0,
+    errorCode: null,
+    coverageComplete: false,
     createdAt: CREATED_AT,
     updatedAt: UPDATED_AT,
     ...overrides,
   };
 }
+
+function postgresMailItemRow(item) {
+  return {
+    id: item.id,
+    connection_key: item.connectionKey,
+    gmail_message_id: item.gmailMessageId,
+    gmail_thread_id: item.gmailThreadId,
+    client_id: item.clientId,
+    suggested_project_id: item.suggestedProjectId,
+    approved_project_id: item.approvedProjectId,
+    status: item.status,
+    match_reason: item.matchReason,
+    email_drive_file_id: item.emailDriveFileId,
+    analysis_payload: item.analysisPayload,
+    party: item.party,
+    confidence: item.confidence,
+    content_hash: item.contentHash,
+    label_definition_version: item.labelDefinitionVersion,
+    attempted_label_definition_version: item.attemptedLabelDefinitionVersion,
+    subject: item.subject,
+    sender: item.sender,
+    received_at: item.receivedAt === null ? null : new Date(item.receivedAt),
+    failure_attempts: item.failureAttempts,
+    error_code: item.errorCode,
+    coverage_complete: item.coverageComplete,
+    created_at: new Date(item.createdAt),
+    updated_at: new Date(item.updatedAt),
+  };
+}
+
+test("PostgreSQL mail items read only within one connection and expose frozen analysis", async () => {
+  const stored = mailItem();
+  const row = postgresMailItemRow(stored);
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^SELECT id, connection_key/);
+    return result([row], 1);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+
+  const found = await repository.findByGmailMessageId(
+    "google-workspace",
+    "gmail-1",
+  );
+  assert.deepEqual(found, stored);
+  assert.equal(Object.isFrozen(found.analysisPayload), true);
+  assert.equal(Object.isFrozen(found.analysisPayload.intents), true);
+  assert.deepEqual(
+    dataQuery(pool, /WHERE connection_key = \$1 AND gmail_message_id = \$2/).values,
+    ["google-workspace", "gmail-1"],
+  );
+
+  assert.deepEqual(
+    await repository.listByStatus("google-workspace", "accepted", 900),
+    [stored],
+  );
+  assert.deepEqual(
+    dataQuery(pool, /WHERE connection_key = \$1 AND status = \$2/).values,
+    ["google-workspace", "accepted", 100],
+  );
+});
+
+test("PostgreSQL mail items select retryable work before LIMIT and renew an exhausted budget for a new catalog", async () => {
+  const currentCatalogRows = Array.from({ length: 101 }, (_, index) =>
+    postgresMailItemRow(mailItem({
+      id: `mail-current-${index}`,
+      gmailMessageId: `gmail-current-${index}`,
+      status: "needs-review",
+      labelDefinitionVersion: "catalog-v3",
+      createdAt: CREATED_AT + index,
+      updatedAt: UPDATED_AT + index,
+    }))
+  );
+  const retryable = postgresMailItemRow(mailItem({
+    id: "mail-exhausted-v2",
+    gmailMessageId: "gmail-exhausted-v2",
+    status: "needs-review",
+    labelDefinitionVersion: "catalog-v1",
+    attemptedLabelDefinitionVersion: "catalog-v2",
+    failureAttempts: 3,
+    errorCode: "analysis_failed",
+  }));
+  assert.equal([...currentCatalogRows, retryable].length > 100, true);
+
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^SELECT id, connection_key/);
+    assert.match(
+      sql,
+      /error_code = 'analysis_daily_limit_reached'[\s\S]*failure_attempts < \$2[\s\S]*attempted_label_definition_version IS DISTINCT FROM \$3[\s\S]*status = 'failed'[\s\S]*status = 'needs-review'[\s\S]*label_definition_version IS DISTINCT FROM \$4[\s\S]*ORDER BY updated_at ASC, id ASC[\s\S]*LIMIT \$5/u,
+    );
+    assert.ok(
+      sql.indexOf("failure_attempts") < sql.indexOf("LIMIT"),
+      "retryability must be selected before the hard limit",
+    );
+    return result([retryable], 1);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+
+  assert.deepEqual(
+    (await repository.listRetryableAnalysisRows(
+      "google-workspace",
+      "catalog-v3",
+      100,
+    )).map(({ gmailMessageId }) => gmailMessageId),
+    ["gmail-exhausted-v2"],
+  );
+  assert.deepEqual(
+    dataQuery(
+      pool,
+      /attempted_label_definition_version IS DISTINCT FROM \$3/,
+    ).values,
+    ["google-workspace", 3, "catalog-v3", "catalog-v3", 100],
+  );
+});
+
+test("PostgreSQL mail-item insertIfAbsent preserves any existing analysis row on identity conflict", async () => {
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^INSERT INTO mail_items/);
+    return result([], 0);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+  assert.deepEqual(
+    await repository.insertIfAbsent(mailItem({
+      clientId: null,
+      suggestedProjectId: null,
+      approvedProjectId: null,
+      status: "failed",
+      analysisPayload: null,
+      party: null,
+      confidence: null,
+      contentHash: null,
+      attemptedLabelDefinitionVersion: "catalog-2026-07-27",
+      failureAttempts: 1,
+      errorCode: "analysis_state_read_failed",
+    })),
+    { outcome: "existing-preserved" },
+  );
+  const insert = dataQuery(pool, /^INSERT INTO mail_items/);
+  assert.match(
+    insert.sql,
+    /ON CONFLICT \(connection_key, gmail_message_id\) DO NOTHING$/u,
+  );
+  assert.doesNotMatch(insert.sql, /DO UPDATE/u);
+});
 
 test("PostgreSQL mail items require valid record references and preserve creation time on upsert", async () => {
   const pool = new RecordingPostgresPool(({ sql }) => {
@@ -357,16 +522,50 @@ test("PostgreSQL mail items require valid record references and preserve creatio
   }).upsert(mailItem()), { outcome: "saved" });
 
   const upsert = dataQuery(pool, /^INSERT INTO mail_items/);
-  assert.deepEqual(upsert.values.slice(3, 6), [
+  assert.deepEqual(upsert.values.slice(4, 7), [
     CLIENT_ID,
     SUGGESTED_PROJECT_ID,
     APPROVED_PROJECT_ID,
   ]);
+  assert.equal(upsert.values[10], JSON.stringify(mailItem().analysisPayload));
+  assert.match(
+    upsert.sql,
+    /ON CONFLICT \(connection_key, gmail_message_id\) DO UPDATE SET/u,
+  );
   assert.doesNotMatch(
     upsert.sql.split("DO UPDATE SET")[1],
-    /created_at\s*=/,
+    /\b(?:id|created_at)\s*=/,
     "an update must retain the original mail-item creation timestamp",
   );
+  assert.match(
+    upsert.sql,
+    /coverage_complete = mail_items\.coverage_complete OR EXCLUDED\.coverage_complete/u,
+  );
+  assert.match(
+    upsert.sql,
+    /\(SELECT id FROM projects WHERE id = \$6::uuid\)/u,
+    "a missing classifier suggestion must persist as null instead of violating its foreign key",
+  );
+  assert.match(
+    upsert.sql,
+    /WHERE mail_items\.status IN \('needs-review', 'failed'\)$/u,
+  );
+
+  const nullableClientPool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^INSERT INTO mail_items/);
+    return result([], 1);
+  });
+  assert.deepEqual(await createPostgresMailItemRepository(nullableClientPool, {
+    schema: "settings_test",
+  }).upsert(mailItem({
+    id: "mail-no-client",
+    gmailMessageId: "gmail-no-client",
+    clientId: null,
+    suggestedProjectId: null,
+    approvedProjectId: null,
+    status: "needs-review",
+  })), { outcome: "saved" });
+  assert.equal(dataQuery(nullableClientPool, /^INSERT INTO mail_items/).values[4], null);
 
   for (const [property, outcome] of [
     ["clientId", "client-not-found"],
@@ -417,4 +616,100 @@ test("PostgreSQL mail items require valid record references and preserve creatio
     }).upsert(mailItem()),
     (error) => error === unexpectedError,
   );
+});
+
+test("PostgreSQL mail items preserve a terminal row while nulling an orphan suggested project", async () => {
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^INSERT INTO mail_items/);
+    return result([], 0);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+
+  assert.deepEqual(await repository.upsert(mailItem({
+    suggestedProjectId: SUGGESTED_PROJECT_ID,
+  })), { outcome: "terminal-preserved" });
+
+  const upsert = dataQuery(pool, /^INSERT INTO mail_items/);
+  assert.match(upsert.sql, /\(SELECT id FROM projects WHERE id = \$6::uuid\)/u);
+  assert.equal(upsert.values[5], SUGGESTED_PROJECT_ID);
+});
+
+for (const terminalStatus of ["accepted", "dismissed", "skipped-noise"]) {
+  test(`PostgreSQL mail items preserve an existing ${terminalStatus} row against a late sweep`, async () => {
+    const pool = new RecordingPostgresPool(({ sql }) => {
+      assert.match(sql, /^INSERT INTO mail_items/);
+      return result([], 0);
+    });
+    const repository = createPostgresMailItemRepository(pool, {
+      schema: "settings_test",
+    });
+    assert.deepEqual(await repository.upsert(mailItem({
+      id: `late-${terminalStatus}`,
+      gmailMessageId: `terminal-${terminalStatus}`,
+      status: "needs-review",
+    })), { outcome: "terminal-preserved" });
+
+    const upsert = dataQuery(pool, /^INSERT INTO mail_items/);
+    assert.match(
+      upsert.sql,
+      /WHERE mail_items\.status IN \('needs-review', 'failed'\)$/u,
+    );
+    assert.equal(
+      upsert.sql.includes(`'${terminalStatus}'`),
+      false,
+      `${terminalStatus} must not be admitted to the mutable conflict states`,
+    );
+  });
+}
+
+test("PostgreSQL mail items mark coverage only for the requested connection", async () => {
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^UPDATE mail_items/);
+    return result([], 2);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+  await repository.markCoverageComplete("workspace-simulation");
+  const update = dataQuery(pool, /^UPDATE mail_items/);
+  assert.match(
+    update.sql,
+    /SET coverage_complete = true[\s\S]*WHERE connection_key = \$1 AND coverage_complete = false/u,
+  );
+  assert.deepEqual(update.values, ["workspace-simulation"]);
+});
+
+test("PostgreSQL mail items reject unsafe analysis state before connecting", async () => {
+  for (const item of [
+    mailItem({ status: "approved" }),
+    mailItem({ party: "customer" }),
+    mailItem({ confidence: "certain" }),
+    mailItem({ contentHash: "not-a-sha256" }),
+    mailItem({ sender: "unsafe\u0000sender" }),
+    mailItem({ coverageComplete: 1 }),
+    mailItem({ analysisPayload: { rationale: "x".repeat(8_001) } }),
+    mailItem({
+      status: "failed",
+      analysisPayload: null,
+      party: null,
+      confidence: null,
+      contentHash: null,
+      labelDefinitionVersion: null,
+      failureAttempts: 0,
+      errorCode: null,
+    }),
+  ]) {
+    const pool = new RecordingPostgresPool(() => {
+      throw new Error("invalid mail item must not reach PostgreSQL");
+    });
+    await assert.rejects(
+      createPostgresMailItemRepository(pool, {
+        schema: "settings_test",
+      }).upsert(item),
+      /mail item/i,
+    );
+    assert.equal(pool.clients.length, 0);
+  }
 });
