@@ -14,6 +14,10 @@ import {
 } from "../../../../../../../lib/google-drive";
 import { googleIntegrationErrorResponse } from "../../../../../../../lib/google-integration-error";
 import {
+  assertWorkspaceReconcileParentChainInSync,
+  assertWorkspaceReconcileRegistryParentChainInSync,
+} from "../../../../../../../lib/google-workspace-reconcile";
+import {
   getEffectiveGoogleRuntimeSetup,
   getGoogleAccessToken,
   writeGoogleIntegrationEvent,
@@ -127,6 +131,7 @@ export async function POST(request: NextRequest) {
     const drive = config.simulation
       ? null
       : new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
+    let latestReviewSetup: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>> | null = null;
     if (reconcileReview) {
       if (config.simulation && existingTemplatesByKey.has(reconcileReview.resourceKey)) {
         throw new GoogleIntegrationError(
@@ -146,6 +151,7 @@ export async function POST(request: NextRequest) {
         }
       }
       const latest = await getEffectiveGoogleRuntimeSetup();
+      latestReviewSetup = latest;
       if (
         latest.blueprintVersion !== reconcileReview.expectedVersion
         || !latest.blueprint.templates.some((template) => template.key === reconcileReview.resourceKey)
@@ -244,16 +250,36 @@ export async function POST(request: NextRequest) {
       const savedProviderName = typeof existing?.metadata.name === "string"
         ? existing.metadata.name.trim()
         : "";
+      let targetFolderId = ensuredFolder.folder.id;
+      if (reconcileReview) {
+        const latestRootId = latestReviewSetup?.config.drive.rootFolderId;
+        if (!latestReviewSetup || !latestRootId) {
+          throw new GoogleIntegrationError(
+            "workspace_reconcile_review_stale",
+            "The Shared Drive changed after this missing-template review. Check Workspace drift again.",
+            409,
+          );
+        }
+        const parentReview = {
+          blueprint: latestReviewSetup.blueprint,
+          resources: latestReviewSetup.resources,
+          rootExternalId: latestRootId,
+          parentKey: "templates",
+        };
+        targetFolderId = drive
+          ? await assertWorkspaceReconcileParentChainInSync({ drive, ...parentReview })
+          : assertWorkspaceReconcileRegistryParentChainInSync(parentReview);
+      }
       const ensured = drive
         ? template.kind === "slides"
           ? await drive.findOrCreateManagedNativeFile({
-            parentId: ensuredFolder.folder.id,
+            parentId: targetFolderId,
             name: template.name,
             mimeType: expectedMimeType,
             appProperties: { fciTemplateKey: template.key },
           })
           : await drive.findOrUploadManagedFile({
-            parentId: ensuredFolder.folder.id,
+            parentId: targetFolderId,
             name: template.name,
             mimeType: rendered!.metadataMimeType,
             mediaMimeType: rendered!.mediaMimeType,
@@ -266,7 +292,7 @@ export async function POST(request: NextRequest) {
             id: existing?.externalId ?? `workspace-simulation-template-${template.key}`,
             name: existing ? savedProviderName || template.name : template.name,
             mimeType: expectedMimeType,
-            parents: [ensuredFolder.folder.id],
+            parents: [targetFolderId],
             url: existing?.externalUrl ?? `/settings?section=google-workspace&workspace-simulation=template-${encodeURIComponent(template.key)}`,
             appProperties: { fciTemplateKey: template.key },
             checksum: null,
@@ -292,7 +318,7 @@ export async function POST(request: NextRequest) {
         resourceType: "drive.file",
         resourceKey: template.key,
         externalId: ensured.file.id,
-        parentExternalId: ensuredFolder.folder.id,
+        parentExternalId: targetFolderId,
         externalUrl: ensured.file.url,
         origin: outcome === "created" ? "created" : outcome === "adopted" ? "adopted" : existing?.origin ?? "adopted",
         metadata: {

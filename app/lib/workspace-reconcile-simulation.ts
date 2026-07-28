@@ -69,9 +69,28 @@ export function workspaceReconcileSimulationActual(
         stamped: true,
       });
     });
-  const byExternalId = new Map<string, WorkspaceReconcileActualResource>();
-  for (const resource of [...actual, ...additionalFixtures]) {
-    byExternalId.set(resource.externalId, resource);
+  const byClaim = new Map<string, WorkspaceReconcileActualResource>();
+  const registeredExternalIds = new Set(actual.map((resource) => resource.externalId));
+  for (const resource of actual) {
+    byClaim.set(
+      `${resource.externalId}:${resource.resourceType}:${resource.key ?? "unstamped"}`,
+      resource,
+    );
   }
-  return [...byExternalId.values()];
+  for (const resource of additionalFixtures) {
+    if (resource.key === null && registeredExternalIds.has(resource.externalId)) continue;
+    const claimKey = `${resource.externalId}:${resource.resourceType}:${resource.key ?? "unstamped"}`;
+    if (!byClaim.has(claimKey)) byClaim.set(claimKey, resource);
+  }
+  const claimCounts = new Map<string, Set<string>>();
+  for (const resource of byClaim.values()) {
+    const claims = claimCounts.get(resource.externalId) ?? new Set<string>();
+    claims.add(`${resource.resourceType}:${resource.key ?? "unstamped"}`);
+    claimCounts.set(resource.externalId, claims);
+  }
+  return [...byClaim.values()].map((resource) => (
+    (claimCounts.get(resource.externalId)?.size ?? 0) > 1
+      ? Object.freeze({ ...resource, validIdentity: false })
+      : resource
+  ));
 }

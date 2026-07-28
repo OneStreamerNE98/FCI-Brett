@@ -181,7 +181,12 @@ export function workspaceReconcileDesiredResources(
   ];
 }
 
-function missingDrift(resource: WorkspaceReconcileDesiredResource): WorkspaceReconcileDrift {
+function missingDrift(
+  resource: WorkspaceReconcileDesiredResource,
+  parentChainInSync: boolean,
+): WorkspaceReconcileDrift {
+  const actions = missingActions(resource.resourceType);
+  const blockedByParent = actions.length > 0 && !parentChainInSync;
   return Object.freeze({
     id: stableId("missing", resource.resourceType, resource.key, null),
     state: "missing",
@@ -193,8 +198,10 @@ function missingDrift(resource: WorkspaceReconcileDesiredResource): WorkspaceRec
     actualName: null,
     externalId: null,
     url: null,
-    detail: `${resource.name} is defined in the blueprint but was not found in Google.`,
-    actions: Object.freeze([...missingActions(resource.resourceType)]),
+    detail: blockedByParent
+      ? `${resource.name} is defined in the blueprint but was not found in Google. Create is unavailable until every blueprint parent is in sync.`
+      : `${resource.name} is defined in the blueprint but was not found in Google.`,
+    actions: Object.freeze(blockedByParent ? [] : [...actions]),
   });
 }
 
@@ -262,13 +269,39 @@ export function deriveWorkspaceReconcileDrift(
     matches.push(resource);
     actualByIdentity.set(identity, matches);
   }
+  const allActualByIdentity = new Map(
+    [...actualByIdentity].map(([identity, matches]) => [identity, [...matches]]),
+  );
+
+  const exactInSync = (resource: WorkspaceReconcileDesiredResource) => {
+    const matches = allActualByIdentity.get(desiredIdentity(resource)) ?? [];
+    if (matches.length !== 1) return false;
+    const [match] = matches;
+    return match.validMetadata !== false
+      && match.validIdentity !== false
+      && match.validType
+      && match.validParent !== false
+      && match.name === resource.name;
+  };
+  const parentChainInSync = (resource: WorkspaceReconcileDesiredResource) => {
+    const visited = new Set<string>();
+    let parentKey = resource.parentKey;
+    while (parentKey) {
+      if (visited.has(parentKey)) return false;
+      visited.add(parentKey);
+      const parent = desiredByIdentity.get(`drive.folder:${parentKey}`);
+      if (!parent || !exactInSync(parent)) return false;
+      parentKey = parent.parentKey;
+    }
+    return true;
+  };
 
   const drift: WorkspaceReconcileDrift[] = [];
   for (const resource of desired) {
     const identity = desiredIdentity(resource);
     const matches = actualByIdentity.get(identity) ?? [];
     if (matches.length === 0) {
-      drift.push(missingDrift(resource));
+      drift.push(missingDrift(resource, parentChainInSync(resource)));
       continue;
     }
     actualByIdentity.delete(identity);

@@ -341,7 +341,11 @@ export async function POST(request: NextRequest) {
       }
       targetExternalUrl = reviewed.url;
       await assertReviewedBlueprintCurrent();
-      const providerRename = await drive.renameFolder(targetExternalId, renamedNode.name);
+      const providerRename = await drive.renameFolder(
+        targetExternalId,
+        renamedNode.name,
+        { expectedCurrentName: reviewedActualName! },
+      );
       providerPreviousName = providerRename.previousName;
       driveRenamed = true;
     } else {

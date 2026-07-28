@@ -4,7 +4,10 @@ import {
 } from "./google-drive";
 import type { GoogleCalendarClient } from "./google-calendar-client";
 import { GoogleIntegrationError } from "./google-oauth";
-import type { WorkspaceBlueprint } from "./workspace-blueprint";
+import {
+  flattenWorkspaceRootFolders,
+  type WorkspaceBlueprint,
+} from "./workspace-blueprint";
 import type { WorkspaceResource } from "./workspace-effective-config";
 import {
   workspaceReconcileDesiredResources,
@@ -159,6 +162,135 @@ function exactDriveIdentity(
   if (identities.size !== 1) return false;
   const [identity] = [...identities.values()];
   return identity.resourceType === resourceType && identity.key === key;
+}
+
+function staleParentReview(): never {
+  throw new GoogleIntegrationError(
+    "workspace_reconcile_review_stale",
+    "A blueprint parent changed in Google Drive after this review. Check Workspace drift again before creating anything.",
+    409,
+  );
+}
+
+export function assertWorkspaceReconcileRegistryParentChainInSync(input: Readonly<{
+  blueprint: WorkspaceBlueprint;
+  resources: readonly WorkspaceResource[];
+  rootExternalId: string;
+  parentKey: string | null;
+}>): string {
+  const sharedDrive = input.resources.find((resource) => (
+    resource.resourceType === "drive.shared-drive"
+    && resource.resourceKey === "primary"
+  ));
+  if (!sharedDrive || sharedDrive.externalId !== input.rootExternalId) staleParentReview();
+
+  const desiredFolders = new Map(
+    flattenWorkspaceRootFolders(input.blueprint).map((folder) => [folder.key, folder]),
+  );
+  const registeredFolders = new Map(
+    input.resources
+      .filter((resource) => resource.resourceType === "drive.folder")
+      .map((resource) => [resource.resourceKey, resource]),
+  );
+  const driveClaimCounts = new Map<string, number>();
+  for (const resource of input.resources) {
+    if (resource.resourceType === "calendar.calendar") continue;
+    driveClaimCounts.set(
+      resource.externalId,
+      (driveClaimCounts.get(resource.externalId) ?? 0) + 1,
+    );
+  }
+  const chain: ReturnType<typeof flattenWorkspaceRootFolders> = [];
+  const visited = new Set<string>();
+  let key = input.parentKey;
+  while (key) {
+    if (visited.has(key)) staleParentReview();
+    visited.add(key);
+    const folder = desiredFolders.get(key);
+    if (!folder) staleParentReview();
+    chain.unshift(folder);
+    key = folder.parentKey;
+  }
+
+  let expectedParentId = input.rootExternalId;
+  for (const folder of chain) {
+    const registered = registeredFolders.get(folder.key);
+    const registeredName = typeof registered?.metadata.name === "string"
+      ? registered.metadata.name.trim()
+      : "";
+    if (
+      !registered
+      || driveClaimCounts.get(registered.externalId) !== 1
+      || registeredName !== folder.name
+      || registered.parentExternalId !== expectedParentId
+    ) {
+      staleParentReview();
+    }
+    expectedParentId = registered.externalId;
+  }
+  return expectedParentId;
+}
+
+/**
+ * Re-reads the complete folder ancestry for one reviewed create immediately
+ * before its provider write. Registry IDs are hints only: every parent must
+ * still have one exact identity, type, name, and provider parent.
+ */
+export async function assertWorkspaceReconcileParentChainInSync(input: Readonly<{
+  drive: Pick<GoogleDriveClient, "findSetupItemsByIdentity">;
+  blueprint: WorkspaceBlueprint;
+  resources: readonly WorkspaceResource[];
+  rootExternalId: string;
+  parentKey: string | null;
+}>): Promise<string> {
+  const registeredParentId = assertWorkspaceReconcileRegistryParentChainInSync(input);
+
+  const desiredFolders = new Map(
+    flattenWorkspaceRootFolders(input.blueprint).map((folder) => [folder.key, folder]),
+  );
+  const registeredFolders = new Map(
+    input.resources
+      .filter((resource) => resource.resourceType === "drive.folder")
+      .map((resource) => [resource.resourceKey, resource]),
+  );
+  const chain: ReturnType<typeof flattenWorkspaceRootFolders> = [];
+  const visited = new Set<string>();
+  let key = input.parentKey;
+  while (key) {
+    if (visited.has(key)) staleParentReview();
+    visited.add(key);
+    const folder = desiredFolders.get(key);
+    if (!folder) staleParentReview();
+    chain.unshift(folder);
+    key = folder.parentKey;
+  }
+
+  let expectedParentId = input.rootExternalId;
+  for (const folder of chain) {
+    const registered = registeredFolders.get(folder.key);
+    if (!registered) staleParentReview();
+    const canonical = await input.drive.findSetupItemsByIdentity("fciRootKey", folder.key);
+    const legacy = LEGACY_ROOT_KEYS.has(folder.key)
+      ? await input.drive.findSetupItemsByIdentity("fciWorkspaceFolder", folder.key)
+      : [];
+    const matches = [...new Map(
+      [...canonical, ...legacy].map((item) => [item.id, item]),
+    ).values()];
+    if (
+      matches.length !== 1
+      || matches[0].id !== registered.externalId
+      || !exactDriveIdentity(matches[0], "drive.folder", folder.key)
+      || matches[0].mimeType !== FOLDER_MIME_TYPE
+      || matches[0].name !== folder.name
+      || matches[0].parents.length !== 1
+      || matches[0].parents[0] !== expectedParentId
+    ) {
+      staleParentReview();
+    }
+    expectedParentId = matches[0].id;
+  }
+  if (expectedParentId !== registeredParentId) staleParentReview();
+  return expectedParentId;
 }
 
 function providerIdentityActual(

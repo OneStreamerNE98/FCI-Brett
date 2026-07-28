@@ -190,8 +190,51 @@ test("simulation uses only persisted provider metadata and fails closed on missi
   );
 });
 
+test("simulation preserves duplicate external-id claims and never fabricates a create action", () => {
+  const blueprint = seedWorkspaceBlueprint();
+  const duplicateExternalId = "one-provider-folder-two-claims";
+  const resources = [
+    simulationResource({
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: "workspace-simulation",
+      parentExternalId: null,
+      metadata: Object.freeze({ name: blueprint.drive.sharedDriveName }),
+    }),
+    simulationResource({
+      resourceKey: "company-admin",
+      externalId: duplicateExternalId,
+      metadata: Object.freeze({ name: "00_Company Admin" }),
+    }),
+    simulationResource({
+      resourceKey: "client-accounts",
+      externalId: duplicateExternalId,
+      metadata: Object.freeze({ name: "01_Client Accounts" }),
+    }),
+  ];
+  const listingView = actual({
+    key: null,
+    externalId: duplicateExternalId,
+    name: "One physical provider folder",
+    stamped: false,
+  });
+
+  const actualResources = workspaceReconcileSimulationActual(blueprint, resources, [listingView]);
+  assert.equal(actualResources.length, 2, "the duplicate listing view is suppressed without dropping either registry claim");
+  assert.ok(actualResources.every(({ validIdentity }) => validIdentity === false));
+
+  const desiredResources = workspaceReconcileDesiredResources(blueprint)
+    .filter(({ key }) => key === "company-admin" || key === "client-accounts");
+  const result = deriveWorkspaceReconcileDrift(desiredResources, actualResources);
+  assert.deepEqual(result.counts, { missing: 0, renamed: 0, unmanaged: 2, inSync: 0 });
+  assert.equal(result.drift.some(({ state }) => state === "missing"), false);
+  assert.ok(result.drift.every(({ actions }) => actions.length === 0));
+});
+
 test("drift matrix maps missing resources to only the existing review-first creation routes", () => {
   const desiredResources = [
+    desired({ key: "company-admin", name: "Company Admin" }),
+    desired({ key: "templates", name: "Templates", parentKey: "company-admin" }),
     desired({ key: "missing-folder", name: "Missing Folder" }),
     desired({
       resourceType: "sheets.spreadsheet",
@@ -215,14 +258,23 @@ test("drift matrix maps missing resources to only the existing review-first crea
       management: "system",
     }),
   ];
+  const actualResources = [
+    actual({ key: "company-admin", name: "Company Admin", externalId: "company-admin-id" }),
+    actual({
+      key: "templates",
+      name: "Templates",
+      externalId: "templates-id",
+      parentExternalId: "company-admin-id",
+    }),
+  ];
 
-  const result = deriveWorkspaceReconcileDrift(desiredResources, []);
+  const result = deriveWorkspaceReconcileDrift(desiredResources, actualResources);
 
   assert.deepEqual(result.counts, {
     missing: 4,
     renamed: 0,
     unmanaged: 0,
-    inSync: 0,
+    inSync: 2,
   });
   assert.deepEqual(
     result.drift.map(({ key, actions, detail }) => ({ key, actions, detail })),
@@ -256,6 +308,57 @@ test("drift matrix maps missing resources to only the existing review-first crea
     "rename-drive",
     "adopt-blueprint-name",
   ]);
+});
+
+test("missing folder, spreadsheet, and template creates stay locked behind a degraded parent chain", () => {
+  const desiredResources = [
+    desired({ key: "company-admin", name: "Company Admin" }),
+    desired({ key: "templates", name: "Templates", parentKey: "company-admin" }),
+    desired({ key: "missing-child", name: "Missing Child", parentKey: "company-admin" }),
+    desired({
+      resourceType: "sheets.spreadsheet",
+      key: "missing-sheet",
+      label: "Client directory spreadsheet",
+      name: "Missing Sheet",
+      parentKey: "company-admin",
+    }),
+    desired({
+      resourceType: "drive.file",
+      key: "missing-template",
+      label: "Document template",
+      name: "Missing Template",
+      parentKey: "templates",
+    }),
+  ];
+  const actualResources = [
+    actual({
+      key: "company-admin",
+      name: "Company Admin",
+      externalId: "company-admin-id",
+      parentExternalId: "outside-workspace",
+      validParent: false,
+    }),
+    actual({
+      key: "templates",
+      name: "Templates",
+      externalId: "templates-id",
+      parentExternalId: "company-admin-id",
+    }),
+  ];
+
+  const result = deriveWorkspaceReconcileDrift(desiredResources, actualResources);
+  const missing = result.drift.filter(({ state }) => state === "missing");
+  assert.deepEqual(
+    missing.map(({ key, actions }) => ({ key, actions })),
+    [
+      { key: "missing-template", actions: [] },
+      { key: "missing-child", actions: [] },
+      { key: "missing-sheet", actions: [] },
+    ],
+  );
+  assert.ok(missing.every(({ detail }) => detail.endsWith(
+    "Create is unavailable until every blueprint parent is in sync.",
+  )));
 });
 
 test("folder rename actions distinguish owner-managed and system-managed identities exactly", () => {

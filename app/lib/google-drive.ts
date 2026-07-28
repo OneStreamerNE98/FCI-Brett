@@ -1106,7 +1106,11 @@ export class GoogleDriveClient {
   }
 
   /** Renames one contained active folder and returns both names for compensation/audit. */
-  async renameFolder(folderId: string, name: string) {
+  async renameFolder(
+    folderId: string,
+    name: string,
+    options: Readonly<{ expectedCurrentName?: string }> = {},
+  ) {
     const normalized = ensureNonEmptyString(name, "The blueprint folder name", 120);
     if (normalized.includes("/") || normalized.includes("\\")) {
       throw new GoogleIntegrationError("invalid_drive_folder_name", "A blueprint folder name cannot contain a path separator.", 400);
@@ -1115,6 +1119,16 @@ export class GoogleDriveClient {
     const current = await this.getFolder(folderId);
     if (current.mimeType !== FOLDER_MIME_TYPE || current.trashed) {
       throw new GoogleIntegrationError("invalid_drive_folder", "Only an active managed folder can be renamed.", 409);
+    }
+    if (
+      options.expectedCurrentName !== undefined
+      && current.name !== options.expectedCurrentName
+    ) {
+      throw new GoogleIntegrationError(
+        "workspace_reconcile_review_stale",
+        "The reviewed Drive folder changed after the drift check. Check for drift again before renaming.",
+        409,
+      );
     }
     const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
     const renamed = await this.request<DriveFile>(`files/${encodeURIComponent(folderId)}?${parameters.toString()}`, {

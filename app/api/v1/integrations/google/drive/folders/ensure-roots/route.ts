@@ -11,6 +11,10 @@ import { parseBoundedJsonObject } from "../../../../../../../lib/api-json-body";
 import { GoogleDriveClient } from "../../../../../../../lib/google-drive";
 import { googleIntegrationErrorResponse } from "../../../../../../../lib/google-integration-error";
 import {
+  assertWorkspaceReconcileParentChainInSync,
+  assertWorkspaceReconcileRegistryParentChainInSync,
+} from "../../../../../../../lib/google-workspace-reconcile";
+import {
   getEffectiveGoogleRuntimeSetup,
   getGoogleAccessToken,
   writeGoogleIntegrationEvent,
@@ -98,6 +102,7 @@ export async function POST(request: NextRequest) {
     const drive = config.simulation
       ? null
       : new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
+    let latestReviewSetup: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>> | null = null;
     if (reconcileReview) {
       if (config.simulation && existingByKey.has(reconcileReview.resourceKey)) {
         throw new GoogleIntegrationError(
@@ -120,6 +125,7 @@ export async function POST(request: NextRequest) {
         }
       }
       const latest = await getEffectiveGoogleRuntimeSetup();
+      latestReviewSetup = latest;
       if (
         latest.blueprintVersion !== reconcileReview.expectedVersion
         || !flattenWorkspaceRootFolders(latest.blueprint).some((root) => root.key === reconcileReview.resourceKey)
@@ -149,7 +155,7 @@ export async function POST(request: NextRequest) {
     }> = [];
 
     for (const root of roots) {
-      const parentId = root.parentKey
+      let parentId = root.parentKey
         ? (reconcileReview
           ? existingByKey.get(root.parentKey)?.externalId
           : ensuredByKey.get(root.parentKey)?.id)
@@ -159,6 +165,25 @@ export async function POST(request: NextRequest) {
       const savedProviderName = typeof existing?.metadata.name === "string"
         ? existing.metadata.name.trim()
         : "";
+      if (reconcileReview) {
+        const latestRootId = latestReviewSetup?.config.drive.rootFolderId;
+        if (!latestReviewSetup || !latestRootId) {
+          throw new GoogleIntegrationError(
+            "workspace_reconcile_review_stale",
+            "The Shared Drive changed after this missing-folder review. Check Workspace drift again.",
+            409,
+          );
+        }
+        const parentReview = {
+          blueprint: latestReviewSetup.blueprint,
+          resources: latestReviewSetup.resources,
+          rootExternalId: latestRootId,
+          parentKey: root.parentKey,
+        };
+        parentId = drive
+          ? await assertWorkspaceReconcileParentChainInSync({ drive, ...parentReview })
+          : assertWorkspaceReconcileRegistryParentChainInSync(parentReview);
+      }
       const ensured = drive
         ? await drive.ensureBlueprintFolder({ parentId, key: root.key, name: root.name, reuseByName: true })
         : {

@@ -11,6 +11,10 @@ import { parseBoundedJsonObject } from "../../../../../../lib/api-json-body";
 import { GoogleDriveClient } from "../../../../../../lib/google-drive";
 import { googleIntegrationErrorResponse } from "../../../../../../lib/google-integration-error";
 import {
+  assertWorkspaceReconcileParentChainInSync,
+  assertWorkspaceReconcileRegistryParentChainInSync,
+} from "../../../../../../lib/google-workspace-reconcile";
+import {
   getEffectiveGoogleRuntimeSetup,
   getGoogleAccessToken,
   getGoogleConnectionStatus,
@@ -128,6 +132,7 @@ export async function POST(request: NextRequest) {
         .map((resource) => [resource.resourceKey, resource]),
     );
     const drive = providerToken ? new GoogleDriveClient(providerToken, config) : null;
+    let latestReviewSetup: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>> | null = null;
     if (reconcileReview) {
       if (config.simulation && existingByKey.has(reconcileReview.resourceKey)) {
         throw new GoogleIntegrationError(
@@ -147,6 +152,7 @@ export async function POST(request: NextRequest) {
         }
       }
       const latest = await getEffectiveGoogleRuntimeSetup();
+      latestReviewSetup = latest;
       if (
         latest.blueprintVersion !== reconcileReview.expectedVersion
         || !latest.blueprint.spreadsheets.some((spreadsheet) => spreadsheet.key === reconcileReview.resourceKey)
@@ -178,12 +184,32 @@ export async function POST(request: NextRequest) {
 
     for (const spreadsheet of selectedSpreadsheets) {
       const target = foldersByKey.get(spreadsheet.targetFolderKey)!;
+      let targetExternalId = target.externalId;
       const existing = existingByKey.get(spreadsheet.key);
       const savedProviderName = typeof existing?.metadata.name === "string"
         ? existing.metadata.name.trim()
         : "";
+      if (reconcileReview) {
+        const latestRootId = latestReviewSetup?.config.drive.rootFolderId;
+        if (!latestReviewSetup || !latestRootId) {
+          throw new GoogleIntegrationError(
+            "workspace_reconcile_review_stale",
+            "The Shared Drive changed after this missing-spreadsheet review. Check Workspace drift again.",
+            409,
+          );
+        }
+        const parentReview = {
+          blueprint: latestReviewSetup.blueprint,
+          resources: latestReviewSetup.resources,
+          rootExternalId: latestRootId,
+          parentKey: spreadsheet.targetFolderKey,
+        };
+        targetExternalId = drive
+          ? await assertWorkspaceReconcileParentChainInSync({ drive, ...parentReview })
+          : assertWorkspaceReconcileRegistryParentChainInSync(parentReview);
+      }
       const ensured = drive
-        ? await drive.ensureBlueprintSpreadsheet({ parentId: target.externalId, key: spreadsheet.key, name: spreadsheet.name })
+        ? await drive.ensureBlueprintSpreadsheet({ parentId: targetExternalId, key: spreadsheet.key, name: spreadsheet.name })
         : {
           created: !existing,
           file: {
@@ -192,7 +218,7 @@ export async function POST(request: NextRequest) {
               : `workspace-simulation-spreadsheet-${spreadsheet.key}`),
             name: existing ? savedProviderName || spreadsheet.name : spreadsheet.name,
             mimeType: "application/vnd.google-apps.spreadsheet",
-            parents: [target.externalId],
+            parents: [targetExternalId],
             url: existing?.externalUrl ?? `/settings?section=google-workspace&workspace-simulation=spreadsheet-${encodeURIComponent(spreadsheet.key)}`,
             appProperties: { fciResourceKind: spreadsheet.key },
             checksum: null,
@@ -218,7 +244,7 @@ export async function POST(request: NextRequest) {
         resourceType: "sheets.spreadsheet",
         resourceKey: spreadsheet.key,
         externalId: ensured.file.id,
-        parentExternalId: ensured.file.parents[0] ?? target.externalId,
+        parentExternalId: ensured.file.parents[0] ?? targetExternalId,
         externalUrl: ensured.file.url,
         origin: outcome === "created" ? "created" : outcome === "adopted" ? "adopted" : existing?.origin ?? "adopted",
         metadata: {
