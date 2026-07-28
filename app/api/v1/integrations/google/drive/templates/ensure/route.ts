@@ -14,12 +14,20 @@ import {
 } from "../../../../../../../lib/google-drive";
 import { googleIntegrationErrorResponse } from "../../../../../../../lib/google-integration-error";
 import {
+  assertWorkspaceReconcileParentChainInSync,
+  assertWorkspaceReconcileRegistryParentChainInSync,
+} from "../../../../../../../lib/google-workspace-reconcile";
+import {
   getEffectiveGoogleRuntimeSetup,
   getGoogleAccessToken,
   writeGoogleIntegrationEvent,
 } from "../../../../../../../lib/google-oauth-sites";
 import { GoogleIntegrationError } from "../../../../../../../lib/google-oauth";
 import { flattenWorkspaceRootFolders } from "../../../../../../../lib/workspace-blueprint";
+import {
+  parseWorkspaceReconcileMissingReview,
+  type WorkspaceReconcileMissingReview,
+} from "../../../../../../../lib/workspace-reconcile-review";
 import { renderWorkspaceTemplate } from "../../../../../../../lib/workspace-templates";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../../_workspace-data";
@@ -30,8 +38,7 @@ export async function POST(request: NextRequest) {
   if (originError) return noStoreResponse(originError);
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return noStoreResponse(auth.response);
-  await ensureWorkspaceSchema();
-
+  let reconcileReview: WorkspaceReconcileMissingReview | null = null;
   if (request.body) {
     const parsed = await parseBoundedJsonObject(request, {
       maximumBytes: 1_000,
@@ -39,11 +46,25 @@ export async function POST(request: NextRequest) {
       tooLargeMessage: "The template ensure request is too large.",
     });
     if (!parsed.ok) return response({ error: parsed.error }, parsed.status);
-    if (Object.keys(parsed.body).length > 0) return response({ error: "Provide no fields when ensuring the Workspace templates." }, 400);
+    const review = parseWorkspaceReconcileMissingReview(parsed.body);
+    if (!review.ok) {
+      return response({
+        error: "Provide no fields, or only mode reconcile-missing, resourceKey, and expectedVersion when ensuring one reviewed template.",
+      }, 400);
+    }
+    reconcileReview = review.review;
   }
+  await ensureWorkspaceSchema();
 
   const setup = await getEffectiveGoogleRuntimeSetup();
-  const { config, blueprint, resources } = setup;
+  const { config, blueprint, blueprintVersion, resources } = setup;
+  if (reconcileReview && reconcileReview.expectedVersion !== blueprintVersion) {
+    return response({
+      error: "The reviewed missing template is stale. Check Workspace drift again before creating anything.",
+      code: "workspace_reconcile_review_stale",
+      currentVersion: blueprintVersion,
+    }, 409);
+  }
   if (!config.connectReady || !config.drive.rootFolderId) {
     return response({ error: "Adopt and verify the Shared Drive before ensuring templates.", code: "shared_drive_not_adopted" }, 409);
   }
@@ -64,6 +85,23 @@ export async function POST(request: NextRequest) {
       .filter((resource) => resource.resourceType === "drive.folder")
       .map((resource) => [resource.resourceKey, resource]),
   );
+  const existingTemplateFolder = existingFoldersByKey.get("templates");
+  const selectedTemplates = reconcileReview
+    ? blueprint.templates.filter((template) => template.key === reconcileReview.resourceKey)
+    : blueprint.templates;
+  if (reconcileReview && selectedTemplates.length !== 1) {
+    return response({
+      error: "The reviewed missing template is no longer in the saved blueprint. Check Workspace drift again.",
+      code: "workspace_reconcile_review_stale",
+      currentVersion: blueprintVersion,
+    }, 409);
+  }
+  if (reconcileReview && !existingTemplateFolder) {
+    return response({
+      error: "Create the blueprint Templates folder before creating this reviewed template.",
+      code: "templates_folder_missing",
+    }, 409);
+  }
   const parent = templateFolder.parentKey
     ? existingFoldersByKey.get(templateFolder.parentKey)
     : sharedDrive;
@@ -85,7 +123,6 @@ export async function POST(request: NextRequest) {
   if (!lease) return response({ error: "A template setup request is already in progress. Try again shortly.", code: "workspace_setup_lease_conflict" }, 409);
 
   try {
-    const existingTemplateFolder = existingFoldersByKey.get("templates");
     const existingTemplatesByKey = new Map(
       resources
         .filter((resource) => resource.resourceType === "drive.file")
@@ -94,48 +131,105 @@ export async function POST(request: NextRequest) {
     const drive = config.simulation
       ? null
       : new GoogleDriveClient(await getGoogleAccessToken(config, "drive"), config);
-    const ensuredFolder = drive
-      ? await drive.ensureBlueprintFolder({
+    let latestReviewSetup: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>> | null = null;
+    if (reconcileReview) {
+      if (config.simulation && existingTemplatesByKey.has(reconcileReview.resourceKey)) {
+        throw new GoogleIntegrationError(
+          "workspace_reconcile_review_stale",
+          "The reviewed template already exists in simulation. Check Workspace drift again.",
+          409,
+        );
+      }
+      if (drive) {
+        const matches = await drive.findSetupItemsByIdentity("fciTemplateKey", reconcileReview.resourceKey);
+        if (matches.length > 0) {
+          throw new GoogleIntegrationError(
+            "workspace_reconcile_review_stale",
+            "The reviewed template identity now exists or moved in Google Drive. Check Workspace drift again before creating anything.",
+            409,
+          );
+        }
+      }
+      const latest = await getEffectiveGoogleRuntimeSetup();
+      latestReviewSetup = latest;
+      if (
+        latest.blueprintVersion !== reconcileReview.expectedVersion
+        || !latest.blueprint.templates.some((template) => template.key === reconcileReview.resourceKey)
+        || (
+          !existingTemplatesByKey.has(reconcileReview.resourceKey)
+          && latest.resources.some((resource) => (
+            resource.resourceType === "drive.file"
+            && resource.resourceKey === reconcileReview.resourceKey
+          ))
+        )
+      ) {
+        throw new GoogleIntegrationError(
+          "workspace_reconcile_review_stale",
+          "The saved blueprint changed after this missing-template review. Check Workspace drift again.",
+          409,
+        );
+      }
+    }
+    const savedTemplateFolderName = typeof existingTemplateFolder?.metadata.name === "string"
+      ? existingTemplateFolder.metadata.name.trim()
+      : "";
+    const ensuredFolder = reconcileReview
+      ? {
+        outcome: "found" as const,
+        folder: {
+          id: existingTemplateFolder!.externalId,
+          name: savedTemplateFolderName || templateFolder.name,
+          url: existingTemplateFolder!.externalUrl
+            ?? "/settings?section=google-workspace&workspace-simulation=folder-templates",
+          parents: [parent.externalId],
+        },
+      }
+      : drive
+        ? await drive.ensureBlueprintFolder({
         parentId: parent.externalId,
         key: "templates",
         name: templateFolder.name,
         reuseByName: true,
         appProperties: { fciFolderKind: "templates" },
       })
-      : {
-        outcome: existingTemplateFolder ? "found" as const : "created" as const,
-        folder: {
-          id: existingTemplateFolder?.externalId ?? "workspace-simulation-folder-templates",
-          name: templateFolder.name,
-          url: existingTemplateFolder?.externalUrl ?? "/settings?section=google-workspace&workspace-simulation=folder-templates",
-          parents: [parent.externalId],
+        : {
+          outcome: existingTemplateFolder ? "found" as const : "created" as const,
+          folder: {
+            id: existingTemplateFolder?.externalId ?? "workspace-simulation-folder-templates",
+            name: existingTemplateFolder
+              ? savedTemplateFolderName || templateFolder.name
+              : templateFolder.name,
+            url: existingTemplateFolder?.externalUrl ?? "/settings?section=google-workspace&workspace-simulation=folder-templates",
+            parents: [parent.externalId],
+          },
+        };
+    if (!reconcileReview) {
+      const folderCompletedAt = Date.now();
+      const folderOrigin = existingTemplateFolder?.externalId === ensuredFolder.folder.id
+        ? existingTemplateFolder.origin
+        : ensuredFolder.outcome === "created"
+          ? "created"
+          : "adopted";
+      await upsertWorkspaceResource(env.DB, {
+        id: existingTemplateFolder?.id ?? crypto.randomUUID(),
+        connectionKey: config.connectionKey,
+        resourceType: "drive.folder",
+        resourceKey: "templates",
+        externalId: ensuredFolder.folder.id,
+        parentExternalId: parent.externalId,
+        externalUrl: ensuredFolder.folder.url,
+        origin: folderOrigin,
+        metadata: {
+          name: ensuredFolder.folder.name,
+          path: templateFolder.path,
+          management: templateFolder.management,
+          folderKind: "templates",
         },
-      };
-    const folderCompletedAt = Date.now();
-    const folderOrigin = existingTemplateFolder?.externalId === ensuredFolder.folder.id
-      ? existingTemplateFolder.origin
-      : ensuredFolder.outcome === "created"
-        ? "created"
-        : "adopted";
-    await upsertWorkspaceResource(env.DB, {
-      id: existingTemplateFolder?.id ?? crypto.randomUUID(),
-      connectionKey: config.connectionKey,
-      resourceType: "drive.folder",
-      resourceKey: "templates",
-      externalId: ensuredFolder.folder.id,
-      parentExternalId: parent.externalId,
-      externalUrl: ensuredFolder.folder.url,
-      origin: folderOrigin,
-      metadata: {
-        name: ensuredFolder.folder.name,
-        path: templateFolder.path,
-        management: templateFolder.management,
-        folderKind: "templates",
-      },
-      createdBy: existingTemplateFolder?.createdBy ?? auth.user.email,
-      createdAt: existingTemplateFolder?.createdAt ?? folderCompletedAt,
-      updatedAt: folderCompletedAt,
-    });
+        createdBy: existingTemplateFolder?.createdBy ?? auth.user.email,
+        createdAt: existingTemplateFolder?.createdAt ?? folderCompletedAt,
+        updatedAt: folderCompletedAt,
+      });
+    }
 
     const results: Array<{
       key: string;
@@ -147,22 +241,45 @@ export async function POST(request: NextRequest) {
       id: string;
       url: string;
     }> = [];
-    for (const template of blueprint.templates) {
+    for (const template of selectedTemplates) {
       const expectedMimeType = PROJECT_FILE_KIND_MIME_TYPES[template.kind];
       const rendered = template.kind === "slides"
         ? null
         : renderWorkspaceTemplate(template, blueprint.business.displayName);
       const existing = existingTemplatesByKey.get(template.key);
+      const savedProviderName = typeof existing?.metadata.name === "string"
+        ? existing.metadata.name.trim()
+        : "";
+      let targetFolderId = ensuredFolder.folder.id;
+      if (reconcileReview) {
+        const latestRootId = latestReviewSetup?.config.drive.rootFolderId;
+        if (!latestReviewSetup || !latestRootId) {
+          throw new GoogleIntegrationError(
+            "workspace_reconcile_review_stale",
+            "The Shared Drive changed after this missing-template review. Check Workspace drift again.",
+            409,
+          );
+        }
+        const parentReview = {
+          blueprint: latestReviewSetup.blueprint,
+          resources: latestReviewSetup.resources,
+          rootExternalId: latestRootId,
+          parentKey: "templates",
+        };
+        targetFolderId = drive
+          ? await assertWorkspaceReconcileParentChainInSync({ drive, ...parentReview })
+          : assertWorkspaceReconcileRegistryParentChainInSync(parentReview);
+      }
       const ensured = drive
         ? template.kind === "slides"
           ? await drive.findOrCreateManagedNativeFile({
-            parentId: ensuredFolder.folder.id,
+            parentId: targetFolderId,
             name: template.name,
             mimeType: expectedMimeType,
             appProperties: { fciTemplateKey: template.key },
           })
           : await drive.findOrUploadManagedFile({
-            parentId: ensuredFolder.folder.id,
+            parentId: targetFolderId,
             name: template.name,
             mimeType: rendered!.metadataMimeType,
             mediaMimeType: rendered!.mediaMimeType,
@@ -173,9 +290,9 @@ export async function POST(request: NextRequest) {
           created: !existing,
           file: {
             id: existing?.externalId ?? `workspace-simulation-template-${template.key}`,
-            name: template.name,
+            name: existing ? savedProviderName || template.name : template.name,
             mimeType: expectedMimeType,
-            parents: [ensuredFolder.folder.id],
+            parents: [targetFolderId],
             url: existing?.externalUrl ?? `/settings?section=google-workspace&workspace-simulation=template-${encodeURIComponent(template.key)}`,
             appProperties: { fciTemplateKey: template.key },
             checksum: null,
@@ -201,7 +318,7 @@ export async function POST(request: NextRequest) {
         resourceType: "drive.file",
         resourceKey: template.key,
         externalId: ensured.file.id,
-        parentExternalId: ensuredFolder.folder.id,
+        parentExternalId: targetFolderId,
         externalUrl: ensured.file.url,
         origin: outcome === "created" ? "created" : outcome === "adopted" ? "adopted" : existing?.origin ?? "adopted",
         metadata: {
@@ -255,6 +372,11 @@ export async function POST(request: NextRequest) {
       },
       counts,
       templates: results,
+      ...(reconcileReview ? {
+        reconciled: true,
+        resourceKey: reconcileReview.resourceKey,
+        version: blueprintVersion,
+      } : {}),
     }, created ? 201 : 200);
   } catch (error) {
     const code = error instanceof GoogleIntegrationError ? error.code : "templates_ensure_failed";

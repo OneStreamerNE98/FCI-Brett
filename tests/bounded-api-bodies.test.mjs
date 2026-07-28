@@ -47,6 +47,7 @@ const [
   launchChecklistRoute,
   googleChatConfigRoute,
   workspaceBlueprintRoute,
+  workspaceReconcileRoute,
   sharedDriveAdoptRoute,
   driveFolderRenameRoute,
   driveFolderEnsureRoute,
@@ -71,6 +72,7 @@ const [
     vite.ssrLoadModule("/app/api/v1/settings/launch-checklist/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/chat/config/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/setup/blueprint/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/integrations/google/setup/reconcile/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/shared-drive/adopt/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/rename/route.ts"),
     vite.ssrLoadModule("/app/api/v1/integrations/google/drive/folders/ensure-roots/route.ts"),
@@ -227,6 +229,12 @@ const cases = [
     maximumBytes: 64 * 1024,
     error: "The Workspace blueprint request is too large.",
     invoke: (request) => workspaceBlueprintRoute.PUT(request),
+  },
+  {
+    name: "Workspace reconcile read",
+    maximumBytes: 1_000,
+    error: "The Workspace reconcile request is too large.",
+    invoke: (request) => workspaceReconcileRoute.POST(request),
   },
   {
     name: "Shared Drive adoption",

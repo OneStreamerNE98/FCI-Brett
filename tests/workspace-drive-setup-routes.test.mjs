@@ -118,6 +118,7 @@ function fakeDatabase({
     mapping: null,
     sheetStates: [],
     workspaceSettings,
+    failNextIntegrationEvent: false,
   };
 
   const database = {
@@ -245,6 +246,10 @@ function fakeDatabase({
             return { meta: { changes: 1 } };
           }
           if (sql.startsWith("INSERT INTO google_integration_events")) {
+            if (state.failNextIntegrationEvent) {
+              state.failNextIntegrationEvent = false;
+              throw new Error("FCI TEST integration-event write failed");
+            }
             if (sql.includes("FROM workspace_blueprints") && !state.lastBlueprintSaveChanged) return { meta: { changes: 0 } };
             const [id, connectionKey, eventType, actor, entityType, entityId, detail, createdAt] = query.values;
             state.events.push({ id, connectionKey, eventType, actor, entityType, entityId, detail, createdAt });
@@ -397,16 +402,61 @@ function installProvider({ matches = [], driveNames = {}, fileParents = {} } = {
   return calls;
 }
 
-function installRenameProvider({ folderId, rootId, initialName, failCompensation = false }) {
+function installRenameProvider({
+  folderId,
+  rootId,
+  initialName,
+  failCompensation = false,
+  identityKey = "client-accounts",
+  parentId = rootId,
+  mimeType = "application/vnd.google-apps.folder",
+  duplicateIdentity = false,
+  onIdentityRead = () => {},
+  changeNameBeforeRenameRead = null,
+}) {
   const patchNames = [];
   let currentName = initialName;
+  let directReads = 0;
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     if (url.href === "https://oauth2.googleapis.com/token") {
       return Response.json({ access_token: "FCI_TEST_ACCESS_TOKEN", expires_in: 3600 });
     }
+    if (url.pathname === "/drive/v3/files" && (init.method ?? "GET") === "GET") {
+      const query = url.searchParams.get("q") ?? "";
+      if (query.includes("key='fciRootKey'") && query.includes(`value='${identityKey}'`)) {
+        onIdentityRead();
+      }
+      return Response.json({
+        files: query.includes("key='fciRootKey'") && query.includes(`value='${identityKey}'`)
+          ? [{
+            id: folderId,
+            name: currentName,
+            mimeType,
+            parents: [parentId],
+            trashed: false,
+            webViewLink: `https://drive.google.test/${folderId}`,
+            appProperties: { fciRootKey: identityKey },
+          }, ...(duplicateIdentity ? [{
+            id: `${folderId}-duplicate`,
+            name: currentName,
+            mimeType,
+            parents: [parentId],
+            trashed: false,
+            webViewLink: `https://drive.google.test/${folderId}-duplicate`,
+            appProperties: { fciRootKey: identityKey },
+          }] : [])]
+          : [],
+      });
+    }
     if (url.pathname !== `/drive/v3/files/${folderId}`) {
       throw new Error(`Unexpected provider request: ${(init.method ?? "GET")} ${url}`);
+    }
+    if ((init.method ?? "GET") === "GET") {
+      directReads += 1;
+      if (directReads === 2 && changeNameBeforeRenameRead) {
+        currentName = changeNameBeforeRenameRead;
+      }
     }
     if ((init.method ?? "GET") === "PATCH") {
       const name = JSON.parse(String(init.body)).name;
@@ -419,11 +469,11 @@ function installRenameProvider({ folderId, rootId, initialName, failCompensation
     return Response.json({
       id: folderId,
       name: currentName,
-      mimeType: "application/vnd.google-apps.folder",
-      parents: [rootId],
+      mimeType,
+      parents: [parentId],
       trashed: false,
       webViewLink: `https://drive.google.test/${folderId}`,
-      appProperties: { fciRootKey: "client-accounts" },
+      appProperties: { fciRootKey: identityKey },
     });
   };
   return { patchNames, currentName: () => currentName };
@@ -445,7 +495,7 @@ function installEnsureProvider(rootId, initialFolders = []) {
       const identity = query.match(/key='([^']+)' and value='([^']+)'/u);
       const name = query.match(/name = '([^']+)'/u)?.[1];
       return Response.json({ files: folders.filter((folder) => (
-        folder.parents.includes(parentId)
+        (parentId === undefined || folder.parents.includes(parentId))
         && (!identity || folder.appProperties?.[identity[1]] === identity[2])
         && (name === undefined || folder.name === name)
       )) });
@@ -488,10 +538,26 @@ function installEnsureProvider(rootId, initialFolders = []) {
   return { folders, calls };
 }
 
-function installSpreadsheetProvider({ rootId, targetFolderId, existing = [] }) {
+function installSpreadsheetProvider({
+  rootId,
+  targetFolderId,
+  existing = [],
+  targetFolderKey = "company-admin",
+  targetFolderName = "00_Company Admin",
+  targetParentId = rootId,
+}) {
   const files = new Map(existing.map((file) => [file.appProperties.fciResourceKind, file]));
   const tabs = new Map();
   const calls = [];
+  const targetFolder = {
+    id: targetFolderId,
+    name: targetFolderName,
+    mimeType: "application/vnd.google-apps.folder",
+    parents: [targetParentId],
+    trashed: false,
+    webViewLink: `https://drive.google.test/${targetFolderId}`,
+    appProperties: { fciRootKey: targetFolderKey },
+  };
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     const method = init.method ?? "GET";
@@ -502,16 +568,15 @@ function installSpreadsheetProvider({ rootId, targetFolderId, existing = [] }) {
       return Response.json({ access_token: "FCI_TEST_ACCESS_TOKEN", expires_in: 3600 });
     }
     if (url.pathname === `/drive/v3/files/${targetFolderId}` && method === "GET") {
-      return Response.json({
-        id: targetFolderId,
-        name: "00_Company Admin",
-        mimeType: "application/vnd.google-apps.folder",
-        parents: [rootId],
-        trashed: false,
-      });
+      return Response.json(targetFolder);
     }
     if (url.pathname === "/drive/v3/files" && method === "GET") {
-      const key = (url.searchParams.get("q") ?? "").match(/value='([^']+)'/u)?.[1];
+      const query = url.searchParams.get("q") ?? "";
+      const identity = query.match(/key='([^']+)' and value='([^']+)'/u);
+      if (identity?.[1] === "fciRootKey") {
+        return Response.json({ files: identity[2] === targetFolderKey ? [targetFolder] : [] });
+      }
+      const key = identity?.[2];
       return Response.json({ files: key && files.has(key) ? [files.get(key)] : [] });
     }
     if (url.pathname === "/drive/v3/files" && method === "POST") {
@@ -552,15 +617,31 @@ function installSpreadsheetProvider({ rootId, targetFolderId, existing = [] }) {
   return { calls, files, tabs };
 }
 
-function installTemplateProvider({ rootId, parentFolderId, templateFolderId }) {
+function installTemplateProvider({
+  rootId,
+  parentFolderId,
+  templateFolderId,
+  stampedFolders = false,
+  parentFolderParentId = rootId,
+  templateFolderParentId = parentFolderId,
+}) {
+  const parentFolder = {
+    id: parentFolderId,
+    name: "00_Company Admin",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: [parentFolderParentId],
+    trashed: false,
+    webViewLink: `https://drive.google.test/${parentFolderId}`,
+    appProperties: { fciRootKey: "company-admin" },
+  };
   const templateFolder = {
     id: templateFolderId,
     name: "Templates",
     mimeType: "application/vnd.google-apps.folder",
-    parents: [parentFolderId],
+    parents: [templateFolderParentId],
     trashed: false,
     webViewLink: `https://drive.google.test/${templateFolderId}`,
-    appProperties: {},
+    appProperties: stampedFolders ? { fciRootKey: "templates", fciFolderKind: "templates" } : {},
   };
   const files = new Map();
   const calls = [];
@@ -577,9 +658,12 @@ function installTemplateProvider({ rootId, parentFolderId, templateFolderId }) {
       if (templateKey) return Response.json({ files: files.has(templateKey) ? [files.get(templateKey)] : [] });
       const rootKey = query.match(/key='fciRootKey' and value='([^']+)'/u)?.[1];
       const name = query.match(/name = '([^']+)'/u)?.[1];
-      const matchesIdentity = rootKey === undefined || templateFolder.appProperties.fciRootKey === rootKey;
-      const matchesName = name === undefined || templateFolder.name === name;
-      return Response.json({ files: matchesIdentity && matchesName ? [templateFolder] : [] });
+      return Response.json({
+        files: [parentFolder, templateFolder].filter((folder) => (
+          (rootKey === undefined || folder.appProperties.fciRootKey === rootKey)
+          && (name === undefined || folder.name === name)
+        )),
+      });
     }
     if (url.pathname === "/drive/v3/files" && method === "POST") {
       const metadata = JSON.parse(String(init.body));
@@ -605,15 +689,7 @@ function installTemplateProvider({ rootId, parentFolderId, templateFolderId }) {
     if (fileId && method === "GET") {
       const decoded = decodeURIComponent(fileId);
       if (decoded === templateFolderId) return Response.json(templateFolder);
-      if (decoded === parentFolderId) {
-        return Response.json({
-          id: parentFolderId,
-          name: "00_Company Admin",
-          mimeType: "application/vnd.google-apps.folder",
-          parents: [rootId],
-          trashed: false,
-        });
-      }
+      if (decoded === parentFolderId) return Response.json(parentFolder);
       if (decoded === rootId) {
         return Response.json({ id: rootId, name: "FCI Operations", mimeType: "application/vnd.google-apps.folder", parents: [], trashed: false });
       }
@@ -638,7 +714,7 @@ function installTemplateProvider({ rootId, parentFolderId, templateFolderId }) {
     }
     throw new Error(`Unexpected provider request: ${method} ${url}`);
   };
-  return { calls, files, templateFolder };
+  return { calls, files, parentFolder, templateFolder };
 }
 
 function savedResource({ id, connectionKey = "google-workspace", resourceType, resourceKey, externalId, parentExternalId = null, origin = "adopted", name }) {
@@ -806,6 +882,10 @@ test("setup mutations reject non-admin and cross-origin requests before database
     assert.equal(officeResponse.status, 403);
     const crossOriginResponse = await route.POST(routeRequest(path, ADMIN_EMAIL, body, "https://evil.example.test"));
     assert.equal(crossOriginResponse.status, 403);
+    if ([ensureRoute, templateEnsureRoute, sheetEnsureRoute].includes(route)) {
+      assert.equal(officeResponse.headers.get("cache-control"), "no-store");
+      assert.equal(crossOriginResponse.headers.get("cache-control"), "no-store");
+    }
   }
 });
 
@@ -851,11 +931,22 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
   assert.equal(firstEnsureResponse.status, 201);
   assert.deepEqual(firstEnsure.counts, { found: 0, created: 7, adopted: 0 });
   assert.ok(firstEnsure.folders.some((folder) => folder.key === "fixture-operations" && folder.outcome === "created"));
+  const simulatedClientRoot = database.state.resources.find((row) => (
+    row.resource_type === "drive.folder" && row.resource_key === "client-accounts"
+  ));
+  simulatedClientRoot.metadata_json = JSON.stringify({
+    ...JSON.parse(simulatedClientRoot.metadata_json),
+    name: "Provider-renamed Client Accounts",
+  });
 
   const secondEnsureResponse = await ensureRoute.POST(routeRequest("/api/v1/integrations/google/drive/folders/ensure-roots"));
   const secondEnsure = await secondEnsureResponse.json();
   assert.equal(secondEnsureResponse.status, 200);
   assert.deepEqual(secondEnsure.counts, { found: 7, created: 0, adopted: 0 });
+  assert.equal(
+    secondEnsure.folders.find((folder) => folder.key === "client-accounts").name,
+    "Provider-renamed Client Accounts",
+  );
 
   const firstSpreadsheetResponse = await sheetEnsureRoute.POST(routeRequest("/api/v1/integrations/google/sheets/ensure"));
   const firstSpreadsheets = await firstSpreadsheetResponse.json();
@@ -866,11 +957,22 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
     { key: "first-run-import", role: "import" },
     { key: "project-ledger", role: "reference" },
   ]);
+  const simulatedDirectorySheet = database.state.resources.find((row) => (
+    row.resource_type === "sheets.spreadsheet" && row.resource_key === "client-directory"
+  ));
+  simulatedDirectorySheet.metadata_json = JSON.stringify({
+    ...JSON.parse(simulatedDirectorySheet.metadata_json),
+    name: "Provider-renamed Client Directory",
+  });
 
   const secondSpreadsheetResponse = await sheetEnsureRoute.POST(routeRequest("/api/v1/integrations/google/sheets/ensure"));
   const secondSpreadsheets = await secondSpreadsheetResponse.json();
   assert.equal(secondSpreadsheetResponse.status, 200);
   assert.deepEqual(secondSpreadsheets.counts, { found: 3, created: 0, adopted: 0 });
+  assert.equal(
+    secondSpreadsheets.spreadsheets.find((spreadsheet) => spreadsheet.key === "client-directory").name,
+    "Provider-renamed Client Directory",
+  );
 
   const systemRenameResponse = await renameRoute.POST(routeRequest(
     "/api/v1/integrations/google/drive/folders/rename",
@@ -893,6 +995,38 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
   assert.equal(
     JSON.parse(database.state.blueprint.blueprint_json).drive.roots.find((folder) => folder.key === "projects").name,
     "02_Custom Projects",
+  );
+
+  const systemFolder = database.state.resources.find((resource) => (
+    resource.resource_type === "drive.folder" && resource.resource_key === "unsorted-intake"
+  ));
+  systemFolder.metadata_json = JSON.stringify({
+    ...JSON.parse(systemFolder.metadata_json),
+    name: "Externally renamed intake",
+  });
+  const blueprintBeforeSystemReconcile = database.state.blueprint.blueprint_json;
+  const systemReconcileResponse = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "unsorted-intake",
+      mode: "reconcile-drive-name",
+      expectedVersion: 2,
+      externalId: systemFolder.external_id,
+      actualName: "Externally renamed intake",
+    },
+  ));
+  const systemReconciled = await systemReconcileResponse.json();
+  assert.equal(systemReconcileResponse.status, 200);
+  assert.equal(systemReconciled.reconciled, true);
+  assert.equal(systemReconciled.previousName, "Externally renamed intake");
+  assert.equal(systemReconciled.folder.name, "99_Unsorted Intake");
+  assert.equal(database.state.blueprint.blueprint_json, blueprintBeforeSystemReconcile);
+  assert.equal(
+    JSON.parse(database.state.resources.find((resource) => (
+      resource.resource_type === "drive.folder" && resource.resource_key === "unsorted-intake"
+    )).metadata_json).name,
+    "99_Unsorted Intake",
   );
 
   database.state.project = {
@@ -929,8 +1063,18 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.drive_roots_ensured").length, 2);
   assert.equal(eventTypes.filter((eventType) => eventType === "setup.spreadsheets_ensured").length, 2);
   assert.match(database.state.events.find((event) => event.eventType === "setup.spreadsheets_ensured").detail, /outcomes=client-directory:created,first-run-import:created,project-ledger:created/u);
-  assert.equal(eventTypes.filter((eventType) => eventType === "setup.folder_renamed").length, 1);
-  assert.match(database.state.events.find((event) => event.eventType === "setup.folder_renamed").detail, /key=projects/u);
+  assert.equal(eventTypes.filter((eventType) => eventType === "setup.folder_renamed").length, 2);
+  assert.ok(database.state.events.some((event) => (
+    event.eventType === "setup.folder_renamed"
+    && /mode=reconcile-drive-name;key=unsorted-intake;from=Externally renamed intake;to=99_Unsorted Intake/u.test(event.detail)
+  )));
+  // The ORIGINAL blueprint-rename path keeps its audit-detail pin alongside the new
+  // reconcile-mode one — main asserted key=projects here and the reconcile work must
+  // not un-pin it (review finding, PR #227).
+  assert.ok(database.state.events.some((event) => (
+    event.eventType === "setup.folder_renamed"
+    && /key=projects/u.test(event.detail)
+  )));
   assert.equal(eventTypes.filter((eventType) => eventType === "drive.simulation_project_folder_provisioned").length, 1);
 });
 
@@ -989,6 +1133,73 @@ test("simulation project provisioning returns 409 for an active lease and succee
   );
   assert.equal(database.state.leases.get(operationKey).status, "completed");
   assert.equal(database.state.leases.get(operationKey).leaseExpiresAt, null);
+});
+
+test("reconcile-only folder rename fences stale reviews and restores simulation metadata if its audit fails", async () => {
+  const database = fakeDatabase();
+  simulationEnvironment(database);
+  globalThis.fetch = async () => {
+    throw new Error("Simulation reconcile rename must not call Google.");
+  };
+  assert.equal(
+    (await adoptRoute.POST(routeRequest("/api/v1/integrations/google/drive/shared-drive/adopt"))).status,
+    200,
+  );
+  assert.equal(
+    (await ensureRoute.POST(routeRequest("/api/v1/integrations/google/drive/folders/ensure-roots"))).status,
+    201,
+  );
+  const folder = database.state.resources.find((resource) => (
+    resource.resource_type === "drive.folder" && resource.resource_key === "unsorted-intake"
+  ));
+  folder.metadata_json = JSON.stringify({
+    ...JSON.parse(folder.metadata_json),
+    name: "FCI TEST external rename",
+  });
+
+  const staleResponse = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "unsorted-intake",
+      mode: "reconcile-drive-name",
+      expectedVersion: 99,
+      externalId: folder.external_id,
+      actualName: "FCI TEST external rename",
+    },
+  ));
+  const stale = await staleResponse.json();
+  assert.equal(staleResponse.status, 409);
+  assert.equal(stale.code, "workspace_blueprint_version_conflict");
+  assert.equal(stale.currentVersion, 0);
+  assert.equal(JSON.parse(folder.metadata_json).name, "FCI TEST external rename");
+
+  database.state.failNextIntegrationEvent = true;
+  const auditFailureResponse = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "unsorted-intake",
+      mode: "reconcile-drive-name",
+      expectedVersion: 0,
+      externalId: folder.external_id,
+      actualName: "FCI TEST external rename",
+    },
+  ));
+  assert.equal(auditFailureResponse.status, 503);
+  assert.equal(
+    JSON.parse(database.state.resources.find((resource) => (
+      resource.resource_type === "drive.folder" && resource.resource_key === "unsorted-intake"
+    )).metadata_json).name,
+    "FCI TEST external rename",
+  );
+  assert.equal(
+    database.state.events.some((event) => (
+      event.eventType === "setup.folder_renamed"
+      && /mode=reconcile-drive-name/u.test(event.detail)
+    )),
+    false,
+  );
 });
 
 test("simulation project provisioning cannot commit after its exact lease is replaced", async () => {
@@ -1062,12 +1273,31 @@ test("simulation template ensure creates the central folder, covers owner shells
     JSON.parse(database.state.resources.find((row) => row.resource_type === "drive.folder" && row.resource_key === "templates").metadata_json).folderKind,
     "templates",
   );
+  const simulatedTemplateFolder = database.state.resources.find((row) => (
+    row.resource_type === "drive.folder" && row.resource_key === "templates"
+  ));
+  simulatedTemplateFolder.metadata_json = JSON.stringify({
+    ...JSON.parse(simulatedTemplateFolder.metadata_json),
+    name: "Provider-renamed Templates",
+  });
+  const simulatedEstimateTemplate = database.state.resources.find((row) => (
+    row.resource_type === "drive.file" && row.resource_key === "estimate-proposal"
+  ));
+  simulatedEstimateTemplate.metadata_json = JSON.stringify({
+    ...JSON.parse(simulatedEstimateTemplate.metadata_json),
+    name: "Provider-renamed Estimate",
+  });
 
   const secondResponse = await templateEnsureRoute.POST(routeRequest("/api/v1/integrations/google/drive/templates/ensure"));
   const second = await secondResponse.json();
   assert.equal(secondResponse.status, 200);
   assert.equal(second.folder.outcome, "found");
+  assert.equal(second.folder.name, "Provider-renamed Templates");
   assert.deepEqual(second.counts, { found: 6, created: 0, adopted: 0 });
+  assert.equal(
+    second.templates.find((template) => template.key === "estimate-proposal").name,
+    "Provider-renamed Estimate",
+  );
   assert.equal(database.state.resources.filter((row) => row.resource_type === "drive.file").length, 6);
   assert.equal(
     database.state.resources.find((row) => row.resource_type === "drive.folder" && row.resource_key === "templates").origin,
@@ -1566,6 +1796,212 @@ test("live rename restores the provider's actual prior name when blueprint CAS l
   assert.equal(database.state.events.some((event) => event.eventType === "setup.folder_rename_compensation_failed"), false);
 });
 
+test("live reconcile rename mutates only the reviewed identity even when the registry is stale", async () => {
+  const rootId = "app-shared-drive-123";
+  const reviewedFolderId = "reviewed-client-folder";
+  const database = fakeDatabase({
+    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprintConnectionKey: "google-workspace",
+  });
+  await workspaceEnvironment(database);
+  database.state.resources.push(
+    savedResource({
+      id: "shared",
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: rootId,
+      name: "FCI Operations",
+    }),
+    savedResource({
+      id: "stale-folder",
+      resourceType: "drive.folder",
+      resourceKey: "client-accounts",
+      externalId: "stale-unrelated-folder",
+      parentExternalId: rootId,
+      name: "Stale registry target",
+    }),
+  );
+  const provider = installRenameProvider({
+    folderId: reviewedFolderId,
+    rootId,
+    initialName: "01_Provider Drift",
+  });
+
+  const response = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "client-accounts",
+      mode: "reconcile-drive-name",
+      expectedVersion: 1,
+      externalId: reviewedFolderId,
+      actualName: "01_Provider Drift",
+    },
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.deepEqual(provider.patchNames, ["01_Client Accounts"]);
+  assert.equal(body.folder.id, reviewedFolderId);
+  assert.equal(body.previousName, "01_Provider Drift");
+  assert.equal(database.state.events.at(-1).entityId, reviewedFolderId);
+});
+
+test("live reconcile rename rejects a stale provider name, duplicate, type, or blueprint parent before PATCH", async (t) => {
+  const scenarios = [
+    {
+      name: "provider name changed",
+      provider: { initialName: "01_Changed After Review" },
+      reviewedName: "01_Provider Drift",
+    },
+    {
+      name: "identity became duplicated",
+      provider: { initialName: "01_Provider Drift", duplicateIdentity: true },
+      reviewedName: "01_Provider Drift",
+    },
+    {
+      name: "identity moved under another contained folder",
+      provider: { initialName: "01_Provider Drift", parentId: "different-managed-parent" },
+      reviewedName: "01_Provider Drift",
+    },
+    {
+      name: "identity moved onto a non-folder",
+      provider: {
+        initialName: "01_Provider Drift",
+        mimeType: "application/vnd.google-apps.spreadsheet",
+      },
+      reviewedName: "01_Provider Drift",
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const rootId = "app-shared-drive-123";
+      const reviewedFolderId = "reviewed-client-folder";
+      const database = fakeDatabase({
+        blueprint: blueprintModule.seedWorkspaceBlueprint(),
+        blueprintConnectionKey: "google-workspace",
+      });
+      await workspaceEnvironment(database);
+      database.state.resources.push(savedResource({
+        id: "shared",
+        resourceType: "drive.shared-drive",
+        resourceKey: "primary",
+        externalId: rootId,
+        name: "FCI Operations",
+      }));
+      const provider = installRenameProvider({
+        folderId: reviewedFolderId,
+        rootId,
+        ...scenario.provider,
+      });
+
+      const response = await renameRoute.POST(routeRequest(
+        "/api/v1/integrations/google/drive/folders/rename",
+        ADMIN_EMAIL,
+        {
+          key: "client-accounts",
+          mode: "reconcile-drive-name",
+          expectedVersion: 1,
+          externalId: reviewedFolderId,
+          actualName: scenario.reviewedName,
+        },
+      ));
+      const body = await response.json();
+
+      assert.equal(response.status, 409, JSON.stringify(body));
+      assert.equal(body.code, "workspace_reconcile_review_stale");
+      assert.deepEqual(provider.patchNames, []);
+    });
+  }
+});
+
+test("live reconcile rename rechecks the blueprint after provider discovery and never PATCHes a stale review", async () => {
+  const rootId = "app-shared-drive-123";
+  const reviewedFolderId = "reviewed-client-folder";
+  const database = fakeDatabase({
+    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprintConnectionKey: "google-workspace",
+  });
+  await workspaceEnvironment(database);
+  database.state.resources.push(savedResource({
+    id: "shared",
+    resourceType: "drive.shared-drive",
+    resourceKey: "primary",
+    externalId: rootId,
+    name: "FCI Operations",
+  }));
+  let advanced = false;
+  const provider = installRenameProvider({
+    folderId: reviewedFolderId,
+    rootId,
+    initialName: "01_Provider Drift",
+    onIdentityRead() {
+      if (advanced) return;
+      advanced = true;
+      database.state.blueprint.version += 1;
+    },
+  });
+
+  const response = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "client-accounts",
+      mode: "reconcile-drive-name",
+      expectedVersion: 1,
+      externalId: reviewedFolderId,
+      actualName: "01_Provider Drift",
+    },
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "workspace_blueprint_version_conflict");
+  assert.deepEqual(provider.patchNames, []);
+});
+
+test("live reconcile rename rejects a provider-name race immediately before PATCH", async () => {
+  const rootId = "app-shared-drive-123";
+  const reviewedFolderId = "reviewed-client-folder";
+  const database = fakeDatabase({
+    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprintConnectionKey: "google-workspace",
+  });
+  await workspaceEnvironment(database);
+  database.state.resources.push(savedResource({
+    id: "shared",
+    resourceType: "drive.shared-drive",
+    resourceKey: "primary",
+    externalId: rootId,
+    name: "FCI Operations",
+  }));
+  const provider = installRenameProvider({
+    folderId: reviewedFolderId,
+    rootId,
+    initialName: "01_Provider Drift",
+    changeNameBeforeRenameRead: "01_Concurrent Manual Rename",
+  });
+
+  const response = await renameRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/rename",
+    ADMIN_EMAIL,
+    {
+      key: "client-accounts",
+      mode: "reconcile-drive-name",
+      expectedVersion: 1,
+      externalId: reviewedFolderId,
+      actualName: "01_Provider Drift",
+    },
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "workspace_reconcile_review_stale");
+  assert.deepEqual(provider.patchNames, []);
+  assert.equal(provider.currentName(), "01_Concurrent Manual Rename");
+});
+
 test("live rename reports and audits a failed compensation after blueprint CAS loses", async () => {
   const rootId = "app-shared-drive-123";
   const folderId = "client-folder-123";
@@ -1669,6 +2105,602 @@ test("ensure-roots maps a conflicting same-name blueprint identity to 409 withou
   assert.deepEqual(provider.folders.map((folder) => folder.appProperties.fciRootKey), ["first-sibling"]);
   assert.equal(provider.calls.some((call) => call.method === "PATCH" || call.method === "DELETE"), false);
   assert.equal(database.state.resources.some((row) => row.resource_key === "second-sibling"), false);
+});
+
+test("SET-18 reviewed missing-resource ensures mutate only the exact approved blueprint key", async (t) => {
+  await t.test("one root folder", async () => {
+    const blueprint = blueprintModule.seedWorkspaceBlueprint();
+    const database = fakeDatabase({ blueprint });
+    simulationEnvironment(database);
+    database.state.resources.push(savedResource({
+      id: "shared",
+      connectionKey: "workspace-simulation",
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: "workspace-simulation-shared-drive",
+      name: "FCI Operations",
+    }));
+    globalThis.fetch = async () => {
+      throw new Error("A simulation reviewed ensure must not call Google.");
+    };
+
+    const response = await ensureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/drive/folders/ensure-roots",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "client-accounts", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 201, JSON.stringify(body));
+    assert.equal(body.reconciled, true);
+    assert.equal(body.resourceKey, "client-accounts");
+    assert.deepEqual(body.folders.map((folder) => folder.key), ["client-accounts"]);
+    assert.deepEqual(
+      database.state.resources.filter((row) => row.resource_type === "drive.folder").map((row) => row.resource_key),
+      ["client-accounts"],
+    );
+  });
+
+  await t.test("one spreadsheet", async () => {
+    const blueprint = blueprintModule.seedWorkspaceBlueprint();
+    const database = fakeDatabase({ blueprint });
+    simulationEnvironment(database);
+    database.state.resources.push(
+      savedResource({
+        id: "shared",
+        connectionKey: "workspace-simulation",
+        resourceType: "drive.shared-drive",
+        resourceKey: "primary",
+        externalId: "workspace-simulation-shared-drive",
+        name: "FCI Operations",
+      }),
+      savedResource({
+        id: "company-admin",
+        connectionKey: "workspace-simulation",
+        resourceType: "drive.folder",
+        resourceKey: "company-admin",
+        externalId: "workspace-simulation-folder-company-admin",
+        parentExternalId: "workspace-simulation-shared-drive",
+        name: "00_Company Admin",
+      }),
+    );
+    globalThis.fetch = async () => {
+      throw new Error("A simulation reviewed ensure must not call Google.");
+    };
+
+    const response = await sheetEnsureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/sheets/ensure",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "client-directory", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 201, JSON.stringify(body));
+    assert.equal(body.reconciled, true);
+    assert.deepEqual(body.spreadsheets.map((spreadsheet) => spreadsheet.key), ["client-directory"]);
+    assert.deepEqual(
+      database.state.resources.filter((row) => row.resource_type === "sheets.spreadsheet").map((row) => row.resource_key),
+      ["client-directory"],
+    );
+  });
+
+  await t.test("one template beneath an in-sync simulation folder chain", async () => {
+    const blueprint = blueprintModule.seedWorkspaceBlueprint();
+    const database = fakeDatabase({ blueprint });
+    simulationEnvironment(database);
+    database.state.resources.push(
+      savedResource({
+        id: "shared",
+        connectionKey: "workspace-simulation",
+        resourceType: "drive.shared-drive",
+        resourceKey: "primary",
+        externalId: "workspace-simulation-shared-drive",
+        name: "FCI Operations",
+      }),
+      savedResource({
+        id: "company-admin",
+        connectionKey: "workspace-simulation",
+        resourceType: "drive.folder",
+        resourceKey: "company-admin",
+        externalId: "workspace-simulation-folder-company-admin",
+        parentExternalId: "workspace-simulation-shared-drive",
+        name: "00_Company Admin",
+      }),
+      savedResource({
+        id: "templates",
+        connectionKey: "workspace-simulation",
+        resourceType: "drive.folder",
+        resourceKey: "templates",
+        externalId: "workspace-simulation-folder-templates",
+        parentExternalId: "workspace-simulation-folder-company-admin",
+        name: "Templates",
+      }),
+    );
+    const originalFolderMetadata = database.state.resources.find((row) => row.resource_key === "templates").metadata_json;
+    globalThis.fetch = async () => {
+      throw new Error("A simulation reviewed ensure must not call Google.");
+    };
+
+    const response = await templateEnsureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/drive/templates/ensure",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "estimate-proposal", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 201, JSON.stringify(body));
+    assert.equal(body.reconciled, true);
+    assert.equal(body.folder.name, "Templates");
+    assert.deepEqual(body.templates.map((template) => template.key), ["estimate-proposal"]);
+    assert.deepEqual(
+      database.state.resources.filter((row) => row.resource_type === "drive.file").map((row) => row.resource_key),
+      ["estimate-proposal"],
+    );
+    assert.equal(
+      database.state.resources.find((row) => row.resource_key === "templates").metadata_json,
+      originalFolderMetadata,
+    );
+  });
+});
+
+test("SET-18 reviewed ensures reject stale versions and closed-body violations before setup work", async (t) => {
+  const cases = [
+    [ensureRoute, "/api/v1/integrations/google/drive/folders/ensure-roots", "client-accounts"],
+    [sheetEnsureRoute, "/api/v1/integrations/google/sheets/ensure", "client-directory"],
+    [templateEnsureRoute, "/api/v1/integrations/google/drive/templates/ensure", "estimate-proposal"],
+  ];
+  for (const [route, path, resourceKey] of cases) {
+    await t.test(path, async () => {
+      const database = fakeDatabase({ blueprint: blueprintModule.seedWorkspaceBlueprint() });
+      simulationEnvironment(database);
+      const stale = await route.POST(routeRequest(path, ADMIN_EMAIL, {
+        mode: "reconcile-missing",
+        resourceKey,
+        expectedVersion: 0,
+      }));
+      const staleBody = await stale.json();
+      assert.equal(stale.status, 409);
+      assert.equal(staleBody.code, "workspace_reconcile_review_stale");
+      assert.equal(database.state.leases.size, 0);
+      assert.equal(database.state.resources.length, 0);
+
+      const closed = await route.POST(routeRequest(path, ADMIN_EMAIL, {
+        mode: "reconcile-missing",
+        resourceKey,
+        expectedVersion: 1,
+        extra: true,
+      }));
+      assert.equal(closed.status, 400);
+      assert.equal(database.state.leases.size, 0);
+      assert.equal(database.state.resources.length, 0);
+    });
+  }
+});
+
+test("SET-18 reviewed ensure bodies are rejected before schema or persistence access", async () => {
+  const database = {
+    prepare() {
+      throw new Error("A rejected reviewed ensure body must not touch D1.");
+    },
+  };
+  simulationEnvironment(database);
+  const cases = [
+    [ensureRoute, "/api/v1/integrations/google/drive/folders/ensure-roots", "client-accounts"],
+    [sheetEnsureRoute, "/api/v1/integrations/google/sheets/ensure", "client-directory"],
+    [templateEnsureRoute, "/api/v1/integrations/google/drive/templates/ensure", "estimate-proposal"],
+  ];
+  for (const [route, path, resourceKey] of cases) {
+    const response = await route.POST(routeRequest(path, ADMIN_EMAIL, {
+      mode: "reconcile-missing",
+      resourceKey,
+      expectedVersion: 1,
+      extra: true,
+    }));
+    assert.equal(response.status, 400);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+});
+
+test("SET-18 simulation rechecks the reviewed blueprint version immediately before selected mutation", async () => {
+  const database = fakeDatabase({ blueprint: blueprintModule.seedWorkspaceBlueprint() });
+  const originalPrepare = database.prepare.bind(database);
+  let blueprintReads = 0;
+  database.prepare = (sql) => {
+    if (/FROM workspace_blueprints WHERE connection_key = \?/u.test(sql)) {
+      blueprintReads += 1;
+      if (blueprintReads === 2) database.state.blueprint.version = 2;
+    }
+    return originalPrepare(sql);
+  };
+  simulationEnvironment(database);
+  database.state.resources.push(savedResource({
+    id: "shared",
+    connectionKey: "workspace-simulation",
+    resourceType: "drive.shared-drive",
+    resourceKey: "primary",
+    externalId: "workspace-simulation-shared-drive",
+    name: "FCI Operations",
+  }));
+  globalThis.fetch = async () => {
+    throw new Error("A simulation reviewed ensure must not call Google.");
+  };
+
+  const response = await ensureRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/ensure-roots",
+    ADMIN_EMAIL,
+    { mode: "reconcile-missing", resourceKey: "client-accounts", expectedVersion: 1 },
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "workspace_reconcile_review_stale");
+  assert.equal(database.state.resources.some((row) => row.resource_key === "client-accounts"), false);
+});
+
+test("SET-18 reviewed root ensure globally rechecks Drive identity before any provider mutation", async () => {
+  const rootId = "app-shared-drive-123";
+  const database = fakeDatabase({
+    blueprint: blueprintModule.seedWorkspaceBlueprint(),
+    blueprintConnectionKey: "google-workspace",
+  });
+  await workspaceEnvironment(database);
+  database.state.resources.push(savedResource({
+    id: "shared",
+    resourceType: "drive.shared-drive",
+    resourceKey: "primary",
+    externalId: rootId,
+    name: "FCI Operations",
+  }));
+  const provider = installEnsureProvider(rootId, [{
+    id: "moved-wrong-type-client-accounts",
+    name: "Moved client accounts",
+    mimeType: "application/vnd.google-apps.spreadsheet",
+    parents: ["different-managed-parent"],
+    trashed: false,
+    webViewLink: "https://drive.google.test/moved-wrong-type-client-accounts",
+    appProperties: { fciRootKey: "client-accounts" },
+  }]);
+
+  const response = await ensureRoute.POST(routeRequest(
+    "/api/v1/integrations/google/drive/folders/ensure-roots",
+    ADMIN_EMAIL,
+    { mode: "reconcile-missing", resourceKey: "client-accounts", expectedVersion: 1 },
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 409, JSON.stringify(body));
+  assert.equal(body.code, "workspace_reconcile_review_stale");
+  assert.equal(provider.calls.some((call) => (
+    call.url.hostname === "www.googleapis.com"
+    && ["POST", "PATCH", "DELETE"].includes(call.method)
+  )), false);
+  assert.equal(database.state.resources.some((row) => row.resource_key === "client-accounts"), false);
+});
+
+test("SET-18 reviewed file ensures globally recheck Drive identity before any provider mutation", async (t) => {
+  await t.test("spreadsheet identity", async () => {
+    const rootId = "app-shared-drive-123";
+    const targetFolderId = "company-admin-folder-123";
+    const database = fakeDatabase({
+      blueprint: blueprintModule.seedWorkspaceBlueprint(),
+      blueprintConnectionKey: "google-workspace",
+    });
+    await workspaceEnvironment(database, { GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,sheets" });
+    database.state.resources.push(
+      savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+      savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: targetFolderId, parentExternalId: rootId, name: "00_Company Admin" }),
+    );
+    const provider = installSpreadsheetProvider({
+      rootId,
+      targetFolderId,
+      existing: [{
+        id: "moved-wrong-type-client-directory",
+        name: "Moved client directory",
+        mimeType: "application/vnd.google-apps.folder",
+        parents: ["different-managed-parent"],
+        trashed: false,
+        webViewLink: "https://drive.google.test/moved-wrong-type-client-directory",
+        appProperties: { fciResourceKind: "client-directory" },
+      }],
+    });
+
+    const response = await sheetEnsureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/sheets/ensure",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "client-directory", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(provider.calls.some((call) => (
+      call.url.hostname === "www.googleapis.com"
+      && ["POST", "PATCH", "DELETE"].includes(call.method)
+    )), false);
+    assert.equal(provider.calls.some((call) => call.url.hostname === "sheets.googleapis.com"), false);
+  });
+
+  await t.test("template identity", async () => {
+    const rootId = "app-shared-drive-123";
+    const parentFolderId = "company-admin-folder-123";
+    const templateFolderId = "templates-folder-123";
+    const database = fakeDatabase({
+      blueprint: blueprintModule.seedWorkspaceBlueprint(),
+      blueprintConnectionKey: "google-workspace",
+    });
+    await workspaceEnvironment(database);
+    database.state.resources.push(
+      savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+      savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: parentFolderId, parentExternalId: rootId, name: "00_Company Admin" }),
+      savedResource({ id: "templates", resourceType: "drive.folder", resourceKey: "templates", externalId: templateFolderId, parentExternalId: parentFolderId, name: "Templates" }),
+    );
+    const provider = installTemplateProvider({ rootId, parentFolderId, templateFolderId });
+    provider.files.set("estimate-proposal", {
+      id: "moved-wrong-type-estimate",
+      name: "Moved estimate",
+      mimeType: "application/vnd.google-apps.spreadsheet",
+      parents: ["different-managed-parent"],
+      trashed: false,
+      webViewLink: "https://drive.google.test/moved-wrong-type-estimate",
+      appProperties: { fciTemplateKey: "estimate-proposal" },
+    });
+
+    const response = await templateEnsureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/drive/templates/ensure",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "estimate-proposal", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(provider.calls.some((call) => (
+      call.url.hostname === "www.googleapis.com"
+      && ["POST", "PATCH", "DELETE"].includes(call.method)
+    )), false);
+  });
+});
+
+test("SET-18 reviewed creates revalidate every degraded parent chain immediately before provider writes", async (t) => {
+  await t.test("folder parent chain", async () => {
+    const rootId = "app-shared-drive-123";
+    const parentFolderId = "company-admin-folder-123";
+    const database = fakeDatabase({
+      blueprint: blueprintModule.seedWorkspaceBlueprint(),
+      blueprintConnectionKey: "google-workspace",
+    });
+    await workspaceEnvironment(database);
+    database.state.resources.push(
+      savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+      savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: parentFolderId, parentExternalId: rootId, name: "00_Company Admin" }),
+    );
+    const provider = installEnsureProvider(rootId, [{
+      id: parentFolderId,
+      name: "00_Company Admin",
+      mimeType: "application/vnd.google-apps.folder",
+      parents: ["outside-workspace"],
+      trashed: false,
+      webViewLink: `https://drive.google.test/${parentFolderId}`,
+      appProperties: { fciRootKey: "company-admin" },
+    }]);
+
+    const response = await ensureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/drive/folders/ensure-roots",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "templates", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(provider.calls.some((call) => (
+      call.url.hostname === "www.googleapis.com"
+      && ["POST", "PATCH", "DELETE"].includes(call.method)
+    )), false);
+    assert.equal(database.state.resources.some((row) => row.resource_key === "templates"), false);
+  });
+
+  await t.test("spreadsheet parent chain", async () => {
+    const rootId = "app-shared-drive-123";
+    const targetFolderId = "company-admin-folder-123";
+    const database = fakeDatabase({
+      blueprint: blueprintModule.seedWorkspaceBlueprint(),
+      blueprintConnectionKey: "google-workspace",
+    });
+    await workspaceEnvironment(database, { GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,sheets" });
+    database.state.resources.push(
+      savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+      savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: targetFolderId, parentExternalId: rootId, name: "00_Company Admin" }),
+    );
+    const provider = installSpreadsheetProvider({
+      rootId,
+      targetFolderId,
+      targetParentId: "outside-workspace",
+    });
+
+    const response = await sheetEnsureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/sheets/ensure",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "client-directory", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(provider.calls.some((call) => (
+      ["www.googleapis.com", "sheets.googleapis.com"].includes(call.url.hostname)
+      && ["POST", "PATCH", "DELETE"].includes(call.method)
+    )), false);
+    assert.equal(database.state.resources.some((row) => row.resource_key === "client-directory"), false);
+  });
+
+  await t.test("template parent chain", async () => {
+    const rootId = "app-shared-drive-123";
+    const parentFolderId = "company-admin-folder-123";
+    const templateFolderId = "templates-folder-123";
+    const database = fakeDatabase({
+      blueprint: blueprintModule.seedWorkspaceBlueprint(),
+      blueprintConnectionKey: "google-workspace",
+    });
+    await workspaceEnvironment(database);
+    database.state.resources.push(
+      savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+      savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: parentFolderId, parentExternalId: rootId, name: "00_Company Admin" }),
+      savedResource({ id: "templates", resourceType: "drive.folder", resourceKey: "templates", externalId: templateFolderId, parentExternalId: parentFolderId, name: "Templates" }),
+    );
+    const provider = installTemplateProvider({
+      rootId,
+      parentFolderId,
+      templateFolderId,
+      stampedFolders: true,
+      templateFolderParentId: "outside-workspace",
+    });
+
+    const response = await templateEnsureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/drive/templates/ensure",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "estimate-proposal", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(provider.calls.some((call) => (
+      call.url.hostname === "www.googleapis.com"
+      && ["POST", "PATCH", "DELETE"].includes(call.method)
+    )), false);
+    assert.equal(database.state.resources.some((row) => row.resource_key === "estimate-proposal"), false);
+  });
+});
+
+test("SET-18 simulation rejects direct reviewed creates beneath degraded registry parents", async (t) => {
+  const sharedResource = () => savedResource({
+    id: "shared",
+    connectionKey: "workspace-simulation",
+    resourceType: "drive.shared-drive",
+    resourceKey: "primary",
+    externalId: "workspace-simulation-shared-drive",
+    name: "FCI Operations",
+  });
+  const companyAdminResource = (parentExternalId) => savedResource({
+    id: "company-admin",
+    connectionKey: "workspace-simulation",
+    resourceType: "drive.folder",
+    resourceKey: "company-admin",
+    externalId: "workspace-simulation-folder-company-admin",
+    parentExternalId,
+    name: "00_Company Admin",
+  });
+
+  await t.test("folder parent chain", async () => {
+    const database = fakeDatabase({ blueprint: blueprintModule.seedWorkspaceBlueprint() });
+    simulationEnvironment(database);
+    database.state.resources.push(
+      sharedResource(),
+      companyAdminResource("outside-workspace"),
+    );
+    globalThis.fetch = async () => {
+      throw new Error("A rejected simulation review must not call Google.");
+    };
+
+    const response = await ensureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/drive/folders/ensure-roots",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "templates", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(database.state.resources.some((row) => row.resource_key === "templates"), false);
+  });
+
+  await t.test("spreadsheet parent chain", async () => {
+    const database = fakeDatabase({ blueprint: blueprintModule.seedWorkspaceBlueprint() });
+    simulationEnvironment(database);
+    database.state.resources.push(
+      sharedResource(),
+      companyAdminResource("outside-workspace"),
+    );
+    globalThis.fetch = async () => {
+      throw new Error("A rejected simulation review must not call Google.");
+    };
+
+    const response = await sheetEnsureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/sheets/ensure",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "client-directory", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(database.state.resources.some((row) => row.resource_key === "client-directory"), false);
+  });
+
+  await t.test("template parent chain", async () => {
+    const database = fakeDatabase({ blueprint: blueprintModule.seedWorkspaceBlueprint() });
+    simulationEnvironment(database);
+    database.state.resources.push(
+      sharedResource(),
+      companyAdminResource("workspace-simulation-shared-drive"),
+      savedResource({
+        id: "templates",
+        connectionKey: "workspace-simulation",
+        resourceType: "drive.folder",
+        resourceKey: "templates",
+        externalId: "workspace-simulation-folder-templates",
+        parentExternalId: "outside-workspace",
+        name: "Templates",
+      }),
+    );
+    globalThis.fetch = async () => {
+      throw new Error("A rejected simulation review must not call Google.");
+    };
+
+    const response = await templateEnsureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/drive/templates/ensure",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "estimate-proposal", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(database.state.resources.some((row) => row.resource_key === "estimate-proposal"), false);
+  });
+
+  await t.test("duplicate parent identity claims", async () => {
+    const database = fakeDatabase({ blueprint: blueprintModule.seedWorkspaceBlueprint() });
+    simulationEnvironment(database);
+    database.state.resources.push(
+      sharedResource(),
+      companyAdminResource("workspace-simulation-shared-drive"),
+      savedResource({
+        id: "conflicting-parent-claim",
+        connectionKey: "workspace-simulation",
+        resourceType: "drive.folder",
+        resourceKey: "client-accounts",
+        externalId: "workspace-simulation-folder-company-admin",
+        parentExternalId: "workspace-simulation-shared-drive",
+        name: "01_Client Accounts",
+      }),
+    );
+    globalThis.fetch = async () => {
+      throw new Error("A rejected simulation review must not call Google.");
+    };
+
+    const response = await ensureRoute.POST(routeRequest(
+      "/api/v1/integrations/google/drive/folders/ensure-roots",
+      ADMIN_EMAIL,
+      { mode: "reconcile-missing", resourceKey: "templates", expectedVersion: 1 },
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 409, JSON.stringify(body));
+    assert.equal(body.code, "workspace_reconcile_review_stale");
+    assert.equal(database.state.resources.some((row) => row.resource_key === "templates"), false);
+  });
 });
 
 test("setup actions reject unknown request fields before setup state changes", async () => {

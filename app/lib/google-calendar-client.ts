@@ -50,6 +50,12 @@ type CalendarApiEvent = {
   };
 };
 
+type CalendarApiEventList = {
+  summary?: string;
+  timeZone?: string;
+  items?: CalendarApiEvent[];
+};
+
 export type CalendarEventSummary = {
   id: string;
   title: string;
@@ -58,6 +64,13 @@ export type CalendarEventSummary = {
   end: string;
   url?: string;
 };
+
+export type GoogleCalendarResource = Readonly<{
+  id: string;
+  name: string;
+  timeZone: string | null;
+  url: string;
+}>;
 
 export type GoogleCalendarClientDependencies = Readonly<{
   fetch: GoogleFetch;
@@ -102,10 +115,21 @@ function safeEvent(event: CalendarApiEvent): CalendarEventSummary | null {
   };
 }
 
-function requireWorkspaceCalendarId(config: GoogleRuntimeConfig) {
+function requireCalendarReadiness(config: GoogleRuntimeConfig) {
   assertGoogleService(config, "calendar");
+  if (!config.oauthReady) {
+    throw new GoogleIntegrationError(
+      "calendar_configuration_required",
+      "Complete the Google Workspace Calendar setup before using appointments.",
+      409,
+    );
+  }
+}
+
+function requireWorkspaceCalendarId(config: GoogleRuntimeConfig) {
+  requireCalendarReadiness(config);
   const calendarId = config.clientAppointmentsCalendarId?.trim();
-  if (!config.oauthReady || !calendarId) {
+  if (!calendarId) {
     throw new GoogleIntegrationError(
       "calendar_configuration_required",
       "Complete the Google Workspace Calendar setup before using appointments.",
@@ -131,7 +155,7 @@ export class GoogleCalendarClient {
     init: RequestInit = {},
     policy: GoogleFetchPolicy = {},
   ) {
-    this.workspaceCalendarId();
+    requireCalendarReadiness(this.config);
     let response: Response;
     try {
       response = await fetchGoogleProvider(this.dependencies.fetch, `${CALENDAR_API}/${path}`, {
@@ -167,6 +191,47 @@ export class GoogleCalendarClient {
       throw new GoogleIntegrationError("calendar_request_failed", "Google Calendar could not complete that operation. Try again.", 503);
     }
     return data as T;
+  }
+
+  /**
+   * Reads one registered Calendar through its events collection. That response
+   * includes the Calendar summary and time zone while remaining within the
+   * existing calendar.events grant; reconcile must not widen OAuth consent.
+   */
+  async getCalendarMetadata(calendarId: string): Promise<GoogleCalendarResource | null> {
+    const normalizedId = calendarId.trim();
+    if (!normalizedId || normalizedId.length > 1_024 || /[\u0000-\u001f\u007f]/.test(normalizedId)) {
+      throw new GoogleIntegrationError("calendar_configuration_required", "The registered Workspace calendar ID is invalid.", 409);
+    }
+    const query = new URLSearchParams({
+      maxResults: "1",
+      showDeleted: "false",
+      fields: "summary,timeZone,items(id)",
+    });
+    let result: CalendarApiEventList;
+    try {
+      result = await this.request<CalendarApiEventList>(
+        `calendars/${encodeURIComponent(normalizedId)}/events?${query.toString()}`,
+        {},
+        { idempotent: true },
+      );
+    } catch (error) {
+      if (error instanceof GoogleIntegrationError && error.code === "calendar_not_found") return null;
+      throw error;
+    }
+    if (typeof result.summary !== "string" || !result.summary.trim()) {
+      throw new GoogleIntegrationError(
+        "calendar_invalid_response",
+        "Google Calendar returned incomplete registered-calendar details.",
+        503,
+      );
+    }
+    return Object.freeze({
+      id: normalizedId,
+      name: result.summary.trim(),
+      timeZone: typeof result.timeZone === "string" && result.timeZone.trim() ? result.timeZone.trim() : null,
+      url: `https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(normalizedId)}`,
+    });
   }
 
   async listUpcomingEvents(now = this.dependencies.now()) {

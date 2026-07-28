@@ -1,0 +1,149 @@
+.reconcileBody {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.reconcileBody > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.toolbar,
+.actionList {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.checkedAt,
+.readonly,
+.status,
+.informational {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.error {
+  color: #8b3a31;
+}
+
+.inSync {
+  padding: 10px 12px;
+  border: 1px solid #bad0c1;
+  border-radius: var(--radius-control);
+  background: #f3f8f4;
+  color: #35674d !important;
+  font-weight: 750;
+}
+
+.reconcileTable {
+  width: 100%;
+  min-width: 0;
+}
+
+.reconcileTable td {
+  vertical-align: top;
+}
+
+.reconcileTable td > strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.reconcileTable td > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--forest);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.reconcileTable td > small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.stateChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.missing,
+.renamed {
+  background: #fff3d6;
+  color: #785c18;
+}
+
+.unmanaged {
+  background: #f0eeeb;
+  color: #6c655f;
+}
+
+.names {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.names > div {
+  display: grid;
+  gap: 1px;
+}
+
+.names dt {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.names dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.actionList > :global(.administrator-action-control) {
+  max-width: 100%;
+}
+
+.actionList button {
+  min-height: var(--target-min);
+  white-space: normal;
+}
+
+@media (max-width: 560px) {
+  .toolbar,
+  .toolbar > *,
+  .actionList,
+  .actionList > :global(.administrator-action-control),
+  .actionList button {
+    width: 100%;
+    max-width: none;
+  }
+
+  .toolbar button,
+  .actionList button {
+    min-height: 44px;
+  }
+}

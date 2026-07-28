@@ -35,6 +35,7 @@ const settingsMutationRoutes = [
   "app/api/v1/integrations/google/sheets/sync/route.ts",
   "app/api/v1/integrations/google/sheets/ensure/route.ts",
   "app/api/v1/integrations/google/setup/blueprint/route.ts",
+  "app/api/v1/integrations/google/setup/reconcile/route.ts",
 ];
 
 test("exposes the authenticated user's Administrator flag through the shared account request", async () => {

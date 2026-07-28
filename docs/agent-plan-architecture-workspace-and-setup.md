@@ -1536,7 +1536,7 @@ deliberate; template content contains no secrets or env values; simulation e2e.
 **Effort:** medium.
 
 ### SET-18 · Reconcile & drift maintenance (medium, after SET-15+16+17)
-**Status:** In progress — `codex/set18-reconcile-drift`, built and pushed (lint + `npm test` 1,084 pass + focused e2e green); PR was deliberately withheld while SET-22's #217/#221 owned the templates/ensure route. **That collision cleared July 27 (#217 merged)** — the resume path is: rebase onto main, resolve the templates/ensure route additively over SET-22's merged version, reverify all three gates, open the draft PR.
+**Status:** In review — PR #227, July 27, 2026. Rebased onto current main after SET-22; lint and `npm test` are green, focused SET-18 e2e is green, and the full Windows e2e rerun's classified baseline failures are disclosed in the PR. Source-only and undeployed; no live Google operations. Guide impact: `docs/settings-guide.md` updated.
 **Why:** Owner requirement: blueprint edits after resources exist must drive a drift
 view — defined-but-missing offers create; removed-from-blueprint is shown unmanaged and
 is **never deleted**.

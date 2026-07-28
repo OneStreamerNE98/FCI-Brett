@@ -20,6 +20,12 @@ const DOCUMENT_MIME_TYPE = "application/vnd.google-apps.document";
 const PRESENTATION_MIME_TYPE = "application/vnd.google-apps.presentation";
 const MAX_MANAGED_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_MANAGED_APP_PROPERTIES = 12;
+const MAX_SETUP_READ_REQUESTS = 220;
+const MAX_SETUP_READ_ITEMS = 1_000;
+const MAX_SETUP_PAGE_ITEMS = 100;
+const MAX_SETUP_PROVIDER_NAME_LENGTH = 180;
+const MAX_SETUP_PROVIDER_ID_LENGTH = 200;
+const MAX_SETUP_PAGE_TOKEN_LENGTH = 512;
 const LEGACY_WORKSPACE_FOLDER_IDENTITY = "fciWorkspaceFolder";
 const LEGACY_PROVISIONING_ROOT_KEYS = new Set(["client-accounts", "projects"]);
 
@@ -109,6 +115,24 @@ export type DriveManagedFileUploadResult = {
 export type DriveBlueprintSpreadsheetEnsureResult = Readonly<{
   created: boolean;
   file: DriveManagedFile;
+}>;
+
+export const WORKSPACE_SETUP_DRIVE_IDENTITY_PROPERTIES = [
+  "fciRootKey",
+  "fciTemplateKey",
+  "fciResourceKind",
+  "fciWorkspaceFolder",
+] as const;
+
+export type WorkspaceSetupDriveIdentityProperty = (typeof WORKSPACE_SETUP_DRIVE_IDENTITY_PROPERTIES)[number];
+
+export type DriveSetupItem = Readonly<{
+  id: string;
+  name: string;
+  mimeType: string;
+  parents: readonly string[];
+  url: string;
+  appProperties: Readonly<Record<string, string>>;
 }>;
 
 export function buildProjectDriveBlueprintPlan(blueprint: WorkspaceBlueprint) {
@@ -287,6 +311,91 @@ function asManagedFile(file: DriveFile): DriveManagedFile {
   };
 }
 
+function invalidSetupProviderResponse(message: string): never {
+  throw new GoogleIntegrationError("drive_invalid_response", message, 503);
+}
+
+function providerSetupText(value: unknown, label: string, maximum: number) {
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || value.length > maximum
+    || /[\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    invalidSetupProviderResponse(`Google Drive returned an invalid setup-resource ${label}.`);
+  }
+  return value;
+}
+
+function providerSetupAppProperties(value: unknown) {
+  if (value === undefined) return Object.freeze({});
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    invalidSetupProviderResponse("Google Drive returned invalid setup-resource app properties.");
+  }
+  const source = value as Record<string, unknown>;
+  const recognized: Record<string, string> = {};
+  for (const property of WORKSPACE_SETUP_DRIVE_IDENTITY_PROPERTIES) {
+    if (source[property] === undefined) continue;
+    const propertyValue = providerSetupText(source[property], "identity", 124);
+    if (propertyValue !== propertyValue.trim()) {
+      invalidSetupProviderResponse("Google Drive returned an invalid setup-resource identity.");
+    }
+    recognized[property] = propertyValue;
+  }
+  return Object.freeze(recognized);
+}
+
+function setupItemFromProvider(value: unknown, expectedId?: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    invalidSetupProviderResponse("Google Drive returned invalid setup-resource metadata.");
+  }
+  const source = value as Record<string, unknown>;
+  const id = providerSetupText(source.id, "ID", MAX_SETUP_PROVIDER_ID_LENGTH);
+  if (expectedId !== undefined && id !== expectedId) {
+    invalidSetupProviderResponse("Google Drive returned the wrong registered setup-resource ID.");
+  }
+  const name = providerSetupText(source.name, "name", MAX_SETUP_PROVIDER_NAME_LENGTH);
+  const mimeType = providerSetupText(source.mimeType, "MIME type", 128);
+  if (source.trashed !== true && source.trashed !== false) {
+    invalidSetupProviderResponse("Google Drive returned an invalid setup-resource trash state.");
+  }
+  const parentValues = source.parents === undefined ? [] : source.parents;
+  if (!Array.isArray(parentValues) || parentValues.length > 1) {
+    invalidSetupProviderResponse("Google Drive returned invalid setup-resource parents.");
+  }
+  const parents = parentValues.map((parent) => (
+    providerSetupText(parent, "parent ID", MAX_SETUP_PROVIDER_ID_LENGTH)
+  ));
+  const webViewLink = source.webViewLink === undefined
+    ? undefined
+    : providerSetupText(source.webViewLink, "web URL", 2_048);
+  const file: DriveFile = {
+    id,
+    name,
+    mimeType,
+    parents,
+    trashed: source.trashed,
+    webViewLink,
+    appProperties: providerSetupAppProperties(source.appProperties),
+  };
+  return Object.freeze({
+    item: Object.freeze({
+      id,
+      name,
+      mimeType,
+      parents: Object.freeze(parents),
+      url: mimeType === FOLDER_MIME_TYPE ? folderUrl(file) : fileUrl(file),
+      appProperties: Object.freeze({ ...(file.appProperties ?? {}) }),
+    }) satisfies DriveSetupItem,
+    trashed: source.trashed,
+  });
+}
+
+function setupPageToken(value: unknown) {
+  if (value === undefined) return undefined;
+  return providerSetupText(value, "page token", MAX_SETUP_PAGE_TOKEN_LENGTH);
+}
+
 function ensureNonEmptyString(value: string, label: string, maximum: number) {
   const normalized = value.trim();
   if (!normalized || normalized.length > maximum || /[\u0000-\u001f\u007f]/.test(normalized)) {
@@ -369,12 +478,44 @@ function multipartUploadBody(metadata: Record<string, unknown>, bytes: Uint8Arra
 }
 
 export class GoogleDriveClient {
+  private setupReadRequests = 0;
+  private setupReadItems = 0;
+
   constructor(
     private readonly accessToken: string,
     private readonly config: GoogleRuntimeConfig,
     private readonly fetcher: GoogleFetch = DEFAULT_GOOGLE_FETCH,
     private readonly resilience: GoogleFetchResilienceDependencies = {},
   ) {}
+
+  private consumeSetupReadRequest() {
+    this.setupReadRequests += 1;
+    if (this.setupReadRequests > MAX_SETUP_READ_REQUESTS) {
+      throw new GoogleIntegrationError(
+        "drive_reconcile_read_limit",
+        "Workspace reconciliation exceeded its bounded Google Drive read budget.",
+        503,
+      );
+    }
+  }
+
+  private consumeSetupReadItems(count: number) {
+    if (!Number.isSafeInteger(count) || count < 0 || count > MAX_SETUP_PAGE_ITEMS) {
+      throw new GoogleIntegrationError(
+        "drive_reconcile_read_limit",
+        "Google Drive returned too many setup resources in one page.",
+        503,
+      );
+    }
+    this.setupReadItems += count;
+    if (this.setupReadItems > MAX_SETUP_READ_ITEMS) {
+      throw new GoogleIntegrationError(
+        "drive_reconcile_read_limit",
+        "Workspace reconciliation exceeded its bounded Google Drive item budget.",
+        503,
+      );
+    }
+  }
 
   /**
    * files.list accepts Shared Drive search selectors in addition to the general
@@ -619,6 +760,147 @@ export class GoogleDriveClient {
     return { id: root.id, name: root.name, url: folderUrl(root) };
   }
 
+  /**
+   * Enumerates direct children for setup reconciliation. The hard page bound
+   * fails closed instead of truncating a large provider listing and claiming
+   * the blueprint is in sync.
+   */
+  async listSetupChildren(parentId: string): Promise<DriveSetupItem[]> {
+    const normalizedParentId = ensureNonEmptyString(parentId, "The setup parent folder ID", 200);
+    await this.assertContained(normalizedParentId);
+    const items: DriveSetupItem[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      this.consumeSetupReadRequest();
+      const parameters = this.addListOptions(new URLSearchParams({
+        q: `'${driveQueryString(normalizedParentId)}' in parents and trashed = false`,
+        fields: "nextPageToken,files(id,name,mimeType,parents,trashed,webViewLink,appProperties)",
+        pageSize: "100",
+      }));
+      if (pageToken) parameters.set("pageToken", pageToken);
+      const response = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(
+        `files?${parameters.toString()}`,
+        {},
+        { idempotent: true },
+      );
+      if (!response || typeof response !== "object" || Array.isArray(response)) {
+        invalidSetupProviderResponse("Google Drive returned an invalid setup-resource page.");
+      }
+      if (response.files !== undefined && !Array.isArray(response.files)) {
+        invalidSetupProviderResponse("Google Drive returned an invalid setup-resource page.");
+      }
+      const providerItems = response.files ?? [];
+      this.consumeSetupReadItems(providerItems.length);
+      const pageItems = providerItems.map((file) => {
+        const parsed = setupItemFromProvider(file);
+        if (parsed.trashed) {
+          invalidSetupProviderResponse("Google Drive returned a trashed item in an active setup-resource listing.");
+        }
+        return parsed.item;
+      });
+      if (pageItems.some((item) => item.parents.length !== 1 || item.parents[0] !== normalizedParentId)) {
+        throw new GoogleIntegrationError(
+          "drive_invalid_response",
+          "Google Drive returned an item outside the requested setup parent.",
+          503,
+        );
+      }
+      items.push(...pageItems);
+      const nextPageToken = setupPageToken(response.nextPageToken);
+      if (!nextPageToken) return items;
+      pageToken = nextPageToken;
+    }
+    throw new GoogleIntegrationError(
+      "drive_list_incomplete",
+      "Google Drive returned too many setup-resource pages to reconcile safely.",
+      503,
+    );
+  }
+
+  /** Finds exact appProperties identities anywhere in the configured Drive. */
+  async findSetupItemsByIdentity(
+    property: WorkspaceSetupDriveIdentityProperty,
+    value: string,
+  ): Promise<DriveSetupItem[]> {
+    if (!WORKSPACE_SETUP_DRIVE_IDENTITY_PROPERTIES.includes(property)) {
+      throw new GoogleIntegrationError("invalid_drive_identity", "The setup identity property is invalid.", 400);
+    }
+    const normalizedValue = ensureNonEmptyString(value, "The setup identity value", 124);
+    const items: DriveSetupItem[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < 10; page += 1) {
+      this.consumeSetupReadRequest();
+      const parameters = this.addListOptions(new URLSearchParams({
+        q: `trashed = false and appProperties has { key='${driveQueryString(property)}' and value='${driveQueryString(normalizedValue)}' }`,
+        fields: "nextPageToken,files(id,name,mimeType,parents,trashed,webViewLink,appProperties)",
+        pageSize: "100",
+      }));
+      if (pageToken) parameters.set("pageToken", pageToken);
+      const response = await this.request<{ files?: DriveFile[]; nextPageToken?: string }>(
+        `files?${parameters.toString()}`,
+        {},
+        { idempotent: true },
+      );
+      if (!response || typeof response !== "object" || Array.isArray(response)) {
+        invalidSetupProviderResponse("Google Drive returned an invalid setup-resource page.");
+      }
+      if (response.files !== undefined && !Array.isArray(response.files)) {
+        invalidSetupProviderResponse("Google Drive returned an invalid setup-resource page.");
+      }
+      const providerItems = response.files ?? [];
+      this.consumeSetupReadItems(providerItems.length);
+      const pageItems = providerItems.map((file) => {
+        const parsed = setupItemFromProvider(file);
+        if (parsed.trashed) {
+          invalidSetupProviderResponse("Google Drive returned a trashed item in an active setup-resource listing.");
+        }
+        return parsed.item;
+      });
+      if (pageItems.some((item) => item.appProperties[property] !== normalizedValue)) {
+        throw new GoogleIntegrationError(
+          "drive_invalid_response",
+          "Google Drive returned a setup item without the requested identity.",
+          503,
+        );
+      }
+      items.push(...pageItems);
+      const nextPageToken = setupPageToken(response.nextPageToken);
+      if (!nextPageToken) break;
+      if (page === 9) {
+        throw new GoogleIntegrationError(
+          "drive_list_incomplete",
+          "Google Drive returned too many identity-matched setup pages to reconcile safely.",
+          503,
+        );
+      }
+      pageToken = nextPageToken;
+    }
+    return items;
+  }
+
+  /** Reads one registered setup item; a provider 404 is an honest absence. */
+  async getSetupItem(fileId: string): Promise<DriveSetupItem | null> {
+    const normalizedFileId = ensureNonEmptyString(fileId, "The setup resource ID", 200);
+    this.consumeSetupReadRequest();
+    let file: DriveFile;
+    try {
+      const parameters = this.addFileOptions(new URLSearchParams({
+        fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties",
+      }));
+      file = await this.request<DriveFile>(
+        `files/${encodeURIComponent(normalizedFileId)}?${parameters.toString()}`,
+        {},
+        { idempotent: true },
+      );
+    } catch (error) {
+      if (error instanceof GoogleIntegrationError && error.code === "drive_not_found") return null;
+      throw error;
+    }
+    const parsed = setupItemFromProvider(file, normalizedFileId);
+    this.consumeSetupReadItems(1);
+    return parsed.trashed ? null : parsed.item;
+  }
+
   async assertContained(folderId: string) {
     const rootId = this.rootId();
     let currentId = folderId;
@@ -824,7 +1106,11 @@ export class GoogleDriveClient {
   }
 
   /** Renames one contained active folder and returns both names for compensation/audit. */
-  async renameFolder(folderId: string, name: string) {
+  async renameFolder(
+    folderId: string,
+    name: string,
+    options: Readonly<{ expectedCurrentName?: string }> = {},
+  ) {
     const normalized = ensureNonEmptyString(name, "The blueprint folder name", 120);
     if (normalized.includes("/") || normalized.includes("\\")) {
       throw new GoogleIntegrationError("invalid_drive_folder_name", "A blueprint folder name cannot contain a path separator.", 400);
@@ -833,6 +1119,16 @@ export class GoogleDriveClient {
     const current = await this.getFolder(folderId);
     if (current.mimeType !== FOLDER_MIME_TYPE || current.trashed) {
       throw new GoogleIntegrationError("invalid_drive_folder", "Only an active managed folder can be renamed.", 409);
+    }
+    if (
+      options.expectedCurrentName !== undefined
+      && current.name !== options.expectedCurrentName
+    ) {
+      throw new GoogleIntegrationError(
+        "workspace_reconcile_review_stale",
+        "The reviewed Drive folder changed after the drift check. Check for drift again before renaming.",
+        409,
+      );
     }
     const parameters = this.addFileOptions(new URLSearchParams({ fields: "id,name,mimeType,parents,trashed,webViewLink,appProperties" }));
     const renamed = await this.request<DriveFile>(`files/${encodeURIComponent(folderId)}?${parameters.toString()}`, {
