@@ -132,6 +132,7 @@ test("GET is office-readable, no-store, secret-safe, and defaults every feature 
     features: {
       orgQa: true,
       triage: true,
+      inboxAnalysis: true,
       replyDrafts: true,
       taskExtraction: true,
     },
@@ -139,6 +140,7 @@ test("GET is office-readable, no-store, secret-safe, and defaults every feature 
   assert.doesNotMatch(JSON.stringify(body), new RegExp(secret, "u"));
   assert.deepEqual(Object.keys(body).sort(), ["features", "keyState", "model", "provider"]);
   assert.deepEqual(Object.keys(body.features).sort(), [
+    "inboxAnalysis",
     "orgQa",
     "replyDrafts",
     "taskExtraction",
@@ -154,6 +156,7 @@ test("GET is office-readable, no-store, secret-safe, and defaults every feature 
   assert.deepEqual(missing.features, {
     orgQa: false,
     triage: false,
+    inboxAnalysis: false,
     replyDrafts: false,
     taskExtraction: false,
   });
@@ -196,6 +199,7 @@ test("GET widens stored features one key at a time and never exposes unknown sto
     features: {
       orgQa: false,
       triage: true,
+      inboxAnalysis: true,
       replyDrafts: true,
       taskExtraction: true,
     },
@@ -217,7 +221,7 @@ test("PATCH round-trips a known subset while preserving sibling settings and unk
     "/api/v1/assistant/config",
     ADMIN_EMAIL,
     "PATCH",
-    { features: { triage: false, taskExtraction: false } },
+    { features: { triage: false, inboxAnalysis: false, taskExtraction: false } },
   ));
   const body = await response.json();
 
@@ -230,6 +234,7 @@ test("PATCH round-trips a known subset while preserving sibling settings and unk
     features: {
       orgQa: false,
       triage: false,
+      inboxAnalysis: false,
       replyDrafts: true,
       taskExtraction: false,
     },
@@ -248,6 +253,7 @@ test("PATCH round-trips a known subset while preserving sibling settings and unk
     {
       orgQa: stored.aiFeatures.orgQa,
       triage: stored.aiFeatures.triage,
+      inboxAnalysis: stored.aiFeatures.inboxAnalysis,
       replyDrafts: stored.aiFeatures.replyDrafts,
       taskExtraction: stored.aiFeatures.taskExtraction,
     },
@@ -278,12 +284,14 @@ test("PATCH while the key is missing preserves enabled defaults for a later conf
   assert.deepEqual((await response.json()).features, {
     orgQa: false,
     triage: false,
+    inboxAnalysis: false,
     replyDrafts: false,
     taskExtraction: false,
   });
   assert.deepEqual(database.readSettings().aiFeatures, {
     orgQa: true,
     triage: false,
+    inboxAnalysis: true,
     replyDrafts: true,
     taskExtraction: true,
   });
@@ -295,6 +303,7 @@ test("PATCH while the key is missing preserves enabled defaults for a later conf
   assert.deepEqual((await configured.json()).features, {
     orgQa: true,
     triage: false,
+    inboxAnalysis: true,
     replyDrafts: true,
     taskExtraction: true,
   });

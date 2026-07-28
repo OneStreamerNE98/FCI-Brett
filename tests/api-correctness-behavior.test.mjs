@@ -284,6 +284,7 @@ test("remaining client, project, filing-rule, and settings writes use their boun
     ["app/api/v1/assistant/config/route.ts", /MAX_ASSISTANT_CONFIG_BODY_BYTES = 8_000/],
     ["app/api/v1/assistant/extract-tasks/route.ts", /MAX_TASK_EXTRACTION_BODY_BYTES = 8_000/],
     ["app/api/v1/assistant/triage/route.ts", /MAX_ASSISTANT_TRIAGE_BODY_BYTES = 8_000/],
+    ["app/api/v1/inbox-analysis/route.ts", /MAX_INBOX_ANALYSIS_BODY_BYTES = 8_000/],
     ["app/api/v1/clients/route.ts", /MAX_CLIENT_BODY_BYTES = 64_000/],
     ["app/api/v1/projects/route.ts", /MAX_PROJECT_BODY_BYTES = 64_000/],
     ["app/api/v1/filing-rules/[ruleId]/route.ts", /MAX_RULE_BODY_BYTES = 8_000/],

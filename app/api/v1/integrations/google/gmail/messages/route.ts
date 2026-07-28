@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
         { headers: { "Cache-Control": "no-store" } },
       );
     }
-    const messages = await client.listMessages({ labelId, search });
+    const { messages } = await client.listMessages({ labelId, search });
     return NextResponse.json(
       { bucket, messages, labelReady: true, limit: 20 },
       { headers: { "Cache-Control": "no-store" } },

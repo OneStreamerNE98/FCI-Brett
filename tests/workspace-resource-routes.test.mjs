@@ -616,10 +616,15 @@ test("simulation reset deletes registry rows only for the simulation connection 
     ADMIN_EMAIL,
     "POST",
   ));
+  const mailItemDeletes = database.queries.filter((query) => /DELETE FROM mail_items/u.test(query.sql));
   const registryDeletes = database.queries.filter((query) => /DELETE FROM workspace_resources/u.test(query.sql));
   const blueprintDeletes = database.queries.filter((query) => /DELETE FROM workspace_blueprints/u.test(query.sql));
 
   assert.equal(response.status, 200);
+  assert.equal(mailItemDeletes.length, 1);
+  assert.deepEqual(mailItemDeletes[0].values, ["workspace-simulation"]);
+  assert.match(mailItemDeletes[0].sql, /WHERE connection_key = \?/u);
+  assert.doesNotMatch(mailItemDeletes[0].sql, /google-workspace/u);
   assert.equal(registryDeletes.length, 1);
   assert.deepEqual(registryDeletes[0].values, ["workspace-simulation"]);
   assert.match(registryDeletes[0].sql, /WHERE connection_key = \?/u);

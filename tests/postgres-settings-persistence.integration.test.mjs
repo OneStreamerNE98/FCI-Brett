@@ -280,20 +280,104 @@ test(
 
       const item = {
         id: "mail-1",
+        connectionKey: "google-workspace",
         gmailMessageId: "gmail-message-1",
         gmailThreadId: "gmail-thread-1",
         clientId,
         suggestedProjectId,
         approvedProjectId,
-        status: "approved",
+        status: "accepted",
         matchReason: "Exact project number.",
         emailDriveFileId: "drive-file-1",
+        analysisPayload: {
+          intents: ["project-update"],
+          rationale: "Exact project number.",
+        },
+        party: "client",
+        confidence: "high",
+        contentHash: "a".repeat(64),
+        labelDefinitionVersion: "catalog-2026-07-27",
+        attemptedLabelDefinitionVersion: null,
+        subject: "FCI TEST — DO NOT USE project update",
+        sender: "Client <client@example.test>",
+        receivedAt: NOW + 5_000,
+        failureAttempts: 0,
+        errorCode: null,
+        coverageComplete: false,
         createdAt: NOW + 6_000,
         updatedAt: NOW + 7_000,
       };
       assert.deepEqual(await mailItems.upsert(item), { outcome: "saved" });
       assert.deepEqual(await mailItems.findById(item.id), item);
-      assert.deepEqual(await mailItems.listByStatus("approved", 10), [item]);
+      assert.deepEqual(
+        await mailItems.findByGmailMessageId(
+          "google-workspace",
+          item.gmailMessageId,
+        ),
+        item,
+      );
+      assert.deepEqual(
+        await mailItems.listByStatus("google-workspace", "accepted", 10),
+        [item],
+      );
+
+      const reanalyzed = {
+        ...item,
+        id: "mail-reanalysis-must-not-replace-id",
+        status: "dismissed",
+        confidence: "medium",
+        coverageComplete: false,
+        updatedAt: NOW + 8_000,
+      };
+      assert.deepEqual(await mailItems.upsert(reanalyzed), { outcome: "saved" });
+      assert.deepEqual(
+        await mailItems.findByGmailMessageId(
+          "google-workspace",
+          item.gmailMessageId,
+        ),
+        {
+          ...reanalyzed,
+          id: item.id,
+          createdAt: item.createdAt,
+        },
+      );
+
+      const simulationItem = {
+        ...item,
+        id: "mail-simulation",
+        connectionKey: "workspace-simulation",
+        clientId: null,
+        suggestedProjectId: null,
+        approvedProjectId: null,
+        status: "needs-review",
+        coverageComplete: false,
+      };
+      assert.deepEqual(await mailItems.upsert(simulationItem), { outcome: "saved" });
+      assert.equal(
+        (await pool.query(
+          `SELECT count(*)::integer AS count
+           FROM ${schema}.mail_items
+           WHERE gmail_message_id = $1`,
+          [item.gmailMessageId],
+        )).rows[0].count,
+        2,
+      );
+
+      await mailItems.markCoverageComplete("google-workspace");
+      assert.equal(
+        (await mailItems.findByGmailMessageId(
+          "google-workspace",
+          item.gmailMessageId,
+        )).coverageComplete,
+        true,
+      );
+      assert.equal(
+        (await mailItems.findByGmailMessageId(
+          "workspace-simulation",
+          item.gmailMessageId,
+        )).coverageComplete,
+        false,
+      );
 
       const missingReferenceCases = [
         {

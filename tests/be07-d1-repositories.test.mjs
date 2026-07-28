@@ -31,6 +31,7 @@ const [
   userModule,
   filingModule,
   mailModule,
+  mailDomain,
   workspaceDomain,
   workspaceRoute,
   filingRoute,
@@ -42,6 +43,7 @@ const [
     vite.ssrLoadModule("/app/adapters/d1/user-preferences-repository.ts"),
     vite.ssrLoadModule("/app/adapters/d1/filing-rule-repository.ts"),
     vite.ssrLoadModule("/app/adapters/d1/mail-item-repository.ts"),
+    vite.ssrLoadModule("/app/domain/mail-item.ts"),
     vite.ssrLoadModule("/app/domain/workspace-settings.ts"),
     vite.ssrLoadModule("/app/api/v1/settings/workspace/route.ts"),
     vite.ssrLoadModule("/app/api/v1/filing-rules/route.ts"),
@@ -289,6 +291,7 @@ test("filing-rule D1 CRUD keeps camel-case API values and review-first approval 
 test("mail-item adapter maps nullable relationships, bounds list size, and upserts the full item", async () => {
   const row = {
     id: "mail-1",
+    connection_key: "google-workspace",
     gmail_message_id: "message-1",
     gmail_thread_id: null,
     client_id: MAIL_CLIENT_ID,
@@ -297,12 +300,27 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
     status: "needs-review",
     match_reason: "Known sender",
     email_drive_file_id: null,
+    analysis_payload: JSON.stringify({
+      intents: ["lead"],
+      leadFields: { companyName: "FCI TEST — DO NOT USE" },
+    }),
+    party: "prospect",
+    confidence: "high",
+    content_hash: "a".repeat(64),
+    label_definition_version: "catalog-2026-07-27",
+    subject: "FCI TEST — DO NOT USE flooring request",
+    sender: "Prospect <prospect@example.test>",
+    received_at: 29,
+    failure_attempts: 0,
+    error_code: null,
+    coverage_complete: 0,
     created_at: 30,
     updated_at: 31,
   };
   const database = new FakeDatabase({
     first(statement) {
       if (/FROM mail_items WHERE id = \?/u.test(statement.sql)) return row;
+      if (/FROM mail_items WHERE connection_key = \? AND gmail_message_id = \?/u.test(statement.sql)) return row;
       if (/^SELECT id FROM (?:clients|projects) WHERE id = \?$/u.test(statement.sql)) {
         return { id: statement.values[0] };
       }
@@ -314,10 +332,35 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
   const item = await repository.findById("mail-1");
   assert.equal(item.gmailMessageId, "message-1");
   assert.equal(item.approvedProjectId, null);
+  assert.equal(item.connectionKey, "google-workspace");
+  assert.equal(item.coverageComplete, false);
+  assert.deepEqual(item.analysisPayload, {
+    intents: ["lead"],
+    leadFields: { companyName: "FCI TEST — DO NOT USE" },
+  });
+  assert.equal(Object.isFrozen(item.analysisPayload), true);
+  assert.equal(Object.isFrozen(item.analysisPayload.leadFields), true);
 
-  const listed = await repository.listByStatus("needs-review", 501);
+  assert.deepEqual(
+    await repository.findByGmailMessageId("google-workspace", "message-1"),
+    item,
+  );
+  assert.deepEqual(database.statements.at(-1).values, [
+    "google-workspace",
+    "message-1",
+  ]);
+
+  const listed = await repository.listByStatus(
+    "google-workspace",
+    "needs-review",
+    501,
+  );
   assert.equal(listed.length, 1);
-  assert.deepEqual(database.statements.at(-1).values, ["needs-review", 100]);
+  assert.deepEqual(database.statements.at(-1).values, [
+    "google-workspace",
+    "needs-review",
+    100,
+  ]);
 
   const result = await repository.upsert({
     ...item,
@@ -337,13 +380,34 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
   );
   const write = database.statements.at(-1);
   assert.match(write.sql, /^INSERT INTO mail_items/u);
-  assert.equal(write.values[5], MAIL_APPROVED_PROJECT_ID);
+  assert.match(
+    write.sql,
+    /ON CONFLICT\(connection_key, gmail_message_id\) DO UPDATE/u,
+  );
+  assert.doesNotMatch(write.sql.split("DO UPDATE SET")[1], /\bid\s*=/u);
+  assert.doesNotMatch(write.sql.split("DO UPDATE SET")[1], /\bcreated_at\s*=/u);
+  assert.match(
+    write.sql,
+    /coverage_complete = mail_items\.coverage_complete OR excluded\.coverage_complete/u,
+  );
+  assert.equal(write.values[6], MAIL_APPROVED_PROJECT_ID);
+  assert.equal(write.values[10], JSON.stringify(item.analysisPayload));
   assert.equal(write.values.at(-1), 32);
   assert.equal(database.runs.length, 1);
+
+  await repository.markCoverageComplete("google-workspace");
+  const coverageWrite = database.statements.at(-1);
+  assert.equal(
+    coverageWrite.sql,
+    "UPDATE mail_items SET coverage_complete = 1 WHERE connection_key = ? AND coverage_complete = 0",
+  );
+  assert.deepEqual(coverageWrite.values, ["google-workspace"]);
+  assert.equal(database.runs.length, 2);
 });
 
 const baseMailItem = Object.freeze({
   id: "mail-validation",
+  connectionKey: "google-workspace",
   gmailMessageId: "message-validation",
   gmailThreadId: null,
   clientId: null,
@@ -352,9 +416,168 @@ const baseMailItem = Object.freeze({
   status: "needs-review",
   matchReason: null,
   emailDriveFileId: null,
+  analysisPayload: Object.freeze({
+    intents: Object.freeze(["lead"]),
+    rationale: "A bounded rationale.",
+  }),
+  party: "prospect",
+  confidence: "medium",
+  contentHash: "b".repeat(64),
+  labelDefinitionVersion: "catalog-2026-07-27",
+  attemptedLabelDefinitionVersion: null,
+  subject: "FCI TEST — DO NOT USE",
+  sender: "sender@example.test",
+  receivedAt: 39,
+  failureAttempts: 0,
+  errorCode: null,
+  coverageComplete: false,
   createdAt: 40,
   updatedAt: 41,
 });
+
+function d1MailItemRow(overrides = {}) {
+  const item = { ...baseMailItem, ...overrides };
+  return {
+    id: item.id,
+    connection_key: item.connectionKey,
+    gmail_message_id: item.gmailMessageId,
+    gmail_thread_id: item.gmailThreadId,
+    client_id: item.clientId,
+    suggested_project_id: item.suggestedProjectId,
+    approved_project_id: item.approvedProjectId,
+    status: item.status,
+    match_reason: item.matchReason,
+    email_drive_file_id: item.emailDriveFileId,
+    analysis_payload: item.analysisPayload === null
+      ? null
+      : JSON.stringify(item.analysisPayload),
+    party: item.party,
+    confidence: item.confidence,
+    content_hash: item.contentHash,
+    label_definition_version: item.labelDefinitionVersion,
+    attempted_label_definition_version: item.attemptedLabelDefinitionVersion,
+    subject: item.subject,
+    sender: item.sender,
+    received_at: item.receivedAt,
+    failure_attempts: item.failureAttempts,
+    error_code: item.errorCode,
+    coverage_complete: item.coverageComplete ? 1 : 0,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+  };
+}
+
+test("mail-item domain closes party and confidence to the shipped catalogs", () => {
+  for (const party of ["client", "prospect", "vendor", "employee", "unknown"]) {
+    assert.equal(
+      mailDomain.normalizeStoredMailItem({ ...baseMailItem, party }).party,
+      party,
+    );
+  }
+  for (const confidence of ["high", "medium", "low"]) {
+    assert.equal(
+      mailDomain.normalizeStoredMailItem({
+        ...baseMailItem,
+        confidence,
+      }).confidence,
+      confidence,
+    );
+  }
+  assert.throws(
+    () => mailDomain.normalizeStoredMailItem({
+      ...baseMailItem,
+      party: "customer",
+    }),
+    /party.*catalog/iu,
+  );
+  assert.throws(
+    () => mailDomain.normalizeStoredMailItem({
+      ...baseMailItem,
+      confidence: "certain",
+    }),
+    /confidence.*catalog/iu,
+  );
+});
+
+test("mail-item adapter filters retryable analysis rows before LIMIT so a current backlog cannot starve work", async () => {
+  const currentCatalogRows = Array.from({ length: 101 }, (_, index) =>
+    d1MailItemRow({
+      id: `mail-current-${index}`,
+      gmailMessageId: `message-current-${index}`,
+      labelDefinitionVersion: "catalog-v3",
+      createdAt: 100 + index,
+      updatedAt: 100 + index,
+    })
+  );
+  const retryable = d1MailItemRow({
+    id: "mail-exhausted-v2",
+    gmailMessageId: "message-exhausted-v2",
+    labelDefinitionVersion: "catalog-v1",
+    attemptedLabelDefinitionVersion: "catalog-v2",
+    failureAttempts: 3,
+    createdAt: 10,
+    updatedAt: 10,
+  });
+  assert.equal([...currentCatalogRows, retryable].length > 100, true);
+
+  const database = new FakeDatabase({
+    all(statement) {
+      assert.match(
+        statement.sql,
+        /^SELECT \* FROM mail_items WHERE connection_key = \? AND \(failure_attempts < \? OR attempted_label_definition_version IS NOT \?\) AND \(status = 'failed' OR \(status = 'needs-review' AND label_definition_version IS NOT \?\)\) ORDER BY updated_at ASC, id ASC LIMIT \?$/u,
+      );
+      assert.ok(
+        statement.sql.indexOf("failure_attempts") < statement.sql.indexOf("LIMIT"),
+        "retryability must be selected before the hard limit",
+      );
+      return [retryable];
+    },
+  });
+  const repository = mailModule.createD1MailItemRepository(database);
+
+  assert.deepEqual(
+    (await repository.listRetryableAnalysisRows(
+      "google-workspace",
+      "catalog-v3",
+      100,
+    )).map(({ gmailMessageId }) => gmailMessageId),
+    ["message-exhausted-v2"],
+  );
+  assert.deepEqual(database.statements.at(-1).values, [
+    "google-workspace",
+    3,
+    "catalog-v3",
+    "catalog-v3",
+    100,
+  ]);
+});
+
+for (const terminalStatus of ["accepted", "dismissed", "skipped-noise"]) {
+  test(`mail-item adapter preserves an existing ${terminalStatus} row against a late sweep`, async () => {
+    const database = new FakeDatabase({ run: () => 0 });
+    const repository = mailModule.createD1MailItemRepository(database);
+    const incoming = {
+      ...baseMailItem,
+      id: `late-${terminalStatus}`,
+      gmailMessageId: `terminal-${terminalStatus}`,
+      updatedAt: 42,
+    };
+
+    assert.deepEqual(await repository.upsert(incoming), {
+      outcome: "terminal-preserved",
+    });
+    const upsert = database.statements.at(-1);
+    assert.match(
+      upsert.sql,
+      /WHERE mail_items\.status IN \('needs-review', 'failed'\)$/u,
+    );
+    assert.equal(
+      upsert.sql.includes(`'${terminalStatus}'`),
+      false,
+      `${terminalStatus} must not be admitted to the mutable conflict states`,
+    );
+  });
+}
 
 for (const scenario of [
   {
@@ -412,6 +635,63 @@ for (const scenario of [
     assert.equal(database.runs.length, 0);
   });
 }
+
+test("mail-item adapter rejects unsafe analysis state before a D1 write", async () => {
+  for (const item of [
+    { ...baseMailItem, status: "approved" },
+    { ...baseMailItem, party: "customer" },
+    { ...baseMailItem, confidence: "certain" },
+    { ...baseMailItem, contentHash: "not-a-sha256" },
+    { ...baseMailItem, subject: "unsafe\u0000subject" },
+    { ...baseMailItem, coverageComplete: "yes" },
+    {
+      ...baseMailItem,
+      analysisPayload: { rationale: "x".repeat(8_001) },
+    },
+    {
+      ...baseMailItem,
+      status: "failed",
+      analysisPayload: null,
+      party: null,
+      confidence: null,
+      contentHash: null,
+      labelDefinitionVersion: null,
+      failureAttempts: 0,
+      errorCode: null,
+    },
+  ]) {
+    const database = new FakeDatabase();
+    const repository = mailModule.createD1MailItemRepository(database);
+    await assert.rejects(repository.upsert(item), /mail item/i);
+    assert.equal(database.runs.length, 0);
+  }
+});
+
+test("mail-item adapter persists a bounded failed row with nullable analysis and client", async () => {
+  const database = new FakeDatabase();
+  const repository = mailModule.createD1MailItemRepository(database);
+  assert.deepEqual(await repository.upsert({
+    ...baseMailItem,
+    id: "mail-failed",
+    gmailMessageId: "message-failed",
+    clientId: null,
+    status: "failed",
+    analysisPayload: null,
+    party: null,
+    confidence: null,
+    contentHash: null,
+    labelDefinitionVersion: null,
+    attemptedLabelDefinitionVersion: "catalog-2026-07-27",
+    matchReason: "Provider response was structurally invalid.",
+    failureAttempts: 1,
+    errorCode: "provider_invalid",
+  }), { outcome: "saved" });
+  const write = database.statements.at(-1);
+  assert.equal(write.values[4], null);
+  assert.equal(write.values[10], null);
+  assert.equal(write.values[19], 1);
+  assert.equal(write.values[20], "provider_invalid");
+});
 
 test("Workspace Settings GET/PATCH keep their public contract while delegating persistence", async () => {
   const database = new FakeDatabase({

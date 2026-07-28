@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Building2, FolderOpen, Inbox, ListFilter, Mail, RefreshCw, Reply, ShieldCheck, Sparkles } from "lucide-react";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
 import { cachedGetJson } from "../../lib/client-get-cache";
@@ -48,7 +48,7 @@ type GmailWorkspaceStatus = {
 };
 type AssistantTriageConfiguration = {
   keyState: "Configured" | "Missing";
-  features: { triage: boolean };
+  features: { triage: boolean; inboxAnalysis: boolean };
 };
 type AssistantTriageSuggestion = {
   messageId: string;
@@ -56,6 +56,17 @@ type AssistantTriageSuggestion = {
   confidence: "high" | "medium" | "low";
   rationale: string;
 };
+type InboxAnalysisCoverage =
+  | Readonly<{
+      terminationReason: "caught-up";
+      message: "You're caught up";
+      nextPageToken: null;
+    }>
+  | Readonly<{
+      terminationReason: "older-pending";
+      message: "Older messages not yet analyzed";
+      nextPageToken: string | null;
+    }>;
 
 const inboxBucketLabels: Record<InboxBucket, string> = {
   inbox: "Inbox",
@@ -68,6 +79,48 @@ function inboxDate(value: string | null) {
   if (!value) return "Date unavailable";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function inboxAnalysisCoverage(value: unknown): InboxAnalysisCoverage | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    record.terminationReason === "caught-up"
+    && record.message === "You're caught up"
+  ) {
+    return Object.freeze({
+      terminationReason: "caught-up",
+      message: "You're caught up",
+      nextPageToken: null,
+    });
+  }
+  if (
+    record.terminationReason === "older-pending"
+    && record.message === "Older messages not yet analyzed"
+  ) {
+    if (record.nextPageToken === undefined || record.nextPageToken === null) {
+      return Object.freeze({
+        terminationReason: "older-pending",
+        message: "Older messages not yet analyzed",
+        nextPageToken: null,
+      });
+    }
+    if (typeof record.nextPageToken === "string") {
+      const nextPageToken = record.nextPageToken.trim();
+      if (
+        nextPageToken
+        && nextPageToken.length <= 2_048
+        && !/[\u0000-\u001f\u007f]/.test(nextPageToken)
+      ) {
+        return Object.freeze({
+          terminationReason: "older-pending",
+          message: "Older messages not yet analyzed",
+          nextPageToken,
+        });
+      }
+    }
+  }
+  return null;
 }
 
 type InboxProjectSuggestion = { kind: "project" | "needs-review" | "intake" | "ignored"; text: string; reason: string };
@@ -103,6 +156,11 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
   const [triageSuggestions, setTriageSuggestions] = useState<Record<string, AssistantTriageSuggestion>>({});
   const [triageLoading, setTriageLoading] = useState(false);
   const triageRequestIdRef = useRef(0);
+  const [analysisCoverage, setAnalysisCoverage] = useState<InboxAnalysisCoverage | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const analysisAutoStartedRef = useRef(false);
+  const analysisInFlightRef = useRef<Promise<void> | null>(null);
+  const analysisMountedRef = useRef(true);
 
   function clearTriageSuggestions() {
     triageRequestIdRef.current += 1;
@@ -148,7 +206,14 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
         triageRequestIdRef.current += 1;
         setTriageSuggestions({});
         setTriageLoading(false);
-        setTriageConfiguration(configurationResult.value);
+        setTriageConfiguration({
+          keyState: configurationResult.value.keyState,
+          features: {
+            triage: configurationResult.value.features.triage,
+            // Missing or malformed newly widened settings fail closed.
+            inboxAnalysis: configurationResult.value.features?.inboxAnalysis === true,
+          },
+        });
       }
     });
     return () => {
@@ -157,8 +222,75 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
     };
   }, []);
 
+  useEffect(() => {
+    analysisMountedRef.current = true;
+    return () => {
+      analysisMountedRef.current = false;
+    };
+  }, []);
+
   const gmailReady = workspace?.connectionStatus === "connected" && workspace.gmailEnabled === true && workspace.gmailConnected === true;
   const visibleMessages = loadedBucket === bucket ? messages : [];
+  const triageReady = Boolean(
+    isAdmin
+    && triageConfiguration?.keyState === "Configured"
+    && triageConfiguration.features.triage,
+  );
+  const inboxAnalysisReady = Boolean(
+    isAdmin
+    && triageConfiguration?.keyState === "Configured"
+    && triageConfiguration.features.inboxAnalysis,
+  );
+
+  const runInboxAnalysis = useCallback((pageToken?: string) => {
+    if (!inboxAnalysisReady) return Promise.resolve();
+    if (analysisInFlightRef.current) return analysisInFlightRef.current;
+    const request = (async () => {
+      if (analysisMountedRef.current) setAnalysisLoading(true);
+      try {
+        const response = await fetch("/api/v1/inbox-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pageToken ? { pageToken } : {}),
+        });
+        const body = await response.json().catch(() => null) as unknown;
+        if (!response.ok) {
+          throw new Error("Inbox analysis could not finish.");
+        }
+        const coverage = inboxAnalysisCoverage(body);
+        if (!coverage) {
+          throw new Error("Inbox analysis returned an invalid coverage result.");
+        }
+        if (analysisMountedRef.current) setAnalysisCoverage(coverage);
+      } catch {
+        if (analysisMountedRef.current) {
+          setAnalysisCoverage(null);
+          notify("Inbox analysis could not finish. Refresh to retry.", "warning");
+        }
+      } finally {
+        if (analysisMountedRef.current) setAnalysisLoading(false);
+      }
+    })();
+    analysisInFlightRef.current = request;
+    void request.finally(() => {
+      if (analysisInFlightRef.current === request) {
+        analysisInFlightRef.current = null;
+      }
+    });
+    return request;
+  }, [inboxAnalysisReady, notify]);
+
+  useEffect(() => {
+    if (
+      !gmailReady
+      || !inboxAnalysisReady
+      || analysisAutoStartedRef.current
+    ) {
+      return;
+    }
+    analysisAutoStartedRef.current = true;
+    void runInboxAnalysis();
+  }, [gmailReady, inboxAnalysisReady, runInboxAnalysis]);
 
   async function loadMessages() {
     clearTriageSuggestions();
@@ -174,6 +306,7 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
       setLoadedBucket(bucket);
       setLabelReady(Boolean(data.labelReady));
       notify(`Loaded ${data.messages?.length ?? 0} message${(data.messages?.length ?? 0) === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`, "info");
+      if (inboxAnalysisReady) void runInboxAnalysis();
     } catch (loadError) {
       setMessages([]);
       setLoadedBucket(bucket);
@@ -355,18 +488,13 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
   }
 
   const connectionText = workspace?.simulation ? "Local Workspace simulation is ready" : gmailReady ? `Connected Workspace Gmail: ${workspace?.connectionAccount ?? "company mailbox"}` : workspace?.requiresReauthorization ? "Google Workspace needs to be reconnected to approve Gmail access." : "Connect the company Google Workspace account to load messages.";
-  const triageReady = Boolean(
-    isAdmin
-    && triageConfiguration?.keyState === "Configured"
-    && triageConfiguration.features.triage,
-  );
   return <>
     <PageTitle eyebrow="Gmail intake" title="Gmail project inbox" text="Search the company Gmail mailbox—or safe simulated messages—then review and copy each message to one independent project." state={gmailReady ? "In development" : "Setup required"} action={<><button className="soft-button" onClick={onRules}><ListFilter size={15} /> Inbox & file rules</button>{gmailReady ? <button className="soft-button" onClick={() => void loadMessages()} disabled={loading}>{loading ? "Loading…" : <><RefreshCw size={15} /> Refresh</>}</button> : <button className="primary-button" onClick={onGoogleSetup}><Building2 size={15} /> Google setup</button>}</>} />
     <section className={`inbox-connection inbox-state-strip ${gmailReady ? "ready" : ""}`}><Mail size={18} /><div className="inbox-state-copy"><strong>{gmailReady ? connectionText : "Workspace Gmail connection required"}</strong><span>{workspace?.simulation ? "Sample messages only. No Google account is connected and nothing is sent to Google." : gmailReady ? "Messages load only after your direct action; filing remains review-first and keeps Inbox." : connectionText}</span><span className="inbox-safety-copy"><ShieldCheck size={14} />Suggestions only: {rules.filter((rule) => rule.enabled).length} enabled rules can recommend a destination, but you must choose the exact project and approve every copy.</span></div><div className="inbox-state-actions"><button className="soft-button" onClick={() => void checkGmailConnection(true)} disabled={checking}>{checking ? "Checking…" : "Check connection"}</button><button className="soft-button" onClick={onRules}>Manage rules</button></div></section>
     {error && <p className="workspace-missing">{error}</p>}
     <div className="inbox-layout">
       <section className="panel message-list">
-        <header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => { clearTriageSuggestions(); onBucket(event.target.value as InboxBucket); }} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI/Intake</option><option value="needs-review">FCI/Needs Review</option><option value="filed">FCI/Filed</option></select></label><label>Search this Gmail mailbox<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label><small className="gmail-search-help">Use Gmail search terms such as <b>from:</b>, <b>subject:</b>, or a project number.</small></div><div className="workspace-actions">{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}{triageReady && <button className="soft-button" onClick={() => void suggestWithAi()} disabled={visibleMessages.length === 0 || loading || triageLoading}><Sparkles size={15} /> {triageLoading ? "Suggesting…" : "Suggest with AI"}</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
+        <header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => { clearTriageSuggestions(); onBucket(event.target.value as InboxBucket); }} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI/Intake</option><option value="needs-review">FCI/Needs Review</option><option value="filed">FCI/Filed</option></select></label><label>Search this Gmail mailbox<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label><small className="gmail-search-help">Use Gmail search terms such as <b>from:</b>, <b>subject:</b>, or a project number.</small></div><div className="workspace-actions">{(analysisLoading || analysisCoverage) && <span className="gmail-search-help" role="status" aria-live="polite">{analysisLoading ? "Checking inbox analysis…" : analysisCoverage?.message}</span>}{analysisCoverage?.terminationReason === "older-pending" && <button className="soft-button" type="button" onClick={() => void runInboxAnalysis(analysisCoverage.nextPageToken ?? undefined)} aria-busy={analysisLoading} aria-disabled={analysisLoading}>{analysisLoading ? "Checking older…" : "Check older"}</button>}{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}{triageReady && <button className="soft-button" onClick={() => void suggestWithAi()} disabled={visibleMessages.length === 0 || loading || triageLoading}><Sparkles size={15} /> {triageLoading ? "Suggesting…" : "Suggest with AI"}</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
         {!gmailReady ? <OperationsEmptyState variant="inbox"><Mail size={25} /><h2>Connect Workspace Gmail to see the company inbox</h2><p>Until Workspace is available, switch the local app to Workspace simulation to test the full inbox workflow with sample data.</p><button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button></OperationsEmptyState> : visibleMessages.length === 0 ? <OperationsEmptyState variant="inbox"><Inbox size={25} /><h2>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h2><p>Choose a mailbox, optionally enter a Gmail search, and use the Load messages button above. The view is limited to 20 message summaries.</p></OperationsEmptyState> : visibleMessages.map((message, index) => {
           const suggestion = inboxProjectSuggestion(message, projects, clients, rules);
           const aiSuggestion = triageSuggestions[message.id];

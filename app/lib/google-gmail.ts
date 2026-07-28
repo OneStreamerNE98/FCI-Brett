@@ -8,6 +8,7 @@ import { seedWorkspaceBlueprint } from "./workspace-blueprint";
 
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const MAX_MESSAGE_RESULTS = 20;
+const MAX_GMAIL_PAGE_TOKEN_LENGTH = 2_048;
 const DEFAULT_GOOGLE_FETCH: GoogleFetch = (input, init) => globalThis.fetch(input, init);
 const MAX_SEARCH_QUERY_LENGTH = 240;
 const MAX_ARCHIVE_MESSAGE_PARTS = 160;
@@ -86,6 +87,19 @@ export type GmailMessageSummary = {
   labelIds: string[];
 };
 
+export type GmailMessageListPage = Readonly<{
+  messages: GmailMessageSummary[];
+  messageIds: string[];
+  failedMessageIds: string[];
+  nextPageToken: string | null;
+}>;
+
+export type GmailMessageAnalysisInput = Readonly<{
+  summary: GmailMessageSummary;
+  bodyText: string;
+  listUnsubscribe: string | null;
+}>;
+
 export type GmailLabelSummary = {
   id: string;
   name: string;
@@ -155,6 +169,15 @@ function compactText(value: string | undefined, maximum: number) {
 
 function header(headers: GmailHeader[] | undefined, name: string) {
   return compactText(headers?.find((item) => item.name?.toLowerCase() === name.toLowerCase())?.value, 500) || null;
+}
+
+function boundedHeader(headers: GmailHeader[] | undefined, name: string) {
+  const value = header(headers, name);
+  if (!value) return null;
+  return value
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 500) || null;
 }
 
 function toIsoDate(value: string | undefined) {
@@ -395,6 +418,35 @@ export function validateGmailMessageId(messageId: string) {
   return messageId;
 }
 
+export function normalizeGmailPageToken(value: string | null | undefined) {
+  if (value === null || value === undefined) return undefined;
+  const token = value.trim();
+  if (
+    !token
+    || token.length > MAX_GMAIL_PAGE_TOKEN_LENGTH
+    || /[\u0000-\u001f\u007f]/.test(token)
+  ) {
+    throw new GoogleIntegrationError(
+      "invalid_gmail_page_token",
+      "The Gmail page token is invalid.",
+      400,
+    );
+  }
+  return token;
+}
+
+function returnedGmailPageToken(value: unknown) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") {
+    throw archiveResponseError("Gmail returned an invalid message page.");
+  }
+  try {
+    return normalizeGmailPageToken(value) ?? null;
+  } catch {
+    throw archiveResponseError("Gmail returned an invalid message page.");
+  }
+}
+
 function mapMessage(message: GmailMessage): GmailMessageSummary {
   return {
     id: message.id,
@@ -406,6 +458,22 @@ function mapMessage(message: GmailMessage): GmailMessageSummary {
     snippet: compactText(message.snippet, 600),
     labelIds: (message.labelIds ?? []).filter((labelId) => typeof labelId === "string").slice(0, 30),
   };
+}
+
+function analysisInput(message: GmailMessage): GmailMessageAnalysisInput {
+  const bodyText = (
+    collectGmailPlainTextBody(message.payload, GMAIL_REPLY_TEXT_LIMIT)
+    || compactText(message.snippet, GMAIL_REPLY_TEXT_LIMIT)
+  )
+    .replace(/\r\n/g, "\n")
+    .replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .slice(0, GMAIL_REPLY_TEXT_LIMIT)
+    .trim();
+  return Object.freeze({
+    summary: mapMessage(message),
+    bodyText,
+    listUnsubscribe: boundedHeader(message.payload?.headers, "List-Unsubscribe"),
+  });
 }
 
 export function normalizeGmailBucket(value: string | null): GmailListBucket {
@@ -664,17 +732,51 @@ export class GoogleGmailClient {
     return label?.id ?? null;
   }
 
-  async listMessages(input: { labelId: string; search?: string }) {
+  async listMessages(input: {
+    labelId: string;
+    search?: string;
+    pageToken?: string;
+    mode?: "sweep";
+  }): Promise<GmailMessageListPage> {
     const parameters = new URLSearchParams({ maxResults: String(MAX_MESSAGE_RESULTS), labelIds: input.labelId });
     if (input.search) parameters.set("q", input.search);
-    const response = await this.request<{ messages?: Array<Pick<GmailMessage, "id" | "threadId">> }>(
+    const pageToken = normalizeGmailPageToken(input.pageToken);
+    if (pageToken) parameters.set("pageToken", pageToken);
+    const response = await this.request<{
+      messages?: Array<Pick<GmailMessage, "id" | "threadId">>;
+      nextPageToken?: unknown;
+    }>(
       `messages?${parameters.toString()}`,
       {},
       { idempotent: true },
     );
     const references = (response.messages ?? []).slice(0, MAX_MESSAGE_RESULTS);
-    const messages = await Promise.all(references.map((reference) => this.getMessageSummary(reference.id)));
-    return messages;
+    const messageIds = references.map((reference) => validateGmailMessageId(reference.id));
+    let messages: GmailMessageSummary[];
+    let failedMessageIds: string[];
+    if (input.mode === "sweep") {
+      const summaries = await Promise.allSettled(
+        messageIds.map((messageId) => this.getMessageSummary(messageId)),
+      );
+      messages = summaries.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : []
+      );
+      failedMessageIds = summaries.flatMap((result, index) =>
+        result.status === "rejected" ? [messageIds[index]] : []
+      );
+    } else {
+      // Preserve the ordinary Inbox list's existing fail-together behavior.
+      messages = await Promise.all(
+        messageIds.map((messageId) => this.getMessageSummary(messageId)),
+      );
+      failedMessageIds = [];
+    }
+    return Object.freeze({
+      messages,
+      messageIds,
+      failedMessageIds,
+      nextPageToken: returnedGmailPageToken(response.nextPageToken),
+    });
   }
 
   async getMessageSummary(messageId: string) {
@@ -700,13 +802,18 @@ export class GoogleGmailClient {
   async getMessageBodyText(messageId: string) {
     const safeMessageId = validateGmailMessageId(messageId);
     const message = await this.getFullMessage(safeMessageId);
-    const plain = collectGmailPlainTextBody(message.payload, GMAIL_REPLY_TEXT_LIMIT)
-      || compactText(message.snippet, GMAIL_REPLY_TEXT_LIMIT);
-    return plain
-      .replace(/\r\n/g, "\n")
-      .replace(/[\u0000\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
-      .slice(0, GMAIL_REPLY_TEXT_LIMIT)
-      .trim();
+    return analysisInput(message).bodyText;
+  }
+
+  /**
+   * Returns the one bounded, read-only Gmail input used for durable inbox
+   * analysis. The full-format response supplies both the plain-text body and
+   * List-Unsubscribe header without changing getMessageSummary's pinned
+   * four-header metadata request.
+   */
+  async getMessageAnalysisInput(messageId: string): Promise<GmailMessageAnalysisInput> {
+    const safeMessageId = validateGmailMessageId(messageId);
+    return analysisInput(await this.getFullMessage(safeMessageId));
   }
 
   private async getFullMessage(messageId: string) {

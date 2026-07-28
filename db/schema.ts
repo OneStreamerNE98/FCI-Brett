@@ -197,6 +197,7 @@ export const userPreferences = sqliteTable("user_preferences", {
 
 export const mailItems = sqliteTable("mail_items", {
   id: text("id").primaryKey(),
+  connectionKey: text("connection_key").notNull().default("google-workspace"),
   gmailMessageId: text("gmail_message_id"),
   gmailThreadId: text("gmail_thread_id"),
   clientId: text("client_id"),
@@ -205,9 +206,23 @@ export const mailItems = sqliteTable("mail_items", {
   status: text("status").notNull(),
   matchReason: text("match_reason"),
   emailDriveFileId: text("email_drive_file_id"),
+  analysisPayload: text("analysis_payload", { mode: "json" }),
+  party: text("party"),
+  confidence: text("confidence"),
+  contentHash: text("content_hash"),
+  labelDefinitionVersion: text("label_definition_version"),
+  attemptedLabelDefinitionVersion: text("attempted_label_definition_version"),
+  subject: text("subject"),
+  sender: text("sender"),
+  receivedAt: integer("received_at", { mode: "timestamp_ms" }),
+  failureAttempts: integer("failure_attempts").notNull().default(0),
+  errorCode: text("error_code"),
+  coverageComplete: integer("coverage_complete", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 }, (table) => [
+  uniqueIndex("mail_items_profile_message_unique").on(table.connectionKey, table.gmailMessageId),
+  index("mail_items_profile_status_idx").on(table.connectionKey, table.status, table.updatedAt),
   index("mail_items_status_idx").on(table.status, table.updatedAt),
 ]);
 

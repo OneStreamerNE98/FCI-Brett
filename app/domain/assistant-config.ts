@@ -1,6 +1,7 @@
 export const ASSISTANT_FEATURE_KEYS = Object.freeze([
   "orgQa",
   "triage",
+  "inboxAnalysis",
   "replyDrafts",
   "taskExtraction",
 ] as const);
@@ -18,6 +19,7 @@ export function defaultAssistantFeatures(keyConfigured: boolean): AssistantFeatu
   return Object.freeze({
     orgQa: keyConfigured,
     triage: keyConfigured,
+    inboxAnalysis: keyConfigured,
     replyDrafts: keyConfigured,
     taskExtraction: keyConfigured,
   });

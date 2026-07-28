@@ -17,6 +17,7 @@ const productionMigrationModules = new Set([
   join(appRoot, "platform", "postgres", "settings-persistence-schema.ts"),
   join(appRoot, "platform", "postgres", "task-schema.ts"),
   join(appRoot, "platform", "postgres", "core-record-concurrency-schema.ts"),
+  join(appRoot, "platform", "postgres", "mail-item-analysis-schema.ts"),
 ]);
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
@@ -28,6 +29,7 @@ const pageLayoutsMigrationPrefix = "0017_";
 const tasksMigrationPrefix = "0018_";
 const projectSegmentMigrationPrefix = "0019_";
 const coreRecordConcurrencyMigrationPrefix = "0020_";
+const mailItemAnalysisMigrationPrefix = "0021_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -50,6 +52,8 @@ const requiredDevelopmentIndexes = [
   ...integrityIndexNames,
   "tasks_project_status_idx",
   "tasks_status_due_date_idx",
+  "mail_items_profile_message_unique",
+  "mail_items_profile_status_idx",
 ];
 
 async function sourceFiles(directory) {
@@ -567,11 +571,96 @@ test("adds one generated D1 version column to each core record table in migratio
     );
     assert.deepEqual(unchangedColumns, previousSnapshot.tables[table].columns);
   }
-  assert.deepEqual(journal.entries.at(-1), {
+  const journalEntry = journal.entries.find(({ idx }) => idx === 20);
+  assert.deepEqual(journalEntry, {
     idx: 20,
     version: "6",
-    when: journal.entries.at(-1).when,
+    when: journalEntry.when,
     tag: "0020_core_record_concurrency",
+    breakpoints: true,
+  });
+});
+
+test("extends mail_items additively for AI-10 in generated migration 0021", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(mailItemAnalysisMigrationPrefix));
+  assert.equal(migration, "0021_superb_killer_shrike.sql");
+  assert.equal(files.filter((file) => file.startsWith(mailItemAnalysisMigrationPrefix)).length, 1);
+
+  const [migrationSql, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0020_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0021_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+  const addedColumns = [
+    "connection_key",
+    "analysis_payload",
+    "party",
+    "confidence",
+    "content_hash",
+    "label_definition_version",
+    "attempted_label_definition_version",
+    "subject",
+    "sender",
+    "received_at",
+    "failure_attempts",
+    "error_code",
+    "coverage_complete",
+  ];
+  for (const column of addedColumns) {
+    assert.match(
+      migrationSql,
+      new RegExp("ALTER TABLE `mail_items` ADD `" + column + "`", "u"),
+    );
+  }
+  assert.match(
+    migrationSql,
+    /`connection_key` text DEFAULT 'google-workspace' NOT NULL/u,
+  );
+  assert.match(
+    migrationSql,
+    /CREATE UNIQUE INDEX `mail_items_profile_message_unique` ON `mail_items` \(`connection_key`,`gmail_message_id`\)/u,
+  );
+  assert.match(
+    migrationSql,
+    /CREATE INDEX `mail_items_profile_status_idx` ON `mail_items` \(`connection_key`,`status`,`updated_at`\)/u,
+  );
+  assert.doesNotMatch(
+    migrationSql,
+    /\b(?:DROP|UPDATE|INSERT|DELETE|TRUNCATE|RENAME|CREATE TABLE)\b/iu,
+  );
+
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.deepEqual(Object.keys(snapshot.tables).sort(), Object.keys(previousSnapshot.tables).sort());
+  const previousMailItem = previousSnapshot.tables.mail_items;
+  const mailItem = snapshot.tables.mail_items;
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(mailItem.columns).filter(([column]) => !addedColumns.includes(column)),
+    ),
+    previousMailItem.columns,
+  );
+  assert.deepEqual(mailItem.columns.connection_key, {
+    name: "connection_key",
+    type: "text",
+    primaryKey: false,
+    notNull: true,
+    autoincrement: false,
+    default: "'google-workspace'",
+  });
+  assert.deepEqual(mailItem.columns.failure_attempts.default, 0);
+  assert.deepEqual(mailItem.columns.coverage_complete.default, false);
+  assert.deepEqual(mailItem.indexes.mail_items_profile_message_unique, {
+    name: "mail_items_profile_message_unique",
+    columns: ["connection_key", "gmail_message_id"],
+    isUnique: true,
+  });
+  assert.deepEqual(journal.entries.at(-1), {
+    idx: 21,
+    version: "6",
+    when: journal.entries.at(-1).when,
+    tag: "0021_superb_killer_shrike",
     breakpoints: true,
   });
 });

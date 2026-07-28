@@ -1,5 +1,11 @@
 import {
+  MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
+  normalizeMailItemConnectionKey,
+  normalizeMailItemGmailMessageId,
+  normalizeMailItemLabelDefinitionVersion,
+  normalizeMailItemStatus,
   normalizeStoredMailItem,
+  serializeMailItemAnalysisPayload,
   type MailItem,
 } from "../../domain/mail-item";
 import type {
@@ -25,6 +31,7 @@ export type PostgresMailItemOptions = {
 
 type MailItemDatabaseRow = Record<string, unknown> & {
   id: unknown;
+  connection_key: unknown;
   gmail_message_id: unknown;
   gmail_thread_id: unknown;
   client_id: unknown;
@@ -33,6 +40,18 @@ type MailItemDatabaseRow = Record<string, unknown> & {
   status: unknown;
   match_reason: unknown;
   email_drive_file_id: unknown;
+  analysis_payload: unknown;
+  party: unknown;
+  confidence: unknown;
+  content_hash: unknown;
+  label_definition_version: unknown;
+  attempted_label_definition_version: unknown;
+  subject: unknown;
+  sender: unknown;
+  received_at: unknown;
+  failure_attempts: unknown;
+  error_code: unknown;
+  coverage_complete: unknown;
   created_at: unknown;
   updated_at: unknown;
 };
@@ -53,33 +72,8 @@ function boundedText(value: unknown, maximum: number): value is string {
     && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
-function requiredText(value: unknown, label: string, maximum: number) {
-  if (!boundedText(value, maximum)) {
-    throw new TypeError(`${label} must be bounded nonblank text`);
-  }
-  return value;
-}
-
-function nullableText(value: unknown, label: string, maximum: number, multiline = false) {
-  if (value === null) return null;
-  const unsafeControls = multiline
-    ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/
-    : /[\u0000-\u001f\u007f]/;
-  if (
-    typeof value !== "string"
-    || !value.trim()
-    || value.length > maximum
-    || unsafeControls.test(value)
-  ) {
-    throw new TypeError(`${label} must be bounded text or null`);
-  }
-  return value;
-}
-
-function nullableUuid(value: unknown, label: string) {
-  if (value === null) return null;
-  if (!isPostgresUuid(value)) throw new TypeError(`${label} must be a UUID or null`);
-  return value.toLowerCase();
+function nullablePostgresTimestamp(value: unknown, label: string) {
+  return value === null ? null : parsePostgresTimestamp(value, label);
 }
 
 function mailItemFromPostgres(row: MailItemDatabaseRow) {
@@ -91,70 +85,50 @@ function mailItemFromPostgres(row: MailItemDatabaseRow) {
     row.updated_at,
     "PostgreSQL mail item updated_at",
   );
-  if (updatedAt < createdAt) {
-    throw new TypeError("PostgreSQL mail item timestamps are inconsistent");
-  }
+  const receivedAt = nullablePostgresTimestamp(
+    row.received_at,
+    "PostgreSQL mail item received_at",
+  );
   return normalizeStoredMailItem({
-    id: requiredText(row.id, "PostgreSQL mail item ID", 512),
-    gmail_message_id: nullableText(
-      row.gmail_message_id,
-      "PostgreSQL Gmail message ID",
-      512,
-    ),
-    gmail_thread_id: nullableText(
-      row.gmail_thread_id,
-      "PostgreSQL Gmail thread ID",
-      512,
-    ),
-    client_id: nullableUuid(row.client_id, "PostgreSQL mail item client ID"),
-    suggested_project_id: nullableUuid(
-      row.suggested_project_id,
-      "PostgreSQL suggested project ID",
-    ),
-    approved_project_id: nullableUuid(
-      row.approved_project_id,
-      "PostgreSQL approved project ID",
-    ),
-    status: requiredText(row.status, "PostgreSQL mail item status", 80),
-    match_reason: nullableText(
-      row.match_reason,
-      "PostgreSQL mail item match reason",
-      1_000,
-      true,
-    ),
-    email_drive_file_id: nullableText(
-      row.email_drive_file_id,
-      "PostgreSQL mail item Drive file ID",
-      512,
-    ),
+    ...row,
+    client_id: row.client_id,
+    suggested_project_id: row.suggested_project_id,
+    approved_project_id: row.approved_project_id,
+    received_at: receivedAt,
     created_at: createdAt,
     updated_at: updatedAt,
   });
 }
 
 function validateMailItem(item: MailItem) {
-  requiredText(item.id, "PostgreSQL mail item ID", 512);
-  nullableText(item.gmailMessageId, "PostgreSQL Gmail message ID", 512);
-  nullableText(item.gmailThreadId, "PostgreSQL Gmail thread ID", 512);
-  nullableUuid(item.clientId, "PostgreSQL mail item client ID");
-  nullableUuid(item.suggestedProjectId, "PostgreSQL suggested project ID");
-  nullableUuid(item.approvedProjectId, "PostgreSQL approved project ID");
-  requiredText(item.status, "PostgreSQL mail item status", 80);
-  nullableText(item.matchReason, "PostgreSQL mail item match reason", 1_000, true);
-  nullableText(item.emailDriveFileId, "PostgreSQL mail item Drive file ID", 512);
-  const createdAt = persistenceDate(item.createdAt, "PostgreSQL mail item created_at");
-  const updatedAt = persistenceDate(item.updatedAt, "PostgreSQL mail item updated_at");
-  if (updatedAt < createdAt) {
-    throw new TypeError("PostgreSQL mail item timestamps are inconsistent");
+  if (typeof item.coverageComplete !== "boolean") {
+    throw new TypeError("PostgreSQL mail item coverage_complete must be boolean");
   }
-  return { createdAt, updatedAt };
+  const normalized = normalizeStoredMailItem(
+    item as unknown as Record<string, unknown>,
+  );
+  const createdAt = persistenceDate(
+    normalized.createdAt,
+    "PostgreSQL mail item created_at",
+  );
+  const updatedAt = persistenceDate(
+    normalized.updatedAt,
+    "PostgreSQL mail item updated_at",
+  );
+  const receivedAt = normalized.receivedAt === null
+    ? null
+    : persistenceDate(normalized.receivedAt, "PostgreSQL mail item received_at");
+  return { normalized, createdAt, updatedAt, receivedAt };
 }
 
-const MAIL_ITEM_SELECT = `SELECT id, gmail_message_id, gmail_thread_id,
+const MAIL_ITEM_SELECT = `SELECT id, connection_key, gmail_message_id, gmail_thread_id,
        client_id::text AS client_id,
        suggested_project_id::text AS suggested_project_id,
        approved_project_id::text AS approved_project_id, status, match_reason,
-       email_drive_file_id, created_at, updated_at
+       email_drive_file_id, analysis_payload, party, confidence, content_hash,
+       label_definition_version, attempted_label_definition_version,
+       subject, sender, received_at, failure_attempts,
+       error_code, coverage_complete, created_at, updated_at
 FROM mail_items`;
 
 const MAIL_ITEM_REFERENCE_CONSTRAINTS = [
@@ -163,7 +137,10 @@ const MAIL_ITEM_REFERENCE_CONSTRAINTS = [
   "mail_items_approved_project_id_fkey",
 ] as const;
 
-type MissingReferenceOutcome = Exclude<MailItemUpsertResult["outcome"], "saved">;
+type MissingReferenceOutcome = Exclude<
+  MailItemUpsertResult["outcome"],
+  "saved" | "terminal-preserved"
+>;
 
 const MAIL_ITEM_REFERENCE_OUTCOMES = [
   {
@@ -210,6 +187,17 @@ function referenceConstraintOutcome(error: unknown): MailItemUpsertResult | null
   return null;
 }
 
+function singleRow(
+  result: { rowCount: number | null; rows: MailItemDatabaseRow[] },
+  label: string,
+) {
+  if (result.rowCount === 0) return null;
+  if (result.rowCount !== 1 || !result.rows[0]) {
+    throw new Error(`PostgreSQL ${label} returned an invalid result`);
+  }
+  return mailItemFromPostgres(result.rows[0]);
+}
+
 export function createPostgresMailItemRepository(
   pool: PostgresPool,
   options: PostgresMailItemOptions = {},
@@ -226,52 +214,128 @@ export function createPostgresMailItemRepository(
       return withPostgresTransaction(
         pool,
         { ...transactionOptions, readOnly: true },
-        async (client) => {
-          const result = await client.query<MailItemDatabaseRow>(
+        async (client) => singleRow(
+          await client.query<MailItemDatabaseRow>(
             `${MAIL_ITEM_SELECT}\nWHERE id = $1`,
             [id],
-          );
-          if (result.rowCount === 0) return null;
-          if (result.rowCount !== 1 || !result.rows[0]) {
-            throw new Error("PostgreSQL mail item lookup returned an invalid result");
-          }
-          return mailItemFromPostgres(result.rows[0]);
-        },
+          ),
+          "mail item lookup",
+        ),
       );
     },
 
-    async listByStatus(status, limit) {
-      requiredText(status, "PostgreSQL mail item status", 80);
+    async findByGmailMessageId(connectionKey, gmailMessageId) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedMessageId = normalizeMailItemGmailMessageId(gmailMessageId);
+      return withPostgresTransaction(
+        pool,
+        { ...transactionOptions, readOnly: true },
+        async (client) => singleRow(
+          await client.query<MailItemDatabaseRow>(
+            `${MAIL_ITEM_SELECT}
+WHERE connection_key = $1 AND gmail_message_id = $2`,
+            [normalizedConnectionKey, normalizedMessageId],
+          ),
+          "Gmail mail item lookup",
+        ),
+      );
+    },
+
+    async listByStatus(connectionKey, status, limit) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedStatus = normalizeMailItemStatus(status);
       return withPostgresTransaction(
         pool,
         { ...transactionOptions, readOnly: true },
         async (client) => {
           const result = await client.query<MailItemDatabaseRow>(
             `${MAIL_ITEM_SELECT}
-WHERE status = $1
+WHERE connection_key = $1 AND status = $2
 ORDER BY updated_at DESC, id
-LIMIT $2`,
-            [status, boundedLimit(limit)],
+LIMIT $3`,
+            [normalizedConnectionKey, normalizedStatus, boundedLimit(limit)],
           );
           return result.rows.map(mailItemFromPostgres);
         },
       );
     },
 
+    async listRetryableAnalysisRows(
+      connectionKey,
+      currentLabelDefinitionVersion,
+      limit,
+    ) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedLabelDefinitionVersion =
+        normalizeMailItemLabelDefinitionVersion(currentLabelDefinitionVersion);
+      return withPostgresTransaction(
+        pool,
+        { ...transactionOptions, readOnly: true },
+        async (client) => {
+          const result = await client.query<MailItemDatabaseRow>(
+            `${MAIL_ITEM_SELECT}
+WHERE connection_key = $1
+  AND (
+    failure_attempts < $2
+    OR attempted_label_definition_version IS DISTINCT FROM $3
+  )
+  AND (
+    status = 'failed'
+    OR (
+      status = 'needs-review'
+      AND label_definition_version IS DISTINCT FROM $4
+    )
+  )
+ORDER BY updated_at ASC, id ASC
+LIMIT $5`,
+            [
+              normalizedConnectionKey,
+              MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
+              normalizedLabelDefinitionVersion,
+              normalizedLabelDefinitionVersion,
+              boundedLimit(limit),
+            ],
+          );
+          return result.rows.map(mailItemFromPostgres);
+        },
+      );
+    },
+
+    async markCoverageComplete(connectionKey) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      await withPostgresTransaction(pool, transactionOptions, async (client) => {
+        await client.query(
+          `UPDATE mail_items
+SET coverage_complete = true
+WHERE connection_key = $1 AND coverage_complete = false`,
+          [normalizedConnectionKey],
+        );
+      });
+    },
+
     async upsert(item) {
       const invalidReferenceResult = invalidReference(item);
       if (invalidReferenceResult) return invalidReferenceResult;
-      const timestamps = validateMailItem(item);
+      const values = validateMailItem(item);
+      const normalized = values.normalized;
       try {
-        await withPostgresTransaction(pool, transactionOptions, async (client) => {
-          const result = await client.query(
-            `INSERT INTO mail_items (
-               id, gmail_message_id, gmail_thread_id, client_id,
+        const rowCount = await withPostgresTransaction(
+          pool,
+          transactionOptions,
+          async (client) => {
+            const result = await client.query(
+              `INSERT INTO mail_items (
+               id, connection_key, gmail_message_id, gmail_thread_id, client_id,
                suggested_project_id, approved_project_id, status, match_reason,
-               email_drive_file_id, created_at, updated_at
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-             ON CONFLICT (id) DO UPDATE SET
-               gmail_message_id = EXCLUDED.gmail_message_id,
+               email_drive_file_id, analysis_payload, party, confidence, content_hash,
+               label_definition_version, attempted_label_definition_version,
+               subject, sender, received_at,
+               failure_attempts, error_code, coverage_complete, created_at, updated_at
+             ) VALUES (
+               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+               $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+             )
+             ON CONFLICT (connection_key, gmail_message_id) DO UPDATE SET
                gmail_thread_id = EXCLUDED.gmail_thread_id,
                client_id = EXCLUDED.client_id,
                suggested_project_id = EXCLUDED.suggested_project_id,
@@ -279,26 +343,56 @@ LIMIT $2`,
                status = EXCLUDED.status,
                match_reason = EXCLUDED.match_reason,
                email_drive_file_id = EXCLUDED.email_drive_file_id,
-               updated_at = EXCLUDED.updated_at`,
-            [
-              item.id,
-              item.gmailMessageId,
-              item.gmailThreadId,
-              item.clientId,
-              item.suggestedProjectId,
-              item.approvedProjectId,
-              item.status,
-              item.matchReason,
-              item.emailDriveFileId,
-              timestamps.createdAt,
-              timestamps.updatedAt,
-            ],
-          );
-          if (result.rowCount !== 1) {
-            throw new Error("PostgreSQL mail item was not upserted exactly once");
-          }
+               analysis_payload = EXCLUDED.analysis_payload,
+               party = EXCLUDED.party,
+               confidence = EXCLUDED.confidence,
+               content_hash = EXCLUDED.content_hash,
+               label_definition_version = EXCLUDED.label_definition_version,
+               attempted_label_definition_version = EXCLUDED.attempted_label_definition_version,
+               subject = EXCLUDED.subject,
+               sender = EXCLUDED.sender,
+               received_at = EXCLUDED.received_at,
+               failure_attempts = EXCLUDED.failure_attempts,
+               error_code = EXCLUDED.error_code,
+               coverage_complete = mail_items.coverage_complete OR EXCLUDED.coverage_complete,
+               updated_at = EXCLUDED.updated_at
+             WHERE mail_items.status IN ('needs-review', 'failed')`,
+              [
+                normalized.id,
+                normalized.connectionKey,
+                normalized.gmailMessageId,
+                normalized.gmailThreadId,
+                normalized.clientId,
+                normalized.suggestedProjectId,
+                normalized.approvedProjectId,
+                normalized.status,
+                normalized.matchReason,
+                normalized.emailDriveFileId,
+                serializeMailItemAnalysisPayload(normalized.analysisPayload),
+                normalized.party,
+                normalized.confidence,
+                normalized.contentHash,
+                normalized.labelDefinitionVersion,
+                normalized.attemptedLabelDefinitionVersion,
+                normalized.subject,
+                normalized.sender,
+                values.receivedAt,
+                normalized.failureAttempts,
+                normalized.errorCode,
+                normalized.coverageComplete,
+                values.createdAt,
+                values.updatedAt,
+              ],
+            );
+            if (result.rowCount !== 0 && result.rowCount !== 1) {
+              throw new Error("PostgreSQL mail item was not upserted exactly once");
+            }
+            return result.rowCount;
+          },
+        );
+        return Object.freeze({
+          outcome: rowCount === 0 ? "terminal-preserved" : "saved",
         });
-        return Object.freeze({ outcome: "saved" });
       } catch (error) {
         const missing = referenceConstraintOutcome(error);
         if (missing) return missing;

@@ -344,6 +344,9 @@ test("creates and closes a runtime composition through injected pool dependencie
   assert.equal(typeof composition.repositories.userPreferences.findByEmail, "function");
   assert.equal(typeof composition.repositories.filingRules.list, "function");
   assert.equal(typeof composition.repositories.mailItems.upsert, "function");
+  assert.equal(typeof composition.repositories.mailItems.findByGmailMessageId, "function");
+  assert.equal(typeof composition.repositories.mailItems.listRetryableAnalysisRows, "function");
+  assert.equal(typeof composition.repositories.mailItems.markCoverageComplete, "function");
   await composition.close();
   assert.deepEqual(events, ["pool.end", "connector.close"]);
 });

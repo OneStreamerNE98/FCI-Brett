@@ -105,12 +105,13 @@ recorded explicitly in §11 rather than being presented as working behavior.
 | Organization-wide Q&A engine (AI-03) | API/application layer only; office; the same POST with `projectId` omitted. The first-party Ask form always supplies a project today. | `orgQa` | Bounded `search_records` records-only result with a missing-key cause. Configured-but-off uses the same shape with an off cause and zero provider calls. | Saved D1 tools in both modes; no Google call; `drive_search` is not composed |
 | Today view (AI-04) | Assistant **Today** tab (default); office; `GET /api/v1/assistant/today` | None | Unchanged; it never calls a provider | Deterministic D1 assembly in both modes; no Google or Gmail call |
 | Inbox triage suggestions (AI-05) | Inbox button/chip; **admin**; `POST /api/v1/assistant/triage` | `triage` | Button absent and route returns `503 assistant_key_missing`; there is no fabricated fallback | Simulation reads local sample Gmail summaries; live requires the approved Workspace Gmail connection. Both may call OpenAI when configured. Accept only preselects the existing filing-review modal. |
+| Durable Inbox analysis (AI-10 a+b+c) | Automatic bounded Inbox sweep; **admin**; `POST /api/v1/inbox-analysis` | `inboxAnalysis` | The client makes no request and the route returns `503 assistant_key_missing`; no provider call or `mail_items` write occurs | Simulation uses deterministic local fixtures and calls neither Google nor OpenAI. Live reads bounded Gmail evidence, calls the provider once per eligible message, and persists one connection-scoped outcome row. |
 | Reply drafting (AI-06) | Gmail reply modal; **admin**; `POST /api/v1/assistant/reply-draft` | `replyDrafts` | Button disabled with a cause and route returns `503 assistant_key_missing`; there is no records-only draft | Simulation reads local message context; live requires Workspace Gmail. Both may call OpenAI. The route returns text only; the human separately chooses **Save draft**. |
 | Task extraction (AI-07a) | Assistant Ask tab review list; office; `POST /api/v1/assistant/extract-tasks` | `taskExtraction` when a key is configured | Literal saved meeting action items are returned as records-only proposals **before** the toggle check, including when the stored toggle is off | Saved D1 meeting data in both modes; no Google call. Nothing is created until the user accepts one proposal through the ordinary task route. |
 | `task.assigned` Chat event (AI-07b) | Existing task-create/notifier path | Not an AI-feature toggle: global Chat enablement plus the exact event route, both off by default | Unchanged; it does not use OpenAI | Simulation writes a sanitized integration audit and never resolves a webhook; live delivery additionally requires the configured route and secret |
-| Settings and help (AI-08) | Config GET: office; PATCH: admin + same-origin + bounded. Admin card is editable; office card is read-only. | Stores `orgQa`, `triage`, `replyDrafts`, `taskExtraction` | Public config reports every feature unavailable/off while preserving stored choices so adding the key restores untouched defaults | D1 settings plus environment-name presence in both modes; response exposes only `Configured` or `Missing`, never the key |
+| Settings and help (AI-08 + AI-10 kill switch) | Config GET: office; PATCH: admin + same-origin + bounded. Admin card is editable; office card is read-only. | Stores `orgQa`, `triage`, `inboxAnalysis`, `replyDrafts`, `taskExtraction` | Public config reports every feature unavailable/off while preserving stored choices so adding the key restores untouched defaults | D1 settings plus environment-name presence in both modes; response exposes only `Configured` or `Missing`, never the key |
 
-All four saved feature choices default on when the key is configured. A
+All five saved feature choices default on when the key is configured. A
 missing key makes the public feature states false without overwriting saved
 choices. The exception to the usual button-gating rule is the deliberate
 AI-07 records-only action-item fallback described above.
@@ -250,8 +251,9 @@ office sees read-only state):
 - Provider row: `Provider` → `OpenAI` · `API key` → `Configured` | `Missing`
   · `Model` → the `OPENAI_MODEL` value (name only).
 - Toggles (default on when the key is Configured): `Organization-wide
-  answers` (orgQa) · `Inbox filing suggestions` (triage) · `Reply drafting`
-  (replyDrafts) · `Task extraction from meetings` (taskExtraction).
+  answers` (orgQa) · `Inbox filing suggestions` (triage) · `Inbox analysis`
+  (inboxAnalysis) · `Reply drafting` (replyDrafts) · `Task extraction from
+  meetings` (taskExtraction).
 - Footer caption: `The assistant reads saved records and drafts text. It
   never sends email, never files messages, and never creates records without
   your confirmation.`
@@ -376,11 +378,12 @@ written down as such rather than absorbed silently.
    rule and the AGENTS.md no-scheduling rule both hold unchanged. The trigger is deliberately
    separable so WS-12's History polling can replace it later without touching the stored
    analysis or the review surface.
-   Honest limit to state in the UI: `listMessages` is a fixed top-20 with no pagination
-   (`app/lib/google-gmail.ts:667-678`), so a sweep covers what a load returns, not "every
-   email". AI-10 adds bounded pagination and stop-on-known termination; it still cannot see a
-   message that arrived and was archived before any sweep ran. Only Gmail History closes that,
-   and it stays deferred.
+   The shipped AI-10 trigger is `InboxView` → `POST /api/v1/inbox-analysis`.
+   `listMessages` now exposes an optional opaque page token and the next token while preserving
+   the existing first-page Inbox behavior. Each sweep is bounded to five pages / 100 messages
+   and reports either `You're caught up` or `Older messages not yet analyzed`; the latter
+   exposes a bounded **Check older** continuation. It still cannot see a message that arrived
+   and was archived before any sweep ran. Only Gmail History closes that, and it stays deferred.
 
 2. **Persistence — analyses are STORED. This overrides §1 principle 1 and §6 item 2.**
    §1 principle 1 says "No infrastructure that needs feeding … in Tier 1" and §6 item 2 says
@@ -398,8 +401,8 @@ written down as such rather than absorbed silently.
    and has no callers today. This keeps the AI tier at **zero** new tables.
    Guard consequence: **none.** The no-write guards stay unmodified. Classification lives in
    `app/application/assistant/inbox-analysis.ts` and performs only `SELECT`; the write lives in
-   a route outside `app/api/v1/assistant/**`, exactly as AI-07 already separates proposal from
-   creation.
+   `app/api/v1/inbox-analysis/route.ts`, outside `app/api/v1/assistant/**`, exactly as AI-07
+   already separates proposal from creation.
 
 3. **The Inbox `needs-review` bucket becomes an app-side queue.** That one bucket stops
    resolving through `labelIdForBucket` and instead lists stored rows with
@@ -423,13 +426,16 @@ written down as such rather than absorbed silently.
    nest the card; it is a recorded design decision, not a safety rail, and the owner — who could
    not find the AI settings himself — has chosen to change it. The read-only mirror in
    *My settings* stays so office users can still see what is on without changing it.
-   **Implementing packet: AI-11, not AI-10.** AI-10's Files touch no `app/settings/**`
-   component; the section, the re-points above, and decision 6's settings-card statement all
-   land with AI-11. Until then this decision is recorded, not shipped.
+   **Implementing packet for the new section: AI-11, not AI-10.** AI-10 adds only the binding
+   `inboxAnalysis` kill switch to the existing card in *Workflow & notifications* (and its
+   office read-only mirror); AI-11 still owns the new section, the navigation re-points above,
+   and decision 6's expanded settings-card disclosure. Until AI-11 lands, the section decision
+   is recorded but not shipped.
 
 6. **Data at rest.** A minimal display snapshot (subject, sender, received date) persists on
    each analysis row so the queue renders without a per-message Gmail round-trip and survives a
    message being moved in Gmail. This places customer names and subject lines in the app
-   database — a new fact for this app, stated here, in the settings guide (AI-10), and in the
-   settings card **when AI-11 builds it** (see decision 5's implementing-packet note), exactly
-   as the bounded-body-read decision already is.
+   database — a new fact for this app, now stated here and in the settings guide. AI-10's
+   persisted fields live on `mail_items`; the settings card receives the fuller data-at-rest
+   disclosure **when AI-11 builds its dedicated section** (see decision 5), exactly as the
+   bounded-body-read decision already is.
