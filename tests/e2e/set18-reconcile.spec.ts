@@ -266,17 +266,22 @@ test("review-first reconcile creates a newly defined folder and never deletes a 
     await expect(unmanaged).toContainText("FCI TEST Reconcile Folder");
     await expect(unmanaged).toContainText("Informational only — nothing will be deleted.");
     await page.setViewportSize({ width: 390, height: 844 });
-    const mobileGeometry = await driftCard.evaluate((card) => {
-      const action = card.querySelector("button");
-      return {
-        cardContained: card.scrollWidth <= card.clientWidth,
-        documentContained: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
-        actionHeight: action?.getBoundingClientRect().height ?? 0,
-      };
-    });
-    expect(mobileGeometry.cardContained).toBe(true);
-    expect(mobileGeometry.documentContained).toBe(true);
-    expect(mobileGeometry.actionHeight).toBeGreaterThanOrEqual(44);
+    // Reflow at the new viewport width is asynchronous, so a one-shot read can
+    // measure the card mid-reflow and report a transient overflow. Retry until
+    // layout settles; a genuinely overflowing card still fails after the timeout.
+    await expect(async () => {
+      const mobileGeometry = await driftCard.evaluate((card) => {
+        const action = card.querySelector("button");
+        return {
+          cardContained: card.scrollWidth <= card.clientWidth,
+          documentContained: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+          actionHeight: action?.getBoundingClientRect().height ?? 0,
+        };
+      });
+      expect(mobileGeometry.cardContained).toBe(true);
+      expect(mobileGeometry.documentContained).toBe(true);
+      expect(mobileGeometry.actionHeight).toBeGreaterThanOrEqual(44);
+    }).toPass({ timeout: 10_000 });
     const accessibility = await new AxeBuilder({ page })
       .include('[data-stage-four-upkeep="drift"]')
       .analyze();
