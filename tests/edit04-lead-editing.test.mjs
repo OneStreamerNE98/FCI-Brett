@@ -98,3 +98,23 @@ test("lead PATCH checks the admin-only field before reads and scopes authorized 
   assert.match(collectionRoute, /authorizedLeadPayload\(result\.value, auth\.user\.email\)/u);
   assert.match(collectionRoute, /authorizedLeadOwnerEmail\(parsed\.body\.ownerEmail, auth\.user\.email\)/u);
 });
+
+test("LeadModal create mode accepts prefill and the edit surface keeps all terminal statuses", async () => {
+  const app = await read("app/FloorOpsApp.tsx");
+  // AI-10 sub-PR (f)'s implement-once contract: create mode carries OPTIONAL
+  // initialValues and the create-visible fields default from the shared seed, so
+  // the email-derived lead proposal prefills THIS modal with no further rework
+  // (review finding, PR #231 — prefill was previously welded to edit mode).
+  assert.match(app, /mode: "create";[\s\S]{0,400}initialValues\?: Partial<Lead>;/u);
+  assert.match(app, /const seed[\s\S]{0,120}props\.initialValues \?\? null/u);
+  for (const field of ["company", "contact", "project", "site", "next"]) {
+    assert.match(app, new RegExp(`defaultValue=\\{seed\\?\\.${field}`, "u"));
+  }
+  assert.match(app, /defaultValue=\{seed\?\.estimatedValue/u);
+  // The archive-only decision's three terminal statuses stay reachable from the
+  // only sanctioned UI path — a refactor dropping Lost/Archived must fail here
+  // (review finding, PR #231: only "converted" was previously exercised).
+  assert.match(app, /<option value="converted">Converted<\/option>/u);
+  assert.match(app, /<option value="lost">Lost<\/option>/u);
+  assert.match(app, /<option value="archived">Archived<\/option>/u);
+});

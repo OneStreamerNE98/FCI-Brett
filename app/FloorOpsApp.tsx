@@ -136,6 +136,11 @@ type LeadUpdatePayload = {
 type LeadModalProps =
   | {
       mode: "create";
+      // Optional prefill for create mode: AI-10 sub-PR (f) accepts an email-derived
+      // lead proposal by opening THIS modal pre-filled and posting through the
+      // ordinary create path — the implement-once contract this packet ships so the
+      // modal is never reworked a second time (review finding, PR #231).
+      initialValues?: Partial<Lead>;
       isAdmin: boolean;
       onClose: () => void;
       onSave: (lead: Lead) => Promise<void>;
@@ -1846,8 +1851,11 @@ function LeadModal(props: LeadModalProps) {
   const [conflictVersion, setConflictVersion] = useState<string | null>(null);
   const [conflictValues, setConflictValues] = useState<LeadConflictValues>({});
   const editLead = props.mode === "edit" ? props.initialValues : null;
+  // seed feeds defaultValues in BOTH modes: full row in edit, optional prefill in
+  // create (the AI-10 (f) consumption path). Mode logic stays keyed on editLead.
+  const seed: Partial<Lead> | null = props.mode === "edit" ? props.initialValues : props.initialValues ?? null;
   const sourceOptions = ["Website", "Referral", "Bid invite", "Repeat client"];
-  if (editLead && !sourceOptions.includes(editLead.source)) sourceOptions.push(editLead.source);
+  if (seed?.source && !sourceOptions.includes(seed.source)) sourceOptions.push(seed.source);
   const stageOptions = [...leadStages];
   if (editLead && !stageOptions.includes(editLead.stage)) stageOptions.push(editLead.stage);
 
@@ -1975,14 +1983,14 @@ function LeadModal(props: LeadModalProps) {
     <header><div><p className="eyebrow">{editLead ? editLead.number : "New opportunity"}</p><h2>{editLead ? "Edit lead" : "Add a lead"}</h2></div><button type="button" onClick={props.onClose} aria-label={editLead ? "Close lead editor" : "Close"} disabled={saving}><X size={20} /></button></header>
     <form onSubmit={submit}>
       {error && <p className="project-operation-error" role="alert">{error}</p>}
-      <label>Client company<input data-overlay-initial-focus name="company" required maxLength={180} placeholder="Business name" defaultValue={editLead?.company ?? ""} disabled={saving} />{savedValue("company")}</label>
-      <div className="form-row"><label>Primary contact<input name="contact" required maxLength={160} placeholder="Full name" defaultValue={editLead?.contact ?? ""} disabled={saving} />{savedValue("contactName")}</label><label>Lead source<select name="source" defaultValue={editLead?.source ?? "Website"} disabled={saving}>{sourceOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("source")}</label></div>
+      <label>Client company<input data-overlay-initial-focus name="company" required maxLength={180} placeholder="Business name" defaultValue={seed?.company ?? ""} disabled={saving} />{savedValue("company")}</label>
+      <div className="form-row"><label>Primary contact<input name="contact" required maxLength={160} placeholder="Full name" defaultValue={seed?.contact ?? ""} disabled={saving} />{savedValue("contactName")}</label><label>Lead source<select name="source" defaultValue={seed?.source ?? "Website"} disabled={saving}>{sourceOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("source")}</label></div>
       {editMode && <div className="form-row"><label>Contact email <span className="optional-label">Optional</span><input name="contactEmail" type="email" maxLength={254} defaultValue={editLead?.contactEmail ?? ""} disabled={saving} />{savedValue("contactEmail")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="contactPhone" type="tel" maxLength={40} defaultValue={editLead?.contactPhone ?? ""} disabled={saving} />{savedValue("contactPhone")}</label></div>}
-      <label>Project / opportunity<input name="project" required maxLength={180} placeholder="Project name" defaultValue={editLead?.project ?? ""} disabled={saving} />{savedValue("projectName")}</label>
-      <div className="form-row"><label>Estimated value<input name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={editLead?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{savedValue("estimatedValue")}</label><label>Project site<input name="site" required maxLength={300} placeholder="Address or city and state" defaultValue={editLead?.site ?? ""} disabled={saving} />{savedValue("site")}</label></div>
+      <label>Project / opportunity<input name="project" required maxLength={180} placeholder="Project name" defaultValue={seed?.project ?? ""} disabled={saving} />{savedValue("projectName")}</label>
+      <div className="form-row"><label>Estimated value<input name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{savedValue("estimatedValue")}</label><label>Project site<input name="site" required maxLength={300} placeholder="Address or city and state" defaultValue={seed?.site ?? ""} disabled={saving} />{savedValue("site")}</label></div>
       {editMode && !props.isAdmin && <p id="lead-estimated-value-help" className="form-help"><ShieldCheck size={14} /> Estimated value is read-only here. An administrator can edit it.</p>}
       {editMode && <div className="form-row"><label>Stage<select name="stage" defaultValue={editLead?.stage} disabled={saving}>{stageOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("stage")}</label><label>Lead status<select name="status" defaultValue={editLead?.status.toLowerCase()} disabled={saving}><option value="active">Active</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="archived">Archived</option></select>{savedValue("status")}</label></div>}
-      <label>Next action<textarea name="notes" required maxLength={500} placeholder="What needs to happen next?" defaultValue={editLead?.next ?? ""} disabled={saving} />{savedValue("nextAction")}</label>
+      <label>Next action<textarea name="notes" required maxLength={500} placeholder="What needs to happen next?" defaultValue={seed?.next ?? ""} disabled={saving} />{savedValue("nextAction")}</label>
       {editMode && <div className="form-row"><label>Next action date <span className="optional-label">Optional</span><input name="nextActionAt" type="datetime-local" defaultValue={dateTimeLocalInputValue(editLead?.nextActionAt ?? null)} disabled={saving} />{savedValue("nextActionAt")}</label><label>Lead owner email<input name="ownerEmail" type="email" maxLength={254} placeholder="Authorized office email" defaultValue={editLead?.ownerEmail ?? ""} disabled={saving} />{savedValue("ownerEmail")}{editLead?.ownerEmail === null && <small>The saved owner is unavailable because it is not a current authorized office identity.</small>}</label></div>}
       {editMode && <p className="form-help"><ShieldCheck size={14} /> Saving appends before-and-after activity records. A newer saved version is never overwritten automatically.</p>}
       <footer><button type="button" className="soft-button" onClick={props.onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : editMode ? conflictVersion ? "Re-apply changes" : "Save changes" : "Add to pipeline"}</button></footer>
