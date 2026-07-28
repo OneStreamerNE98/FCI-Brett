@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { seedWorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
 
 function simulationReadiness() {
   return {
@@ -232,13 +233,17 @@ test("review-first reconcile creates a newly defined folder and never deletes a 
     await expandStage(page, 4);
     const driftCard = page.locator('[data-stage-four-upkeep="drift"]');
     await driftCard.getByRole("button", { name: "Check for drift", exact: true }).click();
+    await expect(driftCard.getByText(
+      "Simulation only — this check used simulated Workspace resources. Google was not contacted.",
+      { exact: true },
+    )).toBeVisible();
     const missing = driftCard.locator('[data-workspace-reconcile-row][data-workspace-reconcile-state="missing"]');
     await expect(missing).toContainText("FCI TEST Reconcile Folder");
     await missing.getByRole("button", { name: "Create from blueprint", exact: true }).click();
     await expect(page.locator(".toast.toast-success")).toContainText(
       "FCI TEST Reconcile Folder was reviewed and the matching setup ensure action completed.",
     );
-    await expect(driftCard.getByText("Blueprint and Google resources are in sync.", { exact: true })).toBeVisible();
+    await expect(driftCard.getByText("Blueprint and simulated Workspace resources are in sync.", { exact: true })).toBeVisible();
 
     await page.evaluate(() => {
       window.location.hash = "workspace-stage-3";
@@ -300,7 +305,7 @@ test("renamed rows expose the owner/system action matrix and send the exact revi
           simulated: true,
           blueprintVersion: 7,
           checkedAt: Date.now(),
-          counts: { missing: 0, renamed: 2, unmanaged: 0, inSync: 0 },
+          counts: { missing: 0, renamed: 3, unmanaged: 0, inSync: 0 },
           drift: [
             {
               id: "renamed-owner-folder",
@@ -315,6 +320,20 @@ test("renamed rows expose the owner/system action matrix and send the exact revi
               url: "https://drive.google.test/projects-folder",
               detail: "Google uses “Projects from Drive”; the blueprint expects “02_Projects”.",
               actions: ["rename-drive", "adopt-blueprint-name"],
+            },
+            {
+              id: "renamed-owner-template",
+              state: "renamed",
+              resourceType: "drive.file",
+              key: "estimate-proposal",
+              label: "Document template",
+              management: "owner",
+              expectedName: "Estimate Proposal",
+              actualName: "Customer Estimate",
+              externalId: "estimate-template",
+              url: "https://drive.google.test/estimate-template",
+              detail: "Google uses “Customer Estimate”; the blueprint expects “Estimate Proposal”.",
+              actions: ["adopt-blueprint-name"],
             },
             {
               id: "renamed-system-folder",
@@ -337,7 +356,7 @@ test("renamed rows expose the owner/system action matrix and send the exact revi
           simulated: true,
           blueprintVersion: 7,
           checkedAt: Date.now(),
-          counts: { missing: 0, renamed: 0, unmanaged: 0, inSync: 2 },
+          counts: { missing: 0, renamed: 0, unmanaged: 0, inSync: 3 },
           drift: [],
         }),
     });
@@ -356,14 +375,17 @@ test("renamed rows expose the owner/system action matrix and send the exact revi
   const driftCard = page.locator('[data-stage-four-upkeep="drift"]');
   await driftCard.getByRole("button", { name: "Check for drift", exact: true }).click();
   const ownerRow = driftCard.locator('[data-workspace-reconcile-row="renamed-owner-folder"]');
+  const ownerTemplateRow = driftCard.locator('[data-workspace-reconcile-row="renamed-owner-template"]');
   const systemRow = driftCard.locator('[data-workspace-reconcile-row="renamed-system-folder"]');
   await expect(ownerRow.getByRole("button", { name: "Rename in Drive", exact: true })).toBeVisible();
   await expect(ownerRow.getByRole("button", { name: "Use Drive name in blueprint", exact: true })).toBeVisible();
+  await expect(ownerTemplateRow.getByRole("button", { name: "Use Drive name in blueprint", exact: true })).toBeVisible();
+  await expect(ownerTemplateRow.getByRole("button", { name: "Rename in Drive", exact: true })).toHaveCount(0);
   await expect(systemRow.getByRole("button", { name: "Rename in Drive", exact: true })).toBeVisible();
   await expect(systemRow.getByRole("button", { name: "Use Drive name in blueprint", exact: true })).toHaveCount(0);
 
   await systemRow.getByRole("button", { name: "Rename in Drive", exact: true }).click();
-  await expect(driftCard.getByText("Blueprint and Google resources are in sync.", { exact: true })).toBeVisible();
+  await expect(driftCard.getByText("Blueprint and simulated Workspace resources are in sync.", { exact: true })).toBeVisible();
   expect(renameBody).toEqual({
     key: "unsorted-intake",
     mode: "reconcile-drive-name",
@@ -371,6 +393,108 @@ test("renamed rows expose the owner/system action matrix and send the exact revi
     externalId: "intake-folder",
     actualName: "Manual intake name",
   });
+});
+
+test("owner template adoption sends the exact reviewed blueprint mutation and never calls folder rename", async ({ page }) => {
+  await installWorkspaceFrameMocks(page);
+  let currentBlueprint = seedWorkspaceBlueprint();
+  let currentVersion = 7;
+  let reconcileCalls = 0;
+  let renameCalls = 0;
+  let blueprintPutBody: {
+    blueprint: ReturnType<typeof seedWorkspaceBlueprint>;
+    expectedVersion: number;
+    reconcileReview: {
+      resourceType: string;
+      key: string;
+      expectedExternalId: string;
+      expectedActualName: string;
+      expectedVersion: number;
+    };
+  } | null = null;
+
+  await page.route("**/api/v1/integrations/google/setup/blueprint", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ blueprint: currentBlueprint, version: currentVersion, seeded: false }),
+      });
+      return;
+    }
+    blueprintPutBody = route.request().postDataJSON();
+    currentBlueprint = blueprintPutBody!.blueprint;
+    currentVersion += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ blueprint: currentBlueprint, version: currentVersion, changes: [] }),
+    });
+  });
+  await page.route("**/api/v1/integrations/google/setup/reconcile", async (route) => {
+    reconcileCalls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(reconcileCalls === 1
+        ? {
+          reconciled: true,
+          simulated: true,
+          blueprintVersion: 7,
+          checkedAt: Date.now(),
+          counts: { missing: 0, renamed: 1, unmanaged: 0, inSync: 0 },
+          drift: [{
+            id: "renamed-owner-template",
+            state: "renamed",
+            resourceType: "drive.file",
+            key: "estimate-proposal",
+            label: "Document template",
+            management: "owner",
+            expectedName: "Estimate Proposal",
+            actualName: "Customer Estimate",
+            externalId: "estimate-template",
+            url: "https://drive.google.test/estimate-template",
+            detail: "Google uses “Customer Estimate”; the blueprint expects “Estimate Proposal”.",
+            actions: ["adopt-blueprint-name"],
+          }],
+        }
+        : {
+          reconciled: true,
+          simulated: true,
+          blueprintVersion: 8,
+          checkedAt: Date.now(),
+          counts: { missing: 0, renamed: 0, unmanaged: 0, inSync: 1 },
+          drift: [],
+        }),
+    });
+  });
+  await page.route("**/api/v1/integrations/google/drive/folders/rename", async (route) => {
+    renameCalls += 1;
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Owner template adoption must not rename in Drive." }),
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-4");
+  await expandStage(page, 4);
+  const driftCard = page.locator('[data-stage-four-upkeep="drift"]');
+  await driftCard.getByRole("button", { name: "Check for drift", exact: true }).click();
+  const templateRow = driftCard.locator('[data-workspace-reconcile-row="renamed-owner-template"]');
+  await templateRow.getByRole("button", { name: "Use Drive name in blueprint", exact: true }).click();
+
+  await expect(driftCard.getByText("Blueprint and simulated Workspace resources are in sync.", { exact: true })).toBeVisible();
+  expect(blueprintPutBody?.expectedVersion).toBe(7);
+  expect(blueprintPutBody?.reconcileReview).toEqual({
+    resourceType: "drive.file",
+    key: "estimate-proposal",
+    expectedExternalId: "estimate-template",
+    expectedActualName: "Customer Estimate",
+    expectedVersion: 7,
+  });
+  expect(blueprintPutBody?.blueprint.templates.find(({ key }) => key === "estimate-proposal")?.name).toBe("Customer Estimate");
+  expect(renameCalls).toBe(0);
 });
 
 test("reconcile failures state the no-mutation guarantee once and never contradict a completed repair", async ({ page }) => {

@@ -19,8 +19,11 @@ import { mapGoogleIntegrationError, GoogleIntegrationError } from "../../../../.
 import { workspaceReconcileDriveIdentities } from "../../../../../../lib/google-workspace-reconcile";
 import { noStoreJson, noStoreResponse } from "../../../../../../lib/no-store-json";
 import {
+  adoptGoogleNameIntoWorkspaceBlueprint,
+  workspaceReconcileDesiredResources,
+} from "../../../../../../lib/workspace-reconcile";
+import {
   flattenWorkspaceRootFolders,
-  renameWorkspaceRootFolder,
   sanitizeWorkspaceBlueprint,
   seedWorkspaceBlueprint,
   summarizeWorkspaceBlueprintChanges,
@@ -34,8 +37,10 @@ const MAXIMUM_BLUEPRINT_BODY_BYTES = 64 * 1024;
 const GOOGLE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const LEGACY_ROOT_KEYS = new Set(["client-accounts", "projects"]);
 
+type ReconcileBlueprintResourceType = "drive.folder" | "sheets.spreadsheet" | "drive.file";
+
 type ReconcileBlueprintReview = Readonly<{
-  resourceType: "drive.folder";
+  resourceType: ReconcileBlueprintResourceType;
   key: string;
   expectedExternalId: string;
   expectedActualName: string;
@@ -49,9 +54,15 @@ function invalidBody(error: string, status = 400) {
 function staleReconcileReview() {
   return new GoogleIntegrationError(
     "workspace_reconcile_review_stale",
-    "The reviewed Google Drive folder changed after the drift check. Check for drift again before using its name.",
+    "The reviewed Google resource changed after the drift check. Check for drift again before using its name.",
     409,
   );
+}
+
+function isReconcileBlueprintResourceType(value: unknown): value is ReconcileBlueprintResourceType {
+  return value === "drive.folder"
+    || value === "sheets.spreadsheet"
+    || value === "drive.file";
 }
 
 function parseReconcileBlueprintReview(value: unknown): ReconcileBlueprintReview | null {
@@ -65,7 +76,7 @@ function parseReconcileBlueprintReview(value: unknown): ReconcileBlueprintReview
     || !keys.includes("expectedExternalId")
     || !keys.includes("expectedActualName")
     || !keys.includes("expectedVersion")
-    || review.resourceType !== "drive.folder"
+    || !isReconcileBlueprintResourceType(review.resourceType)
     || typeof review.key !== "string"
     || !review.key.trim()
     || review.key.trim().length > 41
@@ -82,7 +93,7 @@ function parseReconcileBlueprintReview(value: unknown): ReconcileBlueprintReview
     return null;
   }
   return Object.freeze({
-    resourceType: "drive.folder",
+    resourceType: review.resourceType,
     key: review.key.trim(),
     expectedExternalId: review.expectedExternalId.trim(),
     expectedActualName: review.expectedActualName.trim(),
@@ -94,33 +105,37 @@ function sameBlueprint(left: WorkspaceBlueprint, right: WorkspaceBlueprint) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function driveIdentityIsExact(item: DriveSetupItem, key: string) {
+function driveIdentityIsExact(
+  item: DriveSetupItem,
+  resourceType: ReconcileBlueprintResourceType,
+  key: string,
+) {
   const identities = new Set(
     workspaceReconcileDriveIdentities(item)
       .map((identity) => `${identity.resourceType}:${identity.key}`),
   );
-  return identities.size === 1 && identities.has(`drive.folder:${key}`);
+  return identities.size === 1 && identities.has(`${resourceType}:${key}`);
 }
 
-async function assertLiveReconcileReview(
+async function resolveLiveFolderChain(
   drive: GoogleDriveClient,
   blueprint: WorkspaceBlueprint,
   rootFolderId: string,
-  review: ReconcileBlueprintReview,
+  leafKey: string | null,
 ) {
   const foldersByKey = new Map(
     flattenWorkspaceRootFolders(blueprint).map((folder) => [folder.key, folder]),
   );
   const chain = [];
   const seen = new Set<string>();
-  let cursor = foldersByKey.get(review.key);
+  let cursor = leafKey ? foldersByKey.get(leafKey) : undefined;
   while (cursor) {
     if (seen.has(cursor.key)) throw staleReconcileReview();
     seen.add(cursor.key);
     chain.unshift(cursor);
     cursor = cursor.parentKey ? foldersByKey.get(cursor.parentKey) : undefined;
   }
-  if (chain.length === 0) throw staleReconcileReview();
+  if (leafKey && chain.length === 0) throw staleReconcileReview();
 
   let expectedParentId = rootFolderId;
   let reviewed: DriveSetupItem | null = null;
@@ -137,41 +152,80 @@ async function assertLiveReconcileReview(
       || match.mimeType !== GOOGLE_FOLDER_MIME_TYPE
       || match.parents.length !== 1
       || match.parents[0] !== expectedParentId
-      || !driveIdentityIsExact(match, folder.key)
+      || !driveIdentityIsExact(match, "drive.folder", folder.key)
     ) {
       throw staleReconcileReview();
     }
     reviewed = match;
     expectedParentId = match.id;
   }
+  return { parentId: expectedParentId, reviewed };
+}
+
+async function assertLiveReconcileReview(
+  drive: GoogleDriveClient,
+  blueprint: WorkspaceBlueprint,
+  rootFolderId: string,
+  review: ReconcileBlueprintReview,
+) {
+  const desired = workspaceReconcileDesiredResources(blueprint).find((resource) => (
+    resource.resourceType === review.resourceType && resource.key === review.key
+  ));
+  if (!desired || desired.management !== "owner") throw staleReconcileReview();
+
+  const identityProperty = review.resourceType === "sheets.spreadsheet"
+    ? "fciResourceKind"
+    : "fciTemplateKey";
+  const { parentId, reviewed: reviewedFolder } = await resolveLiveFolderChain(
+    drive,
+    blueprint,
+    rootFolderId,
+    review.resourceType === "drive.folder" ? review.key : desired.parentKey,
+  );
+  let reviewedResource = review.resourceType === "drive.folder"
+    ? reviewedFolder
+    : null;
+  if (review.resourceType !== "drive.folder") {
+    const matches = await drive.findSetupItemsByIdentity(identityProperty, review.key);
+    reviewedResource = matches.length === 1 ? matches[0] : null;
+    if (
+      !reviewedResource
+      || reviewedResource.mimeType !== desired.expectedMimeType
+      || reviewedResource.parents.length !== 1
+      || reviewedResource.parents[0] !== parentId
+      || !driveIdentityIsExact(reviewedResource, review.resourceType, review.key)
+    ) {
+      throw staleReconcileReview();
+    }
+  }
   if (
-    !reviewed
-    || reviewed.id !== review.expectedExternalId
-    || reviewed.name !== review.expectedActualName
+    !reviewedResource
+    || reviewedResource.id !== review.expectedExternalId
+    || reviewedResource.name !== review.expectedActualName
   ) {
     throw staleReconcileReview();
   }
 }
 
-function assertSimulationReconcileReview(
+function resolveSimulationFolderChain(
   blueprint: WorkspaceBlueprint,
   resources: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["resources"],
   rootFolderId: string,
-  review: ReconcileBlueprintReview,
+  leafKey: string | null,
 ) {
   const foldersByKey = new Map(
     flattenWorkspaceRootFolders(blueprint).map((folder) => [folder.key, folder]),
   );
   const chain = [];
   const seen = new Set<string>();
-  let cursor = foldersByKey.get(review.key);
+  let cursor = leafKey ? foldersByKey.get(leafKey) : undefined;
   while (cursor) {
     if (seen.has(cursor.key)) throw staleReconcileReview();
     seen.add(cursor.key);
     chain.unshift(cursor);
     cursor = cursor.parentKey ? foldersByKey.get(cursor.parentKey) : undefined;
   }
-  if (chain.length === 0) throw staleReconcileReview();
+  if (leafKey && chain.length === 0) throw staleReconcileReview();
 
   let expectedParentId = rootFolderId;
   let reviewed: (typeof resources)[number] | null = null;
@@ -194,11 +248,46 @@ function assertSimulationReconcileReview(
     reviewed = match;
     expectedParentId = match.externalId;
   }
+  return { parentId: expectedParentId, reviewed };
+}
+
+function assertSimulationReconcileReview(
+  blueprint: WorkspaceBlueprint,
+  resources: Awaited<ReturnType<typeof getEffectiveGoogleRuntimeSetup>>["resources"],
+  rootFolderId: string,
+  review: ReconcileBlueprintReview,
+) {
+  const desired = workspaceReconcileDesiredResources(blueprint).find((resource) => (
+    resource.resourceType === review.resourceType && resource.key === review.key
+  ));
+  if (!desired || desired.management !== "owner") throw staleReconcileReview();
+
+  const { parentId, reviewed: reviewedFolder } = resolveSimulationFolderChain(
+    blueprint,
+    resources,
+    rootFolderId,
+    review.resourceType === "drive.folder" ? review.key : desired.parentKey,
+  );
+  const matches = review.resourceType === "drive.folder"
+    ? reviewedFolder ? [reviewedFolder] : []
+    : resources.filter((resource) => (
+      resource.resourceType === review.resourceType && resource.resourceKey === review.key
+    ));
+  const [reviewed] = matches;
+  const identitiesForExternalId = reviewed
+    ? resources.filter((resource) => resource.externalId === reviewed.externalId)
+    : [];
   const reviewedName = typeof reviewed?.metadata.name === "string"
     ? reviewed.metadata.name.trim()
     : "";
   if (
-    !reviewed
+    matches.length !== 1
+    || !reviewed
+    || identitiesForExternalId.length !== 1
+    || (
+      review.resourceType !== "drive.folder"
+      && reviewed.parentExternalId !== parentId
+    )
     || reviewed.externalId !== review.expectedExternalId
     || reviewedName !== review.expectedActualName
   ) {
@@ -252,7 +341,7 @@ export async function PUT(request: NextRequest) {
     ? parseReconcileBlueprintReview(parsed.body.reconcileReview)
     : null;
   if (reconcileSave && !reconcileReview) {
-    return invalidBody("Provide a valid closed reconcileReview for one Drive folder.");
+    return invalidBody("Provide a valid closed reconcileReview for one owner-managed Workspace resource.");
   }
   await ensureWorkspaceSchema();
 
@@ -281,15 +370,19 @@ export async function PUT(request: NextRequest) {
         currentVersion: setup.blueprintVersion,
       }, 409);
     }
-    const currentFolder = flattenWorkspaceRootFolders(setup.blueprint)
-      .find((folder) => folder.key === reconcileReview.key);
-    if (!currentFolder || currentFolder.management !== "owner") {
-      return invalidBody("Only an owner-managed Shared Drive folder name can be adopted.");
+    const currentResource = workspaceReconcileDesiredResources(setup.blueprint)
+      .find((resource) => (
+        resource.resourceType === reconcileReview.resourceType
+        && resource.key === reconcileReview.key
+      ));
+    if (!currentResource || currentResource.management !== "owner") {
+      return invalidBody("Only an owner-managed Workspace resource name can be adopted.");
     }
     let reviewedBlueprint: WorkspaceBlueprint;
     try {
-      reviewedBlueprint = renameWorkspaceRootFolder(
+      reviewedBlueprint = adoptGoogleNameIntoWorkspaceBlueprint(
         setup.blueprint,
+        reconcileReview.resourceType,
         reconcileReview.key,
         reconcileReview.expectedActualName,
       );
@@ -300,7 +393,7 @@ export async function PUT(request: NextRequest) {
       throw error;
     }
     if (!sameBlueprint(reviewedBlueprint, blueprint)) {
-      return invalidBody("A reconcile review may change only the reviewed owner-managed folder name.");
+      return invalidBody("A reconcile review may change only the reviewed owner-managed resource name.");
     }
     if (!setup.config.drive.rootFolderId) {
       return noStoreJson({
@@ -331,7 +424,7 @@ export async function PUT(request: NextRequest) {
     } catch (error) {
       const mapped = mapGoogleIntegrationError(
         error,
-        "Google Drive could not revalidate the reviewed folder. Check for drift again before retrying.",
+        "Google Drive could not revalidate the reviewed resource. Check for drift again before retrying.",
       );
       return noStoreJson(mapped.body, mapped.status);
     }

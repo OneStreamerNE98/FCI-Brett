@@ -84,7 +84,11 @@ function allowedActions(item: WorkspaceReconcileDrift) {
     }
     if (action === "adopt-blueprint-name") {
       return item.state === "renamed"
-        && item.resourceType === "drive.folder"
+        && (
+          item.resourceType === "drive.folder"
+          || item.resourceType === "sheets.spreadsheet"
+          || item.resourceType === "drive.file"
+        )
         && item.management === "owner"
         && Boolean(item.key && item.actualName);
     }
@@ -128,6 +132,7 @@ export function WorkspaceReconcileCard({
       );
       if (
         data.reconciled !== true
+        || typeof data.simulated !== "boolean"
         || !Number.isSafeInteger(data.blueprintVersion)
         || !Array.isArray(data.drift)
         || !data.counts
@@ -143,8 +148,10 @@ export function WorkspaceReconcileCard({
       if (announce) {
         notify(
           data.drift.length === 0
-            ? "The Workspace blueprint and Google resources are in sync."
-            : `Drift check found ${data.counts.missing} missing, ${data.counts.renamed} renamed, and ${data.counts.unmanaged} unmanaged resource(s).`,
+            ? data.simulated
+              ? "Simulation only — the Workspace blueprint and simulated resources are in sync. Google was not contacted."
+              : "The Workspace blueprint and Google resources are in sync."
+            : `${data.simulated ? "Simulation only — " : ""}Drift check found ${data.counts.missing} missing, ${data.counts.renamed} renamed, and ${data.counts.unmanaged} unmanaged resource(s).`,
           data.drift.length === 0 ? "success" : "warning",
         );
       }
@@ -265,7 +272,7 @@ export function WorkspaceReconcileCard({
             blueprint,
             expectedVersion: current.version,
             reconcileReview: {
-              resourceType: "drive.folder",
+              resourceType: item.resourceType,
               key: item.key,
               expectedExternalId: item.externalId,
               expectedActualName: item.actualName,
@@ -347,7 +354,10 @@ export function WorkspaceReconcileCard({
     {error && <p className={styles.error} role="alert">
       {error.message}{error.noMutation ? " No Google resource was changed." : ""}
     </p>}
-    {result && result.drift.length === 0 && state !== "loading" && <p className={styles.inSync} role="status">Blueprint and Google resources are in sync.</p>}
+    {result && result.simulated && state !== "loading" && <p className={styles.status}>Simulation only — this check used simulated Workspace resources. Google was not contacted.</p>}
+    {result && result.drift.length === 0 && state !== "loading" && <p className={styles.inSync} role="status">
+      {result.simulated ? "Blueprint and simulated Workspace resources are in sync." : "Blueprint and Google resources are in sync."}
+    </p>}
     {result && result.drift.length > 0 && <>
       <p className={styles.status} role="status">
         {result.counts.missing} missing · {result.counts.renamed} renamed · {result.counts.unmanaged} unmanaged

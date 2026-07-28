@@ -106,6 +106,15 @@ function renamedActions(resource: WorkspaceReconcileDesiredResource) {
       ? ["rename-drive"] as const
       : ["rename-drive", "adopt-blueprint-name"] as const;
   }
+  if (
+    resource.management === "owner"
+    && (
+      resource.resourceType === "sheets.spreadsheet"
+      || resource.resourceType === "drive.file"
+    )
+  ) {
+    return ["adopt-blueprint-name"] as const;
+  }
   return [] as const;
 }
 
@@ -343,9 +352,9 @@ export function deriveWorkspaceReconcileDrift(
       ));
       continue;
     }
-    // Only folders have an existing provider rename surface, but every
-    // registered resource still reports display-name drift honestly. Non-folder
-    // rename rows are informational until their own reviewed mutation exists.
+    // Only folders have an existing provider rename surface. Owner-managed
+    // sheets and templates can still adopt the reviewed Google display name
+    // into the blueprint without mutating Google.
     if (match.name !== resource.name) {
       drift.push(renamedDrift(resource, match));
     } else {

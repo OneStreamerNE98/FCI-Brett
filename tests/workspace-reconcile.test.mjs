@@ -498,20 +498,34 @@ test("removed, unstamped, duplicate, wrong-type, and wrong-parent resources stay
   );
 });
 
-test("identity matches stay in sync while non-folder name drift is honest and non-actionable", () => {
+test("owner sheet/template name drift offers blueprint adoption while system non-folders and calendars stay informational", () => {
   const desiredResources = [
     desired({ key: "folder", name: "Folder" }),
     desired({
       resourceType: "sheets.spreadsheet",
-      key: "sheet",
+      key: "owner-sheet",
       name: "Blueprint sheet name",
       label: "Reference spreadsheet",
     }),
     desired({
       resourceType: "drive.file",
-      key: "template",
+      key: "owner-template",
       name: "Blueprint template name",
       label: "Document template",
+    }),
+    desired({
+      resourceType: "sheets.spreadsheet",
+      key: "system-sheet",
+      name: "System blueprint sheet name",
+      label: "Client directory spreadsheet",
+      management: "system",
+    }),
+    desired({
+      resourceType: "drive.file",
+      key: "system-template",
+      name: "System blueprint template name",
+      label: "Document template",
+      management: "system",
     }),
     desired({
       resourceType: "calendar.calendar",
@@ -523,8 +537,10 @@ test("identity matches stay in sync while non-folder name drift is honest and no
   ];
   const actualResources = [
     actual({ key: "folder", name: "Folder" }),
-    actual({ resourceType: "sheets.spreadsheet", key: "sheet", name: "Google sheet name", externalId: "sheet-id" }),
-    actual({ resourceType: "drive.file", key: "template", name: "Google template name", externalId: "template-id" }),
+    actual({ resourceType: "sheets.spreadsheet", key: "owner-sheet", name: "Google sheet name", externalId: "sheet-id" }),
+    actual({ resourceType: "drive.file", key: "owner-template", name: "Google template name", externalId: "template-id" }),
+    actual({ resourceType: "sheets.spreadsheet", key: "system-sheet", name: "System Google sheet name", externalId: "system-sheet-id" }),
+    actual({ resourceType: "drive.file", key: "system-template", name: "System Google template name", externalId: "system-template-id" }),
     actual({
       resourceType: "calendar.calendar",
       key: "calendar",
@@ -539,7 +555,7 @@ test("identity matches stay in sync while non-folder name drift is honest and no
 
   assert.deepEqual(result.counts, {
     missing: 0,
-    renamed: 3,
+    renamed: 5,
     unmanaged: 0,
     inSync: 1,
   });
@@ -547,8 +563,10 @@ test("identity matches stay in sync while non-folder name drift is honest and no
     result.drift.map(({ key, state, actions }) => ({ key, state, actions })),
     [
       { key: "calendar", state: "renamed", actions: [] },
-      { key: "template", state: "renamed", actions: [] },
-      { key: "sheet", state: "renamed", actions: [] },
+      { key: "owner-template", state: "renamed", actions: ["adopt-blueprint-name"] },
+      { key: "system-template", state: "renamed", actions: [] },
+      { key: "owner-sheet", state: "renamed", actions: ["adopt-blueprint-name"] },
+      { key: "system-sheet", state: "renamed", actions: [] },
     ],
   );
 });

@@ -221,6 +221,69 @@ function reviewedFolderResources(actualName = "Projects from Drive") {
   ];
 }
 
+function reviewedOwnerResourceRows(blueprint, {
+  resourceType,
+  key,
+  externalId,
+  actualName,
+}) {
+  const parentKey = resourceType === "sheets.spreadsheet"
+    ? blueprint.spreadsheets.find((resource) => resource.key === key)?.targetFolderKey
+    : blueprint.templates.find((resource) => resource.key === key)?.targetFolderKey;
+  assert.equal(typeof parentKey, "string");
+  const foldersByKey = new Map(
+    blueprintModule.flattenWorkspaceRootFolders(blueprint).map((folder) => [folder.key, folder]),
+  );
+  const chain = [];
+  let cursor = foldersByKey.get(parentKey);
+  while (cursor) {
+    chain.unshift(cursor);
+    cursor = cursor.parentKey ? foldersByKey.get(cursor.parentKey) : undefined;
+  }
+  let parentExternalId = "shared-drive-1";
+  const folderRows = chain.map((folder) => {
+    const row = workspaceResourceRow({
+      id: `${folder.key}-row`,
+      resourceType: "drive.folder",
+      resourceKey: folder.key,
+      externalId: `${folder.key}-folder`,
+      parentExternalId,
+      name: folder.name,
+    });
+    parentExternalId = row.external_id;
+    return row;
+  });
+  return [
+    workspaceResourceRow({
+      id: "shared-drive-row",
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: "shared-drive-1",
+      name: "FCI Operations",
+    }),
+    ...folderRows,
+    workspaceResourceRow({
+      id: `${key}-row`,
+      resourceType,
+      resourceKey: key,
+      externalId,
+      parentExternalId,
+      name: actualName,
+    }),
+  ];
+}
+
+function withReviewedResourceName(blueprint, resourceType, key, name) {
+  const draft = structuredClone(blueprint);
+  const resources = resourceType === "sheets.spreadsheet"
+    ? draft.spreadsheets
+    : draft.templates;
+  const resource = resources.find((candidate) => candidate.key === key);
+  assert.ok(resource);
+  resource.name = name;
+  return blueprintModule.sanitizeWorkspaceBlueprint(draft);
+}
+
 function workspaceEnvironment(database, overrides = {}) {
   for (const key of Object.keys(workerEnvironment)) delete workerEnvironment[key];
   Object.assign(workerEnvironment, {
@@ -410,6 +473,162 @@ test("blueprint reconcile PUT revalidates the simulation registry before adoptin
   assert.equal(providerCalls, 0);
 });
 
+test("blueprint reconcile PUT adopts reviewed owner sheet and template names without contacting Google", async (context) => {
+  const baseDraft = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  baseDraft.spreadsheets.push({
+    key: "owner-register",
+    name: "Owner Register",
+    targetFolderKey: "company-admin",
+    management: "owner",
+    role: "reference",
+  });
+  const seed = blueprintModule.sanitizeWorkspaceBlueprint(baseDraft);
+  const scenarios = [
+    {
+      resourceType: "sheets.spreadsheet",
+      key: "owner-register",
+      externalId: "owner-register-sheet",
+      actualName: "Field Register",
+    },
+    {
+      resourceType: "drive.file",
+      key: "estimate-proposal",
+      externalId: "estimate-proposal-template",
+      actualName: "Customer Estimate",
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    await context.test(scenario.resourceType, async () => {
+      const resources = reviewedOwnerResourceRows(seed, scenario);
+      const database = fakeDatabase(persistedRow(seed, 4), { resources });
+      workspaceEnvironment(database);
+      let providerCalls = 0;
+      globalThis.fetch = async () => {
+        providerCalls += 1;
+        throw new Error("Simulation reconciliation must not contact Google.");
+      };
+      const blueprint = withReviewedResourceName(
+        seed,
+        scenario.resourceType,
+        scenario.key,
+        scenario.actualName,
+      );
+      const response = await blueprintRoute.PUT(routeRequest(
+        "/api/v1/integrations/google/setup/blueprint",
+        ADMIN_EMAIL,
+        "PUT",
+        {
+          blueprint,
+          expectedVersion: 4,
+          reconcileReview: {
+            resourceType: scenario.resourceType,
+            key: scenario.key,
+            expectedExternalId: scenario.externalId,
+            expectedActualName: scenario.actualName,
+            expectedVersion: 4,
+          },
+        },
+      ));
+      const body = await response.json();
+
+      assert.equal(response.status, 200);
+      assert.equal(body.version, 5);
+      const savedResources = scenario.resourceType === "sheets.spreadsheet"
+        ? body.blueprint.spreadsheets
+        : body.blueprint.templates;
+      assert.equal(savedResources.find(({ key }) => key === scenario.key).name, scenario.actualName);
+      assert.equal(database.events.length, 1);
+      assert.equal(providerCalls, 0);
+    });
+  }
+});
+
+test("blueprint reconcile PUT rejects stale owner template reviews before CAS", async (context) => {
+  const seed = blueprintModule.seedWorkspaceBlueprint();
+  const scenario = {
+    resourceType: "drive.file",
+    key: "estimate-proposal",
+    externalId: "estimate-proposal-template",
+    actualName: "Customer Estimate",
+  };
+  const blueprint = withReviewedResourceName(
+    seed,
+    scenario.resourceType,
+    scenario.key,
+    scenario.actualName,
+  );
+  const baseResources = reviewedOwnerResourceRows(seed, scenario);
+  const cases = [
+    {
+      name: "provider name changed",
+      resources: baseResources.map((resource) => (
+        resource.resource_key === scenario.key
+          ? { ...resource, metadata_json: JSON.stringify({ name: "Changed again", management: "owner" }) }
+          : resource
+      )),
+    },
+    {
+      name: "template moved",
+      resources: baseResources.map((resource) => (
+        resource.resource_key === scenario.key
+          ? { ...resource, parent_external_id: "somewhere-else" }
+          : resource
+      )),
+    },
+    {
+      name: "external identity changed",
+      resources: baseResources,
+      review: { expectedExternalId: "reviewed-old-id" },
+    },
+    {
+      name: "external identity conflicts with another registry row",
+      resources: [
+        ...baseResources,
+        workspaceResourceRow({
+          id: "conflict-row",
+          resourceType: "drive.file",
+          resourceKey: "other-template",
+          externalId: scenario.externalId,
+          parentExternalId: "templates-folder",
+          name: "Other template",
+        }),
+      ],
+    },
+  ];
+
+  for (const testCase of cases) {
+    await context.test(testCase.name, async () => {
+      const database = fakeDatabase(persistedRow(seed, 4), { resources: testCase.resources });
+      workspaceEnvironment(database);
+      const response = await blueprintRoute.PUT(routeRequest(
+        "/api/v1/integrations/google/setup/blueprint",
+        ADMIN_EMAIL,
+        "PUT",
+        {
+          blueprint,
+          expectedVersion: 4,
+          reconcileReview: {
+            resourceType: scenario.resourceType,
+            key: scenario.key,
+            expectedExternalId: scenario.externalId,
+            expectedActualName: scenario.actualName,
+            expectedVersion: 4,
+            ...testCase.review,
+          },
+        },
+      ));
+      const body = await response.json();
+
+      assert.equal(response.status, 409);
+      assert.equal(body.code, "workspace_reconcile_review_stale");
+      assert.equal(database.row.version, 4);
+      assert.equal(database.batches.length, 0);
+      assert.equal(database.events.length, 0);
+    });
+  }
+});
+
 test("blueprint reconcile PUT rejects stale, moved, replaced, and conflicting simulation reviews before CAS", async (context) => {
   const seed = blueprintModule.seedWorkspaceBlueprint();
   const blueprint = blueprintModule.renameWorkspaceRootFolder(seed, "projects", "Projects from Drive");
@@ -577,21 +796,49 @@ test("blueprint reconcile PUT is closed, version-fenced, and limited to exactly 
   assert.equal(system.status, 400);
   assert.match((await system.json()).error, /owner-managed/u);
   assert.equal(systemDatabase.batches.length, 0);
+
+  const systemSheetDatabase = fakeDatabase(persistedRow(seed, 4), { resources });
+  workspaceEnvironment(systemSheetDatabase);
+  const systemSheet = await blueprintRoute.PUT(routeRequest(
+    "/api/v1/integrations/google/setup/blueprint",
+    ADMIN_EMAIL,
+    "PUT",
+    {
+      blueprint: seed,
+      expectedVersion: 4,
+      reconcileReview: {
+        resourceType: "sheets.spreadsheet",
+        key: "client-directory",
+        expectedExternalId: "client-directory-sheet",
+        expectedActualName: "Client Directory from Drive",
+        expectedVersion: 4,
+      },
+    },
+  ));
+  assert.equal(systemSheet.status, 400);
+  assert.match((await systemSheet.json()).error, /owner-managed Workspace resource/u);
+  assert.equal(systemSheetDatabase.batches.length, 0);
 });
 
-test("blueprint reconcile source re-reads exact Drive identity, type, parent, name, and id before the CAS save", () => {
+test("blueprint reconcile source re-reads exact folder, sheet, and template identity, type, parent, name, and id before the CAS save", () => {
   const providerFence = blueprintRouteSource.slice(
-    blueprintRouteSource.indexOf("async function assertLiveReconcileReview"),
-    blueprintRouteSource.indexOf("function assertSimulationReconcileReview"),
+    blueprintRouteSource.indexOf("async function resolveLiveFolderChain"),
+    blueprintRouteSource.indexOf("function resolveSimulationFolderChain"),
   );
   assert.match(providerFence, /findSetupItemsByIdentity\("fciRootKey", folder\.key\)/u);
   assert.match(providerFence, /findSetupItemsByIdentity\("fciWorkspaceFolder", folder\.key\)/u);
   assert.match(providerFence, /match\.mimeType !== GOOGLE_FOLDER_MIME_TYPE/u);
   assert.match(providerFence, /match\.parents\.length !== 1/u);
   assert.match(providerFence, /match\.parents\[0\] !== expectedParentId/u);
-  assert.match(providerFence, /driveIdentityIsExact\(match, folder\.key\)/u);
-  assert.match(providerFence, /reviewed\.id !== review\.expectedExternalId/u);
-  assert.match(providerFence, /reviewed\.name !== review\.expectedActualName/u);
+  assert.match(providerFence, /driveIdentityIsExact\(match, "drive\.folder", folder\.key\)/u);
+  assert.match(providerFence, /review\.resourceType === "sheets\.spreadsheet"[\s\S]+fciResourceKind[\s\S]+fciTemplateKey/u);
+  assert.match(providerFence, /findSetupItemsByIdentity\(identityProperty, review\.key\)/u);
+  assert.match(providerFence, /reviewedResource = matches\.length === 1 \? matches\[0\] : null/u);
+  assert.match(providerFence, /reviewedResource\.mimeType !== desired\.expectedMimeType/u);
+  assert.match(providerFence, /reviewedResource\.parents\[0\] !== parentId/u);
+  assert.match(providerFence, /driveIdentityIsExact\(reviewedResource, review\.resourceType, review\.key\)/u);
+  assert.match(providerFence, /reviewedResource\.id !== review\.expectedExternalId/u);
+  assert.match(providerFence, /reviewedResource\.name !== review\.expectedActualName/u);
 
   const reviewCall = blueprintRouteSource.indexOf("await assertLiveReconcileReview(");
   const saveCall = blueprintRouteSource.indexOf("const result = await saveWorkspaceBlueprint");

@@ -243,12 +243,16 @@ test("Stage 4 pins normative verification and ongoing-upkeep copy with review-fi
   assert.match(stageFourSource.slice(driftStart, renameStart), /enabled=\{workspaceReconcileEnabled\}[\s\S]+Calendar is registered but unavailable[\s\S]+onChanged=\{refreshAfterDriveSetup\}/);
   assert.match(panel, /const registeredCalendarPresent = !simulation && resourceRows\.some[\s\S]+const workspaceReconcileEnabled = folderRenamesEnabled && reconcileCalendarReadable/);
   assert.match(reconcileCard, /Check Google against the saved blueprint\. The check reads provider metadata only; every repair waits for your click, and removed resources stay in Google\./);
-  assert.match(reconcileCard, />Blueprint and Google resources are in sync\.<\/p>/);
+  assert.match(reconcileCard, /typeof data\.simulated !== "boolean"/);
+  assert.match(reconcileCard, /Simulation only — this check used simulated Workspace resources\. Google was not contacted\./);
+  assert.match(reconcileCard, /result\.simulated \? "Blueprint and simulated Workspace resources are in sync\." : "Blueprint and Google resources are in sync\."/);
   assert.match(reconcileCard, /"Rename in Drive"/);
   assert.match(reconcileCard, /"Use Drive name in blueprint"/);
   assert.match(reconcileCard, /"Create from blueprint"/);
+  assert.match(reconcileCard, /action === "rename-drive"[\s\S]+item\.resourceType === "drive\.folder"/);
+  assert.match(reconcileCard, /action === "adopt-blueprint-name"[\s\S]+item\.resourceType === "drive\.folder"[\s\S]+item\.resourceType === "sheets\.spreadsheet"[\s\S]+item\.resourceType === "drive\.file"[\s\S]+item\.management === "owner"/);
   assert.match(reconcileCard, /expectedVersion: result\.blueprintVersion[\s\S]+externalId: item\.externalId[\s\S]+actualName: item\.actualName/);
-  assert.match(reconcileCard, /current\.version !== result\.blueprintVersion[\s\S]+expectedVersion: current\.version[\s\S]+reconcileReview:[\s\S]+resourceType: "drive\.folder"[\s\S]+expectedExternalId: item\.externalId[\s\S]+expectedActualName: item\.actualName[\s\S]+expectedVersion: result\.blueprintVersion/);
+  assert.match(reconcileCard, /current\.version !== result\.blueprintVersion[\s\S]+expectedVersion: current\.version[\s\S]+reconcileReview:[\s\S]+resourceType: item\.resourceType[\s\S]+expectedExternalId: item\.externalId[\s\S]+expectedActualName: item\.actualName[\s\S]+expectedVersion: result\.blueprintVersion/);
   assert.match(reconcileCard, /mode: "reconcile-missing"[\s\S]+resourceKey: item\.key[\s\S]+expectedVersion: result\.blueprintVersion/);
   assert.match(reconcileCard, /ensured\.ensured !== true[\s\S]+ensured\.reconciled !== true[\s\S]+ensured\.resourceKey !== item\.key[\s\S]+ensured\.version !== result\.blueprintVersion[\s\S]+setup ensure action returned an incomplete result/);
   assert.match(reconcileCard, /renamed\.renamed !== true[\s\S]+Drive rename returned an incomplete result/);
