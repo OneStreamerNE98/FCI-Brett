@@ -423,3 +423,56 @@ test(
     }
   },
 );
+
+test(
+  "PostgreSQL v12 maps legacy mail-item statuses before constraining the vocabulary",
+  {
+    skip: postgresTestUrl ? false : "TEST_POSTGRES_URL is not configured",
+    timeout: 30_000,
+  },
+  async () => {
+    const { Pool } = await import("pg");
+    const pool = new Pool({
+      connectionString: postgresTestUrl,
+      max: 4,
+      application_name: "fci_mail_item_legacy_migration_integration",
+    });
+    const schema = `fci_mail_legacy_${randomUUID().replaceAll("-", "")}`;
+    await pool.query(`CREATE SCHEMA ${schema}`);
+
+    try {
+      const preAnalysisMigrations = PRODUCTION_SCHEMA_MIGRATIONS.filter(
+        ({ version }) => version < 12,
+      );
+      await runProductionSchemaMigrations(pool, preAnalysisMigrations, { schema });
+
+      const legacyRows = [
+        ["legacy-approved", "gmail-legacy-approved", "approved"],
+        ["legacy-unknown", "gmail-legacy-unknown", "routed-elsewhere"],
+        ["legacy-review", "gmail-legacy-review", "needs-review"],
+      ];
+      for (const [id, gmailMessageId, status] of legacyRows) {
+        await pool.query(
+          `INSERT INTO ${schema}.mail_items (
+             id, gmail_message_id, status, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $4)`,
+          [id, gmailMessageId, status, new Date(NOW)],
+        );
+      }
+
+      await runProductionSchemaMigrations(pool, PRODUCTION_SCHEMA_MIGRATIONS, { schema });
+
+      const migrated = await pool.query(
+        `SELECT id, status FROM ${schema}.mail_items ORDER BY id`,
+      );
+      assert.deepEqual(migrated.rows, [
+        { id: "legacy-approved", status: "accepted" },
+        { id: "legacy-review", status: "needs-review" },
+        { id: "legacy-unknown", status: "dismissed" },
+      ]);
+    } finally {
+      await pool.query(`DROP SCHEMA ${schema} CASCADE`);
+      await pool.end();
+    }
+  },
+);

@@ -431,7 +431,7 @@ test("registers AI-10 mail-item analysis as immutable contiguous migration twelv
   assert.equal(migration.statements, MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS);
   assert.equal(
     migration.checksum,
-    "sha256:fb563bec9f0f41c7add4ac61a787d3e47c0cb39a072e00775d0db62c2882097e",
+    "sha256:46904428caf2572fd63079820a5ebf9b5b04e5390bcc7c69a69a8249431430bc",
   );
   const sql = migration.statements.join("\n");
   assert.match(
@@ -493,7 +493,28 @@ test("registers AI-10 mail-item analysis as immutable contiguous migration twelv
   );
   assert.doesNotMatch(
     sql,
-    /\b(?:CREATE TABLE|DROP TABLE|DROP COLUMN|TRUNCATE|DELETE|UPDATE|INSERT)\b/iu,
+    /\b(?:CREATE TABLE|DROP TABLE|DROP COLUMN|TRUNCATE|DELETE|INSERT)\b/iu,
+  );
+  // The only permitted writes are the legacy status backfills: the pre-v12
+  // status column accepted any bounded nonblank text, so the closed vocabulary
+  // must map existing rows before its constraint validates them. Both must
+  // run before the constraint, and nothing else in v12 may write data.
+  assert.deepEqual(
+    migration.statements.filter((statement) => /\bUPDATE\b/iu.test(statement)),
+    [
+      "UPDATE mail_items SET status = 'accepted' WHERE status = 'approved'",
+      `UPDATE mail_items SET status = 'dismissed' WHERE status NOT IN (
+    'needs-review', 'accepted', 'dismissed', 'skipped-noise', 'failed'
+  )`,
+    ],
+  );
+  assert.ok(
+    migration.statements.findIndex((statement) =>
+      statement.includes("WHERE status = 'approved'")
+    ) < migration.statements.findIndex((statement) =>
+      statement.includes("mail_items_analysis_status_check")
+    ),
+    "legacy status backfills must precede the closed-vocabulary constraint",
   );
 });
 

@@ -464,7 +464,7 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
   {
     version: 12,
     name: "mail_item_analysis",
-    checksum: "sha256:fb563bec9f0f41c7add4ac61a787d3e47c0cb39a072e00775d0db62c2882097e",
+    checksum: "sha256:46904428caf2572fd63079820a5ebf9b5b04e5390bcc7c69a69a8249431430bc",
     statements: MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS,
   },
 ];

@@ -72,6 +72,15 @@ export const MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS = [
       AND error_code !~ '[[:cntrl:]]'
     )
   )`,
+  // The pre-v12 status column accepted any bounded nonblank text and the
+  // table had no production writer, so make this migration total for any
+  // earlier database: map the legacy approved lifecycle onto the analysis
+  // vocabulary and retire unrecognized values as dismissed before the closed
+  // vocabulary validates existing rows. Rows are never deleted.
+  "UPDATE mail_items SET status = 'accepted' WHERE status = 'approved'",
+  `UPDATE mail_items SET status = 'dismissed' WHERE status NOT IN (
+    'needs-review', 'accepted', 'dismissed', 'skipped-noise', 'failed'
+  )`,
   `ALTER TABLE mail_items ADD CONSTRAINT mail_items_analysis_status_check CHECK (
     status IN ('needs-review', 'accepted', 'dismissed', 'skipped-noise', 'failed')
   )`,
