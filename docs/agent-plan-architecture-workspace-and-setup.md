@@ -796,7 +796,7 @@ dashboard markup); `npm test` green.
 **Effort:** small-medium. **Cost:** $0.
 
 ### EDIT-05 · Project editing (medium-large, after EDIT-03)
-**Status:** In progress — `codex/edit05-project-editing`
+**Status:** In review — PR #228, July 27, 2026. Lint, `npm test`, and focused EDIT-05 e2e are green; the full Windows e2e baseline font failures are disclosed in the PR. Source-only and undeployed; D1 creation obtains the canonical version through GET-after-create. Guide impact: none.
 **Why:** nine project columns have **no mutation route at all** — `name`,
 `status`, `site`, `clientId`, `estimatedValue`, `flooringCategory`,
 `squareFeet`, `contractValue`, `segment` — so a project cannot move
