@@ -2996,7 +2996,7 @@ with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
 
 ### AI-10 · Email intake: durable review queue and review-first lead capture (large; after AI-09)
-**Status:** In progress — `codex/ai10-de-review-queue`
+**Status:** In review — PR #238, July 28, 2026. Sub-PRs d+e only; source-only and undeployed.
 **Why:** the owner asked for OpenAI to read inbound email, identify leads, and
 pre-populate a draft lead a person approves, edits, or removes. Two research
 passes (July 26, 2026) established that the app does **not** need a new surface
