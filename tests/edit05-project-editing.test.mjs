@@ -401,6 +401,47 @@ test("stale project PATCH returns currentVersion and performs no write or audit"
   }
 });
 
+test("PATCH response applies the same manager-disclosure filter as the collection GET", async () => {
+  // The collection GET nulls any project_manager that is neither the actor nor a
+  // current office identity; the mutation response must not resurface an offboarded
+  // manager's email (review finding, PR #228). The seeded manager@example.test is
+  // deliberately absent from FCI_OFFICE_EMAILS.
+  const database = new ProjectD1Database();
+  try {
+    const response = await patchRequest(database, { name: "Filtered response", version: "1" }, "office@example.test");
+    assert.equal(response.status, 200);
+    const { project } = await response.json();
+    assert.equal(project.projectManagerId, null);
+
+    database.database.prepare("UPDATE projects SET project_manager = ?").run("office@example.test");
+    const echoed = await patchRequest(database, { site: "Actor-owned manager" , version: "2" }, "office@example.test");
+    assert.equal(echoed.status, 200);
+    const echoedBody = await echoed.json();
+    assert.equal(echoedBody.project.projectManagerId, "office@example.test");
+  } finally {
+    database.close();
+  }
+});
+
+test("a no-op PATCH returns 200 with no version bump and zero audit rows", async () => {
+  // updateProject's changes.length === 0 branch had zero coverage (review finding,
+  // PR #228): a same-value patch must not bump version or append a spurious audit row.
+  const database = new ProjectD1Database();
+  try {
+    const response = await patchRequest(database, {
+      name: "FCI TEST — DO NOT USE project",
+      version: "1",
+    });
+    assert.equal(response.status, 200);
+    const { project } = await response.json();
+    assert.equal(project.version, "1");
+    assert.equal(database.project().version, 1);
+    assert.equal(database.activities().length, 0);
+  } finally {
+    database.close();
+  }
+});
+
 test("project PATCH auth and origin failures are no-store", async () => {
   const database = new ProjectD1Database();
   cloudflareEnv.DB = database;

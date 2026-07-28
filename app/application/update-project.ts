@@ -10,6 +10,8 @@ import type {
   ProjectRepository,
   ProjectRow,
 } from "../ports/project-repository.ts";
+import { normalizeProjectManagerId } from "../domain/project-creation.ts";
+import { officeIdentityForEmail } from "../lib/workspace-auth.ts";
 
 export const MAX_PROJECT_PATCH_BODY_BYTES = 64_000;
 
@@ -190,7 +192,7 @@ export async function updateProject(
   return { ok: true, value: result.value };
 }
 
-export function projectUpdateResponse(row: ProjectRow, isAdmin: boolean) {
+export function projectUpdateResponse(row: ProjectRow, isAdmin: boolean, actorEmail: string) {
   return {
     id: row.id,
     projectNumber: row.projectNumber,
@@ -198,7 +200,11 @@ export function projectUpdateResponse(row: ProjectRow, isAdmin: boolean) {
     name: row.name,
     status: row.status,
     site: row.site,
-    projectManagerId: row.projectManagerId,
+    // Same disclosure guarantee as the collection GET (projects/route.ts
+    // authorizedProjectManagerId): a manager email is returned only when it is the
+    // requesting actor or a current office identity — an offboarded manager's email
+    // must not resurface through the mutation response (review finding, PR #228).
+    projectManagerId: authorizedResponseProjectManagerId(row.projectManagerId, actorEmail),
     estimatedValue: row.estimatedValue,
     flooringCategory: row.flooringCategory,
     squareFeet: row.squareFeet,
@@ -207,4 +213,11 @@ export function projectUpdateResponse(row: ProjectRow, isAdmin: boolean) {
     updatedAt: row.updatedAt,
     version: row.version,
   };
+}
+
+function authorizedResponseProjectManagerId(candidate: unknown, actorEmail: string) {
+  const normalized = normalizeProjectManagerId(candidate);
+  if (!normalized.ok) return null;
+  if (normalized.value === actorEmail) return normalized.value;
+  return officeIdentityForEmail(normalized.value)?.email ?? null;
 }

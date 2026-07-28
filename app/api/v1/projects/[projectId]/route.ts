@@ -53,5 +53,5 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       status,
     );
   }
-  return noStoreJson({ project: projectUpdateResponse(result.value, auth.user.isAdmin) });
+  return noStoreJson({ project: projectUpdateResponse(result.value, auth.user.isAdmin, auth.user.email) });
 }
