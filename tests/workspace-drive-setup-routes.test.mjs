@@ -1068,6 +1068,13 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
     event.eventType === "setup.folder_renamed"
     && /mode=reconcile-drive-name;key=unsorted-intake;from=Externally renamed intake;to=99_Unsorted Intake/u.test(event.detail)
   )));
+  // The ORIGINAL blueprint-rename path keeps its audit-detail pin alongside the new
+  // reconcile-mode one — main asserted key=projects here and the reconcile work must
+  // not un-pin it (review finding, PR #227).
+  assert.ok(database.state.events.some((event) => (
+    event.eventType === "setup.folder_renamed"
+    && /key=projects/u.test(event.detail)
+  )));
   assert.equal(eventTypes.filter((eventType) => eventType === "drive.simulation_project_folder_provisioned").length, 1);
 });
 

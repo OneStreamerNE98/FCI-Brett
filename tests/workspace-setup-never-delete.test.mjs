@@ -67,6 +67,13 @@ const DESTRUCTIVE_SOURCE_RULES = Object.freeze([
     pattern: /["'`][^"'`\r\n]*(?::delete\b|\/(?:batch)?delete\b|batchDelete\b)[^"'`\r\n]*["'`]/giu,
   }),
   Object.freeze({
+    // Gmail exposes trash as an ENDPOINT (POST users.messages.trash), not a body flag,
+    // so a URL-segment deny is required alongside the Drive body-based rule below
+    // (review finding, PR #227: a setup-module trashMessage() would otherwise pass).
+    label: "a Google trash or untrash endpoint",
+    pattern: /["'`][^"'`\r\n]*\/(?:un)?trash\b[^"'`\r\n]*["'`]/giu,
+  }),
+  Object.freeze({
     label: "a Drive trash mutation",
     pattern: /\btrashed\s*:\s*true\b/giu,
   }),
@@ -104,7 +111,11 @@ async function loadSetupProviderCensus() {
   const providerModules = (await discoverTypeScriptFiles("app/lib"))
     .filter((relativePath) => (
       /\/google-[^/]+\.ts$/u.test(relativePath)
-      || /\/(?:google-)?workspace-reconcile(?:-simulation)?\.ts$/u.test(relativePath)
+      // Every workspace-* helper joins the census, not a hand-picked name list: the
+      // reconcile-review parser fell outside the original two patterns the day it was
+      // added (review finding, PR #227), which is exactly how a future fetch-bearing
+      // helper would escape the never-delete scan.
+      || /\/workspace-[^/]+\.ts$/u.test(relativePath)
     ));
   const sources = new Map();
   for (const relativePath of [...integrationModules, ...providerModules].sort()) {
