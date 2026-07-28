@@ -85,7 +85,9 @@ A lead is a potential job you are chasing. The Leads page lists your active oppo
 
 (A lead whose stage doesn't match one of these appears under **Other stages**.)
 
-**What Advance does.** Open a lead and use **Advance stage** (or the Advance action in the list) to push it to the next stage in the order above — New inquiry to Site visit, Site visit to Proposal, and so on. It only moves one step at a time, and only while the lead is still active and not already at the final stage. If you advance by mistake, an **Undo** button appears in the confirmation message. Advancing does not skip stages and does not mark a lead won or lost — those outcomes are set elsewhere as the deal closes.
+**What Advance does.** Open a lead and use **Advance stage** (or the Advance action in the list) to push it to the next stage in the order above — New inquiry to Site visit, Site visit to Proposal, and so on. It only moves one step at a time, and only while the lead is still active and not already at the final stage. If you advance by mistake, an **Undo** button appears in the confirmation message. Advancing does not skip stages and does not mark a lead won or lost — those outcomes are set in **Edit lead**, below.
+
+**Editing a lead.** Open a lead's drawer and use **Edit lead** to change its details — company, contact, project, site, source, stage, next action and its date, the lead owner, and the outcome (**Active**, **Converted**, **Lost**, or **Archived** — records are archived, never deleted). Only an administrator can change the **estimated value**; for everyone else it shows read-only. If someone else saved a change to the same lead while your form was open, saving shows a conflict with each **saved value** beside your entry so you can decide before applying yours over it. Every saved edit is recorded in the lead's history with what changed, from what, to what.
 
 > [SCREENSHOT 2 — see Screenshot index]
 
@@ -109,6 +111,8 @@ The Projects page can filter to **Active**, **Completed**, **Cancelled**, or **A
 
 - **Overview** — the site map, estimated and contract value, flooring category, square feet, installation dates, the post-installation callback result, the assigned project manager, and a link to the project's Google Drive folder. Fields that haven't been filled in yet read **Not yet captured**.
 - **Meetings** — meeting notes for this project (see the next section).
+
+**Editing a project.** In the drawer, **Edit project** changes the project's details — name, site, client, flooring category, square feet, and segment are open to everyone in the office. Three fields are **administrator-only**: the project **status** (moving a job Planning → Mobilizing → Installation → Closeout → Completed), the **estimated value**, and the **contract value** — they show read-only for everyone else. If a teammate saved a change to the same project while your form was open, saving shows a conflict with each **saved value** beside your entry so nothing is overwritten unseen. Every saved edit is recorded in the project's history with what changed, from what, to what.
 
 **Recording installation dates and follow-ups.** In the Overview tab, under **Installation & follow-up**, an administrator can:
 

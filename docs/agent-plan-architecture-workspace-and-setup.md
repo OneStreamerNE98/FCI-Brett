@@ -764,7 +764,7 @@ applied; golden hashes untouched; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### EDIT-04 · Lead editing (small-medium, after EDIT-01 + EDIT-03)
-**Status:** In review — PR #231, July 28, 2026. Source-only and undeployed. Reusable create/edit `LeadModal` (create mode carries optional prefill — the AI-10 (f) implement-once contract); all 13 lead fields round-trip through changed-key/version-fenced PATCH; Administrator-only estimated-value edits fail before conflict disclosure; scoped saved-value conflict re-apply, office-identity email projection (owner/createdBy filtered; contact email consciously office-visible client data), dashboard refresh, and stable focus fallback are pinned. **Create-contract change, recorded:** `POST /api/v1/leads` now rejects a non-office `ownerEmail` with 400 (previously 201 with an owner that immediately projected as null) — coherent with the projection rule, tested, and disclosed. Guide impact: none.
+**Status:** Complete — PR #231, July 28, 2026. Source-only and undeployed. Review: 4-lens fleet, 4 confirmed P2 / 0 refuted — create-mode prefill welded open (the AI-10 (f) implement-once contract, now pinned), terminal statuses Lost/Archived pinned, the create-contract change recorded; the pre-existing assistant `owner_email` evidence leak is recorded for a separate orchestrator PR. Guide impact: `docs/settings-guide.md` gains the Editing-a-lead and Editing-a-project sections in this flip. Reusable create/edit `LeadModal` (create mode carries optional prefill — the AI-10 (f) implement-once contract); all 13 lead fields round-trip through changed-key/version-fenced PATCH; Administrator-only estimated-value edits fail before conflict disclosure; scoped saved-value conflict re-apply, office-identity email projection (owner/createdBy filtered; contact email consciously office-visible client data), dashboard refresh, and stable focus fallback are pinned. **Create-contract change, recorded:** `POST /api/v1/leads` now rejects a non-office `ownerEmail` with 400 (previously 201 with an owner that immediately projected as null) — coherent with the projection rule, tested, and disclosed.
 **Why:** the lead PATCH route already accepts all 13 fields
 (`app/api/v1/leads/[leadId]/route.ts:14`) while the UI sends only `stage`
 through `advanceLead` (`app/FloorOpsApp.tsx:948-986`). `nextAction` is
@@ -2118,8 +2118,10 @@ break any KPI; full suites pass.
 **Why:** Install cycle time and callback rate are the two operations/quality KPIs every
 installer tracks — and this franchise's post-installation follow-up walkthrough makes the
 callback question a natural existing step. But project editing does not exist yet
-(tracked step-7 roadmap work). The repo already has the right interim pattern: the
-audited, admin-only "Assign to me" drawer action.
+(tracked step-7 roadmap work; **superseded July 28, 2026 — EDIT-05 / PR #228 shipped
+project editing**, so this Why describes the state when KPI-03 was scoped). The repo
+already had the right interim pattern: the audited, admin-only "Assign to me" drawer
+action.
 **Do:** (1) Additive migration 0014, following merged SET-13 migration 0013:
 `installation_started_at` (ms),
 `installation_completed_at` (ms), `had_callback` (integer boolean default 0),

@@ -7,8 +7,10 @@ Remediation pass: July 12, 2026
 > The [agent plan](agent-plan-architecture-workspace-and-setup.md) owns current status.
 > Since this audit: settings persistence landed (BE-07), the AI assistant wave shipped
 > its engine and settings (Workstream G), and the Google Workspace settings surface was
-> redesigned into the four-stage flow (SET-29…34). Treat the row-level gap claims below
-> as historical.
+> redesigned into the four-stage flow (SET-29…34), and **record editing shipped
+> (July 28, 2026): the Projects row's Critical "project edit" gap closed with EDIT-05 /
+> PR #228, and the Leads row's "full edit/archive UI" gap with EDIT-04 / PR #231.**
+> Treat the row-level gap claims below as historical.
 
 ## Overall assessment
 
