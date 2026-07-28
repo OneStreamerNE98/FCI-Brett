@@ -52,14 +52,14 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /event\.target !== event\.currentTarget/);
   assert.match(overlay, /!closeOnBackdropRef\.current \|\| busyRef\.current/);
 
-  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 14);
+  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 15);
   assert.doesNotMatch(overlayConsumers, /<div className="modal-backdrop"/);
   assert.doesNotMatch(overlayConsumers, /<div className="drawer-backdrop"/);
   assert.match(overlayConsumers, /variant="drawer"/);
   assert.match(overlayConsumers, /busy=\{loading \|\| submitting\}/);
   assert.match(overlayConsumers, /busy=\{saving\}/);
   assert.equal(overlayConsumers.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 8);
-  assert.equal(overlayConsumers.match(/onClick=\{(?:onClose|controller\.closeModal)\} disabled=\{saving\}>Cancel/g)?.length, 9);
+  assert.equal(overlayConsumers.match(/onClick=\{(?:onClose|controller\.closeModal)\} disabled=\{saving\}>Cancel/g)?.length, 10);
   assert.match(overlayConsumers, /ariaLabel=\{`Record installation dates for \$\{project\.number\}`\}/);
   assert.match(overlayConsumers, /ariaLabel=\{`Record follow-up result for \$\{project\.number\}`\}/);
   assert.match(projectFiles, /returnFocusRef=\{returnFocusRef\}/);

@@ -403,7 +403,8 @@ test("feature labels distinguish working, in-development, setup-required, and pl
   await expect(plan.getByRole("heading", { name: "Planned project capabilities" })).toBeVisible();
   await expect(plan.getByText("Planned", { exact: true })).toBeVisible();
   await expect(plan.getByRole("button")).toHaveCount(0);
-  await expect(drawer.locator(".planned-project-updates")).toContainText("Planned");
+  await expect(drawer.getByRole("button", { name: "Edit project" })).toBeVisible();
+  await expect(drawer.locator(".planned-project-updates")).toHaveCount(0);
 });
 
 test("390px project rows preserve schedule, site, and value metadata", async ({ page }) => {

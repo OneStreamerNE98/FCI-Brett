@@ -726,6 +726,124 @@ test(
         requests: 1,
       });
 
+      const projectEditClientIntent = clientIntent({
+        actorId: actorA,
+        name: "FCI TEST — DO NOT USE Project Edit Target",
+        createdAt: projectCreatedAt + 250,
+      });
+      const projectEditClientResult = await createPostgresClientRepository(pool, {
+        schema,
+        request: creationRequest({
+          idempotencyKey: "project-edit-target-client",
+          requestFingerprint: UNTRUSTED_FINGERPRINT,
+          createdAt: projectCreatedAt + 250,
+        }),
+      }).create(projectEditClientIntent);
+      assert.equal(projectEditClientResult.outcome, "accepted");
+      const projectEditClientId = projectEditClientIntent.client.id;
+
+      const projectEditActivityId = randomUUID();
+      const editedProject = await createPostgresProjectRepository(pool, { schema }).update({
+        projectId: acceptedProjectIntent.project.id,
+        expectedVersion: "1",
+        values: {
+          clientId: projectEditClientId,
+          name: "FCI TEST — DO NOT USE edited project",
+          status: "installation",
+          site: "FCI TEST — DO NOT USE edited site",
+          estimatedValue: 180_000,
+          flooringCategory: "hardwood",
+          squareFeet: 4_200,
+          contractValue: 185_000,
+          segment: "commercial",
+        },
+        updatedAt: projectCreatedAt + 500,
+        updatedBy: actorA,
+        activity: {
+          id: projectEditActivityId,
+          recordId: acceptedProjectIntent.project.id,
+          action: "Project fields updated",
+          actor: actorA,
+          detail: "Nine project fields changed before → after",
+          createdAt: projectCreatedAt + 500,
+        },
+      });
+      assert.equal(editedProject.outcome, "updated");
+      assert.deepEqual(editedProject.value, {
+        id: acceptedProjectIntent.project.id,
+        projectNumber: acceptedProjectIntent.project.projectNumber,
+        clientId: projectEditClientId,
+        name: "FCI TEST — DO NOT USE edited project",
+        status: "installation",
+        site: "FCI TEST — DO NOT USE edited site",
+        projectManagerId: actorA,
+        estimatedValue: 180_000,
+        flooringCategory: "hardwood",
+        squareFeet: 4_200,
+        contractValue: 185_000,
+        segment: "commercial",
+        updatedAt: projectCreatedAt + 500,
+        version: "2",
+      });
+      assert.deepEqual(
+        await oneRow(
+          pool,
+          `SELECT name, status, site, client_id::text AS client_id,
+                  estimated_value::text AS estimated_value, flooring_category,
+                  square_feet::text AS square_feet,
+                  contract_value::text AS contract_value, segment,
+                  version::text AS version,
+                  (SELECT count(*)::integer FROM ${schema}.activity_events
+                    WHERE id = $2) AS activities
+           FROM ${schema}.projects WHERE id = $1`,
+          [acceptedProjectIntent.project.id, projectEditActivityId],
+        ),
+        {
+          name: "FCI TEST — DO NOT USE edited project",
+          status: "installation",
+          site: "FCI TEST — DO NOT USE edited site",
+          client_id: projectEditClientId,
+          estimated_value: "180000",
+          flooring_category: "hardwood",
+          square_feet: "4200",
+          contract_value: "185000",
+          segment: "commercial",
+          version: "2",
+          activities: 1,
+        },
+      );
+      const staleProjectEditActivityId = randomUUID();
+      assert.deepEqual(
+        await createPostgresProjectRepository(pool, { schema }).update({
+          projectId: acceptedProjectIntent.project.id,
+          expectedVersion: "1",
+          values: {
+            ...editedProject.value,
+            name: "Stale project edit must not persist",
+          },
+          updatedAt: projectCreatedAt + 600,
+          updatedBy: actorA,
+          activity: {
+            id: staleProjectEditActivityId,
+            recordId: acceptedProjectIntent.project.id,
+            action: "Project fields updated",
+            actor: actorA,
+            detail: "Stale before → after",
+            createdAt: projectCreatedAt + 600,
+          },
+        }),
+        { outcome: "conflict", currentVersion: "2" },
+      );
+      assert.equal(
+        (await oneRow(
+          pool,
+          `SELECT count(*)::integer AS count
+           FROM ${schema}.activity_events WHERE id = $1`,
+          [staleProjectEditActivityId],
+        )).count,
+        0,
+      );
+
       const changedSegmentIntent = structuredClone(acceptedProjectIntent);
       changedSegmentIntent.project.segment = "commercial";
       assert.deepEqual(

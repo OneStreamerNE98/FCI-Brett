@@ -837,8 +837,8 @@ test("labels unfinished features without presenting placeholder controls", async
   }
   assert.match(app, /\(\["Overview", "Files", "Meetings"\] as const\)/);
   assert.match(app, /Planned project capabilities/);
-  assert.match(app, /planned-project-updates/);
-  assert.doesNotMatch(app, /EmptyProjectTab|Project updates planned|disabled title="Project updates/);
+  assert.match(app, /> Edit project<\/button>/);
+  assert.doesNotMatch(app, /planned-project-updates|Project updates planned|disabled title="Project updates/);
   assert.doesNotMatch(app, /ProjectUpdateDraft|ProjectUpdateModal|projectUpdate|Project update composer opened|Send update/);
 });
 
