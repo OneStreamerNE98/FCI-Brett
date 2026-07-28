@@ -327,10 +327,6 @@ export async function discoverWorkspaceReconcileActual(input: Readonly<{
     for (const registration of input.calendarRegistrations) {
       const metadata = await input.calendar.getCalendarMetadata(registration.externalId);
       if (!metadata) continue;
-      const desiredCalendar = desired.find((candidate) => (
-        candidate.resourceType === "calendar.calendar" && candidate.key === registration.key
-      ));
-      if (!desiredCalendar) continue;
       addActual(records, discoveredExternalIds, Object.freeze({
         resourceType: "calendar.calendar",
         key: registration.key,

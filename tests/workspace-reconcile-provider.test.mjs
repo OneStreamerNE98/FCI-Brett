@@ -288,6 +288,14 @@ test("provider discovery covers managed listings, registered resources, duplicat
           url: "https://calendar.google.test/client",
         });
       }
+      if (externalId === "calendar-removed") {
+        return Object.freeze({
+          id: externalId,
+          name: "Removed blueprint calendar",
+          timeZone: "America/New_York",
+          url: "https://calendar.google.test/removed",
+        });
+      }
       if (externalId === "calendar-field-missing") return null;
       throw new Error(`Unexpected calendar read for ${externalId}`);
     },
@@ -295,6 +303,7 @@ test("provider discovery covers managed listings, registered resources, duplicat
   const calendarRegistrations = Object.freeze([
     Object.freeze({ key: "client-appointments", externalId: "calendar-client" }),
     Object.freeze({ key: "field-schedule", externalId: "calendar-field-missing" }),
+    Object.freeze({ key: "removed-calendar", externalId: "calendar-removed" }),
   ]);
   const resources = Object.freeze([
     resource({
@@ -360,7 +369,7 @@ test("provider discovery covers managed listings, registered resources, duplicat
     ],
     "root-listed resources must not be fetched twice and every other resource is read by its retained ID",
   );
-  assert.deepEqual(calendarCalls, ["calendar-client", "calendar-field-missing"]);
+  assert.deepEqual(calendarCalls, ["calendar-client", "calendar-field-missing", "calendar-removed"]);
   assert.equal(actualById.get(companyAdmin.id).key, "company-admin");
   assert.equal(actualById.get(templates.id).key, "templates");
   assert.equal(actualById.get(directorySheet.id).key, "client-directory");
@@ -384,6 +393,7 @@ test("provider discovery covers managed listings, registered resources, duplicat
   assert.equal(actualById.get(operationalProjectFolder.id).key, null);
   assert.equal(actualById.get(operationalTemplateChild.id).key, null);
   assert.equal(actualById.has("calendar-field-missing"), false);
+  assert.equal(actualById.get("calendar-removed").key, "removed-calendar");
 
   const desired = workspaceReconcileDesiredResources(
     blueprint,
@@ -393,7 +403,7 @@ test("provider discovery covers managed listings, registered resources, duplicat
   assert.deepEqual(result.counts, {
     missing: 1,
     renamed: 2,
-    unmanaged: 11,
+    unmanaged: 12,
     inSync: 2,
   });
   assert.deepEqual(
@@ -430,6 +440,17 @@ test("provider discovery covers managed listings, registered resources, duplicat
       && detail.includes("no longer in the blueprint")
     )),
     true,
+  );
+  assert.equal(
+    result.drift.some(({ state, resourceType, key, externalId, detail }) => (
+      state === "unmanaged"
+      && resourceType === "calendar.calendar"
+      && key === "removed-calendar"
+      && externalId === "calendar-removed"
+      && detail.includes("no longer in the blueprint")
+    )),
+    true,
+    "a registered Calendar removed from the blueprint remains provider-visible as unmanaged drift",
   );
   assert.equal(result.drift.some(({ actualName }) => actualName === operationalProjectFolder.name), true);
   assert.equal(result.drift.some(({ actualName }) => actualName === operationalTemplateChild.name), true);
