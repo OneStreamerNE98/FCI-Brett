@@ -764,7 +764,7 @@ applied; golden hashes untouched; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### EDIT-04 · Lead editing (small-medium, after EDIT-01 + EDIT-03)
-**Status:** In progress — `codex/edit04-lead-editing`
+**Status:** In review — PR #231, July 28, 2026. Source-only and undeployed. Reusable create/edit `LeadModal`; all 13 lead fields round-trip through changed-key/version-fenced PATCH; Administrator-only estimated-value edits fail before conflict disclosure; scoped saved-value conflict re-apply, office-identity email projection, dashboard refresh, and stable focus fallback are pinned. Guide impact: none.
 **Why:** the lead PATCH route already accepts all 13 fields
 (`app/api/v1/leads/[leadId]/route.ts:14`) while the UI sends only `stage`
 through `advanceLead` (`app/FloorOpsApp.tsx:948-986`). `nextAction` is
