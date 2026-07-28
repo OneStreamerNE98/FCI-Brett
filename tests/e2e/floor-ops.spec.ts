@@ -454,7 +454,11 @@ test("lead details open separately from stage advancement and restore focus", as
   const drawer = page.getByRole("dialog", { name: new RegExp(leadCompany) });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByRole("heading", { level: 2, name: leadCompany })).toBeVisible();
-  await expect(drawer.getByText("This drawer is read-only.", { exact: false })).toBeVisible();
+  await expect(drawer.getByText(
+    "Edit saved lead details here. Advance stage remains a separate deliberate action and can be undone from the confirmation message.",
+    { exact: true },
+  )).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Edit lead" })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Advance stage" })).toBeVisible();
 
   await drawer.getByRole("button", { name: "Close lead details" }).click();

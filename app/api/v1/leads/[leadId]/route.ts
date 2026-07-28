@@ -8,14 +8,18 @@ import {
   MAX_LEAD_BODY_BYTES,
   LEAD_PATCH_KEYS,
   leadValues,
-  leadResponse,
   mergeLeadPatch,
   normalizeLeadPatch,
+  type LeadPatchKey,
   type ValidatedLeadValues,
 } from "../../../../domain/lead";
 import type { LeadActivityIntent } from "../../../../ports/lead-repository";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { noStoreJson as noStore } from "../../../../lib/no-store-json";
+import {
+  authorizedLeadOwnerEmail,
+  authorizedLeadResponse,
+} from "../../../../lib/authorized-lead-response";
 
 type RouteContext = { params: Promise<{ leadId: string }> };
 
@@ -37,10 +41,48 @@ const LEAD_ACTIVITY_ACTIONS = {
 
 const MUTABLE_KEYS = new Set<keyof ValidatedLeadValues>(LEAD_PATCH_KEYS);
 
+type LeadConflictValues = Partial<{
+  [Key in LeadPatchKey]: Key extends "ownerEmail"
+    ? string | null
+    : ValidatedLeadValues[Key];
+}>;
+
 function leadActivityValue(key: keyof ValidatedLeadValues, value: string | number | null) {
   if (value === null) return "Not set";
   if (key === "nextActionAt") return new Date(value as number).toISOString();
   return String(value);
+}
+
+function leadConflictValues(
+  row: Parameters<typeof leadValues>[0],
+  patch: ReturnType<typeof normalizeLeadPatch> & { ok: true },
+  actorEmail: string,
+): LeadConflictValues {
+  const values = leadValues(row);
+  return Object.fromEntries(
+    LEAD_PATCH_KEYS.flatMap((key) => {
+      if (!Object.hasOwn(patch.value, key)) return [];
+      const value = key === "ownerEmail"
+        ? authorizedLeadOwnerEmail(values.ownerEmail, actorEmail)
+        : values[key];
+      return [[key, value]];
+    }),
+  ) as LeadConflictValues;
+}
+
+function leadConflictResponse(
+  row: Parameters<typeof leadValues>[0],
+  patch: ReturnType<typeof normalizeLeadPatch> & { ok: true },
+  actorEmail: string,
+) {
+  return noStore(
+    {
+      error: "Lead changed since it was loaded.",
+      currentVersion: row.version,
+      currentValues: leadConflictValues(row, patch, actorEmail),
+    },
+    { status: 409 },
+  );
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
@@ -58,16 +100,32 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (!parsed.ok) return noStore({ error: parsed.error }, { status: parsed.status });
   const normalized = normalizeLeadPatch(parsed.body);
   if (!normalized.ok) return noStore({ error: normalized.message }, { status: 400 });
+  // `isAdmin` is the only development-transport authorization primitive that
+  // actually enforces an edit boundary today. Keep this check before every
+  // record read/conflict path so a forbidden financial edit cannot disclose
+  // lead existence, version, or saved values through a 409.
+  if (Object.hasOwn(normalized.value, "estimatedValue") && !auth.user.isAdmin) {
+    return noStore(
+      { error: "An FCI administrator must update lead estimated value." },
+      { status: 403 },
+    );
+  }
+  if (
+    Object.hasOwn(normalized.value, "ownerEmail")
+    && !authorizedLeadOwnerEmail(normalized.value.ownerEmail ?? "", auth.user.email)
+  ) {
+    return noStore(
+      { error: "Lead owner must be a current authorized office identity." },
+      { status: 400 },
+    );
+  }
 
   await ensureWorkspaceSchema();
   const repository = createD1LeadRepository(env.DB as unknown as D1Database);
   const current = await repository.findById(leadId);
   if (!current) return noStore({ error: "Lead not found." }, { status: 404 });
   if (normalized.value.version && normalized.value.version !== current.version) {
-    return noStore(
-      { error: "Lead changed since it was loaded.", currentVersion: current.version },
-      { status: 409 },
-    );
+    return leadConflictResponse(current, normalized, auth.user.email);
   }
   const currentValues = leadValues(current);
   const values = mergeLeadPatch(currentValues, normalized.value);
@@ -86,7 +144,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       createdAt: now,
     });
   }
-  if (activities.length === 0) return noStore({ lead: leadResponse(current) });
+  if (activities.length === 0) {
+    return noStore({ lead: authorizedLeadResponse(current, auth.user.email) });
+  }
   const result = await repository.update({
     leadId,
     expectedVersion: normalized.value.version ?? current.version,
@@ -99,10 +159,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return noStore({ error: "Lead not found." }, { status: 404 });
   }
   if (result.outcome === "conflict") {
-    return noStore(
-      { error: "Lead changed since it was loaded.", currentVersion: result.currentVersion },
-      { status: 409 },
-    );
+    const latest = await repository.findById(leadId);
+    if (!latest) return noStore({ error: "Lead not found." }, { status: 404 });
+    return leadConflictResponse(latest, normalized, auth.user.email);
   }
-  return noStore({ lead: leadResponse(result.value) });
+  return noStore({ lead: authorizedLeadResponse(result.value, auth.user.email) });
 }
