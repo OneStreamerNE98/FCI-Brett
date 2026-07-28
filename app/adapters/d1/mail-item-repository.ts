@@ -7,6 +7,7 @@ import {
   normalizeMailItemStatus,
   normalizeStoredMailItem,
   serializeMailItemAnalysisPayload,
+  type MailItem,
 } from "../../domain/mail-item";
 import type {
   MailItemRepository,
@@ -79,6 +80,40 @@ function invalidReference(
     }
   }
   return null;
+}
+
+type ReferenceResolution =
+  | Readonly<{ kind: "item"; item: MailItem }>
+  | Readonly<{ kind: "result"; result: MailItemUpsertResult }>;
+
+async function resolveStoredReferences(
+  database: D1Database,
+  item: MailItem,
+): Promise<ReferenceResolution> {
+  let suggestedProjectId = item.suggestedProjectId;
+  for (const reference of REFERENCE_OUTCOMES) {
+    const value = item[reference.property];
+    if (value === null || await referenceExists(database, reference.table, value)) {
+      continue;
+    }
+    // A suggestion is classifier evidence, not an accepted relationship. If
+    // its project disappears between evidence selection and persistence, keep
+    // the durable analysis/watermark while dropping the stale foreign key.
+    if (reference.property === "suggestedProjectId") {
+      suggestedProjectId = null;
+      continue;
+    }
+    return Object.freeze({
+      kind: "result",
+      result: missingReference(reference.outcome),
+    });
+  }
+  return Object.freeze({
+    kind: "item",
+    item: suggestedProjectId === item.suggestedProjectId
+      ? item
+      : Object.freeze({ ...item, suggestedProjectId }),
+  });
 }
 
 export function createD1MailItemRepository(database: D1Database): MailItemRepository {
@@ -158,44 +193,38 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
       const normalized = normalizeStoredMailItem(
         item as unknown as Record<string, unknown>,
       );
-      for (const reference of REFERENCE_OUTCOMES) {
-        const value = normalized[reference.property];
-        if (
-          value !== null
-          && !await referenceExists(database, reference.table, value)
-        ) {
-          return missingReference(reference.outcome);
-        }
-      }
+      const referenceResolution = await resolveStoredReferences(database, normalized);
+      if (referenceResolution.kind === "result") return referenceResolution.result;
+      const relationshipSafe = referenceResolution.item;
       const result = await database
         .prepare(
           "INSERT INTO mail_items (id, connection_key, gmail_message_id, gmail_thread_id, client_id, suggested_project_id, approved_project_id, status, match_reason, email_drive_file_id, analysis_payload, party, confidence, content_hash, label_definition_version, attempted_label_definition_version, subject, sender, received_at, failure_attempts, error_code, coverage_complete, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(connection_key, gmail_message_id) DO NOTHING",
         )
         .bind(
-          normalized.id,
-          normalized.connectionKey,
-          normalized.gmailMessageId,
-          normalized.gmailThreadId,
-          normalized.clientId,
-          normalized.suggestedProjectId,
-          normalized.approvedProjectId,
-          normalized.status,
-          normalized.matchReason,
-          normalized.emailDriveFileId,
-          serializeMailItemAnalysisPayload(normalized.analysisPayload),
-          normalized.party,
-          normalized.confidence,
-          normalized.contentHash,
-          normalized.labelDefinitionVersion,
-          normalized.attemptedLabelDefinitionVersion,
-          normalized.subject,
-          normalized.sender,
-          normalized.receivedAt,
-          normalized.failureAttempts,
-          normalized.errorCode,
-          normalized.coverageComplete ? 1 : 0,
-          normalized.createdAt,
-          normalized.updatedAt,
+          relationshipSafe.id,
+          relationshipSafe.connectionKey,
+          relationshipSafe.gmailMessageId,
+          relationshipSafe.gmailThreadId,
+          relationshipSafe.clientId,
+          relationshipSafe.suggestedProjectId,
+          relationshipSafe.approvedProjectId,
+          relationshipSafe.status,
+          relationshipSafe.matchReason,
+          relationshipSafe.emailDriveFileId,
+          serializeMailItemAnalysisPayload(relationshipSafe.analysisPayload),
+          relationshipSafe.party,
+          relationshipSafe.confidence,
+          relationshipSafe.contentHash,
+          relationshipSafe.labelDefinitionVersion,
+          relationshipSafe.attemptedLabelDefinitionVersion,
+          relationshipSafe.subject,
+          relationshipSafe.sender,
+          relationshipSafe.receivedAt,
+          relationshipSafe.failureAttempts,
+          relationshipSafe.errorCode,
+          relationshipSafe.coverageComplete ? 1 : 0,
+          relationshipSafe.createdAt,
+          relationshipSafe.updatedAt,
         )
         .run();
       if (result.meta.changes === 0) {
@@ -216,45 +245,39 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
       const normalized = normalizeStoredMailItem(
         item as unknown as Record<string, unknown>,
       );
-      for (const reference of REFERENCE_OUTCOMES) {
-        const value = normalized[reference.property];
-        if (
-          value !== null
-          && !await referenceExists(database, reference.table, value)
-        ) {
-          return missingReference(reference.outcome);
-        }
-      }
+      const referenceResolution = await resolveStoredReferences(database, normalized);
+      if (referenceResolution.kind === "result") return referenceResolution.result;
+      const relationshipSafe = referenceResolution.item;
 
       const result = await database
         .prepare(
           "INSERT INTO mail_items (id, connection_key, gmail_message_id, gmail_thread_id, client_id, suggested_project_id, approved_project_id, status, match_reason, email_drive_file_id, analysis_payload, party, confidence, content_hash, label_definition_version, attempted_label_definition_version, subject, sender, received_at, failure_attempts, error_code, coverage_complete, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(connection_key, gmail_message_id) DO UPDATE SET gmail_thread_id = excluded.gmail_thread_id, client_id = excluded.client_id, suggested_project_id = excluded.suggested_project_id, approved_project_id = excluded.approved_project_id, status = excluded.status, match_reason = excluded.match_reason, email_drive_file_id = excluded.email_drive_file_id, analysis_payload = excluded.analysis_payload, party = excluded.party, confidence = excluded.confidence, content_hash = excluded.content_hash, label_definition_version = excluded.label_definition_version, attempted_label_definition_version = excluded.attempted_label_definition_version, subject = excluded.subject, sender = excluded.sender, received_at = excluded.received_at, failure_attempts = excluded.failure_attempts, error_code = excluded.error_code, coverage_complete = mail_items.coverage_complete OR excluded.coverage_complete, updated_at = excluded.updated_at WHERE mail_items.status IN ('needs-review', 'failed')",
         )
         .bind(
-          normalized.id,
-          normalized.connectionKey,
-          normalized.gmailMessageId,
-          normalized.gmailThreadId,
-          normalized.clientId,
-          normalized.suggestedProjectId,
-          normalized.approvedProjectId,
-          normalized.status,
-          normalized.matchReason,
-          normalized.emailDriveFileId,
-          serializeMailItemAnalysisPayload(normalized.analysisPayload),
-          normalized.party,
-          normalized.confidence,
-          normalized.contentHash,
-          normalized.labelDefinitionVersion,
-          normalized.attemptedLabelDefinitionVersion,
-          normalized.subject,
-          normalized.sender,
-          normalized.receivedAt,
-          normalized.failureAttempts,
-          normalized.errorCode,
-          normalized.coverageComplete ? 1 : 0,
-          normalized.createdAt,
-          normalized.updatedAt,
+          relationshipSafe.id,
+          relationshipSafe.connectionKey,
+          relationshipSafe.gmailMessageId,
+          relationshipSafe.gmailThreadId,
+          relationshipSafe.clientId,
+          relationshipSafe.suggestedProjectId,
+          relationshipSafe.approvedProjectId,
+          relationshipSafe.status,
+          relationshipSafe.matchReason,
+          relationshipSafe.emailDriveFileId,
+          serializeMailItemAnalysisPayload(relationshipSafe.analysisPayload),
+          relationshipSafe.party,
+          relationshipSafe.confidence,
+          relationshipSafe.contentHash,
+          relationshipSafe.labelDefinitionVersion,
+          relationshipSafe.attemptedLabelDefinitionVersion,
+          relationshipSafe.subject,
+          relationshipSafe.sender,
+          relationshipSafe.receivedAt,
+          relationshipSafe.failureAttempts,
+          relationshipSafe.errorCode,
+          relationshipSafe.coverageComplete ? 1 : 0,
+          relationshipSafe.createdAt,
+          relationshipSafe.updatedAt,
         )
         .run();
       if (result.meta.changes === 0) {

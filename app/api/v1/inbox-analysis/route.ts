@@ -361,14 +361,19 @@ async function saveFailure(input: {
   existing: MailItem | null;
   errorCode: string;
   now: number;
+  countsAgainstAttemptBudget?: boolean;
 }) {
-  const attempts = input.existing?.attemptedLabelDefinitionVersion
-      === INBOX_ANALYSIS_LABEL_DEFINITION_VERSION
-    ? Math.min(
+  const existingAttempts =
+    input.existing?.attemptedLabelDefinitionVersion
+        === INBOX_ANALYSIS_LABEL_DEFINITION_VERSION
+      ? input.existing.failureAttempts
+      : 0;
+  const attempts = input.countsAgainstAttemptBudget === false
+    ? Math.max(1, existingAttempts)
+    : Math.min(
         MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
-        input.existing.failureAttempts + 1,
-      )
-    : 1;
+        existingAttempts + 1,
+      );
   const preservesReview = input.existing?.status === "needs-review";
   await saveMailItem(input.repository, normalizeStoredMailItem({
     ...rowBase(input),
@@ -487,7 +492,8 @@ function needsReanalysis(item: MailItem) {
 function needsRetry(item: MailItem) {
   return item.status === "failed"
     && (
-      item.attemptedLabelDefinitionVersion
+      item.errorCode === "analysis_daily_limit_reached"
+      || item.attemptedLabelDefinitionVersion
         !== INBOX_ANALYSIS_LABEL_DEFINITION_VERSION
       || item.failureAttempts < MAX_MAIL_ITEM_FAILURE_ATTEMPTS
     );
@@ -579,6 +585,7 @@ export async function runInboxAnalysisSweep(input: {
 
   let pageToken = input.pageToken;
   let continuationToken: string | null = pageToken ?? null;
+  let continuationMessageIds: ReadonlySet<string> | null = null;
   let hitWatermark = false;
   let exhausted = false;
   let discoveryFailed = false;
@@ -663,6 +670,9 @@ export async function runInboxAnalysisSweep(input: {
     }
 
     continuationToken = page.nextPageToken;
+    continuationMessageIds = page.nextPageToken
+      ? new Set(page.messageIds)
+      : null;
     if (hitWatermark) break;
     if (!page.nextPageToken) {
       exhausted = true;
@@ -674,6 +684,7 @@ export async function runInboxAnalysisSweep(input: {
   const deadline = AbortSignal.timeout(INBOX_ANALYSIS_SWEEP_DEADLINE_MS);
   const effectiveSignal = AbortSignal.any([input.signal, deadline]);
   let nextWorkIndex = 0;
+  const durableProgressMessageIds = new Set<string>();
 
   const processWork = async (item: AnalysisWork) => {
     const checkedAt = now();
@@ -688,7 +699,7 @@ export async function runInboxAnalysisSweep(input: {
         contentHash: item.existing?.contentHash ?? null,
         now: checkedAt,
       });
-      return;
+      return true;
     }
     if (item.discoveryError) {
       await saveDiscoveryFailure({
@@ -698,7 +709,7 @@ export async function runInboxAnalysisSweep(input: {
         summary: item.summary,
         now: checkedAt,
       });
-      return;
+      return false;
     }
 
     let analysisInput: GmailMessageAnalysisInput;
@@ -713,8 +724,9 @@ export async function runInboxAnalysisSweep(input: {
         existing: item.existing,
         errorCode: "gmail_read_failed",
         now: checkedAt,
+        countsAgainstAttemptBudget: false,
       });
-      return;
+      return false;
     }
     const contentHash = await sha256(analysisContent(analysisInput));
     if (analysisInput.listUnsubscribe) {
@@ -728,7 +740,7 @@ export async function runInboxAnalysisSweep(input: {
         contentHash,
         now: checkedAt,
       });
-      return;
+      return true;
     }
 
     const message: InboxAnalysisMessage = {
@@ -762,7 +774,7 @@ export async function runInboxAnalysisSweep(input: {
             errorCode: "analysis_daily_limit_reached",
             now: checkedAt,
           });
-          return;
+          return false;
         }
         analysis = await analyzeInboxMessage({
           message,
@@ -786,7 +798,7 @@ export async function runInboxAnalysisSweep(input: {
           : "analysis_failed",
         now: checkedAt,
       });
-      return;
+      return false;
     }
     await saveAnalysis({
       repository,
@@ -797,6 +809,7 @@ export async function runInboxAnalysisSweep(input: {
       contentHash,
       now: checkedAt,
     });
+    return true;
   };
 
   const workers = Array.from(
@@ -818,11 +831,14 @@ export async function runInboxAnalysisSweep(input: {
               ? "analysis_request_aborted"
               : "analysis_deadline_exceeded",
             now: now(),
+            countsAgainstAttemptBudget: input.signal.aborted,
           });
           continue;
         }
         try {
-          await processWork(work[workIndex]);
+          if (await processWork(work[workIndex])) {
+            durableProgressMessageIds.add(work[workIndex].messageId);
+          }
         } catch {
           // Keep one durable row for a swept message even if a pre-filter,
           // content hash, normalization, or first persistence attempt fails.
@@ -863,7 +879,13 @@ export async function runInboxAnalysisSweep(input: {
   const result = Object.freeze({
     terminationReason: "older-pending",
     message: OLDER_PENDING_MESSAGE,
-    ...(continuationToken ? { nextPageToken: continuationToken } : {}),
+    ...(continuationToken
+      && continuationMessageIds
+      && [...continuationMessageIds].some((messageId) =>
+        durableProgressMessageIds.has(messageId)
+      )
+      ? { nextPageToken: continuationToken }
+      : {}),
   } as const);
   await completeWorkspaceSetupLease(input.database, lease, now());
   lease = null;
@@ -891,7 +913,7 @@ export async function POST(request: NextRequest) {
   if (originError) return noStoreResponse(originError);
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return noStoreResponse(auth.response);
-  const rateLimitResponse = enforceDevelopmentRequestRateLimit("assistant", auth.user.email);
+  const rateLimitResponse = enforceDevelopmentRequestRateLimit("inbox-analysis", auth.user.email);
   if (rateLimitResponse) return noStoreResponse(rateLimitResponse);
 
   const parsed = await parseBoundedJsonObject(request, {

@@ -371,6 +371,40 @@ test("AI-10 route is Administrator-only and its feature-off denial precedes Gmai
   }
 });
 
+test("AI-10 feature-on route reports a secret-safe missing-provider response through real composition", async () => {
+  const database = new InboxAnalysisDatabase({ inboxAnalysis: true });
+  const originalDatabase = workerEnvironment.DB;
+  const originalWorkerKey = workerEnvironment.OPENAI_API_KEY;
+  const originalProcessKey = process.env.OPENAI_API_KEY;
+  workerEnvironment.DB = database;
+  delete workerEnvironment.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const response = await route.POST(routeRequest());
+    const responseBody = await response.text();
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    assert.deepEqual(JSON.parse(responseBody), {
+      error: "Inbox analysis requires a configured AI provider key.",
+      code: "assistant_key_missing",
+    });
+    assert.doesNotMatch(
+      responseBody,
+      /sk-ai10-route-fixture-never-return/u,
+    );
+    assert.deepEqual(database.rows(), []);
+  } finally {
+    workerEnvironment.DB = originalDatabase;
+    workerEnvironment.OPENAI_API_KEY = originalWorkerKey;
+    if (originalProcessKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalProcessKey;
+    }
+    database.close();
+  }
+});
+
 test("AI-10 sweep writes one durable row per message, prefilters noise, and analyzes once under an unchanged catalog", async () => {
   const database = new InboxAnalysisDatabase();
   try {
@@ -533,6 +567,120 @@ test("AI-10 failed rows retry only to the durable bound and stay outside the rev
   }
 });
 
+test("AI-10 zero-call deadline aborts remain retryable without consuming the three-attempt budget", async () => {
+  const database = new InboxAnalysisDatabase();
+  const originalTimeout = AbortSignal.timeout;
+  try {
+    const message = summary("message-zero-call-deadline");
+    const gmail = gmailClient([message]);
+    const provider = fixtureProvider();
+    AbortSignal.timeout = () => AbortSignal.abort(
+      new DOMException("Injected sweep deadline.", "TimeoutError"),
+    );
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await route.runInboxAnalysisSweep(
+        sweepInput(database, gmail, provider),
+      );
+      assert.equal(result.terminationReason, "older-pending");
+    }
+
+    const pending = database.rows();
+    assert.equal(provider.requests.length, 0);
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].status, "failed");
+    assert.equal(pending[0].error_code, "analysis_deadline_exceeded");
+    assert.equal(
+      pending[0].failure_attempts,
+      1,
+      "repeated zero-provider-call aborts must not advance the durable attempt budget",
+    );
+    assert.equal(
+      database.database.prepare(
+        "SELECT COUNT(*) AS count FROM activity_events WHERE action = 'assistant.inbox_analysis_provider_call'",
+      ).get().count,
+      0,
+    );
+
+    AbortSignal.timeout = originalTimeout;
+    const recovered = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.equal(recovered.terminationReason, "caught-up");
+    assert.equal(provider.requests.length, 1);
+    assert.equal(database.rows()[0].status, "needs-review");
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+    database.close();
+  }
+});
+
+test("AI-10 repeated Gmail read failures do not consume the provider-attempt budget", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-gmail-read-failure");
+    const gmail = gmailClient([message]);
+    gmail.getMessageAnalysisInput = async () => {
+      gmail.calls.reads.push(message.id);
+      throw new Error("Injected Gmail read failure.");
+    };
+    const provider = fixtureProvider();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = await route.runInboxAnalysisSweep(
+        sweepInput(database, gmail, provider),
+      );
+      assert.equal(result.terminationReason, "older-pending");
+    }
+
+    assert.equal(gmail.calls.reads.length, 3);
+    assert.equal(provider.requests.length, 0);
+    const pending = database.rows();
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].status, "failed");
+    assert.equal(pending[0].error_code, "gmail_read_failed");
+    assert.equal(pending[0].failure_attempts, 1);
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 provider-consuming deadline failures remain bounded to three attempts", async () => {
+  const database = new InboxAnalysisDatabase();
+  const originalTimeout = AbortSignal.timeout;
+  let activeDeadline;
+  try {
+    const message = summary("message-provider-call-deadline");
+    const gmail = gmailClient([message]);
+    AbortSignal.timeout = () => {
+      activeDeadline = new AbortController();
+      return activeDeadline.signal;
+    };
+    const provider = fixtureProvider(() => {
+      activeDeadline.abort(
+        new DOMException("Injected provider deadline.", "TimeoutError"),
+      );
+      throw new Error("Injected provider timeout.");
+    });
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await route.runInboxAnalysisSweep(
+        sweepInput(database, gmail, provider),
+      );
+    }
+
+    assert.equal(provider.requests.length, 3);
+    const failed = database.rows();
+    assert.equal(failed.length, 1);
+    assert.equal(failed[0].status, "failed");
+    assert.equal(failed[0].error_code, "analysis_deadline_exceeded");
+    assert.equal(failed[0].failure_attempts, 3);
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+    database.close();
+  }
+});
+
 test("AI-10 enforces the durable 200-provider-call UTC-day ceiling and retries capped rows on the next day", async () => {
   const database = new InboxAnalysisDatabase();
   try {
@@ -674,6 +822,33 @@ test("AI-10 persists earlier-page work when a later Gmail page fails", async () 
     assert.equal(database.rows().length, 1);
     assert.equal(database.rows()[0].gmail_message_id, message.id);
     assert.equal(database.rows()[0].status, "needs-review");
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-10 does not expose a continuation token when every item on the page fails", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-all-failed-page");
+    const gmail = gmailClient([message], {
+      nextPageToken: "page-with-no-progress",
+    });
+    const provider = fixtureProvider(({ messageId }) => ({
+      ...providerOutput(messageId),
+      unexpectedInstruction: "invalidate the strict output",
+    }));
+
+    const result = await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    assert.deepEqual(result, {
+      terminationReason: "older-pending",
+      message: "Older messages not yet analyzed",
+    });
+    assert.equal(provider.requests.length, 1);
+    assert.equal(database.rows().length, 1);
+    assert.equal(database.rows()[0].status, "failed");
   } finally {
     database.close();
   }

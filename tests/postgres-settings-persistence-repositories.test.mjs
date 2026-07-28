@@ -543,6 +543,11 @@ test("PostgreSQL mail items require valid record references and preserve creatio
   );
   assert.match(
     upsert.sql,
+    /\(SELECT id FROM projects WHERE id = \$6::uuid\)/u,
+    "a missing classifier suggestion must persist as null instead of violating its foreign key",
+  );
+  assert.match(
+    upsert.sql,
     /WHERE mail_items\.status IN \('needs-review', 'failed'\)$/u,
   );
 
@@ -611,6 +616,24 @@ test("PostgreSQL mail items require valid record references and preserve creatio
     }).upsert(mailItem()),
     (error) => error === unexpectedError,
   );
+});
+
+test("PostgreSQL mail items preserve a terminal row while nulling an orphan suggested project", async () => {
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^INSERT INTO mail_items/);
+    return result([], 0);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+
+  assert.deepEqual(await repository.upsert(mailItem({
+    suggestedProjectId: SUGGESTED_PROJECT_ID,
+  })), { outcome: "terminal-preserved" });
+
+  const upsert = dataQuery(pool, /^INSERT INTO mail_items/);
+  assert.match(upsert.sql, /\(SELECT id FROM projects WHERE id = \$6::uuid\)/u);
+  assert.equal(upsert.values[5], SUGGESTED_PROJECT_ID);
 });
 
 for (const terminalStatus of ["accepted", "dismissed", "skipped-noise"]) {

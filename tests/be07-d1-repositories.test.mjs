@@ -624,6 +624,30 @@ for (const terminalStatus of ["accepted", "dismissed", "skipped-noise"]) {
   });
 }
 
+test("mail-item adapter preserves a terminal row while nulling an orphan suggested project", async () => {
+  const database = new FakeDatabase({
+    first(statement) {
+      assert.match(statement.sql, /^SELECT id FROM projects WHERE id = \?$/u);
+      assert.deepEqual(statement.values, [MAIL_SUGGESTED_PROJECT_ID]);
+      return null;
+    },
+    run: () => 0,
+  });
+  const repository = mailModule.createD1MailItemRepository(database);
+
+  assert.deepEqual(await repository.upsert({
+    ...baseMailItem,
+    suggestedProjectId: MAIL_SUGGESTED_PROJECT_ID,
+  }), { outcome: "terminal-preserved" });
+
+  const upsert = database.runs.at(-1);
+  assert.equal(
+    upsert.values[5],
+    null,
+    "a classifier suggestion whose project disappeared must not block the durable row",
+  );
+});
+
 for (const scenario of [
   {
     label: "malformed client",
@@ -647,12 +671,6 @@ for (const scenario of [
     label: "missing client",
     item: { ...baseMailItem, clientId: MAIL_CLIENT_ID },
     outcome: "client-not-found",
-    expectedLookupCount: 1,
-  },
-  {
-    label: "missing suggested project",
-    item: { ...baseMailItem, suggestedProjectId: MAIL_SUGGESTED_PROJECT_ID },
-    outcome: "suggested-project-not-found",
     expectedLookupCount: 1,
   },
   {

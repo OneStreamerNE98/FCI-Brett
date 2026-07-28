@@ -52,11 +52,12 @@ state would require a separately approved infrastructure and reliability decisio
 
 The development surface applies a light fixed window immediately after the existing
 same-origin and office-user checks. Each normalized office-user email receives 10
-requests per 60-second window for each of five isolated scopes:
+requests per 60-second window for each of six isolated scopes:
 
 | Scope | Route | Protected cost |
 | --- | --- | --- |
-| `assistant` | `POST /api/v1/assistant`, `/assistant/extract-tasks`, `/assistant/triage`, `/assistant/reply-draft`, `/api/v1/inbox-analysis` (AI-10 sweep) | OpenAI request opportunity |
+| `assistant` | `POST /api/v1/assistant`, `/assistant/extract-tasks`, `/assistant/triage`, `/assistant/reply-draft` | Interactive OpenAI request opportunity |
+| `inbox-analysis` | `POST /api/v1/inbox-analysis` | AI-10 inbox sweep opportunity |
 | `uploads` | `POST /api/v1/uploads` | R2 object write opportunity |
 | `google-sheets-sync` | `POST /api/v1/integrations/google/sheets/sync` | Google Sheets reconciliation |
 | `project-drive-provisioning` | `POST /api/v1/projects/:projectId/drive` | Google Drive provisioning |
@@ -66,6 +67,10 @@ The `tasks` scope is the one an assistant flow can reach indirectly: the AI-07 r
 proposes action items but creates them through the ordinary `POST /api/v1/tasks`, so accepting
 more than ten proposals inside one window returns `429` from the `tasks` scope, not the
 `assistant` scope.
+
+The background-style inbox analysis sweep has its own `inbox-analysis` window, so using
+that bounded sweep cannot consume the allowance for interactive questions, triage,
+reply drafts, or task extraction.
 
 Scopes and users do not consume one another's windows. The eleventh request returns
 `429`, `Cache-Control: no-store`, integer `Retry-After`, and:
@@ -84,8 +89,8 @@ requests retain their existing denial behavior and do not consume an office-user
 ## Verification and rollout boundary
 
 Focused tests pin thresholds, refill/reset timing, user and route isolation,
-`Retry-After`, the production audit event, fail-closed audit failure, exact nine-route
-wiring across the five scopes, configuration defaults/bounds, and unchanged
+`Retry-After`, the production audit event, fail-closed audit failure, exact ten-route
+wiring across the six scopes, configuration defaults/bounds, and unchanged
 allowed-response bytes. `npm test`
 continues to build both surfaces and run the complete Node suite.
 

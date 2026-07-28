@@ -324,6 +324,9 @@ WHERE connection_key = $1 AND coverage_complete = false`,
           pool,
           transactionOptions,
           async (client) => {
+            // Suggested-project evidence is non-authoritative. The scalar
+            // lookup atomically turns a concurrently removed project into
+            // null while retaining the durable analysis row.
             const result = await client.query(
               `INSERT INTO mail_items (
                id, connection_key, gmail_message_id, gmail_thread_id, client_id,
@@ -333,7 +336,9 @@ WHERE connection_key = $1 AND coverage_complete = false`,
                subject, sender, received_at,
                failure_attempts, error_code, coverage_complete, created_at, updated_at
              ) VALUES (
-               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+               $1, $2, $3, $4, $5,
+               (SELECT id FROM projects WHERE id = $6::uuid),
+               $7, $8, $9, $10, $11, $12, $13,
                $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
              )
              ON CONFLICT (connection_key, gmail_message_id) DO NOTHING`,
@@ -392,6 +397,8 @@ WHERE connection_key = $1 AND coverage_complete = false`,
           pool,
           transactionOptions,
           async (client) => {
+            // Match insertIfAbsent: a stale classifier suggestion must not
+            // prevent the analysis/watermark row from being persisted.
             const result = await client.query(
               `INSERT INTO mail_items (
                id, connection_key, gmail_message_id, gmail_thread_id, client_id,
@@ -401,7 +408,9 @@ WHERE connection_key = $1 AND coverage_complete = false`,
                subject, sender, received_at,
                failure_attempts, error_code, coverage_complete, created_at, updated_at
              ) VALUES (
-               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+               $1, $2, $3, $4, $5,
+               (SELECT id FROM projects WHERE id = $6::uuid),
+               $7, $8, $9, $10, $11, $12, $13,
                $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
              )
              ON CONFLICT (connection_key, gmail_message_id) DO UPDATE SET

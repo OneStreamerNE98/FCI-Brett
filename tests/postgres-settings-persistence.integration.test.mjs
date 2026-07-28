@@ -384,11 +384,6 @@ test(
           outcome: "client-not-found",
         },
         {
-          id: "mail-orphan-suggested",
-          property: "suggestedProjectId",
-          outcome: "suggested-project-not-found",
-        },
-        {
           id: "mail-orphan-approved",
           property: "approvedProjectId",
           outcome: "approved-project-not-found",
@@ -402,6 +397,19 @@ test(
           [property]: randomUUID(),
         }), { outcome });
       }
+      const orphanSuggested = {
+        ...item,
+        id: "mail-orphan-suggested",
+        gmailMessageId: `${item.gmailMessageId}-mail-orphan-suggested`,
+        suggestedProjectId: randomUUID(),
+      };
+      assert.deepEqual(await mailItems.upsert(orphanSuggested), {
+        outcome: "saved",
+      });
+      assert.equal(
+        (await mailItems.findById(orphanSuggested.id)).suggestedProjectId,
+        null,
+      );
       const orphanCount = await pool.query(
         `SELECT count(*)::integer AS count
          FROM ${schema}.mail_items
