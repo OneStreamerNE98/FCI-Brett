@@ -723,3 +723,44 @@ test("a row filed after its analysis but before the sweep ends raises no card", 
     database.close();
   }
 });
+
+test("a transient filed-state read error still counts the arrival", async () => {
+  // Review-bot P2 (PR #238): the post-write filed-state re-check runs after the
+  // analysis is durably committed. If that read fails transiently the row is
+  // still a genuine review arrival, so returning early would silently drop its
+  // card. The emit-time re-read verifies the row again before anything is sent.
+  const database = new ReviewQueueDatabase();
+  const message = summary("gmail-filed-read-error");
+  const client = gmailClient([message]);
+  const notifications = [];
+  const provider = {
+    async complete(request) {
+      const messageId = request.output.schema.properties.messageId.enum[0];
+      return { kind: "output", value: providerOutput(messageId) };
+    },
+  };
+  const realPrepare = database.prepare.bind(database);
+  let archiveReads = 0;
+  database.prepare = (sql) => {
+    if (sql.includes("FROM gmail_file_archives")) {
+      archiveReads += 1;
+      // Fail only the post-write re-check, not the pre-filter.
+      if (archiveReads > 1) throw new Error("Injected archive read failure.");
+    }
+    return realPrepare(sql);
+  };
+  try {
+    await route.runInboxAnalysisSweep(sweepInput(database, client, provider, {
+      onNeedsReviewBatch(notification) {
+        notifications.push(notification);
+      },
+    }));
+    assert.equal(database.rows()[0].status, "needs-review");
+    assert.deepEqual(notifications, [
+      { gmailMessageId: message.id, subject: message.subject, count: 1 },
+    ], "an unknown filed state must not silence a real arrival");
+  } finally {
+    database.prepare = realPrepare;
+    database.close();
+  }
+});

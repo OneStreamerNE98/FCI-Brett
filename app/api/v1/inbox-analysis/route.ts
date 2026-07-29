@@ -888,8 +888,22 @@ export async function runInboxAnalysisSweep(input: {
     // analysis with a bare failed row. A failure here leaves the committed
     // needs-review row standing, and the emit-time re-read still re-verifies
     // before any card is sent.
+    let filedWhileAnalyzing = false;
     try {
-      if (await isAlreadyFiled(input.database, config.connectionKey, item.messageId)) {
+      filedWhileAnalyzing = await isAlreadyFiled(
+        input.database,
+        config.connectionKey,
+        item.messageId,
+      );
+    } catch {
+      // Filed state unknown. Treat the row as the review arrival it was
+      // committed as — the emit-time re-read verifies it again before any card
+      // is sent, so a transient read error costs nothing, whereas returning
+      // early here would silently drop a legitimate notification.
+      filedWhileAnalyzing = false;
+    }
+    if (filedWhileAnalyzing) {
+      try {
         await saveSkipped({
           repository,
           connectionKey: config.connectionKey,
@@ -900,9 +914,9 @@ export async function runInboxAnalysisSweep(input: {
           contentHash,
           now: checkedAt,
         });
-        return true;
+      } catch {
+        // The committed needs-review row stands; the next sweep retires it.
       }
-    } catch {
       return true;
     }
     if (saved.enteredReview) {
