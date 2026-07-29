@@ -178,7 +178,16 @@ export async function GET(request: NextRequest) {
     connectReady: config.connectReady,
     simulation: config.simulation,
     identity: {
-      connectionAccount: config.simulation ? "Local Workspace simulation" : connection ? maskAccount(connection.google_email) : null,
+      // A severed connection keeps its row for audit history, so presence alone
+      // must not advertise an account: doing so leaves the identity block
+      // reporting a live account for a connection that was deliberately revoked,
+      // which reads to the operator as sources disagreeing rather than as a
+      // completed disconnect. Matches getGoogleConnectionStatus.
+      connectionAccount: config.simulation
+        ? "Local Workspace simulation"
+        : connection && connection.status !== "revoked"
+          ? maskAccount(connection.google_email)
+          : null,
       intakeMailboxMatches,
       allowedDomains: config.allowedDomains,
       mode: config.environment,
