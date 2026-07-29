@@ -764,3 +764,52 @@ test("a transient filed-state read error still counts the arrival", async () => 
     database.close();
   }
 });
+
+test("a failed retirement leaves the row retryable rather than stranded", async () => {
+  // Review-bot P2 (PR #238): a needs-review row is never re-swept, so if the
+  // retire write fails after the message was filed, leaving it as-is strands it
+  // exactly like the defect the re-check exists to prevent. It must be demoted
+  // to a retryable failure so the next sweep can retire it properly.
+  const database = new ReviewQueueDatabase();
+  const message = summary("gmail-retire-write-fails");
+  const client = gmailClient([message]);
+  const notifications = [];
+  const provider = {
+    async complete(request) {
+      const messageId = request.output.schema.properties.messageId.enum[0];
+      database.database.prepare(
+        `INSERT INTO gmail_file_archives (id, connection_key, gmail_message_id, status)
+         VALUES (?, ?, ?, 'filed')`,
+      ).run("archive-retire-fail", CONNECTION_KEY, message.id);
+      return { kind: "output", value: providerOutput(messageId) };
+    },
+  };
+  const realPrepare = database.prepare.bind(database);
+  let mailItemWrites = 0;
+  database.prepare = (sql) => {
+    if (sql.includes("INSERT INTO mail_items")) {
+      mailItemWrites += 1;
+      // Let the analysis commit, then fail the retirement write only.
+      if (mailItemWrites === 2) throw new Error("Injected retirement write failure.");
+    }
+    return realPrepare(sql);
+  };
+  try {
+    await route.runInboxAnalysisSweep(sweepInput(database, client, provider, {
+      onNeedsReviewBatch(notification) {
+        notifications.push(notification);
+      },
+    }));
+    const row = database.rows()[0];
+    assert.equal(row.status, "failed", "a stranded needs-review row is the bug");
+    assert.equal(row.error_code, "analysis_retire_failed");
+    assert.ok(
+      row.failure_attempts >= 1 && row.failure_attempts < 3,
+      "the row must remain inside its retry budget",
+    );
+    assert.deepEqual(notifications, [], "a filed message still owes no card");
+  } finally {
+    database.prepare = realPrepare;
+    database.close();
+  }
+});

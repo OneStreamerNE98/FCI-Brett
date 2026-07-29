@@ -915,7 +915,29 @@ export async function runInboxAnalysisSweep(input: {
           now: checkedAt,
         });
       } catch {
-        // The committed needs-review row stands; the next sweep retires it.
+        // A needs-review row is never re-swept, so leaving it here would strand
+        // it exactly like the defect this re-check exists to prevent. Demote it
+        // to a retryable failure instead: the next sweep re-queues it, re-reads
+        // the archive, and retires it properly.
+        try {
+          await saveFailure({
+            repository,
+            connectionKey: config.connectionKey,
+            messageId: item.messageId,
+            summary: analysisInput.summary,
+            // Deliberately not `saved.item`: saveFailure preserves a
+            // needs-review status when handed a review row, which would leave
+            // this one stranded — a needs-review row is never re-queued. The
+            // message is filed, so its analysis is moot; what matters is that
+            // `failed` is retryable and the next sweep retires it properly.
+            existing: null,
+            errorCode: "analysis_retire_failed",
+            now: checkedAt,
+          });
+        } catch {
+          // Storage is unavailable; the sweep reports failure rather than
+          // claiming coverage, and the row is reconciled on a later run.
+        }
       }
       return true;
     }
@@ -998,7 +1020,21 @@ export async function runInboxAnalysisSweep(input: {
       pendingArrivals.push(arrival);
       continue;
     }
-    if (!current || current.status === "needs-review") pendingArrivals.push(arrival);
+    if (current && current.status !== "needs-review") continue;
+    // The row can still read needs-review while the message is filed: if filing
+    // committed before this analysis inserted, its guarded UPDATE matched
+    // nothing. The archive is the authoritative filing record, so consult it
+    // too — a read failure here leaves the arrival counted, as above.
+    try {
+      if (await isAlreadyFiled(
+        input.database,
+        config.connectionKey,
+        arrival.gmailMessageId,
+      )) continue;
+    } catch {
+      // Filed state unknown; keep the arrival rather than lose a real card.
+    }
+    pendingArrivals.push(arrival);
   }
   if (pendingArrivals.length > 0 && input.onNeedsReviewBatch) {
     const newest = pendingArrivals.reduce((leader, candidate) =>
