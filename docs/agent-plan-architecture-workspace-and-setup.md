@@ -1172,7 +1172,7 @@ authenticated flag without weakening any server gate. No integration audit route
 (Anchors drift — locate by symbol name.)
 
 ### WS-17 · Google credential severance on employee disable/offboarding (small-medium)
-**Status:** In progress — `codex/ws17-credential-severance`
+**Status:** In review — PR #241, July 29, 2026. Source-only and undeployed. Explicit Administrator disconnect; employee disable leaves the shared company connector untouched.
 **Why:** disabling a user never touches their Google credentials: `disableUser`
 (`app/adapters/postgres/admin-access-persistence-repository.ts:1100-1167`) revokes sessions
 and invitations but no Google token, and the production integration-metadata port has **no
