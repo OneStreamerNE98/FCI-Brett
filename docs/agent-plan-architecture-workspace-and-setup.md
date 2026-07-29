@@ -2996,7 +2996,6 @@ with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
 
 ### AI-10 · Email intake: durable review queue and review-first lead capture (large; after AI-09)
-**Status:** In review — PR #238, July 28, 2026. Sub-PRs d+e only; source-only and undeployed.
 **Why:** the owner asked for OpenAI to read inbound email, identify leads, and
 pre-populate a draft lead a person approves, edits, or removes. Two research
 passes (July 26, 2026) established that the app does **not** need a new surface
@@ -3106,9 +3105,28 @@ after a six-lens review (ten confirmed findings), a five-lens follow-up round
 v12 totality finding (legacy statuses now backfilled before the closed
 vocabulary constrains). The engine is live behind the default-off
 `inboxAnalysis` toggle. Sub-PRs (d+e) — the app-side review queue, the
-Mark-reviewed exit, and the coalesced Chat trigger — are in review as PR #238,
-which is what the status line above claims; only sub-PR (f), lead capture and
-its `FloorOpsApp.tsx` queue slot, remains unclaimed.
+Mark-reviewed exit, and the coalesced Chat trigger — merged in PR #238,
+July 29, 2026. Only sub-PR (f), lead capture and its `FloorOpsApp.tsx` queue
+slot, remains; the packet carries no status line so (f) is dispatchable.
+
+**Binding note for whoever writes sub-PR (f) and AI-11 — learned the hard way in
+PR #238.** Eighteen defects were fixed across #235 and #238, and the last five
+review rounds were all the same defect at increasing depth: a filed message left
+sitting in the review queue because some retirement write did not happen. The
+cause is structural. **Filing and analysis are two independent writers racing
+over one `mail_items` row with no shared transaction**, and a `needs-review` row
+is never re-queued, so any missed retirement strands its message permanently.
+Four successive per-item compensations each turned out to be defeatable by the
+next interleaving. What finally closed the class is a single idempotent
+set-based reconciliation at sweep start that retires every review row whose
+message already has a filed archive — so whatever failed last sweep, a filed
+message is out of the queue by the start of the next one. Two consequences bind
+future work: (1) **prefer a reconciling invariant to a compensating action**
+whenever these two writers can interleave; (2) AI-11's typed accepts add *more*
+writers to the same row (task creation, filing, lead capture), so it should make
+a row's terminal state one atomic decision rather than adding a fifth
+compensation. The per-item retirements that remain are fast paths, not
+guarantees, and must not be read as such.
 
 **ADDENDUM (July 27, 2026 — devils-advocate review; binding, part of this packet).**
 Ten judged attacks landed on this packet before dispatch. The corrections:
