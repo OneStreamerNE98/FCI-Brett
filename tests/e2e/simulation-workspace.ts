@@ -101,19 +101,9 @@ export function registerSimulationResetRecovery(testApi: typeof PlaywrightTest) 
   return { markResetAttempted: () => { attempted = true; } };
 }
 
-/** Reset to a known-empty simulation workspace, then re-provision it. */
-export async function resetAndRestoreSimulationWorkspace(page: Page) {
-  await page.evaluate(async () => {
-    const response = await fetch("/api/v1/integrations/google/simulation/reset", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    if (!response.ok) {
-      throw new Error(
-        `simulation reset failed: ${response.status} ${await response.text()}`,
-      );
-    }
-  });
-  await restoreSimulationWorkspace(page);
-}
+// Deliberately NOT exported here: an inline reset-then-restore helper. It would
+// be the in-test pattern this module exists to forbid — the restore would share
+// the test's timeout budget and be skipped exactly when a reset most needs
+// repairing. A spec that needs a clean workspace should register recovery with
+// registerSimulationResetRecovery, call markResetAttempted(), and then reset;
+// teardown does the repair on its own budget.
