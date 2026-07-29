@@ -623,3 +623,38 @@ test("filing a message retires its review row inside the lease-guarded batch", a
   assert.match(statement, /AND \$\{FILING_LEASE_EXISTS\}/u);
   assert.doesNotMatch(statement, /INSERT INTO mail_items/u);
 });
+
+test("a message filed while its analysis is in flight never lands in the queue", async () => {
+  // Review-bot P1 (PR #238, round three): the pre-filter's isAlreadyFiled runs
+  // before the Gmail read and the provider call, so filing can commit while the
+  // analysis is outstanding. The filing batch updates zero rows because no row
+  // exists yet, and a current needs-review row is never re-swept — so without a
+  // post-write re-check the filed message sits in the queue forever.
+  const database = new ReviewQueueDatabase();
+  const message = summary("gmail-filed-midflight");
+  const client = gmailClient([message]);
+  const notifications = [];
+  const provider = {
+    async complete(request) {
+      const messageId = request.output.schema.properties.messageId.enum[0];
+      database.database.prepare(
+        `INSERT INTO gmail_file_archives (id, connection_key, gmail_message_id, status)
+         VALUES (?, ?, ?, 'filed')`,
+      ).run("archive-midflight", CONNECTION_KEY, message.id);
+      return { kind: "output", value: providerOutput(messageId) };
+    },
+  };
+  try {
+    await route.runInboxAnalysisSweep(sweepInput(database, client, provider, {
+      onNeedsReviewBatch(notification) {
+        notifications.push(notification);
+      },
+    }));
+    const rows = database.rows();
+    assert.equal(rows.length, 1, "the swept message still owes exactly one row");
+    assert.equal(rows[0].status, "skipped-noise");
+    assert.deepEqual(notifications, [], "a filed message owes no review card");
+  } finally {
+    database.close();
+  }
+});

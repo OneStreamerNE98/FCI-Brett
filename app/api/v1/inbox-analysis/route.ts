@@ -872,6 +872,25 @@ export async function runInboxAnalysisSweep(input: {
       contentHash,
       now: checkedAt,
     });
+    // The pre-filter's isAlreadyFiled ran before the Gmail read and the provider
+    // call, so a person can file this message while the analysis is in flight.
+    // The filing batch would have updated zero rows (this row did not exist
+    // yet), and a current needs-review row is never re-swept, so the message
+    // would sit in the queue forever. Re-check after the write: whichever of the
+    // two paths commits second retires the row, so every interleaving converges.
+    if (await isAlreadyFiled(input.database, config.connectionKey, item.messageId)) {
+      await saveSkipped({
+        repository,
+        connectionKey: config.connectionKey,
+        messageId: item.messageId,
+        summary: analysisInput.summary,
+        existing: saved.item,
+        reason: "already-filed",
+        contentHash,
+        now: checkedAt,
+      });
+      return true;
+    }
     if (saved.enteredReview) {
       needsReviewArrivals.push({
         gmailMessageId: saved.item.gmailMessageId,
