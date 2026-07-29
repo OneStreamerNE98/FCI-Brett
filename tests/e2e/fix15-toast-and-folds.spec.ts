@@ -1,5 +1,9 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { restoreSimulationWorkspace } from "./simulation-workspace";
+import { registerSimulationResetRecovery } from "./simulation-workspace";
+
+// Teardown-budget recovery for the real reset this file drives. Not an in-test
+// finally: that shares the test's 45s timeout and is abandoned when it expires.
+const { markResetAttempted } = registerSimulationResetRecovery(test);
 
 const project = {
   id: "fix15-project-001",
@@ -151,18 +155,14 @@ test.describe("FIX-15 toast timeline", () => {
     await page.clock.install({ time: new Date("2026-07-25T15:00:00.000Z") });
     await page.clock.pauseAt(new Date("2026-07-25T15:00:01.000Z"));
 
+    // Marked BEFORE the click: recovery must run even if the click or an
+    // assertion below never returns, since this destroys the shared registry
+    // that workspace-setup-stepper.spec.ts reads as its precondition.
+    markResetAttempted();
     await stageTwo.getByRole("button", { name: "Reset simulation data", exact: true }).click();
 
-    try {
-      await expectSuccessToastLifetime(page, "Workspace simulation reset with");
-      await expect(page.getByText("Workspace readiness refreshed. Current status is shown above.", { exact: true })).toHaveCount(0);
-    } finally {
-      // Restore the shared simulation registry this real reset destroyed, in a
-      // finally so a failed toast assertion cannot leak the wiped state forward
-      // to workspace-setup-stepper.spec.ts. The helper verifies the App-managed
-      // / Created "client-directory" row is genuinely back and throws if not.
-      await restoreSimulationWorkspace(page);
-    }
+    await expectSuccessToastLifetime(page, "Workspace simulation reset with");
+    await expect(page.getByText("Workspace readiness refreshed. Current status is shown above.", { exact: true })).toHaveCount(0);
   });
 
   test("Gmail filing success is not clobbered by the follow-up message reload", async ({ page }) => {

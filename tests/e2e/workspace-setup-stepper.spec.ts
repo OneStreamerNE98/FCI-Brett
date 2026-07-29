@@ -1,7 +1,12 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
-import { restoreSimulationWorkspace } from "./simulation-workspace";
+import { registerSimulationResetRecovery } from "./simulation-workspace";
+
+// Teardown-budget recovery for the real reset one test in this file drives. Not
+// an in-test finally: that shares the test's 45s timeout and is abandoned when
+// it expires, which would leak the wiped registry into every later spec.
+const { markResetAttempted } = registerSimulationResetRecovery(test);
 
 const e2eOrigin = process.env.FCI_E2E_ORIGIN ?? "http://localhost:4173";
 
@@ -3049,31 +3054,28 @@ test("simulation reset removes the registry-backed resource and refreshes the cr
   await setStageExpanded(page, 2, true);
   await setStageExpanded(page, 3, true);
 
-  try {
-    const spreadsheetDetails = creationRow(page, "spreadsheets").locator("details");
-    await spreadsheetDetails.locator("summary").click();
-    const directoryRow = spreadsheetDetails.locator("li").filter({ hasText: "Client directory spreadsheet" });
-    // Unconditional again: this test used to skip its own precondition on retry
-    // (`if (testInfo.retry === 0)`) because its first attempt destroyed the very
-    // state the precondition reads. The finally below repairs that instead, so
-    // the precondition is real on every attempt.
-    await expect(directoryRow).toContainText("App-managed");
-    await expect(directoryRow).toContainText("Created");
-    await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
+  const spreadsheetDetails = creationRow(page, "spreadsheets").locator("details");
+  await spreadsheetDetails.locator("summary").click();
+  const directoryRow = spreadsheetDetails.locator("li").filter({ hasText: "Client directory spreadsheet" });
+  // Unconditional again: this test used to skip its own precondition on retry
+  // (`if (testInfo.retry === 0)`) because its first attempt destroyed the very
+  // state the precondition reads. Teardown recovery repairs that instead, so the
+  // precondition is real on every attempt.
+  await expect(directoryRow).toContainText("App-managed");
+  await expect(directoryRow).toContainText("Created");
+  await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
 
-    const stageTwo = setupStage(page, 2);
-    await expect(stageTwo.getByText("Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state.", { exact: true })).toBeVisible();
-    await stageTwo.getByRole("button", { name: "Reset simulation data" }).click();
-    await setStageExpanded(page, 3, true);
-    await expect(directoryRow).toContainText("Not configured");
-    await expect(directoryRow).not.toContainText("App-managed");
-    await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
-  } finally {
-    // This is the REAL reset endpoint: it wipes the shared simulation registry
-    // every later spec reads. Restore in finally so a failed assertion above
-    // cannot leak the wiped state forward through the rest of the run.
-    await restoreSimulationWorkspace(page);
-  }
+  const stageTwo = setupStage(page, 2);
+  await expect(stageTwo.getByText("Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state.", { exact: true })).toBeVisible();
+  // Marked BEFORE the click: this is the REAL reset endpoint and it wipes the
+  // shared registry every later spec reads, so recovery must run even if the
+  // click or an assertion below never returns.
+  markResetAttempted();
+  await stageTwo.getByRole("button", { name: "Reset simulation data" }).click();
+  await setStageExpanded(page, 3, true);
+  await expect(directoryRow).toContainText("Not configured");
+  await expect(directoryRow).not.toContainText("App-managed");
+  await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
 });
 
 test("simulation creation journey adopts Drive, ensures roots, spreadsheets, and templates, then renames an owner folder", async ({ page }) => {

@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, test as PlaywrightTest } from "@playwright/test";
 
 // Shared recovery for the ONE simulation workspace every e2e spec shares.
 //
@@ -74,6 +74,29 @@ export async function restoreSimulationWorkspace(page: Page) {
       );
     }
   }, RESTORE_STEPS);
+}
+
+/**
+ * Registers teardown recovery for a spec file that drives the REAL reset.
+ *
+ * Recovery must NOT live in an in-test `finally`: that runs on the test's own
+ * timeout budget (45s in playwright.config.ts), so a test that times out is
+ * abandoned mid-body and the restore never happens — leaving the very wiped
+ * registry this module exists to prevent. An `afterEach` hook gets a separate
+ * teardown budget, so it still runs after a timeout.
+ *
+ * Call `markResetAttempted()` immediately BEFORE triggering a reset, so recovery
+ * runs even if the click or a later assertion never returns, and so specs that
+ * never reset pay nothing.
+ */
+export function registerSimulationResetRecovery(testApi: typeof PlaywrightTest) {
+  let attempted = false;
+  testApi.afterEach(async ({ page }) => {
+    if (!attempted) return;
+    attempted = false;
+    await restoreSimulationWorkspace(page);
+  });
+  return { markResetAttempted: () => { attempted = true; } };
 }
 
 /** Reset to a known-empty simulation workspace, then re-provision it. */
