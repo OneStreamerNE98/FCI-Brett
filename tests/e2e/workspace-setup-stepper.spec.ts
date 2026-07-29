@@ -1,6 +1,12 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
+import { registerSimulationResetRecovery } from "./simulation-workspace";
+
+// Teardown-budget recovery for the real reset one test in this file drives. Not
+// an in-test finally: that shares the test's 45s timeout and is abandoned when
+// it expires, which would leak the wiped registry into every later spec.
+const { markResetAttempted } = registerSimulationResetRecovery(test);
 
 const e2eOrigin = process.env.FCI_E2E_ORIGIN ?? "http://localhost:4173";
 
@@ -3042,7 +3048,7 @@ test("Stage 3 maps raw simulation resource states to provenance-backed operation
   await expect(setupStage(page, 3).getByText("Simulated", { exact: true })).toHaveCount(0);
 });
 
-test("simulation reset removes the registry-backed resource and refreshes the creation list", async ({ page }, testInfo) => {
+test("simulation reset removes the registry-backed resource and refreshes the creation list", async ({ page }) => {
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await page.goto("/settings?section=google-workspace");
   await setStageExpanded(page, 2, true);
@@ -3051,14 +3057,20 @@ test("simulation reset removes the registry-backed resource and refreshes the cr
   const spreadsheetDetails = creationRow(page, "spreadsheets").locator("details");
   await spreadsheetDetails.locator("summary").click();
   const directoryRow = spreadsheetDetails.locator("li").filter({ hasText: "Client directory spreadsheet" });
-  if (testInfo.retry === 0) {
-    await expect(directoryRow).toContainText("App-managed");
-    await expect(directoryRow).toContainText("Created");
-  }
+  // Unconditional again: this test used to skip its own precondition on retry
+  // (`if (testInfo.retry === 0)`) because its first attempt destroyed the very
+  // state the precondition reads. Teardown recovery repairs that instead, so the
+  // precondition is real on every attempt.
+  await expect(directoryRow).toContainText("App-managed");
+  await expect(directoryRow).toContainText("Created");
   await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
 
   const stageTwo = setupStage(page, 2);
   await expect(stageTwo.getByText("Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state.", { exact: true })).toBeVisible();
+  // Marked BEFORE the click: this is the REAL reset endpoint and it wipes the
+  // shared registry every later spec reads, so recovery must run even if the
+  // click or an assertion below never returns.
+  markResetAttempted();
   await stageTwo.getByRole("button", { name: "Reset simulation data" }).click();
   await setStageExpanded(page, 3, true);
   await expect(directoryRow).toContainText("Not configured");
