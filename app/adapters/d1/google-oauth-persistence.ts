@@ -166,13 +166,13 @@ export function createD1GoogleOauthPersistence(database: D1GoogleOauthDatabase):
     },
 
     async markConnectionAccountRejected(id, now) {
-      await database.prepare("UPDATE google_connections SET status = 'reauthorization-required', last_error_code = 'account_no_longer_allowed', updated_at = ? WHERE id = ?")
+      await database.prepare("UPDATE google_connections SET status = 'reauthorization-required', last_error_code = 'account_no_longer_allowed', updated_at = ? WHERE id = ? AND revoked_at IS NULL")
         .bind(now, id)
         .run();
     },
 
     async markConnectionRefreshSucceeded(id, now) {
-      await database.prepare("UPDATE google_connections SET last_success_at = ?, last_error_code = NULL, updated_at = ? WHERE id = ?")
+      await database.prepare("UPDATE google_connections SET last_success_at = ?, last_error_code = NULL, updated_at = ? WHERE id = ? AND revoked_at IS NULL")
         .bind(now, now, id)
         .run();
     },
@@ -181,7 +181,7 @@ export function createD1GoogleOauthPersistence(database: D1GoogleOauthDatabase):
       const status = input.requiresReauthorization
         ? "status = 'reauthorization-required', "
         : "";
-      await database.prepare(`UPDATE google_connections SET ${status}last_error_code = ?, updated_at = ? WHERE id = ?`)
+      await database.prepare(`UPDATE google_connections SET ${status}last_error_code = ?, updated_at = ? WHERE id = ? AND revoked_at IS NULL`)
         .bind(input.errorCode, input.now, input.id)
         .run();
     },

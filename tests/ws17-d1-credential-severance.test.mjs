@@ -318,15 +318,28 @@ test("live revocation records the provider outcome and always severs local use",
     randomUUID: () => eventIds.shift(),
   });
 
-  assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].input, "https://oauth2.googleapis.com/revoke");
-  assert.equal(fetchCalls[0].init.method, "POST");
+  // Consciously re-pointed from a single attempt (review finding): revoking a
+  // token is idempotent, and by the time this call runs the ciphertext is
+  // already emptied, so the plaintext exists only for the rest of this request.
+  // A 503 that is not retried permanently loses the ability to revoke a live
+  // token carrying Drive + gmail.modify + Calendar + Sheets scope. The one
+  // bounded retry is taken; a second 503 still records "failed".
+  assert.equal(fetchCalls.length, 2);
+  for (const call of fetchCalls) {
+    assert.equal(call.input, "https://oauth2.googleapis.com/revoke");
+    assert.equal(call.init.method, "POST");
+  }
   assert.deepEqual(result, {
     connectionRevoked: true,
     providerRevocation: "failed",
     revocationRequested: false,
   });
-  assert.deepEqual(order, ["local-severance", "provider-attempt", "provider-outcome"]);
+  assert.deepEqual(order, [
+    "local-severance",
+    "provider-attempt",
+    "provider-attempt",
+    "provider-outcome",
+  ], "local severance still commits before any provider attempt");
   assert.match(revokeInput.event.detail, /google_revocation=pending/u);
   assert.match(revokeInput.event.detail, /local_connection=revoked/u);
   assert.equal(providerEvent.eventType, "oauth.provider_revocation_recorded");

@@ -727,14 +727,29 @@ export async function getGoogleConnectionStatus(
     || !accountAllowed
     || (hasUsableConnection && config.enabledServices.some((service) => !grantedServices[service]))
   ));
-  const status = !connection ? "not-connected" : requiresReauthorization ? "reauthorization-required" : connection.status;
+  // A severed connection keeps its row as audit history, but nothing about it may
+  // still read as a live grant: the row retains googleEmail and scopesJson, so
+  // without this an administrator who has just disconnected still sees the old
+  // account and every scope marked Granted — the one screen they use to confirm
+  // the severance worked would tell them it did not.
+  // status is the marker to test here: findConnection does not select revoked_at,
+  // and the three state writers are now fenced on `revoked_at IS NULL`, so
+  // 'revoked' can only be left by a fresh-consent reconnect that clears both.
+  const severed = connection?.status === "revoked";
+  const status = !connection
+    ? "not-connected"
+    : severed
+      ? "revoked"
+      : requiresReauthorization
+        ? "reauthorization-required"
+        : connection.status;
   return {
     connected: status === "connected",
     status,
-    account: email ? `${email.slice(0, 2)}•••@${email.split("@")[1] ?? ""}` : null,
+    account: email && !severed ? `${email.slice(0, 2)}•••@${email.split("@")[1] ?? ""}` : null,
     services,
-    grantedServices,
-    requiresReauthorization,
+    grantedServices: severed ? null : grantedServices,
+    requiresReauthorization: severed ? false : requiresReauthorization,
   };
 }
 
@@ -784,11 +799,17 @@ export async function disconnectGoogleConnection(
   }
   if (refreshToken) {
     try {
+      // Idempotent by nature — replaying a revoke cannot duplicate a mutation —
+      // and this call is unrepeatable by construction: local severance has
+      // already emptied the ciphertext, so the plaintext exists only in this
+      // scope. Without the retry a single 429/503 permanently loses the ability
+      // to revoke a still-live token carrying Drive + gmail.modify + Calendar +
+      // Sheets scope, with no outbox to pick it up.
       const response = await fetchGoogleProvider(dependencies.fetch, GOOGLE_REVOCATION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token: refreshToken }),
-      }, {}, dependencies.resilience);
+      }, { idempotent: true }, dependencies.resilience);
       providerRevocation = response.ok ? "succeeded" : "failed";
     } catch {
       providerRevocation = "failed";
