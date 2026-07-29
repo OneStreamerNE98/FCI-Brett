@@ -936,6 +936,44 @@ test("the final active Administrator cannot be demoted or disabled", async (t) =
   }
 });
 
+test("disabling a non-final Administrator leaves the shared Google connector untouched", async () => {
+  const fake = fakeDatabase(async (sql, values) => {
+    if (sql.startsWith("SELECT employee.status")) {
+      return result([{
+        status: "active",
+        version: "4",
+        authorization_version: "7",
+        role_key: "administrator",
+      }], 1);
+    }
+    if (sql.startsWith("SELECT pg_catalog.count")) return result([{ count: "2" }], 1);
+    if (sql.startsWith("UPDATE users")) {
+      return result([{ version: "5", authorization_version: "8" }], 1);
+    }
+    if (sql.startsWith("INSERT INTO audit_events")) return auditInsert(values);
+    assert.fail(`unexpected work query: ${sql}`);
+  });
+  const repository = createPostgresAdminAccessPersistenceRepository(fake.pool, {
+    schema: "fci_test",
+  });
+
+  assert.deepEqual(await repository.disableUser({
+    ...actorIntent(),
+    userId: USER_ID,
+    expectedVersion: "4",
+  }), {
+    outcome: "accepted",
+    version: "5",
+    authorizationVersion: "8",
+  });
+  assert.equal(
+    workQueries(fake).some(({ sql }) =>
+      /\bintegration_(?:connections|credentials|events)\b/.test(sql)),
+    false,
+    "even an Administrator disable must not revoke or audit the shared Google connector",
+  );
+});
+
 test("disable and sign-out-everywhere are version fenced and invalidate through the user cutoff", async (t) => {
   for (const [label, method, status, action] of [
     ["disable", "disableUser", "active", "identity.user_disabled"],
@@ -974,8 +1012,17 @@ test("disable and sign-out-everywhere are version fenced and invalidate through 
       const update = workQueries(fake).find(({ sql }) => sql.startsWith("UPDATE users"));
       assert.match(update.sql, /authorization_version = authorization_version \+ 1/);
       assert.match(update.sql, /sessions_valid_after = GREATEST/);
-      if (method === "disableUser") assert.match(update.sql, /status = 'disabled'/);
-      else assert.doesNotMatch(update.sql, /status = 'disabled'/);
+      if (method === "disableUser") {
+        assert.match(update.sql, /status = 'disabled'/);
+        assert.equal(
+          workQueries(fake).some(({ sql }) =>
+            /\bintegration_(?:connections|credentials|events)\b/.test(sql)),
+          false,
+          "disabling an employee must leave the shared Google connector untouched",
+        );
+      } else {
+        assert.doesNotMatch(update.sql, /status = 'disabled'/);
+      }
       assert.equal(
         workQueries(fake).some(({ sql }) => sql.startsWith("UPDATE sessions")),
         false,

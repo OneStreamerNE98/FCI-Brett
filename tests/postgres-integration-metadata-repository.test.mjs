@@ -161,6 +161,24 @@ function rotateCredentialIntent(overrides = {}) {
   };
 }
 
+function revokeConnectionIntent(overrides = {}) {
+  return {
+    connectionId: CONNECTION_ID,
+    expectedConnectionVersion: "2",
+    revokedByUserId: USER_ID,
+    revokedByActorKey: `user:${USER_ID}`,
+    revokedAt: CREATED_AT + 8 * 60_000,
+    providerRevocationOutcome: "failed",
+    providerRevocationErrorCode: "provider_unreachable",
+    audit: auditEvent({
+      action: "integration.connection_revoked",
+      targetType: "integration_connection",
+      targetId: CONNECTION_ID,
+    }),
+    ...overrides,
+  };
+}
+
 function resourceIntent(overrides = {}) {
   return {
     id: RESOURCE_ID,
@@ -379,6 +397,28 @@ test("repository-owned validation rejects malformed intents before connecting", 
       /email must be normalized/,
     ],
     [
+      "connection revocation version",
+      (subject) => subject.revokeConnection(revokeConnectionIntent({
+        expectedConnectionVersion: "0",
+      })),
+      /positive signed 64-bit integer/,
+    ],
+    [
+      "connection provider revocation outcome",
+      (subject) => subject.revokeConnection(revokeConnectionIntent({
+        providerRevocationOutcome: "maybe",
+      })),
+      /provider revocation outcome must be supported/,
+    ],
+    [
+      "connection provider revocation error evidence",
+      (subject) => subject.revokeConnection(revokeConnectionIntent({
+        providerRevocationOutcome: "succeeded",
+        providerRevocationErrorCode: "unexpected_error",
+      })),
+      /error code must be null unless provider revocation failed/,
+    ],
+    [
       "resource URL",
       (subject) => subject.registerResource(resourceIntent({
         externalUrl: "http://drive.google.com/drive/folders/unsafe",
@@ -557,6 +597,49 @@ test("OAuth completion atomically binds identity, refresh ciphertext, scopes, an
   assert.deepEqual(fake.releases, [undefined]);
 });
 
+test("fresh OAuth completion can reconnect a revoked row only with the newly supplied credential", async () => {
+  const freshCiphertext = Uint8Array.from({ length: 48 }, (_, index) => 200 - index);
+  const intent = completeOauthConnectionIntent({
+    expectedConnectionVersion: "3",
+    refreshTokenCiphertext: freshCiphertext,
+    keyVersion: "fresh-consent-key-v3",
+  });
+  const fake = transactionPool((sql) => {
+    if (sql.startsWith("SELECT id::text AS id")) {
+      return result([{ id: CONNECTION_ID }], 1);
+    }
+    if (sql.startsWith("INSERT INTO integration_credentials (")) return result([], 1);
+    if (sql.startsWith("DELETE FROM integration_connection_scopes")) return result([], 2);
+    if (sql.startsWith("INSERT INTO integration_connection_scopes")) return result([], 1);
+    if (sql.startsWith("UPDATE integration_connections")) {
+      return result([{ version: "4" }], 1);
+    }
+    if (sql.startsWith("INSERT INTO audit_events (")) return auditInsertResult();
+    throw new Error(`unexpected revoked reconnect query: ${sql}`);
+  });
+
+  assert.deepEqual(await repository(fake).completeOauthConnection(intent), {
+    outcome: "accepted",
+    version: "4",
+  });
+  const lock = fake.queries.find(({ sql }) => sql.startsWith("SELECT id::text AS id"));
+  assert.match(
+    lock.sql,
+    /status IN \('pending', 'connected', 'degraded', 'reauthorization_required', 'revoked'\)/,
+  );
+  const credential = fake.queries.find(({ sql }) =>
+    sql.startsWith("INSERT INTO integration_credentials ("));
+  assert.deepEqual(new Uint8Array(credential.values[2]), freshCiphertext);
+  assert.equal(credential.values[3], "fresh-consent-key-v3");
+  assert.match(credential.sql, /ciphertext = EXCLUDED\.ciphertext/);
+  assert.match(credential.sql, /status = 'active'/);
+  assert.match(credential.sql, /revoked_at = NULL/);
+  const connection = fake.queries.find(({ sql }) =>
+    sql.startsWith("UPDATE integration_connections"));
+  assert.match(connection.sql, /status = 'connected'/);
+  assert.match(connection.sql, /revoked_at = NULL/);
+});
+
 test("a stale OAuth connection completion writes denial evidence without storing credentials", async () => {
   const fake = transactionPool((sql) => {
     if (sql.startsWith("SELECT id::text AS id")) return result([], 0);
@@ -581,7 +664,7 @@ test("a stale OAuth connection completion writes denial evidence without storing
 test("active credential reads and exact-version rotation preserve encrypted bytes", async () => {
   const ciphertext = Buffer.from(completeOauthConnectionIntent().refreshTokenCiphertext);
   const readFake = transactionPool((sql) => {
-    if (sql.startsWith("SELECT id::text AS id, connection_id::text AS connection_id")) {
+    if (sql.startsWith("SELECT credential.id::text AS id")) {
       return result([{
         id: CREDENTIAL_ID,
         connection_id: CONNECTION_ID,
@@ -604,6 +687,13 @@ test("active credential reads and exact-version rotation preserve encrypted byte
       version: "3",
     },
   );
+  const activeRead = readFake.queries.find(({ sql }) =>
+    sql.startsWith("SELECT credential.id::text AS id"));
+  assert.match(activeRead.sql, /INNER JOIN integration_connections AS connection/);
+  assert.match(
+    activeRead.sql,
+    /connection\.status IN \('connected', 'degraded', 'reauthorization_required'\)/,
+  );
 
   const rotation = rotateCredentialIntent();
   const rotateFake = transactionPool((sql) => {
@@ -620,6 +710,194 @@ test("active credential reads and exact-version rotation preserve encrypted byte
   assert.deepEqual(new Uint8Array(update.values[4]), rotation.ciphertext);
   assert.equal(update.values[5], "2");
   assert.equal(update.values[6].getTime(), CREATED_AT + 7 * 60_000);
+});
+
+test("revocation atomically tombstones credentials and preserves a versioned revoked connection row", async () => {
+  const intent = revokeConnectionIntent();
+  const fake = transactionPool((sql) => {
+    if (sql.startsWith("SELECT id::text AS id")) {
+      return result([{ id: CONNECTION_ID }], 1);
+    }
+    if (sql.startsWith("UPDATE integration_credentials")) return result([], 1);
+    if (sql.startsWith("UPDATE integration_connections")) {
+      return result([{ version: "3" }], 1);
+    }
+    if (sql.startsWith("INSERT INTO integration_events (")) return result([], 1);
+    if (sql.startsWith("INSERT INTO audit_events (")) return auditInsertResult();
+    throw new Error(`unexpected revocation query: ${sql}`);
+  });
+
+  assert.deepEqual(await repository(fake).revokeConnection(intent), {
+    outcome: "accepted",
+    version: "3",
+  });
+  const lock = fake.queries.find(({ sql }) => sql.startsWith("SELECT id::text AS id"));
+  assert.match(lock.sql, /'disabled'/);
+  assert.match(lock.sql, /'revoked'/);
+  const credential = fake.queries.find(({ sql }) =>
+    sql.startsWith("UPDATE integration_credentials"));
+  assert.match(credential.sql, /ciphertext = NULL, key_version = NULL, status = 'revoked'/);
+  assert.match(credential.sql, /revoked_at = \$2/);
+  assert.deepEqual(credential.values.slice(0, 1), [CONNECTION_ID]);
+  assert.equal(credential.values[1].getTime(), intent.revokedAt);
+
+  const connection = fake.queries.find(({ sql }) =>
+    sql.startsWith("UPDATE integration_connections"));
+  assert.match(connection.sql, /SET status = 'revoked', revoked_at = \$3/);
+  assert.match(connection.sql, /WHERE id = \$1 AND version = \$2::bigint/);
+  assert.doesNotMatch(connection.sql, /\bDELETE\b/);
+  assert.deepEqual(connection.values.slice(0, 2), [CONNECTION_ID, "2"]);
+  assert.equal(connection.values[2].getTime(), intent.revokedAt);
+  assert.deepEqual(connection.values.slice(3), [USER_ID, `user:${USER_ID}`]);
+
+  const integrationEvent = fake.queries.find(({ sql }) =>
+    sql.startsWith("INSERT INTO integration_events ("));
+  assert.deepEqual(integrationEvent.values.slice(0, 3), [
+    AUDIT_ID,
+    CONNECTION_ID,
+    `oauth.connection_revoked:${AUDIT_ID}`,
+  ]);
+  assert.deepEqual(integrationEvent.values.slice(3, 9), [
+    "user",
+    USER_ID,
+    `user:${USER_ID}`,
+    "succeeded",
+    null,
+    "correlation-integration-1",
+  ]);
+  assert.deepEqual(JSON.parse(integrationEvent.values[9]), {
+    local_connection_revoked: true,
+    stored_credentials_revoked: 1,
+    provider_revocation_outcome: "failed",
+    provider_revocation_error_code: "provider_unreachable",
+  });
+  assert.equal(integrationEvent.values[10].getTime(), intent.revokedAt);
+  assert.equal(integrationEvent.values[11], "security_default");
+  assert.equal(integrationEvent.values[12].getTime(), intent.audit.retentionUntil);
+
+  const audit = fake.queries.find(({ sql }) => sql.startsWith("INSERT INTO audit_events ("));
+  assert.deepEqual(audit.values.slice(6, 11), [
+    "integration.connection_revoked",
+    "integration_connection",
+    CONNECTION_ID,
+    "succeeded",
+    null,
+  ]);
+  assert.equal(fake.queries.some(({ sql }) => /^DELETE FROM integration_(?:connections|credentials)/.test(sql)), false);
+  assert.equal(fake.queries.at(-1).sql, "COMMIT");
+});
+
+test("disabled and already-revoked exact-version rows remain revocable with fresh audit evidence", async (t) => {
+  for (const status of ["disabled", "revoked"]) {
+    await t.test(status, async () => {
+      const intent = revokeConnectionIntent({
+        expectedConnectionVersion: status === "disabled" ? "2" : "3",
+      });
+      const fake = transactionPool((sql) => {
+        if (sql.startsWith("SELECT id::text AS id")) {
+          assert.match(sql, new RegExp(`'${status}'`));
+          return result([{ id: CONNECTION_ID }], 1);
+        }
+        if (sql.startsWith("UPDATE integration_credentials")) {
+          return result([], status === "disabled" ? 1 : 0);
+        }
+        if (sql.startsWith("UPDATE integration_connections")) {
+          return result([{ version: status === "disabled" ? "3" : "4" }], 1);
+        }
+        if (sql.startsWith("INSERT INTO integration_events (")) return result([], 1);
+        if (sql.startsWith("INSERT INTO audit_events (")) return auditInsertResult();
+        throw new Error(`unexpected ${status} revocation query: ${sql}`);
+      });
+
+      assert.deepEqual(await repository(fake).revokeConnection(intent), {
+        outcome: "accepted",
+        version: status === "disabled" ? "3" : "4",
+      });
+      assert.equal(
+        fake.queries.filter(({ sql }) => sql.startsWith("INSERT INTO integration_events (")).length,
+        1,
+      );
+      assert.equal(
+        fake.queries.filter(({ sql }) => sql.startsWith("INSERT INTO audit_events (")).length,
+        1,
+      );
+      assert.equal(fake.queries.at(-1).sql, "COMMIT");
+    });
+  }
+});
+
+test("simulation-skipped provider revocation records local success without claiming Google success", async () => {
+  const intent = revokeConnectionIntent({
+    providerRevocationOutcome: "skipped_simulation",
+    providerRevocationErrorCode: null,
+  });
+  const fake = transactionPool((sql) => {
+    if (sql.startsWith("SELECT id::text AS id")) return result([{ id: CONNECTION_ID }], 1);
+    if (sql.startsWith("UPDATE integration_credentials")) return result([], 1);
+    if (sql.startsWith("UPDATE integration_connections")) return result([{ version: "3" }], 1);
+    if (sql.startsWith("INSERT INTO integration_events (")) return result([], 1);
+    if (sql.startsWith("INSERT INTO audit_events (")) return auditInsertResult();
+    throw new Error(`unexpected simulation revocation query: ${sql}`);
+  });
+
+  assert.deepEqual(await repository(fake).revokeConnection(intent), {
+    outcome: "accepted",
+    version: "3",
+  });
+  const integrationEvent = fake.queries.find(({ sql }) =>
+    sql.startsWith("INSERT INTO integration_events ("));
+  assert.deepEqual(integrationEvent.values.slice(6, 8), [
+    "succeeded",
+    null,
+  ]);
+  assert.equal(
+    JSON.parse(integrationEvent.values[9]).provider_revocation_outcome,
+    "skipped_simulation",
+  );
+  assert.equal(
+    JSON.parse(integrationEvent.values[9]).provider_revocation_error_code,
+    null,
+  );
+});
+
+test("a stale connection revocation writes nothing and leaves no audit row", async () => {
+  const fake = transactionPool((sql) => {
+    if (sql.startsWith("SELECT id::text AS id")) return result([], 0);
+    throw new Error(`unexpected stale revocation query: ${sql}`);
+  });
+
+  assert.deepEqual(
+    await repository(fake).revokeConnection(revokeConnectionIntent()),
+    { outcome: "stale" },
+  );
+  assert.equal(
+    fake.queries.some(({ sql }) =>
+      sql.startsWith("UPDATE integration_credentials")
+      || sql.startsWith("UPDATE integration_connections")
+      || sql.startsWith("INSERT INTO integration_events (")
+      || sql.startsWith("INSERT INTO audit_events (")),
+    false,
+  );
+  assert.equal(fake.queries.at(-1).sql, "COMMIT");
+});
+
+test("revoked or disconnected connection state cannot expose an otherwise-active credential", async () => {
+  const fake = transactionPool((sql) => {
+    if (sql.startsWith("SELECT credential.id::text AS id")) return result([], 0);
+    throw new Error(`unexpected revoked credential read query: ${sql}`);
+  });
+
+  assert.equal(
+    await repository(fake).getActiveCredential(CONNECTION_ID, "refresh_token"),
+    null,
+  );
+  const selected = fake.queries.find(({ sql }) =>
+    sql.startsWith("SELECT credential.id::text AS id"));
+  assert.match(selected.sql, /credential\.status = 'active'/);
+  assert.match(
+    selected.sql,
+    /connection\.status IN \('connected', 'degraded', 'reauthorization_required'\)/,
+  );
 });
 
 test("a stale exact-version credential rotation records denial without changing ciphertext", async () => {
@@ -670,6 +948,11 @@ test("an audit insert failure rolls back every integration mutation path", async
       invoke: (subject) => subject.rotateCredential(rotateCredentialIntent()),
     },
     {
+      label: "connection revocation",
+      mutationPrefix: "SELECT id::text AS id",
+      invoke: (subject) => subject.revokeConnection(revokeConnectionIntent()),
+    },
+    {
       label: "resource",
       mutationPrefix: "INSERT INTO integration_resources (",
       invoke: (subject) => subject.registerResource(resourceIntent()),
@@ -684,6 +967,12 @@ test("an audit insert failure rolls back every integration mutation path", async
         if (sql.startsWith("DELETE FROM integration_connection_scopes")) return result([], 0);
         if (sql.startsWith("INSERT INTO integration_connection_scopes")) return result([], 1);
         if (sql.startsWith("UPDATE integration_connections")) return result([{ version: "2" }], 1);
+      }
+      if (scenario.label === "connection revocation") {
+        if (sql.startsWith("SELECT id::text AS id")) return result([{ id: CONNECTION_ID }], 1);
+        if (sql.startsWith("UPDATE integration_credentials")) return result([], 1);
+        if (sql.startsWith("UPDATE integration_connections")) return result([{ version: "3" }], 1);
+        if (sql.startsWith("INSERT INTO integration_events (")) return result([], 1);
       }
       if (sql.startsWith(scenario.mutationPrefix)) {
         if (scenario.label === "OAuth consumption") {

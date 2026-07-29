@@ -70,7 +70,18 @@ export interface GoogleOauthPersistence {
   findOauthAttemptByStateHash(stateHash: string): Promise<StoredGoogleOauthAttempt | null>;
   consumeOauthAttempt(id: string, consumedAt: number): Promise<boolean>;
   findConnection(connectionKey: string): Promise<StoredGoogleConnection | null>;
-  deleteConnection(connectionKey: string): Promise<void>;
+  revokeConnection(input: Readonly<{
+    connectionKey: string;
+    revokedAt: number;
+    event: Readonly<{
+      id: string;
+      eventType: string;
+      actor: string;
+      entityType: string;
+      entityId: string;
+      detail: string;
+    }>;
+  }>): Promise<boolean>;
   saveConnection(input: Readonly<{
     id: string;
     connectionKey: string;
@@ -79,9 +90,10 @@ export interface GoogleOauthPersistence {
     scopesJson: string;
     refreshTokenCiphertext: string;
     keyVersion: string;
+    credentialSource: "fresh" | "reused";
     actor: string;
     now: number;
-  }>): Promise<void>;
+  }>): Promise<"saved" | "stale">;
   markConnectionAccountRejected(id: string, now: number): Promise<void>;
   markConnectionRefreshSucceeded(id: string, now: number): Promise<void>;
   markConnectionRefreshFailed(input: Readonly<{
@@ -728,32 +740,76 @@ export async function getGoogleConnectionStatus(
 
 export async function disconnectGoogleConnection(
   config: GoogleRuntimeConfig,
+  actor: string,
   dependencies: GoogleOauthDependencies,
 ) {
-  if (config.simulation) return { revocationRequested: false };
   const connection = await dependencies.persistence.findConnection(config.connectionKey);
-  let revocationRequested = false;
-  if (connection?.refreshTokenCiphertext) {
+  let providerRevocation: "succeeded" | "failed" | "not_attempted" | "skipped_simulation" =
+    config.simulation ? "skipped_simulation" : "not_attempted";
+  let refreshToken: string | null = null;
+  if (!config.simulation && connection?.refreshTokenCiphertext) {
     try {
-      const refreshToken = await decryptGoogleSecretWithStore(
+      refreshToken = await decryptGoogleSecretWithStore(
         connection.refreshTokenCiphertext,
         connection.keyVersion,
         dependencies.secrets,
         `google-connection:${config.connectionKey}:refresh`,
       );
+    } catch {
+      // Credential decryption failure cannot block local severance.
+      providerRevocation = "failed";
+    }
+  }
+  const revokedAt = dependencies.now();
+  const providerStateAtSeverance = refreshToken ? "pending" : providerRevocation;
+  const event = {
+    id: dependencies.randomUUID(),
+    eventType: "oauth.disconnected",
+    actor,
+    entityType: "connection",
+    entityId: config.connectionKey,
+    detail: `mode=${config.environment};google_revocation=${providerStateAtSeverance};local_connection=${connection ? "revoked" : "not-found"}`,
+  };
+  const connectionRevoked = await dependencies.persistence.revokeConnection({
+    connectionKey: config.connectionKey,
+    revokedAt,
+    event,
+  });
+  if (!connectionRevoked) {
+    await dependencies.persistence.writeIntegrationEvent({
+      ...event,
+      connectionKey: config.connectionKey,
+      createdAt: revokedAt,
+    });
+  }
+  if (refreshToken) {
+    try {
       const response = await fetchGoogleProvider(dependencies.fetch, GOOGLE_REVOCATION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ token: refreshToken }),
       }, {}, dependencies.resilience);
-      revocationRequested = response.ok;
+      providerRevocation = response.ok ? "succeeded" : "failed";
     } catch {
-      // The local disconnect still proceeds, ensuring this app no longer retains a usable token.
-      revocationRequested = false;
+      providerRevocation = "failed";
     }
+    await dependencies.persistence.writeIntegrationEvent({
+      id: dependencies.randomUUID(),
+      connectionKey: config.connectionKey,
+      eventType: "oauth.provider_revocation_recorded",
+      actor,
+      entityType: "connection",
+      entityId: config.connectionKey,
+      detail: `mode=${config.environment};google_revocation=${providerRevocation};local_connection=${connectionRevoked ? "revoked" : "not-found"}`,
+      createdAt: dependencies.now(),
+    });
   }
-  await dependencies.persistence.deleteConnection(config.connectionKey);
-  return { revocationRequested };
+  return {
+    connectionRevoked,
+    providerRevocation,
+    // Retain the existing response field while making the provider outcome explicit.
+    revocationRequested: providerRevocation === "succeeded",
+  };
 }
 
 export async function saveGoogleConnection(
@@ -772,12 +828,15 @@ export async function saveGoogleConnection(
       `google-connection:${config.connectionKey}:refresh`,
     )
     : null;
-  const refreshTokenCiphertext = encrypted?.ciphertext ?? existing?.refreshTokenCiphertext;
-  const keyVersion = encrypted?.keyVersion ?? existing?.keyVersion;
+  // A revoked connection is a tombstone, never reusable OAuth material. Reconnection
+  // must provide a newly issued refresh token from a fresh consent callback.
+  const reusableExisting = existing && existing.status !== "revoked" ? existing : null;
+  const refreshTokenCiphertext = encrypted?.ciphertext ?? reusableExisting?.refreshTokenCiphertext;
+  const keyVersion = encrypted?.keyVersion ?? reusableExisting?.keyVersion;
   if (!refreshTokenCiphertext) {
     throw new GoogleIntegrationError("refresh_token_missing", "Google did not issue a reusable authorization. Remove this app from your Google Account and connect again.", 409);
   }
-  await dependencies.persistence.saveConnection({
+  const saveOutcome = await dependencies.persistence.saveConnection({
     id: existing?.id ?? dependencies.randomUUID(),
     connectionKey: config.connectionKey,
     googleSubject: profile.subject,
@@ -785,9 +844,17 @@ export async function saveGoogleConnection(
     scopesJson: JSON.stringify(tokens.scope),
     refreshTokenCiphertext,
     keyVersion: keyVersion!,
+    credentialSource: encrypted ? "fresh" : "reused",
     actor,
     now,
   });
+  if (saveOutcome === "stale") {
+    throw new GoogleIntegrationError(
+      "stale_google_connection",
+      "Google authorization changed while consent completed. Start the connection again.",
+      409,
+    );
+  }
 }
 
 export async function getGoogleAccessToken(
@@ -882,7 +949,7 @@ export function createGoogleOauthOperations(
     fetchUserProfile: (accessToken: string) =>
       fetchGoogleUserProfile(accessToken, dependencies.fetch, dependencies.resilience),
     connectionStatus: () => getGoogleConnectionStatus(config, dependencies),
-    disconnect: () => disconnectGoogleConnection(config, dependencies),
+    disconnect: (actor: string) => disconnectGoogleConnection(config, actor, dependencies),
     saveConnection: (tokens: GoogleTokenSet, profile: GoogleUserProfile, actor: string) =>
       saveGoogleConnection(config, tokens, profile, actor, dependencies),
     accessToken: (requiredService?: GoogleService) =>

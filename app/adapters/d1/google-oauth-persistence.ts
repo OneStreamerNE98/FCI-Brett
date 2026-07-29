@@ -14,6 +14,7 @@ type D1PreparedStatementLike = {
 
 export type D1GoogleOauthDatabase = Readonly<{
   prepare(sql: string): D1PreparedStatementLike;
+  batch(statements: D1PreparedStatementLike[]): Promise<D1RunResultLike[]>;
 }>;
 
 type OauthAttemptRow = Readonly<{
@@ -100,14 +101,53 @@ export function createD1GoogleOauthPersistence(database: D1GoogleOauthDatabase):
       return connection(row);
     },
 
-    async deleteConnection(connectionKey) {
-      await database.prepare("DELETE FROM google_connections WHERE connection_key = ?")
-        .bind(connectionKey)
-        .run();
+    async revokeConnection(input) {
+      const [result, eventResult] = await database.batch([
+        database.prepare("UPDATE google_connections SET refresh_token_ciphertext = '', key_version = '', status = 'revoked', last_error_code = NULL, updated_at = ?, revoked_at = ? WHERE connection_key = ?")
+          .bind(input.revokedAt, input.revokedAt, input.connectionKey),
+        database.prepare("INSERT INTO google_integration_events (id, connection_key, event_type, actor, entity_type, entity_id, detail, created_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM google_connections WHERE connection_key = ?)")
+          .bind(
+            input.event.id,
+            input.connectionKey,
+            input.event.eventType,
+            input.event.actor,
+            input.event.entityType,
+            input.event.entityId,
+            input.event.detail,
+            input.revokedAt,
+            input.connectionKey,
+          ),
+      ]);
+      if (result?.meta?.changes !== 1) {
+        if ((eventResult?.meta?.changes ?? 0) !== 0) {
+          throw new TypeError("Missing Google connection revocation unexpectedly created an integration event.");
+        }
+        return false;
+      }
+      if (eventResult?.meta?.changes !== 1) {
+        throw new TypeError("Google connection revocation did not create its integration event.");
+      }
+      return true;
     },
 
     async saveConnection(input) {
-      await database.prepare("INSERT INTO google_connections (id, connection_key, google_subject, google_email, scopes_json, refresh_token_ciphertext, key_version, status, last_error_code, last_success_at, created_by, created_at, updated_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'connected', NULL, ?, ?, ?, ?, NULL) ON CONFLICT(connection_key) DO UPDATE SET google_subject = excluded.google_subject, google_email = excluded.google_email, scopes_json = excluded.scopes_json, refresh_token_ciphertext = excluded.refresh_token_ciphertext, key_version = excluded.key_version, status = 'connected', last_error_code = NULL, last_success_at = excluded.last_success_at, created_by = excluded.created_by, updated_at = excluded.updated_at, revoked_at = NULL")
+      if (input.credentialSource === "reused") {
+        const reused = await database.prepare("UPDATE google_connections SET google_subject = ?, google_email = ?, scopes_json = ?, status = 'connected', last_error_code = NULL, last_success_at = ?, created_by = ?, updated_at = ?, revoked_at = NULL WHERE connection_key = ? AND status <> 'revoked' AND refresh_token_ciphertext = ? AND key_version = ?")
+          .bind(
+            input.googleSubject,
+            input.googleEmail,
+            input.scopesJson,
+            input.now,
+            input.actor,
+            input.now,
+            input.connectionKey,
+            input.refreshTokenCiphertext,
+            input.keyVersion,
+          )
+          .run();
+        return reused.meta?.changes === 1 ? "saved" : "stale";
+      }
+      const fresh = await database.prepare("INSERT INTO google_connections (id, connection_key, google_subject, google_email, scopes_json, refresh_token_ciphertext, key_version, status, last_error_code, last_success_at, created_by, created_at, updated_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'connected', NULL, ?, ?, ?, ?, NULL) ON CONFLICT(connection_key) DO UPDATE SET google_subject = excluded.google_subject, google_email = excluded.google_email, scopes_json = excluded.scopes_json, refresh_token_ciphertext = excluded.refresh_token_ciphertext, key_version = excluded.key_version, status = 'connected', last_error_code = NULL, last_success_at = excluded.last_success_at, created_by = excluded.created_by, updated_at = excluded.updated_at, revoked_at = NULL")
         .bind(
           input.id,
           input.connectionKey,
@@ -122,6 +162,7 @@ export function createD1GoogleOauthPersistence(database: D1GoogleOauthDatabase):
           input.now,
         )
         .run();
+      return fresh.meta?.changes === 1 ? "saved" : "stale";
     },
 
     async markConnectionAccountRejected(id, now) {
