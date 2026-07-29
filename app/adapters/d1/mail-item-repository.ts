@@ -151,6 +151,25 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
       return result.results.map(normalizeStoredMailItem);
     },
 
+    async listByStatusPage(connectionKey, status, limit) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedStatus = normalizeMailItemStatus(status);
+      const result = await database
+        .prepare(
+          "SELECT mail_items.*, COUNT(*) OVER () AS total_count FROM mail_items WHERE connection_key = ? AND status = ? ORDER BY updated_at DESC, id LIMIT ?",
+        )
+        .bind(normalizedConnectionKey, normalizedStatus, boundedLimit(limit))
+        .all<Record<string, unknown> & { total_count: unknown }>();
+      const totalCount = Number(result.results[0]?.total_count ?? 0);
+      if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
+        throw new Error("D1 mail item count was invalid");
+      }
+      return Object.freeze({
+        items: result.results.map(normalizeStoredMailItem),
+        totalCount,
+      });
+    },
+
     async listRetryableAnalysisRows(
       connectionKey,
       currentLabelDefinitionVersion,
@@ -182,6 +201,18 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         )
         .bind(normalizedConnectionKey)
         .run();
+    },
+
+    async dismissNeedsReview(id, connectionKey, updatedAt) {
+      if (!boundedId(id)) return false;
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const result = await database
+        .prepare(
+          "UPDATE mail_items SET status = 'dismissed', attempted_label_definition_version = NULL, failure_attempts = 0, error_code = NULL, updated_at = ? WHERE id = ? AND connection_key = ? AND status = 'needs-review'",
+        )
+        .bind(updatedAt, id, normalizedConnectionKey)
+        .run();
+      return Number(result.meta.changes ?? 0) === 1;
     },
 
     async insertIfAbsent(item) {

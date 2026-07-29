@@ -163,7 +163,8 @@ The Inbox is the **Gmail project inbox** — where you review emails and file th
 
 - **Inbox** — the regular company mailbox.
 - **FCI/Intake** — messages waiting to be routed.
-- **FCI/Needs Review** — messages a rule flagged for you to check.
+- **Needs review** — the app's stored, Administrator-only analysis queue. It
+  is not a Gmail label filter.
 - **FCI/Filed** — messages already copied into a project.
 
 **Filing is review-first — nothing happens automatically.** Rules can *suggest* a destination, but you always choose the exact project and approve every copy yourself. To file an email, use **Review & copy**, pick the exact project, review the preview (nothing is copied at the preview step), then confirm. Only then is the email and its attachments copied into that project's Drive folder. Your Inbox is never emptied or archived — the original email stays put; filing adds a copy.
@@ -196,7 +197,11 @@ date**. In other words, subjects and senders now persist in the app database;
 turning the switch off stops future sweeps but does not erase results already
 stored. Analysis never sends, files, labels, archives, drafts, or creates a
 lead. The Inbox reports either **You're caught up** or **Older messages not yet
-analyzed**; **Check older** continues another bounded batch.
+analyzed**; **Check older** continues another bounded batch. Opening **Needs
+review** reads those stored rows and their total directly from the app
+database. Rendering the stored rows makes zero per-row Gmail calls; the
+separate bounded sweep may read newly encountered messages. **Mark reviewed**
+dismisses one row from the queue without changing Gmail.
 
 > [SCREENSHOT 4 — see Screenshot index]
 
@@ -622,7 +627,7 @@ Consolidated list of every screenshot placeholder, with whether an existing capt
 | 1 | Part 1 · Install | Chrome address-bar install prompt on desktop, and the Safari Share sheet "Add to Home Screen" on a phone | **Needs fresh.** No baseline shows browser install chrome; capture on a real device/browser. |
 | 2 | Part 1 · Leads | Leads page with a lead open in its side drawer, highlighting **Advance stage** and the stage chips | Partial: `leads-1280.png` / `leads-390.png` show the page. **Needs fresh** for the drawer-open + Advance highlight. |
 | 3 | Part 1 · Projects | Project drawer Overview tab: value / square-feet / installation-date stats and the **Installation & follow-up** buttons | Partial: `projects-1280.png` shows the list. **Needs fresh** for the drawer-open Overview tab. |
-| 4 | Part 1 · Inbox | Gmail project inbox: a message with its suggested-project chip, **Review & copy** and **Draft reply** buttons, and the mailbox-bucket selector | `inbox-1280.png` / `inbox-390.png` can likely serve; confirm the suggested-project chip is visible, else **fresh**. |
+| 4 | Part 1 · Inbox | Gmail project inbox: a message with its suggested-project chip, **Review & copy** and **Draft reply** buttons, and the mailbox-bucket selector | **Needs fresh.** AI-10 d+e changed the bucket selector copy and made **Needs review** an app-side queue, so `inbox-1280.png` / `inbox-390.png` no longer match. |
 | 5 | Part 2 · Settings nav | Settings left navigation: the "For you" group with My settings, and the "Workspace & company setup" group listing the seven company sections | Partial: `settings-1280.png` shows Settings. **Needs fresh** if it does not show the admin nav with all sections. |
 | 6 | Part 2 · Client Directory | Client Directory & Project Register panel: the two mirror cards with last-synced times and the **Sync now** button | **Needs fresh.** No baseline of this sub-panel. |
 | 7 | Part 2 · Workflow & notifications | Reminder-hour fields, the office notification email, the AI assistant status and feature switches, and the Google Chat notification-routing card | **Needs fresh.** No baseline of this sub-panel. |

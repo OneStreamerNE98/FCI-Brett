@@ -260,6 +260,37 @@ LIMIT $3`,
       );
     },
 
+    async listByStatusPage(connectionKey, status, limit) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedStatus = normalizeMailItemStatus(status);
+      return withPostgresTransaction(
+        pool,
+        { ...transactionOptions, readOnly: true },
+        async (client) => {
+          const result = await client.query<
+            MailItemDatabaseRow & { total_count: unknown }
+          >(
+            `SELECT page.*, COUNT(*) OVER ()::text AS total_count
+FROM (
+  ${MAIL_ITEM_SELECT}
+  WHERE connection_key = $1 AND status = $2
+) AS page
+ORDER BY page.updated_at DESC, page.id
+LIMIT $3`,
+            [normalizedConnectionKey, normalizedStatus, boundedLimit(limit)],
+          );
+          const totalCount = Number(result.rows[0]?.total_count ?? 0);
+          if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
+            throw new Error("PostgreSQL mail item count was invalid");
+          }
+          return Object.freeze({
+            items: result.rows.map(mailItemFromPostgres),
+            totalCount,
+          });
+        },
+      );
+    },
+
     async listRetryableAnalysisRows(
       connectionKey,
       currentLabelDefinitionVersion,
@@ -311,6 +342,30 @@ SET coverage_complete = true
 WHERE connection_key = $1 AND coverage_complete = false`,
           [normalizedConnectionKey],
         );
+      });
+    },
+
+    async dismissNeedsReview(id, connectionKey, updatedAt) {
+      if (!boundedText(id, 512)) return false;
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      return withPostgresTransaction(pool, transactionOptions, async (client) => {
+        const result = await client.query(
+          `UPDATE mail_items
+SET status = 'dismissed',
+    attempted_label_definition_version = NULL,
+    failure_attempts = 0,
+    error_code = NULL,
+    updated_at = $1
+WHERE id = $2
+  AND connection_key = $3
+  AND status = 'needs-review'`,
+          [
+            persistenceDate(updatedAt, "PostgreSQL mail item updated_at"),
+            id,
+            normalizedConnectionKey,
+          ],
+        );
+        return result.rowCount === 1;
       });
     },
 

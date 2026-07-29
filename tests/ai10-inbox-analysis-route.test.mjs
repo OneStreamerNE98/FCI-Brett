@@ -615,7 +615,13 @@ test("AI-10 zero-call deadline aborts remain retryable without consuming the thr
   }
 });
 
-test("AI-10 repeated Gmail read failures do not consume the provider-attempt budget", async () => {
+test("AI-10 bounds Gmail read failures to the durable attempt budget", async () => {
+  // Deliberately NOT exempt. An exempt read failure pins the row at one attempt
+  // forever, and a message deleted from Gmail 404s on every future read, so the
+  // row would sit in the retry backlog permanently, block "caught-up" for good,
+  // and once ~81 accumulate consume the whole page budget and stop new mail
+  // being discovered at all. The zero-provider-call exemptions that remain
+  // (deadline, request abort, daily cap) all self-heal on a later sweep.
   const database = new InboxAnalysisDatabase();
   try {
     const message = summary("message-gmail-read-failure");
@@ -626,20 +632,21 @@ test("AI-10 repeated Gmail read failures do not consume the provider-attempt bud
     };
     const provider = fixtureProvider();
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const result = await route.runInboxAnalysisSweep(
-        sweepInput(database, gmail, provider),
-      );
-      assert.equal(result.terminationReason, "older-pending");
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
     }
 
-    assert.equal(gmail.calls.reads.length, 3);
+    assert.equal(
+      gmail.calls.reads.length,
+      3,
+      "the row stops being re-queued once its budget is spent",
+    );
     assert.equal(provider.requests.length, 0);
     const pending = database.rows();
     assert.equal(pending.length, 1);
     assert.equal(pending[0].status, "failed");
     assert.equal(pending[0].error_code, "gmail_read_failed");
-    assert.equal(pending[0].failure_attempts, 1);
+    assert.equal(pending[0].failure_attempts, 3);
   } finally {
     database.close();
   }
@@ -876,8 +883,8 @@ test("AI-10 capped rows do not poison the attempt budget of a later transient fa
     assert.equal(overwritten.error_code, "gmail_read_failed");
     assert.equal(
       overwritten.failure_attempts,
-      1,
-      "a transient failure overwriting a capped row must not inherit an exhausted budget",
+      2,
+      "a counted failure over a capped row advances one step, never inheriting an exhausted budget",
     );
 
     gmail.getMessageAnalysisInput = readGmail;
@@ -1147,7 +1154,9 @@ test("AI-10 contains one item-level prefilter failure and still persists a bound
     const prepare = database.prepare.bind(database);
     let injected = false;
     database.prepare = (sql) => {
-      if (!injected && /FROM gmail_file_archives/u.test(sql)) {
+      // The item prefilter probe specifically — not the sweep's reconciliation
+      // statement, which also names the archive table in a subquery.
+      if (!injected && /^SELECT id\s+FROM gmail_file_archives/u.test(sql.trim())) {
         injected = true;
         throw new Error("Injected archive prefilter failure.");
       }
@@ -1399,9 +1408,24 @@ test("AI-10 writer placement, request bounds, and Gmail read-only surface stay m
   assert.deepEqual(
     analysisWriters,
     [{
+      // Raw-SQL flag consciously flipped: the sweep opens with one idempotent
+      // set-based reconciliation that retires review rows whose message is
+      // already filed. It is expressible only as a statement (a cross-table
+      // EXISTS over gmail_file_archives), and it closes the stranded-row class
+      // that four rounds of per-item compensations could not guarantee. Every
+      // other mail-item write here still goes through the repository.
       path: "app/api/v1/inbox-analysis/route.ts",
-      writesRawMailItems: false,
+      writesRawMailItems: true,
       mutatesThroughRepository: true,
+    }, {
+      // Consciously widened (review bot P1, PR #238): filing is the decision the
+      // review queue waits on, and a current needs-review row is never re-swept,
+      // so only the filing route can retire it. The write is a single guarded
+      // UPDATE inside the existing lease-protected batch — it never inserts a
+      // row, so the analysis route remains the only creator of mail items.
+      path: "gmail/messages/[messageId]/file/route.ts",
+      writesRawMailItems: true,
+      mutatesThroughRepository: false,
     }, {
       path: "integrations/google/simulation/reset/route.ts",
       writesRawMailItems: true,

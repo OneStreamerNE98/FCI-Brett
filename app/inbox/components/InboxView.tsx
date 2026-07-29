@@ -56,6 +56,17 @@ type AssistantTriageSuggestion = {
   confidence: "high" | "medium" | "low";
   rationale: string;
 };
+type InboxReviewQueueRow = Readonly<{
+  id: string;
+  subject: string | null;
+  sender: string | null;
+  receivedAt: number | null;
+}>;
+type InboxReviewQueue = Readonly<{
+  rows: readonly InboxReviewQueueRow[];
+  totalCount: number;
+}>;
+type InboxReviewQueueState = "idle" | "loading" | "ready" | "unavailable";
 type InboxAnalysisCoverage =
   | Readonly<{
       terminationReason: "caught-up";
@@ -75,10 +86,51 @@ const inboxBucketLabels: Record<InboxBucket, string> = {
   filed: "FCI/Filed",
 };
 
-function inboxDate(value: string | null) {
+function inboxDate(value: string | number | null) {
   if (!value) return "Date unavailable";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    !Array.isArray(record.rows)
+    || !Number.isSafeInteger(record.totalCount)
+    || Number(record.totalCount) < 0
+  ) {
+    return null;
+  }
+  const rows: InboxReviewQueueRow[] = [];
+  for (const candidate of record.rows) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return null;
+    }
+    const row = candidate as Record<string, unknown>;
+    if (
+      typeof row.id !== "string"
+      || !row.id
+      || (row.subject !== null && typeof row.subject !== "string")
+      || (row.sender !== null && typeof row.sender !== "string")
+      || (
+        row.receivedAt !== null
+        && (!Number.isSafeInteger(row.receivedAt) || Number(row.receivedAt) < 0)
+      )
+    ) {
+      return null;
+    }
+    rows.push(Object.freeze({
+      id: row.id,
+      subject: row.subject as string | null,
+      sender: row.sender as string | null,
+      receivedAt: row.receivedAt as number | null,
+    }));
+  }
+  return Object.freeze({
+    rows: Object.freeze(rows),
+    totalCount: Number(record.totalCount),
+  });
 }
 
 function inboxAnalysisCoverage(value: unknown): InboxAnalysisCoverage | null {
@@ -139,6 +191,7 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
   const [loadedBucket, setLoadedBucket] = useState<InboxBucket | null>(null);
   const [search, setSearch] = useState("");
   const [checking, setChecking] = useState(false);
+  const [workspaceSettled, setWorkspaceSettled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [labelReady, setLabelReady] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -158,9 +211,24 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
   const triageRequestIdRef = useRef(0);
   const [analysisCoverage, setAnalysisCoverage] = useState<InboxAnalysisCoverage | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [reviewRows, setReviewRows] = useState<readonly InboxReviewQueueRow[]>([]);
+  const [reviewTotalCount, setReviewTotalCount] = useState(0);
+  const [reviewQueueState, setReviewQueueState] =
+    useState<InboxReviewQueueState>("idle");
+  const [markingReviewId, setMarkingReviewId] = useState<string | null>(null);
+  const [accountSettled, setAccountSettled] = useState(false);
   const analysisAutoStartedRef = useRef(false);
-  const analysisInFlightRef = useRef<Promise<void> | null>(null);
+  const analysisInFlightRef = useRef<Promise<InboxAnalysisCoverage | null> | null>(null);
   const analysisMountedRef = useRef(true);
+  const reviewQueueRequestIdRef = useRef(0);
+  const reviewQueueAutoLoadedRef = useRef(false);
+  const reviewQueueRefreshInFlightRef =
+    useRef<Promise<InboxReviewQueue | null> | null>(null);
+  const markReviewedInFlightRef = useRef(false);
+  const [analysisFailed, setAnalysisFailed] = useState(false);
+  const [focusReviewRowId, setFocusReviewRowId] = useState<string | null>(null);
+  const emptyReviewQueueRef = useRef<HTMLHeadingElement | null>(null);
+  const restoreEmptyQueueFocusRef = useRef(false);
 
   function clearTriageSuggestions() {
     triageRequestIdRef.current += 1;
@@ -179,6 +247,7 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
       setError(connectionError instanceof Error ? connectionError.message : "Google Workspace status could not be checked.");
     }).finally(() => {
       setChecking(false);
+      setWorkspaceSettled(true);
     });
   }
 
@@ -215,6 +284,7 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
           },
         });
       }
+      setAccountSettled(true);
     });
     return () => {
       active = false;
@@ -230,7 +300,10 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
   }, []);
 
   const gmailReady = workspace?.connectionStatus === "connected" && workspace.gmailEnabled === true && workspace.gmailConnected === true;
-  const visibleMessages = loadedBucket === bucket ? messages : [];
+  const visibleMessages = loadedBucket === bucket && bucket !== "needs-review" ? messages : [];
+  const visibleReviewRows = loadedBucket === bucket && bucket === "needs-review"
+    ? reviewRows
+    : [];
   const triageReady = Boolean(
     isAdmin
     && triageConfiguration?.keyState === "Configured"
@@ -243,7 +316,7 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
   );
 
   const runInboxAnalysis = useCallback((pageToken?: string) => {
-    if (!inboxAnalysisReady) return Promise.resolve();
+    if (!inboxAnalysisReady) return Promise.resolve(null);
     if (analysisInFlightRef.current) return analysisInFlightRef.current;
     const request = (async () => {
       if (analysisMountedRef.current) setAnalysisLoading(true);
@@ -261,12 +334,21 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
         if (!coverage) {
           throw new Error("Inbox analysis returned an invalid coverage result.");
         }
-        if (analysisMountedRef.current) setAnalysisCoverage(coverage);
+        if (analysisMountedRef.current) {
+          setAnalysisCoverage(coverage);
+          setAnalysisFailed(false);
+        }
+        return coverage;
       } catch {
         if (analysisMountedRef.current) {
           setAnalysisCoverage(null);
+          // The queue read that follows can still succeed, so without a durable
+          // flag an empty stored queue would render "No messages need review" —
+          // a coverage conclusion this sweep never earned.
+          setAnalysisFailed(true);
           notify("Inbox analysis could not finish. Refresh to retry.", "warning");
         }
+        return null;
       } finally {
         if (analysisMountedRef.current) setAnalysisLoading(false);
       }
@@ -280,23 +362,121 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
     return request;
   }, [inboxAnalysisReady, notify]);
 
+  const loadReviewQueue = useCallback(async () => {
+    const requestId = ++reviewQueueRequestIdRef.current;
+    setReviewQueueState("loading");
+    setError(null);
+    try {
+      const response = await fetch("/api/v1/inbox-analysis");
+      const body = await response.json().catch(() => null) as unknown;
+      if (!response.ok) {
+        throw new Error("The inbox review queue could not be loaded.");
+      }
+      const queue = inboxReviewQueue(body);
+      if (!queue) {
+        throw new Error("The inbox review queue returned an invalid result.");
+      }
+      if (requestId !== reviewQueueRequestIdRef.current) return null;
+      setReviewRows(queue.rows);
+      setReviewTotalCount(queue.totalCount);
+      setLoadedBucket("needs-review");
+      setReviewQueueState("ready");
+      setError(null);
+      return queue;
+    } catch (queueError) {
+      if (requestId !== reviewQueueRequestIdRef.current) return null;
+      setLoadedBucket("needs-review");
+      setReviewQueueState("unavailable");
+      setError(
+        queueError instanceof Error
+          ? queueError.message
+          : "The inbox review queue could not be loaded.",
+      );
+      return null;
+    }
+  }, []);
+
+  const refreshReviewQueue = useCallback((pageToken?: string) => {
+    if (reviewQueueRefreshInFlightRef.current) {
+      return reviewQueueRefreshInFlightRef.current;
+    }
+    const refreshId = ++reviewQueueRequestIdRef.current;
+    setReviewQueueState("loading");
+    setError(null);
+    const request = (async () => {
+      if (gmailReady && inboxAnalysisReady) {
+        await runInboxAnalysis(pageToken);
+      }
+      if (refreshId !== reviewQueueRequestIdRef.current) return null;
+      return loadReviewQueue();
+    })();
+    reviewQueueRefreshInFlightRef.current = request;
+    void request.finally(() => {
+      if (reviewQueueRefreshInFlightRef.current === request) {
+        reviewQueueRefreshInFlightRef.current = null;
+      }
+    });
+    return request;
+  }, [gmailReady, inboxAnalysisReady, loadReviewQueue, runInboxAnalysis]);
+
   useEffect(() => {
-    if (
-      !gmailReady
-      || !inboxAnalysisReady
-      || analysisAutoStartedRef.current
-    ) {
+    if (bucket !== "needs-review") {
+      reviewQueueAutoLoadedRef.current = false;
+      reviewQueueRequestIdRef.current += 1;
+      reviewQueueRefreshInFlightRef.current = null;
+    }
+    if (bucket === "needs-review") {
+      if (!accountSettled || !workspaceSettled || !isAdmin) return;
+      if (!reviewQueueAutoLoadedRef.current) {
+        reviewQueueAutoLoadedRef.current = true;
+        if (gmailReady && inboxAnalysisReady) {
+          analysisAutoStartedRef.current = true;
+          void Promise.resolve().then(() => refreshReviewQueue());
+        } else {
+          void Promise.resolve().then(() => loadReviewQueue());
+        }
+        return;
+      }
+      if (
+        gmailReady
+        && inboxAnalysisReady
+        && !analysisAutoStartedRef.current
+      ) {
+        analysisAutoStartedRef.current = true;
+        void Promise.resolve().then(() => refreshReviewQueue());
+      }
       return;
     }
+    if (!gmailReady || !inboxAnalysisReady || analysisAutoStartedRef.current) return;
     analysisAutoStartedRef.current = true;
     void runInboxAnalysis();
-  }, [gmailReady, inboxAnalysisReady, runInboxAnalysis]);
+  }, [
+    accountSettled,
+    bucket,
+    gmailReady,
+    inboxAnalysisReady,
+    isAdmin,
+    loadReviewQueue,
+    refreshReviewQueue,
+    runInboxAnalysis,
+    workspaceSettled,
+  ]);
 
   async function loadMessages() {
     clearTriageSuggestions();
     setLoading(true);
     setError(null);
     try {
+      if (bucket === "needs-review") {
+        const queue = await refreshReviewQueue();
+        if (queue) {
+          notify(
+            `Loaded ${queue.totalCount} message${queue.totalCount === 1 ? "" : "s"} from the app review queue.`,
+            "info",
+          );
+        }
+        return;
+      }
       const parameters = new URLSearchParams({ label: bucket });
       if (search.trim()) parameters.set("q", search.trim());
       const response = await fetch(`/api/v1/integrations/google/gmail/messages?${parameters.toString()}`);
@@ -314,6 +494,57 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
       await checkGmailConnection(true);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function markReviewed(row: InboxReviewQueueRow) {
+    if (markReviewedInFlightRef.current) return;
+    markReviewedInFlightRef.current = true;
+    const requestId = ++reviewQueueRequestIdRef.current;
+    setMarkingReviewId(row.id);
+    try {
+      const response = await fetch("/api/v1/inbox-analysis", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.id }),
+      });
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) {
+        throw new Error(body.error ?? "The message could not be marked reviewed.");
+      }
+      if (requestId !== reviewQueueRequestIdRef.current) return;
+      // The dismissed row unmounts its own focused button, so name the next
+      // focus target before it goes — the neighbour below, else above, else the
+      // empty-state heading. TodayPanel's complete-in-place sets the precedent.
+      setReviewRows((current) => {
+        const index = current.findIndex((item) => item.id === row.id);
+        const remaining = current.filter((item) => item.id !== row.id);
+        const next = index >= 0
+          ? remaining[index] ?? remaining[index - 1] ?? null
+          : null;
+        setFocusReviewRowId(next?.id ?? null);
+        restoreEmptyQueueFocusRef.current = next === null;
+        return remaining;
+      });
+      setReviewTotalCount((current) => Math.max(0, current - 1));
+      notify("Message marked reviewed and removed from the queue.", "success");
+      await loadReviewQueue();
+    } catch (reviewError) {
+      if (requestId !== reviewQueueRequestIdRef.current) return;
+      notify(
+        reviewError instanceof Error
+          ? reviewError.message
+          : "The message could not be marked reviewed.",
+        "error",
+      );
+      // This click bumped the request id and so invalidated any refresh already
+      // in flight, which returns without touching state. Without this re-sync a
+      // failed dismissal can strand the queue in its loading state — both
+      // refresh controls disabled, the row undismissable — until a full reload.
+      await loadReviewQueue();
+    } finally {
+      markReviewedInFlightRef.current = false;
+      setMarkingReviewId(null);
     }
   }
 
@@ -487,26 +718,373 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
     }
   }
 
-  const connectionText = workspace?.simulation ? "Local Workspace simulation is ready" : gmailReady ? `Connected Workspace Gmail: ${workspace?.connectionAccount ?? "company mailbox"}` : workspace?.requiresReauthorization ? "Google Workspace needs to be reconnected to approve Gmail access." : "Connect the company Google Workspace account to load messages.";
+  const reviewQueueSelected = bucket === "needs-review";
+  const connectionText = workspace?.simulation
+    ? "Local Workspace simulation is ready"
+    : gmailReady
+      ? `Connected Workspace Gmail: ${workspace?.connectionAccount ?? "company mailbox"}`
+      : workspace?.requiresReauthorization
+        ? "Google Workspace needs to be reconnected to approve Gmail access."
+        : "Connect the company Google Workspace account to load messages.";
+  const canRefresh = reviewQueueSelected ? isAdmin : gmailReady;
+  const queueReadInFlight =
+    reviewQueueSelected && reviewQueueState === "loading";
+
   return <>
-    <PageTitle eyebrow="Gmail intake" title="Gmail project inbox" text="Search the company Gmail mailbox—or safe simulated messages—then review and copy each message to one independent project." state={gmailReady ? "In development" : "Setup required"} action={<><button className="soft-button" onClick={onRules}><ListFilter size={15} /> Inbox & file rules</button>{gmailReady ? <button className="soft-button" onClick={() => void loadMessages()} disabled={loading}>{loading ? "Loading…" : <><RefreshCw size={15} /> Refresh</>}</button> : <button className="primary-button" onClick={onGoogleSetup}><Building2 size={15} /> Google setup</button>}</>} />
-    <section className={`inbox-connection inbox-state-strip ${gmailReady ? "ready" : ""}`}><Mail size={18} /><div className="inbox-state-copy"><strong>{gmailReady ? connectionText : "Workspace Gmail connection required"}</strong><span>{workspace?.simulation ? "Sample messages only. No Google account is connected and nothing is sent to Google." : gmailReady ? "Messages load only after your direct action; filing remains review-first and keeps Inbox." : connectionText}</span><span className="inbox-safety-copy"><ShieldCheck size={14} />Suggestions only: {rules.filter((rule) => rule.enabled).length} enabled rules can recommend a destination, but you must choose the exact project and approve every copy.</span></div><div className="inbox-state-actions"><button className="soft-button" onClick={() => void checkGmailConnection(true)} disabled={checking}>{checking ? "Checking…" : "Check connection"}</button><button className="soft-button" onClick={onRules}>Manage rules</button></div></section>
+    <PageTitle
+      eyebrow="Gmail intake"
+      title="Gmail project inbox"
+      text={reviewQueueSelected
+        ? "Rows render from saved snapshots while a bounded sweep checks for newly unanalyzed messages."
+        : "Search the company Gmail mailbox—or safe simulated messages—then review and copy each message to one independent project."}
+      state={reviewQueueSelected && isAdmin ? "Review queue" : gmailReady ? "In development" : "Setup required"}
+      action={<>
+        <button className="soft-button" onClick={onRules}>
+          <ListFilter size={15} /> Inbox & file rules
+        </button>
+        {canRefresh && <button
+          className="soft-button"
+          onClick={() => void loadMessages()}
+          disabled={loading || queueReadInFlight}
+        >
+          {loading || queueReadInFlight ? "Loading…" : <><RefreshCw size={15} /> Refresh</>}
+        </button>}
+        {!reviewQueueSelected && !canRefresh && <button className="primary-button" onClick={onGoogleSetup}>
+          <Building2 size={15} /> Google setup
+        </button>}
+      </>}
+    />
+    <section className={`inbox-connection inbox-state-strip ${gmailReady ? "ready" : ""}`}>
+      <Mail size={18} />
+      <div className="inbox-state-copy">
+        <strong>{reviewQueueSelected
+          ? "Stored inbox review queue"
+          : gmailReady
+            ? connectionText
+            : "Workspace Gmail connection required"}</strong>
+        <span>{reviewQueueSelected
+          ? gmailReady
+            ? "Stored rows remain available while the bounded sweep checks Gmail for newly unanalyzed messages."
+            : "Stored rows remain available. Connect Workspace Gmail to sweep for newly unanalyzed messages."
+          : workspace?.simulation
+          ? "Sample messages only. No Google account is connected and nothing is sent to Google."
+          : gmailReady
+            ? "Messages load only after your direct action; filing remains review-first and keeps Inbox."
+            : connectionText}</span>
+        <span className="inbox-safety-copy">
+          <ShieldCheck size={14} />
+          Suggestions only: {rules.filter((rule) => rule.enabled).length} enabled rules can recommend a destination, but you must choose the exact project and approve every copy.
+        </span>
+      </div>
+      <div className="inbox-state-actions">
+        <button className="soft-button" onClick={() => void checkGmailConnection(true)} disabled={checking}>
+          {checking ? "Checking…" : "Check connection"}
+        </button>
+        <button className="soft-button" onClick={onRules}>Manage rules</button>
+      </div>
+    </section>
     {error && <p className="workspace-missing">{error}</p>}
     <div className="inbox-layout">
       <section className="panel message-list">
-        <header className="live-inbox-toolbar"><div><label>Mailbox<select value={bucket} onChange={(event) => { clearTriageSuggestions(); onBucket(event.target.value as InboxBucket); }} disabled={loading}><option value="inbox">Inbox</option><option value="intake">FCI/Intake</option><option value="needs-review">FCI/Needs Review</option><option value="filed">FCI/Filed</option></select></label><label>Search this Gmail mailbox<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="e.g. from:vendor@example.com" disabled={loading} /></label><small className="gmail-search-help">Use Gmail search terms such as <b>from:</b>, <b>subject:</b>, or a project number.</small></div><div className="workspace-actions">{(analysisLoading || analysisCoverage) && <span className="gmail-search-help" role="status" aria-live="polite">{analysisLoading ? "Checking inbox analysis…" : analysisCoverage?.message}</span>}{analysisCoverage?.terminationReason === "older-pending" && <button className="soft-button" type="button" onClick={() => void runInboxAnalysis(analysisCoverage.nextPageToken ?? undefined)} aria-busy={analysisLoading} aria-disabled={analysisLoading}>{analysisLoading ? "Checking older…" : "Check older"}</button>}{labelReady === false && bucket !== "inbox" && <button className="soft-button" onClick={() => void prepareLabels()} disabled={loading}>Prepare FCI labels</button>}{triageReady && <button className="soft-button" onClick={() => void suggestWithAi()} disabled={visibleMessages.length === 0 || loading || triageLoading}><Sparkles size={15} /> {triageLoading ? "Suggesting…" : "Suggest with AI"}</button>}<button className="primary-button" onClick={() => void loadMessages()} disabled={!gmailReady || loading}>{loading ? "Loading…" : "Load messages"}</button></div></header>
-        {!gmailReady ? <OperationsEmptyState variant="inbox"><Mail size={25} /><h2>Connect Workspace Gmail to see the company inbox</h2><p>Until Workspace is available, switch the local app to Workspace simulation to test the full inbox workflow with sample data.</p><button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button></OperationsEmptyState> : visibleMessages.length === 0 ? <OperationsEmptyState variant="inbox"><Inbox size={25} /><h2>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h2><p>Choose a mailbox, optionally enter a Gmail search, and use the Load messages button above. The view is limited to 20 message summaries.</p></OperationsEmptyState> : visibleMessages.map((message, index) => {
-          const suggestion = inboxProjectSuggestion(message, projects, clients, rules);
-          const aiSuggestion = triageSuggestions[message.id];
-          const aiProject = aiSuggestion?.projectId
-            ? projects.find((project) => project.id === aiSuggestion.projectId)
-            : null;
-          return <article className="message-row live-message-row" key={message.id}><div className={`sender-dot s${index % 4}`}>{(message.from ?? "?").split(/[\s@<]+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div><div className="message-copy"><strong>{message.from ?? "Unknown sender"}</strong><h3>{message.subject ?? "(No subject)"}</h3><p>{message.snippet || "No preview available."}</p><div className={`inbox-project-suggestion ${suggestion.kind}`} title={suggestion.reason} aria-label={`${suggestion.text}. ${suggestion.reason}`}><ShieldCheck size={13} /> {suggestion.text}</div>{aiSuggestion && <div className={`inbox-project-suggestion ${aiProject ? "project" : "needs-review"}`} title={aiSuggestion.rationale} aria-label={`AI suggestion. ${aiProject ? `${aiProject.number} — ${aiProject.name}` : "No confident project match"}. ${aiSuggestion.confidence} confidence. ${aiSuggestion.rationale}`}><Sparkles size={13} aria-hidden="true" /> AI suggestion · {aiSuggestion.confidence} · {aiProject ? `${aiProject.number} — ${aiProject.name}` : "No confident project match"}{aiProject && <button className="soft-button" aria-label={`Accept AI suggestion for ${message.subject || "(No subject)"}: ${aiProject.number} — ${aiProject.name}; ${aiSuggestion.confidence} confidence; ${aiSuggestion.rationale}`} onClick={() => acceptTriageSuggestion(message, aiSuggestion)}>Accept</button>}</div>}</div><div className="message-actions"><span>{inboxDate(message.date)}</span><small>{message.to ? `To: ${message.to}` : workspace?.simulation ? "Simulated Workspace mailbox" : "Company Workspace mailbox"}</small><button className="primary-button" onClick={() => openFilingReview(message)}><FolderOpen size={14} /> Review & copy</button><button className="soft-button" onClick={() => openReplyComposer(message)}><Reply size={14} /> Draft reply</button></div></article>;
-        })}
+        <header className="live-inbox-toolbar">
+          <div>
+            <label>
+              Mailbox
+              <select
+                value={bucket}
+                onChange={(event) => {
+                  clearTriageSuggestions();
+                  onBucket(event.target.value as InboxBucket);
+                }}
+                disabled={loading}
+              >
+                <option value="inbox">Inbox</option>
+                <option value="intake">FCI/Intake</option>
+                <option value="needs-review">Needs review</option>
+                <option value="filed">FCI/Filed</option>
+              </select>
+            </label>
+            {reviewQueueSelected
+              ? <small className="gmail-search-help">
+                  App review queue · stored subject, sender, and received date
+                </small>
+              : <>
+                  <label>
+                    Search this Gmail mailbox
+                    <input
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="e.g. from:vendor@example.com"
+                      disabled={loading}
+                    />
+                  </label>
+                  <small className="gmail-search-help">
+                    Use Gmail search terms such as <b>from:</b>, <b>subject:</b>, or a project number.
+                  </small>
+                </>}
+          </div>
+          <div className="workspace-actions">
+            {reviewQueueSelected && accountSettled && isAdmin && reviewQueueState === "ready" && <span className="gmail-search-help">
+              {reviewTotalCount} {reviewTotalCount === 1 ? "message needs" : "messages need"} review
+            </span>}
+            {(analysisLoading || analysisCoverage) && <span className="gmail-search-help" role="status" aria-live="polite">
+              {analysisLoading ? "Checking inbox analysis…" : analysisCoverage?.message}
+            </span>}
+            {reviewQueueSelected && analysisFailed && !analysisLoading && <span className="gmail-search-help" role="status" aria-live="polite">
+              Inbox analysis did not finish — this list may be incomplete.
+            </span>}
+            {analysisCoverage?.terminationReason === "older-pending" && <button
+              className="soft-button"
+              type="button"
+              onClick={() => {
+                if (analysisLoading || queueReadInFlight) return;
+                void (
+                  reviewQueueSelected
+                    ? refreshReviewQueue(analysisCoverage.nextPageToken ?? undefined)
+                    : runInboxAnalysis(analysisCoverage.nextPageToken ?? undefined)
+                );
+              }}
+              aria-busy={analysisLoading || queueReadInFlight}
+              aria-disabled={analysisLoading || queueReadInFlight}
+            >
+              {analysisLoading || queueReadInFlight ? "Checking older…" : "Check older"}
+            </button>}
+            {!reviewQueueSelected && labelReady === false && bucket !== "inbox" && <button
+              className="soft-button"
+              onClick={() => void prepareLabels()}
+              disabled={loading}
+            >
+              Prepare FCI labels
+            </button>}
+            {!reviewQueueSelected && triageReady && <button
+              className="soft-button"
+              onClick={() => void suggestWithAi()}
+              disabled={visibleMessages.length === 0 || loading || triageLoading}
+            >
+              <Sparkles size={15} /> {triageLoading ? "Suggesting…" : "Suggest with AI"}
+            </button>}
+            {(!reviewQueueSelected || isAdmin) && <button
+              className="primary-button"
+              onClick={() => void loadMessages()}
+              disabled={!canRefresh || loading || queueReadInFlight}
+            >
+              {loading || queueReadInFlight ? "Loading…" : reviewQueueSelected ? "Refresh queue" : "Load messages"}
+            </button>}
+          </div>
+        </header>
+        {reviewQueueSelected
+          ? !accountSettled
+            ? <OperationsEmptyState variant="inbox">
+                <Inbox size={25} />
+                <h2>Checking review access…</h2>
+                <p>The app is confirming whether this Administrator-only queue is available.</p>
+              </OperationsEmptyState>
+            : !isAdmin
+              ? <OperationsEmptyState variant="inbox">
+                  <ShieldCheck size={25} />
+                  <h2>Administrator review queue</h2>
+                  <p>Only an Administrator can review or dismiss stored inbox analyses.</p>
+                </OperationsEmptyState>
+              : (reviewQueueState === "idle" || reviewQueueState === "loading")
+                && visibleReviewRows.length === 0
+                ? <OperationsEmptyState variant="inbox">
+                    <Inbox size={25} />
+                    <h2>Checking the review queue…</h2>
+                    <p>Loading stored review rows. A bounded sweep runs only when Gmail and AI analysis are available.</p>
+                  </OperationsEmptyState>
+                : reviewQueueState === "unavailable" && visibleReviewRows.length === 0
+                  ? <OperationsEmptyState variant="inbox">
+                      <Inbox size={25} />
+                      <h2>Review queue unavailable</h2>
+                      <p>Stored review rows could not be read. Refresh to try again.</p>
+                    </OperationsEmptyState>
+                  : visibleReviewRows.length === 0
+                ? <OperationsEmptyState variant="inbox">
+                    <Inbox size={25} />
+                    <h2
+                      tabIndex={-1}
+                      ref={(node) => {
+                        emptyReviewQueueRef.current = node;
+                        if (node && restoreEmptyQueueFocusRef.current) {
+                          const active = document.activeElement;
+                          if (!active || active === document.body) node.focus();
+                          restoreEmptyQueueFocusRef.current = false;
+                        }
+                      }}
+                    >
+                      {analysisFailed
+                        ? "Review queue may be incomplete"
+                        : "No messages need review"}
+                    </h2>
+                    <p>{analysisFailed
+                      ? "Inbox analysis did not finish, so Gmail was not swept. Refresh to retry."
+                      : analysisCoverage?.message ?? "Refresh to check the newest bounded inbox analysis sweep."}</p>
+                  </OperationsEmptyState>
+                : visibleReviewRows.map((row, index) => <article className="message-row live-message-row" key={row.id}>
+                    <div className={`sender-dot s${index % 4}`}>
+                      {(row.sender ?? "?")
+                        .split(/[\s@<]+/)
+                        .filter(Boolean)
+                        .map((part) => part[0])
+                        .slice(0, 2)
+                        .join("")
+                        .toUpperCase()}
+                    </div>
+                    <div className="message-copy">
+                      <strong>{row.sender ?? "Unknown sender"}</strong>
+                      <h3>{row.subject ?? "(No subject)"}</h3>
+                      <p>Stored analysis · review required</p>
+                    </div>
+                    <div className="message-actions">
+                      <span>{inboxDate(row.receivedAt)}</span>
+                      <small>App review queue</small>
+                      <button
+                        className="soft-button"
+                        ref={(node) => {
+                          if (node && focusReviewRowId === row.id) {
+                            // Only restore focus the dismissal actually dropped.
+                            // If the user moved on while the PATCH was in
+                            // flight, activeElement is a real element and
+                            // stealing it back would be worse than doing
+                            // nothing.
+                            const active = document.activeElement;
+                            if (!active || active === document.body) node.focus();
+                            setFocusReviewRowId(null);
+                          }
+                        }}
+                        onClick={() => {
+                          if (markingReviewId !== null) return;
+                          void markReviewed(row);
+                        }}
+                        aria-disabled={markingReviewId !== null}
+                        aria-label={`Mark reviewed: ${row.subject ?? row.sender ?? "message"}`}
+                      >
+                        <ShieldCheck size={14} />
+                        {markingReviewId === row.id ? "Marking…" : "Mark reviewed"}
+                      </button>
+                    </div>
+                  </article>)
+          : !gmailReady
+            ? <OperationsEmptyState variant="inbox">
+                <Mail size={25} />
+                <h2>Connect Workspace Gmail to see the company inbox</h2>
+                <p>Until Workspace is available, switch the local app to Workspace simulation to test the full inbox workflow with sample data.</p>
+                <button className="primary-button" onClick={onGoogleSetup}>Open Google Workspace setup</button>
+              </OperationsEmptyState>
+            : visibleMessages.length === 0
+              ? <OperationsEmptyState variant="inbox">
+                  <Inbox size={25} />
+                  <h2>{loading ? "Loading your inbox…" : "No messages loaded yet"}</h2>
+                  <p>Choose a mailbox, optionally enter a Gmail search, and use the Load messages button above. The view is limited to 20 message summaries.</p>
+                </OperationsEmptyState>
+              : visibleMessages.map((message, index) => {
+                  const suggestion = inboxProjectSuggestion(message, projects, clients, rules);
+                  const aiSuggestion = triageSuggestions[message.id];
+                  const aiProject = aiSuggestion?.projectId
+                    ? projects.find((project) => project.id === aiSuggestion.projectId)
+                    : null;
+                  return <article className="message-row live-message-row" key={message.id}>
+                    <div className={`sender-dot s${index % 4}`}>
+                      {(message.from ?? "?").split(/[\s@<]+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}
+                    </div>
+                    <div className="message-copy">
+                      <strong>{message.from ?? "Unknown sender"}</strong>
+                      <h3>{message.subject ?? "(No subject)"}</h3>
+                      <p>{message.snippet || "No preview available."}</p>
+                      <div className={`inbox-project-suggestion ${suggestion.kind}`} title={suggestion.reason} aria-label={`${suggestion.text}. ${suggestion.reason}`}>
+                        <ShieldCheck size={13} /> {suggestion.text}
+                      </div>
+                      {aiSuggestion && <div
+                        className={`inbox-project-suggestion ${aiProject ? "project" : "needs-review"}`}
+                        title={aiSuggestion.rationale}
+                        aria-label={`AI suggestion. ${aiProject ? `${aiProject.number} — ${aiProject.name}` : "No confident project match"}. ${aiSuggestion.confidence} confidence. ${aiSuggestion.rationale}`}
+                      >
+                        <Sparkles size={13} aria-hidden="true" /> AI suggestion · {aiSuggestion.confidence} · {aiProject ? `${aiProject.number} — ${aiProject.name}` : "No confident project match"}
+                        {aiProject && <button
+                          className="soft-button"
+                          aria-label={`Accept AI suggestion for ${message.subject || "(No subject)"}: ${aiProject.number} — ${aiProject.name}; ${aiSuggestion.confidence} confidence; ${aiSuggestion.rationale}`}
+                          onClick={() => acceptTriageSuggestion(message, aiSuggestion)}
+                        >
+                          Accept
+                        </button>}
+                      </div>}
+                    </div>
+                    <div className="message-actions">
+                      <span>{inboxDate(message.date)}</span>
+                      <small>{message.to ? `To: ${message.to}` : workspace?.simulation ? "Simulated Workspace mailbox" : "Company Workspace mailbox"}</small>
+                      <button className="primary-button" onClick={() => openFilingReview(message)}>
+                        <FolderOpen size={14} /> Review & copy
+                      </button>
+                      <button className="soft-button" onClick={() => openReplyComposer(message)}>
+                        <Reply size={14} /> Draft reply
+                      </button>
+                    </div>
+                  </article>;
+                })}
       </section>
-      <aside className="panel inbox-summary"><div className="summary-icon"><Mail size={20} /></div><h2>Inbox status</h2><p>{gmailReady ? `Showing ${visibleMessages.length} loaded message${visibleMessages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.` : "Workspace Gmail is not connected yet."}</p><dl className="inbox-status-list"><div><dt>Provider</dt><dd>{workspace?.simulation ? "Local Workspace simulation" : workspace?.connectionAccount ?? "Not connected"}</dd></div><div><dt>Message limit</dt><dd>20 summaries</dd></div><div><dt>Filing protection</dt><dd>Exact project required</dd></div></dl><hr /><h3>Keep it organized</h3><ul className="inbox-organization"><li>Use only FCI/Intake, FCI/Needs Review, and FCI/Filed labels.</li><li>Use project numbers for the safest match.</li><li>Store the permanent email and attachments in that project’s Shared Drive folder.</li></ul><small>{workspace?.simulation ? "Simulation mode · no Google access" : "Google Workspace mode"}</small><small>Inbox is retained after filing</small></aside>
+      <aside className="panel inbox-summary">
+        <div className="summary-icon"><Mail size={20} /></div>
+        <h2>Inbox status</h2>
+        <p>{reviewQueueSelected
+          ? reviewQueueState === "ready"
+            ? `${reviewTotalCount} stored ${reviewTotalCount === 1 ? "message needs" : "messages need"} review.`
+            : reviewQueueState === "unavailable"
+              ? "The stored review queue is unavailable."
+              : "Checking the stored review queue."
+          : gmailReady
+            ? `Showing ${visibleMessages.length} loaded message${visibleMessages.length === 1 ? "" : "s"} from ${inboxBucketLabels[bucket]}.`
+            : "Workspace Gmail is not connected yet."}</p>
+        <dl className="inbox-status-list">
+          <div>
+            <dt>Provider</dt>
+            <dd>{reviewQueueSelected ? "App database" : workspace?.simulation ? "Local Workspace simulation" : workspace?.connectionAccount ?? "Not connected"}</dd>
+          </div>
+          <div>
+            <dt>{reviewQueueSelected ? "Queue count" : "Message limit"}</dt>
+            <dd>{reviewQueueSelected
+              ? reviewQueueState === "ready"
+                ? reviewTotalCount
+                : "Unavailable"
+              : "20 summaries"}</dd>
+          </div>
+          <div>
+            <dt>Filing protection</dt>
+            <dd>Exact project required</dd>
+          </div>
+        </dl>
+        <hr />
+        <h3>Keep it organized</h3>
+        <ul className="inbox-organization">
+          <li>FCI/Intake and FCI/Filed remain Gmail labels; Needs review is the app’s stored analysis queue.</li>
+          <li>Use project numbers for the safest match.</li>
+          <li>Store the permanent email and attachments in that project’s Shared Drive folder.</li>
+        </ul>
+        <small>{workspace?.simulation ? "Simulation mode · no Google access" : "Google Workspace mode"}</small>
+        <small>Inbox is retained after filing</small>
+      </aside>
     </div>
-    {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
-    {replyMessage && <GmailReplyModal message={replyMessage} body={replyBody} saving={replySaving} onBody={setReplyBody} onSave={saveReplyDraft} onClose={closeReplyComposer} />}
+    {filingMessage && <GmailFilingModal
+      message={filingMessage}
+      projects={projects}
+      projectId={filingProjectId}
+      preview={filingPreview}
+      loading={filingLoading}
+      submitting={filingSubmitting}
+      onProject={(projectId) => {
+        setFilingProjectId(projectId);
+        setFilingPreview(null);
+      }}
+      onPreview={previewGmailFiling}
+      onConfirm={confirmGmailFiling}
+      onClose={closeFilingReview}
+    />}
+    {replyMessage && <GmailReplyModal
+      message={replyMessage}
+      body={replyBody}
+      saving={replySaving}
+      onBody={setReplyBody}
+      onSave={saveReplyDraft}
+      onClose={closeReplyComposer}
+    />}
   </>;
 }

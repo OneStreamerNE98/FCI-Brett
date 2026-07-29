@@ -494,11 +494,16 @@ test("inbox keeps one primary load action and exposes semantic status details", 
   await expect(titleActionButtons).toHaveCount(2);
   for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
-    expect(await titleActions.evaluate((element) => getComputedStyle(element).flexWrap)).toBe("nowrap");
-    expect(await titleActionButtons.evaluateAll((buttons) => {
-      const tops = buttons.map((button) => button.getBoundingClientRect().top);
-      return Math.max(...tops) - Math.min(...tops) < 1;
-    })).toBe(true);
+    // Reflow after a viewport change is asynchronous, so a one-shot geometry
+    // read can land mid-reflow and see a transient second row. Retry until
+    // layout settles; genuinely wrapped actions still fail after the timeout.
+    await expect(async () => {
+      expect(await titleActions.evaluate((element) => getComputedStyle(element).flexWrap)).toBe("nowrap");
+      expect(await titleActionButtons.evaluateAll((buttons) => {
+        const tops = buttons.map((button) => button.getBoundingClientRect().top);
+        return Math.max(...tops) - Math.min(...tops) < 1;
+      })).toBe(true);
+    }).toPass({ timeout: 10_000 });
   }
 
   const loadMessages = page.getByRole("button", { name: "Load messages", exact: true });

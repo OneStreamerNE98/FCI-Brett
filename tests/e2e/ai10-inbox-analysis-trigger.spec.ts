@@ -249,3 +249,268 @@ test("a failed refresh clears an earlier caught-up result instead of leaving sta
   await expect(page.getByText("You're caught up", { exact: true })).toHaveCount(0);
   expect(analysisRequests).toBe(2);
 });
+
+test("Needs review renders the stored queue, continues bounded coverage, and dismisses without a Gmail label read", async ({ page }) => {
+  await mockInbox(page, true);
+  const calls: Array<{ method: string; body: unknown }> = [];
+  const gmailQueueReads: string[] = [];
+  let queueRows = [{
+    id: "mail-item-ai10-review",
+    subject: "FCI TEST stored queue subject",
+    sender: "Stored Sender <stored@example.test>",
+    receivedAt: Date.parse("2026-07-28T13:00:00.000Z"),
+  }];
+  let postCalls = 0;
+  page.on("request", (request) => {
+    if (
+      request.url().includes("/integrations/google/gmail/messages")
+      && request.url().includes("label=needs-review")
+      && !request.url().includes("verification=status")
+    ) {
+      gmailQueueReads.push(request.url());
+    }
+  });
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    const method = route.request().method();
+    const body = method === "GET"
+      ? null
+      : route.request().postDataJSON();
+    calls.push({ method, body });
+    if (method === "GET") {
+      await fulfillJson(route, {
+        rows: queueRows,
+        totalCount: queueRows.length,
+      });
+      return;
+    }
+    if (method === "PATCH") {
+      const update = body as { id?: string };
+      queueRows = queueRows.filter((row) => row.id !== update.id);
+      await fulfillJson(route, {
+        id: update.id,
+        status: "dismissed",
+      });
+      return;
+    }
+    postCalls += 1;
+    await fulfillJson(route, postCalls === 1
+      ? {
+          terminationReason: "older-pending",
+          message: "Older messages not yet analyzed",
+          nextPageToken: "ai10-queue-next-page",
+        }
+      : {
+          terminationReason: "caught-up",
+          message: "You're caught up",
+        });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText("FCI TEST stored queue subject", { exact: true })).toBeVisible();
+  await expect(page.getByText(
+    "Stored Sender <stored@example.test>",
+    { exact: true },
+  )).toBeVisible();
+  await expect(page.getByText("1 stored message needs review.", { exact: true })).toBeVisible();
+  await expect(page.getByText(
+    "Older messages not yet analyzed",
+    { exact: true },
+  )).toBeVisible();
+  expect(calls.slice(0, 2).map(({ method }) => method)).toEqual(["POST", "GET"]);
+  expect(gmailQueueReads).toEqual([]);
+
+  await page.getByRole("button", { name: "Check older" }).click();
+  await expect(page.getByText("You're caught up", { exact: true })).toBeVisible();
+  expect(calls[2]).toEqual({
+    method: "POST",
+    body: { pageToken: "ai10-queue-next-page" },
+  });
+  expect(calls[3]?.method).toBe("GET");
+
+  await page.getByRole("button", {
+    name: "Mark reviewed: FCI TEST stored queue subject",
+  }).click();
+  await expect(page.getByText("FCI TEST stored queue subject", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("No messages need review", { exact: true })).toBeVisible();
+  await expect(page.getByText("0 stored messages need review.", { exact: true })).toBeVisible();
+  expect(calls.at(-2)).toEqual({
+    method: "PATCH",
+    body: { id: "mail-item-ai10-review" },
+  });
+  expect(calls.at(-1)?.method).toBe("GET");
+  expect(gmailQueueReads).toEqual([]);
+});
+
+test("Needs review stays indeterminate until its stored queue read settles", async ({ page }) => {
+  await mockInbox(page, true);
+  let releaseQueue: (() => void) | null = null;
+  const queueReleased = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    if (route.request().method() === "POST") {
+      await fulfillJson(route, {
+        terminationReason: "caught-up",
+        message: "You're caught up",
+      });
+      return;
+    }
+    await queueReleased;
+    await fulfillJson(route, { rows: [], totalCount: 0 });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText("Checking the review queue…", { exact: true })).toBeVisible();
+  await expect(page.getByText("No messages need review", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("0 stored messages need review.", { exact: true })).toHaveCount(0);
+  releaseQueue?.();
+  await expect(page.getByText("No messages need review", { exact: true })).toBeVisible();
+  await expect(page.getByText("0 stored messages need review.", { exact: true })).toBeVisible();
+});
+
+test("Needs review read failures stay unavailable instead of fabricating an empty queue", async ({ page }) => {
+  await mockInbox(page, true);
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    if (route.request().method() === "POST") {
+      await fulfillJson(route, {
+        terminationReason: "caught-up",
+        message: "You're caught up",
+      });
+      return;
+    }
+    await fulfillJson(route, { error: "queue_unavailable" }, 503);
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText("Review queue unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByText("The stored review queue is unavailable.", { exact: true })).toBeVisible();
+  await expect(page.getByText("No messages need review", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("0 stored messages need review.", { exact: true })).toHaveCount(0);
+});
+
+test("connected non-admins cannot refresh the Administrator-only review queue", async ({ page }) => {
+  await mockInbox(page, true, { isAdmin: false });
+  let analysisRequests = 0;
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    analysisRequests += 1;
+    await fulfillJson(route, { rows: [], totalCount: 0 });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText("Administrator review queue", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Refresh", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Refresh queue", exact: true })).toHaveCount(0);
+  expect(analysisRequests).toBe(0);
+});
+
+test("missing-key Needs review loads stored rows without claiming or starting a sweep", async ({ page }) => {
+  await mockInbox(page, true, { keyState: "Missing" });
+  const methods: string[] = [];
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    methods.push(route.request().method());
+    await fulfillJson(route, {
+      rows: [{
+        id: "missing-key-stored-row",
+        subject: "FCI TEST stored while AI is unavailable",
+        sender: "stored@example.test",
+        receivedAt: Date.parse("2026-07-28T13:00:00.000Z"),
+      }],
+      totalCount: 1,
+    });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText(
+    "FCI TEST stored while AI is unavailable",
+    { exact: true },
+  )).toBeVisible();
+  await expect(page.getByText(
+    "Loading stored review rows. A bounded sweep runs only when Gmail and AI analysis are available.",
+    { exact: true },
+  )).toHaveCount(0);
+  await expect(page.getByText("Checking inbox analysis…", { exact: true })).toHaveCount(0);
+  expect(methods).toEqual(["GET"]);
+});
+
+test("a stale queue read cannot replace a newer Gmail bucket load", async ({ page }) => {
+  await mockInbox(page, true);
+  let releaseQueue: (() => void) | null = null;
+  const queueReleased = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    if (route.request().method() === "POST") {
+      await fulfillJson(route, {
+        terminationReason: "caught-up",
+        message: "You're caught up",
+      });
+      return;
+    }
+    await queueReleased;
+    await fulfillJson(route, {
+      rows: [{
+        id: "stale-queue-row",
+        subject: "FCI TEST stale queue row",
+        sender: "stale@example.test",
+        receivedAt: Date.parse("2026-07-28T13:00:00.000Z"),
+      }],
+      totalCount: 1,
+    });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText("Checking the review queue…", { exact: true })).toBeVisible();
+  await page.getByLabel("Mailbox").selectOption("inbox");
+  await page.getByRole("button", { name: "Load messages", exact: true }).click();
+  await expect(page.getByText(message.subject, { exact: true })).toBeVisible();
+  releaseQueue?.();
+  await expect(page.getByText(message.subject, { exact: true })).toBeVisible();
+  await expect(page.getByText("FCI TEST stale queue row", { exact: true })).toHaveCount(0);
+});
+
+test("a delayed Mark reviewed response cannot restore the queue after a mailbox switch", async ({ page }) => {
+  await mockInbox(page, true);
+  let releaseDismissal: (() => void) | null = null;
+  const dismissalReleased = new Promise<void>((resolve) => {
+    releaseDismissal = resolve;
+  });
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    const method = route.request().method();
+    if (method === "POST") {
+      await fulfillJson(route, {
+        terminationReason: "caught-up",
+        message: "You're caught up",
+      });
+      return;
+    }
+    if (method === "PATCH") {
+      await dismissalReleased;
+      await fulfillJson(route, {
+        id: "delayed-review-row",
+        status: "dismissed",
+      });
+      return;
+    }
+    await fulfillJson(route, {
+      rows: [{
+        id: "delayed-review-row",
+        subject: "FCI TEST delayed review row",
+        sender: "delayed@example.test",
+        receivedAt: Date.parse("2026-07-28T13:00:00.000Z"),
+      }],
+      totalCount: 1,
+    });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText("FCI TEST delayed review row", { exact: true })).toBeVisible();
+  await page.getByRole("button", {
+    name: "Mark reviewed: FCI TEST delayed review row",
+  }).click();
+  await page.getByLabel("Mailbox").selectOption("inbox");
+  await page.getByRole("button", { name: "Load messages", exact: true }).click();
+  await expect(page.getByText(message.subject, { exact: true })).toBeVisible();
+  releaseDismissal?.();
+  await expect(page.getByText(message.subject, { exact: true })).toBeVisible();
+  await expect(page.getByText("FCI TEST delayed review row", { exact: true })).toHaveCount(0);
+});

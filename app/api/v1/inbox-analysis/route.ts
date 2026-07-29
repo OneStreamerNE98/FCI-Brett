@@ -36,6 +36,8 @@ import {
   type GmailMessageListPage,
   type GmailMessageSummary,
 } from "../../../lib/google-gmail";
+import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { noStoreJson, noStoreResponse } from "../../../lib/no-store-json";
 import {
   simulationInboxAnalysisFixture,
@@ -99,6 +101,25 @@ type InboxAnalysisWorkspace = Readonly<{
   client: InboxAnalysisGmailClient;
 }>;
 
+type NeedsReviewArrival = Readonly<{
+  gmailMessageId: string;
+  subject: string;
+  receivedAt: number | null;
+}>;
+
+type NeedsReviewNotification = Readonly<{
+  gmailMessageId: string;
+  subject: string;
+  count: number;
+}>;
+
+/** Newest subject first, then the remainder as a count, inside the notifier's
+ * 180-character summary budget. One card per sweep, never one per message. */
+export function coalescedReviewSubject(subject: string, count: number) {
+  const newest = subject.length > 120 ? `${subject.slice(0, 119)}…` : subject;
+  return count > 1 ? `${newest} · plus ${count - 1} more need review` : newest;
+}
+
 function runtimeValue(
   environment: Readonly<Record<string, string | undefined>>,
   name: string,
@@ -124,6 +145,19 @@ function parseSweepRequest(body: Record<string, unknown>) {
   } catch {
     return null;
   }
+}
+
+function parseMarkReviewedRequest(body: Record<string, unknown>) {
+  if (
+    Object.keys(body).length !== 1
+    || typeof body.id !== "string"
+    || !body.id.trim()
+    || body.id.length > 512
+    || /[\u0000-\u001f\u007f]/.test(body.id)
+  ) {
+    return null;
+  }
+  return Object.freeze({ id: body.id });
 }
 
 function singleLineSnapshot(value: string | null, maximum: number) {
@@ -298,12 +332,16 @@ function rowBase(input: {
 async function saveMailItem(
   repository: ReturnType<typeof createD1MailItemRepository>,
   item: MailItem,
+  mode: "upsert" | "insert-if-absent" = "upsert",
 ) {
-  const result = await repository.upsert(item);
+  const result = mode === "insert-if-absent"
+    ? await repository.insertIfAbsent(item)
+    : await repository.upsert(item);
+  if (result.outcome === "saved") return true;
   if (
-    result.outcome === "saved"
+    result.outcome === "existing-preserved"
     || result.outcome === "terminal-preserved"
-  ) return;
+  ) return false;
   // A project/client can be removed between the candidate SELECT and the
   // guarded repository write. Preserve the analysis row and its watermark,
   // but never retain a relationship the database could not verify.
@@ -315,13 +353,17 @@ async function saveMailItem(
       ? null
       : item.approvedProjectId,
   });
-  const fallback = await repository.upsert(withoutStaleReferences);
+  const fallback = mode === "insert-if-absent"
+    ? await repository.insertIfAbsent(withoutStaleReferences)
+    : await repository.upsert(withoutStaleReferences);
+  if (fallback.outcome === "saved") return true;
   if (
-    fallback.outcome !== "saved"
+    fallback.outcome !== "existing-preserved"
     && fallback.outcome !== "terminal-preserved"
   ) {
     throw new Error("Inbox analysis could not persist a relationship-safe row.");
   }
+  return false;
 }
 
 async function saveSkipped(input: {
@@ -456,7 +498,7 @@ async function saveAnalysis(input: {
   const relationshipClientId = isMailItemRelationshipId(input.analysis.clientId)
     ? input.analysis.clientId
     : null;
-  await saveMailItem(input.repository, normalizeStoredMailItem({
+  const item = normalizeStoredMailItem({
     ...rowBase({
       connectionKey: input.connectionKey,
       messageId: input.analysisInput.summary.id,
@@ -476,7 +518,22 @@ async function saveAnalysis(input: {
     attemptedLabelDefinitionVersion: null,
     failureAttempts: 0,
     errorCode: null,
-  }));
+  });
+  const saved = await saveMailItem(
+    input.repository,
+    item,
+    input.existing ? "upsert" : "insert-if-absent",
+  );
+  return Object.freeze({
+    item,
+    inserted: input.existing === null && saved,
+    // A message "arrives" in the queue whenever a write moves it into
+    // needs-review from anywhere else — a first insert, or a recovery from a
+    // failed row (deadline, abort, Gmail read, daily cap). Only a row that was
+    // already needs-review is a refresh and owes no notification.
+    enteredReview: saved
+      && (input.existing === null || input.existing.status !== "needs-review"),
+  });
 }
 
 function needsReanalysis(item: MailItem) {
@@ -532,6 +589,7 @@ export async function runInboxAnalysisSweep(input: {
   now?: () => number;
   workspace?: InboxAnalysisWorkspace;
   provider?: AssistantProvider;
+  onNeedsReviewBatch?: (notification: NeedsReviewNotification) => void;
 }): Promise<SweepResult> {
   // The reusable sweep owns the kill switch as well as the HTTP route. A
   // future trigger cannot accidentally reach Gmail, OpenAI, or mail_items by
@@ -569,6 +627,37 @@ export async function runInboxAnalysisSweep(input: {
     : null;
   if (!config.simulation && !provider) {
     throw new Error("The configured AI provider key is unavailable.");
+  }
+
+  // Reconcile before discovery. A needs-review row is never re-queued, so any
+  // retirement that failed mid-flight — a racing filing, a transient write, a
+  // failed fallback — would strand its message in the queue permanently. Each
+  // of those interleavings had its own compensating action, and each one could
+  // itself fail. This single idempotent statement makes the whole class
+  // self-healing instead: whatever went wrong last sweep, a filed message is
+  // out of the queue by the start of the next one. The per-item retirements
+  // remain as fast paths, no longer as guarantees.
+  try {
+    await input.database.prepare(
+      `UPDATE mail_items
+          SET status = 'skipped-noise',
+              match_reason = 'Filed before this review row was retired.',
+              attempted_label_definition_version = NULL,
+              failure_attempts = 0,
+              error_code = NULL,
+              updated_at = ?
+        WHERE connection_key = ?
+          AND status = 'needs-review'
+          AND EXISTS (
+            SELECT 1
+              FROM gmail_file_archives
+             WHERE gmail_file_archives.connection_key = mail_items.connection_key
+               AND gmail_file_archives.gmail_message_id = mail_items.gmail_message_id
+               AND gmail_file_archives.status = 'filed')`,
+    ).bind(now(), config.connectionKey).run();
+  } catch {
+    // Best effort: a reconciliation failure must not stop the sweep, and the
+    // next sweep runs it again.
   }
 
   const backlog = await repository.listRetryableAnalysisRows(
@@ -688,6 +777,7 @@ export async function runInboxAnalysisSweep(input: {
   const deadline = AbortSignal.timeout(INBOX_ANALYSIS_SWEEP_DEADLINE_MS);
   const effectiveSignal = AbortSignal.any([input.signal, deadline]);
   let nextWorkIndex = 0;
+  const needsReviewArrivals: NeedsReviewArrival[] = [];
 
   const processWork = async (item: AnalysisWork) => {
     const checkedAt = now();
@@ -727,7 +817,11 @@ export async function runInboxAnalysisSweep(input: {
         existing: item.existing,
         errorCode: "gmail_read_failed",
         now: checkedAt,
-        countsAgainstAttemptBudget: false,
+        // Deliberately counted. An exempt read failure is pinned at one attempt
+        // forever, and a message deleted from Gmail 404s on every future read —
+        // so the row would sit in the retry backlog permanently, block
+        // "caught-up" for good, and once enough accumulate consume the whole
+        // page budget and stop new mail being discovered at all.
       });
       return false;
     }
@@ -804,7 +898,7 @@ export async function runInboxAnalysisSweep(input: {
       });
       return false;
     }
-    await saveAnalysis({
+    const saved = await saveAnalysis({
       repository,
       connectionKey: config.connectionKey,
       analysisInput,
@@ -813,6 +907,80 @@ export async function runInboxAnalysisSweep(input: {
       contentHash,
       now: checkedAt,
     });
+    // The pre-filter's isAlreadyFiled ran before the Gmail read and the provider
+    // call, so a person can file this message while the analysis is in flight.
+    // The filing batch would have updated zero rows (this row did not exist
+    // yet), and a current needs-review row is never re-swept, so the message
+    // would sit in the queue forever. Re-check after the write: whichever of the
+    // two paths commits second retires the row, so every interleaving converges.
+    // Everything here runs AFTER the analysis is durably committed, so it must
+    // not throw: the worker's catch would call saveFailure with the pre-sweep
+    // snapshot, whose preservesReview is false, overwriting the paid-for
+    // analysis with a bare failed row. A failure here leaves the committed
+    // needs-review row standing, and the emit-time re-read still re-verifies
+    // before any card is sent.
+    let filedWhileAnalyzing = false;
+    try {
+      filedWhileAnalyzing = await isAlreadyFiled(
+        input.database,
+        config.connectionKey,
+        item.messageId,
+      );
+    } catch {
+      // Filed state unknown. Treat the row as the review arrival it was
+      // committed as — the emit-time re-read verifies it again before any card
+      // is sent, so a transient read error costs nothing, whereas returning
+      // early here would silently drop a legitimate notification.
+      filedWhileAnalyzing = false;
+    }
+    if (filedWhileAnalyzing) {
+      try {
+        await saveSkipped({
+          repository,
+          connectionKey: config.connectionKey,
+          messageId: item.messageId,
+          summary: analysisInput.summary,
+          existing: saved.item,
+          reason: "already-filed",
+          contentHash,
+          now: checkedAt,
+        });
+      } catch {
+        // A needs-review row is never re-swept, so leaving it here would strand
+        // it exactly like the defect this re-check exists to prevent. Demote it
+        // to a retryable failure instead: the next sweep re-queues it, re-reads
+        // the archive, and retires it properly.
+        try {
+          await saveFailure({
+            repository,
+            connectionKey: config.connectionKey,
+            messageId: item.messageId,
+            summary: analysisInput.summary,
+            // Deliberately not `saved.item`: saveFailure preserves a
+            // needs-review status when handed a review row, which would leave
+            // this one stranded — a needs-review row is never re-queued. The
+            // message is filed, so its analysis is moot; what matters is that
+            // `failed` is retryable and the next sweep retires it properly.
+            existing: null,
+            errorCode: "analysis_retire_failed",
+            now: checkedAt,
+          });
+        } catch {
+          // Both the retirement and its fallback failed, so this message has no
+          // durable outcome. Report no progress: claiming it would let the
+          // continuation token advance past a message nothing has resolved.
+          return false;
+        }
+      }
+      return true;
+    }
+    if (saved.enteredReview) {
+      needsReviewArrivals.push({
+        gmailMessageId: saved.item.gmailMessageId,
+        subject: saved.item.subject ?? "Message subject unavailable",
+        receivedAt: saved.item.receivedAt ?? null,
+      });
+    }
     return true;
   };
 
@@ -864,6 +1032,80 @@ export async function runInboxAnalysisSweep(input: {
     },
   );
   await Promise.all(workers);
+
+  // One card per sweep, not one per message: a bootstrap sweep can move up to
+  // MAX_INBOX_ANALYSIS_MESSAGES rows into review at once, and a card apiece
+  // would burst the office space the moment an administrator opens the Inbox.
+  // Arrivals are collected as each worker finishes, but the card is emitted
+  // once here, so filing can retire a row in between. Re-read the queue state
+  // at emit time: a card must describe the queue as it is now, and its count
+  // must match. A row that cannot be re-read is kept — a card pointing at a
+  // queue is recoverable, a silently dropped one is not.
+  const pendingArrivals = [];
+  for (const arrival of needsReviewArrivals) {
+    let current;
+    try {
+      current = await repository.findByGmailMessageId(
+        config.connectionKey,
+        arrival.gmailMessageId,
+      );
+    } catch {
+      pendingArrivals.push(arrival);
+      continue;
+    }
+    if (current && current.status !== "needs-review") continue;
+    // The row can still read needs-review while the message is filed: if filing
+    // committed before this analysis inserted, its guarded UPDATE matched
+    // nothing. The archive is the authoritative filing record, so consult it
+    // too — a read failure here leaves the arrival counted, as above.
+    try {
+      if (await isAlreadyFiled(
+        input.database,
+        config.connectionKey,
+        arrival.gmailMessageId,
+      )) {
+        // The archive is authoritative and the row still reads needs-review, so
+        // the earlier retire never happened. Suppressing only the card would
+        // leave a filed message sitting in the queue; retire it here too.
+        try {
+          await saveSkipped({
+            repository,
+            connectionKey: config.connectionKey,
+            messageId: arrival.gmailMessageId,
+            summary: null,
+            existing: current,
+            reason: "already-filed",
+            contentHash: current?.contentHash ?? null,
+            now: now(),
+          });
+        } catch {
+          // The next sweep reconciles it; the card stays suppressed regardless.
+        }
+        continue;
+      }
+    } catch {
+      // Filed state unknown; keep the arrival rather than lose a real card.
+    }
+    pendingArrivals.push(arrival);
+  }
+  if (pendingArrivals.length > 0 && input.onNeedsReviewBatch) {
+    const newest = pendingArrivals.reduce((leader, candidate) =>
+      (candidate.receivedAt ?? 0) > (leader.receivedAt ?? 0) ? candidate : leader
+    );
+    try {
+      input.onNeedsReviewBatch({
+        gmailMessageId: newest.gmailMessageId,
+        subject: coalescedReviewSubject(
+          newest.subject,
+          pendingArrivals.length,
+        ),
+        count: pendingArrivals.length,
+      });
+    } catch {
+      // Chat delivery is advisory. A notification failure cannot undo or
+      // misreport the durable review rows that were already committed.
+    }
+  }
 
   const coverageComplete = !discoveryFailed && (hitWatermark || exhausted);
   if (coverageComplete) {
@@ -973,9 +1215,99 @@ export async function POST(request: NextRequest) {
         ? { pageToken: sweepRequest.pageToken }
         : {}),
       signal: request.signal,
+      onNeedsReviewBatch: (notification) => {
+        queueGoogleChatNotification(
+          {
+            eventType: "gmail.filing_review_needed",
+            entityId: notification.gmailMessageId,
+            subject: notification.subject,
+          },
+          auth.user.email,
+          request.nextUrl.origin,
+        );
+      },
     }));
   } catch (error) {
     if (request.signal.aborted) throw error;
     return noStoreResponse(gmailErrorResponse(error));
+  }
+}
+
+function reviewQueueRow(item: MailItem) {
+  return Object.freeze({
+    id: item.id,
+    subject: item.subject,
+    sender: item.sender,
+    receivedAt: item.receivedAt,
+  });
+}
+
+export async function GET(request: NextRequest) {
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+
+  try {
+    await ensureWorkspaceSchema();
+    const database = env.DB as unknown as D1Database;
+    const repository = createD1MailItemRepository(database);
+    const connectionKey = getGoogleRuntimeConfig().connectionKey;
+    const page = await repository.listByStatusPage(
+      connectionKey,
+      "needs-review",
+      500,
+    );
+    return noStoreJson({
+      rows: page.items.map(reviewQueueRow),
+      totalCount: page.totalCount,
+    });
+  } catch {
+    return noStoreJson(
+      { error: "The inbox review queue could not be loaded." },
+      500,
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return noStoreResponse(originError);
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const rateLimitResponse = enforceDevelopmentRequestRateLimit(
+    "inbox-analysis",
+    auth.user.email,
+  );
+  if (rateLimitResponse) return noStoreResponse(rateLimitResponse);
+
+  const parsed = await parseBoundedJsonObject(request, {
+    maximumBytes: MAX_INBOX_ANALYSIS_BODY_BYTES,
+    invalidMessage: "Inbox review update must be a valid JSON object.",
+    tooLargeMessage: "Inbox review update is too large.",
+  });
+  if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
+  const update = parseMarkReviewedRequest(parsed.body);
+  if (!update) {
+    return noStoreJson({ error: "Choose one valid inbox review row." }, 400);
+  }
+
+  try {
+    await ensureWorkspaceSchema();
+    const database = env.DB as unknown as D1Database;
+    const repository = createD1MailItemRepository(database);
+    const connectionKey = getGoogleRuntimeConfig().connectionKey;
+    const dismissed = await repository.dismissNeedsReview(
+      update.id,
+      connectionKey,
+      Date.now(),
+    );
+    if (!dismissed) {
+      return noStoreJson({ error: "Inbox review row not found." }, 404);
+    }
+    return noStoreJson({ id: update.id, status: "dismissed" });
+  } catch {
+    return noStoreJson(
+      { error: "Inbox review row could not be marked reviewed." },
+      500,
+    );
   }
 }
