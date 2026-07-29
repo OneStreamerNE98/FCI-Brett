@@ -1179,19 +1179,48 @@ revoke operation at all** (`app/ports/integration-metadata.ts:113-127`). Today, 
 connection, an offboarded admin's knowledge of the connected account outlives their access;
 under per-user Gmail this becomes each departing employee keeping a live mailbox connection.
 Flagged twice by research (July 27) and owned by no packet until now.
-**Do:** add a revoke operation to the integration-metadata port and both adapters
-(delete/invalidate the stored refresh-token credential and mark the connection
-`revoked`, never hard-deleting the connection row — audit history survives); call it from
-`disableUser` in the same transaction; where a Google-side revocation endpoint call is
-appropriate, it is **fire-and-recorded** (an integration event row), never silently assumed.
-Simulation mode short-circuits the Google call and still records the event.
+**AMENDED July 29, 2026 — owner decision, after Codex correctly refused the original
+scope.** The first draft said "call it from `disableUser`" without saying *which*
+connections. There is exactly one shared connection today and **no ownership field in
+either store**: PostgreSQL `integration_connections.created_by_user_id` and D1
+`google_connections.createdBy` both record who *configured* the connection, not who owns
+it. Wiring revocation to `disableUser` would therefore take Gmail, Drive, Sheets and
+Calendar offline for the whole company the moment the administrator who set Google up is
+disabled. **Owner decision: disabling an administrator must NOT revoke the shared company
+connector.** Codex proposed adding `owner_type`/`owner_user_id`; declined for now, because
+per-user connections are blocked on durable identity (identity is a hosting-supplied header,
+`workspace-auth.ts:64`), so ownership columns would be a model nothing can enforce — the
+same decorative-authorization trap EDIT-01 exposed. That work belongs to the per-user Gmail
+track. Also corrected: D1 stores the refresh token **inline** on the connection row
+(`google_connections.refresh_token_ciphertext`), so there is no separate credential row to
+delete there — it must be tombstoned in place. `revoked_at` already exists on that row and
+the reconnect upsert already clears it (`d1/google-oauth-persistence.ts:110`), so the
+fresh-consent transition is half-built.
+**Do:** add a revoke operation to the integration-metadata port and both adapters —
+tombstone the stored refresh token (in place on D1; the credential record on PostgreSQL) and
+mark the connection `revoked`, **never hard-deleting the connection row** so audit history
+survives, with the two adapters' observable behaviour identical and pinned in both suites.
+Prove the fresh-consent transition on both stores: a revoked connection requires the full
+OAuth flow and can never resurrect the old token. Give it a real consumer in the same PR —
+an explicit admin **Disconnect Google** action on the existing
+`app/api/v1/integrations/google/connection/route.ts` (admin-only, same-origin, bounded,
+audited); this packet must not ship a capability with no caller, the mistake SET-06 spent a
+whole packet correcting. Where a Google-side revocation endpoint call is appropriate it is
+**fire-and-recorded** (an integration event row), never silently assumed. Simulation mode
+short-circuits the Google call and still records the event.
+**Do NOT:** call revoke from `disableUser`, or add ownership columns. Disable-triggered
+revocation is **deferred until connections carry owners**, which is the per-user Gmail
+track's job; that deferral is deliberate and recorded here rather than left implicit.
 **Files:** `app/ports/integration-metadata.ts`, the D1 and PostgreSQL integration-metadata
-adapters, `app/adapters/postgres/admin-access-persistence-repository.ts`,
-`infrastructure/postgres/least-privilege.sql` (the credential table needs its missing grant),
-tests.
-**Accept:** disabling a user leaves zero usable stored credentials for them; the connection
-row survives with a `revoked` status and an audit event; re-enabling requires a fresh consent
-flow, not resurrection of the old token; simulation proves the path with no live Google call;
+adapters, `app/api/v1/integrations/google/connection/route.ts`,
+`infrastructure/postgres/least-privilege.sql` (narrow connection/credential/event grants for
+this path only — not broad ciphertext access; `tests/postgres-least-privilege-source.test.mjs`
+pins the grant lists and must be re-pointed consciously), tests.
+**Accept:** revoking leaves zero usable stored credentials for that connection; the
+connection row survives with a `revoked` status and an audit event; reconnecting requires a
+fresh consent flow and cannot resurrect the old token, pinned on both stores; **disabling an
+employee leaves the shared connector untouched** — pin this explicitly, it is the decision
+this packet turns on; simulation proves the path with no live Google call;
 `npm test` + `npm run test:e2e` + `npm run lint` named with outcomes.
 **Effort:** small-medium. **Sequencing:** independent now; **must land no later than the
 per-user OAuth connect flow** in the per-user Gmail track.
