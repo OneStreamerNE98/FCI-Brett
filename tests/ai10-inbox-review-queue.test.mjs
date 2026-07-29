@@ -742,7 +742,9 @@ test("a transient filed-state read error still counts the arrival", async () => 
   const realPrepare = database.prepare.bind(database);
   let archiveReads = 0;
   database.prepare = (sql) => {
-    if (sql.includes("FROM gmail_file_archives")) {
+    // Count only the isAlreadyFiled probes, not the sweep's reconciliation
+    // statement, which also names the archive table in a subquery.
+    if (sql.trim().startsWith("SELECT id") && sql.includes("gmail_file_archives")) {
       archiveReads += 1;
       // Fail only the post-write re-check, not the pre-filter.
       if (archiveReads > 1) throw new Error("Injected archive read failure.");
@@ -835,7 +837,9 @@ test("an archive-confirmed row is retired at emit, not merely silenced", async (
   const realPrepare = database.prepare.bind(database);
   let archiveReads = 0;
   database.prepare = (sql) => {
-    if (sql.includes("FROM gmail_file_archives")) {
+    // Count only the isAlreadyFiled probes, not the sweep's reconciliation
+    // statement, which also names the archive table in a subquery.
+    if (sql.trim().startsWith("SELECT id") && sql.includes("gmail_file_archives")) {
       archiveReads += 1;
       // Fail the post-write re-check only; the emit-time read succeeds.
       if (archiveReads === 2) throw new Error("Injected archive read failure.");
@@ -856,6 +860,42 @@ test("an archive-confirmed row is retired at emit, not merely silenced", async (
     );
   } finally {
     database.prepare = realPrepare;
+    database.close();
+  }
+});
+
+test("a sweep reconciles any review row whose message was already filed", async () => {
+  // The structural close of a class the per-item compensations could not
+  // guarantee: a needs-review row is never re-queued, so ANY retirement that
+  // failed mid-flight — racing filing, transient write, failed fallback —
+  // stranded its message in the queue forever. This row stands for every one of
+  // those interleavings: whatever failed last time, the next sweep retires it.
+  const database = new ReviewQueueDatabase();
+  try {
+    database.insertReview({ id: "stranded-row", messageId: "gmail-stranded" });
+    database.database.prepare(
+      `INSERT INTO gmail_file_archives (id, connection_key, gmail_message_id, status)
+       VALUES (?, ?, ?, 'filed')`,
+    ).run("archive-stranded", CONNECTION_KEY, "gmail-stranded");
+    assert.equal(database.rows()[0].status, "needs-review");
+
+    const client = gmailClient([]);
+    const provider = {
+      async complete() {
+        throw new Error("Reconciliation must not need the provider.");
+      },
+    };
+    await route.runInboxAnalysisSweep(sweepInput(database, client, provider));
+
+    const row = database.rows()[0];
+    assert.equal(
+      row.status,
+      "skipped-noise",
+      "a filed message must be out of the queue by the next sweep",
+    );
+    assert.equal(row.failure_attempts, 0);
+    assert.equal(row.error_code, null);
+  } finally {
     database.close();
   }
 });

@@ -629,6 +629,37 @@ export async function runInboxAnalysisSweep(input: {
     throw new Error("The configured AI provider key is unavailable.");
   }
 
+  // Reconcile before discovery. A needs-review row is never re-queued, so any
+  // retirement that failed mid-flight — a racing filing, a transient write, a
+  // failed fallback — would strand its message in the queue permanently. Each
+  // of those interleavings had its own compensating action, and each one could
+  // itself fail. This single idempotent statement makes the whole class
+  // self-healing instead: whatever went wrong last sweep, a filed message is
+  // out of the queue by the start of the next one. The per-item retirements
+  // remain as fast paths, no longer as guarantees.
+  try {
+    await input.database.prepare(
+      `UPDATE mail_items
+          SET status = 'skipped-noise',
+              match_reason = 'Filed before this review row was retired.',
+              attempted_label_definition_version = NULL,
+              failure_attempts = 0,
+              error_code = NULL,
+              updated_at = ?
+        WHERE connection_key = ?
+          AND status = 'needs-review'
+          AND EXISTS (
+            SELECT 1
+              FROM gmail_file_archives
+             WHERE gmail_file_archives.connection_key = mail_items.connection_key
+               AND gmail_file_archives.gmail_message_id = mail_items.gmail_message_id
+               AND gmail_file_archives.status = 'filed')`,
+    ).bind(now(), config.connectionKey).run();
+  } catch {
+    // Best effort: a reconciliation failure must not stop the sweep, and the
+    // next sweep runs it again.
+  }
+
   const backlog = await repository.listRetryableAnalysisRows(
     config.connectionKey,
     INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
