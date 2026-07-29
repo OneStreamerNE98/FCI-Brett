@@ -953,8 +953,27 @@ export async function runInboxAnalysisSweep(input: {
   // One card per sweep, not one per message: a bootstrap sweep can move up to
   // MAX_INBOX_ANALYSIS_MESSAGES rows into review at once, and a card apiece
   // would burst the office space the moment an administrator opens the Inbox.
-  if (needsReviewArrivals.length > 0 && input.onNeedsReviewBatch) {
-    const newest = needsReviewArrivals.reduce((leader, candidate) =>
+  // Arrivals are collected as each worker finishes, but the card is emitted
+  // once here, so filing can retire a row in between. Re-read the queue state
+  // at emit time: a card must describe the queue as it is now, and its count
+  // must match. A row that cannot be re-read is kept — a card pointing at a
+  // queue is recoverable, a silently dropped one is not.
+  const pendingArrivals = [];
+  for (const arrival of needsReviewArrivals) {
+    let current;
+    try {
+      current = await repository.findByGmailMessageId(
+        config.connectionKey,
+        arrival.gmailMessageId,
+      );
+    } catch {
+      pendingArrivals.push(arrival);
+      continue;
+    }
+    if (!current || current.status === "needs-review") pendingArrivals.push(arrival);
+  }
+  if (pendingArrivals.length > 0 && input.onNeedsReviewBatch) {
+    const newest = pendingArrivals.reduce((leader, candidate) =>
       (candidate.receivedAt ?? 0) > (leader.receivedAt ?? 0) ? candidate : leader
     );
     try {
@@ -962,9 +981,9 @@ export async function runInboxAnalysisSweep(input: {
         gmailMessageId: newest.gmailMessageId,
         subject: coalescedReviewSubject(
           newest.subject,
-          needsReviewArrivals.length,
+          pendingArrivals.length,
         ),
-        count: needsReviewArrivals.length,
+        count: pendingArrivals.length,
       });
     } catch {
       // Chat delivery is advisory. A notification failure cannot undo or

@@ -658,3 +658,68 @@ test("a message filed while its analysis is in flight never lands in the queue",
     database.close();
   }
 });
+
+test("a row filed after its analysis but before the sweep ends raises no card", async () => {
+  // Review-bot P2 (PR #238): arrivals accumulate as workers finish, but the
+  // coalesced card is emitted once at the end of the sweep. Filing can retire a
+  // row in that gap, and the card must not describe a message that has already
+  // left the queue — nor over-count the ones that remain.
+  const database = new ReviewQueueDatabase();
+  const filedLater = summary("gmail-filed-after-analysis", {
+    date: "2026-07-28T11:00:00.000Z",
+  });
+  const staysPending = summary("gmail-stays-pending", {
+    date: "2026-07-28T09:00:00.000Z",
+  });
+  const client = gmailClient([filedLater, staysPending]);
+  const notifications = [];
+  const provider = {
+    async complete(request) {
+      const messageId = request.output.schema.properties.messageId.enum[0];
+      if (messageId === staysPending.id) {
+        // Both messages are analyzed concurrently. Wait until the other row is
+        // durable, then retire it exactly as the filing route's guarded batch
+        // would — landing inside the window between its write and the emit.
+        for (let attempt = 0; attempt < 500; attempt += 1) {
+          const stored = database.database.prepare(
+            "SELECT status FROM mail_items WHERE gmail_message_id = ?",
+          ).get(filedLater.id);
+          if (stored) {
+            database.database.prepare(
+              `UPDATE mail_items SET status = 'accepted', approved_project_id = ?,
+                 attempted_label_definition_version = NULL, failure_attempts = 0,
+                 error_code = NULL
+               WHERE connection_key = ? AND gmail_message_id = ?`,
+            ).run(PROJECT_ID, CONNECTION_KEY, filedLater.id);
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+      return { kind: "output", value: providerOutput(messageId) };
+    },
+  };
+  try {
+    await route.runInboxAnalysisSweep(sweepInput(database, client, provider, {
+      onNeedsReviewBatch(notification) {
+        notifications.push(notification);
+      },
+    }));
+    assert.equal(
+      database.rows().find(({ gmail_message_id }) =>
+        gmail_message_id === filedLater.id
+      ).status,
+      "accepted",
+      "the filed row really was retired before the emit",
+    );
+    assert.deepEqual(notifications, [
+      {
+        gmailMessageId: staysPending.id,
+        subject: staysPending.subject,
+        count: 1,
+      },
+    ], "the card names only the arrival still owed a decision");
+  } finally {
+    database.close();
+  }
+});
