@@ -537,6 +537,11 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
           : "The message could not be marked reviewed.",
         "error",
       );
+      // This click bumped the request id and so invalidated any refresh already
+      // in flight, which returns without touching state. Without this re-sync a
+      // failed dismissal can strand the queue in its loading state — both
+      // refresh controls disabled, the row undismissable — until a full reload.
+      await loadReviewQueue();
     } finally {
       markReviewedInFlightRef.current = false;
       setMarkingReviewId(null);
@@ -901,7 +906,8 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
                       ref={(node) => {
                         emptyReviewQueueRef.current = node;
                         if (node && restoreEmptyQueueFocusRef.current) {
-                          node.focus();
+                          const active = document.activeElement;
+                          if (!active || active === document.body) node.focus();
                           restoreEmptyQueueFocusRef.current = false;
                         }
                       }}
@@ -936,7 +942,13 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
                         className="soft-button"
                         ref={(node) => {
                           if (node && focusReviewRowId === row.id) {
-                            node.focus();
+                            // Only restore focus the dismissal actually dropped.
+                            // If the user moved on while the PATCH was in
+                            // flight, activeElement is a real element and
+                            // stealing it back would be worse than doing
+                            // nothing.
+                            const active = document.activeElement;
+                            if (!active || active === document.body) node.focus();
                             setFocusReviewRowId(null);
                           }
                         }}

@@ -615,7 +615,13 @@ test("AI-10 zero-call deadline aborts remain retryable without consuming the thr
   }
 });
 
-test("AI-10 repeated Gmail read failures do not consume the provider-attempt budget", async () => {
+test("AI-10 bounds Gmail read failures to the durable attempt budget", async () => {
+  // Deliberately NOT exempt. An exempt read failure pins the row at one attempt
+  // forever, and a message deleted from Gmail 404s on every future read, so the
+  // row would sit in the retry backlog permanently, block "caught-up" for good,
+  // and once ~81 accumulate consume the whole page budget and stop new mail
+  // being discovered at all. The zero-provider-call exemptions that remain
+  // (deadline, request abort, daily cap) all self-heal on a later sweep.
   const database = new InboxAnalysisDatabase();
   try {
     const message = summary("message-gmail-read-failure");
@@ -626,20 +632,21 @@ test("AI-10 repeated Gmail read failures do not consume the provider-attempt bud
     };
     const provider = fixtureProvider();
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const result = await route.runInboxAnalysisSweep(
-        sweepInput(database, gmail, provider),
-      );
-      assert.equal(result.terminationReason, "older-pending");
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
     }
 
-    assert.equal(gmail.calls.reads.length, 3);
+    assert.equal(
+      gmail.calls.reads.length,
+      3,
+      "the row stops being re-queued once its budget is spent",
+    );
     assert.equal(provider.requests.length, 0);
     const pending = database.rows();
     assert.equal(pending.length, 1);
     assert.equal(pending[0].status, "failed");
     assert.equal(pending[0].error_code, "gmail_read_failed");
-    assert.equal(pending[0].failure_attempts, 1);
+    assert.equal(pending[0].failure_attempts, 3);
   } finally {
     database.close();
   }
@@ -876,8 +883,8 @@ test("AI-10 capped rows do not poison the attempt budget of a later transient fa
     assert.equal(overwritten.error_code, "gmail_read_failed");
     assert.equal(
       overwritten.failure_attempts,
-      1,
-      "a transient failure overwriting a capped row must not inherit an exhausted budget",
+      2,
+      "a counted failure over a capped row advances one step, never inheriting an exhausted budget",
     );
 
     gmail.getMessageAnalysisInput = readGmail;

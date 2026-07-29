@@ -786,7 +786,11 @@ export async function runInboxAnalysisSweep(input: {
         existing: item.existing,
         errorCode: "gmail_read_failed",
         now: checkedAt,
-        countsAgainstAttemptBudget: false,
+        // Deliberately counted. An exempt read failure is pinned at one attempt
+        // forever, and a message deleted from Gmail 404s on every future read —
+        // so the row would sit in the retry backlog permanently, block
+        // "caught-up" for good, and once enough accumulate consume the whole
+        // page budget and stop new mail being discovered at all.
       });
       return false;
     }
@@ -878,17 +882,27 @@ export async function runInboxAnalysisSweep(input: {
     // yet), and a current needs-review row is never re-swept, so the message
     // would sit in the queue forever. Re-check after the write: whichever of the
     // two paths commits second retires the row, so every interleaving converges.
-    if (await isAlreadyFiled(input.database, config.connectionKey, item.messageId)) {
-      await saveSkipped({
-        repository,
-        connectionKey: config.connectionKey,
-        messageId: item.messageId,
-        summary: analysisInput.summary,
-        existing: saved.item,
-        reason: "already-filed",
-        contentHash,
-        now: checkedAt,
-      });
+    // Everything here runs AFTER the analysis is durably committed, so it must
+    // not throw: the worker's catch would call saveFailure with the pre-sweep
+    // snapshot, whose preservesReview is false, overwriting the paid-for
+    // analysis with a bare failed row. A failure here leaves the committed
+    // needs-review row standing, and the emit-time re-read still re-verifies
+    // before any card is sent.
+    try {
+      if (await isAlreadyFiled(input.database, config.connectionKey, item.messageId)) {
+        await saveSkipped({
+          repository,
+          connectionKey: config.connectionKey,
+          messageId: item.messageId,
+          summary: analysisInput.summary,
+          existing: saved.item,
+          reason: "already-filed",
+          contentHash,
+          now: checkedAt,
+        });
+        return true;
+      }
+    } catch {
       return true;
     }
     if (saved.enteredReview) {
