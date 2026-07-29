@@ -2242,10 +2242,23 @@ rules, and draft-PR workflow as Workstreams A–D.
 pipeline the app already mirrors.
 **Do:** Owner creates the lead form in Forms UI (name, address, rooms, flooring type,
 preferred contact) linked to a response Sheet; a checklist-11 row records the form and
-Sheet IDs. The app polls the response Sheet on its existing scheduled Sheets reads
-(existing `spreadsheets` scope, no webhook), maps rows to lead records review-first
-(new-lead queue, not silent creation), and marks processed rows by row index +
-timestamp watermark. Duplicate handling reuses SET-25's matcher.
+Sheet IDs. **Trigger corrected July 29, 2026 — the original premise was false.** This
+packet said the app would poll "on its existing scheduled Sheets reads"; there are no
+scheduled Sheets reads and there is no scheduler at all. `worker/index.ts` exports no
+`scheduled` handler and may not (repo law, mechanically enforced by
+`tests/ai-outbound-guard.test.mjs`), and the mirror sync is a request-triggered
+`POST /api/v1/integrations/google/sheets/sync`. Dispatching against the original text
+would have had the implementer either invent a scheduler that violates repo law or
+discover mid-build that the machinery it was told to reuse does not exist.
+Use the AI-10 precedent instead: read on demand inside a request, bounded, with a durable
+watermark. An explicit admin **Check for new form responses** action reads the response
+Sheet (existing `spreadsheets` scope, no webhook) with a bounded row budget per call;
+processed rows are marked by row index + timestamp watermark, so the watermark — not a
+timer — is what makes repeat reads cheap and idempotent. Rows map to lead records
+review-first (new-lead queue, not silent creation). Duplicate handling reuses SET-25's
+matcher. Background polling stays deferred to WS-12's Gmail-History work, which is where
+the scheduler question is actually owned; when it lands, only the trigger changes and the
+mapping, watermark and review queue are untouched.
 **Accept:** ingestion tests with fixture response rows (mapping, watermark, duplicate
 branch, malformed-row tolerance); review-first queue asserted (no auto-created lead
 without confirmation); simulation e2e. **Effort:** small. **Cost:** $0.
@@ -3533,8 +3546,10 @@ remain the only dispatch authority).
   where staff already read mail; strategic option, not scheduled.
 
 **Orchestrator to-dos (not Codex):**
-- Amend GI-01 before any dispatch — its "existing scheduled Sheets reads" premise is false
-  (July 27 audit).
+- ~~Amend GI-01 before any dispatch~~ — **done July 29, 2026.** Its "existing scheduled
+  Sheets reads" premise was false (no scheduler exists and repo law forbids one); the
+  packet now specifies an on-demand admin-triggered read with a durable watermark, on the
+  AI-10 precedent. GI-01 is dispatchable.
 - Nightly-review program: nights 2–5 and 9–10 pending the owner's kickoff; its specs live
   outside the repo — owner to decide enshrine vs retire before the next night runs.
 
