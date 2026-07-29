@@ -16,8 +16,10 @@ import type { Page, test as PlaywrightTest } from "@playwright/test";
 // local run failed four workspace-setup-stepper tests and one accessibility test
 // that all pass in isolation, while CI on the same commit failed a different spec.
 //
-// Every real reset must therefore be paired with this restore, in a finally block
-// so an assertion failure cannot leak the wiped state forward.
+// Every real reset must therefore be paired with recovery, and that recovery must be
+// registered through registerSimulationResetRecovery below — NOT written as an in-test
+// `finally`. A `finally` shares the test's own timeout budget, so a test that times out is
+// abandoned before it runs, which is the one case where the registry most needs restoring.
 
 // Exactly the three steps PR #206 landed and that specs downstream of a reset are
 // known to tolerate. Deliberately NOT drive/templates/ensure: the seed baseline
