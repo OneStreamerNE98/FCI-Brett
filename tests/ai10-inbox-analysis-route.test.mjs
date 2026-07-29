@@ -1154,7 +1154,9 @@ test("AI-10 contains one item-level prefilter failure and still persists a bound
     const prepare = database.prepare.bind(database);
     let injected = false;
     database.prepare = (sql) => {
-      if (!injected && /FROM gmail_file_archives/u.test(sql)) {
+      // The item prefilter probe specifically — not the sweep's reconciliation
+      // statement, which also names the archive table in a subquery.
+      if (!injected && /^SELECT id\s+FROM gmail_file_archives/u.test(sql.trim())) {
         injected = true;
         throw new Error("Injected archive prefilter failure.");
       }
@@ -1406,8 +1408,14 @@ test("AI-10 writer placement, request bounds, and Gmail read-only surface stay m
   assert.deepEqual(
     analysisWriters,
     [{
+      // Raw-SQL flag consciously flipped: the sweep opens with one idempotent
+      // set-based reconciliation that retires review rows whose message is
+      // already filed. It is expressible only as a statement (a cross-table
+      // EXISTS over gmail_file_archives), and it closes the stranded-row class
+      // that four rounds of per-item compensations could not guarantee. Every
+      // other mail-item write here still goes through the repository.
       path: "app/api/v1/inbox-analysis/route.ts",
-      writesRawMailItems: false,
+      writesRawMailItems: true,
       mutatesThroughRepository: true,
     }, {
       // Consciously widened (review bot P1, PR #238): filing is the decision the
