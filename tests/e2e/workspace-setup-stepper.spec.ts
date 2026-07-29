@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { seedWorkspaceBlueprint, type WorkspaceBlueprint } from "../../app/lib/workspace-blueprint";
+import { restoreSimulationWorkspace } from "./simulation-workspace";
 
 const e2eOrigin = process.env.FCI_E2E_ORIGIN ?? "http://localhost:4173";
 
@@ -3042,28 +3043,37 @@ test("Stage 3 maps raw simulation resource states to provenance-backed operation
   await expect(setupStage(page, 3).getByText("Simulated", { exact: true })).toHaveCount(0);
 });
 
-test("simulation reset removes the registry-backed resource and refreshes the creation list", async ({ page }, testInfo) => {
+test("simulation reset removes the registry-backed resource and refreshes the creation list", async ({ page }) => {
   await page.unroute("**/api/v1/integrations/google/setup/resources");
   await page.goto("/settings?section=google-workspace");
   await setStageExpanded(page, 2, true);
   await setStageExpanded(page, 3, true);
 
-  const spreadsheetDetails = creationRow(page, "spreadsheets").locator("details");
-  await spreadsheetDetails.locator("summary").click();
-  const directoryRow = spreadsheetDetails.locator("li").filter({ hasText: "Client directory spreadsheet" });
-  if (testInfo.retry === 0) {
+  try {
+    const spreadsheetDetails = creationRow(page, "spreadsheets").locator("details");
+    await spreadsheetDetails.locator("summary").click();
+    const directoryRow = spreadsheetDetails.locator("li").filter({ hasText: "Client directory spreadsheet" });
+    // Unconditional again: this test used to skip its own precondition on retry
+    // (`if (testInfo.retry === 0)`) because its first attempt destroyed the very
+    // state the precondition reads. The finally below repairs that instead, so
+    // the precondition is real on every attempt.
     await expect(directoryRow).toContainText("App-managed");
     await expect(directoryRow).toContainText("Created");
-  }
-  await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
+    await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
 
-  const stageTwo = setupStage(page, 2);
-  await expect(stageTwo.getByText("Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state.", { exact: true })).toBeVisible();
-  await stageTwo.getByRole("button", { name: "Reset simulation data" }).click();
-  await setStageExpanded(page, 3, true);
-  await expect(directoryRow).toContainText("Not configured");
-  await expect(directoryRow).not.toContainText("App-managed");
-  await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
+    const stageTwo = setupStage(page, 2);
+    await expect(stageTwo.getByText("Simulation runs locally, and nothing is sent to Google. Reset restores the isolated sample Gmail, Calendar, Drive, and Sheets state.", { exact: true })).toBeVisible();
+    await stageTwo.getByRole("button", { name: "Reset simulation data" }).click();
+    await setStageExpanded(page, 3, true);
+    await expect(directoryRow).toContainText("Not configured");
+    await expect(directoryRow).not.toContainText("App-managed");
+    await expect(directoryRow.getByText("Simulated", { exact: true })).toHaveCount(0);
+  } finally {
+    // This is the REAL reset endpoint: it wipes the shared simulation registry
+    // every later spec reads. Restore in finally so a failed assertion above
+    // cannot leak the wiped state forward through the rest of the run.
+    await restoreSimulationWorkspace(page);
+  }
 });
 
 test("simulation creation journey adopts Drive, ensures roots, spreadsheets, and templates, then renames an owner folder", async ({ page }) => {
