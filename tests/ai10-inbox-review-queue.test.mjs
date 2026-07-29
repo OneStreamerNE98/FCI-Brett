@@ -813,3 +813,49 @@ test("a failed retirement leaves the row retryable rather than stranded", async 
     database.close();
   }
 });
+
+test("an archive-confirmed row is retired at emit, not merely silenced", async () => {
+  // Review-bot P2 (PR #238): if the post-write archive read fails but the
+  // emit-time read succeeds, suppressing only the card would leave a filed
+  // message sitting in the queue. The emit retires it as well.
+  const database = new ReviewQueueDatabase();
+  const message = summary("gmail-emit-retire");
+  const client = gmailClient([message]);
+  const notifications = [];
+  const provider = {
+    async complete(request) {
+      const messageId = request.output.schema.properties.messageId.enum[0];
+      database.database.prepare(
+        `INSERT INTO gmail_file_archives (id, connection_key, gmail_message_id, status)
+         VALUES (?, ?, ?, 'filed')`,
+      ).run("archive-emit-retire", CONNECTION_KEY, message.id);
+      return { kind: "output", value: providerOutput(messageId) };
+    },
+  };
+  const realPrepare = database.prepare.bind(database);
+  let archiveReads = 0;
+  database.prepare = (sql) => {
+    if (sql.includes("FROM gmail_file_archives")) {
+      archiveReads += 1;
+      // Fail the post-write re-check only; the emit-time read succeeds.
+      if (archiveReads === 2) throw new Error("Injected archive read failure.");
+    }
+    return realPrepare(sql);
+  };
+  try {
+    await route.runInboxAnalysisSweep(sweepInput(database, client, provider, {
+      onNeedsReviewBatch(notification) {
+        notifications.push(notification);
+      },
+    }));
+    assert.deepEqual(notifications, [], "a filed message owes no card");
+    assert.equal(
+      database.rows()[0].status,
+      "skipped-noise",
+      "a filed message must not be left sitting in the queue",
+    );
+  } finally {
+    database.prepare = realPrepare;
+    database.close();
+  }
+});

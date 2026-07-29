@@ -935,8 +935,10 @@ export async function runInboxAnalysisSweep(input: {
             now: checkedAt,
           });
         } catch {
-          // Storage is unavailable; the sweep reports failure rather than
-          // claiming coverage, and the row is reconciled on a later run.
+          // Both the retirement and its fallback failed, so this message has no
+          // durable outcome. Report no progress: claiming it would let the
+          // continuation token advance past a message nothing has resolved.
+          return false;
         }
       }
       return true;
@@ -1030,7 +1032,26 @@ export async function runInboxAnalysisSweep(input: {
         input.database,
         config.connectionKey,
         arrival.gmailMessageId,
-      )) continue;
+      )) {
+        // The archive is authoritative and the row still reads needs-review, so
+        // the earlier retire never happened. Suppressing only the card would
+        // leave a filed message sitting in the queue; retire it here too.
+        try {
+          await saveSkipped({
+            repository,
+            connectionKey: config.connectionKey,
+            messageId: arrival.gmailMessageId,
+            summary: null,
+            existing: current,
+            reason: "already-filed",
+            contentHash: current?.contentHash ?? null,
+            now: now(),
+          });
+        } catch {
+          // The next sweep reconciles it; the card stays suppressed regardless.
+        }
+        continue;
+      }
     } catch {
       // Filed state unknown; keep the arrival rather than lose a real card.
     }
