@@ -485,9 +485,10 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.doesNotMatch(tools, /current UTC date|timeZone: "UTC"/u);
   assert.match(assistantRoute, /findByEmail\(auth\.user\.email\)[\s\S]*timeZone,/u);
   assert.match(assistant, /useState<AssistantTab>\("today"\)/u);
-  assert.match(assistant, /const tabs: AssistantTab\[\] = \["today", "ask"\]/u);
+  assert.match(assistant, /const tabs: AssistantTab\[\] = \["today", "ask", "tasks"\]/u);
   assert.match(assistant, /<section role="tabpanel" id="assistant-today-panel" aria-labelledby="assistant-today-tab" hidden=\{tab !== "today"\}>\{tab === "today" && <TodayPanel \/>\}<\/section>/u);
   assert.match(assistant, /<section role="tabpanel" id="assistant-ask-panel" aria-labelledby="assistant-ask-tab" hidden=\{tab !== "ask"\}>\{tab === "ask" && <>/u);
+  assert.match(assistant, /<section role="tabpanel" id="assistant-tasks-panel" aria-labelledby="assistant-tasks-tab" hidden=\{tab !== "tasks"\}>\{tab === "tasks" && <TaskManagementPanel projects=\{projects\} \/>\}<\/section>/u);
   assert.match(panel, /fetch\("\/api\/v1\/assistant\/today"/u);
   assert.match(panel, /const loadIdRef = useRef\(0\);/u);
   assert.match(panel, /const loadId = \+\+loadIdRef\.current;/u);

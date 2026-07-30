@@ -7,6 +7,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 const expectedAssistantComponents = new Map([
   ["AssistantHelpPanel.tsx", ["AssistantHelpPanel"]],
+  ["TaskManagementPanel.tsx", ["TaskManagementPanel"]],
   ["AssistantView.tsx", ["AssistantView"]],
   ["TodayPanel.tsx", ["TodayPanel"]],
 ]);
