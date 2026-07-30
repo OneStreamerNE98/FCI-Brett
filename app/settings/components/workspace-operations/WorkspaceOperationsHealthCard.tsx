@@ -227,7 +227,9 @@ export function WorkspaceOperationsHealthCard({ isAdmin }: { isAdmin: boolean })
           </div>
         </div>
         {events.length === 0
-          ? <p className={styles.empty}>No integration event is recorded for this connection. Resetting simulation clears this history.</p>
+          ? <p className={styles.empty}>{payload?.simulation
+              ? "No integration event is recorded for this connection. Resetting simulation clears this history."
+              : "No integration event is recorded for this connection."}</p>
           : <OperationsDataTable
             className={styles.table}
             columns={EVENT_COLUMNS}

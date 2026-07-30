@@ -305,3 +305,31 @@ test("source pins the authorization order, SELECT-only route, Settings surface, 
   assert.match(rolloutGuide, /FCI\/Intake[\s\S]*FCI\/Needs Review[\s\S]*accumulate[\s\S]*no automated cleanup/iu);
   assert.match(settingsGuide, /Operations health[\s\S]*stuck Drive leases[\s\S]*failed Gmail archives[\s\S]*recent integration\s+activity/u);
 });
+
+test("the empty integration-activity state does not promise simulation reset in workspace mode", async () => {
+  // The card renders in BOTH runtime modes, so unconditional simulation copy would tell a
+  // live-connection admin that resetting simulation clears real Google history. The wording
+  // came from SET-09's spec line, which assumed a simulation-only surface; WS-10's card is
+  // not one. The component already gates its toolbar sentence on payload.simulation, so the
+  // empty state must gate the same way.
+  const card = await read("app/settings/components/workspace-operations/WorkspaceOperationsHealthCard.tsx");
+  // Two styles.empty paragraphs exist — the failures one and the events one. Select the
+  // events block by its own copy rather than by position, so a reorder cannot silently
+  // point this assertion at the wrong paragraph.
+  const emptyState = card
+    .split(/<p className=\{styles\.empty\}>/u)
+    .slice(1)
+    .map((segment) => segment.slice(0, segment.indexOf("</p>")))
+    .find((segment) => segment.includes("No integration event is recorded"));
+  assert.ok(emptyState, "the empty integration-activity state must still exist");
+  assert.match(
+    emptyState,
+    /payload\?\.simulation/u,
+    "the empty integration-activity state must gate its copy on payload.simulation",
+  );
+  assert.doesNotMatch(
+    card,
+    /\{"No integration event is recorded for this connection\. Resetting simulation clears this history\."\}|>No integration event is recorded for this connection\. Resetting simulation clears this history\.</u,
+    "simulation-reset copy must never render unconditionally",
+  );
+});
