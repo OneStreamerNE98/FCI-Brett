@@ -1,3 +1,7 @@
+// Explicit .ts extension: this is a value import, and the test loader resolves these
+// literally (app/domain/task.ts imports ./record-version.ts the same way).
+import { MAX_TASK_LIST_RESULTS } from "../domain/task.ts";
+
 export const TASK_MANAGEMENT_PATCH_KEYS = [
   "title",
   "details",
@@ -128,8 +132,14 @@ export function taskManagementPatch(
   return Object.keys(patch).length > 1 ? patch : null;
 }
 
+// The API enforces MAX_TASK_LIST_RESULTS as a hard ceiling — a request above it is
+// rejected outright (app/domain/task.ts:304), so the client cannot ask for one extra row
+// to detect truncation. A full page therefore means "there may be more", and the panel
+// says exactly that rather than presenting a capped list as the whole set.
+export const TASK_MANAGEMENT_RESULT_LIMIT = MAX_TASK_LIST_RESULTS;
+
 export function taskManagementSearch(filters: TaskManagementFilters) {
-  const search = new URLSearchParams({ limit: "200" });
+  const search = new URLSearchParams({ limit: String(TASK_MANAGEMENT_RESULT_LIMIT) });
   if (filters.status) search.set("status", filters.status);
   if (filters.assigneeEmail.trim()) {
     search.set("assigneeEmail", filters.assigneeEmail.trim().toLowerCase());

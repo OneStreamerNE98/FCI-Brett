@@ -9,8 +9,12 @@ import {
   taskManagementPatch,
   taskManagementSavedValue,
   taskManagementSearch,
+  TASK_MANAGEMENT_RESULT_LIMIT,
 } from "../app/assistant/task-management.ts";
-import { TASK_PATCH_KEYS as DOMAIN_TASK_PATCH_KEYS } from "../app/domain/task.ts";
+import {
+  MAX_TASK_LIST_RESULTS,
+  TASK_PATCH_KEYS as DOMAIN_TASK_PATCH_KEYS,
+} from "../app/domain/task.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -100,6 +104,22 @@ test("task filters map to the existing closed GET query without introducing an e
     }),
     "limit=200",
   );
+});
+
+test("a full page of task results is disclosed as possibly incomplete", async () => {
+  // The API rejects any limit above MAX_TASK_LIST_RESULTS, so the client cannot request
+  // one extra row to detect truncation — a full page is the only available signal, and
+  // the panel must not present it as the whole set. The default filter carries no status,
+  // so completed tasks occupy the same budget, and the server orders undated rows last
+  // (`ORDER BY due_date IS NULL, due_date, ...`), which makes a new undated task the
+  // first thing to disappear.
+  assert.equal(TASK_MANAGEMENT_RESULT_LIMIT, MAX_TASK_LIST_RESULTS);
+  const panel = await read("app/assistant/components/TaskManagementPanel.tsx");
+  assert.match(
+    panel,
+    /tasks\.length >= TASK_MANAGEMENT_RESULT_LIMIT \?[\s\S]{0,400}Showing the first \{TASK_MANAGEMENT_RESULT_LIMIT\} tasks/u,
+  );
+  assert.match(panel, /Tasks without a due date are listed last/u);
 });
 
 test("conflict helpers expose saved values and reject malformed task payloads", () => {

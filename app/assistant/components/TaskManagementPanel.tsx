@@ -34,6 +34,7 @@ import {
   taskManagementPatch,
   taskManagementSavedValue,
   taskManagementSearch,
+  TASK_MANAGEMENT_RESULT_LIMIT,
   type TaskManagementDraft,
   type TaskManagementFilters,
   type TaskManagementPatchKey,
@@ -490,14 +491,21 @@ export function TaskManagementPanel({
           ? <OperationsEmptyState variant="source">
               No tasks match these filters.
             </OperationsEmptyState>
-          : <OperationsActionableList
-              ariaLabel="Saved tasks"
-              columns={["Task", "Due", "Assignee", "Status", ""]}
-              headerClassName={styles.listHeader}
-              className={styles.list}
-            >
-              {taskRows}
-            </OperationsActionableList>}
+          : <>
+              {tasks.length >= TASK_MANAGEMENT_RESULT_LIMIT ? <p className={styles.truncationNotice} role="status">
+                Showing the first {TASK_MANAGEMENT_RESULT_LIMIT} tasks. There may be more —
+                narrow the filters to see them. Tasks without a due date are listed last, so
+                they are the first to fall outside this limit.
+              </p> : null}
+              <OperationsActionableList
+                ariaLabel="Saved tasks"
+                columns={["Task", "Due", "Assignee", "Status", ""]}
+                headerClassName={styles.listHeader}
+                className={styles.list}
+              >
+                {taskRows}
+              </OperationsActionableList>
+            </>}
 
     {editor ? <AccessibleOverlay
       ariaLabel={editor.mode === "create" ? "Create task" : `Edit task ${editor.task.title}`}
