@@ -101,6 +101,9 @@ test("DES-08d and AI-04 route every Today consumer through the shared bounded re
   assert.equal(TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT, 5);
   assert.match(dashboardRoute, /findByEmail\(auth\.user\.email\)/u);
   assert.match(dashboardRoute, /normalizeUserDisplayTimezone\(preferences\?\.displayTimezone\)/u);
-  assert.match(dashboardRoute, /dashboardData\(env\.DB, \{ now: generatedAt, timeZone \}\)/u);
+  // The call gained `simulation` so the filed-email count excludes simulation
+  // filings; the point this test pins — one shared bounded read, no second
+  // Today query — is unchanged (WS-18 review).
+  assert.match(dashboardRoute, /dashboardData\(env\.DB, \{ now: generatedAt, timeZone, simulation: google\.simulation \}\)/u);
   assert.match(assistantRoute, /findByEmail\(auth\.user\.email\)[\s\S]*createAssistantToolRegistry\(\{[\s\S]*timeZone,/u);
 });

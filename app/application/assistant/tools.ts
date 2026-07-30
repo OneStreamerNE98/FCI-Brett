@@ -1,4 +1,5 @@
 import { createD1TaskRepository } from "../../adapters/d1/task-repository";
+import { archiveScope } from "../archive-scope";
 import type { D1Database } from "../../adapters/d1/d1-database";
 import { defaultUserSettingsPreferences } from "../../lib/user-settings";
 import type { AssistantProviderToolDefinition } from "../../ports/assistant-provider";
@@ -27,6 +28,9 @@ type DriveSearchService = {
 type AssistantToolRegistryOptions = {
   database: D1Database;
   isAdmin: boolean;
+  // Environment scope for filed-email reads: simulation archives share the table
+  // with live ones, so live answers must not adopt them (WS-18 review).
+  simulation?: boolean;
   // The requesting office user's email. Evidence strings carrying EMPLOYEE emails
   // (lead owner, project manager, task assignee) apply the same office-identity
   // disclosure rule as the record routes: the actor's own email or a current office
@@ -164,6 +168,7 @@ export function createAssistantToolRegistry(
     if (email.toLowerCase() === actorEmail.toLowerCase()) return email;
     return officeIdentityLookup?.(email)?.email ?? "unavailable (not a current office identity)";
   };
+  const simulation = options.simulation === true;
   const now = options.now ?? Date.now;
 
   const searchRecordsTool = tool(
@@ -203,6 +208,7 @@ export function createAssistantToolRegistry(
       if (!projectId) return { evidence: [] };
       const context = await projectEvidence(database, projectId, {
         includeFinancials: isAdmin,
+        simulation,
       });
       return { evidence: context?.evidence ?? [] };
     },
@@ -408,10 +414,15 @@ export function createAssistantToolRegistry(
       ) {
         return { evidence: [] };
       }
+      // Project-keyed, not connection-keyed (WS-18) — but simulation archives
+      // share this table, so the environment scope keeps pretend filings out of
+      // live answers without narrowing reads to a single connection.
+      const archives = archiveScope(simulation, "a.connection_key");
       const conditions = [
         "a.status = 'filed'",
+        archives.clause,
       ];
-      const bindings: unknown[] = [];
+      const bindings: unknown[] = [...archives.bindings];
       if (projectId) {
         conditions.push("a.project_id = ?");
         bindings.push(projectId);

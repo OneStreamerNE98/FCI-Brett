@@ -63,11 +63,20 @@ test("counts filed emails across the business rather than one Google connection"
     read("app/application/dashboard-data.ts"),
   ]);
 
-  assert.doesNotMatch(dashboard, /getGoogleRuntimeConfig|connectionKey/);
-  assert.match(dashboard, /dashboardData\(env\.DB, \{ now: generatedAt, timeZone \}\)/);
+  // The count is business-wide, not per connection — but it must still exclude
+  // simulation filings, which share the table under their own connection. So the
+  // ban is on a connection KEY being threaded in, not on reading runtime mode
+  // (WS-18 review: the original blanket ban also forbade that isolation).
+  assert.doesNotMatch(dashboard, /connectionKey/);
+  assert.match(dashboard, /dashboardData\(env\.DB, \{ now: generatedAt, timeZone, simulation: google\.simulation \}\)/);
   assert.match(dashboard, /findByEmail\(auth\.user\.email\)/);
   assert.match(dashboardData, /gmail_file_archives WHERE status = 'filed'/);
-  assert.doesNotMatch(dashboardData, /connection_key|connectionKey/);
+  assert.doesNotMatch(dashboardData, /connectionKey/);
+  assert.doesNotMatch(
+    dashboardData,
+    /connection_key\s*=\s*\?\s*AND/u,
+    "the count must not be scoped to one connection",
+  );
 });
 
 test("task reads and mutations reject non-office identities before body or database work", async () => {

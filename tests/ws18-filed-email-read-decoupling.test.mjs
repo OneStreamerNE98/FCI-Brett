@@ -84,13 +84,17 @@ function projectFixtureResolver(archives) {
       };
     }
     if (kind === "all" && sql.includes("FROM gmail_file_archives")) {
-      assert.doesNotMatch(sql, /connection_key/u);
-      assert.deepEqual(values, ["project-1"]);
+      // Project-keyed, plus the environment scope that keeps simulation
+      // archives out of live evidence. What must NOT appear is scoping to one
+      // caller-supplied connection.
+      assert.match(sql, /WHERE project_id = ?/u);
+      assert.doesNotMatch(sql, /connection_key = \? AND project_id/u);
+      assert.deepEqual(values, ["project-1", "workspace-simulation"]);
       return archives;
     }
     if (kind === "first" && sql.includes("FROM gmail_file_archives")) {
-      assert.doesNotMatch(sql, /connection_key\s*=/u);
-      assert.deepEqual(values, ["project-1"]);
+      assert.doesNotMatch(sql, /connection_key = \? AND project_id/u);
+      assert.deepEqual(values, ["project-1", "workspace-simulation"]);
       return {
         total: archives.length,
         connection_total: new Set(
@@ -181,8 +185,10 @@ test("filed-email tool filters by project, never by connection", async () => {
   const database = new FakeDatabase((kind, sql, values) => {
     if (kind === "all" && sql.startsWith("SELECT a.id, a.project_id")) {
       assert.match(sql, /a\.project_id = \?/u);
-      assert.doesNotMatch(sql, /connection_key/u);
-      assert.deepEqual(values, ["project-1"]);
+      // The environment scope is required; scoping to one caller-supplied
+      // connection is the defect WS-18 removes.
+      assert.doesNotMatch(sql, /a\.connection_key = \? AND a\.project_id/u);
+      assert.deepEqual(values, ["workspace-simulation", "project-1"]);
       return [{
         id: "archive-company",
         project_id: "project-1",
@@ -222,8 +228,8 @@ test("filed-email tool filters by project, never by connection", async () => {
 test("dashboard filed-email count is global across the business", async () => {
   const database = new FakeDatabase((kind, sql, values) => {
     if (kind === "first" && sql.includes("FROM gmail_file_archives")) {
-      assert.doesNotMatch(sql, /connection_key/u);
-      assert.deepEqual(values, []);
+      assert.doesNotMatch(sql, /connection_key = \? AND/u);
+      assert.deepEqual(values, ["workspace-simulation"]);
       return { total: 2 };
     }
     if (kind === "first" && sql.includes("active_leads")) {
@@ -253,17 +259,35 @@ test("filed-email evidence read modules expose no connection-key filter paramete
     read("app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts"),
   ]);
   const readSources = [
-    projectEvidenceSource.replaceAll("COUNT(DISTINCT connection_key)", ""),
+    projectEvidenceSource,
     toolsSource,
     dashboardSource,
     assistantRouteSource,
     dashboardRouteSource,
   ];
+  // What WS-18 forbids is a caller-supplied CONNECTION KEY threaded into reads —
+  // not every mention of the column. Banning the string outright was too broad:
+  // it also forbade the environment scope that keeps simulation archives out of
+  // live evidence, which a review found this packet had removed along with the
+  // per-connection filter. Test the contract instead of the vocabulary.
   for (const source of readSources) {
     assert.doesNotMatch(
       source,
-      /\b(?:connection_key|connectionKey)\b/u,
-      "filed-email evidence reads must not accept or predicate on a connection key",
+      /connectionKey\s*[,:)]/u,
+      "filed-email evidence reads must not accept a connection key parameter",
+    );
+    assert.doesNotMatch(
+      source,
+      /connection_key\s*=\s*\?\s*AND\s*(?:a\.)?project_id/u,
+      "filed-email reads must be project-keyed, never scoped to one connection",
+    );
+  }
+  // The isolation itself is centralised, so there is exactly one place to audit.
+  for (const source of [projectEvidenceSource, toolsSource, dashboardSource]) {
+    assert.match(
+      source,
+      /archiveScope\(/u,
+      "every filed-email read must apply the shared environment scope",
     );
   }
   assert.doesNotMatch(
@@ -288,4 +312,52 @@ test("filed-email evidence read modules expose no connection-key filter paramete
     /WHERE connection_key = \? AND gmail_message_id = \?/u,
     "the filing write path must keep stamping and locating the writing connection",
   );
+});
+
+test("live evidence never adopts simulation archives, and simulation sees only its own", async () => {
+  // The defect this pins (WS-18 review, P1): dropping the connection predicate
+  // opened reads across connections AND across environments. Simulation filings
+  // are written into the same table under the simulation connection, so a live
+  // deployment began reporting pretend filings as real evidence — and once
+  // adopted, a simulation reset could not purge them. Reads must stay open
+  // across every REAL connection while never mixing the two environments.
+  const liveCalls = [];
+  const live = new FakeDatabase((kind, sql, values) => {
+    if (sql.includes("FROM gmail_file_archives")) liveCalls.push({ sql, values });
+    return kind === "all" ? [] : { total: 0, connection_total: 0 };
+  });
+  await projectEvidence(live, "project-1", {
+    includeFinancials: true,
+    simulation: false,
+  });
+  assert.ok(liveCalls.length > 0, "the read must actually query archives");
+  for (const call of liveCalls) {
+    assert.match(
+      call.sql,
+      /connection_key <> \?/u,
+      "a live read must exclude the simulation connection",
+    );
+    assert.ok(
+      call.values.includes("workspace-simulation"),
+      "the excluded key must be the simulation connection",
+    );
+  }
+
+  const simulationCalls = [];
+  const simulated = new FakeDatabase((kind, sql, values) => {
+    if (sql.includes("FROM gmail_file_archives")) simulationCalls.push({ sql, values });
+    return kind === "all" ? [] : { total: 0, connection_total: 0 };
+  });
+  await projectEvidence(simulated, "project-1", {
+    includeFinancials: true,
+    simulation: true,
+  });
+  for (const call of simulationCalls) {
+    assert.match(
+      call.sql,
+      /connection_key = \?/u,
+      "a simulation read must see only the simulation connection",
+    );
+    assert.ok(call.values.includes("workspace-simulation"));
+  }
 });

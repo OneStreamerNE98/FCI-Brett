@@ -15,6 +15,7 @@ import {
 } from "../../../application/assistant/org-wide-fallback";
 import { projectEvidence } from "../../../application/assistant/project-evidence";
 import { createAssistantToolRegistry } from "../../../application/assistant/tools";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import {
   normalizeSearchQuery,
   searchRecords,
@@ -97,13 +98,14 @@ export async function POST(request: NextRequest) {
   }
 
   await ensureWorkspaceSchema();
+  const google = getGoogleRuntimeConfig();
   const assistantProvider = provider();
 
   if (hasProjectId) {
     const context = await projectEvidence(
       env.DB,
       projectId,
-      { includeFinancials: true },
+      { includeFinancials: true, simulation: google.simulation },
     );
     if (!context) {
       return noStore(
@@ -169,6 +171,7 @@ export async function POST(request: NextRequest) {
     isAdmin: auth.user.isAdmin,
     actorEmail: auth.user.email,
     officeIdentityLookup: officeIdentityForEmail,
+    simulation: google.simulation,
     timeZone,
   });
   const modelOutcome = assistantProvider

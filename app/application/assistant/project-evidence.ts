@@ -1,4 +1,5 @@
 import type { D1Database } from "../../adapters/d1/d1-database";
+import { archiveScope } from "../archive-scope";
 import {
   compact,
   parseStringArray,
@@ -11,17 +12,21 @@ import {
 export async function projectEvidence(
   database: D1Database,
   projectId: string,
-  options: { includeFinancials: boolean } = { includeFinancials: true },
+  options: { includeFinancials: boolean; simulation?: boolean } = { includeFinancials: true },
 ) {
+  // Reads stay open across every real connection — that is WS-18's purpose — but
+  // simulation archives live in the same table under their own connection, so a
+  // live deployment must never adopt them as evidence.
+  const scope = archiveScope(options.simulation === true);
   const project = await database.prepare("SELECT p.id, p.project_number, p.name, p.status, p.site, p.project_manager, p.estimated_value, c.id AS client_id, c.name AS client_name, c.client_code FROM projects p JOIN clients c ON c.id = p.client_id WHERE p.id = ?").bind(projectId).first<ProjectRecord>();
   if (!project) return null;
   const [contacts, archives, events, meetings, contactCount, archiveCount, meetingCount] = await Promise.all([
     database.prepare("SELECT id, name, email, role, is_primary FROM contacts WHERE client_id = ? ORDER BY is_primary DESC, created_at ASC LIMIT 8").bind(project.client_id).all<ContactRecord>(),
-    database.prepare("SELECT id, attachment_count, filed_at FROM gmail_file_archives WHERE project_id = ? AND status = 'filed' ORDER BY filed_at DESC LIMIT 6").bind(projectId).all<{ id: string; attachment_count: number; filed_at: number | null }>(),
+    database.prepare(`SELECT id, attachment_count, filed_at FROM gmail_file_archives WHERE project_id = ? AND status = 'filed' AND ${scope.clause} ORDER BY filed_at DESC LIMIT 6`).bind(projectId, ...scope.bindings).all<{ id: string; attachment_count: number; filed_at: number | null }>(),
     database.prepare("SELECT id, action, detail, created_at FROM activity_events WHERE record_id = ? ORDER BY created_at DESC LIMIT 6").bind(projectId).all<{ id: string; action: string; detail: string | null; created_at: number }>(),
     database.prepare("SELECT id, title, meeting_at, source_provider, source_url, summary, decisions, notes, transcript, action_items_json FROM project_meetings WHERE project_id = ? ORDER BY meeting_at DESC LIMIT 6").bind(projectId).all<MeetingRecord>(),
     database.prepare("SELECT COUNT(*) AS total FROM contacts WHERE client_id = ?").bind(project.client_id).first<{ total: number }>(),
-    database.prepare("SELECT COUNT(*) AS total, COUNT(DISTINCT connection_key) AS connection_total FROM gmail_file_archives WHERE project_id = ? AND status = 'filed'").bind(projectId).first<{ total: number; connection_total: number }>(),
+    database.prepare(`SELECT COUNT(*) AS total, COUNT(DISTINCT connection_key) AS connection_total FROM gmail_file_archives WHERE project_id = ? AND status = 'filed' AND ${scope.clause}`).bind(projectId, ...scope.bindings).first<{ total: number; connection_total: number }>(),
     database.prepare("SELECT COUNT(*) AS total FROM project_meetings WHERE project_id = ?").bind(projectId).first<{ total: number }>(),
   ]);
   const totals = {
@@ -32,7 +37,7 @@ export async function projectEvidence(
   const financialDetail = options.includeFinancials && project.estimated_value !== null
     ? ` · Estimated value: $${Number(project.estimated_value).toLocaleString()}`
     : "";
-  const archiveScope = Number(archiveCount?.connection_total ?? 0) > 1
+  const archiveScopeLabel = Number(archiveCount?.connection_total ?? 0) > 1
     ? `across ${Number(archiveCount?.connection_total)} Google Workspace connections`
     : "in the active Google Workspace connection";
   const projectItems: Evidence[] = [{
@@ -42,7 +47,7 @@ export async function projectEvidence(
     }, {
       id: `summary:${project.id}`,
       label: `Available project evidence · ${project.project_number}`,
-      detail: `${totals.contacts} client contact${totals.contacts === 1 ? "" : "s"} · ${totals.archives} filed email archive${totals.archives === 1 ? "" : "s"} ${archiveScope} · ${totals.meetings} meeting record${totals.meetings === 1 ? "" : "s"}`,
+      detail: `${totals.contacts} client contact${totals.contacts === 1 ? "" : "s"} · ${totals.archives} filed email archive${totals.archives === 1 ? "" : "s"} ${archiveScopeLabel} · ${totals.meetings} meeting record${totals.meetings === 1 ? "" : "s"}`,
     }];
   const contactItems: Evidence[] = contacts.results.slice(0, 4).map((contact) => ({
       id: `contact:${contact.id}`,
