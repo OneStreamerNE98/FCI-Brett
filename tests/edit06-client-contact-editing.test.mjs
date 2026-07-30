@@ -597,6 +597,71 @@ test("overlapping D1 normalized-name candidates admit one client and one typed d
   }
 });
 
+test("a legacy near-duplicate client stays editable when its name does not change", async () => {
+  // Rows created under the old LOWER(name) uniqueness could differ only by whitespace, so
+  // they carry a NULL normalized_name_key and collapse to ONE key under the 0022 rules.
+  // An unconditional duplicate scan on update would report each as a duplicate of the
+  // other forever — locking out the archive transition this packet exists to deliver.
+  const database = new ClientD1Database();
+  try {
+    const repository = createD1ClientRepository(database);
+    const seed = database.database.prepare(`
+      INSERT INTO clients (
+        id, client_code, name, normalized_name_key, status, industry,
+        created_by, created_at, updated_at, version
+      ) VALUES (?, ?, ?, NULL, 'active', NULL, 'office@example.test', ?, ?, 1)
+    `);
+    seed.run("client-legacy-a", "CL-LEGACY01", "FCI TEST — DO NOT USE Legacy  Twin", UPDATED_AT, UPDATED_AT);
+    seed.run("client-legacy-b", "CL-LEGACY02", "FCI TEST — DO NOT USE Legacy Twin", UPDATED_AT, UPDATED_AT);
+
+    const archived = await repository.update({
+      clientId: "client-legacy-a",
+      expectedVersion: "1",
+      values: {
+        name: "FCI TEST — DO NOT USE Legacy  Twin",
+        status: "archived",
+        industry: null,
+      },
+      updatedAt: UPDATED_AT + 1,
+      updatedBy: "office@example.test",
+      activity: {
+        id: "activity-legacy-archive",
+        recordId: "client-legacy-a",
+        action: "Client fields updated",
+        actor: "office@example.test",
+        detail: "Status: active → archived",
+        createdAt: UPDATED_AT + 1,
+      },
+    });
+    assert.equal(archived.outcome, "updated");
+    assert.equal(archived.value.status, "archived");
+
+    // A genuine rename into the sibling's key is still rejected.
+    const collision = await repository.update({
+      clientId: "client-legacy-b",
+      expectedVersion: "1",
+      values: {
+        name: "FCI TEST — DO NOT USE Legacy  Twin",
+        status: "active",
+        industry: null,
+      },
+      updatedAt: UPDATED_AT + 2,
+      updatedBy: "office@example.test",
+      activity: {
+        id: "activity-legacy-collision",
+        recordId: "client-legacy-b",
+        action: "Client fields updated",
+        actor: "office@example.test",
+        detail: "Name: b → a",
+        createdAt: UPDATED_AT + 2,
+      },
+    });
+    assert.equal(collision.outcome, "duplicate");
+  } finally {
+    database.close();
+  }
+});
+
 test("malformed D1 client update evidence is rejected before any write", async () => {
   const database = new ClientD1Database();
   try {
@@ -813,7 +878,10 @@ test("FloorOps composes create plus independent changed-key client and contact e
   );
   assert.match(
     app,
-    /industry:\s*industryRaw \?\? "Unspecified",[\s\S]*industryRaw,/u,
+    // "Commercial" is the shipped DES-08a1 row-chip default and is also pinned by
+    // tests/e2e/des08a1-industry-surfacing.spec.ts ("UNSPEC-001 · Commercial"). Pinned
+    // here too so a regression fails in seconds on Node rather than only in Playwright.
+    /industry:\s*industryRaw \?\? "Commercial",[\s\S]*industryRaw,/u,
   );
   assert.match(
     app,
@@ -853,7 +921,7 @@ test("FloorOps composes create plus independent changed-key client and contact e
   );
   assert.match(
     app,
-    /industry:\s*saved\.industry \?\? "Unspecified",[\s\S]*industryRaw:\s*saved\.industry/u,
+    /industry:\s*saved\.industry \?\? "Commercial",[\s\S]*industryRaw:\s*saved\.industry/u,
   );
   assert.doesNotMatch(
     app,

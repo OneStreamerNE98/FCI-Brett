@@ -71,6 +71,14 @@ function contactRow(row: D1ContactRow): ContactRow {
   };
 }
 
+async function currentClientName(database: D1Database, clientId: string) {
+  const row = await database
+    .prepare("SELECT name FROM clients WHERE id = ?")
+    .bind(clientId)
+    .first<{ name: unknown }>();
+  return row && typeof row.name === "string" ? row.name : null;
+}
+
 async function currentClientVersion(database: D1Database, clientId: string) {
   const row = await database
     .prepare("SELECT version FROM clients WHERE id = ?")
@@ -189,7 +197,18 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
       const expectedVersion = d1RecordVersion(intent.expectedVersion, "Expected D1 client version");
       const resultingVersion = nextD1RecordVersion(expectedVersion);
       const { activity, values } = intent;
-      if (await duplicateClientName(database, intent.clientId, values.name)) {
+      // Scan for a duplicate only when the normalized name actually changes. `values.name`
+      // is the merged name, so an edit that touches only status or industry still arrives
+      // here carrying the row's own name. Rows created under the old LOWER(name) guard can
+      // be near-duplicates ("Acme  Corp" vs "Acme Corp") that collapse to one normalized
+      // key, and an unconditional scan would report those rows as duplicates of each other
+      // forever — making them permanently uneditable, including the archive transition this
+      // packet exists to deliver. A genuine rename into a taken key is still rejected below,
+      // both by the UPDATE's own NOT EXISTS guard and by the post-failure recheck.
+      const existingName = await currentClientName(database, intent.clientId);
+      const nameChanged = existingName === null
+        || normalizeClientNameKey(existingName) !== normalizeClientNameKey(values.name);
+      if (nameChanged && await duplicateClientName(database, intent.clientId, values.name)) {
         const existingVersion = await currentClientVersion(database, intent.clientId);
         if (!existingVersion) return { outcome: "client-not-found" };
         if (existingVersion !== expectedVersion) {

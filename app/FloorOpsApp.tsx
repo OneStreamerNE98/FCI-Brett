@@ -461,7 +461,11 @@ function mapClientRecord(record: Record<string, unknown>): Client {
     contactRole: String(record.primary_contact_role ?? "Primary contact"),
     contactVersion: normalizeRecordVersion(record.primary_contact_version) ?? undefined,
     email: String(record.primary_contact_email ?? ""),
-    industry: industryRaw ?? "Unspecified",
+    // "Commercial", not "Unspecified": the row chip's default is an owner-approved
+    // DES-08a1 decision and is pinned by an e2e gate ("UNSPEC-001 · Commercial").
+    // Only the Reports bucket says Unspecified, and it reads industryRaw, which
+    // stays null — so the split survives this extraction.
+    industry: industryRaw ?? "Commercial",
     industryRaw,
     status: displayStatus(record.status, "Active"),
     initials: recordInitials(name),
@@ -1161,7 +1165,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       ? {
           ...item,
           name: saved.name,
-          industry: saved.industry ?? "Unspecified",
+          industry: saved.industry ?? "Commercial",
           industryRaw: saved.industry,
           status: displayStatus(saved.status, saved.status),
           initials: recordInitials(saved.name),
