@@ -18,6 +18,7 @@ import {
 } from "./WorkspaceDriveResourceActions";
 import { WorkspaceDomainChecklistCard } from "./workspace-domain-checklist/WorkspaceDomainChecklistCard";
 import { WorkspaceReconcileCard } from "./workspace-reconcile/WorkspaceReconcileCard";
+import { WorkspaceOperationsHealthCard } from "./workspace-operations/WorkspaceOperationsHealthCard";
 import {
   deriveWorkspaceDomainChecklist,
   workspaceDomainChecklistDisplayStatus,
@@ -147,6 +148,7 @@ const DRIFT_CHECK_INFO = "Compares your blueprint with what's actually in Drive 
 const FOLDER_RENAMES_INFO = "Rename managed folders safely — the app updates Drive and its own records together.";
 const NOTIFICATION_ROUTING_COPY = "Review the closed event-to-space map. Hosted webhook secrets stay outside the browser, application data, logs, and source control.";
 const NOTIFICATION_ROUTING_INFO = "Choose which supported events can notify each approved Google Chat space. The routing page shows what is available before anything is enabled.";
+const OPERATIONS_HEALTH_INFO = "Reads the app's recorded stuck Drive leases, failed Gmail archives, and recent integration activity for the current connection. It never calls Google or repairs anything automatically.";
 
 function SetupStage({
   number,
@@ -1504,6 +1506,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                   notify={notify}
                   onChanged={refreshAfterDriveSetup}
                 />}
+              </OngoingTool>
+              <OngoingTool
+                rowKey="operations-health"
+                label="Operations health"
+                info={OPERATIONS_HEALTH_INFO}
+                state="AVAILABLE"
+              >
+                <WorkspaceOperationsHealthCard isAdmin={isAdmin} />
               </OngoingTool>
               <OngoingTool
                 rowKey="notifications"
