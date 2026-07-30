@@ -318,6 +318,21 @@ test("client creation and contact patch share contact normalization, limits, and
     phone: null,
     role: "Primary contact",
   });
+  // Contract change from main, pinned here because nothing asserted it either way.
+  // main returned `primaryContact: null` when a supplied contact had no usable name,
+  // silently creating a contactless client and discarding what the caller sent. That
+  // is now a typed rejection. Neither caller can reach it — the create form marks the
+  // contact name `required`, and first-run import passes `undefined` rather than a
+  // nameless object (app/domain/first-run-import.ts:396) — so this is a hardening, not
+  // a behaviour change any existing path observes.
+  assert.deepEqual(normalizeClientCreation({
+    name: "FCI TEST — DO NOT USE Nameless Contact",
+    primaryContact: { name: "   ", email: "someone@example.test" },
+  }), { ok: false, message: "primary contact name is invalid" });
+  assert.equal(normalizeClientCreation({
+    name: "FCI TEST — DO NOT USE Omitted Contact",
+  }).value.primaryContact, null);
+
   assert.deepEqual(normalizeContactPatch({
     email: "",
     phone: null,
