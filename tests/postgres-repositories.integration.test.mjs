@@ -373,6 +373,191 @@ test(
         outbox_events: 1,
         requests: 1,
       });
+
+      const duplicateTargetIntent = clientIntent({
+        actorId: actorB,
+        name: "FCI TEST — DO NOT USE Edit Duplicate Target",
+        createdAt: raceCreatedAt + 1,
+      });
+      const duplicateTarget = await createPostgresClientRepository(pool, {
+        schema,
+        request: creationRequest({
+          idempotencyKey: "client-edit-duplicate-target",
+          requestFingerprint: UNTRUSTED_FINGERPRINT,
+          createdAt: raceCreatedAt + 1,
+        }),
+      }).create(duplicateTargetIntent);
+      assert.equal(duplicateTarget.outcome, "accepted");
+
+      const editingRepository = createPostgresClientRepository(pool, {
+        schema,
+        request: creationRequest({
+          idempotencyKey: "client-edit-unused",
+          requestFingerprint: UNTRUSTED_FINGERPRINT,
+          createdAt: raceCreatedAt,
+        }),
+      });
+      const duplicateEdit = await editingRepository.update({
+        clientId: winningClientId,
+        expectedVersion: "1",
+        values: {
+          name: duplicateTargetIntent.client.name.toUpperCase(),
+          status: "active",
+          industry: "Flooring",
+        },
+        updatedAt: raceCreatedAt + 1,
+        updatedBy: actorA,
+        activity: {
+          id: randomUUID(),
+          recordId: winningClientId,
+          action: "Client fields updated",
+          actor: actorA,
+          detail: "Name: original → duplicate",
+          createdAt: raceCreatedAt + 1,
+        },
+      });
+      assert.deepEqual(duplicateEdit, { outcome: "duplicate" });
+      const duplicateEditState = await oneRow(
+        pool,
+        `SELECT version::text AS version,
+                (SELECT count(*)::integer FROM ${schema}.activity_events
+                 WHERE client_id = $1) AS activities
+         FROM ${schema}.clients WHERE id = $1`,
+        [winningClientId],
+      );
+      assert.deepEqual(duplicateEditState, { version: "1", activities: 1 });
+
+      const clientEditActivityId = randomUUID();
+      const clientEditAt = raceCreatedAt + 2;
+      const editedClient = await editingRepository.update({
+        clientId: winningClientId,
+        expectedVersion: "1",
+        values: {
+          name: "FCI TEST — DO NOT USE Edited Client",
+          status: "archived",
+          industry: "Residential",
+        },
+        updatedAt: clientEditAt,
+        updatedBy: actorA,
+        activity: {
+          id: clientEditActivityId,
+          recordId: winningClientId,
+          action: "Client fields updated",
+          actor: actorA,
+          detail: "Name, status, and industry changed before → after",
+          createdAt: clientEditAt,
+        },
+      });
+      assert.equal(editedClient.outcome, "updated");
+      assert.deepEqual(editedClient.value, {
+        id: winningClientId,
+        clientCode: winningIntent.client.clientCode,
+        name: "FCI TEST — DO NOT USE Edited Client",
+        status: "archived",
+        industry: "Residential",
+        updatedAt: clientEditAt,
+        version: "2",
+      });
+      assert.deepEqual(await editingRepository.update({
+        clientId: winningClientId,
+        expectedVersion: "1",
+        values: {
+          name: "Stale client editor",
+          status: "active",
+          industry: null,
+        },
+        updatedAt: clientEditAt + 1,
+        updatedBy: actorA,
+        activity: {
+          id: randomUUID(),
+          recordId: winningClientId,
+          action: "Client fields updated",
+          actor: actorA,
+          detail: "Stale edit must not write",
+          createdAt: clientEditAt + 1,
+        },
+      }), { outcome: "conflict", currentVersion: "2" });
+
+      const contactEditAt = clientEditAt + 2;
+      const contactEditActivityId = randomUUID();
+      const editedContact = await editingRepository.updateContact({
+        contactId: winningIntent.primaryContact.id,
+        expectedVersion: "1",
+        values: {
+          name: "FCI TEST — DO NOT USE Edited Contact",
+          email: "edited-contact@example.test",
+          phone: "555-0199",
+          role: "Account owner",
+        },
+        updatedAt: contactEditAt,
+        updatedBy: actorA,
+        activity: {
+          id: contactEditActivityId,
+          recordId: winningClientId,
+          action: "Contact fields updated",
+          actor: actorA,
+          detail: "Contact fields changed before → after",
+          createdAt: contactEditAt,
+        },
+      });
+      assert.equal(editedContact.outcome, "updated");
+      assert.deepEqual(editedContact.value, {
+        id: winningIntent.primaryContact.id,
+        clientId: winningClientId,
+        name: "FCI TEST — DO NOT USE Edited Contact",
+        email: "edited-contact@example.test",
+        phone: "555-0199",
+        role: "Account owner",
+        isPrimary: true,
+        updatedAt: contactEditAt,
+        version: "2",
+      });
+      assert.deepEqual(await editingRepository.updateContact({
+        contactId: winningIntent.primaryContact.id,
+        expectedVersion: "1",
+        values: {
+          name: "Stale Contact",
+          email: null,
+          phone: null,
+          role: "Stale",
+        },
+        updatedAt: contactEditAt + 1,
+        updatedBy: actorA,
+        activity: {
+          id: randomUUID(),
+          recordId: winningClientId,
+          action: "Contact fields updated",
+          actor: actorA,
+          detail: "Stale contact edit must not write",
+          createdAt: contactEditAt + 1,
+        },
+      }), { outcome: "conflict", currentVersion: "2" });
+      const editState = await oneRow(
+        pool,
+        `SELECT c.name, c.status, c.industry, c.version::text AS client_version,
+                ct.name AS contact_name, ct.email AS contact_email,
+                ct.phone AS contact_phone, ct.role AS contact_role,
+                ct.version::text AS contact_version,
+                (SELECT count(*)::integer FROM ${schema}.activity_events
+                 WHERE client_id = c.id) AS activities
+         FROM ${schema}.clients c
+         JOIN ${schema}.contacts ct ON ct.client_id = c.id AND ct.is_primary
+         WHERE c.id = $1`,
+        [winningClientId],
+      );
+      assert.deepEqual(editState, {
+        name: "FCI TEST — DO NOT USE Edited Client",
+        status: "archived",
+        industry: "Residential",
+        client_version: "2",
+        contact_name: "FCI TEST — DO NOT USE Edited Contact",
+        contact_email: "edited-contact@example.test",
+        contact_phone: "555-0199",
+        contact_role: "Account owner",
+        contact_version: "2",
+        activities: 3,
+      });
+
       const completedRequest = await oneRow(
         pool,
         `SELECT request_fingerprint, status, response_status, response_body, version::text AS version

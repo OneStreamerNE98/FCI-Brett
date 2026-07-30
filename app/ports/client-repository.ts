@@ -4,7 +4,7 @@ import type { VersionConflict } from "../domain/record-version";
 export type ClientActivityIntent = {
   id: string;
   recordId: string;
-  action: "Client created" | "Client fields updated";
+  action: "Client created" | "Client fields updated" | "Contact fields updated";
   actor: string;
   detail: string;
   createdAt: number;
@@ -78,10 +78,39 @@ export type ClientFieldUpdateIntent = {
 export type ClientFieldUpdateRepositoryResult =
   | { outcome: "updated"; value: ClientRow }
   | { outcome: "client-not-found" }
+  | { outcome: "duplicate" }
+  | VersionConflict;
+
+export type ContactRow = {
+  id: string;
+  clientId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+  isPrimary: boolean;
+  updatedAt: number;
+  version: string;
+};
+
+export type ContactFieldUpdateIntent = {
+  contactId: string;
+  expectedVersion: string;
+  values: Pick<ContactRow, "name" | "email" | "phone" | "role">;
+  updatedAt: number;
+  updatedBy: string;
+  activity: ClientActivityIntent & { action: "Contact fields updated" };
+};
+
+export type ContactFieldUpdateRepositoryResult =
+  | { outcome: "updated"; value: ContactRow }
+  | { outcome: "contact-not-found" }
   | VersionConflict;
 
 export interface ClientRepository {
   findById(clientId: string): Promise<ClientRow | null>;
+  findContactById(contactId: string): Promise<ContactRow | null>;
   create(intent: ClientCreationIntent): Promise<ClientCreationRepositoryResult>;
   update(intent: ClientFieldUpdateIntent): Promise<ClientFieldUpdateRepositoryResult>;
+  updateContact(intent: ContactFieldUpdateIntent): Promise<ContactFieldUpdateRepositoryResult>;
 }

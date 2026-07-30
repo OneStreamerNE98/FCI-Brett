@@ -41,6 +41,8 @@ const [
   assistantReplyDraftRoute,
   inboxAnalysisRoute,
   clientsRoute,
+  clientRoute,
+  contactRoute,
   projectsRoute,
   filingRuleRoute,
   accountSettingsRoute,
@@ -69,6 +71,8 @@ const [
     vite.ssrLoadModule("/app/api/v1/assistant/reply-draft/route.ts"),
     vite.ssrLoadModule("/app/api/v1/inbox-analysis/route.ts"),
     vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/clients/[clientId]/route.ts"),
+    vite.ssrLoadModule("/app/api/v1/contacts/[contactId]/route.ts"),
     vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
     vite.ssrLoadModule("/app/api/v1/filing-rules/[ruleId]/route.ts"),
     vite.ssrLoadModule("/app/api/v1/settings/me/route.ts"),
@@ -160,6 +164,24 @@ const cases = [
     maximumBytes: 64_000,
     error: "Client details are too large.",
     invoke: (request) => clientsRoute.POST(request),
+  },
+  {
+    name: "client update",
+    method: "PATCH",
+    maximumBytes: 64_000,
+    error: "Client update is too large.",
+    invoke: (request) => clientRoute.PATCH(request, {
+      params: Promise.resolve({ clientId: "client-1" }),
+    }),
+  },
+  {
+    name: "contact update",
+    method: "PATCH",
+    maximumBytes: 32_000,
+    error: "Contact update is too large.",
+    invoke: (request) => contactRoute.PATCH(request, {
+      params: Promise.resolve({ contactId: "contact-1" }),
+    }),
   },
   {
     name: "project creation",

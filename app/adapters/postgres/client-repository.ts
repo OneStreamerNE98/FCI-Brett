@@ -5,6 +5,7 @@ import type {
   ClientCreationIntent,
   ClientRepository,
   ClientRow,
+  ContactRow,
 } from "../../ports/client-repository";
 import {
   bindPostgresCreationRequest,
@@ -37,9 +38,26 @@ type ClientDatabaseRow = ClientInsertRow & {
   updated_at: unknown;
 };
 
+type ContactDatabaseRow = Record<string, unknown> & {
+  id: unknown;
+  client_id: unknown;
+  name: unknown;
+  email: unknown;
+  phone: unknown;
+  role: unknown;
+  is_primary: unknown;
+  updated_at: unknown;
+  version: unknown;
+};
+
 const CLIENT_SELECT = `SELECT id::text AS id, client_code, name, status, industry,
        updated_at, version::text AS version
 FROM clients`;
+
+const CONTACT_SELECT = `SELECT id::text AS id, client_id::text AS client_id,
+       name, email, phone, role, is_primary, updated_at,
+       version::text AS version
+FROM contacts`;
 
 const CLIENT_IDENTIFIER_CONSTRAINTS = [
   "clients_pkey",
@@ -50,6 +68,8 @@ const CLIENT_IDENTIFIER_CONSTRAINTS = [
   "outbox_events_event_key_key",
   "idempotency_requests_pkey",
 ] as const;
+
+const CLIENT_NAME_CONSTRAINTS = ["clients_normalized_name_key_key"] as const;
 
 export type PostgresClientRepositoryOptions = {
   schema?: string;
@@ -175,6 +195,33 @@ function clientRowFromPostgres(row: ClientDatabaseRow): ClientRow {
   };
 }
 
+function contactRowFromPostgres(row: ContactDatabaseRow): ContactRow {
+  if (
+    typeof row.id !== "string"
+    || !isPostgresUuid(row.id)
+    || typeof row.client_id !== "string"
+    || !isPostgresUuid(row.client_id)
+    || typeof row.name !== "string"
+    || row.email !== null && typeof row.email !== "string"
+    || row.phone !== null && typeof row.phone !== "string"
+    || typeof row.role !== "string"
+    || typeof row.is_primary !== "boolean"
+  ) {
+    throw new Error("PostgreSQL contact row is invalid");
+  }
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    role: row.role,
+    isPrimary: row.is_primary,
+    updatedAt: parsePostgresTimestamp(row.updated_at, "PostgreSQL contact updated_at"),
+    version: parsePostgresPositiveBigint(row.version, "PostgreSQL contact version"),
+  };
+}
+
 export function createPostgresClientRepository(
   pool: PostgresPool,
   options: PostgresClientRepositoryOptions,
@@ -195,6 +242,25 @@ export function createPostgresClientRepository(
             throw new Error("PostgreSQL client lookup returned an invalid result");
           }
           return clientRowFromPostgres(result.rows[0]);
+        },
+      );
+    },
+
+    async findContactById(contactId) {
+      if (!isPostgresUuid(contactId)) return null;
+      return withPostgresTransaction(
+        pool,
+        { schema: options.schema, readOnly: true },
+        async (client) => {
+          const result = await client.query<ContactDatabaseRow>(
+            `${CONTACT_SELECT}\nWHERE id = $1`,
+            [contactId],
+          );
+          if (result.rowCount === 0) return null;
+          if (result.rowCount !== 1 || !result.rows[0]) {
+            throw new Error("PostgreSQL contact lookup returned an invalid result");
+          }
+          return contactRowFromPostgres(result.rows[0]);
         },
       );
     },
@@ -355,67 +421,165 @@ export function createPostgresClientRepository(
         "Expected PostgreSQL client version",
       );
 
+      try {
+        return await withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
+          const updated = await client.query<ClientDatabaseRow>(
+            `UPDATE clients
+             SET name = $1, normalized_name_key = $2, status = $3, industry = $4,
+                 updated_by = $5, updated_at = $6, version = version + 1
+             WHERE id = $7 AND version = $8::bigint
+             RETURNING id::text AS id, client_code, name, status, industry,
+                       updated_at, version::text AS version`,
+            [
+              intent.values.name,
+              normalizeClientNameKey(intent.values.name),
+              intent.values.status,
+              intent.values.industry,
+              intent.updatedBy,
+              new Date(intent.updatedAt),
+              intent.clientId,
+              expectedVersion,
+            ],
+          );
+          if (updated.rowCount === 0) {
+            const current = await client.query<{ version: unknown }>(
+              "SELECT version::text AS version FROM clients WHERE id = $1",
+              [intent.clientId],
+            );
+            if (current.rowCount === 0) return { outcome: "client-not-found" as const };
+            if (current.rowCount !== 1 || !current.rows[0]) {
+              throw new Error("PostgreSQL client conflict lookup returned an invalid result");
+            }
+            return {
+              outcome: "conflict" as const,
+              currentVersion: parsePostgresPositiveBigint(
+                current.rows[0].version,
+                "PostgreSQL current client version",
+              ),
+            };
+          }
+          if (updated.rowCount !== 1 || !updated.rows[0]) {
+            throw new Error("PostgreSQL client update returned an invalid result");
+          }
+          const value = clientRowFromPostgres(updated.rows[0]);
+          const audit = await client.query(
+            `INSERT INTO activity_events (
+               id, client_id, action, actor_id, correlation_id, result, detail, occurred_at
+             )
+             SELECT $1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7
+             WHERE EXISTS (
+               SELECT 1 FROM clients WHERE id = $2 AND version = $8::bigint
+             )`,
+            [
+              intent.activity.id,
+              intent.clientId,
+              intent.activity.action,
+              intent.activity.actor,
+              `client-update:${intent.activity.id}`,
+              JSON.stringify({ message: intent.activity.detail }),
+              new Date(intent.activity.createdAt),
+              value.version,
+            ],
+          );
+          if (audit.rowCount !== 1) {
+            throw new Error("PostgreSQL client update evidence was not inserted exactly once");
+          }
+          return { outcome: "updated" as const, value };
+        });
+      } catch (error) {
+        if (postgresConstraint(error, "23505", CLIENT_NAME_CONSTRAINTS)) {
+          return { outcome: "duplicate" };
+        }
+        throw error;
+      }
+    },
+
+    async updateContact(intent) {
+      if (!isPostgresUuid(intent.contactId)) return { outcome: "contact-not-found" };
+      assertUuid(intent.activity.id, "PostgreSQL contact activity ID");
+      if (
+        !intent.values.name.trim()
+        || intent.values.email !== null && !intent.values.email.trim()
+        || intent.values.phone !== null && !intent.values.phone.trim()
+        || !intent.values.role.trim()
+        || !intent.updatedBy.trim()
+        || !Number.isSafeInteger(intent.updatedAt)
+        || intent.activity.actor !== intent.updatedBy
+        || intent.activity.createdAt !== intent.updatedAt
+      ) {
+        throw new TypeError("PostgreSQL contact update values and evidence are invalid");
+      }
+      const expectedVersion = parsePostgresPositiveBigint(
+        intent.expectedVersion,
+        "Expected PostgreSQL contact version",
+      );
+
       return withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
-        const updated = await client.query<ClientDatabaseRow>(
-          `UPDATE clients
-           SET name = $1, normalized_name_key = $2, status = $3, industry = $4,
-               updated_by = $5, updated_at = $6, version = version + 1
-           WHERE id = $7 AND version = $8::bigint
-           RETURNING id::text AS id, client_code, name, status, industry,
-                     updated_at, version::text AS version`,
+        const updated = await client.query<ContactDatabaseRow>(
+          `UPDATE contacts
+           SET name = $1, email = $2, phone = $3, role = $4,
+               updated_at = $5, version = version + 1
+           WHERE id = $6 AND version = $7::bigint
+           RETURNING id::text AS id, client_id::text AS client_id,
+                     name, email, phone, role, is_primary, updated_at,
+                     version::text AS version`,
           [
             intent.values.name,
-            normalizeClientNameKey(intent.values.name),
-            intent.values.status,
-            intent.values.industry,
-            intent.updatedBy,
+            intent.values.email,
+            intent.values.phone,
+            intent.values.role,
             new Date(intent.updatedAt),
-            intent.clientId,
+            intent.contactId,
             expectedVersion,
           ],
         );
         if (updated.rowCount === 0) {
           const current = await client.query<{ version: unknown }>(
-            "SELECT version::text AS version FROM clients WHERE id = $1",
-            [intent.clientId],
+            "SELECT version::text AS version FROM contacts WHERE id = $1",
+            [intent.contactId],
           );
-          if (current.rowCount === 0) return { outcome: "client-not-found" as const };
+          if (current.rowCount === 0) return { outcome: "contact-not-found" as const };
           if (current.rowCount !== 1 || !current.rows[0]) {
-            throw new Error("PostgreSQL client conflict lookup returned an invalid result");
+            throw new Error("PostgreSQL contact conflict lookup returned an invalid result");
           }
           return {
             outcome: "conflict" as const,
             currentVersion: parsePostgresPositiveBigint(
               current.rows[0].version,
-              "PostgreSQL current client version",
+              "PostgreSQL current contact version",
             ),
           };
         }
         if (updated.rowCount !== 1 || !updated.rows[0]) {
-          throw new Error("PostgreSQL client update returned an invalid result");
+          throw new Error("PostgreSQL contact update returned an invalid result");
         }
-        const value = clientRowFromPostgres(updated.rows[0]);
+        const value = contactRowFromPostgres(updated.rows[0]);
+        if (intent.activity.recordId !== value.clientId) {
+          throw new TypeError("PostgreSQL contact update evidence must reference its client");
+        }
         const audit = await client.query(
           `INSERT INTO activity_events (
              id, client_id, action, actor_id, correlation_id, result, detail, occurred_at
            )
            SELECT $1, $2, $3, $4, $5, 'succeeded', $6::jsonb, $7
            WHERE EXISTS (
-             SELECT 1 FROM clients WHERE id = $2 AND version = $8::bigint
+             SELECT 1 FROM contacts
+             WHERE id = $8 AND client_id = $2 AND version = $9::bigint
            )`,
           [
             intent.activity.id,
-            intent.clientId,
+            value.clientId,
             intent.activity.action,
             intent.activity.actor,
-            `client-update:${intent.activity.id}`,
+            `contact-update:${intent.activity.id}`,
             JSON.stringify({ message: intent.activity.detail }),
             new Date(intent.activity.createdAt),
+            intent.contactId,
             value.version,
           ],
         );
         if (audit.rowCount !== 1) {
-          throw new Error("PostgreSQL client update evidence was not inserted exactly once");
+          throw new Error("PostgreSQL contact update evidence was not inserted exactly once");
         }
         return { outcome: "updated" as const, value };
       });
