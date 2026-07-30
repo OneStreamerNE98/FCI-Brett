@@ -1227,7 +1227,7 @@ this packet turns on; simulation proves the path with no live Google call;
 per-user OAuth connect flow** in the per-user Gmail track.
 
 ### WS-18 · Decouple filed-email evidence reads from the connection key (small-medium)
-**Status:** In review — PR #246, July 29, 2026. Source-only and undeployed.
+**Status:** Complete — PR #246, July 30, 2026. Source-only and undeployed. Every filed-email read resolves archives by project, with `connection_key` a stored attribute rather than a filter, so a project's filed email is found regardless of which mailbox filed it; the filing write path, its lease and idempotency, and the `(connection_key, gmail_message_id)` uniqueness are untouched, and single-connection evidence output is byte-identical. Review correction, load-bearing: dropping the predicate outright merged the two ENVIRONMENTS as well as connections — simulation filings share the table under their own connection, so live deployments began adopting pretend filings as real evidence and a simulation reset could no longer purge them, because the reset deletes by connection key while the reads no longer cared about one. `app/application/archive-scope.ts` now centralises a scope rather than a key: live reads exclude the simulation connection, simulation reads see only it, so reads stay open across any number of REAL connections — which is what per-user Gmail needs — while the environments never mix. Four over-broad test assertions across three suites were consciously re-pointed: they banned the strings `connection_key`/`connectionKey`/`getGoogleRuntimeConfig` outright, which forbade that isolation, and now pin the actual contract plus a positive assertion that every filed-email read applies the shared scope. Guide impact: none.
 **Why:** the first increment of the per-user Gmail track (owner request, July 27–28: each
 login sees its own mailbox, additional mailboxes attachable to a login), chosen because it is
 useful standalone and is a hard prerequisite for every multi-connection future. Today every
@@ -3040,7 +3040,7 @@ with reality; every Tier-2 entry names its gate; `npm test` green.
 **Effort:** small. **Cost:** $0.
 
 ### AI-10 · Email intake: durable review queue and review-first lead capture (large; after AI-09)
-**Status:** In review — PR #245, July 29, 2026. Source-only and undeployed.
+**Status:** Complete — PR #235 + PR #238 + PR #245, July 30, 2026. Source-only and undeployed. All six sub-PRs shipped: the write-free classifier and only-writer persistence route (a+b+c), the app-side review queue with its Mark-reviewed exit and one coalesced Chat card per sweep (d+e), and review-first lead capture (f) — a lead-intent row pre-fills the existing Add-lead modal, submits through the existing `POST /api/v1/leads`, and retires through the existing Mark-reviewed PATCH, adding no second writer. Review across the three PRs: twenty-six defects fixed on-branch. The load-bearing ones were structural rather than local — a stranded-row class closed by a reconciling invariant at sweep start after four per-item compensations each proved defeatable, and a duplicate-lead path where the Create-lead guard was a banner flag that every retry cleared, so a second failed retry re-offered the button on a row whose lead already existed. Recorded and NOT fixed, for AI-11 to own: the lead guard is per-session, so a reload or a second administrator restores the button — closing that needs a durable marker on `mail_items`, which is a second writer this packet forbids; the prefill fabricates a next-action date and sentence the analysis never supplied, neither flagged as invented; and a row carrying intents beyond `lead` is retired with no disclosure the others existed. Guide impact: the settings guide records the app-side queue meaning and the at-rest disclosure.
 **Why:** the owner asked for OpenAI to read inbound email, identify leads, and
 pre-populate a draft lead a person approves, edits, or removes. Two research
 passes (July 26, 2026) established that the app does **not** need a new surface
@@ -3151,8 +3151,9 @@ v12 totality finding (legacy statuses now backfilled before the closed
 vocabulary constrains). The engine is live behind the default-off
 `inboxAnalysis` toggle. Sub-PRs (d+e) — the app-side review queue, the
 Mark-reviewed exit, and the coalesced Chat trigger — merged in PR #238,
-July 29, 2026. Only sub-PR (f), lead capture and its `FloorOpsApp.tsx` queue
-slot, remains; the packet carries no status line so (f) is dispatchable.
+July 29, 2026. Sub-PR (f), lead capture and its `FloorOpsApp.tsx` queue slot,
+merged in PR #245 on July 30, 2026, releasing that slot. The packet is Complete;
+its status line above carries the full account.
 
 **Binding note for whoever writes sub-PR (f) and AI-11 — learned the hard way in
 PR #238.** Eighteen defects were fixed across #235 and #238, and the last five
@@ -3236,8 +3237,6 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
-**Status:** Blocked — awaiting the AI-10 sub-PR (f) merge; filed now so the deferred scope is
-visible to dispatch and unclaimable (the DES-08c precedent for a blocked-but-filed packet).
 **Why:** AI-10 deliberately ships one accept action; three intents accumulate in the queue with
 only a manual "mark reviewed" exit, and spec §12 decisions 5–6 name this packet as their
 implementing packet. Nothing else owns the label catalog editor at all.
