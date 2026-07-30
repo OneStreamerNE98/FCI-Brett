@@ -30,8 +30,14 @@ function numeric(value: number | string | null | undefined) {
 
 export async function dashboardData(
   database: D1Database,
-  options: { now: number; timeZone: string; simulation?: boolean } = { now: Date.now(), timeZone: "America/New_York" },
+  // now/timeZone are optional so a caller can supply ONLY the environment scope
+  // without having to invent a clock reading. That matters: the assistant's
+  // dashboard tool must not call its injected now() again just to pass it
+  // through, because Today pins that the display-timezone now is captured once.
+  options: { now?: number; timeZone?: string; simulation?: boolean } = {},
 ) {
+  const now = options.now ?? Date.now();
+  const timeZone = options.timeZone ?? "America/New_York";
   // Simulation filings share this table; a live count must not include them.
   const filedScope = archiveScope(options.simulation === true);
   const [
@@ -52,8 +58,8 @@ export async function dashboardData(
     database.prepare("SELECT COUNT(*) AS total FROM project_meetings").first<CountRow>(),
     database.prepare(`SELECT COUNT(*) AS total FROM gmail_file_archives WHERE status = 'filed' AND ${filedScope.clause}`).bind(...filedScope.bindings).first<CountRow>(),
     readTodayProjectMeetings(database, {
-      now: options.now,
-      timeZone: options.timeZone,
+      now,
+      timeZone,
       includeUpcoming: true,
       limit: TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT,
     }),

@@ -453,7 +453,10 @@ export function createAssistantToolRegistry(
     async (argumentsValue) => {
       const input = objectValue(argumentsValue);
       if (!input || !hasOnlyKeys(input, [])) return { evidence: [] };
-      const dashboard = await dashboardData(database);
+      // Same environment scope as every other filed-email read here: without it
+      // a simulated session reports the LIVE filed-email count, which is the
+      // isolation failure inverted rather than fixed.
+      const dashboard = await dashboardData(database, { simulation });
       const evidence: Evidence[] = [
         { id: "metric:active-leads", label: "Dashboard metric · Active leads", detail: String(dashboard.metrics.activeLeads) },
         { id: "metric:active-projects", label: "Dashboard metric · Active projects", detail: String(dashboard.metrics.activeProjects) },
