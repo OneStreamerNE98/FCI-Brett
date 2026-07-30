@@ -976,7 +976,17 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   });
   const gmailStepStatus = stepStatus({ simulation, previousComplete: driveStepStatus === "Complete", prerequisitesReady: gmailReady, complete: gmailLabelsReady });
   const calendarStepStatus = stepStatus({ simulation, previousComplete: gmailStepStatus === "Complete", prerequisitesReady: calendarReady, complete: calendarChecked });
-  const hasStoredConnection = !simulation && Boolean(workspace?.connectionStatus && workspace.connectionStatus !== "not-connected");
+  // 'revoked' is a real status kept for audit and health reporting, but there is
+  // nothing left to disconnect: the row survives only as history and its token is
+  // destroyed. Without excluding it here the Disconnect button lingers after a
+  // successful severance, and pressing it re-tombstones the row, writes a second
+  // disconnect audit event, and reports not_attempted — firing the
+  // manual-revocation warning for a connection that was already revoked.
+  const hasStoredConnection = !simulation && Boolean(
+    workspace?.connectionStatus
+    && workspace.connectionStatus !== "not-connected"
+    && workspace.connectionStatus !== "revoked",
+  );
   const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
   const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
   const calendarActionsEnabled = simulation || (gmailStepStatus === "Complete" && calendarReady);
