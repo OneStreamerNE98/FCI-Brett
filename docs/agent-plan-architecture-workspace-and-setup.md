@@ -1088,7 +1088,7 @@ is overwritten.
 **Accept:** mechanics section matches code; live test recorded.
 
 ### WS-10 · AGENT — Connection-health and sync-error operator surface (medium, after WS-03)
-**Status:** In progress — `codex/ws10-connection-health`
+**Status:** Complete — PR #253, July 30, 2026. Source-only and undeployed. Shipped the endpoint route (`GET /api/v1/integrations/google/operations`, admin-gated, SELECT-only, connection-scoped, 50 rows per category with a 51st-row `hasMore` probe) rather than the documented-D1-queries alternative, per the packet's "choose one, don't half-do both". Review fixed the empty activity state, which promised "Resetting simulation clears this history." in both runtime modes; it is now gated on `payload.simulation`. **This packet also shipped SET-09's events reader and activity card, so SET-09 was narrowed in the same PR to its genuine residual (opaque-cursor pagination past the first 50) rather than being left claimable against a premise this work made false.**
 
 **Why:** An operator cannot list stuck/failed Google work: drive-operation leases +
 `last_error_code`, failed gmail archives, and `google_integration_events` have no reader.
@@ -2751,13 +2751,28 @@ regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
 ### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026)
-**Status:** In progress — `codex/des11a-span-model`
-**Prioritized by the owner July 30, 2026** — the status line is removed deliberately, which
-under the dispatch law ("available if and only if it has no status line") makes this packet
-claimable. Design complete via the approved plan-mode design of July 24, 2026. **Sub-scopes
-A and B ship as sequential PRs, A first** — B's toggle drives the span model A introduces.
-**A takes the single `app/FloorOpsApp.tsx` queue slot and the `app/globals.css` lock**, so
-no other packet may hold either while A is open.
+**SUB-SCOPE A IS COMPLETE — PR #252, July 30, 2026. Source-only and undeployed. ONLY
+SUB-SCOPE B REMAINS CLAIMABLE.** The packet carries no status line because B is still
+open and the dispatch law reads "available if and only if it has no status line" — but a
+claimant must take **B only**. Do not rebuild A.
+
+**A, merged in PR #252 — do not redo:** the `fullWidth` span model in
+`app/lib/page-layouts.ts` (type, `PAGE_LAYOUT_RESIZABLE_SECTIONS`, validators, merge,
+`isDefaultPageLayout` requiring empty `fullWidth`, and the pure `resolveArrangedSpans`
+pairing-promotion pass), the FloorOpsApp arranged-branch mappings with the
+`data-page-layout-size` hook, symmetric `repeat(2, minmax(0,1fr))` arranged tracks in
+`globals.css`, and the unit-test updates. A seven-lens review proved the no-holes
+invariant holds for every input, including hidden sections interleaved with halves and a
+lone trailing half. Golden hashes verified byte-identical on the merged tree. **The
+`app/FloorOpsApp.tsx` queue slot and the `app/globals.css` lock are both FREE again.**
+
+**B, still to build:** the width-toggle UI and its e2e — `PageLayoutEditor` toggle, copy,
+pressed styling, the e2e `StoredPreferences` type (which A deliberately left carrying no
+`fullWidth`, assigning the type update here), and one new test covering the curated-only
+toggle census, keyboard operation, pairing outcome via `data-page-layout-size`, axe at
+1280/390 in the editing state, a ≥44px target, persistence round-trip, and Reset →
+default digest byte-identical. B touches `PageLayoutEditor.tsx` and the e2e spec; it does
+**not** need the FloorOpsApp or globals.css locks.
 
 **Why:** owner feedback (July 24, 2026): layout-editor cards only move
 vertically, and layouts can look incohesive after moves. Owner decisions,
