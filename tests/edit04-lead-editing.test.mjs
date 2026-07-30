@@ -59,9 +59,20 @@ test("create mode and the dedicated advanceLead fast path retain their establish
   const advanceLead = sourceSection(app, "async function advanceLead", "async function searchWorkspace", "advanceLead");
   const leadModal = sourceSection(app, "function LeadModal", "function ClientModal", "LeadModal");
 
-  assert.match(addLead, /body: JSON\.stringify\(\{ company: lead\.company, contactName: lead\.contact, projectName: lead\.project, source: lead\.source, stage: lead\.stage, site: lead\.site, estimatedValue: lead\.estimatedValue, nextAction: lead\.next, status: "active" \}\)/u);
+  for (const field of [
+    ["contactEmail", "lead.contactEmail"],
+    ["contactPhone", "lead.contactPhone"],
+    ["nextActionAt", "lead.nextActionAt"],
+  ]) {
+    assert.match(
+      addLead,
+      new RegExp(`${field[0]}: ${field[1].replace(".", "\\.")}`, "u"),
+    );
+  }
+  assert.match(addLead, /lead\.ownerEmail \? \{ ownerEmail: lead\.ownerEmail \} : \{\}/u);
+  assert.match(addLead, /status: "active"/u);
   assert.match(leadModal, /props\.mode === "create"/u);
-  assert.match(leadModal, /stage: "New inquiry"/u);
+  assert.match(leadModal, /const stage = [\s\S]*\|\| "New inquiry"/u);
   assert.match(leadModal, /status: "active"/u);
   assert.match(leadModal, /"Add to pipeline"/u);
 
@@ -107,9 +118,20 @@ test("LeadModal create mode accepts prefill and the edit surface keeps all termi
   // (review finding, PR #231 — prefill was previously welded to edit mode).
   assert.match(app, /mode: "create";[\s\S]{0,400}initialValues\?: Partial<Lead>;/u);
   assert.match(app, /const seed[\s\S]{0,120}props\.initialValues \?\? null/u);
-  for (const field of ["company", "contact", "project", "site", "next"]) {
+  for (const field of [
+    "company",
+    "contact",
+    "contactEmail",
+    "contactPhone",
+    "project",
+    "site",
+    "stage",
+    "next",
+    "ownerEmail",
+  ]) {
     assert.match(app, new RegExp(`defaultValue=\\{seed\\?\\.${field}`, "u"));
   }
+  assert.match(app, /defaultValue=\{dateTimeLocalInputValue\(seed\?\.nextActionAt/u);
   assert.match(app, /defaultValue=\{seed\?\.estimatedValue/u);
   // The archive-only decision's three terminal statuses stay reachable from the
   // only sanctioned UI path — a refactor dropping Lost/Archived must fail here

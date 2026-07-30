@@ -190,6 +190,7 @@ class ReviewQueueDatabase {
     sender = "Stored Sender <stored@example.test>",
     clientId = null,
     approvedProjectId = null,
+    analysisPayload = {},
   }) {
     this.database.prepare(
       `INSERT INTO mail_items (
@@ -199,7 +200,7 @@ class ReviewQueueDatabase {
          label_definition_version, attempted_label_definition_version,
          subject, sender, received_at, failure_attempts, error_code,
          coverage_complete, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'Review required', NULL, '{}',
+       ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'Review required', NULL, ?,
                  'prospect', 'medium', ?, ?, NULL, ?, ?, ?, 0, NULL, 1, ?, ?)`,
     ).run(
       id,
@@ -209,6 +210,7 @@ class ReviewQueueDatabase {
       clientId,
       approvedProjectId,
       status,
+      JSON.stringify(analysisPayload),
       "a".repeat(64),
       application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
       subject,
@@ -367,6 +369,7 @@ test("review queue GET is admin, no-store, snapshot-counted, and network free", 
         subject: "FCI TEST stored review subject",
         sender: "Stored Sender <stored@example.test>",
         receivedAt: Date.parse("2026-07-28T13:00:00.000Z"),
+        leadProposal: null,
       }],
       totalCount: 1,
     });
@@ -374,6 +377,84 @@ test("review queue GET is admin, no-store, snapshot-counted, and network free", 
   } finally {
     workerEnvironment.DB = originalDatabase;
     globalThis.fetch = originalFetch;
+    database.close();
+  }
+});
+
+test("review queue GET exposes only a closed lead proposal for valid lead-intent rows", async () => {
+  const database = new ReviewQueueDatabase();
+  const originalDatabase = workerEnvironment.DB;
+  workerEnvironment.DB = database;
+  const validLeadFields = {
+    company: "FCI TEST — DO NOT USE",
+    contactName: "Taylor Example",
+    contactEmail: "taylor@example.test",
+    contactPhone: "555-0100",
+    projectName: "Lobby flooring estimate",
+    site: null,
+    estimatedValue: null,
+  };
+  const storedValidLeadFields = {
+    ...validLeadFields,
+    company: "  FCI TEST — DO NOT USE  ",
+    contactEmail: "TAYLOR@EXAMPLE.TEST",
+  };
+  database.insertReview({
+    id: "mail-valid-lead",
+    messageId: "gmail-a-valid-lead",
+    analysisPayload: {
+      intents: ["lead", "schedule"],
+      leadFields: storedValidLeadFields,
+    },
+  });
+  database.insertReview({
+    id: "mail-non-lead",
+    messageId: "gmail-b-non-lead",
+    analysisPayload: {
+      intents: ["schedule"],
+      leadFields: validLeadFields,
+    },
+  });
+  database.insertReview({
+    id: "mail-malformed-lead",
+    messageId: "gmail-c-malformed-lead",
+    analysisPayload: {
+      intents: ["lead"],
+      leadFields: {
+        ...validLeadFields,
+        unexpected: "must not cross the queue boundary",
+      },
+    },
+  });
+  database.insertReview({
+    id: "mail-unsafe-email",
+    messageId: "gmail-d-unsafe-email",
+    analysisPayload: {
+      intents: ["lead"],
+      leadFields: {
+        ...validLeadFields,
+        contactEmail: "not-an-email",
+      },
+    },
+  });
+  try {
+    const response = await route.GET(routeRequest());
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.rows.length, 4);
+    assert.deepEqual(body.rows.toSorted((left, right) =>
+      left.id.localeCompare(right.id)
+    ).map((row) => [
+      row.id,
+      row.leadProposal,
+    ]), [
+      ["mail-malformed-lead", null],
+      ["mail-non-lead", null],
+      ["mail-unsafe-email", null],
+      ["mail-valid-lead", validLeadFields],
+    ]);
+  } finally {
+    workerEnvironment.DB = originalDatabase;
     database.close();
   }
 });

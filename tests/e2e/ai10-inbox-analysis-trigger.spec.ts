@@ -10,6 +10,33 @@ const message = {
   snippet: "A safe Inbox analysis fixture.",
   labelIds: ["INBOX"],
 };
+const leadReviewRow = {
+  id: "mail-item-ai10-lead-review",
+  subject: "FCI TEST lead request",
+  sender: "Taylor Example <taylor@example.test>",
+  receivedAt: Date.parse("2026-07-28T13:00:00.000Z"),
+  leadProposal: {
+    company: "FCI TEST — DO NOT USE — AI-10 Lead",
+    contactName: "Taylor Example",
+    contactEmail: "taylor@example.test",
+    contactPhone: "555-0100",
+    projectName: "Lobby flooring estimate",
+    site: null,
+    estimatedValue: null,
+  },
+};
+const secondLeadReviewRow = {
+  ...leadReviewRow,
+  id: "mail-item-ai10-lead-review-second",
+  subject: "FCI TEST second lead request",
+  sender: "Morgan Example <morgan@example.test>",
+  leadProposal: {
+    ...leadReviewRow.leadProposal,
+    company: "FCI TEST — DO NOT USE — AI-10 Second Lead",
+    contactName: "Morgan Example",
+    contactEmail: "morgan@example.test",
+  },
+};
 
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
@@ -339,6 +366,183 @@ test("Needs review renders the stored queue, continues bounded coverage, and dis
   });
   expect(calls.at(-1)?.method).toBe("GET");
   expect(gmailQueueReads).toEqual([]);
+});
+
+test("a lead-intent review row opens one prefilled lead review and retires only after create succeeds", async ({ page }) => {
+  await mockInbox(page, true);
+  const leadPosts: Record<string, unknown>[] = [];
+  const reviewPatches: unknown[] = [];
+  let queueRows = [leadReviewRow];
+  await page.route("**/api/v1/leads", async (route) => {
+    if (route.request().method() === "POST") {
+      leadPosts.push(route.request().postDataJSON());
+      await fulfillJson(route, { lead: { id: "lead-ai10-created" } }, 201);
+      return;
+    }
+    await fulfillJson(route, { leads: [] });
+  });
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    const method = route.request().method();
+    if (method === "POST") {
+      await fulfillJson(route, {
+        terminationReason: "caught-up",
+        message: "You're caught up",
+      });
+      return;
+    }
+    if (method === "PATCH") {
+      const body = route.request().postDataJSON();
+      reviewPatches.push(body);
+      queueRows = [];
+      await fulfillJson(route, {
+        id: leadReviewRow.id,
+        status: "dismissed",
+      });
+      return;
+    }
+    await fulfillJson(route, {
+      rows: queueRows,
+      totalCount: queueRows.length,
+    });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await page.getByRole("button", {
+    name: "Create lead: FCI TEST lead request",
+  }).click();
+  const modal = page.getByRole("dialog", { name: "Add a lead" });
+  await expect(modal.getByLabel("Client company")).toHaveValue(
+    "FCI TEST — DO NOT USE — AI-10 Lead",
+  );
+  await expect(modal.getByLabel("Primary contact")).toHaveValue("Taylor Example");
+  await expect(modal.getByLabel(/Contact email/)).toHaveValue(
+    "taylor@example.test",
+  );
+  await expect(modal.getByLabel(/Contact phone/)).toHaveValue("555-0100");
+  await expect(modal.getByLabel("Project / opportunity")).toHaveValue(
+    "Lobby flooring estimate",
+  );
+  await expect(modal.getByLabel("Lead source")).toHaveValue("Email");
+  await expect(modal.getByLabel("Stage")).toHaveValue("New inquiry");
+  await expect(modal.getByLabel("Lead owner email")).toHaveValue(
+    "e2e-admin@example.test",
+  );
+  await expect(modal.getByRole("textbox", {
+    name: "Next action",
+    exact: true,
+  })).toHaveValue("Review the email and contact this prospective client.");
+  await expect(modal.getByLabel(/Next action date/)).not.toHaveValue("");
+  await expect(modal.getByText(
+    "Still needs typing before this lead can be added.",
+    { exact: true },
+  )).toHaveCount(2);
+
+  await modal.getByLabel("Project site").fill("123 Test Street");
+  await modal.getByLabel("Estimated value").fill("25000");
+  await modal.getByRole("button", { name: "Add to pipeline" }).click();
+
+  await expect(modal).toBeHidden();
+  await expect(page.getByText("FCI TEST lead request", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("No messages need review", { exact: true })).toBeVisible();
+  expect(leadPosts).toHaveLength(1);
+  expect(leadPosts[0]).toEqual(expect.objectContaining({
+    company: "FCI TEST — DO NOT USE — AI-10 Lead",
+    contactName: "Taylor Example",
+    contactEmail: "taylor@example.test",
+    contactPhone: "555-0100",
+    projectName: "Lobby flooring estimate",
+    source: "Email",
+    stage: "New inquiry",
+    site: "123 Test Street",
+    estimatedValue: 25_000,
+    nextAction: "Review the email and contact this prospective client.",
+    ownerEmail: "e2e-admin@example.test",
+    status: "active",
+  }));
+  expect(typeof leadPosts[0].nextActionAt).toBe("string");
+  expect(reviewPatches).toEqual([{ id: leadReviewRow.id }]);
+});
+
+test("a failed lead retirement stays honest after another row is created and retired", async ({ page }) => {
+  await mockInbox(page, true);
+  let leadPosts = 0;
+  let reviewPatches = 0;
+  let queueRows = [leadReviewRow, secondLeadReviewRow];
+  await page.route("**/api/v1/leads", async (route) => {
+    if (route.request().method() === "POST") {
+      leadPosts += 1;
+      await fulfillJson(route, { lead: { id: "lead-ai10-created" } }, 201);
+      return;
+    }
+    await fulfillJson(route, { leads: [] });
+  });
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    const method = route.request().method();
+    if (method === "POST") {
+      await fulfillJson(route, {
+        terminationReason: "caught-up",
+        message: "You're caught up",
+      });
+      return;
+    }
+    if (method === "PATCH") {
+      reviewPatches += 1;
+      const body = route.request().postDataJSON();
+      if (body.id === leadReviewRow.id) {
+        await fulfillJson(route, { error: "review_store_unavailable" }, 503);
+        return;
+      }
+      queueRows = queueRows.filter((row) => row.id !== body.id);
+      await fulfillJson(route, { id: body.id, status: "dismissed" });
+      return;
+    }
+    await fulfillJson(route, { rows: queueRows, totalCount: queueRows.length });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await page.getByRole("button", {
+    name: "Create lead: FCI TEST lead request",
+  }).click();
+  const modal = page.getByRole("dialog", { name: "Add a lead" });
+  await modal.getByLabel("Project site").fill("123 Test Street");
+  await modal.getByLabel("Estimated value").fill("25000");
+  await modal.getByRole("button", { name: "Add to pipeline" }).click();
+
+  await expect(modal).toBeHidden();
+  await expect(page.getByText("FCI TEST lead request", { exact: true })).toBeVisible();
+  await expect(page.getByText(
+    "Lead created, but this message is still in review. Use Mark reviewed to retire it when the queue is available.",
+    { exact: true },
+  )).toBeVisible();
+  await expect(page.getByRole("button", {
+    name: "Create lead: FCI TEST lead request",
+  })).toHaveCount(0);
+  await expect(page.getByRole("button", {
+    name: "Mark reviewed: FCI TEST lead request",
+  })).toBeVisible();
+
+  await page.getByRole("button", {
+    name: "Create lead: FCI TEST second lead request",
+  }).click();
+  const secondModal = page.getByRole("dialog", { name: "Add a lead" });
+  await secondModal.getByLabel("Project site").fill("456 Test Avenue");
+  await secondModal.getByLabel("Estimated value").fill("18000");
+  await secondModal.getByRole("button", { name: "Add to pipeline" }).click();
+
+  await expect(secondModal).toBeHidden();
+  await expect(page.getByText(
+    "Lead created, but this message is still in review. Use Mark reviewed to retire it when the queue is available.",
+    { exact: true },
+  )).toBeVisible();
+  await expect(page.getByRole("button", {
+    name: "Create lead: FCI TEST lead request",
+  })).toHaveCount(0);
+  await expect(page.getByRole("button", {
+    name: "Mark reviewed: FCI TEST lead request",
+  })).toBeVisible();
+  await expect(page.getByText("FCI TEST second lead request", { exact: true })).toHaveCount(0);
+  expect(leadPosts).toBe(2);
+  expect(reviewPatches).toBe(2);
 });
 
 test("Needs review stays indeterminate until its stored queue read settles", async ({ page }) => {

@@ -12,6 +12,7 @@ import { OpenAIResponsesProvider } from "../../../adapters/openai/responses-prov
 import {
   analyzeInboxMessage,
   eligibleInboxAnalysisProjects,
+  INBOX_ANALYSIS_INTENTS,
   INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
   parseAssistantInboxAnalysis,
   type InboxAnalysis,
@@ -59,6 +60,15 @@ export const INBOX_ANALYSIS_SWEEP_DEADLINE_MS = 55_000;
 
 const CAUGHT_UP_MESSAGE = "You're caught up";
 const OLDER_PENDING_MESSAGE = "Older messages not yet analyzed";
+const INBOX_ANALYSIS_INTENT_SET = new Set<string>(INBOX_ANALYSIS_INTENTS);
+const REVIEW_LEAD_FIELD_LIMITS = Object.freeze({
+  company: 180,
+  contactName: 160,
+  contactEmail: 254,
+  contactPhone: 40,
+  projectName: 180,
+  site: 300,
+} as const);
 
 type ProjectCandidateRow = {
   id: string;
@@ -1233,12 +1243,91 @@ export async function POST(request: NextRequest) {
   }
 }
 
+function reviewQueueLeadProposal(item: MailItem) {
+  const payload = item.analysisPayload;
+  if (
+    !payload
+    || !Array.isArray(payload.intents)
+    || !payload.intents.includes("lead")
+    || payload.intents.some((intent) =>
+      typeof intent !== "string" || !INBOX_ANALYSIS_INTENT_SET.has(intent)
+    )
+    || new Set(payload.intents).size !== payload.intents.length
+  ) {
+    return null;
+  }
+  const candidate = payload.leadFields;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
+  const fields = candidate as Record<string, unknown>;
+  if (
+    Object.keys(fields).length !== Object.keys(REVIEW_LEAD_FIELD_LIMITS).length + 1
+    || !Object.keys(REVIEW_LEAD_FIELD_LIMITS).every((key) =>
+      Object.hasOwn(fields, key)
+    )
+    || !Object.hasOwn(fields, "estimatedValue")
+  ) {
+    return null;
+  }
+  const safeText: Partial<
+    Record<keyof typeof REVIEW_LEAD_FIELD_LIMITS, string | null>
+  > = {};
+  for (const [key, maximum] of Object.entries(REVIEW_LEAD_FIELD_LIMITS) as [
+    keyof typeof REVIEW_LEAD_FIELD_LIMITS,
+    number,
+  ][]) {
+    const value = fields[key];
+    if (value === null) {
+      safeText[key] = null;
+      continue;
+    }
+    const normalized = typeof value === "string"
+      ? value.replace(/\s+/g, " ").trim()
+      : "";
+    if (
+      typeof value !== "string"
+      || !normalized
+      || normalized.length > maximum
+      || /[\u0000-\u001f\u007f]/.test(value)
+      || (
+        key === "contactEmail"
+        && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)
+      )
+    ) {
+      return null;
+    }
+    safeText[key] = key === "contactEmail"
+      ? normalized.toLowerCase()
+      : normalized;
+  }
+  const estimatedValue = fields.estimatedValue === null
+    || (
+      Number.isSafeInteger(fields.estimatedValue)
+      && Number(fields.estimatedValue) >= 0
+      && Number(fields.estimatedValue) <= 2_147_483_647
+    )
+    ? fields.estimatedValue as number | null
+    : null;
+  if (fields.estimatedValue !== null && estimatedValue === null) return null;
+  return Object.freeze({
+    company: safeText.company ?? null,
+    contactName: safeText.contactName ?? null,
+    contactEmail: safeText.contactEmail ?? null,
+    contactPhone: safeText.contactPhone ?? null,
+    projectName: safeText.projectName ?? null,
+    site: safeText.site ?? null,
+    estimatedValue,
+  });
+}
+
 function reviewQueueRow(item: MailItem) {
   return Object.freeze({
     id: item.id,
     subject: item.subject,
     sender: item.sender,
     receivedAt: item.receivedAt,
+    leadProposal: reviewQueueLeadProposal(item),
   });
 }
 
