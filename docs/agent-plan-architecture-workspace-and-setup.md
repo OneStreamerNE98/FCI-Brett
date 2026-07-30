@@ -2737,8 +2737,13 @@ unchanged; PNGs/manifest byte-identical unless the variant explicitly
 regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
-### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026; NOT prioritized)
-**Status:** Blocked — awaiting owner prioritization and dispatch; design complete via the approved plan-mode design of July 24, 2026 (sub-scopes A/B below ship as sequential PRs when dispatched).
+### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026)
+**Prioritized by the owner July 30, 2026** — the status line is removed deliberately, which
+under the dispatch law ("available if and only if it has no status line") makes this packet
+claimable. Design complete via the approved plan-mode design of July 24, 2026. **Sub-scopes
+A and B ship as sequential PRs, A first** — B's toggle drives the span model A introduces.
+**A takes the single `app/FloorOpsApp.tsx` queue slot and the `app/globals.css` lock**, so
+no other packet may hold either while A is open.
 
 **Why:** owner feedback (July 24, 2026): layout-editor cards only move
 vertically, and layouts can look incohesive after moves. Owner decisions,
@@ -3295,14 +3300,52 @@ suggest, what was accepted or dismissed, and by whom" — proposals with their r
 outcome status, label-definition version, and per-label accept/dismiss counts. This is the
 transparency layer the persistence decision exists to enable, and it doubles as the §6
 calibration evidence the spec requires before any auto-apply may ever be proposed. Reads only;
-no new table (the analyses rows already carry everything).
-**Files:** named at claim time against merged AI-10 source — this packet must be re-verified
-against main before dispatch, per the amended-before-dispatch rule.
+**no new table** — but see the amendment below, because "by whom" is not free.
+
+**AMENDED July 30, 2026, before dispatch — sub-scope (d) asserted a premise that does not
+hold.** The packet claimed the stored rows "already carry everything". Verified against
+merged AI-10 source on main, that is true for every clause **except attribution**:
+
+- `mail_items` carries `analysisPayload`, `party`, `confidence`, `contentHash`,
+  `labelDefinitionVersion`, `attemptedLabelDefinitionVersion`, `subject`, `sender`,
+  `receivedAt`, `status`, `matchReason`, `suggestedProjectId`, `approvedProjectId` — so
+  proposals, rationale, outcomes, label version, and per-label counts are all answerable.
+- `MAIL_ITEM_STATUSES` already contains `accepted` and `dismissed`, so outcome state exists.
+- **There is no actor anywhere on the review path.** `mail_items` has no actor column;
+  `dismissNeedsReview(id, connectionKey, updatedAt)` (`app/ports/mail-item-repository.ts:38`)
+  takes none; and the only `activity_events` write in
+  `app/api/v1/inbox-analysis/route.ts:207` is the
+  `assistant.inbox_analysis_provider_call` rate-limit counter, **not** a review-outcome
+  audit. `approvalActor` belongs to `gmail_file_archives`, a different table on a different
+  path.
+
+**Resolution (owner requirement preserved rather than silently dropped):** (d) additionally
+adds **additive `reviewed_by` and `reviewed_at` columns on `mail_items`** and threads the
+actor through both the accept and the dismiss paths. Both call sites already hold the email
+from `requireOfficeUser`, so this is a parameter thread plus one additive migration — the
+same shape as AI-10's own additive migration, and it keeps the "no new table" constraint
+literally true. Without it the review audit is anonymous, which is the one thing an
+attribution view cannot be.
+**Files:** verified against main July 30, 2026 (post-#248/#249/#250). (b) must re-point
+**two** assertions in `tests/ai08-ui-contract.test.mjs`, not one — the eight-name
+`SETTINGS_SECTIONS` deep-equal **and** the adjacent
+`assert.doesNotMatch(navigation, /AI assistant/iu, "AI-08 must not add a Settings section")`.
+Confirmed still present: `TASK_SOURCES` includes `"email"` (`app/domain/task.ts:7`), so (a)'s
+schedule and warranty accepts need no domain change.
+**Dispatch as sub-PRs, not one large PR** — the AI-10 precedent (a+b+c → d+e → f) exists
+because a large AI packet is unreviewable in one pass. Recommended order: **(a)** typed
+accepts, self-contained and the highest value since the queue currently accumulates three
+intents with only a manual dismiss → **(b)** the Settings section and its two re-points →
+**(c)** the label catalog editor, which is the security-sensitive half and deserves its own
+review → **(d)** the activity view last, since it reads what (c) writes.
 **Accept:** every queue intent has a typed accept; the AI section exists with the three
 re-points made deliberately; label CRUD round-trips with a used label refusing deletion and a
 retired slug never reissued; a hostile label description cannot alter guard guarantees;
 the activity view renders proposals with outcomes and rationale from stored rows only, with
-honest empty states and zero provider calls;
+honest empty states and zero provider calls; **every accept and dismiss records the acting
+user, and the activity view shows it** — a review row whose outcome changed with no
+`reviewed_by` fails this packet, since an anonymous audit is the one thing an attribution
+view cannot ship with;
 `npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
 **Effort:** large. **Cost:** provider spend within the existing budget.
 
