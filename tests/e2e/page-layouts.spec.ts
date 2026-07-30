@@ -201,7 +201,7 @@ test("keyboard-only Overview reorder and hide persist, while Reset restores byte
       ...originalPreferences,
       pageLayouts: {
         ...originalPreferences.pageLayouts,
-        overview: { order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
+        overview: { ...originalPreferences.pageLayouts.overview, order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
       },
     });
     await page.reload();
@@ -280,7 +280,7 @@ test("Reports supports native drag, hide persistence, and reset to its legacy de
       ...originalPreferences,
       pageLayouts: {
         ...originalPreferences.pageLayouts,
-        reports: { order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"], hidden: [] },
+        reports: { ...originalPreferences.pageLayouts.reports, order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"], hidden: [] },
       },
     });
     await page.reload();
@@ -350,8 +350,8 @@ test("ready Overview and Reports metrics follow the linked-versus-static card gr
     await restoreStoredPreferences(page, {
       ...originalPreferences,
       pageLayouts: {
-        overview: { order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
-        reports: { order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"], hidden: [] },
+        overview: { ...originalPreferences.pageLayouts.overview, order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"], hidden: [] },
+        reports: { ...originalPreferences.pageLayouts.reports, order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"], hidden: [] },
       },
     });
 

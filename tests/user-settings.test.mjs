@@ -114,10 +114,12 @@ function pageLayouts(overviewFirst, overviewHidden, reportsFirst, reportsHidden)
     overview: {
       order: [overviewFirst, ...defaults.overview.order.filter((key) => key !== overviewFirst)],
       hidden: [overviewHidden],
+      fullWidth: [overviewFirst],
     },
     reports: {
       order: [reportsFirst, ...defaults.reports.order.filter((key) => key !== reportsFirst)],
       hidden: [reportsHidden],
+      fullWidth: ["pipeline-by-stage"],
     },
   };
 }
@@ -225,6 +227,7 @@ test("widens stale stored layouts and preserves them through unrelated partial u
   assert.deepEqual(beforeBody.preferences.pageLayouts.overview, {
     order: ["scheduling", "metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
     hidden: ["gmail-project-inbox"],
+    fullWidth: [],
   });
   assert.deepEqual(beforeBody.preferences.pageLayouts.reports, defaultPageLayouts(false).reports);
 
@@ -294,6 +297,12 @@ test("rejects target-identity injection, malformed preferences, cross-origin wri
   unknownLayout.overview.order = ["invented", ...unknownLayout.overview.order];
   const unknownSection = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", { pageLayouts: unknownLayout }));
   assert.equal(unknownSection.status, 400);
+  assert.equal(database.queries.filter(({ operation }) => operation === "run").length, 0);
+
+  const missingFullWidth = defaultPageLayouts(true);
+  delete missingFullWidth.overview.fullWidth;
+  const incompleteLayoutShape = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", { pageLayouts: missingFullWidth }));
+  assert.equal(incompleteLayoutShape.status, 400);
   assert.equal(database.queries.filter(({ operation }) => operation === "run").length, 0);
 
   const crossOrigin = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", validPreferences, "/api/v1/settings/me", "https://fci.example.test", "https://outside.example.test"));

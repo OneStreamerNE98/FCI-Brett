@@ -32,17 +32,24 @@ export const PAGE_LAYOUT_SECTION_CATALOG = {
 
 export type PageLayoutPage = keyof typeof PAGE_LAYOUT_SECTION_CATALOG;
 export type PageLayoutSectionKey = typeof PAGE_LAYOUT_SECTION_CATALOG[PageLayoutPage][number]["key"];
+export type PageLayoutSpanSize = "half" | "full";
+
+export const PAGE_LAYOUT_RESIZABLE_SECTIONS = {
+  overview: ["lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"],
+  reports: ["pipeline-by-stage", "projects-by-status"],
+} as const satisfies Record<PageLayoutPage, readonly PageLayoutSectionKey[]>;
 
 export type PageLayout = {
   order: PageLayoutSectionKey[];
   hidden: PageLayoutSectionKey[];
+  fullWidth: PageLayoutSectionKey[];
 };
 
 export type PageLayouts = Record<PageLayoutPage, PageLayout>;
 
 const PAGE_LAYOUT_PAGES = Object.freeze(Object.keys(PAGE_LAYOUT_SECTION_CATALOG) as PageLayoutPage[]);
 const PAGE_LAYOUT_PAGE_KEYS = new Set<string>(PAGE_LAYOUT_PAGES);
-const PAGE_LAYOUT_VALUE_KEYS = new Set(["order", "hidden"]);
+const PAGE_LAYOUT_VALUE_KEYS = new Set(["order", "hidden", "fullWidth"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -50,6 +57,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>) {
   return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isPageLayoutSectionResizable(page: PageLayoutPage, key: string) {
+  return (PAGE_LAYOUT_RESIZABLE_SECTIONS[page] as readonly string[]).includes(key);
 }
 
 export function isPageLayoutCatalogEntryVisible(entry: PageLayoutCatalogEntry, isAdmin: boolean) {
@@ -64,6 +75,7 @@ export function defaultPageLayout(page: PageLayoutPage, isAdmin: boolean): PageL
   return {
     order: pageLayoutSectionCatalog(page, isAdmin).map(({ key }) => key as PageLayoutSectionKey),
     hidden: [],
+    fullWidth: [],
   };
 }
 
@@ -80,10 +92,13 @@ function normalizePageLayoutForRead(value: unknown, page: PageLayoutPage, isAdmi
   const layout = isRecord(value) ? value : {};
   const rawOrder = Array.isArray(layout.order) ? layout.order : [];
   const rawHidden = Array.isArray(layout.hidden) ? layout.hidden : [];
+  const rawFullWidth = Array.isArray(layout.fullWidth) ? layout.fullWidth : [];
   const seenOrder = new Set<string>();
   const seenHidden = new Set<string>();
+  const seenFullWidth = new Set<string>();
   const order: PageLayoutSectionKey[] = [];
   const hidden: PageLayoutSectionKey[] = [];
+  const fullWidth: PageLayoutSectionKey[] = [];
 
   for (const key of rawOrder) {
     if (typeof key !== "string" || !known.has(key) || seenOrder.has(key)) continue;
@@ -98,8 +113,18 @@ function normalizePageLayoutForRead(value: unknown, page: PageLayoutPage, isAdmi
     seenHidden.add(key);
     hidden.push(key as PageLayoutSectionKey);
   }
+  for (const key of rawFullWidth) {
+    if (
+      typeof key !== "string"
+      || !known.has(key)
+      || !isPageLayoutSectionResizable(page, key)
+      || seenFullWidth.has(key)
+    ) continue;
+    seenFullWidth.add(key);
+    fullWidth.push(key as PageLayoutSectionKey);
+  }
 
-  return { order, hidden };
+  return { order, hidden, fullWidth };
 }
 
 /**
@@ -125,21 +150,35 @@ export function parseStoredPageLayouts(value: string | null | undefined, isAdmin
 
 function normalizePageLayoutForWrite(value: unknown, page: PageLayoutPage, isAdmin: boolean): PageLayout | null {
   if (!isRecord(value) || !hasOnlyKeys(value, PAGE_LAYOUT_VALUE_KEYS)) return null;
-  if (!Array.isArray(value.order) || !Array.isArray(value.hidden)) return null;
-  if (value.order.some((key) => typeof key !== "string") || value.hidden.some((key) => typeof key !== "string")) return null;
+  if (!Array.isArray(value.order) || !Array.isArray(value.hidden) || !Array.isArray(value.fullWidth)) return null;
+  if (
+    value.order.some((key) => typeof key !== "string")
+    || value.hidden.some((key) => typeof key !== "string")
+    || value.fullWidth.some((key) => typeof key !== "string")
+  ) return null;
 
   const defaults = defaultPageLayout(page, isAdmin);
   const known = new Set<string>(defaults.order);
   const orderValues = value.order as string[];
   const hiddenValues = value.hidden as string[];
-  if (orderValues.some((key) => !known.has(key)) || hiddenValues.some((key) => !known.has(key))) return null;
-  if (new Set(orderValues).size !== orderValues.length || new Set(hiddenValues).size !== hiddenValues.length) return null;
+  const fullWidthValues = value.fullWidth as string[];
+  if (
+    orderValues.some((key) => !known.has(key))
+    || hiddenValues.some((key) => !known.has(key))
+    || fullWidthValues.some((key) => !known.has(key) || !isPageLayoutSectionResizable(page, key))
+  ) return null;
+  if (
+    new Set(orderValues).size !== orderValues.length
+    || new Set(hiddenValues).size !== hiddenValues.length
+    || new Set(fullWidthValues).size !== fullWidthValues.length
+  ) return null;
 
   const order = orderValues as PageLayoutSectionKey[];
   const present = new Set<string>(order);
   return {
     order: [...order, ...defaults.order.filter((key) => !present.has(key))],
     hidden: hiddenValues as PageLayoutSectionKey[],
+    fullWidth: fullWidthValues as PageLayoutSectionKey[],
   };
 }
 
@@ -169,6 +208,10 @@ export function mergePageLayoutsForWrite(storedValue: string | null | undefined,
         ...submitted[page].hidden,
         ...stored[page].hidden.filter((key) => !visibleKeys.has(key)),
       ],
+      fullWidth: [
+        ...submitted[page].fullWidth,
+        ...stored[page].fullWidth.filter((key) => !visibleKeys.has(key)),
+      ],
     };
   }
   return merged;
@@ -177,6 +220,37 @@ export function mergePageLayoutsForWrite(storedValue: string | null | undefined,
 export function isDefaultPageLayout(layout: PageLayout, page: PageLayoutPage, isAdmin: boolean) {
   const defaults = defaultPageLayout(page, isAdmin);
   return layout.hidden.length === 0
+    && layout.fullWidth.length === 0
     && layout.order.length === defaults.order.length
     && layout.order.every((key, index) => key === defaults.order[index]);
+}
+
+/**
+ * Resolves the arranged grid in DOM order. A half-width section remains half
+ * only when the next section can share its row; every unpaired half is promoted
+ * to full so the grid never leaves a visual hole.
+ */
+export function resolveArrangedSpans<Key extends PageLayoutSectionKey>(
+  page: PageLayoutPage,
+  keys: readonly Key[],
+  fullWidth: readonly PageLayoutSectionKey[],
+): Array<{ key: Key; size: PageLayoutSpanSize }> {
+  const requestedFullWidth = new Set<PageLayoutSectionKey>(fullWidth);
+  const spans = keys.map((key) => ({
+    key,
+    size: (
+      !isPageLayoutSectionResizable(page, key)
+      || requestedFullWidth.has(key)
+    ) ? "full" : "half",
+  } satisfies { key: Key; size: PageLayoutSpanSize }));
+
+  for (let index = 0; index < spans.length; index += 1) {
+    if (spans[index].size !== "half") continue;
+    if (spans[index + 1]?.size === "half") {
+      index += 1;
+      continue;
+    }
+    spans[index] = { ...spans[index], size: "full" };
+  }
+  return spans;
 }

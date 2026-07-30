@@ -2738,6 +2738,7 @@ regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
 ### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026)
+**Status:** In progress — `codex/des11a-span-model`
 **Prioritized by the owner July 30, 2026** — the status line is removed deliberately, which
 under the dispatch law ("available if and only if it has no status line") makes this packet
 claimable. Design complete via the approved plan-mode design of July 24, 2026. **Sub-scopes

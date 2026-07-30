@@ -35,6 +35,7 @@ import {
   defaultPageLayouts,
   isDefaultPageLayout,
   normalizePageLayoutsForRead,
+  resolveArrangedSpans,
   type PageLayout,
   type PageLayoutPage,
   type PageLayouts,
@@ -1911,14 +1912,14 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
 
   return <PageLayoutEditor page="overview" layout={layout} isAdmin={isAdmin} enabled={layoutReady} loadError={layoutError} onRetry={onRetryLayout} onSave={onSaveLayout}>{({ layout: activeLayout, editing, editButton, editor, endDropZone, section }) => {
     const visibleKeys = activeLayout.order.filter((key) => !activeLayout.hidden.includes(key) && key in sectionNodes) as Array<keyof typeof sectionNodes>;
+    const arrangedSpans = resolveArrangedSpans("overview", visibleKeys, activeLayout.fullWidth);
     const defaultSections = <>
       {sectionNodes.metrics}
       {sectionNodes["todays-meetings"]}
       <section className="dashboard-grid">{sectionNodes["lead-pipeline"]}{sectionNodes.scheduling}</section>
       <section className="dashboard-grid lower-grid">{sectionNodes["active-projects"]}{sectionNodes["gmail-project-inbox"]}</section>
     </>;
-    const overviewFullWidthKeys = new Set<keyof typeof sectionNodes>(["metrics", "todays-meetings"]);
-    const arrangedSections = <><div className="page-layout-grid page-layout-grid-overview">{visibleKeys.map((key) => <div className={overviewFullWidthKeys.has(key) ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
+    const arrangedSections = <><div className="page-layout-grid page-layout-grid-overview">{arrangedSpans.map(({ key, size }) => <div className={size === "full" ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} data-page-layout-size={size} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
     return <>
       <PageTitle eyebrow={dateLabel} title={`${greeting}${firstName ? `, ${firstName}` : ""}.`} text={recordsReady ? "Here’s the latest from your operations workspace." : "Connecting to your operations workspace."} state="Working" action={<><button className="soft-button" onClick={() => onView("Schedule")}><CalendarDays size={16} /> View scheduling status</button>{editButton}</>} />
       {editor}
@@ -2078,6 +2079,7 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin, layo
 
   return <PageLayoutEditor page="reports" layout={layout} isAdmin={isAdmin} enabled={layoutReady} loadError={layoutError} onRetry={onRetryLayout} onSave={onSaveLayout}>{({ layout: activeLayout, editing, editButton, editor, endDropZone, section }) => {
     const visibleKeys = activeLayout.order.filter((key) => !activeLayout.hidden.includes(key) && key in sectionNodes) as Array<keyof typeof sectionNodes>;
+    const arrangedSpans = resolveArrangedSpans("reports", visibleKeys, activeLayout.fullWidth);
     const defaultSections = <>
       {sectionNodes["summary-metrics"]}
       {sectionNodes["business-kpis"]}
@@ -2085,8 +2087,7 @@ function ReportsView({ leads, projects, clients, dashboard, state, isAdmin, layo
       {sectionNodes["clients-by-industry"]}
       {sectionNodes["future-reports"]}
     </>;
-    const fullWidthKeys = new Set<keyof typeof sectionNodes>(["summary-metrics", "business-kpis", "clients-by-industry", "future-reports"]);
-    const arrangedSections = <><div className="page-layout-grid page-layout-grid-reports">{visibleKeys.map((key) => <div className={fullWidthKeys.has(key) ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
+    const arrangedSections = <><div className="page-layout-grid page-layout-grid-reports">{arrangedSpans.map(({ key, size }) => <div className={size === "full" ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} data-page-layout-size={size} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
     return <>
       <PageTitle eyebrow="Business performance" title="Reports" text="Current totals from saved leads, clients, projects, and meeting notes." state="Working" action={editButton} />
       {editor}
