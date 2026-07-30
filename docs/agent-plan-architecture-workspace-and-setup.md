@@ -1088,6 +1088,8 @@ is overwritten.
 **Accept:** mechanics section matches code; live test recorded.
 
 ### WS-10 · AGENT — Connection-health and sync-error operator surface (medium, after WS-03)
+**Status:** In progress — `codex/ws10-connection-health`
+
 **Why:** An operator cannot list stuck/failed Google work: drive-operation leases +
 `last_error_code`, failed gmail archives, and `google_integration_events` have no reader.
 **Do:** Either a small admin-gated `GET /api/v1/integrations/google/operations` endpoint
