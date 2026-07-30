@@ -13,6 +13,7 @@ import type { AppEnvironment } from "./lib/app-environment";
 import { AssistantView } from "./assistant/components/AssistantView";
 import { localDayRolloverDelay } from "./application/today-project-meetings";
 import { InboxView } from "./inbox/components/InboxView";
+import type { InboxLeadProposal } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
@@ -152,6 +153,10 @@ type LeadModalProps =
       onClose: () => void;
       onSave: (patch: LeadEditPatch, version: string) => Promise<void>;
     };
+type LeadModalRequest = Readonly<{
+  initialValues?: Partial<Lead>;
+  afterCreate?: () => Promise<void>;
+}>;
 type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; industryRaw?: string | null; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; jobSite: JobSiteLocation | null; driveFolderId?: string; driveUrl?: string };
 type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; version?: string; driveFolderId?: string; driveUrl?: string };
 type ProjectEditPatch = Partial<{
@@ -431,7 +436,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   const [topbarHidden, setTopbarHidden] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [leadModal, setLeadModal] = useState(false);
+  const [leadModal, setLeadModal] = useState<LeadModalRequest | null>(null);
   const [clientModal, setClientModal] = useState(false);
   const [projectModal, setProjectModal] = useState(false);
   const [projectModalClientId, setProjectModalClientId] = useState<string | null>(null);
@@ -902,17 +907,46 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     activeToastRef.current = null;
   }, []);
 
+  function openInboxLead(
+    proposal: InboxLeadProposal,
+    afterCreate: () => Promise<void>,
+  ) {
+    setLeadModal({
+      initialValues: {
+        company: proposal.company ?? "",
+        contact: proposal.contactName ?? "",
+        contactEmail: proposal.contactEmail,
+        contactPhone: proposal.contactPhone,
+        project: proposal.projectName ?? "",
+        source: "Email",
+        stage: "New inquiry",
+        site: proposal.site ?? "",
+        ...(proposal.estimatedValue === null
+          ? {}
+          : { estimatedValue: proposal.estimatedValue }),
+        next: "Review the email and contact this prospective client.",
+        nextActionAt: new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString(),
+        ownerEmail: userEmail.trim().toLowerCase(),
+        status: "active",
+      },
+      afterCreate,
+    });
+  }
+
   async function addLead(lead: Lead) {
+    const afterCreate = leadModal?.afterCreate;
     try {
-      const response = await fetch("/api/v1/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: lead.company, contactName: lead.contact, projectName: lead.project, source: lead.source, stage: lead.stage, site: lead.site, estimatedValue: lead.estimatedValue, nextAction: lead.next, status: "active" }) });
+      const response = await fetch("/api/v1/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: lead.company, contactName: lead.contact, projectName: lead.project, source: lead.source, stage: lead.stage, site: lead.site, estimatedValue: lead.estimatedValue, nextAction: lead.next, status: "active", ...(lead.contactEmail ? { contactEmail: lead.contactEmail } : {}), ...(lead.contactPhone ? { contactPhone: lead.contactPhone } : {}), ...(lead.nextActionAt ? { nextActionAt: lead.nextActionAt } : {}), ...(lead.ownerEmail ? { ownerEmail: lead.ownerEmail } : {}) }) });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Lead could not be saved.");
-      await refreshDirectoryData();
-      setLeadModal(false);
-      notify(`${lead.company} added to your live pipeline`, "success");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Lead could not be saved.", "error");
+      return;
     }
+    setLeadModal(null);
+    notify(`${lead.company} added to your live pipeline`, "success");
+    if (afterCreate) await afterCreate();
+    await refreshDirectoryData();
   }
 
   async function saveLeadEdits(
@@ -1501,17 +1535,17 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           {development && <section className="development-banner" role="status" aria-label="Development environment; test data only"><ShieldCheck size={17} /><div><strong>Development environment · Test data only</strong><span>Use approved test records while this working copy moves toward production readiness.</span></div></section>}
           <LiveDataBanner state={liveDataState} error={liveDataError} onRetry={() => void refreshDirectoryData()} />
           {view === "Overview" && <Overview firstName={firstName} timezone={displayTimezone} leads={leads} projects={projectItems} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.overview} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("overview", layout)} onView={navigateToView} onProject={openProject} onLead={openLead} />}
-          {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal(true)} onAdvance={advanceLead} onLead={openLead} />}
+          {view === "Leads" && <LeadsView leads={leads} state={liveDataState} filter={leadStageFilter} onAdd={() => setLeadModal({})} onAdvance={advanceLead} onLead={openLead} />}
           {view === "Clients" && <ClientsView clients={clients} state={liveDataState} projectCounts={clientProjectCounts} onAdd={() => setClientModal(true)} onClient={openClient} onNewProject={() => openNewProject()} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} syncingSheet={sheetSyncing} />}
           {view === "Projects" && <ProjectsView projects={projectItems} state={liveDataState} filter={projectStatus} lifecycle={projectLifecycle} onFilter={navigateToProjectStatus} onNewProject={() => openNewProject()} onProject={openProject} />}
           {view === "Schedule" && <ScheduleView dashboard={dashboard} onSettings={() => navigateToSettings("Workflow & notifications")} />}
-          {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} />}
+          {view === "Inbox" && <InboxView notify={notify} bucket={inboxBucket} onBucket={navigateToInboxBucket} onRules={openRules} projects={projectItems} clients={clients} rules={filingRules} onGoogleSetup={openGoogleWorkspace} onCreateLead={openInboxLead} />}
           {view === "AI Assistant" && <AssistantView projects={projectItems} />}
           {view === "Reports" && <ReportsView leads={leads} projects={projectItems} clients={clients} dashboard={dashboard} state={liveDataState} isAdmin={isAdmin} layout={pageLayouts.reports} layoutReady={pageLayoutsReady} layoutError={pageLayoutsError} onRetryLayout={() => void retryPageLayouts()} onSaveLayout={(layout) => savePageLayout("reports", layout)} />}
           {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} onImportConfirmed={refreshDirectoryData} syncingSheet={sheetSyncing} />}
         </div>
       </main>
-      {leadModal && <LeadModal mode="create" isAdmin={isAdmin} onClose={() => setLeadModal(false)} onSave={addLead} />}
+      {leadModal && <LeadModal mode="create" initialValues={leadModal.initialValues} isAdmin={isAdmin} onClose={() => setLeadModal(null)} onSave={addLead} />}
       {clientModal && <ClientModal onClose={() => setClientModal(false)} onSave={addClient} />}
       {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} managerId={userEmail.trim().toLowerCase()} managerLabel={userName.trim() || userEmail} isAdmin={isAdmin} onClose={closeNewProject} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
@@ -1854,10 +1888,11 @@ function LeadModal(props: LeadModalProps) {
   // seed feeds defaultValues in BOTH modes: full row in edit, optional prefill in
   // create (the AI-10 (f) consumption path). Mode logic stays keyed on editLead.
   const seed: Partial<Lead> | null = props.mode === "edit" ? props.initialValues : props.initialValues ?? null;
+  const inboxPrefill = props.mode === "create" && props.initialValues !== undefined;
   const sourceOptions = ["Website", "Referral", "Bid invite", "Repeat client"];
   if (seed?.source && !sourceOptions.includes(seed.source)) sourceOptions.push(seed.source);
   const stageOptions = [...leadStages];
-  if (editLead && !stageOptions.includes(editLead.stage)) stageOptions.push(editLead.stage);
+  if (seed?.stage && !stageOptions.includes(seed.stage)) stageOptions.push(seed.stage);
 
   function savedValue(key: keyof LeadConflictValues) {
     if (!Object.hasOwn(conflictValues, key)) return null;
@@ -1890,6 +1925,14 @@ function LeadModal(props: LeadModalProps) {
     const site = String(form.get("site") ?? "").trim();
     const estimatedValue = Number(form.get("value") ?? editLead?.estimatedValue ?? 0);
     const nextAction = String(form.get("notes") ?? "").trim();
+    const contactEmailText = String(form.get("contactEmail") ?? "").trim().toLowerCase();
+    const contactEmail = contactEmailText || null;
+    const contactPhone = String(form.get("contactPhone") ?? "").trim() || null;
+    const stage = String(form.get("stage") ?? "New inquiry").trim() || "New inquiry";
+    const nextActionAtText = String(form.get("nextActionAt") ?? "");
+    const nextActionAt = dateTimeIsoValue(nextActionAtText);
+    const ownerEmail = String(form.get("ownerEmail") ?? "").trim().toLowerCase();
+    const status = String(form.get("status") ?? "active").trim().toLowerCase();
 
     if (props.mode === "create") {
       setSaving(true);
@@ -1899,16 +1942,16 @@ function LeadModal(props: LeadModalProps) {
           number: "",
           company,
           contact: contactName,
-          contactEmail: null,
-          contactPhone: null,
+          contactEmail,
+          contactPhone,
           project: projectName,
           value: money(estimatedValue),
           estimatedValue,
-          stage: "New inquiry",
+          stage,
           source,
           next: nextAction,
-          nextActionAt: null,
-          ownerEmail: null,
+          nextActionAt,
+          ownerEmail: ownerEmail || null,
           site,
           status: "active",
           initials: recordInitials(company),
@@ -1925,14 +1968,6 @@ function LeadModal(props: LeadModalProps) {
       setError("Refresh live lead records before editing this lead.");
       return;
     }
-    const contactEmailText = String(form.get("contactEmail") ?? "").trim().toLowerCase();
-    const contactEmail = contactEmailText || null;
-    const contactPhone = String(form.get("contactPhone") ?? "").trim() || null;
-    const stage = String(form.get("stage") ?? "").trim();
-    const nextActionAtText = String(form.get("nextActionAt") ?? "");
-    const nextActionAt = dateTimeIsoValue(nextActionAtText);
-    const ownerEmail = String(form.get("ownerEmail") ?? "").trim().toLowerCase();
-    const status = String(form.get("status") ?? "").trim().toLowerCase();
     if (!ownerEmail && props.initialValues.ownerEmail) {
       setError("Lead owner email cannot be empty.");
       return;
@@ -1985,13 +2020,13 @@ function LeadModal(props: LeadModalProps) {
       {error && <p className="project-operation-error" role="alert">{error}</p>}
       <label>Client company<input data-overlay-initial-focus name="company" required maxLength={180} placeholder="Business name" defaultValue={seed?.company ?? ""} disabled={saving} />{savedValue("company")}</label>
       <div className="form-row"><label>Primary contact<input name="contact" required maxLength={160} placeholder="Full name" defaultValue={seed?.contact ?? ""} disabled={saving} />{savedValue("contactName")}</label><label>Lead source<select name="source" defaultValue={seed?.source ?? "Website"} disabled={saving}>{sourceOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("source")}</label></div>
-      {editMode && <div className="form-row"><label>Contact email <span className="optional-label">Optional</span><input name="contactEmail" type="email" maxLength={254} defaultValue={editLead?.contactEmail ?? ""} disabled={saving} />{savedValue("contactEmail")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="contactPhone" type="tel" maxLength={40} defaultValue={editLead?.contactPhone ?? ""} disabled={saving} />{savedValue("contactPhone")}</label></div>}
+      {(editMode || inboxPrefill) && <div className="form-row"><label>Contact email <span className="optional-label">Optional</span><input name="contactEmail" type="email" maxLength={254} defaultValue={seed?.contactEmail ?? ""} disabled={saving} />{savedValue("contactEmail")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="contactPhone" type="tel" maxLength={40} defaultValue={seed?.contactPhone ?? ""} disabled={saving} />{savedValue("contactPhone")}</label></div>}
       <label>Project / opportunity<input name="project" required maxLength={180} placeholder="Project name" defaultValue={seed?.project ?? ""} disabled={saving} />{savedValue("projectName")}</label>
-      <div className="form-row"><label>Estimated value<input name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{savedValue("estimatedValue")}</label><label>Project site<input name="site" required maxLength={300} placeholder="Address or city and state" defaultValue={seed?.site ?? ""} disabled={saving} />{savedValue("site")}</label></div>
+      <div className="form-row"><label>Estimated value<input name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{inboxPrefill && seed?.estimatedValue === undefined && <small>Still needs typing before this lead can be added.</small>}{savedValue("estimatedValue")}</label><label>Project site<input name="site" required maxLength={300} placeholder="Address or city and state" defaultValue={seed?.site ?? ""} disabled={saving} />{inboxPrefill && !seed?.site && <small>Still needs typing before this lead can be added.</small>}{savedValue("site")}</label></div>
       {editMode && !props.isAdmin && <p id="lead-estimated-value-help" className="form-help"><ShieldCheck size={14} /> Estimated value is read-only here. An administrator can edit it.</p>}
-      {editMode && <div className="form-row"><label>Stage<select name="stage" defaultValue={editLead?.stage} disabled={saving}>{stageOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("stage")}</label><label>Lead status<select name="status" defaultValue={editLead?.status.toLowerCase()} disabled={saving}><option value="active">Active</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="archived">Archived</option></select>{savedValue("status")}</label></div>}
+      {(editMode || inboxPrefill) && <div className="form-row"><label>Stage<select name="stage" defaultValue={seed?.stage ?? "New inquiry"} disabled={saving}>{stageOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("stage")}</label>{editMode && <label>Lead status<select name="status" defaultValue={editLead?.status.toLowerCase()} disabled={saving}><option value="active">Active</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="archived">Archived</option></select>{savedValue("status")}</label>}</div>}
       <label>Next action<textarea name="notes" required maxLength={500} placeholder="What needs to happen next?" defaultValue={seed?.next ?? ""} disabled={saving} />{savedValue("nextAction")}</label>
-      {editMode && <div className="form-row"><label>Next action date <span className="optional-label">Optional</span><input name="nextActionAt" type="datetime-local" defaultValue={dateTimeLocalInputValue(editLead?.nextActionAt ?? null)} disabled={saving} />{savedValue("nextActionAt")}</label><label>Lead owner email<input name="ownerEmail" type="email" maxLength={254} placeholder="Authorized office email" defaultValue={editLead?.ownerEmail ?? ""} disabled={saving} />{savedValue("ownerEmail")}{editLead?.ownerEmail === null && <small>The saved owner is unavailable because it is not a current authorized office identity.</small>}</label></div>}
+      {(editMode || inboxPrefill) && <div className="form-row"><label>Next action date <span className="optional-label">Optional</span><input name="nextActionAt" type="datetime-local" defaultValue={dateTimeLocalInputValue(seed?.nextActionAt ?? null)} disabled={saving} />{savedValue("nextActionAt")}</label><label>Lead owner email {editMode ? null : <span className="optional-label">Optional</span>}<input name="ownerEmail" type="email" maxLength={254} placeholder={editMode ? "Authorized office email" : "Signed-in user when left blank"} defaultValue={seed?.ownerEmail ?? ""} disabled={saving} />{savedValue("ownerEmail")}{editMode && editLead?.ownerEmail === null && <small>The saved owner is unavailable because it is not a current authorized office identity.</small>}</label></div>}
       {editMode && <p className="form-help"><ShieldCheck size={14} /> Saving appends before-and-after activity records. A newer saved version is never overwritten automatically.</p>}
       <footer><button type="button" className="soft-button" onClick={props.onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : editMode ? conflictVersion ? "Re-apply changes" : "Save changes" : "Add to pipeline"}</button></footer>
     </form>

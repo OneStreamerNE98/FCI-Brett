@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, FolderOpen, Inbox, ListFilter, Mail, RefreshCw, Reply, ShieldCheck, Sparkles } from "lucide-react";
+import { Building2, FolderOpen, Inbox, ListFilter, Mail, RefreshCw, Reply, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
 import { cachedGetJson } from "../../lib/client-get-cache";
 import {
@@ -56,11 +56,21 @@ type AssistantTriageSuggestion = {
   confidence: "high" | "medium" | "low";
   rationale: string;
 };
+export type InboxLeadProposal = Readonly<{
+  company: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  projectName: string | null;
+  site: string | null;
+  estimatedValue: number | null;
+}>;
 type InboxReviewQueueRow = Readonly<{
   id: string;
   subject: string | null;
   sender: string | null;
   receivedAt: number | null;
+  leadProposal: InboxLeadProposal | null;
 }>;
 type InboxReviewQueue = Readonly<{
   rows: readonly InboxReviewQueueRow[];
@@ -78,6 +88,21 @@ type InboxAnalysisCoverage =
       message: "Older messages not yet analyzed";
       nextPageToken: string | null;
     }>;
+
+type InboxViewProps = Readonly<{
+  notify: Notify;
+  bucket: InboxBucket;
+  onBucket: (bucket: InboxBucket) => void;
+  onRules: () => void;
+  projects: InboxProject[];
+  clients: InboxRuleClient[];
+  rules: FilingRuleDraft[];
+  onGoogleSetup: () => void;
+  onCreateLead: (
+    proposal: InboxLeadProposal,
+    afterCreate: () => Promise<void>,
+  ) => void;
+}>;
 
 const inboxBucketLabels: Record<InboxBucket, string> = {
   inbox: "Inbox",
@@ -120,11 +145,70 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
     ) {
       return null;
     }
+    let leadProposal: InboxLeadProposal | null = null;
+    if (row.leadProposal !== null && row.leadProposal !== undefined) {
+      if (
+        !row.leadProposal
+        || typeof row.leadProposal !== "object"
+        || Array.isArray(row.leadProposal)
+      ) {
+        return null;
+      }
+      const proposal = row.leadProposal as Record<string, unknown>;
+      const proposalTextLimits = {
+        company: 180,
+        contactName: 160,
+        contactEmail: 254,
+        contactPhone: 40,
+        projectName: 180,
+        site: 300,
+      } as const;
+      const proposalTextKeys = Object.keys(proposalTextLimits) as
+        (keyof typeof proposalTextLimits)[];
+      if (
+        Object.keys(proposal).length !== proposalTextKeys.length + 1
+        || !proposalTextKeys.every((key) => Object.hasOwn(proposal, key))
+        || !Object.hasOwn(proposal, "estimatedValue")
+        || proposalTextKeys.some((key) => {
+          const value = proposal[key];
+          return value !== null && (
+            typeof value !== "string"
+            || !value.trim()
+            || value.length > proposalTextLimits[key]
+            || /[\u0000-\u001f\u007f]/.test(value)
+            || (
+              key === "contactEmail"
+              && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+            )
+          );
+        })
+        || (
+          proposal.estimatedValue !== null
+          && (
+            !Number.isSafeInteger(proposal.estimatedValue)
+            || Number(proposal.estimatedValue) < 0
+            || Number(proposal.estimatedValue) > 2_147_483_647
+          )
+        )
+      ) {
+        return null;
+      }
+      leadProposal = Object.freeze({
+        company: proposal.company as string | null,
+        contactName: proposal.contactName as string | null,
+        contactEmail: proposal.contactEmail as string | null,
+        contactPhone: proposal.contactPhone as string | null,
+        projectName: proposal.projectName as string | null,
+        site: proposal.site as string | null,
+        estimatedValue: proposal.estimatedValue as number | null,
+      });
+    }
     rows.push(Object.freeze({
       id: row.id,
       subject: row.subject as string | null,
       sender: row.sender as string | null,
       receivedAt: row.receivedAt as number | null,
+      leadProposal,
     }));
   }
   return Object.freeze({
@@ -185,7 +269,17 @@ function inboxProjectSuggestion(message: WorkspaceMessage, projects: InboxProjec
   return { kind: "intake", text: "FCI/Intake: no enabled built-in rule matched; choose a project before filing", reason: decision.reason };
 }
 
-export function InboxView({ notify, bucket, onBucket, onRules, projects, clients, rules, onGoogleSetup }: { notify: Notify; bucket: InboxBucket; onBucket: (bucket: InboxBucket) => void; onRules: () => void; projects: InboxProject[]; clients: InboxRuleClient[]; rules: FilingRuleDraft[]; onGoogleSetup: () => void }) {
+export function InboxView({
+  notify,
+  bucket,
+  onBucket,
+  onRules,
+  projects,
+  clients,
+  rules,
+  onGoogleSetup,
+  onCreateLead,
+}: InboxViewProps) {
   const [workspace, setWorkspace] = useState<GmailWorkspaceStatus | null>(null);
   const [messages, setMessages] = useState<WorkspaceMessage[]>([]);
   const [loadedBucket, setLoadedBucket] = useState<InboxBucket | null>(null);
@@ -216,6 +310,17 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
   const [reviewQueueState, setReviewQueueState] =
     useState<InboxReviewQueueState>("idle");
   const [markingReviewId, setMarkingReviewId] = useState<string | null>(null);
+  // Append-only for the life of the component, and deliberately separate from
+  // leadRetirementErrorIds. That set is a BANNER flag and is cleared on every
+  // retry; gating the Create lead button on it meant a retry that also failed
+  // erased the guard and re-offered the button for a row whose lead already
+  // exists — a duplicate lead plus a duplicate lead.created Chat card. A row
+  // that has produced a lead can never offer to produce another.
+  const [leadCreatedRowIds, setLeadCreatedRowIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const [leadRetirementErrorIds, setLeadRetirementErrorIds] =
+    useState<ReadonlySet<string>>(() => new Set());
   const [accountSettled, setAccountSettled] = useState(false);
   const analysisAutoStartedRef = useRef(false);
   const analysisInFlightRef = useRef<Promise<InboxAnalysisCoverage | null> | null>(null);
@@ -497,11 +602,20 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
     }
   }
 
-  async function markReviewed(row: InboxReviewQueueRow) {
-    if (markReviewedInFlightRef.current) return;
+  async function markReviewed(
+    row: InboxReviewQueueRow,
+    reason: "manual" | "lead-created" = "manual",
+  ) {
+    if (markReviewedInFlightRef.current) return false;
     markReviewedInFlightRef.current = true;
     const requestId = ++reviewQueueRequestIdRef.current;
     setMarkingReviewId(row.id);
+    setLeadRetirementErrorIds((current) => {
+      if (!current.has(row.id)) return current;
+      const next = new Set(current);
+      next.delete(row.id);
+      return next;
+    });
     try {
       const response = await fetch("/api/v1/inbox-analysis", {
         method: "PATCH",
@@ -512,7 +626,7 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
       if (!response.ok) {
         throw new Error(body.error ?? "The message could not be marked reviewed.");
       }
-      if (requestId !== reviewQueueRequestIdRef.current) return;
+      if (requestId !== reviewQueueRequestIdRef.current) return false;
       // The dismissed row unmounts its own focused button, so name the next
       // focus target before it goes — the neighbour below, else above, else the
       // empty-state heading. TodayPanel's complete-in-place sets the precedent.
@@ -527,21 +641,50 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
         return remaining;
       });
       setReviewTotalCount((current) => Math.max(0, current - 1));
-      notify("Message marked reviewed and removed from the queue.", "success");
-      await loadReviewQueue();
-    } catch (reviewError) {
-      if (requestId !== reviewQueueRequestIdRef.current) return;
+      setLeadRetirementErrorIds((current) => {
+        if (!current.has(row.id)) return current;
+        const next = new Set(current);
+        next.delete(row.id);
+        return next;
+      });
       notify(
-        reviewError instanceof Error
-          ? reviewError.message
-          : "The message could not be marked reviewed.",
-        "error",
+        reason === "lead-created"
+          ? "Lead created and message removed from the review queue."
+          : "Message marked reviewed and removed from the queue.",
+        "success",
       );
+      await loadReviewQueue();
+      return true;
+    } catch (reviewError) {
+      if (requestId !== reviewQueueRequestIdRef.current) return false;
+      if (reason === "lead-created") {
+        setLeadRetirementErrorIds((current) => {
+          if (current.has(row.id)) return current;
+          return new Set(current).add(row.id);
+        });
+        notify(
+          "The lead was created, but this message is still in review because it could not be marked reviewed.",
+          "error",
+        );
+        // The modal returned focus to the Create lead button, which this error
+        // state removes; without naming a target focus lands on <body>. Send it
+        // to the row's surviving Mark reviewed button — the action the banner
+        // tells the user to take. The ref guard only claims focus if it was lost.
+        setFocusReviewRowId(row.id);
+      } else {
+        notify(
+          reviewError instanceof Error
+            ? reviewError.message
+            : "The message could not be marked reviewed.",
+          "error",
+        );
+      }
       // This click bumped the request id and so invalidated any refresh already
       // in flight, which returns without touching state. Without this re-sync a
       // failed dismissal can strand the queue in its loading state — both
       // refresh controls disabled, the row undismissable — until a full reload.
       await loadReviewQueue();
+      return false;
     } finally {
       markReviewedInFlightRef.current = false;
       setMarkingReviewId(null);
@@ -934,10 +1077,38 @@ export function InboxView({ notify, bucket, onBucket, onRules, projects, clients
                       <strong>{row.sender ?? "Unknown sender"}</strong>
                       <h3>{row.subject ?? "(No subject)"}</h3>
                       <p>Stored analysis · review required</p>
+                      {leadRetirementErrorIds.has(row.id) && <p role="status">
+                        Lead created, but this message is still in review. Use Mark reviewed to retire it when the queue is available.
+                      </p>}
                     </div>
                     <div className="message-actions">
                       <span>{inboxDate(row.receivedAt)}</span>
                       <small>App review queue</small>
+                      {row.leadProposal && !leadCreatedRowIds.has(row.id) && <button
+                        className="soft-button"
+                        type="button"
+                        onClick={() => {
+                          if (markingReviewId !== null) return;
+                          onCreateLead(
+                            row.leadProposal as InboxLeadProposal,
+                            async () => {
+                              // Record the lead BEFORE attempting retirement. The
+                              // lead exists from this moment on, so the button must
+                              // never come back for this row — whether the retire
+                              // succeeds, fails, or is retried and fails again.
+                              setLeadCreatedRowIds((current) =>
+                                current.has(row.id) ? current : new Set(current).add(row.id)
+                              );
+                              await markReviewed(row, "lead-created");
+                            },
+                          );
+                        }}
+                        aria-disabled={markingReviewId !== null}
+                        aria-label={`Create lead: ${row.subject ?? row.sender ?? "message"}`}
+                      >
+                        <Users size={14} />
+                        Create lead
+                      </button>}
                       <button
                         className="soft-button"
                         ref={(node) => {
