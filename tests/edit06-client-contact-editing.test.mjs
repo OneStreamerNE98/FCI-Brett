@@ -95,11 +95,13 @@ class ClientD1Database {
   constructor() {
     this.database = new DatabaseSync(":memory:");
     this.preparedSql = [];
+    this.batchTail = Promise.resolve();
     this.database.exec(`
       CREATE TABLE clients (
         id TEXT PRIMARY KEY,
         client_code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL UNIQUE,
+        normalized_name_key TEXT,
         status TEXT NOT NULL,
         industry TEXT,
         created_by TEXT NOT NULL,
@@ -107,6 +109,9 @@ class ClientD1Database {
         updated_at INTEGER NOT NULL,
         version INTEGER NOT NULL DEFAULT 1
       );
+      CREATE UNIQUE INDEX clients_normalized_name_key_unique_idx
+        ON clients (normalized_name_key)
+        WHERE normalized_name_key IS NOT NULL;
       CREATE TABLE contacts (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
@@ -174,15 +179,23 @@ class ClientD1Database {
   }
 
   async batch(statements) {
+    const previousBatch = this.batchTail;
+    let releaseBatch;
+    this.batchTail = new Promise((resolve) => {
+      releaseBatch = resolve;
+    });
+    await previousBatch;
     const results = [];
-    this.database.exec("BEGIN");
     try {
+      this.database.exec("BEGIN");
       for (const statement of statements) results.push(await statement.run());
       this.database.exec("COMMIT");
       return results;
     } catch (error) {
       this.database.exec("ROLLBACK");
       throw error;
+    } finally {
+      releaseBatch();
     }
   }
 
@@ -200,6 +213,12 @@ class ClientD1Database {
         "SELECT name, email, phone, role, version FROM contacts WHERE id = ?",
       ).get(CONTACT_ID),
     };
+  }
+
+  normalizedNameKey(id = CLIENT_ID) {
+    return this.database.prepare(
+      "SELECT normalized_name_key FROM clients WHERE id = ?",
+    ).get(id)?.normalized_name_key ?? null;
   }
 
   activities() {
@@ -326,6 +345,34 @@ test("client creation and contact patch share contact normalization, limits, and
   }
 });
 
+test("client creation and edit share the optional industry contract", () => {
+  for (const [input, expected] of [
+    [null, null],
+    ["", null],
+    ["   ", null],
+    ["  Commercial   flooring  ", "Commercial flooring"],
+    ["x".repeat(120), "x".repeat(120)],
+  ]) {
+    const creation = normalizeClientCreation({
+      name: "FCI TEST — DO NOT USE Shared Industry",
+      industry: input,
+    });
+    const patch = normalizeClientPatch({ industry: input, version: "1" });
+    assert.equal(creation.ok, true);
+    assert.equal(patch.ok, true);
+    assert.equal(creation.value.industry, expected);
+    assert.equal(patch.value.industry, expected);
+  }
+
+  for (const input of ["x".repeat(121), "Commercial\u0000Flooring", 42]) {
+    assert.equal(normalizeClientCreation({
+      name: "FCI TEST — DO NOT USE Invalid Industry",
+      industry: input,
+    }).ok, false);
+    assert.equal(normalizeClientPatch({ industry: input, version: "1" }).ok, false);
+  }
+});
+
 test("client create accepts archived plus primary-contact phone and role and echoes a D1 version", async () => {
   let captured;
   const result = await createClient(
@@ -388,6 +435,10 @@ test("office client PATCH persists all fields, archives and restores, and writes
       industry: "Residential",
       version: 2,
     });
+    assert.equal(
+      database.normalizedNameKey(),
+      "fci test — do not use alpha updated",
+    );
     assert.deepEqual(database.activities(), [{
       record_id: CLIENT_ID,
       action: "Client fields updated",
@@ -476,6 +527,121 @@ test("stale client and contact writes return scoped saved values and append no a
       currentValues: { role: "Primary contact" },
     });
     assert.equal(database.activities().length, 2);
+  } finally {
+    database.close();
+  }
+});
+
+test("overlapping D1 normalized-name candidates admit one client and one typed duplicate", async () => {
+  const database = new ClientD1Database();
+  try {
+    const repository = createD1ClientRepository(database);
+    const intent = (suffix, name) => ({
+      client: {
+        id: `client-concurrent-${suffix}`,
+        clientCode: `CL-CONCUR0${suffix}`,
+        name,
+        status: "active",
+        industry: null,
+        createdBy: "office@example.test",
+        createdAt: UPDATED_AT + Number(suffix),
+        updatedAt: UPDATED_AT + Number(suffix),
+      },
+      primaryContact: null,
+      activity: {
+        id: `activity-concurrent-${suffix}`,
+        recordId: `client-concurrent-${suffix}`,
+        action: "Client created",
+        actor: "office@example.test",
+        detail: `Concurrent candidate ${suffix}`,
+        createdAt: UPDATED_AT + Number(suffix),
+      },
+    });
+    const results = await Promise.all([
+      repository.create(intent("1", "FCI TEST — DO NOT USE Concurrent Identity")),
+      repository.create(intent("2", "ＦＣＩ TEST — DO NOT USE Concurrent Identity")),
+    ]);
+    assert.deepEqual(
+      results.map(({ outcome }) => outcome).sort(),
+      ["created", "duplicate"],
+    );
+    assert.equal(
+      database.database.prepare(
+        "SELECT count(*) AS count FROM clients WHERE normalized_name_key = ?",
+      ).get("fci test — do not use concurrent identity").count,
+      1,
+    );
+    assert.deepEqual(
+      database.activities().map(({ action }) => action),
+      ["Client created"],
+    );
+
+    const [clientSource, importSource] = await Promise.all([
+      read("app/adapters/d1/client-repository.ts"),
+      read("app/adapters/d1/first-run-import-repository.ts"),
+    ]);
+    assert.match(
+      clientSource,
+      /INSERT INTO clients \(id, client_code, name, normalized_name_key,[\s\S]*normalizedNameKey/u,
+    );
+    assert.match(
+      clientSource,
+      /UPDATE clients SET name = \?, normalized_name_key = \?[\s\S]*normalizeClientNameKey\(values\.name\)/u,
+    );
+    assert.match(
+      importSource,
+      /normalizeClientNameKey\(row\.name\)[\s\S]*INSERT INTO clients \(id, client_code, name, normalized_name_key,/u,
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("malformed D1 client update evidence is rejected before any write", async () => {
+  const database = new ClientD1Database();
+  try {
+    const repository = createD1ClientRepository(database);
+    const baseIntent = {
+      clientId: CLIENT_ID,
+      expectedVersion: "1",
+      values: {
+        name: "FCI TEST — DO NOT USE Alpha Updated",
+        status: "active",
+        industry: "Commercial",
+      },
+      updatedAt: UPDATED_AT,
+      updatedBy: "office@example.test",
+      activity: {
+        id: "activity-malformed",
+        recordId: CLIENT_ID,
+        action: "Client fields updated",
+        actor: "office@example.test",
+        detail: "Name: old → new",
+        createdAt: UPDATED_AT,
+      },
+    };
+    for (const intent of [
+      {
+        ...baseIntent,
+        activity: { ...baseIntent.activity, recordId: OTHER_CLIENT_ID },
+      },
+      {
+        ...baseIntent,
+        activity: { ...baseIntent.activity, actor: "different@example.test" },
+      },
+      {
+        ...baseIntent,
+        activity: { ...baseIntent.activity, createdAt: UPDATED_AT + 1 },
+      },
+    ]) {
+      await assert.rejects(
+        repository.update(intent),
+        /D1 client update evidence must match the client and actor/u,
+      );
+    }
+    assert.equal(database.client().name, "FCI TEST — DO NOT USE Alpha");
+    assert.equal(database.client().version, 1);
+    assert.deepEqual(database.activities(), []);
   } finally {
     database.close();
   }
@@ -584,6 +750,43 @@ test("both editing routes return 401/403 before parsing or database work", async
       assert.equal(response.headers.get("cache-control"), "no-store");
       assert.equal(databaseCalls, 0);
     }
+  }
+});
+
+test("both editing routes reject cross-origin requests before parsing or database work", async () => {
+  for (const [route, resource, parameter, id] of [
+    [clientRoute, "clients", "clientId", CLIENT_ID],
+    [contactRoute, "contacts", "contactId", CONTACT_ID],
+  ]) {
+    let databaseCalls = 0;
+    cloudflareEnv.DB = {
+      prepare() {
+        databaseCalls += 1;
+        throw new Error("Cross-origin requests must not prepare database work.");
+      },
+      batch() {
+        databaseCalls += 1;
+        throw new Error("Cross-origin requests must not batch database work.");
+      },
+    };
+    const response = await route.PATCH(
+      new NextRequest(`https://fci.example.test/api/v1/${resource}/${id}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://evil.example.test",
+          "oai-authenticated-user-email": "office@example.test",
+        },
+        body: "{not-json",
+      }),
+      { params: Promise.resolve({ [parameter]: id }) },
+    );
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      error: "Cross-origin requests are not allowed.",
+    });
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(databaseCalls, 0);
   }
 });
 

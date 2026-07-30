@@ -131,7 +131,15 @@ class CoreRecordD1Database {
     let previousChanges = 0;
     for (const statement of statements) {
       if (statement.sql.startsWith("UPDATE clients SET ")) {
-        const [name, status, industry, updatedAt, clientId, expectedVersion] = statement.values;
+        const [
+          name,
+          normalizedNameKey,
+          status,
+          industry,
+          updatedAt,
+          clientId,
+          expectedVersion,
+        ] = statement.values;
         const current = this.clients.get(clientId);
         const versionGuarded = statement.sql.includes("WHERE id = ? AND version = ?");
         if (!current || versionGuarded && String(current.version) !== String(expectedVersion)) {
@@ -142,6 +150,7 @@ class CoreRecordD1Database {
         this.clients.set(clientId, {
           ...current,
           name,
+          normalized_name_key: normalizedNameKey,
           status,
           industry,
           updated_at: updatedAt,

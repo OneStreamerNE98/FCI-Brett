@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const records = sqliteTable("records", {
@@ -32,6 +33,7 @@ export const clients = sqliteTable("clients", {
   id: text("id").primaryKey(),
   clientCode: text("client_code").notNull(),
   name: text("name").notNull(),
+  normalizedNameKey: text("normalized_name_key"),
   status: text("status").notNull().default("active"),
   industry: text("industry"),
   driveFolderId: text("drive_folder_id"),
@@ -43,6 +45,9 @@ export const clients = sqliteTable("clients", {
 }, (table) => [
   uniqueIndex("clients_code_unique_idx").on(table.clientCode),
   uniqueIndex("clients_name_idx").on(table.name),
+  uniqueIndex("clients_normalized_name_key_unique_idx")
+    .on(table.normalizedNameKey)
+    .where(sql`${table.normalizedNameKey} IS NOT NULL`),
 ]);
 
 export const contacts = sqliteTable("contacts", {

@@ -236,30 +236,31 @@ function fakeDatabase({
         .replace(/\s+/gu, " ");
       const duplicateIdentity = state.clients.some((client) => (
         client.name.trim().toLowerCase() === String(values[2]).trim().toLowerCase()
+        || client.normalized_name_key === values[10]
         || client.client_code === values[1]
       ));
-      const duplicateEmail = values[10] !== null && state.clients.some((client) => (
-        String(client.email ?? "").trim().toLowerCase() === values[10]
+      const duplicateEmail = values[12] !== null && state.clients.some((client) => (
+        String(client.email ?? "").trim().toLowerCase() === values[12]
       ));
-      const duplicatePhone = values[12] !== null && state.clients.some((client) => (
-        normalizedPhone(client.phone) === values[12]
+      const duplicatePhone = values[14] !== null && state.clients.some((client) => (
+        normalizedPhone(client.phone) === values[14]
       ));
-      const duplicateAddress = values[14] !== null && state.projects.some((project) => (
-        normalizedAddress(project.site) === normalizedAddress(values[14])
+      const duplicateAddress = values[16] !== null && state.projects.some((project) => (
+        normalizedAddress(project.site) === normalizedAddress(values[16])
       ));
-      const duplicateSourceClientCode = values[16] !== null
+      const duplicateSourceClientCode = values[18] !== null
         && state.activities.some(({ action, detail }) => (
           action === "Client imported"
-          && String(detail ?? "").includes(`sourceClientCode=${values[16]}`)
+          && String(detail ?? "").includes(`sourceClientCode=${values[18]}`)
         ));
-      const duplicateAddressDigest = values[18] !== null
+      const duplicateAddressDigest = values[20] !== null
         && state.activities.some(({ action, detail }) => (
           action === "Client imported"
-          && String(detail ?? "").includes(`sourceAddressDigest=${values[18]}`)
+          && String(detail ?? "").includes(`sourceAddressDigest=${values[20]}`)
         ));
-      const fence = state.leases.get(values[20]);
+      const fence = state.leases.get(values[22]);
       const fenceAllowsWrite = fence?.status === "committing"
-        && fence.leaseExpiresAt === values[21];
+        && fence.leaseExpiresAt === values[23];
       if (
         duplicateIdentity
         || duplicateEmail
@@ -273,8 +274,9 @@ function fakeDatabase({
         id: values[0],
         client_code: values[1],
         name: values[2],
-        status: values[3],
-        industry: values[4],
+        normalized_name_key: values[3],
+        status: values[4],
+        industry: values[5],
         email: null,
         phone: null,
       });
@@ -2128,6 +2130,10 @@ test("SET-25 D1 root writes pin every duplicate key and the exact lease fence", 
   const adapterSource = await readFile(
     new URL("../app/adapters/d1/first-run-import-repository.ts", import.meta.url),
     "utf8",
+  );
+  assert.match(
+    adapterSource,
+    /normalized_name_key = \? OR client_code = \?/u,
   );
   assert.match(
     adapterSource,

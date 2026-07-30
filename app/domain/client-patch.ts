@@ -2,6 +2,7 @@ import {
   CLIENT_STATUSES,
   type ClientStatus,
 } from "./client-creation.ts";
+import { normalizeClientIndustry } from "./client-industry.ts";
 import { normalizeClientDisplayName } from "./client-name-key.ts";
 import { normalizeRecordVersion } from "./record-version.ts";
 
@@ -56,17 +57,8 @@ export function normalizeClientPatch(
     patch.status = value as ClientStatus;
   }
   if (Object.hasOwn(body, "industry")) {
-    if (
-      body.industry !== null
-      && body.industry !== ""
-      && typeof body.industry !== "string"
-    ) {
-      return { ok: false, message: "Client industry is invalid." };
-    }
-    const value = typeof body.industry === "string"
-      ? body.industry.replace(/\s+/gu, " ").trim() || null
-      : null;
-    if (value && (value.length > 120 || /[\u0000-\u001f\u007f]/u.test(value))) {
+    const value = normalizeClientIndustry(body.industry);
+    if (value === undefined) {
       return { ok: false, message: "Client industry is invalid." };
     }
     patch.industry = value;

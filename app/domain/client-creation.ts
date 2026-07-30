@@ -1,3 +1,4 @@
+import { normalizeClientIndustry } from "./client-industry.ts";
 import { normalizeClientDisplayName } from "./client-name-key.ts";
 import {
   normalizeContactEmail,
@@ -36,7 +37,7 @@ export function normalizeClientCreation(input: unknown): ClientCreationValidatio
   if (!input || typeof input !== "object" || Array.isArray(input)) return invalidJsonDetails();
 
   const record = input as Record<string, unknown>;
-  for (const field of ["name", "industry", "status"] as const) {
+  for (const field of ["name", "status"] as const) {
     if (record[field] !== undefined && typeof record[field] !== "string") return invalidJsonDetails();
   }
 
@@ -65,6 +66,8 @@ export function normalizeClientCreation(input: unknown): ClientCreationValidatio
 
   const status = ((record.status as string | undefined)?.trim().toLowerCase() || "active") as ClientStatus;
   if (!CLIENT_STATUSES.includes(status)) return { ok: false, message: "client status is invalid" };
+  const industry = normalizeClientIndustry(record.industry ?? null);
+  if (industry === undefined) return { ok: false, message: "client industry is invalid" };
 
   let normalizedPrimaryContact: NormalizedPrimaryContact | null = null;
   if (primaryContact) {
@@ -97,7 +100,7 @@ export function normalizeClientCreation(input: unknown): ClientCreationValidatio
     ok: true,
     value: {
       name,
-      industry: (record.industry as string | undefined)?.trim() || null,
+      industry,
       status,
       primaryContact: normalizedPrimaryContact,
     },

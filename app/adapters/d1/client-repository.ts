@@ -108,7 +108,34 @@ async function currentContactVersion(database: D1Database, contactId: string) {
 
 function isDuplicateClientError(error: unknown) {
   const detail = error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : String(error);
-  return /UNIQUE constraint failed: clients\.(?:name|client_code)/i.test(detail);
+  return /UNIQUE constraint failed: clients\.(?:name|normalized_name_key|client_code)/i.test(detail);
+}
+
+function assertD1ClientUpdateIntent(
+  intent: Parameters<ClientRepository["update"]>[0],
+) {
+  if (
+    intent.activity.recordId !== intent.clientId
+    || intent.activity.actor !== intent.updatedBy
+    || intent.activity.createdAt !== intent.updatedAt
+    || !intent.updatedBy.trim()
+    || !Number.isSafeInteger(intent.updatedAt)
+  ) {
+    throw new TypeError("D1 client update evidence must match the client and actor");
+  }
+}
+
+function assertD1ContactUpdateIntent(
+  intent: Parameters<ClientRepository["updateContact"]>[0],
+) {
+  if (
+    intent.activity.actor !== intent.updatedBy
+    || intent.activity.createdAt !== intent.updatedAt
+    || !intent.updatedBy.trim()
+    || !Number.isSafeInteger(intent.updatedAt)
+  ) {
+    throw new TypeError("D1 contact update evidence must match the actor and timestamp");
+  }
 }
 
 export function createD1ClientRepository(database: D1Database): ClientRepository {
@@ -134,9 +161,10 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
       if (await duplicateClientName(database, null, client.name)) {
         return { outcome: "duplicate" };
       }
+      const normalizedNameKey = normalizeClientNameKey(client.name);
       const statements: D1PreparedStatement[] = [
-        database.prepare("INSERT INTO clients (id, client_code, name, status, industry, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM clients WHERE LOWER(name) = LOWER(?) LIMIT 1)")
-          .bind(client.id, client.clientCode, client.name, client.status, client.industry, client.createdBy, client.createdAt, client.updatedAt, client.name),
+        database.prepare("INSERT INTO clients (id, client_code, name, normalized_name_key, status, industry, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM clients WHERE LOWER(name) = LOWER(?) LIMIT 1)")
+          .bind(client.id, client.clientCode, client.name, normalizedNameKey, client.status, client.industry, client.createdBy, client.createdAt, client.updatedAt, client.name),
         database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM clients WHERE id = ? AND client_code = ? AND name = ? AND created_by = ? AND created_at = ?)")
           .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt, client.id, client.clientCode, client.name, client.createdBy, client.createdAt),
       ];
@@ -157,6 +185,7 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
     },
 
     async update(intent) {
+      assertD1ClientUpdateIntent(intent);
       const expectedVersion = d1RecordVersion(intent.expectedVersion, "Expected D1 client version");
       const resultingVersion = nextD1RecordVersion(expectedVersion);
       const { activity, values } = intent;
@@ -171,9 +200,10 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
       let results;
       try {
         results = await database.batch([
-          database.prepare("UPDATE clients SET name = ?, status = ?, industry = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND NOT EXISTS (SELECT 1 FROM clients AS duplicate WHERE duplicate.id <> ? AND LOWER(duplicate.name) = LOWER(?) LIMIT 1)")
+          database.prepare("UPDATE clients SET name = ?, normalized_name_key = ?, status = ?, industry = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND NOT EXISTS (SELECT 1 FROM clients AS duplicate WHERE duplicate.id <> ? AND LOWER(duplicate.name) = LOWER(?) LIMIT 1)")
             .bind(
               values.name,
+              normalizeClientNameKey(values.name),
               values.status,
               values.industry,
               intent.updatedAt,
@@ -219,6 +249,7 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
     },
 
     async updateContact(intent) {
+      assertD1ContactUpdateIntent(intent);
       const expectedVersion = d1RecordVersion(intent.expectedVersion, "Expected D1 contact version");
       const resultingVersion = nextD1RecordVersion(expectedVersion);
       const { activity, values } = intent;
