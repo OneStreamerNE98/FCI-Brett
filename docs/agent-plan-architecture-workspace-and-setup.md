@@ -2737,8 +2737,13 @@ unchanged; PNGs/manifest byte-identical unless the variant explicitly
 regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
-### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026; NOT prioritized)
-**Status:** Blocked — awaiting owner prioritization and dispatch; design complete via the approved plan-mode design of July 24, 2026 (sub-scopes A/B below ship as sequential PRs when dispatched).
+### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026)
+**Prioritized by the owner July 30, 2026** — the status line is removed deliberately, which
+under the dispatch law ("available if and only if it has no status line") makes this packet
+claimable. Design complete via the approved plan-mode design of July 24, 2026. **Sub-scopes
+A and B ship as sequential PRs, A first** — B's toggle drives the span model A introduces.
+**A takes the single `app/FloorOpsApp.tsx` queue slot and the `app/globals.css` lock**, so
+no other packet may hold either while A is open.
 
 **Why:** owner feedback (July 24, 2026): layout-editor cards only move
 vertically, and layouts can look incohesive after moves. Owner decisions,
