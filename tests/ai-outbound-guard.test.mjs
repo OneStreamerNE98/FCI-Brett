@@ -433,15 +433,17 @@ test("AI-09 documentation has one source-verified account, explicit Tier-2 gates
   assert.match(meetings, /Assistant and automation boundary \(reconciled July 26, 2026\)/u);
   assert.match(meetings, /proposals are not task\s+rows until an office user presses \*\*Accept\*\*/u);
 
-  for (let index = 1; index <= 9; index += 1) {
-    const packet = sectionFromHeading(plan, `### AI-0${index} ·`, /^### /mu);
-    assert.match(packet, /\*\*Status:\*\* Complete — PR #/u, `AI-0${index} must remain Complete`);
+  for (let index = 1; index <= 10; index += 1) {
+    const id = `AI-${String(index).padStart(2, "0")}`;
+    const packet = sectionFromHeading(plan, `### ${id} ·`, /^### /mu);
+    assert.match(packet, /\*\*Status:\*\* Complete — PR #/u, `${id} must remain Complete`);
   }
-  // AI-10 is filed but not yet merged, so ANY Complete claim on it is premature — including a
-  // well-formed "Complete — PR #N" line. When AI-10 legitimately merges, re-point this pin into
-  // the Complete loop above (extend the loop bound), exactly as AI-09's pin was re-pointed.
-  const ai10 = sectionFromHeading(plan, "### AI-10 ·", /^### /mu);
-  assert.doesNotMatch(ai10, /\*\*Status:\*\* Complete/u);
+  // AI-10 joined the loop on July 30, 2026, when its last sub-PR (f) merged —
+  // the re-point this pin's own note prescribed. AI-11 is the packet that is now
+  // filed but unmerged; it carries no status line at all, so there is nothing
+  // premature to guard. Extend the loop again when AI-11 legitimately merges.
+  const ai11 = sectionFromHeading(plan, "### AI-11 ·", /^### /mu);
+  assert.doesNotMatch(ai11, /\*\*Status:\*\* Complete/u);
   assert.match(
     rateLimitGuide,
     /\/assistant\/triage`, `\/assistant\/reply-draft`/u,
