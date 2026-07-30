@@ -310,6 +310,15 @@ export function InboxView({
   const [reviewQueueState, setReviewQueueState] =
     useState<InboxReviewQueueState>("idle");
   const [markingReviewId, setMarkingReviewId] = useState<string | null>(null);
+  // Append-only for the life of the component, and deliberately separate from
+  // leadRetirementErrorIds. That set is a BANNER flag and is cleared on every
+  // retry; gating the Create lead button on it meant a retry that also failed
+  // erased the guard and re-offered the button for a row whose lead already
+  // exists — a duplicate lead plus a duplicate lead.created Chat card. A row
+  // that has produced a lead can never offer to produce another.
+  const [leadCreatedRowIds, setLeadCreatedRowIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
   const [leadRetirementErrorIds, setLeadRetirementErrorIds] =
     useState<ReadonlySet<string>>(() => new Set());
   const [accountSettled, setAccountSettled] = useState(false);
@@ -657,6 +666,11 @@ export function InboxView({
           "The lead was created, but this message is still in review because it could not be marked reviewed.",
           "error",
         );
+        // The modal returned focus to the Create lead button, which this error
+        // state removes; without naming a target focus lands on <body>. Send it
+        // to the row's surviving Mark reviewed button — the action the banner
+        // tells the user to take. The ref guard only claims focus if it was lost.
+        setFocusReviewRowId(row.id);
       } else {
         notify(
           reviewError instanceof Error
@@ -1070,7 +1084,7 @@ export function InboxView({
                     <div className="message-actions">
                       <span>{inboxDate(row.receivedAt)}</span>
                       <small>App review queue</small>
-                      {row.leadProposal && !leadRetirementErrorIds.has(row.id) && <button
+                      {row.leadProposal && !leadCreatedRowIds.has(row.id) && <button
                         className="soft-button"
                         type="button"
                         onClick={() => {
@@ -1078,6 +1092,13 @@ export function InboxView({
                           onCreateLead(
                             row.leadProposal as InboxLeadProposal,
                             async () => {
+                              // Record the lead BEFORE attempting retirement. The
+                              // lead exists from this moment on, so the button must
+                              // never come back for this row — whether the retire
+                              // succeeds, fails, or is retried and fails again.
+                              setLeadCreatedRowIds((current) =>
+                                current.has(row.id) ? current : new Set(current).add(row.id)
+                              );
                               await markReviewed(row, "lead-created");
                             },
                           );
