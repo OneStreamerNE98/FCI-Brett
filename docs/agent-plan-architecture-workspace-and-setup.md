@@ -1088,6 +1088,8 @@ is overwritten.
 **Accept:** mechanics section matches code; live test recorded.
 
 ### WS-10 · AGENT — Connection-health and sync-error operator surface (medium, after WS-03)
+**Status:** In progress — `codex/ws10-connection-health`
+
 **Why:** An operator cannot list stuck/failed Google work: drive-operation leases +
 `last_error_code`, failed gmail archives, and `google_integration_events` have no reader.
 **Do:** Either a small admin-gated `GET /api/v1/integrations/google/operations` endpoint
@@ -1419,17 +1421,28 @@ reset does NOT clear it (lives in workspace_settings, not connection-scoped tabl
 assert in test).
 
 ### SET-09 · Integration audit viewer (medium, after SET-01+02)
-**Why:** `google_integration_events` is written by every integration flow but has no
-reader anywhere (verified: no audit route exists); the dev-section audit rates this
-"Critical before live data".
-**Do:** New admin-gated `GET /api/v1/integrations/google/audit`: SELECT-only, scoped to
-the current connectionKey, newest-first, 50 + opaque cursor; bare-JSON dev conventions.
-"Integration activity" card at the bottom of GoogleWorkspacePanel (non-admins see the
-explanatory card, no fetch); empty state notes that simulation reset clears this history.
-No retention/export controls (those are SET-12 placeholders). **Covers the events half of
-WS-10.**
-**Accept:** 403 for non-admin; ordered events with stable pagination; route contains no
-mutations.
+**NARROWED July 30, 2026 — WS-10 shipped the events reader, so most of this packet is
+already built.** The original text said `google_integration_events` "has no reader anywhere
+(verified: no audit route exists)" and planned to build one. That premise is now false:
+WS-10 shipped `GET /api/v1/integrations/google/operations` (admin-gated via
+`requireOfficeUser(request, { admin: true })`, SELECT-only, connection-scoped, newest-first,
+50 rows with a 51st-row `hasMore` probe) plus the "Recent integration activity" card in
+`GoogleWorkspacePanel`. The two packets anticipated overlap in the *opposite* direction —
+this one claimed to cover "the events half of WS-10" — and it resolved the other way round.
+Left unamended, this packet has no status line and therefore stays dispatchable, so the next
+agent to read it would rebuild a shipped reader. That is the DOC-02 duplicate-work trap.
+
+**Residual scope — what is genuinely NOT built:**
+**Why:** the shipped reader stops at 50 rows per category. It reports `hasMore` honestly but
+offers no way to reach page two, so an operator cannot audit beyond the newest 50 events.
+**Do:** add opaque-cursor pagination to the existing
+`GET /api/v1/integrations/google/operations` — do **not** add a second `/audit` route — and
+surface it in the existing card. Confirm whether non-admins should see an explanatory card
+with no fetch; the route is admin-only today. No retention/export controls (SET-12
+placeholders).
+**Accept:** stable pagination past 50 with an opaque cursor; 403 for non-admin unchanged;
+route still contains no mutations; the existing card keeps its honest empty state and its
+`payload.simulation` gating.
 
 ### SET-10 · Connection-health detail card (small, after SET-01+02+03)
 **Status:** Complete — PR #56, July 20, 2026. Source-only and undeployed.

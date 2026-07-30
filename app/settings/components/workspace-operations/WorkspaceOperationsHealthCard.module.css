@@ -1,0 +1,148 @@
+.card,
+.section {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.toolbar,
+.sectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.toolbar > p,
+.message,
+.empty,
+.guidance,
+.limitNote,
+.checkedAt,
+.explanation {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.toolbar > p {
+  max-width: 62ch;
+}
+
+.toolbar > :global(.soft-button) {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.section {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.sectionHeading > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sectionHeading h5 {
+  margin: 0;
+  color: var(--ink);
+  font: 700 13px/1.4 var(--font-display);
+}
+
+.sectionHeading span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.successIcon {
+  flex: 0 0 auto;
+  color: #287254;
+}
+
+.warningIcon {
+  flex: 0 0 auto;
+  color: #9f541c;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #deb6b0;
+  border-radius: var(--radius-control);
+  background: #fff8f7;
+  color: #8a3f37;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.table {
+  width: 100%;
+}
+
+.table strong,
+.table span,
+.table small,
+.table code {
+  overflow-wrap: anywhere;
+}
+
+.table td > strong,
+.table td > span,
+.table td > small {
+  display: block;
+}
+
+.table td > small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.table code {
+  font-size: 12px;
+}
+
+.guidance {
+  color: var(--ink);
+}
+
+.limitNote,
+.checkedAt {
+  font-style: italic;
+}
+
+@media (max-width: 560px) {
+  .toolbar,
+  .sectionHeading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .toolbar > :global(.soft-button) {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .successIcon,
+  .warningIcon {
+    justify-self: start;
+  }
+}

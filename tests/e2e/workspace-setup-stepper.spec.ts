@@ -315,7 +315,7 @@ function verificationRow(page: Page, key: "gmail" | "calendar" | "sheets") {
   return setupStage(page, 4).locator(`[data-stage-four-verification="${key}"]`);
 }
 
-function upkeepRow(page: Page, key: "drift" | "renames" | "notifications") {
+function upkeepRow(page: Page, key: "drift" | "renames" | "operations-health" | "notifications") {
   return setupStage(page, 4).locator(`[data-stage-four-upkeep="${key}"]`);
 }
 
@@ -852,6 +852,89 @@ test("Stage 4 disabled verification actions are described by their actual depend
   }
 });
 
+test("Operations health enumerates recorded simulation failures and activity without repair actions", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  let operationsReads = 0;
+  await page.route("**/api/v1/integrations/google/operations", async (route) => {
+    expect(route.request().method()).toBe("GET");
+    operationsReads += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        runtimeMode: "simulation",
+        simulation: true,
+        checkedAt: Date.UTC(2026, 6, 30, 12),
+        limits: { perCategory: 50 },
+        driveOperations: {
+          items: [
+            {
+              id: "drive-stuck",
+              operationKey: "project:stuck",
+              projectId: "project-1",
+              condition: "stuck",
+              status: "in-progress",
+              leaseExpiresAt: Date.UTC(2026, 6, 30, 11, 55),
+              lastErrorCode: null,
+              updatedAt: Date.UTC(2026, 6, 30, 11, 54),
+            },
+            {
+              id: "drive-failed",
+              operationKey: "project:failed",
+              projectId: "project-2",
+              condition: "failed",
+              status: "failed",
+              leaseExpiresAt: null,
+              lastErrorCode: "drive_write_failed",
+              updatedAt: Date.UTC(2026, 6, 30, 11, 53),
+            },
+          ],
+          hasMore: false,
+        },
+        failedArchives: {
+          items: [{
+            id: "archive-failed",
+            gmailMessageId: "gmail-message-1",
+            projectId: "project-3",
+            status: "failed",
+            lastErrorCode: "gmail_copy_failed",
+            updatedAt: Date.UTC(2026, 6, 30, 11, 52),
+          }],
+          hasMore: false,
+        },
+        events: {
+          items: [{
+            id: "event-1",
+            eventType: "gmail.archive_failed",
+            actor: "admin@example.test",
+            entityType: "project",
+            entityId: "project-3",
+            detail: "mode=simulation;code=gmail_copy_failed",
+            createdAt: Date.UTC(2026, 6, 30, 11, 52),
+          }],
+          hasMore: false,
+        },
+      }),
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await setStageExpanded(page, 4, true);
+  const row = upkeepRow(page, "operations-health");
+  await expect(row).toHaveAttribute("data-stage-four-upkeep-state", "AVAILABLE");
+  await expect(row.getByText("Simulation only — these are locally recorded test operations and no Google call is made.", { exact: true })).toBeVisible();
+  await expect(row.getByText("Stuck Drive lease", { exact: true })).toBeVisible();
+  await expect(row.getByText("Failed Drive operation", { exact: true })).toBeVisible();
+  await expect(row.getByText("Failed Gmail archive", { exact: true })).toBeVisible();
+  await expect(row.getByText("Gmail Archive Failed", { exact: true })).toBeVisible();
+  await expect(row.getByText("mode=simulation;code=gmail_copy_failed", { exact: true })).toBeVisible();
+  await expect(row.getByText("wait out the five-minute lease", { exact: false })).toBeVisible();
+  await expect(row.getByText("retry only through the original app action", { exact: false })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Refresh operations", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: /delete|repair|clear lease/i })).toHaveCount(0);
+  expect(operationsReads).toBe(1);
+});
+
 test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async ({ page }) => {
   await mockConnectionHealth(page, connectedHealth());
   await page.route("**/api/v1/google-workspace", async (route) => {
@@ -888,9 +971,9 @@ test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async
 
   const describedIds = await page.locator(".info-hint-trigger").evaluateAll((triggers) => triggers.map((trigger) => trigger.getAttribute("aria-describedby")));
   // Four stage headers + six tenant rows + five creation rows + three
-  // verification rows + three ongoing rows + two blueprint naming fields
+  // verification rows + four ongoing rows + two blueprint naming fields
   // are all mounted in this state.
-  expect(describedIds).toHaveLength(23);
+  expect(describedIds).toHaveLength(24);
   expect(describedIds.every(Boolean)).toBe(true);
   expect(new Set(describedIds).size).toBe(describedIds.length);
   const tooltipText = await page.locator(".info-hint-tooltip").allTextContents();

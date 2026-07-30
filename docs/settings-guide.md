@@ -444,6 +444,11 @@ name in blueprint**; a renamed system folder offers **Rename in Drive** only. Un
 or removed resources stay visible as informational rows and are never deleted. Every
 repair waits for an Administrator to click it.
 
+**Operations health** is the database-only troubleshooting view in the same Ongoing
+upkeep group. It lists stuck Drive leases, failed Gmail archives, and recent integration
+activity for the current connection. It does not contact Google and it never repairs or
+replays work automatically. Simulation results are labeled as local test operations.
+
 > [SCREENSHOT 11 — see Screenshot index]
 
 **A note on how email filing feels.** When you press **Review & copy** on a message, a window opens where you pick the exact project and press **Review destination**. The app shows you precisely where the email and attachments would go — the original email becomes an `.eml` in the project's *05_Correspondence / Email Archive* folder, and attachments go to *05_Correspondence / Email Attachments* — and **nothing is copied until you press Copy email to project**. Your Gmail Inbox is always left intact.
@@ -466,6 +471,10 @@ Most of the time, FCI Operations looks after itself. Here is what actually needs
 - **Drift check** — press **Check for drift** after changing the blueprint or whenever a
   managed Google resource looks out of place. Review each Missing or Renamed action
   before applying it. Unmanaged rows are informational and never trigger deletion.
+- **Operations health** — refresh this when a Drive or Gmail action fails. A stuck lease
+  needs its five-minute window to expire before you retry; a failed archive is retried
+  from the original **Review & copy** action. The recent-activity table shows what the
+  app recorded, not a live Google health check.
 
 **Essentially never (leave it alone):**
 - The system filing folder names — they are locked because filing depends on them.

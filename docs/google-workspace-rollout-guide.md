@@ -622,3 +622,30 @@ Do not store real client data until every required item is complete.
 ### The app opens but employees cannot use Google login
 
 - That is expected in the current development environment. Google data OAuth and app-user login are separate. Complete the remaining Part 14 activation gates before relying on Workspace identity for application access.
+
+### Deleted `FCI/*` Gmail labels
+
+- If `FCI/Intake`, `FCI/Needs Review`, or `FCI/Filed` was deleted in Gmail, return to
+  **Settings → Google Workspace → Stage 4** and select **Prepare FCI labels** again.
+  This re-runs `labels/prepare`; it is idempotent, so existing labels are reused and
+  missing labels are recreated without moving or archiving messages.
+- `FCI/Intake` and `FCI/Needs Review` labels accumulate until a person reviews the
+  mailbox. There is no automated cleanup, expiry, or removal process for either label.
+
+### Stuck Drive-operation lease
+
+- Open **Stage 4 → Ongoing upkeep → Operations health** and confirm that it is a
+  stuck lease. Wait out the full five minutes before retrying the
+  original action; a live operation owns its lease until then.
+- Never hand-edit Drive or the application database to clear a stuck lease. Retry only
+  through the original app action after the lease has expired.
+
+### Failed Gmail archive
+
+- For a failed archive, open **Stage 4 → Ongoing upkeep → Operations health** to read
+  the recorded archive ID, project, and safe error code. Then return to the Gmail
+  project inbox and re-POST the original **Review & copy** filing request.
+- The retry is idempotent by the stable `fciArchiveId`: it resumes or reuses the same
+  review-approved archive instead of deliberately creating a second archive. If it
+  fails again, retain the row and safe error code for developer review; never repair the
+  Drive files or D1 rows by hand.
