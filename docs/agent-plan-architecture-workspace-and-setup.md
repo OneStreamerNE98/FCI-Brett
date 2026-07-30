@@ -1227,6 +1227,7 @@ this packet turns on; simulation proves the path with no live Google call;
 per-user OAuth connect flow** in the per-user Gmail track.
 
 ### WS-18 · Decouple filed-email evidence reads from the connection key (small-medium)
+**Status:** In progress — `codex/ws18-filed-email-read-decoupling`
 **Why:** the first increment of the per-user Gmail track (owner request, July 27–28: each
 login sees its own mailbox, additional mailboxes attachable to a login), chosen because it is
 useful standalone and is a hard prerequisite for every multi-connection future. Today every

@@ -102,7 +102,6 @@ test("registry is ordered, read-only, strict-compatible, and drive-search condit
   const database = new FakeDatabase();
   const registry = createAssistantToolRegistry({
     database,
-    connectionKey: "workspace",
     isAdmin: false,
   });
   assert.deepEqual(registry.map((item) => item.definition.name), [
@@ -121,7 +120,6 @@ test("registry is ordered, read-only, strict-compatible, and drive-search condit
   }
   const withDrive = createAssistantToolRegistry({
     database,
-    connectionKey: "workspace",
     isAdmin: false,
     driveSearch: { search: async () => [] },
   });
@@ -149,7 +147,6 @@ test("registry is ordered, read-only, strict-compatible, and drive-search condit
 test("conditionally injected drive search is capped at ten items", async () => {
   const registry = createAssistantToolRegistry({
     database: new FakeDatabase(),
-    connectionKey: "workspace",
     isAdmin: false,
     driveSearch: {
       search: async () => rows(15, (index) => ({
@@ -172,7 +169,6 @@ test("malformed scoped ids, dates, and emails execute zero database work", async
   });
   const registry = createAssistantToolRegistry({
     database,
-    connectionKey: "workspace",
     isAdmin: false,
   });
   assert.deepEqual(await byName(registry, "search_records").execute({
@@ -227,7 +223,6 @@ test("malformed scoped ids, dates, and emails execute zero database work", async
   let driveSearches = 0;
   const withDrive = createAssistantToolRegistry({
     database,
-    connectionKey: "workspace",
     isAdmin: false,
     driveSearch: {
       search: async () => {
@@ -306,12 +301,10 @@ function evidenceResolver(kind, sql) {
 test("org tools redact financial values before non-admin provider evidence", async () => {
   const nonAdmin = createAssistantToolRegistry({
     database: new FakeDatabase(evidenceResolver),
-    connectionKey: "workspace",
     isAdmin: false,
   });
   const admin = createAssistantToolRegistry({
     database: new FakeDatabase(evidenceResolver),
-    connectionKey: "workspace",
     isAdmin: true,
   });
   const nonAdminProject = await byName(nonAdmin, "get_project_evidence").execute({
@@ -353,7 +346,6 @@ test("employee emails in evidence pass the office-identity filter; client contac
   // so the platform-free module never imports cloudflare-coupled code.
   const registry = createAssistantToolRegistry({
     database: new FakeDatabase(evidenceResolver),
-    connectionKey: "workspace",
     isAdmin: false,
     actorEmail: "asker@example.test",
     officeIdentityLookup: (email) =>
@@ -371,7 +363,6 @@ test("employee emails in evidence pass the office-identity filter; client contac
   // activates only when the route supplies the actor.
   const legacy = createAssistantToolRegistry({
     database: new FakeDatabase(evidenceResolver),
-    connectionKey: "workspace",
     isAdmin: false,
   });
   const legacyLeads = await byName(legacy, "list_leads").execute({
@@ -393,7 +384,6 @@ test("employee emails in evidence pass the office-identity filter; client contac
 test("non-admin financial sentinel never crosses the provider boundary", async () => {
   const registry = createAssistantToolRegistry({
     database: new FakeDatabase(evidenceResolver),
-    connectionKey: "workspace",
     isAdmin: false,
   });
   let round = 0;
@@ -654,7 +644,6 @@ test("every normative tool enforces its output cap and Today captures display-ti
   let nowCalls = 0;
   const registry = createAssistantToolRegistry({
     database: new FakeDatabase(capResolver),
-    connectionKey: "workspace",
     isAdmin: true,
     timeZone: "America/Chicago",
     now: () => {
@@ -683,12 +672,10 @@ test("every normative tool enforces its output cap and Today captures display-ti
 test("dashboard financial sum is admin-only while count evidence is shared", async () => {
   const nonAdmin = createAssistantToolRegistry({
     database: new FakeDatabase(capResolver),
-    connectionKey: "workspace",
     isAdmin: false,
   });
   const admin = createAssistantToolRegistry({
     database: new FakeDatabase(capResolver),
-    connectionKey: "workspace",
     isAdmin: true,
   });
   const ordinary = await byName(nonAdmin, "dashboard_metrics").execute({});

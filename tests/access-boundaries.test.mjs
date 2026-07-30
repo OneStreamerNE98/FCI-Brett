@@ -57,17 +57,17 @@ test("requires and revalidates the explicitly approved Workspace connection acco
   assert.match(d1, /status = 'reauthorization-required'/);
 });
 
-test("scopes dashboard Gmail archive totals to the active Google connection", async () => {
+test("counts filed emails across the business rather than one Google connection", async () => {
   const [dashboard, dashboardData] = await Promise.all([
     read("app/api/v1/dashboard/route.ts"),
     read("app/application/dashboard-data.ts"),
   ]);
 
-  assert.match(dashboard, /getGoogleRuntimeConfig/);
-  assert.match(dashboard, /dashboardData\(env\.DB, google\.connectionKey, \{ now: generatedAt, timeZone \}\)/);
+  assert.doesNotMatch(dashboard, /getGoogleRuntimeConfig|connectionKey/);
+  assert.match(dashboard, /dashboardData\(env\.DB, \{ now: generatedAt, timeZone \}\)/);
   assert.match(dashboard, /findByEmail\(auth\.user\.email\)/);
-  assert.match(dashboardData, /gmail_file_archives WHERE connection_key = \? AND status = 'filed'/);
-  assert.match(dashboardData, /bind\(connectionKey\)/);
+  assert.match(dashboardData, /gmail_file_archives WHERE status = 'filed'/);
+  assert.doesNotMatch(dashboardData, /connection_key|connectionKey/);
 });
 
 test("task reads and mutations reject non-office identities before body or database work", async () => {

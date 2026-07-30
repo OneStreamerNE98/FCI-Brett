@@ -121,8 +121,10 @@ AI-07 records-only action-item fallback described above.
 Common contract: every tool is **read-only**, takes validated JSON args,
 returns `{ evidence: Evidence[] }` (`{id, label, detail}` — the shape the
 citation UI already renders), caps its own output, and receives
-`{ isAdmin, connectionKey }` context. In the organization-wide tools, project
-and lead `estimated_value` fields and the estimated-pipeline sum are included
+`{ isAdmin }` request context. Filed-email evidence resolves by project across
+connection rows; `connection_key` remains archive provenance, not a read-scope
+parameter. In the organization-wide tools, project and lead `estimated_value`
+fields and the estimated-pipeline sum are included
 **only when `isAdmin`** (mirrors the Reports redaction); the selected-project
 legacy exception is recorded in §11. Tool results enter the conversation
 wrapped as untrusted data.
@@ -130,7 +132,7 @@ wrapped as untrusted data.
 | Tool | Input (validated) | Backing call | Output bound |
 |---|---|---|---|
 | `search_records` | `query` 2–100 chars, control chars rejected | the search route's three escaped LIKE queries (clients/projects/contacts, LIMIT 8 each) via a shared helper | ≤20 items |
-| `get_project_evidence` | `projectId` `^[A-Za-z0-9_-]{1,128}$` | existing `projectEvidence()` moved to the application layer, byte-identical SQL | existing bounds |
+| `get_project_evidence` | `projectId` `^[A-Za-z0-9_-]{1,128}$` | existing `projectEvidence()` in the application layer; filed archives are project-keyed across connections while the single-connection evidence payload stays byte-identical | existing bounds |
 | `get_client_evidence` | `clientId`, same pattern | client row + contacts (≤8) + its projects (≤10) | ≤20 items |
 | `search_meetings` | `query` 2–100; optional `projectId` | D1 LIKE over title/summary/decisions/notes/transcript, LIMIT 6; detail = ±400-char excerpt around the first match per field | ≤6 items |
 | `list_tasks` | optional `status`, `assigneeEmail`, `dueBefore`, `projectId` | tasks repository list, LIMIT 20 | ≤20 items |

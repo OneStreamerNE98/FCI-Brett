@@ -101,6 +101,6 @@ test("DES-08d and AI-04 route every Today consumer through the shared bounded re
   assert.equal(TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT, 5);
   assert.match(dashboardRoute, /findByEmail\(auth\.user\.email\)/u);
   assert.match(dashboardRoute, /normalizeUserDisplayTimezone\(preferences\?\.displayTimezone\)/u);
-  assert.match(dashboardRoute, /dashboardData\(env\.DB, google\.connectionKey, \{ now: generatedAt, timeZone \}\)/u);
+  assert.match(dashboardRoute, /dashboardData\(env\.DB, \{ now: generatedAt, timeZone \}\)/u);
   assert.match(assistantRoute, /findByEmail\(auth\.user\.email\)[\s\S]*createAssistantToolRegistry\(\{[\s\S]*timeZone,/u);
 });

@@ -26,7 +26,6 @@ type DriveSearchService = {
 
 type AssistantToolRegistryOptions = {
   database: D1Database;
-  connectionKey: string;
   isAdmin: boolean;
   // The requesting office user's email. Evidence strings carrying EMPLOYEE emails
   // (lead owner, project manager, task assignee) apply the same office-identity
@@ -157,7 +156,7 @@ function matchingExcerpt(value: string | null, query: string) {
 export function createAssistantToolRegistry(
   options: AssistantToolRegistryOptions,
 ): AssistantTool[] {
-  const { database, connectionKey, isAdmin, actorEmail, officeIdentityLookup } = options;
+  const { database, isAdmin, actorEmail, officeIdentityLookup } = options;
   const officeVisibleEmail = (candidate: string | null | undefined) => {
     const email = typeof candidate === "string" ? candidate.trim() : "";
     if (!email) return null;
@@ -202,7 +201,7 @@ export function createAssistantToolRegistry(
         ? identifier(input.projectId)
         : null;
       if (!projectId) return { evidence: [] };
-      const context = await projectEvidence(database, connectionKey, projectId, {
+      const context = await projectEvidence(database, projectId, {
         includeFinancials: isAdmin,
       });
       return { evidence: context?.evidence ?? [] };
@@ -410,10 +409,9 @@ export function createAssistantToolRegistry(
         return { evidence: [] };
       }
       const conditions = [
-        "a.connection_key = ?",
         "a.status = 'filed'",
       ];
-      const bindings: unknown[] = [connectionKey];
+      const bindings: unknown[] = [];
       if (projectId) {
         conditions.push("a.project_id = ?");
         bindings.push(projectId);
@@ -444,7 +442,7 @@ export function createAssistantToolRegistry(
     async (argumentsValue) => {
       const input = objectValue(argumentsValue);
       if (!input || !hasOnlyKeys(input, [])) return { evidence: [] };
-      const dashboard = await dashboardData(database, connectionKey);
+      const dashboard = await dashboardData(database);
       const evidence: Evidence[] = [
         { id: "metric:active-leads", label: "Dashboard metric · Active leads", detail: String(dashboard.metrics.activeLeads) },
         { id: "metric:active-projects", label: "Dashboard metric · Active projects", detail: String(dashboard.metrics.activeProjects) },
