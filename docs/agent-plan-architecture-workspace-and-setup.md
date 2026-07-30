@@ -844,7 +844,7 @@ is proven in one test; golden hashes untouched; `npm test` green.
 **Effort:** medium-large. **Cost:** $0.
 
 ### EDIT-06 · Client and contact editing (medium, after EDIT-03)
-**Status:** In review — PR #249, July 30, 2026. Source-only and undeployed; D1 migration 0022 is unapplied.
+**Status:** Complete — PR #249, July 30, 2026. Source-only and undeployed; D1 migration 0022 is unapplied.
 **Why:** clients have no update endpoint, no edit control, and no domain
 update validator, and there is **no contacts route of any kind** — so a
 client rename or an address correction is impossible after creation. Three
@@ -886,9 +886,27 @@ the settled who-may-edit decision); a source assertion proves no
 connection DELETE routes are pre-existing configuration deletes and stay);
 golden hashes untouched; `npm test` green.
 **Effort:** medium. **Cost:** $0.
+**Residual (recorded in review, PR #249):** migration 0022's unique index on
+`normalized_name_key` is **partial** (`WHERE normalized_name_key IS NOT NULL`)
+and existing rows are left `NULL`, so it is inert until each row is next
+written. For a **pair** of rows created under the old `LOWER(name)` uniqueness
+that collapse to one normalized key (`"Acme  Corp"` vs `"Acme Corp"`), the
+first row edited claims the shared key and the second then legitimately
+reports `duplicate`. That is a real data conflict needing a rename, not the
+artificial lock the review fixed — the unconditional pre-scan that made *both*
+rows permanently uneditable, including the archive transition this packet
+delivers, is gone. A backfill is the proper closure and is not written.
+**Structural lesson (binding on later EDIT packets):** the row chip and the
+client drawer both read `client.industry`, so no single fallback value could
+satisfy `des08a1-industry-surfacing.spec.ts:263` ("Commercial") and
+`edit06-client-contact-editing.spec.ts:145` ("Unspecified") at once. Two
+successive fixes each satisfied one pin and broke the other. **A display
+field with two consumers needs both consumers enumerated before it is
+changed** — the same discipline as auditing every call site when a parameter
+changes, applied to presentation.
 
 ### EDIT-07 · Task management UI (medium, after EDIT-03)
-**Status:** In review — PR #248, July 30, 2026. Source-only and undeployed.
+**Status:** Complete — PR #248, July 30, 2026. Source-only and undeployed.
 **Why:** both task endpoints are live and validated (`app/api/v1/tasks/
 route.ts`, `app/api/v1/tasks/[taskId]/route.ts` behind `normalizeTaskPatch`),
 but **no task list, form, or detail view exists anywhere in the product**.
@@ -917,6 +935,25 @@ re-apply; one audit row per edit with a before→after detail; the Today
 panel's existing complete action keeps its behavior; golden hashes untouched;
 `npm test` green.
 **Effort:** medium. **Cost:** $0.
+**Residual (recorded in review, PR #248) — the task list is bounded and now
+says so.** `MAX_TASK_LIST_RESULTS` (200) is a hard server ceiling: a request
+above it is rejected (`app/domain/task.ts:304`), so the client cannot fetch
+one extra row to detect truncation and a full page is the only available
+signal. Three things compound — the panel's default filter carries **no
+status**, so completed tasks consume the same budget; the server orders
+`due_date IS NULL, due_date, updated_at DESC`, so **undated rows sort last and
+fall off first**; and a newly created task with no due date is therefore
+exactly what goes missing. A full page now renders an honest notice naming
+both the cap and the ordering. Pagination is **not** built.
+**Open follow-up worth its own packet (owner decision):** there is **no
+`GET /api/v1/tasks/[taskId]`** — only `PATCH`. So the 409 recovery
+(`readCurrentTask`) must scan up to four capped lists hunting an exact version
+match, which is why recovery can fail at all and why a task beyond the cap can
+never be recovered. Adding the by-id read collapses four requests into one and
+removes both failure modes. The current dead-end is **deliberate and pinned**
+(`tests/e2e/edit07-task-management-ui.spec.ts:402`), so this is an
+enhancement, not a defect — but it is the natural EDIT-08, or a rider on
+EDIT-03's concurrency foundation.
 
 ---
 
