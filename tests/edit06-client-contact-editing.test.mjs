@@ -804,3 +804,59 @@ test("new editing routes expose no core-record DELETE and authenticate before pa
     assert.ok(authIndex < parserIndex);
   }
 });
+
+test("FloorOps composes create plus independent changed-key client and contact editors", async () => {
+  const app = await read("app/FloorOpsApp.tsx");
+  assert.match(
+    app,
+    /function mapClientRecord[\s\S]*primary_contact_phone[\s\S]*primary_contact_role[\s\S]*primary_contact_version[\s\S]*normalizeRecordVersion\(record\.version\)/u,
+  );
+  assert.match(
+    app,
+    /industry:\s*industryRaw \?\? "Unspecified",[\s\S]*industryRaw,/u,
+  );
+  assert.match(
+    app,
+    /primaryContact:\s*\{[\s\S]*name: client\.contact,[\s\S]*email: client\.email,[\s\S]*phone: client\.contactPhone,[\s\S]*role: client\.contactRole/u,
+  );
+  assert.match(
+    app,
+    /<input name="phone" type="tel" maxLength=\{80\}[\s\S]*<input name="role" required maxLength=\{120\}[\s\S]*CLIENT_STATUSES\.map/u,
+  );
+  assert.match(
+    app,
+    /function ClientEditModal[\s\S]*const patch: ClientEditPatch = \{\};[\s\S]*if \(name !== client\.name\) patch\.name = name;[\s\S]*if \(nextIndustry !== industry\) patch\.industry = nextIndustry;[\s\S]*if \(status !== client\.status\.toLowerCase\(\)\) patch\.status = status;/u,
+  );
+  assert.match(
+    app,
+    /function ContactEditModal[\s\S]*const patch: ContactEditPatch = \{\};[\s\S]*if \(name !== client\.contact\) patch\.name = name;[\s\S]*if \(email !== \(client\.email \|\| null\)\) patch\.email = email;[\s\S]*if \(phone !== client\.contactPhone\) patch\.phone = phone;[\s\S]*if \(role !== client\.contactRole\) patch\.role = role;/u,
+  );
+  assert.match(
+    app,
+    /new ClientEditConflictError\([\s\S]*data\.currentVersion,[\s\S]*data\.currentValues \?\? \{\}/u,
+  );
+  assert.match(
+    app,
+    /new ContactEditConflictError\([\s\S]*data\.currentVersion,[\s\S]*data\.currentValues \?\? \{\}/u,
+  );
+  assert.match(
+    app,
+    /Saved value: \{displayValue\}[\s\S]*Saved value: \{value === null \|\| value === "" \? "Not set" : String\(value\)\}/u,
+  );
+  assert.match(
+    app,
+    /<ClientDrawer[\s\S]*onSaveClient=\{saveClientEdits\} onSaveContact=\{saveContactEdits\}/u,
+  );
+  assert.match(
+    app,
+    /item\.clientId === saved\.id \? \{ \.\.\.item, client: saved\.name \} : item/u,
+  );
+  assert.match(
+    app,
+    /industry:\s*saved\.industry \?\? "Unspecified",[\s\S]*industryRaw:\s*saved\.industry/u,
+  );
+  assert.doesNotMatch(
+    app,
+    /fetch\(`\/api\/v1\/(?:clients|contacts)\/\$\{[^}]+\}`,\s*\{\s*method:\s*"DELETE"/u,
+  );
+});

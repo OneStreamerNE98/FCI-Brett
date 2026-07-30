@@ -52,7 +52,7 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /event\.target !== event\.currentTarget/);
   assert.match(overlay, /!closeOnBackdropRef\.current \|\| busyRef\.current/);
 
-  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 15);
+  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 17);
   assert.doesNotMatch(overlayConsumers, /<div className="modal-backdrop"/);
   assert.doesNotMatch(overlayConsumers, /<div className="drawer-backdrop"/);
   assert.match(overlayConsumers, /variant="drawer"/);
@@ -60,8 +60,10 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlayConsumers, /busy=\{saving\}/);
   assert.equal(overlayConsumers.match(/aria-label="Close" disabled=\{saving\}/g)?.length, 7);
   assert.match(overlayConsumers, /aria-label=\{editLead \? "Close lead editor" : "Close"\} disabled=\{saving\}/);
-  assert.equal(overlayConsumers.match(/onClick=\{(?:onClose|controller\.closeModal)\} disabled=\{saving\}>Cancel/g)?.length, 9);
+  assert.equal(overlayConsumers.match(/onClick=\{(?:onClose|controller\.closeModal)\} disabled=\{saving\}>Cancel/g)?.length, 11);
   assert.equal(overlayConsumers.match(/onClick=\{props\.onClose\} disabled=\{saving\}>Cancel/g)?.length, 1);
+  assert.match(overlayConsumers, /ariaLabel=\{`Edit \$\{client\.code\} client`\} contentClassName="modal project-edit-modal client-edit-modal"/);
+  assert.match(overlayConsumers, /ariaLabel=\{`Edit primary contact for \$\{client\.code\}`\} contentClassName="modal project-edit-modal contact-edit-modal"/);
   assert.match(overlayConsumers, /ariaLabel=\{`Record installation dates for \$\{project\.number\}`\}/);
   assert.match(overlayConsumers, /ariaLabel=\{`Record follow-up result for \$\{project\.number\}`\}/);
   assert.match(projectFiles, /returnFocusRef=\{returnFocusRef\}/);
