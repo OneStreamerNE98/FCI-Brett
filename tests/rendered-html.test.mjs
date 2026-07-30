@@ -467,12 +467,13 @@ test("adds a searchable, configurable inbox with draft-only Workspace replies", 
 });
 
 test("keeps My settings scoped to the authenticated office user and honest about planned consumers", async () => {
-  const [schema, preferencesApi, preferencesAdapter, preferencesDomain, app, mySettings, notificationCatalog, pageLayouts, layoutEditor] = await Promise.all([
+  const [schema, preferencesApi, preferencesAdapter, preferencesDomain, app, mySettings, notificationCatalog, pageLayouts, layoutEditor, layoutStyles] = await Promise.all([
     read("db/schema.ts"), read("app/api/v1/settings/me/route.ts"),
     read("app/adapters/d1/user-preferences-repository.ts"), read("app/domain/user-preferences.ts"),
     readAppSurface(),
     read("app/settings/components/MySettingsPanel.tsx"), read("app/lib/user-settings.ts"),
     read("app/lib/page-layouts.ts"), read("app/components/operations/PageLayoutEditor.tsx"),
+    read("app/globals.css"),
   ]);
   assert.match(schema, /export const userPreferences = sqliteTable\("user_preferences"/);
   assert.match(schema, /userEmail: text\("user_email"\)\.primaryKey\(\)/);
@@ -505,8 +506,17 @@ test("keeps My settings scoped to the authenticated office user and honest about
   assert.match(notificationCatalog, /"project\.warranty_follow_up_due"/);
   assert.match(notificationCatalog, /"task\.assigned"/);
   assert.match(pageLayouts, /PAGE_LAYOUT_SECTION_CATALOG/);
+  assert.match(pageLayouts, /PAGE_LAYOUT_RESIZABLE_SECTIONS/);
   assert.match(pageLayouts, /normalizePageLayoutsForRead/);
   assert.match(pageLayouts, /normalizePageLayoutsForWrite/);
+  assert.match(pageLayouts, /resolveArrangedSpans/);
+  assert.match(pageLayouts, /stored\[page\]\.fullWidth\.filter\(\(key\) => !visibleKeys\.has\(key\)\)/);
+  assert.match(app, /resolveArrangedSpans\("overview"/);
+  assert.match(app, /resolveArrangedSpans\("reports"/);
+  assert.match(app, /data-page-layout-size=\{size\}/);
+  assert.doesNotMatch(app, /overviewFullWidthKeys|const fullWidthKeys = new Set/);
+  assert.match(layoutStyles, /\.page-layout-grid-overview,\.page-layout-grid-reports\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
+  assert.doesNotMatch(layoutStyles, /grid-auto-flow\s*:\s*dense/);
   assert.match(layoutEditor, /draggable/);
   assert.match(layoutEditor, /Move up/);
   assert.match(layoutEditor, /Move down/);
