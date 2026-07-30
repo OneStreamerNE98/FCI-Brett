@@ -231,7 +231,7 @@ test("client creation sends one atomic client, contact, and activity intent befo
       id: "contact-client-1",
       clientId: "12345678-aaaa-bbbb-cccc-000000000001",
       name: "Pat Person",
-      email: " pat@example.test ",
+      email: "pat@example.test",
       phone: "555-0100",
       role: "Primary contact",
       isPrimary: true,
@@ -255,6 +255,7 @@ test("client creation sends one atomic client, contact, and activity intent befo
       clientCode: "CL-12345678",
       name: "FCI TEST Client",
       createdAt: 1_783_914_000_000,
+      version: "1",
       sheetSync,
     },
   });

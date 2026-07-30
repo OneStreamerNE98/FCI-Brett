@@ -131,7 +131,15 @@ class CoreRecordD1Database {
     let previousChanges = 0;
     for (const statement of statements) {
       if (statement.sql.startsWith("UPDATE clients SET ")) {
-        const [name, status, industry, updatedAt, clientId, expectedVersion] = statement.values;
+        const [
+          name,
+          normalizedNameKey,
+          status,
+          industry,
+          updatedAt,
+          clientId,
+          expectedVersion,
+        ] = statement.values;
         const current = this.clients.get(clientId);
         const versionGuarded = statement.sql.includes("WHERE id = ? AND version = ?");
         if (!current || versionGuarded && String(current.version) !== String(expectedVersion)) {
@@ -142,6 +150,7 @@ class CoreRecordD1Database {
         this.clients.set(clientId, {
           ...current,
           name,
+          normalized_name_key: normalizedNameKey,
           status,
           industry,
           updated_at: updatedAt,
@@ -297,6 +306,11 @@ test("D1 client and project CAS admit one editor and leave zero stale-write audi
     sql.startsWith("UPDATE clients SET ") || sql.startsWith("UPDATE projects SET "));
   assert.equal(updateStatements.length, 4);
   assert.equal(updateStatements.every(({ sql }) =>
+    /WHERE id = \? AND version = \?/u.test(sql)), true);
+  assert.equal(updateStatements.filter(({ sql }) => sql.startsWith("UPDATE clients SET ")).every(({ sql }) =>
+    /AND NOT EXISTS \(SELECT 1 FROM clients AS duplicate[\s\S]*LOWER\(duplicate\.name\) = LOWER\(\?\)/u
+      .test(sql)), true);
+  assert.equal(updateStatements.filter(({ sql }) => sql.startsWith("UPDATE projects SET ")).every(({ sql }) =>
     /WHERE id = \? AND version = \?$/u.test(sql)), true);
   const guardedAuditStatements = database.prepared.filter(({ sql }) =>
     sql.startsWith("INSERT INTO activity_events ") && sql.includes("changes() = 1"));

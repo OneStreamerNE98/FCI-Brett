@@ -30,6 +30,7 @@ const tasksMigrationPrefix = "0018_";
 const projectSegmentMigrationPrefix = "0019_";
 const coreRecordConcurrencyMigrationPrefix = "0020_";
 const mailItemAnalysisMigrationPrefix = "0021_";
+const clientNormalizedNameMigrationPrefix = "0022_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -54,6 +55,7 @@ const requiredDevelopmentIndexes = [
   "tasks_status_due_date_idx",
   "mail_items_profile_message_unique",
   "mail_items_profile_status_idx",
+  "clients_normalized_name_key_unique_idx",
 ];
 
 async function sourceFiles(directory) {
@@ -656,11 +658,63 @@ test("extends mail_items additively for AI-10 in generated migration 0021", asyn
     columns: ["connection_key", "gmail_message_id"],
     isUnique: true,
   });
-  assert.deepEqual(journal.entries.at(-1), {
+  const journalEntry = journal.entries.find(({ idx }) => idx === 21);
+  assert.deepEqual(journalEntry, {
     idx: 21,
     version: "6",
-    when: journal.entries.at(-1).when,
+    when: journalEntry.when,
     tag: "0021_superb_killer_shrike",
+    breakpoints: true,
+  });
+});
+
+test("adds the nullable atomic D1 client-name key in generated migration 0022", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(clientNormalizedNameMigrationPrefix));
+  assert.equal(migration, "0022_mean_darkhawk.sql");
+  assert.equal(
+    files.filter((file) => file.startsWith(clientNormalizedNameMigrationPrefix)).length,
+    1,
+  );
+
+  const [migrationSql, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0021_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0022_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.match(
+    migrationSql,
+    /ALTER TABLE `clients` ADD `normalized_name_key` text;/u,
+  );
+  assert.match(
+    migrationSql,
+    /CREATE UNIQUE INDEX `clients_normalized_name_key_unique_idx` ON `clients` \(`normalized_name_key`\) WHERE "clients"\."normalized_name_key" IS NOT NULL;/u,
+  );
+  assert.doesNotMatch(
+    migrationSql,
+    /\b(?:DROP|UPDATE|INSERT|DELETE|TRUNCATE|RENAME|CREATE TABLE)\b/iu,
+  );
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.deepEqual(Object.keys(snapshot.tables).sort(), Object.keys(previousSnapshot.tables).sort());
+  assert.deepEqual(snapshot.tables.clients.columns.normalized_name_key, {
+    name: "normalized_name_key",
+    type: "text",
+    primaryKey: false,
+    notNull: false,
+    autoincrement: false,
+  });
+  assert.deepEqual(snapshot.tables.clients.indexes.clients_normalized_name_key_unique_idx, {
+    name: "clients_normalized_name_key_unique_idx",
+    columns: ["normalized_name_key"],
+    isUnique: true,
+    where: "\"clients\".\"normalized_name_key\" IS NOT NULL",
+  });
+  assert.deepEqual(journal.entries.at(-1), {
+    idx: 22,
+    version: "6",
+    when: journal.entries.at(-1).when,
+    tag: "0022_mean_darkhawk",
     breakpoints: true,
   });
 });

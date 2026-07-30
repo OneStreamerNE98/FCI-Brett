@@ -70,6 +70,7 @@ import { SettingsAudienceNavigation } from "./settings/components/SettingsAudien
 import { TestingLaunchPanel } from "./settings/components/TestingLaunchPanel";
 import { WorkspaceDefaultsPanel } from "./settings/components/WorkspaceDefaultsPanel";
 import { ProjectFileCreationModal, ProjectFilesPanel, useProjectFilesController } from "./projects/components/ProjectFilesPanel";
+import { CLIENT_STATUSES } from "./domain/client-creation";
 import { FLOORING_CATEGORIES, PROJECT_STATUSES, type FlooringCategory } from "./domain/project-creation";
 import { CALLBACK_NOTE_MAX_LENGTH } from "./domain/project-operations";
 import { normalizeRecordVersion } from "./domain/record-version";
@@ -157,7 +158,71 @@ type LeadModalRequest = Readonly<{
   initialValues?: Partial<Lead>;
   afterCreate?: () => Promise<void>;
 }>;
-type Client = { id: string; code: string; name: string; contact: string; email: string; industry: string; industryRaw?: string | null; status: string; initials: string; color: string; googleStatus: "Ready" | "Setup pending"; jobSite: JobSiteLocation | null; driveFolderId?: string; driveUrl?: string };
+type Client = {
+  id: string;
+  code: string;
+  name: string;
+  contact: string;
+  contactId?: string;
+  contactPhone: string | null;
+  contactRole: string;
+  contactVersion?: string;
+  email: string;
+  industry: string;
+  industryRaw?: string | null;
+  status: string;
+  initials: string;
+  color: string;
+  googleStatus: "Ready" | "Setup pending";
+  jobSite: JobSiteLocation | null;
+  version?: string;
+  driveFolderId?: string;
+  driveUrl?: string;
+};
+type ClientEditPatch = Partial<{
+  name: string;
+  status: string;
+  industry: string | null;
+}>;
+type ClientConflictValues = ClientEditPatch;
+type ClientUpdatePayload = {
+  client?: {
+    id: string;
+    clientCode: string;
+    name: string;
+    status: string;
+    industry: string | null;
+    updatedAt: number;
+    version: string;
+  };
+  error?: string;
+  outcome?: "duplicate";
+  currentVersion?: string;
+  currentValues?: ClientConflictValues;
+};
+type ContactEditPatch = Partial<{
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+}>;
+type ContactConflictValues = ContactEditPatch;
+type ContactUpdatePayload = {
+  contact?: {
+    id: string;
+    clientId: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+    role: string;
+    isPrimary: boolean;
+    updatedAt: number;
+    version: string;
+  };
+  error?: string;
+  currentVersion?: string;
+  currentValues?: ContactConflictValues;
+};
 type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; version?: string; driveFolderId?: string; driveUrl?: string };
 type ProjectEditPatch = Partial<{
   name: string;
@@ -282,6 +347,38 @@ class LeadEditConflictError extends Error {
     this.currentValues = currentValues;
   }
 }
+
+class ClientEditConflictError extends Error {
+  currentVersion: string;
+  currentValues: ClientConflictValues;
+
+  constructor(
+    message: string,
+    currentVersion: string,
+    currentValues: ClientConflictValues,
+  ) {
+    super(message);
+    this.name = "ClientEditConflictError";
+    this.currentVersion = currentVersion;
+    this.currentValues = currentValues;
+  }
+}
+
+class ContactEditConflictError extends Error {
+  currentVersion: string;
+  currentValues: ContactConflictValues;
+
+  constructor(
+    message: string,
+    currentVersion: string,
+    currentValues: ContactConflictValues,
+  ) {
+    super(message);
+    this.name = "ContactEditConflictError";
+    this.currentVersion = currentVersion;
+    this.currentValues = currentValues;
+  }
+}
 const focusableControlSelector = [
   "a[href]",
   "button:not([disabled])",
@@ -347,6 +444,41 @@ function mapLeadRecord(record: Record<string, unknown>): Lead {
     createdAt: optionalRecordNumber(record.createdAt),
     updatedAt: optionalRecordNumber(record.updatedAt),
     version: normalizeRecordVersion(record.version) ?? undefined,
+  };
+}
+
+function mapClientRecord(record: Record<string, unknown>): Client {
+  const name = String(record.name ?? "");
+  const industryRaw = optionalRecordText(record.industry);
+  const contactId = optionalRecordText(record.primary_contact_id);
+  return {
+    id: String(record.id),
+    code: String(record.client_code),
+    name,
+    contact: String(record.primary_contact_name ?? "Primary contact pending"),
+    contactId: contactId ?? undefined,
+    contactPhone: optionalRecordText(record.primary_contact_phone),
+    contactRole: String(record.primary_contact_role ?? "Primary contact"),
+    contactVersion: normalizeRecordVersion(record.primary_contact_version) ?? undefined,
+    email: String(record.primary_contact_email ?? ""),
+    // "Commercial", not "Unspecified": the row chip's default is an owner-approved
+    // DES-08a1 decision and is pinned by an e2e gate ("UNSPEC-001 · Commercial").
+    // Only the Reports bucket says Unspecified, and it reads industryRaw, which
+    // stays null — so the split survives this extraction.
+    industry: industryRaw ?? "Commercial",
+    industryRaw,
+    status: displayStatus(record.status, "Active"),
+    initials: recordInitials(name),
+    color: "sage",
+    googleStatus: record.drive_folder_id ? "Ready" : "Setup pending",
+    jobSite: normalizeJobSiteLocation({
+      address: record.site_address ?? record.address,
+      latitude: record.latitude,
+      longitude: record.longitude,
+    }),
+    version: normalizeRecordVersion(record.version) ?? undefined,
+    driveFolderId: record.drive_folder_id ? String(record.drive_folder_id) : undefined,
+    driveUrl: record.drive_url ? String(record.drive_url) : undefined,
   };
 }
 
@@ -569,7 +701,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       const clientRows = Array.isArray(clientData.clients) ? clientData.clients as Record<string, unknown>[] : [];
       const projectRows = Array.isArray(projectData.projects) ? projectData.projects as Record<string, unknown>[] : [];
       setLeads(leadRows.map(mapLeadRecord));
-      setClients(clientRows.map((client) => ({ id: String(client.id), code: String(client.client_code), name: String(client.name), contact: String(client.primary_contact_name ?? "Primary contact pending"), email: String(client.primary_contact_email ?? ""), industry: String(client.industry ?? "Commercial"), industryRaw: client.industry ? String(client.industry) : null, status: displayStatus(client.status, "Active"), initials: recordInitials(String(client.name)), color: "sage", googleStatus: client.drive_folder_id ? "Ready" as const : "Setup pending" as const, jobSite: normalizeJobSiteLocation({ address: client.site_address ?? client.address, latitude: client.latitude, longitude: client.longitude }), driveFolderId: client.drive_folder_id ? String(client.drive_folder_id) : undefined, driveUrl: client.drive_url ? String(client.drive_url) : undefined })));
+      setClients(clientRows.map(mapClientRecord));
       setProjectItems(projectRows.map((project) => {
         const managerId = typeof project.project_manager_id === "string" && project.project_manager_id.trim()
           ? project.project_manager_id.trim().toLowerCase()
@@ -981,7 +1113,21 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
 
   async function addClient(client: Client) {
     try {
-      const response = await fetch("/api/v1/clients", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: client.name, industry: client.industry, status: client.status.toLowerCase(), primaryContact: { name: client.contact, email: client.email } }) });
+      const response = await fetch("/api/v1/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: client.name,
+          industry: client.industry,
+          status: client.status.toLowerCase(),
+          primaryContact: {
+            name: client.contact,
+            email: client.email,
+            phone: client.contactPhone,
+            role: client.contactRole,
+          },
+        }),
+      });
       const errorData = await response.clone().json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(errorData.error ?? "Client could not be saved.");
       const data = await response.json() as { id: string; clientCode: string; sheetSync?: { status?: string; message?: string } };
@@ -991,6 +1137,94 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     } catch (error) {
       notify(error instanceof Error ? error.message : "Client could not be saved.", "error");
     }
+  }
+
+  async function saveClientEdits(
+    client: Client,
+    patch: ClientEditPatch,
+    version: string,
+  ) {
+    const response = await fetch(`/api/v1/clients/${encodeURIComponent(client.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...patch, version }),
+    });
+    const data = await response.json().catch(() => ({})) as ClientUpdatePayload;
+    if (response.status === 409 && typeof data.currentVersion === "string") {
+      throw new ClientEditConflictError(
+        data.error ?? "Client changed since it was loaded.",
+        data.currentVersion,
+        data.currentValues ?? {},
+      );
+    }
+    if (!response.ok || !data.client) {
+      throw new Error(data.error ?? "Client changes could not be saved.");
+    }
+    const saved = data.client;
+    const update = (item: Client): Client => item.id === client.id
+      ? {
+          ...item,
+          name: saved.name,
+          industry: saved.industry ?? "Commercial",
+          industryRaw: saved.industry,
+          status: displayStatus(saved.status, saved.status),
+          initials: recordInitials(saved.name),
+          version: normalizeRecordVersion(saved.version) ?? item.version,
+        }
+      : item;
+    setClients((current) => current.map(update));
+    setSelectedClient((current) => current ? update(current) : current);
+    setProjectItems((current) => current.map((item) => (
+      item.clientId === saved.id ? { ...item, client: saved.name } : item
+    )));
+    setSelectedProject((current) => current?.clientId === saved.id
+      ? { ...current, client: saved.name }
+      : current);
+    notify(`${saved.clientCode} client details updated`, "success");
+  }
+
+  async function saveContactEdits(
+    client: Client,
+    patch: ContactEditPatch,
+    version: string,
+  ) {
+    if (!client.contactId) {
+      throw new Error("This client does not have a primary contact to edit.");
+    }
+    const response = await fetch(`/api/v1/contacts/${encodeURIComponent(client.contactId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...patch, version }),
+    });
+    const data = await response.json().catch(() => ({})) as ContactUpdatePayload;
+    if (response.status === 409 && typeof data.currentVersion === "string") {
+      throw new ContactEditConflictError(
+        data.error ?? "Contact changed since it was loaded.",
+        data.currentVersion,
+        data.currentValues ?? {},
+      );
+    }
+    if (!response.ok || !data.contact) {
+      throw new Error(data.error ?? "Contact changes could not be saved.");
+    }
+    if (data.contact.clientId !== client.id) {
+      throw new Error("The saved contact no longer belongs to this client.");
+    }
+    const saved = data.contact;
+    const update = (item: Client): Client => item.id === client.id
+      ? {
+          ...item,
+          contact: saved.name,
+          email: saved.email ?? "",
+          contactPhone: saved.phone,
+          contactRole: saved.role,
+          contactId: saved.id,
+          contactVersion: normalizeRecordVersion(saved.version) ?? item.contactVersion,
+        }
+      : item;
+    setClients((current) => current.map(update));
+    setSelectedClient((current) => current ? update(current) : current);
+    notify(`${client.code} primary contact updated`, "success");
   }
 
   async function addProject(project: Project) {
@@ -1551,7 +1785,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
       {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} isAdmin={isAdmin} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} onSaveLead={saveLeadEdits} returnFocusRef={leadDrawerReturnFocusRef} fallbackFocusRef={workspaceSearchRef} />}
       {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} clients={clients} jobSiteMaps={jobSiteMaps} onClose={() => setProjectOpen(false)} notify={notify} onSaveProject={saveProjectEdits} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} onMeetingRecorded={() => void refreshDashboardSnapshot().catch(() => {})} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
-      {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} jobSiteMaps={jobSiteMaps} onClose={() => setClientOpen(false)} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
+      {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} jobSiteMaps={jobSiteMaps} onClose={() => setClientOpen(false)} onSaveClient={saveClientEdits} onSaveContact={saveContactEdits} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
       {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"} aria-atomic="true">
         {toast.kind === "success" ? <CheckCircle2 size={18} aria-hidden="true" /> : toast.kind === "info" ? <Info size={18} aria-hidden="true" /> : <CircleAlert size={18} aria-hidden="true" />}
         <span>{toast.message}</span>
@@ -2035,8 +2269,174 @@ function LeadModal(props: LeadModalProps) {
 
 function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client: Client) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const name = String(form.get("name")); try { await onSave({ id: "", code: "", name, contact: String(form.get("contact")), email: String(form.get("email")), industry: String(form.get("industry")), status: String(form.get("status")), initials: recordInitials(name), color: "sage", googleStatus: "Setup pending", jobSite: null }); } finally { setSaving(false); } }
-  return <AccessibleOverlay ariaLabel="Add a client" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Client Directory</p><h2>Add a client</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}><label>Client business name<input data-overlay-initial-focus name="name" required placeholder="Business name" /></label><div className="form-row"><label>Primary contact<input name="contact" required placeholder="Full name" /></label><label>Work email<input name="email" type="email" required placeholder="name@company.com" /></label></div><div className="form-row"><label>Industry<select name="industry">{CLIENT_INDUSTRY_OPTIONS.map((industry) => <option key={industry}>{industry}</option>)}</select></label><label>Client status<select name="status"><option>Active</option><option>Prospect</option><option>Inactive</option></select></label></div><p className="form-help"><FolderTree size={14} /> The app saves the client first, then syncs the Client Directory when Google Sheets is connected. The account folder is created with the first project workspace.</p><footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add client"}</button></footer></form></AccessibleOverlay>;
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name"));
+    const phone = String(form.get("phone") ?? "").trim() || null;
+    try {
+      await onSave({
+        id: "",
+        code: "",
+        name,
+        contact: String(form.get("contact")),
+        contactPhone: phone,
+        contactRole: String(form.get("role")),
+        email: String(form.get("email")),
+        industry: String(form.get("industry")),
+        status: String(form.get("status")),
+        initials: recordInitials(name),
+        color: "sage",
+        googleStatus: "Setup pending",
+        jobSite: null,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+  return <AccessibleOverlay ariaLabel="Add a client" contentClassName="modal" onClose={onClose} busy={saving}><header><div><p className="eyebrow">Client Directory</p><h2>Add a client</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header><form onSubmit={submit}>
+    <label>Client business name<input data-overlay-initial-focus name="name" required maxLength={180} placeholder="Business name" /></label>
+    <div className="form-row"><label>Primary contact<input name="contact" required maxLength={180} placeholder="Full name" /></label><label>Work email<input name="email" type="email" maxLength={254} required placeholder="name@company.com" /></label></div>
+    <div className="form-row"><label>Contact phone <span className="optional-label">Optional</span><input name="phone" type="tel" maxLength={80} placeholder="Phone number" /></label><label>Contact role<input name="role" required maxLength={120} defaultValue="Primary contact" /></label></div>
+    <div className="form-row"><label>Industry<select name="industry">{CLIENT_INDUSTRY_OPTIONS.map((industry) => <option value={industry} key={industry}>{industry}</option>)}</select></label><label>Client status<select name="status" defaultValue="active">{CLIENT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select></label></div>
+    <p className="form-help"><FolderTree size={14} /> The app saves the client and primary contact first, then syncs the Client Directory when Google Sheets is connected. The account folder is created with the first project workspace.</p>
+    <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add client"}</button></footer>
+  </form></AccessibleOverlay>;
+}
+
+function ClientEditModal({ client, onClose, onSave }: { client: Client; onClose: () => void; onSave: (patch: ClientEditPatch, version: string) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [conflictVersion, setConflictVersion] = useState<string | null>(null);
+  const [conflictValues, setConflictValues] = useState<ClientConflictValues>({});
+  const industry = client.industryRaw ?? null;
+  const industryOptions = industry && !(CLIENT_INDUSTRY_OPTIONS as readonly string[]).includes(industry)
+    ? [industry, ...CLIENT_INDUSTRY_OPTIONS]
+    : CLIENT_INDUSTRY_OPTIONS;
+
+  function savedValue(key: keyof ClientConflictValues) {
+    if (!Object.hasOwn(conflictValues, key)) return null;
+    const value = conflictValues[key];
+    const displayValue = key === "status"
+      ? displayStatus(value, "Not set")
+      : value === null || value === ""
+        ? "Not set"
+        : String(value);
+    return <small className="project-edit-saved-value">Saved value: {displayValue}</small>;
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const version = conflictVersion ?? client.version;
+    if (!version) {
+      setError("Refresh live client records before editing this client.");
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name") ?? "").trim();
+    const nextIndustry = String(form.get("industry") ?? "").trim() || null;
+    const status = String(form.get("status") ?? "").trim().toLowerCase();
+    const patch: ClientEditPatch = {};
+    if (name !== client.name) patch.name = name;
+    if (nextIndustry !== industry) patch.industry = nextIndustry;
+    if (status !== client.status.toLowerCase()) patch.status = status;
+    if (Object.keys(patch).length === 0) {
+      setError("Change at least one client field before saving.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(patch, version);
+      onClose();
+    } catch (saveError) {
+      if (saveError instanceof ClientEditConflictError) {
+        setConflictVersion(saveError.currentVersion);
+        setConflictValues(saveError.currentValues);
+        setError("This client changed while you were editing. Review your entries, then choose Re-apply changes.");
+      } else {
+        setError(saveError instanceof Error ? saveError.message : "Client changes could not be saved.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <AccessibleOverlay ariaLabel={`Edit ${client.code} client`} contentClassName="modal project-edit-modal client-edit-modal" onClose={onClose} busy={saving}>
+    <header><div><p className="eyebrow">{client.code}</p><h2>Edit client</h2></div><button type="button" onClick={onClose} aria-label="Close client editor" disabled={saving}><X size={20} /></button></header>
+    <form onSubmit={submit}>
+      {error && <p className="project-operation-error" role="alert">{error}</p>}
+      <label>Client business name<input data-overlay-initial-focus name="name" required maxLength={180} defaultValue={client.name} disabled={saving} />{savedValue("name")}</label>
+      <div className="form-row"><label>Industry <span className="optional-label">Optional</span><select name="industry" defaultValue={industry ?? ""} disabled={saving}><option value="">Not set</option>{industryOptions.map((option) => <option value={option} key={option}>{option}</option>)}</select>{savedValue("industry")}</label><label>Client status<select name="status" defaultValue={client.status.toLowerCase()} disabled={saving}>{CLIENT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select>{savedValue("status")}</label></div>
+      <p className="form-help"><ShieldCheck size={14} /> Saving appends one before-and-after activity record. A newer saved version is never overwritten automatically.</p>
+      <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : conflictVersion ? "Re-apply changes" : "Save changes"}</button></footer>
+    </form>
+  </AccessibleOverlay>;
+}
+
+function ContactEditModal({ client, onClose, onSave }: { client: Client; onClose: () => void; onSave: (patch: ContactEditPatch, version: string) => Promise<void> }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [conflictVersion, setConflictVersion] = useState<string | null>(null);
+  const [conflictValues, setConflictValues] = useState<ContactConflictValues>({});
+
+  function savedValue(key: keyof ContactConflictValues) {
+    if (!Object.hasOwn(conflictValues, key)) return null;
+    const value = conflictValues[key];
+    return <small className="project-edit-saved-value">Saved value: {value === null || value === "" ? "Not set" : String(value)}</small>;
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    const version = conflictVersion ?? client.contactVersion;
+    if (!client.contactId || !version) {
+      setError("Refresh live client records before editing this contact.");
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const name = String(form.get("name") ?? "").trim();
+    const email = String(form.get("email") ?? "").trim() || null;
+    const phone = String(form.get("phone") ?? "").trim() || null;
+    const role = String(form.get("role") ?? "").trim();
+    const patch: ContactEditPatch = {};
+    if (name !== client.contact) patch.name = name;
+    if (email !== (client.email || null)) patch.email = email;
+    if (phone !== client.contactPhone) patch.phone = phone;
+    if (role !== client.contactRole) patch.role = role;
+    if (Object.keys(patch).length === 0) {
+      setError("Change at least one contact field before saving.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(patch, version);
+      onClose();
+    } catch (saveError) {
+      if (saveError instanceof ContactEditConflictError) {
+        setConflictVersion(saveError.currentVersion);
+        setConflictValues(saveError.currentValues);
+        setError("This contact changed while you were editing. Review your entries, then choose Re-apply changes.");
+      } else {
+        setError(saveError instanceof Error ? saveError.message : "Contact changes could not be saved.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <AccessibleOverlay ariaLabel={`Edit primary contact for ${client.code}`} contentClassName="modal project-edit-modal contact-edit-modal" onClose={onClose} busy={saving}>
+    <header><div><p className="eyebrow">{client.code}</p><h2>Edit primary contact</h2></div><button type="button" onClick={onClose} aria-label="Close contact editor" disabled={saving}><X size={20} /></button></header>
+    <form onSubmit={submit}>
+      {error && <p className="project-operation-error" role="alert">{error}</p>}
+      <label>Primary contact<input data-overlay-initial-focus name="name" required maxLength={180} defaultValue={client.contact} disabled={saving} />{savedValue("name")}</label>
+      <div className="form-row"><label>Work email <span className="optional-label">Optional</span><input name="email" type="email" maxLength={254} defaultValue={client.email} disabled={saving} />{savedValue("email")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="phone" type="tel" maxLength={80} defaultValue={client.contactPhone ?? ""} disabled={saving} />{savedValue("phone")}</label></div>
+      <label>Contact role<input name="role" required maxLength={120} defaultValue={client.contactRole} disabled={saving} />{savedValue("role")}</label>
+      <p className="form-help"><ShieldCheck size={14} /> Saving appends one before-and-after activity record. A newer saved version is never overwritten automatically.</p>
+      <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : conflictVersion ? "Re-apply changes" : "Save changes"}</button></footer>
+    </form>
+  </AccessibleOverlay>;
 }
 
 function NewProjectModal({ clients, initialClientId, managerId, managerLabel, isAdmin, onClose, onSave }: { clients: Client[]; initialClientId: string | null; managerId: string; managerLabel: string; isAdmin: boolean; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
@@ -2435,16 +2835,30 @@ function MeetingModal({ project, onClose, onSaved }: { project: Project; onClose
   </form></AccessibleOverlay>;
 }
 
-function ClientDrawer({ client, projects, jobSiteMaps, onClose, onNewProject, onProject, returnFocusRef }: { client: Client; projects: Project[]; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; onNewProject: () => void; onProject: (project: Project) => void; returnFocusRef?: RefObject<HTMLElement | null> }) {
-  return <AccessibleOverlay variant="drawer" ariaLabel={`${client.name} client account`} contentClassName="project-drawer client-drawer" onClose={onClose} returnFocusRef={returnFocusRef}>
+function ClientDrawer({ client, projects, jobSiteMaps, onClose, onSaveClient, onSaveContact, onNewProject, onProject, returnFocusRef }: { client: Client; projects: Project[]; jobSiteMaps: JobSiteMapsRuntimeConfig; onClose: () => void; onSaveClient: (client: Client, patch: ClientEditPatch, version: string) => Promise<void>; onSaveContact: (client: Client, patch: ContactEditPatch, version: string) => Promise<void>; onNewProject: () => void; onProject: (project: Project) => void; returnFocusRef?: RefObject<HTMLElement | null> }) {
+  const [editingClient, setEditingClient] = useState(false);
+  const [editingContact, setEditingContact] = useState(false);
+  const contactEditable = Boolean(client.contactId && client.contactVersion);
+  return <><AccessibleOverlay variant="drawer" ariaLabel={`${client.name} client account`} contentClassName="project-drawer client-drawer" onClose={onClose} returnFocusRef={returnFocusRef}>
     <header><button data-overlay-initial-focus onClick={onClose} aria-label="Close client"><X size={20} /></button><Status text={client.status} /><span>{client.code}</span></header>
     <div className="drawer-title"><p>Client account</p><h2>{client.name}</h2><div><span><ContactRound size={14} />{client.contact}</span><span><Mail size={14} />{client.email || "Contact email pending"}</span></div></div>
     <div className="client-drawer-body">
       <section className="client-account-card"><div className="directory-badge"><FolderTree size={19} /></div><div><strong>Client account folder</strong><span>{client.driveUrl ? "Google Drive folder ready" : "Google Drive folder not created yet"}</span></div></section>
-      <div className="client-summary-grid"><div><span>Industry</span><strong>{client.industry}</strong></div><div><span>Independent projects</span><strong>{projects.length}</strong></div></div>
+      {/* The drawer reads industryRaw, not the display default. This is an editing
+          surface, so showing a fabricated "Commercial" for a client whose industry is
+          genuinely unset would misrepresent what is stored — and it is what the user is
+          about to edit. The list row chip keeps the shipped "Commercial" default
+          (DES-08a1), which is why these two surfaces cannot share one field. Both are
+          pinned: tests/e2e/des08a1-industry-surfacing.spec.ts:263 for the chip,
+          tests/e2e/edit06-client-contact-editing.spec.ts:145 for this value. */}
+      <div className="client-summary-grid"><div><span>Industry</span><strong>{client.industryRaw ?? "Unspecified"}</strong></div><div><span>Contact role</span><strong>{client.contactRole}</strong></div><div><span>Contact phone</span><strong>{client.contactPhone ?? "Not yet captured"}</strong></div><div><span>Independent projects</span><strong>{projects.length}</strong></div></div>
       <JobSiteMapCard location={client.jobSite} runtime={jobSiteMaps} contextLabel={`${client.code} ${client.name}`} />
       <section className="client-project-section"><header><h3>Projects for this client</h3><button onClick={onNewProject}><Plus size={14} /> New project</button></header>{projects.map((project) => <button type="button" className="client-project-link" key={project.id} onClick={() => onProject(project)}><div><Status text={project.status} /><strong>{project.name}</strong><span>{project.number} · {project.site}</span></div><ChevronRight size={16} /></button>)}{!projects.length ? <OperationsEmptyState variant="client-projects">No projects yet. Create the first independent project for this client.</OperationsEmptyState> : null}</section>
       <section className="client-account-notes"><h3>Account-level documents</h3><p>Store reusable client documents here. Project-specific documents stay inside their own project folders.</p></section>
     </div>
-  </AccessibleOverlay>;
+    <footer><button type="button" className="soft-button" onClick={() => setEditingClient(true)}><Settings size={16} /> Edit client</button><button type="button" className="soft-button" onClick={() => setEditingContact(true)} disabled={!contactEditable} title={contactEditable ? "Edit the saved primary contact" : "Refresh after adding a primary contact"}><ContactRound size={16} /> Edit primary contact</button></footer>
+  </AccessibleOverlay>
+    {editingClient && <ClientEditModal client={client} onClose={() => setEditingClient(false)} onSave={(patch, version) => onSaveClient(client, patch, version)} />}
+    {editingContact && contactEditable && <ContactEditModal client={client} onClose={() => setEditingContact(false)} onSave={(patch, version) => onSaveContact(client, patch, version)} />}
+  </>;
 }

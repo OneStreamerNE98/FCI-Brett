@@ -844,6 +844,7 @@ is proven in one test; golden hashes untouched; `npm test` green.
 **Effort:** medium-large. **Cost:** $0.
 
 ### EDIT-06 · Client and contact editing (medium, after EDIT-03)
+**Status:** In review — PR #249, July 30, 2026. Source-only and undeployed; D1 migration 0022 is unapplied.
 **Why:** clients have no update endpoint, no edit control, and no domain
 update validator, and there is **no contacts route of any kind** — so a
 client rename or an address correction is impossible after creation. Three

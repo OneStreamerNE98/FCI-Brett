@@ -1,0 +1,2 @@
+ALTER TABLE `clients` ADD `normalized_name_key` text;--> statement-breakpoint
+CREATE UNIQUE INDEX `clients_normalized_name_key_unique_idx` ON `clients` (`normalized_name_key`) WHERE "clients"."normalized_name_key" IS NOT NULL;

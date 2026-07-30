@@ -17,7 +17,7 @@ export type CreateClientSuccess = {
     clientCode: string;
     name: string;
     createdAt: number;
-    version?: string;
+    version: string;
     sheetSync: Awaited<ReturnType<typeof mirrorAfterDurableCreate>>;
   };
 };
@@ -111,5 +111,15 @@ export async function createClient(
     cause: "client-created",
     recordId: id,
   });
-  return { ok: true, value: { id, clientCode, name: normalized.value.name, createdAt, sheetSync } };
+  return {
+    ok: true,
+    value: {
+      id,
+      clientCode,
+      name: normalized.value.name,
+      createdAt,
+      version: "1",
+      sheetSync,
+    },
+  };
 }

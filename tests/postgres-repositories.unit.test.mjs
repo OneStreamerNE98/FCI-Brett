@@ -426,6 +426,127 @@ test("client update CAS writes one guarded audit and a stale peer writes nothing
   staleClient.assertComplete();
 });
 
+test("client update maps the normalized-name constraint to a typed duplicate outcome", async () => {
+  const updateIntent = {
+    clientId: CLIENT_ID,
+    expectedVersion: "1",
+    values: {
+      name: "  FCI TEST — DO NOT USE EXISTING  ",
+      status: "active",
+      industry: "Flooring",
+    },
+    updatedAt: UPDATED_AT,
+    updatedBy: "actor@example.test",
+    activity: {
+      id: CLIENT_ACTIVITY_ID,
+      recordId: CLIENT_ID,
+      action: "Client fields updated",
+      actor: "actor@example.test",
+      detail: "Name: old → existing",
+      createdAt: UPDATED_AT,
+    },
+  };
+  const duplicateClient = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/UPDATE clients[\s\S]*normalized_name_key = \$2/, result(), {
+      inspect: ({ values }) => assert.equal(values[1], "fci test — do not use existing"),
+      error: Object.assign(new Error("duplicate normalized client name"), {
+        code: "23505",
+        constraint: "clients_normalized_name_key_key",
+      }),
+    }),
+    step(/^ROLLBACK$/),
+  ]);
+  const repository = createPostgresClientRepository(
+    new ScriptedPostgresPool(duplicateClient),
+    { schema: "repository_test", request: clientRequest() },
+  );
+  assert.deepEqual(await repository.update(updateIntent), { outcome: "duplicate" });
+  assert.equal(
+    duplicateClient.queries.some(({ sql }) => sql.startsWith("INSERT INTO activity_events")),
+    false,
+  );
+  duplicateClient.assertComplete();
+});
+
+test("contact update CAS writes one client-scoped guarded audit and a stale peer writes nothing", async () => {
+  const updateIntent = {
+    contactId: CONTACT_ID,
+    expectedVersion: "1",
+    values: {
+      name: "Updated Contact",
+      email: "updated@example.test",
+      phone: "555-0123",
+      role: "Account owner",
+    },
+    updatedAt: UPDATED_AT,
+    updatedBy: "actor@example.test",
+    activity: {
+      id: CLIENT_ACTIVITY_ID,
+      recordId: CLIENT_ID,
+      action: "Contact fields updated",
+      actor: "actor@example.test",
+      detail: "Phone: Not set → 555-0123",
+      createdAt: UPDATED_AT,
+    },
+  };
+  const successfulClient = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/UPDATE contacts[\s\S]*WHERE id = \$6 AND version = \$7::bigint/, result([{
+      id: CONTACT_ID,
+      client_id: CLIENT_ID,
+      name: updateIntent.values.name,
+      email: updateIntent.values.email,
+      phone: updateIntent.values.phone,
+      role: updateIntent.values.role,
+      is_primary: true,
+      updated_at: new Date(UPDATED_AT),
+      version: "2",
+    }], 1), {
+      inspect: ({ values }) => assert.deepEqual(values.slice(-2), [CONTACT_ID, "1"]),
+    }),
+    step(/INSERT INTO activity_events[\s\S]*FROM contacts[\s\S]*version = \$9::bigint/, result([], 1), {
+      inspect: ({ values }) => {
+        assert.equal(values[1], CLIENT_ID);
+        assert.equal(values[2], "Contact fields updated");
+        assert.equal(values[7], CONTACT_ID);
+        assert.equal(values[8], "2");
+      },
+    }),
+    step(/^COMMIT$/),
+  ]);
+  const successfulRepository = createPostgresClientRepository(
+    new ScriptedPostgresPool(successfulClient),
+    { schema: "repository_test", request: clientRequest() },
+  );
+  const first = await successfulRepository.updateContact(updateIntent);
+  assert.equal(first.outcome, "updated");
+  assert.equal(first.value.version, "2");
+  successfulClient.assertComplete();
+
+  const staleClient = new ScriptedPostgresClient([
+    ...transactionSetupSteps(),
+    step(/UPDATE contacts[\s\S]*WHERE id = \$6 AND version = \$7::bigint/, result([], 0)),
+    step(/SELECT version::text AS version FROM contacts WHERE id = \$1/, result([
+      { version: "2" },
+    ], 1)),
+    step(/^COMMIT$/),
+  ]);
+  const staleRepository = createPostgresClientRepository(
+    new ScriptedPostgresPool(staleClient),
+    { schema: "repository_test", request: clientRequest() },
+  );
+  assert.deepEqual(await staleRepository.updateContact({
+    ...updateIntent,
+    values: { ...updateIntent.values, role: "Stale editor" },
+  }), { outcome: "conflict", currentVersion: "2" });
+  assert.equal(
+    staleClient.queries.some(({ sql }) => sql.startsWith("INSERT INTO activity_events")),
+    false,
+  );
+  staleClient.assertComplete();
+});
+
 test("client creation skips the optional contact statement when no contact is supplied", async () => {
   const client = new ScriptedPostgresClient(clientCreationSteps({ withContact: false }));
   const pool = new ScriptedPostgresPool(client);

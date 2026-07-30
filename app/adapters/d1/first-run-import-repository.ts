@@ -1,3 +1,4 @@
+import { normalizeClientNameKey } from "../../domain/client-name-key.ts";
 import type { D1Database, D1PreparedStatement } from "./d1-database.ts";
 import type {
   FirstRunImportClientCreate,
@@ -150,13 +151,15 @@ function clientStatements(
   const phoneKey = row.primaryContact?.phone?.replace(/\D/gu, "") || null;
   const sourceClientCode = encodedSourceClientCode(row.provenance.sourceClientCode);
   const addressDigest = row.provenance.sourceAddressDigest ?? null;
+  const normalizedNameKey = normalizeClientNameKey(row.name);
   const statements: D1PreparedStatement[] = [];
   const insertIndex = statements.length;
   statements.push(
     database.prepare(
-      "INSERT INTO clients (id, client_code, name, status, industry, created_by, created_at, updated_at) "
-      + "SELECT ?, ?, ?, ?, ?, ?, ?, ? "
-      + "WHERE NOT EXISTS (SELECT 1 FROM clients WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) OR client_code = ? LIMIT 1) "
+      "INSERT INTO clients (id, client_code, name, normalized_name_key, status, industry, created_by, created_at, updated_at) "
+      + "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? "
+      + "WHERE NOT EXISTS (SELECT 1 FROM clients WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) "
+      + "OR normalized_name_key = ? OR client_code = ? LIMIT 1) "
       + "AND (? IS NULL OR NOT EXISTS (SELECT 1 FROM contacts WHERE LOWER(TRIM(COALESCE(email, ''))) = ? LIMIT 1)) "
       + "AND (? IS NULL OR NOT EXISTS (SELECT 1 FROM contacts WHERE "
       + "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(COALESCE(phone, '')), ' ', ''), '-', ''), '(', ''), ')', ''), '+', ''), '.', ''), '/', '') = ? LIMIT 1)) "
@@ -171,12 +174,14 @@ function clientStatements(
       row.id,
       row.clientCode,
       row.name,
+      normalizedNameKey,
       row.status,
       row.industry,
       row.actor,
       row.createdAt,
       row.createdAt,
       row.name,
+      normalizedNameKey,
       row.clientCode,
       emailKey,
       emailKey,

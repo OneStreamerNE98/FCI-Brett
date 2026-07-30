@@ -1,3 +1,12 @@
+import { normalizeClientIndustry } from "./client-industry.ts";
+import { normalizeClientDisplayName } from "./client-name-key.ts";
+import {
+  normalizeContactEmail,
+  normalizeContactName,
+  normalizeContactPhone,
+  normalizeContactRole,
+} from "./contact-fields.ts";
+
 export const CLIENT_STATUSES = ["active", "prospect", "inactive", "archived"] as const;
 
 export type ClientStatus = typeof CLIENT_STATUSES[number];
@@ -28,7 +37,7 @@ export function normalizeClientCreation(input: unknown): ClientCreationValidatio
   if (!input || typeof input !== "object" || Array.isArray(input)) return invalidJsonDetails();
 
   const record = input as Record<string, unknown>;
-  for (const field of ["name", "industry", "status"] as const) {
+  for (const field of ["name", "status"] as const) {
     if (record[field] !== undefined && typeof record[field] !== "string") return invalidJsonDetails();
   }
 
@@ -36,33 +45,64 @@ export function normalizeClientCreation(input: unknown): ClientCreationValidatio
   if (record.primaryContact !== undefined) {
     if (!record.primaryContact || typeof record.primaryContact !== "object" || Array.isArray(record.primaryContact)) return invalidJsonDetails();
     primaryContact = record.primaryContact as Record<string, unknown>;
-    for (const field of ["name", "email", "phone", "role"] as const) {
+    for (const field of ["name", "role"] as const) {
       if (primaryContact[field] !== undefined && typeof primaryContact[field] !== "string") return invalidJsonDetails();
+    }
+    for (const field of ["email", "phone"] as const) {
+      if (
+        primaryContact[field] !== undefined
+        && primaryContact[field] !== null
+        && typeof primaryContact[field] !== "string"
+      ) {
+        return invalidJsonDetails();
+      }
     }
   }
 
-  const name = (record.name as string | undefined)?.trim();
-  if (!name) return { ok: false, message: "client name is required" };
-  if (name.length > 180) return { ok: false, message: "client name is too long" };
+  const rawName = record.name as string | undefined;
+  const name = normalizeClientDisplayName(rawName);
+  if (!rawName?.trim()) return { ok: false, message: "client name is required" };
+  if (!name) return { ok: false, message: "client name is too long" };
 
   const status = ((record.status as string | undefined)?.trim().toLowerCase() || "active") as ClientStatus;
   if (!CLIENT_STATUSES.includes(status)) return { ok: false, message: "client status is invalid" };
+  const industry = normalizeClientIndustry(record.industry ?? null);
+  if (industry === undefined) return { ok: false, message: "client industry is invalid" };
 
-  const contactName = (primaryContact?.name as string | undefined)?.trim();
+  let normalizedPrimaryContact: NormalizedPrimaryContact | null = null;
+  if (primaryContact) {
+    const contactName = normalizeContactName(primaryContact.name);
+    const contactEmail = normalizeContactEmail(primaryContact.email ?? null);
+    const contactPhone = normalizeContactPhone(primaryContact.phone ?? null);
+    const contactRole = primaryContact.role === undefined
+      ? "Primary contact"
+      : normalizeContactRole(primaryContact.role);
+    if (!contactName) {
+      return { ok: false, message: "primary contact name is invalid" };
+    }
+    if (contactEmail === undefined) {
+      return { ok: false, message: "primary contact email is invalid" };
+    }
+    if (contactPhone === undefined) {
+      return { ok: false, message: "primary contact phone is invalid" };
+    }
+    if (!contactRole) {
+      return { ok: false, message: "primary contact role is invalid" };
+    }
+    normalizedPrimaryContact = {
+      name: contactName,
+      email: contactEmail,
+      phone: contactPhone,
+      role: contactRole,
+    };
+  }
   return {
     ok: true,
     value: {
       name,
-      industry: (record.industry as string | undefined)?.trim() || null,
+      industry,
       status,
-      primaryContact: contactName
-        ? {
-            name: contactName,
-            email: (primaryContact?.email as string | undefined) ?? null,
-            phone: (primaryContact?.phone as string | undefined) ?? null,
-            role: (primaryContact?.role as string | undefined) ?? "Primary contact",
-          }
-        : null,
+      primaryContact: normalizedPrimaryContact,
     },
   };
 }
