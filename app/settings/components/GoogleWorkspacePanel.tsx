@@ -715,7 +715,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     setWorking(true);
     try {
       const response = await fetch("/api/v1/integrations/google/connection", { method: "DELETE" });
-      const data = await response.json() as { disconnected?: boolean; error?: string };
+      const data = await response.json() as {
+        disconnected?: boolean;
+        providerRevocation?: "succeeded" | "failed" | "not_attempted" | "skipped_simulation";
+        error?: string;
+      };
       if (!response.ok || !data.disconnected) throw new Error(data.error ?? "The Google connection could not be removed.");
       setDriveVerified(false);
       setGmailLabelsReady(false);
@@ -724,7 +728,19 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       setSheetsVerificationPassed(false);
       setGmailMessages([]);
       setCalendarEvents([]);
-      notify("The active Google connection was removed from FCI Operations.", "success");
+      // `disconnected: true` only means LOCAL severance committed. When the
+      // provider revocation failed, Google still lists FCI Operations as
+      // authorized and this app can no longer revoke it — the token it needed is
+      // already destroyed. Reporting that as success would tell an administrator
+      // the grant was removed at the exact moment it was not.
+      if (data.providerRevocation === "failed" || data.providerRevocation === "not_attempted") {
+        notify(
+          "This app's access was severed locally, but Google was not confirmed to have revoked the grant. Remove FCI Operations under the connected account's Google security settings to finish revoking it.",
+          "warning",
+        );
+      } else {
+        notify("The active Google connection was removed from FCI Operations.", "success");
+      }
       invalidateCachedGet("/api/v1/google-workspace");
       invalidateCachedGet("/api/v1/integrations/google/connection");
       invalidateCachedGet("/api/v1/integrations/google/setup/resources");
@@ -960,7 +976,17 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   });
   const gmailStepStatus = stepStatus({ simulation, previousComplete: driveStepStatus === "Complete", prerequisitesReady: gmailReady, complete: gmailLabelsReady });
   const calendarStepStatus = stepStatus({ simulation, previousComplete: gmailStepStatus === "Complete", prerequisitesReady: calendarReady, complete: calendarChecked });
-  const hasStoredConnection = !simulation && Boolean(workspace?.connectionStatus && workspace.connectionStatus !== "not-connected");
+  // 'revoked' is a real status kept for audit and health reporting, but there is
+  // nothing left to disconnect: the row survives only as history and its token is
+  // destroyed. Without excluding it here the Disconnect button lingers after a
+  // successful severance, and pressing it re-tombstones the row, writes a second
+  // disconnect audit event, and reports not_attempted — firing the
+  // manual-revocation warning for a connection that was already revoked.
+  const hasStoredConnection = !simulation && Boolean(
+    workspace?.connectionStatus
+    && workspace.connectionStatus !== "not-connected"
+    && workspace.connectionStatus !== "revoked",
+  );
   const sharedDriveDomainUsersOnly = resourceRows.find((resource) => resource.key === "primary")?.restrictions?.domainUsersOnly ?? null;
   const gmailActionsEnabled = simulation || (driveStepStatus === "Complete" && gmailReady);
   const calendarActionsEnabled = simulation || (gmailStepStatus === "Complete" && calendarReady);

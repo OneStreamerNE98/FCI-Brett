@@ -179,7 +179,7 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("integration_oauth_attempts", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("integration_resources", ["INSERT"]),
     runtimeTableAccess("integration_cursors", []),
-    runtimeTableAccess("integration_events", []),
+    runtimeTableAccess("integration_events", ["INSERT"]),
     runtimeTableAccess("files", ["SELECT", "INSERT"]),
     runtimeTableAccess("file_versions", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("storage_objects", ["SELECT", "INSERT", "UPDATE"]),
@@ -191,12 +191,43 @@ export type ExpectedRuntimeColumnUpdateAccess = Readonly<{
   columns: readonly string[];
 }>;
 
+export type ExpectedRuntimeColumnSelectAccess = Readonly<{
+  table: string;
+  columns: readonly string[];
+}>;
+
+function runtimeColumnSelectAccess(
+  table: string,
+  columns: readonly string[],
+): ExpectedRuntimeColumnSelectAccess {
+  return Object.freeze({ table, columns: Object.freeze([...columns]) });
+}
+
 function runtimeColumnUpdateAccess(
   table: string,
   columns: readonly string[],
 ): ExpectedRuntimeColumnUpdateAccess {
   return Object.freeze({ table, columns: Object.freeze([...columns]) });
 }
+
+/**
+ * Exact column-only SELECT grants for reviewed runtime mutation surfaces.
+ * In particular, WS-17 can fence a connection revocation without granting
+ * access to integration_credentials.ciphertext.
+ */
+export const EXPECTED_RUNTIME_COLUMN_SELECT_ACCESS: readonly ExpectedRuntimeColumnSelectAccess[] =
+  Object.freeze([
+    runtimeColumnSelectAccess("integration_connections", [
+      "id",
+      "status",
+      "version",
+    ]),
+    runtimeColumnSelectAccess("integration_credentials", [
+      "connection_id",
+      "status",
+      "version",
+    ]),
+  ]);
 
 /**
  * Exact column-only UPDATE grants for reviewed runtime mutation surfaces. The
@@ -276,6 +307,22 @@ export const EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS: readonly ExpectedRuntimeColu
       "revocation_reason_code",
       "version",
     ]),
+    runtimeColumnUpdateAccess("integration_connections", [
+      "status",
+      "updated_by_user_id",
+      "updated_by_actor_key",
+      "revoked_at",
+      "updated_at",
+      "version",
+    ]),
+    runtimeColumnUpdateAccess("integration_credentials", [
+      "ciphertext",
+      "key_version",
+      "status",
+      "revoked_at",
+      "updated_at",
+      "version",
+    ]),
   ]);
 
 type RuntimeColumnUpdatePrivilegeExpectation = Readonly<{
@@ -295,6 +342,25 @@ const RUNTIME_COLUMN_UPDATE_PRIVILEGE_EXPECTATIONS:
 
 const RUNTIME_COLUMN_UPDATE_TABLES = new Set(
   EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.map(({ table }) => table),
+);
+
+type RuntimeColumnSelectPrivilegeExpectation = Readonly<{
+  tableName: string;
+  columnName: string;
+}>;
+
+const RUNTIME_COLUMN_SELECT_PRIVILEGE_EXPECTATIONS:
+  readonly RuntimeColumnSelectPrivilegeExpectation[] = Object.freeze(
+    EXPECTED_RUNTIME_COLUMN_SELECT_ACCESS.flatMap(({ table, columns }) =>
+      columns.map((column) => Object.freeze({
+        tableName: table,
+        columnName: column,
+      })),
+    ),
+  );
+
+const RUNTIME_COLUMN_SELECT_TABLES = new Set(
+  EXPECTED_RUNTIME_COLUMN_SELECT_ACCESS.map(({ table }) => table),
 );
 
 type RuntimeTablePrivilegeExpectation = Readonly<{
@@ -340,6 +406,8 @@ type RuntimeColumnUpdatePrivilegeRow = Record<string, unknown> & {
   hasPrivilege: unknown;
   hasGrantOption: unknown;
 };
+
+type RuntimeColumnSelectPrivilegeRow = RuntimeColumnUpdatePrivilegeRow;
 
 type RuntimeTablePrivilegeRow = Record<string, unknown> & {
   tableName: unknown;
@@ -440,8 +508,9 @@ function runtimeTablePrivilegeMatrixMatches(rows: readonly RuntimeTablePrivilege
     const expected = RUNTIME_TABLE_PRIVILEGE_EXPECTATIONS[index];
     const supportsColumnGrant = expected && ["SELECT", "INSERT", "UPDATE", "REFERENCES"]
       .includes(expected.privilege);
-    const hasReviewedColumnOnlyGrant = expected?.privilege === "UPDATE" &&
-      RUNTIME_COLUMN_UPDATE_TABLES.has(expected.tableName);
+    const hasReviewedColumnOnlyGrant =
+      (expected?.privilege === "UPDATE" && RUNTIME_COLUMN_UPDATE_TABLES.has(expected.tableName)) ||
+      (expected?.privilege === "SELECT" && RUNTIME_COLUMN_SELECT_TABLES.has(expected.tableName));
     return Boolean(
       expected &&
       row.tableName === expected.tableName &&
@@ -456,6 +525,33 @@ function runtimeTablePrivilegeMatrixMatches(rows: readonly RuntimeTablePrivilege
       row.hasColumnGrantOption === false
     );
   });
+}
+
+function runtimeColumnSelectPrivilegeMatrixMatches(
+  rows: readonly RuntimeColumnSelectPrivilegeRow[],
+) {
+  if (rows.length < RUNTIME_COLUMN_SELECT_PRIVILEGE_EXPECTATIONS.length) return false;
+
+  for (const [index, expected] of RUNTIME_COLUMN_SELECT_PRIVILEGE_EXPECTATIONS.entries()) {
+    const row = rows[index];
+    if (!(
+      row &&
+      row.tableName === expected.tableName &&
+      row.columnName === expected.columnName &&
+      row.shouldHave === true &&
+      row.relationExists === true &&
+      row.columnExists === true &&
+      row.hasPrivilege === true &&
+      row.hasGrantOption === false
+    )) return false;
+  }
+
+  return rows.slice(RUNTIME_COLUMN_SELECT_PRIVILEGE_EXPECTATIONS.length).every((row) =>
+    row.shouldHave === false &&
+    row.relationExists === true &&
+    row.columnExists === true &&
+    row.hasPrivilege === false &&
+    row.hasGrantOption === false);
 }
 
 function runtimeColumnUpdatePrivilegeMatrixMatches(
@@ -688,6 +784,108 @@ async function readDatabaseReadiness(
         [schema],
       );
       ready = auditActivityProjectionCatalogMatches(projectionCatalog.rows);
+    }
+
+    if (ready) {
+      const columnTableNames = RUNTIME_COLUMN_SELECT_PRIVILEGE_EXPECTATIONS
+        .map(({ tableName }) => tableName);
+      const columnNames = RUNTIME_COLUMN_SELECT_PRIVILEGE_EXPECTATIONS
+        .map(({ columnName }) => columnName);
+      const columnMatrixTables = EXPECTED_RUNTIME_COLUMN_SELECT_ACCESS
+        .map(({ table }) => table);
+      const runtimeColumnSelects = await client.query<RuntimeColumnSelectPrivilegeRow>(
+        `WITH expected_select_columns(table_name, column_name, ordinal) AS (
+           SELECT *
+           FROM pg_catalog.unnest($2::text[], $3::text[])
+             WITH ORDINALITY
+         ),
+         schema_relations AS (
+           SELECT relation.oid, relation.relname
+           FROM pg_catalog.pg_class AS relation
+           INNER JOIN pg_catalog.pg_namespace AS namespace
+             ON namespace.oid = relation.relnamespace
+           WHERE namespace.nspname = $1
+             AND relation.relkind IN ('r', 'p', 'v', 'm', 'f')
+             AND relation.relname = ANY($4::text[])
+         ),
+         schema_columns AS (
+           SELECT relation.oid, relation.relname, attribute.attname
+           FROM schema_relations AS relation
+           INNER JOIN pg_catalog.pg_attribute AS attribute
+             ON attribute.attrelid = relation.oid
+           WHERE attribute.attnum > 0
+             AND NOT attribute.attisdropped
+         ),
+         checked AS (
+           SELECT
+             expected.table_name AS "tableName",
+             expected.column_name AS "columnName",
+             true AS "shouldHave",
+             relation.oid IS NOT NULL AS "relationExists",
+             schema_column.attname IS NOT NULL AS "columnExists",
+             pg_catalog.coalesce(
+               pg_catalog.has_column_privilege(
+                 CURRENT_USER,
+                 relation.oid,
+                 schema_column.attname,
+                 'SELECT'
+               ),
+               false
+             ) AS "hasPrivilege",
+             pg_catalog.coalesce(
+               pg_catalog.has_column_privilege(
+                 CURRENT_USER,
+                 relation.oid,
+                 schema_column.attname,
+                 'SELECT WITH GRANT OPTION'
+               ),
+               false
+             ) AS "hasGrantOption",
+             expected.ordinal AS sort_order
+           FROM expected_select_columns AS expected
+           LEFT JOIN schema_relations AS relation
+             ON relation.relname = expected.table_name
+           LEFT JOIN schema_columns AS schema_column
+             ON schema_column.oid = relation.oid
+            AND schema_column.attname = expected.column_name
+         ),
+         unexpected AS (
+           SELECT
+             schema_column.relname AS "tableName",
+             schema_column.attname AS "columnName",
+             false AS "shouldHave",
+             true AS "relationExists",
+             true AS "columnExists",
+             pg_catalog.has_column_privilege(
+               CURRENT_USER,
+               schema_column.oid,
+               schema_column.attname,
+               'SELECT'
+             ) AS "hasPrivilege",
+             pg_catalog.has_column_privilege(
+               CURRENT_USER,
+               schema_column.oid,
+               schema_column.attname,
+               'SELECT WITH GRANT OPTION'
+             ) AS "hasGrantOption",
+             9223372036854775807::bigint AS sort_order
+           FROM schema_columns AS schema_column
+           LEFT JOIN expected_select_columns AS expected
+             ON expected.table_name = schema_column.relname
+            AND expected.column_name = schema_column.attname
+           WHERE expected.column_name IS NULL
+         )
+         SELECT "tableName", "columnName", "shouldHave", "relationExists",
+                "columnExists", "hasPrivilege", "hasGrantOption"
+         FROM (
+           SELECT * FROM checked
+           UNION ALL
+           SELECT * FROM unexpected
+         ) AS complete_column_select_matrix
+         ORDER BY sort_order, "tableName", "columnName"`,
+        [schema, columnTableNames, columnNames, columnMatrixTables],
+      );
+      ready = runtimeColumnSelectPrivilegeMatrixMatches(runtimeColumnSelects.rows);
     }
 
     if (ready) {

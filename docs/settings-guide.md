@@ -396,7 +396,13 @@ If you are in simulation, this stage instead offers **Reset simulation data**, w
 
 Two buttons you will meet here later:
 - **Reconnect Google Workspace** — appears if Google ever needs you to re-approve permissions.
-- **Disconnect Workspace** — safely removes the saved connection and asks Google to revoke access.
+- **Disconnect Workspace** — severs this app's access immediately and asks Google to revoke
+  the grant. Two things to know. The connection record is **kept, marked revoked**, so the
+  history of who connected and when survives; the saved token itself is destroyed, so
+  reconnecting always requires approving access again from scratch. And if Google cannot be
+  reached to confirm the revocation, you get a warning rather than a success message: the app
+  can no longer revoke it for you, so finish the job by removing **FCI Operations** under the
+  connected Google account's security settings.
 
 Administrators also get a small **Connection health** expander showing the connected account and, per service, whether it is *Enabled* in the app and *Granted* by Google. Note the honest caveat the app itself prints: this reflects the saved consent, not a live health check.
 

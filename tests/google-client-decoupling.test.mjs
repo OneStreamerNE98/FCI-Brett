@@ -77,6 +77,21 @@ function workspaceConfig() {
   });
 }
 
+function incompleteWorkspaceConfig() {
+  return getGoogleRuntimeConfig({
+    NODE_ENV: "production",
+    GOOGLE_INTEGRATION_MODE: "workspace",
+    GOOGLE_WORKSPACE_SHARED_DRIVE_ID: "shared-drive-test",
+    GOOGLE_WORKSPACE_CLIENT_ID: "connector-client.apps.googleusercontent.com",
+    GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI: "https://ops.example.test/api/v1/integrations/google/callback",
+    GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY: KEY_V2,
+    GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION: "2",
+    GOOGLE_WORKSPACE_ALLOWED_DOMAINS: "cherryhillfci.com",
+    GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "operations@cherryhillfci.com",
+    GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive",
+  });
+}
+
 test("stored key versions decrypt after the writer rotates and never fall back implicitly", async () => {
   const writerV1 = createGoogleSecretStore({
     currentVersion: "1",
@@ -276,6 +291,198 @@ test("production OAuth consumes PKCE once, decrypts its stored v1, and writes re
     (error) => error.code === "invalid_oauth_state" && error.status === 400,
   );
   assert.equal(calls.length, 2);
+});
+
+test("production disconnect consumes the metadata revoke port without reading credentials or claiming route composition", async (t) => {
+  const disconnectAudit = audit("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+  let revokeIntent = null;
+  let providerCalls = 0;
+  let secretReads = 0;
+  const service = createProductionGoogleOauth(workspaceConfig(), {
+    repository: {
+      async revokeConnection(input) {
+        revokeIntent = input;
+        return { outcome: "accepted", version: "6" };
+      },
+    },
+    secrets: {
+      async current() {
+        secretReads += 1;
+        throw new Error("disconnect must not read credential secrets");
+      },
+      async get() {
+        secretReads += 1;
+        throw new Error("disconnect must not read credential secrets");
+      },
+    },
+    async fetch() {
+      providerCalls += 1;
+      throw new Error("provider outcome is supplied by the reviewed caller");
+    },
+    now: () => NOW,
+    randomUUID() {
+      throw new Error("disconnect does not allocate OAuth identifiers");
+    },
+    randomBytes() {
+      throw new Error("disconnect does not allocate OAuth entropy");
+    },
+  });
+
+  assert.deepEqual(await service.finalizeDisconnect({
+    connectionId: CONNECTION_ID,
+    expectedConnectionVersion: "5",
+    revokedByUserId: USER_ID,
+    revokedByActorKey: `user:${USER_ID}`,
+    audit: disconnectAudit,
+  }), {
+    connectionVersion: "6",
+    revokedAt: NOW,
+    providerRevocation: "not_attempted",
+    providerRevocationErrorCode: null,
+  });
+  assert.deepEqual(revokeIntent, {
+    connectionId: CONNECTION_ID,
+    expectedConnectionVersion: "5",
+    revokedByUserId: USER_ID,
+    revokedByActorKey: `user:${USER_ID}`,
+    revokedAt: NOW,
+    providerRevocationOutcome: "not_attempted",
+    providerRevocationErrorCode: null,
+    audit: disconnectAudit,
+  });
+  assert.equal(providerCalls, 0);
+  assert.equal(secretReads, 0);
+
+  for (const outcome of ["stale", "conflict"]) {
+    await t.test(`${outcome} is an explicit 409`, async () => {
+      const conflicted = createProductionGoogleOauth(workspaceConfig(), {
+        repository: {
+          async revokeConnection() {
+            return { outcome };
+          },
+        },
+        secrets: {
+          async current() {
+            throw new Error("not used");
+          },
+          async get() {
+            throw new Error("not used");
+          },
+        },
+        async fetch() {
+          throw new Error("not used");
+        },
+        now: () => NOW,
+        randomUUID() {
+          throw new Error("not used");
+        },
+        randomBytes() {
+          throw new Error("not used");
+        },
+      });
+      await assert.rejects(
+        conflicted.finalizeDisconnect({
+          connectionId: CONNECTION_ID,
+          expectedConnectionVersion: "5",
+          revokedByUserId: USER_ID,
+          revokedByActorKey: `user:${USER_ID}`,
+          audit: disconnectAudit,
+        }),
+        (error) =>
+          error.status === 409
+          && error.code === (
+            outcome === "stale" ? "stale_google_connection" : "google_connection_conflict"
+          ),
+      );
+    });
+  }
+
+  const source = await readFile(
+    new URL("app/application/google-workspace-oauth.ts", root),
+    "utf8",
+  );
+  const consumer = source.slice(source.indexOf("async finalizeDisconnect"));
+  assert.match(consumer, /dependencies\.repository\.revokeConnection\(\{/);
+  assert.doesNotMatch(consumer, /getActiveCredential|decryptProductionGoogleCredential|dependencies\.fetch/);
+});
+
+test("production disconnect remains fail-safe when connect-time OAuth configuration is incomplete", async () => {
+  const config = incompleteWorkspaceConfig();
+  assert.equal(config.simulation, false);
+  assert.equal(config.oauthReady, false);
+
+  let revokeIntent = null;
+  const service = createProductionGoogleOauth(config, {
+    repository: {
+      async revokeConnection(input) {
+        revokeIntent = input;
+        return { outcome: "accepted", version: "9" };
+      },
+    },
+    secrets: {
+      async current() {
+        throw new Error("disconnect must not read credential secrets");
+      },
+      async get() {
+        throw new Error("disconnect must not read credential secrets");
+      },
+    },
+    async fetch() {
+      throw new Error("disconnect must not contact Google");
+    },
+    now: () => NOW,
+    randomUUID() {
+      throw new Error("connect-time OAuth entropy must remain gated");
+    },
+    randomBytes() {
+      throw new Error("connect-time OAuth entropy must remain gated");
+    },
+  });
+
+  const disconnectAudit = audit("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  assert.deepEqual(await service.finalizeDisconnect({
+    connectionId: CONNECTION_ID,
+    expectedConnectionVersion: "8",
+    revokedByUserId: USER_ID,
+    revokedByActorKey: `user:${USER_ID}`,
+    audit: disconnectAudit,
+  }), {
+    connectionVersion: "9",
+    revokedAt: NOW,
+    providerRevocation: "not_attempted",
+    providerRevocationErrorCode: null,
+  });
+  assert.equal(revokeIntent?.connectionId, CONNECTION_ID);
+
+  for (const invoke of [
+    () => service.begin({
+      connectionId: CONNECTION_ID,
+      initiatedByUserId: USER_ID,
+      browserNonce: "browser-nonce-test",
+      audit: disconnectAudit,
+    }),
+    () => service.finish({
+      connectionId: CONNECTION_ID,
+      expectedConnectionVersion: "8",
+      expectedAttemptVersion: "1",
+      initiatedByUserId: USER_ID,
+      completedByActorKey: `user:${USER_ID}`,
+      browserNonce: "browser-nonce-test",
+      state: "state-test",
+      code: "authorization-code-test",
+      consumeAudit: disconnectAudit,
+      completionAudit: disconnectAudit,
+    }),
+    () => service.rotateRefreshCredential({
+      connectionId: CONNECTION_ID,
+      audit: disconnectAudit,
+    }),
+  ]) {
+    await assert.rejects(
+      invoke(),
+      (error) => error.code === "configuration_required" && error.status === 503,
+    );
+  }
 });
 
 test("Cloud Run client graph is Cloudflare-free and provider routes remain uncomposed", async () => {

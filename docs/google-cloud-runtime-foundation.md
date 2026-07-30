@@ -76,8 +76,10 @@ the JSON response.
 The production Google data connection is established by fresh consent, never by
 migrating the Sites credential. The development refresh token is AES-GCM ciphertext
 bound to its development key version and connection-scoped additional authenticated data
-(`google-connection:<connectionKey>:refresh`). Cutover deletes and revokes that
-development connection, creates a separate production data-connector OAuth client,
+(`google-connection:<connectionKey>:refresh`). Cutover revokes that development
+connection and **retains its row marked revoked** — WS-17 made severance never delete a
+connection, so the audit history of who connected it survives the cutover — then creates a
+separate production data-connector OAuth client,
 generates a new Secret Manager encryption key, and starts a new OAuth attempt on Cloud
 Run only after the connector activation gates pass.
 

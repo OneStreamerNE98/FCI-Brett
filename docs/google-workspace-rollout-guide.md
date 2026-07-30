@@ -331,10 +331,11 @@ When production cutover is separately approved:
 1. Freeze development connector writes and keep the current development encryption key
    available only long enough to disconnect safely.
 2. Use **Settings → Google Workspace → Disconnect Workspace** (the authorized
-   `DELETE /api/v1/integrations/google/connection` flow). It deletes the development
-   connection and attempts Google revocation. Confirm the grant is revoked in the
-   connection account's Google security controls; if the API revocation could not be
-   confirmed, revoke it there manually before continuing.
+   `DELETE /api/v1/integrations/google/connection` flow). It tombstones the stored
+   credential, preserves the connection row as revoked audit history, and attempts Google
+   revocation. Confirm the grant is revoked in the connection account's Google security
+   controls; if the API revocation could not be confirmed, revoke it there manually before
+   continuing.
 3. Do not export any development OAuth attempt, token, ciphertext, or encryption key.
    Create the production data-connector OAuth client in the separate production Google
    Cloud project with only the exact production callback.
@@ -399,7 +400,8 @@ use this interim Sites procedure:
    or filing actions. Confirm the environment and exact approved connection account.
 2. While the old key is still configured, use **Settings → Google Workspace →
    Disconnect**. This invokes the connection `DELETE` flow so the stored connection is
-   cleared and Google revocation is attempted. Confirm the app reports disconnected.
+   marked revoked, its credential is tombstoned, and Google revocation is attempted.
+   Confirm the app reports disconnected.
 3. Generate 32 random bytes on a trusted computer and encode them as base64url. Increase
    `GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY_VERSION`; never reuse an old version label for
    different key material.
@@ -412,12 +414,12 @@ use this interim Sites procedure:
    results. The refresh token itself is never copied or migrated.
 
 If the key was changed before disconnect and token decryption now fails, use
-**Disconnect** anyway. The current `DELETE` flow still removes the unusable local
-connection when Google revocation cannot be confirmed. Revoke the app grant directly in
-the connection account's Google security controls, confirm the app is disconnected, and
-then reconnect with the new key. If the `DELETE` itself fails, leave the connector
-blocked, capture only its safe error code/correlation ID, and escalate to a developer;
-never edit the database manually.
+**Disconnect** anyway. The current `DELETE` flow still tombstones the unusable local
+credential and preserves the connection as a revoked audit row when Google revocation
+cannot be confirmed. Revoke the app grant directly in the connection account's Google
+security controls, confirm the app is disconnected, and then reconnect with the new key.
+If the `DELETE` itself fails, leave the connector blocked, capture only its safe error
+code/correlation ID, and escalate to a developer; never edit the database manually.
 
 BE-08's source-only production boundary already selects the exact stored `key_version`,
 re-encrypts with the current writer, verifies the new ciphertext, and persists it behind
@@ -462,9 +464,10 @@ available; do not respond by exposing the value or creating an untracked OAuth c
    `DELETE /api/v1/integrations/google/connection` connection flow. The normal
    **Disconnect Workspace** button remains with the Stage 2 connection actions, outside
    the Connection health expander, when a stored connection requires reauthorization.
-   This clears the unusable local connection and attempts revocation; it is safe if Google
-   has already revoked the token. If the exact API status and deletion evidence cannot be
-   captured, mark the drill blocked rather than claiming recovery.
+   This tombstones the unusable credential, preserves the revoked connection audit row,
+   and attempts provider revocation; it is safe if Google has already revoked the token.
+   If the exact API status and revocation evidence cannot be captured, mark the drill
+   blocked rather than claiming recovery.
 4. Select **Connect Google Workspace**, authorize that exact account again, and approve
    every currently enabled service scope.
 5. Re-run Drive, Gmail, Calendar, and Sheets independently, then repeat one bounded

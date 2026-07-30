@@ -150,8 +150,18 @@ GRANT UPDATE (assigned_by_user_id, assigned_by_actor_key, assigned_at, status, r
 GRANT INSERT ON TABLE fci_app.audit_events TO fci_runtime;
 GRANT SELECT ON TABLE fci_app.audit_activity_projection TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.integration_connections TO fci_runtime;
+-- WS-17 composes one explicit disconnect capability without exposing the
+-- stored ciphertext. The runtime may identify/version-fence the connection,
+-- tombstone credential columns, preserve the connection row, and append the
+-- integration outcome. It receives no credential payload SELECT and no
+-- integration DELETE privilege.
+GRANT SELECT (id, status, version) ON TABLE fci_app.integration_connections TO fci_runtime;
+GRANT UPDATE (status, updated_by_user_id, updated_by_actor_key, revoked_at, updated_at, version) ON TABLE fci_app.integration_connections TO fci_runtime;
+GRANT SELECT (connection_id, status, version) ON TABLE fci_app.integration_credentials TO fci_runtime;
+GRANT UPDATE (ciphertext, key_version, status, revoked_at, updated_at, version) ON TABLE fci_app.integration_credentials TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.integration_oauth_attempts TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.integration_resources TO fci_runtime;
+GRANT INSERT ON TABLE fci_app.integration_events TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.files TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.file_versions TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.storage_objects TO fci_runtime;
@@ -177,9 +187,9 @@ REVOKE ALL ON FUNCTION fci_app.read_production_schema_history()
   FROM PUBLIC, fci_runtime, fci_rehearsal_importer;
 GRANT EXECUTE ON FUNCTION fci_app.read_production_schema_history() TO fci_runtime;
 
--- integration_credentials intentionally has no runtime table grant. A future
--- connector must introduce and review a separately named credential boundary
--- instead of making ciphertext available to the general application role.
+-- integration_credentials intentionally has no table-wide runtime grant.
+-- WS-17's reviewed column grants permit only tombstoning and state/version
+-- fencing; ciphertext remains unreadable to the general application role.
 
 -- The rehearsal role deliberately receives no fci_app access. Its temporary,
 -- prefix-validated grants belong only to an isolated fci_rehearsal_* schema;

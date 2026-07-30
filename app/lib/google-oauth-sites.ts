@@ -162,8 +162,8 @@ export function getGoogleConnectionStatus(config: oauth.GoogleRuntimeConfig) {
   return operations(config).connectionStatus();
 }
 
-export function disconnectGoogleConnection(config: oauth.GoogleRuntimeConfig) {
-  return operations(config).disconnect();
+export function disconnectGoogleConnection(config: oauth.GoogleRuntimeConfig, actor: string) {
+  return operations(config).disconnect(actor);
 }
 
 export function saveGoogleConnection(

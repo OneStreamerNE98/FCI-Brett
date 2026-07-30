@@ -6,6 +6,7 @@ import type {
   IntegrationMetadataResult,
   RegisterIntegrationConnectionIntent,
   RegisterIntegrationResourceIntent,
+  RevokeIntegrationConnectionIntent,
   RotateIntegrationCredentialIntent,
 } from "../../ports/integration-metadata";
 import type { SecurityAuditEvent } from "../../ports/security-audit";
@@ -41,6 +42,13 @@ const INTEGRATION_CONFLICT_CONSTRAINTS = [
   "integration_resources_connection_id_id_key",
   "integration_resources_connection_type_external_key",
   "integration_resources_connection_resource_key",
+] as const;
+
+const PROVIDER_REVOCATION_OUTCOMES = [
+  "succeeded",
+  "failed",
+  "skipped_simulation",
+  "not_attempted",
 ] as const;
 
 function exactVersion(
@@ -162,6 +170,46 @@ function validateCredentialRotation(intent: RotateIntegrationCredentialIntent) {
   assertPersistenceText(intent.keyVersion, "Integration rotated credential key version", 255);
   const rotatedAt = persistenceDate(intent.rotatedAt, "Integration credential rotated_at");
   return { expectedVersion, rotatedAt };
+}
+
+function validateConnectionRevocation(intent: RevokeIntegrationConnectionIntent) {
+  assertPersistenceUuid(intent.connectionId, "Integration revocation connection ID");
+  const expectedConnectionVersion = persistenceVersion(
+    intent.expectedConnectionVersion,
+    "Expected Integration revocation connection version",
+  );
+  assertPersistenceUuid(intent.revokedByUserId, "Integration revoking user ID");
+  assertPersistenceText(intent.revokedByActorKey, "Integration revoking actor key", 255);
+  const revokedAt = persistenceDate(intent.revokedAt, "Integration connection revoked_at");
+  if (
+    !PROVIDER_REVOCATION_OUTCOMES.includes(
+      intent.providerRevocationOutcome as (typeof PROVIDER_REVOCATION_OUTCOMES)[number],
+    )
+  ) {
+    throw new TypeError("Integration provider revocation outcome must be supported");
+  }
+  if (intent.providerRevocationOutcome === "failed") {
+    assertPersistenceKey(
+      intent.providerRevocationErrorCode,
+      "Integration provider revocation error code",
+    );
+  } else if (intent.providerRevocationErrorCode !== null) {
+    throw new TypeError(
+      "Integration provider revocation error code must be null unless provider revocation failed",
+    );
+  }
+  assertPersistenceUuid(intent.audit.id, "Integration revocation event ID");
+  return { expectedConnectionVersion, revokedAt };
+}
+
+function providerRevocationEvidence() {
+  return {
+    // The event records the local severance, which succeeds atomically with this
+    // row. Provider revocation is independent evidence in metadata, so a failed
+    // Google attempt never makes the local connection-revoked result ambiguous.
+    result: "succeeded" as const,
+    errorCode: null,
+  };
 }
 
 function validateResource(intent: RegisterIntegrationResourceIntent) {
@@ -383,7 +431,7 @@ export function createPostgresIntegrationMetadataRepository(
            FROM integration_connections
            WHERE id = $1
              AND version = $2::bigint
-             AND status IN ('pending', 'connected', 'degraded', 'reauthorization_required')
+             AND status IN ('pending', 'connected', 'degraded', 'reauthorization_required', 'revoked')
            FOR UPDATE`,
           [intent.connectionId, values.expectedConnectionVersion],
         );
@@ -479,11 +527,17 @@ export function createPostgresIntegrationMetadataRepository(
           key_version: unknown;
           version: unknown;
         }>(
-          `SELECT id::text AS id, connection_id::text AS connection_id,
-                  credential_kind, ciphertext, key_version,
-                  version::text AS version
-           FROM integration_credentials
-           WHERE connection_id = $1 AND credential_kind = $2 AND status = 'active'`,
+          `SELECT credential.id::text AS id,
+                  credential.connection_id::text AS connection_id,
+                  credential.credential_kind, credential.ciphertext,
+                  credential.key_version, credential.version::text AS version
+           FROM integration_credentials AS credential
+           INNER JOIN integration_connections AS connection
+             ON connection.id = credential.connection_id
+           WHERE credential.connection_id = $1
+             AND credential.credential_kind = $2
+             AND credential.status = 'active'
+             AND connection.status IN ('connected', 'degraded', 'reauthorization_required')`,
           [connectionId, credentialKind],
         );
         if (selected.rowCount === 0 && selected.rows.length === 0) return null;
@@ -504,6 +558,100 @@ export function createPostgresIntegrationMetadataRepository(
           keyVersion: row.key_version,
           version: persistenceVersion(row?.version, "Active Integration credential version"),
         };
+      });
+    },
+
+    async revokeConnection(intent) {
+      const values = validateConnectionRevocation(intent);
+      const providerEvidence = providerRevocationEvidence();
+      return withPostgresTransaction(pool, transactionOptions, async (client) => {
+        const locked = await client.query<{ id: unknown }>(
+          `SELECT id::text AS id
+           FROM integration_connections
+           WHERE id = $1
+             AND version = $2::bigint
+             AND status IN (
+               'pending', 'connected', 'degraded', 'reauthorization_required',
+               'disabled', 'revoked'
+             )
+           FOR UPDATE`,
+          [intent.connectionId, values.expectedConnectionVersion],
+        );
+        if (locked.rowCount === 0 && locked.rows.length === 0) {
+          return { outcome: "stale" as const };
+        }
+        if (locked.rowCount !== 1 || locked.rows.length !== 1) {
+          throw new Error("PostgreSQL Integration connection revocation did not lock exactly one row");
+        }
+        assertPersistenceUuid(locked.rows[0]?.id, "Locked Integration revocation connection ID");
+
+        const revokedCredentials = await client.query(
+          `UPDATE integration_credentials
+           SET ciphertext = NULL, key_version = NULL, status = 'revoked',
+               revoked_at = $2, updated_at = $2, version = version + 1
+           WHERE connection_id = $1 AND status <> 'revoked'`,
+          [intent.connectionId, values.revokedAt],
+        );
+
+        const updated = await client.query<{ version: unknown }>(
+          `UPDATE integration_connections
+           SET status = 'revoked', revoked_at = $3,
+               updated_by_user_id = $4, updated_by_actor_key = $5,
+               updated_at = $3, version = version + 1
+           WHERE id = $1 AND version = $2::bigint
+           RETURNING version::text AS version`,
+          [
+            intent.connectionId,
+            values.expectedConnectionVersion,
+            values.revokedAt,
+            intent.revokedByUserId,
+            intent.revokedByActorKey,
+          ],
+        );
+        const version = exactVersion(updated, "PostgreSQL revoked Integration connection");
+        await client.query(
+          `INSERT INTO integration_events (
+             id, connection_id, resource_id, event_key, event_type,
+             executor_type, executor_user_id, executor_key,
+             result, error_code, correlation_id, metadata,
+             occurred_at, retention_policy_key, retention_until
+           ) VALUES (
+             $1, $2, NULL, $3, 'oauth.connection_revoked',
+             $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13
+           )`,
+          [
+            intent.audit.id,
+            intent.connectionId,
+            `oauth.connection_revoked:${intent.audit.id}`,
+            intent.audit.executorType,
+            intent.audit.executorUserId,
+            intent.audit.executorKey,
+            providerEvidence.result,
+            providerEvidence.errorCode,
+            intent.audit.correlationId,
+            JSON.stringify({
+              local_connection_revoked: true,
+              stored_credentials_revoked: revokedCredentials.rowCount ?? 0,
+              provider_revocation_outcome: intent.providerRevocationOutcome,
+              provider_revocation_error_code: intent.providerRevocationErrorCode,
+            }),
+            values.revokedAt,
+            intent.audit.retentionPolicyKey,
+            intent.audit.retentionUntil === null
+              ? null
+              : persistenceDate(
+                  intent.audit.retentionUntil,
+                  "Integration revocation event retention_until",
+                ),
+          ],
+        );
+        await insertPostgresSecurityAuditEvent(client, mutationAudit(
+          intent.audit,
+          "integration.connection_revoked",
+          "integration_connection",
+          intent.connectionId,
+        ));
+        return accepted(version);
       });
     },
 

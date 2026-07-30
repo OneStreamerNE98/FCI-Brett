@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  EXPECTED_RUNTIME_COLUMN_SELECT_ACCESS,
   EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS,
   EXPECTED_RUNTIME_TABLE_ACCESS,
 } from "../app/platform/google-cloud/database-readiness.ts";
@@ -57,14 +58,28 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
   const columnUpdates = new Map(
     EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.map(({ table, columns }) => [table, columns]),
   );
+  const columnSelects = new Map(
+    EXPECTED_RUNTIME_COLUMN_SELECT_ACCESS.map(({ table, columns }) => [table, columns]),
+  );
   const expectedTableGrants = EXPECTED_RUNTIME_TABLE_ACCESS
-    .filter(({ privileges }) => privileges.length > 0)
     .flatMap(({ table, privileges }) => {
-      const tableGrant = `GRANT ${privileges.join(", ")} ON TABLE fci_app.${table} TO fci_runtime;`;
-      const columns = columnUpdates.get(table);
-      return columns
-        ? [tableGrant, `GRANT UPDATE (${columns.join(", ")}) ON TABLE fci_app.${table} TO fci_runtime;`]
-        : [tableGrant];
+      const grants = [];
+      if (privileges.length > 0) {
+        grants.push(`GRANT ${privileges.join(", ")} ON TABLE fci_app.${table} TO fci_runtime;`);
+      }
+      const selectColumns = columnSelects.get(table);
+      if (selectColumns) {
+        grants.push(
+          `GRANT SELECT (${selectColumns.join(", ")}) ON TABLE fci_app.${table} TO fci_runtime;`,
+        );
+      }
+      const updateColumns = columnUpdates.get(table);
+      if (updateColumns) {
+        grants.push(
+          `GRANT UPDATE (${updateColumns.join(", ")}) ON TABLE fci_app.${table} TO fci_runtime;`,
+        );
+      }
+      return grants;
     });
   assert.deepEqual(runtimeGrants, [
     "GRANT USAGE ON SCHEMA fci_app TO fci_runtime;",
@@ -126,10 +141,8 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
   );
   for (const deniedTable of [
     "production_schema_migrations",
-    "integration_credentials",
     "integration_connection_scopes",
     "integration_cursors",
-    "integration_events",
   ]) {
     assert.deepEqual(
       EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === deniedTable)?.privileges,
@@ -140,6 +153,64 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
       new RegExp(`^GRANT .* ON TABLE fci_app\\.${deniedTable} TO fci_runtime;$`, "m"),
     );
   }
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "integration_connections")
+      ?.privileges,
+    ["INSERT"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "integration_credentials")
+      ?.privileges,
+    [],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "integration_events")
+      ?.privileges,
+    ["INSERT"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_SELECT_ACCESS.find(
+      ({ table }) => table === "integration_connections",
+    )?.columns,
+    ["id", "status", "version"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_SELECT_ACCESS.find(
+      ({ table }) => table === "integration_credentials",
+    )?.columns,
+    ["connection_id", "status", "version"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(
+      ({ table }) => table === "integration_connections",
+    )?.columns,
+    [
+      "status",
+      "updated_by_user_id",
+      "updated_by_actor_key",
+      "revoked_at",
+      "updated_at",
+      "version",
+    ],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(
+      ({ table }) => table === "integration_credentials",
+    )?.columns,
+    ["ciphertext", "key_version", "status", "revoked_at", "updated_at", "version"],
+  );
+  assert.doesNotMatch(
+    sql,
+    /GRANT SELECT \([^)]*\bciphertext\b[^)]*\) ON TABLE fci_app\.integration_credentials/,
+  );
+  assert.doesNotMatch(
+    sql,
+    /GRANT (?:SELECT|UPDATE|DELETE).* ON TABLE fci_app\.integration_connection_scopes/,
+  );
+  assert.doesNotMatch(
+    sql,
+    /GRANT .*DELETE.* ON TABLE fci_app\.integration_(?:connections|credentials|events)/,
+  );
   assert.match(sql, /FOR SHARE on users[\s\S]*exact column grants/);
   assert.deepEqual(
     EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "invitations")?.privileges,
@@ -215,7 +286,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
       privileges,
     );
   }
-  assert.match(sql, /integration_credentials intentionally has no runtime table grant/);
+  assert.match(sql, /integration_credentials intentionally has no table-wide runtime grant/);
 });
 
 test("readiness gets migration metadata only through a fixed security-definer boundary", () => {

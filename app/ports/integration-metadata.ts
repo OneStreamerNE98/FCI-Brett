@@ -87,6 +87,21 @@ export type RotateIntegrationCredentialIntent = Readonly<{
   audit: SecurityAuditEvent;
 }>;
 
+export type RevokeIntegrationConnectionIntent = Readonly<{
+  connectionId: string;
+  expectedConnectionVersion: string;
+  revokedByUserId: string;
+  revokedByActorKey: string;
+  revokedAt: number;
+  providerRevocationOutcome:
+    | "succeeded"
+    | "failed"
+    | "skipped_simulation"
+    | "not_attempted";
+  providerRevocationErrorCode: string | null;
+  audit: SecurityAuditEvent;
+}>;
+
 export type RegisterIntegrationResourceIntent = Readonly<{
   id: string;
   connectionId: string;
@@ -122,6 +137,8 @@ export interface IntegrationMetadataRepository {
     connectionId: string,
     credentialKind: string,
   ): Promise<ActiveIntegrationCredential | null>;
+  /** Atomically tombstones the credential while preserving the connection as revoked audit history. */
+  revokeConnection(intent: RevokeIntegrationConnectionIntent): Promise<IntegrationMetadataResult>;
   rotateCredential(intent: RotateIntegrationCredentialIntent): Promise<IntegrationMetadataResult>;
   registerResource(intent: RegisterIntegrationResourceIntent): Promise<IntegrationMetadataResult>;
 }

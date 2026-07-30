@@ -52,6 +52,14 @@ export type RotateProductionGoogleCredential = Readonly<{
   audit: SecurityAuditEvent;
 }>;
 
+export type FinalizeProductionGoogleDisconnect = Readonly<{
+  connectionId: string;
+  expectedConnectionVersion: string;
+  revokedByUserId: string;
+  revokedByActorKey: string;
+  audit: SecurityAuditEvent;
+}>;
+
 function base64Url(bytes: Uint8Array) {
   return Buffer.from(bytes).toString("base64url");
 }
@@ -123,10 +131,9 @@ export function createProductionGoogleOauth(
   config: GoogleRuntimeConfig,
   dependencies: ProductionGoogleOauthDependencies,
 ) {
-  requireProductionConfig(config);
-
   return Object.freeze({
     async begin(input: BeginProductionGoogleOauth) {
+      requireProductionConfig(config);
       const id = dependencies.randomUUID();
       const state = randomValue(dependencies, 32);
       const verifier = randomValue(dependencies, 48);
@@ -163,6 +170,7 @@ export function createProductionGoogleOauth(
     },
 
     async finish(input: FinishProductionGoogleOauth) {
+      requireProductionConfig(config);
       const consumedAt = dependencies.now();
       const consumed = await dependencies.repository.consumeOauthAttempt({
         connectionId: input.connectionId,
@@ -229,6 +237,7 @@ export function createProductionGoogleOauth(
     },
 
     async rotateRefreshCredential(input: RotateProductionGoogleCredential) {
+      requireProductionConfig(config);
       const stored = await dependencies.repository.getActiveCredential(
         input.connectionId,
         "refresh_token",
@@ -289,6 +298,42 @@ export function createProductionGoogleOauth(
         rotated: true,
         version: rotated.version,
         keyVersion: encrypted.keyVersion,
+      });
+    },
+
+    /**
+     * Severs local access before any provider attempt. This source-only
+     * workflow deliberately records provider revocation as not attempted;
+     * a future Gate-C composition must call Google only after this succeeds
+     * and append the provider outcome as separate integration evidence.
+     */
+    async finalizeDisconnect(input: FinalizeProductionGoogleDisconnect) {
+      const revokedAt = dependencies.now();
+      const revoked = await dependencies.repository.revokeConnection({
+        connectionId: input.connectionId,
+        expectedConnectionVersion: input.expectedConnectionVersion,
+        revokedByUserId: input.revokedByUserId,
+        revokedByActorKey: input.revokedByActorKey,
+        revokedAt,
+        providerRevocationOutcome: "not_attempted",
+        providerRevocationErrorCode: null,
+        audit: input.audit,
+      });
+      if (revoked.outcome !== "accepted") {
+        const code = revoked.outcome === "stale"
+          ? "stale_google_connection"
+          : "google_connection_conflict";
+        throw new GoogleIntegrationError(
+          code,
+          "Google connection changed during disconnect. Refresh and try again.",
+          409,
+        );
+      }
+      return Object.freeze({
+        connectionVersion: revoked.version,
+        revokedAt,
+        providerRevocation: "not_attempted" as const,
+        providerRevocationErrorCode: null,
       });
     },
   });
