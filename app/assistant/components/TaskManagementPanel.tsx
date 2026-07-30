@@ -210,26 +210,30 @@ export function TaskManagementPanel({
       taskManagementSearch({ ...EMPTY_TASK_FILTERS, status: "done" }),
     ].filter((search, index, candidates) => candidates.indexOf(search) === index);
 
-    for (const [index, search] of searches.entries()) {
-      const response = await fetch(`/api/v1/tasks?${search}`);
-      const data = await response.json().catch(() => ({})) as {
-        tasks?: unknown[];
-      };
-      if (
-        !response.ok
-        || !Array.isArray(data.tasks)
-        || !data.tasks.every(isTaskManagementRecord)
-        || requestId !== requestIdRef.current
-      ) {
-        return null;
+    try {
+      for (const [index, search] of searches.entries()) {
+        const response = await fetch(`/api/v1/tasks?${search}`);
+        const data = await response.json().catch(() => ({})) as {
+          tasks?: unknown[];
+        };
+        if (
+          !response.ok
+          || !Array.isArray(data.tasks)
+          || !data.tasks.every(isTaskManagementRecord)
+          || requestId !== requestIdRef.current
+        ) {
+          return null;
+        }
+        if (index === 0) setTasks(data.tasks);
+        const current = data.tasks.find((candidate) => (
+          isTaskManagementRecord(candidate)
+          && candidate.id === taskId
+          && candidate.version === currentVersion
+        ));
+        if (current && isTaskManagementRecord(current)) return current;
       }
-      if (index === 0) setTasks(data.tasks);
-      const current = data.tasks.find((candidate) => (
-        isTaskManagementRecord(candidate)
-        && candidate.id === taskId
-        && candidate.version === currentVersion
-      ));
-      if (current && isTaskManagementRecord(current)) return current;
+    } catch {
+      return null;
     }
     return null;
   }

@@ -10,6 +10,7 @@ import {
   taskManagementSavedValue,
   taskManagementSearch,
 } from "../app/assistant/task-management.ts";
+import { TASK_PATCH_KEYS as DOMAIN_TASK_PATCH_KEYS } from "../app/domain/task.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -36,6 +37,11 @@ function task(overrides = {}) {
 }
 
 test("task form helpers expose every PATCH field and send changed keys only", () => {
+  assert.deepEqual(
+    TASK_MANAGEMENT_PATCH_KEYS,
+    DOMAIN_TASK_PATCH_KEYS,
+    "the UI field catalog must grow with the authoritative task PATCH contract",
+  );
   assert.deepEqual(TASK_MANAGEMENT_PATCH_KEYS, [
     "title",
     "details",

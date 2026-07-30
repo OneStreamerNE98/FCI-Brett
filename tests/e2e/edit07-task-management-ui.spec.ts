@@ -268,17 +268,30 @@ test("tasks list, filter, create, edit, reopen, and re-apply a saved conflict th
     },
   });
 
+  await page.getByRole("button", { name: "Edit task Confirm material delivery" }).click();
+  const completeDialog = page.getByRole("dialog", { name: "Edit task Confirm material delivery" });
+  await completeDialog.getByLabel("Status").selectOption("done");
+  await completeDialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(completeDialog).toHaveCount(0);
+  expect(patches.at(-1)).toEqual({
+    id: "task-open",
+    body: {
+      version: "1",
+      status: "done",
+    },
+  });
+
   await filters.getByLabel("Status").selectOption("done");
   await filters.getByRole("button", { name: "Apply filters" }).click();
-  await page.getByRole("button", { name: "Edit task Send completed walkthrough" }).click();
-  const doneDialog = page.getByRole("dialog", { name: "Edit task Send completed walkthrough" });
+  await page.getByRole("button", { name: "Edit task Confirm material delivery" }).click();
+  const doneDialog = page.getByRole("dialog", { name: "Edit task Confirm material delivery" });
   await doneDialog.getByRole("button", { name: "Reopen task" }).click();
   await expect(page.getByRole("dialog", { name: /Edit task/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "New task" })).toBeFocused();
   expect(patches.at(-1)).toEqual({
-    id: "task-done",
+    id: "task-open",
     body: {
-      version: "1",
+      version: "2",
       status: "open",
     },
   });
@@ -383,5 +396,66 @@ test("a conflict outside every bounded list result never invents saved values or
   await expect(dialog.getByText(/^Saved value:/u)).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Refresh list to continue" })).toBeDisabled();
   expect(overflowTasks).toHaveLength(201);
+  expect(patchCount).toBe(1);
+});
+
+test("a rejected 409 recovery read disables re-apply and cannot issue a second PATCH", async ({ page }) => {
+  await mockEmptyToday(page);
+  const savedTask = task({
+    id: "task-recovery-failed",
+    title: "Confirm closeout photos",
+  });
+  let conflicted = false;
+  let patchCount = 0;
+  let recoveryReadCount = 0;
+
+  await page.route(/\/api\/v1\/tasks(?:\/[^?]+)?(?:\?.*)?$/u, async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === "/api/v1/tasks") {
+      if (conflicted) {
+        recoveryReadCount += 1;
+        await route.abort("failed");
+        return;
+      }
+      await fulfillJson(route, 200, { tasks: [savedTask] });
+      return;
+    }
+    if (
+      request.method() === "PATCH"
+      && url.pathname === "/api/v1/tasks/task-recovery-failed"
+    ) {
+      patchCount += 1;
+      conflicted = true;
+      savedTask.version = "2";
+      await fulfillJson(route, 409, {
+        error: "Task changed since it was loaded.",
+        currentVersion: "2",
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/assistant");
+  const tasksTab = page.getByRole("tab", { name: "Tasks", exact: true });
+  await expect(async () => {
+    await tasksTab.click();
+    await expect(tasksTab).toHaveAttribute("aria-selected", "true", { timeout: 500 });
+  }).toPass({ intervals: [100, 250, 500], timeout: 10_000 });
+
+  await page.getByRole("button", { name: "Edit task Confirm closeout photos" }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit task Confirm closeout photos" });
+  await dialog.getByLabel("Title").fill("Confirm revised closeout photos");
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+
+  await expect(dialog.getByRole("alert")).toContainText(
+    "its exact saved version could not be found in the bounded task results",
+  );
+  const blockedReapply = dialog.getByRole("button", { name: "Refresh list to continue" });
+  await expect(blockedReapply).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Re-apply changes" })).toHaveCount(0);
+  await blockedReapply.click({ force: true });
+  expect(recoveryReadCount).toBe(1);
   expect(patchCount).toBe(1);
 });
