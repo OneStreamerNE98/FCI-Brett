@@ -15,6 +15,7 @@ import {
 } from "../../../application/assistant/org-wide-fallback";
 import { projectEvidence } from "../../../application/assistant/project-evidence";
 import { createAssistantToolRegistry } from "../../../application/assistant/tools";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import {
   normalizeSearchQuery,
   searchRecords,
@@ -26,7 +27,6 @@ import {
 } from "../../../lib/assistant-config-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import { noStoreJson as noStore, noStoreResponse } from "../../../lib/no-store-json";
 import { defaultUserSettingsPreferences } from "../../../lib/user-settings";
 import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
@@ -104,9 +104,8 @@ export async function POST(request: NextRequest) {
   if (hasProjectId) {
     const context = await projectEvidence(
       env.DB,
-      google.connectionKey,
       projectId,
-      { includeFinancials: true },
+      { includeFinancials: true, simulation: google.simulation },
     );
     if (!context) {
       return noStore(
@@ -169,10 +168,10 @@ export async function POST(request: NextRequest) {
     ?? defaultUserSettingsPreferences().displayTimezone;
   const tools = createAssistantToolRegistry({
     database: env.DB,
-    connectionKey: google.connectionKey,
     isAdmin: auth.user.isAdmin,
     actorEmail: auth.user.email,
     officeIdentityLookup: officeIdentityForEmail,
+    simulation: google.simulation,
     timeZone,
   });
   const modelOutcome = assistantProvider

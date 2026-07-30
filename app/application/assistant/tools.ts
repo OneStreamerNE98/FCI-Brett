@@ -1,4 +1,5 @@
 import { createD1TaskRepository } from "../../adapters/d1/task-repository";
+import { archiveScope } from "../archive-scope";
 import type { D1Database } from "../../adapters/d1/d1-database";
 import { defaultUserSettingsPreferences } from "../../lib/user-settings";
 import type { AssistantProviderToolDefinition } from "../../ports/assistant-provider";
@@ -26,8 +27,10 @@ type DriveSearchService = {
 
 type AssistantToolRegistryOptions = {
   database: D1Database;
-  connectionKey: string;
   isAdmin: boolean;
+  // Environment scope for filed-email reads: simulation archives share the table
+  // with live ones, so live answers must not adopt them (WS-18 review).
+  simulation?: boolean;
   // The requesting office user's email. Evidence strings carrying EMPLOYEE emails
   // (lead owner, project manager, task assignee) apply the same office-identity
   // disclosure rule as the record routes: the actor's own email or a current office
@@ -157,7 +160,7 @@ function matchingExcerpt(value: string | null, query: string) {
 export function createAssistantToolRegistry(
   options: AssistantToolRegistryOptions,
 ): AssistantTool[] {
-  const { database, connectionKey, isAdmin, actorEmail, officeIdentityLookup } = options;
+  const { database, isAdmin, actorEmail, officeIdentityLookup } = options;
   const officeVisibleEmail = (candidate: string | null | undefined) => {
     const email = typeof candidate === "string" ? candidate.trim() : "";
     if (!email) return null;
@@ -165,6 +168,7 @@ export function createAssistantToolRegistry(
     if (email.toLowerCase() === actorEmail.toLowerCase()) return email;
     return officeIdentityLookup?.(email)?.email ?? "unavailable (not a current office identity)";
   };
+  const simulation = options.simulation === true;
   const now = options.now ?? Date.now;
 
   const searchRecordsTool = tool(
@@ -202,8 +206,9 @@ export function createAssistantToolRegistry(
         ? identifier(input.projectId)
         : null;
       if (!projectId) return { evidence: [] };
-      const context = await projectEvidence(database, connectionKey, projectId, {
+      const context = await projectEvidence(database, projectId, {
         includeFinancials: isAdmin,
+        simulation,
       });
       return { evidence: context?.evidence ?? [] };
     },
@@ -409,11 +414,15 @@ export function createAssistantToolRegistry(
       ) {
         return { evidence: [] };
       }
+      // Project-keyed, not connection-keyed (WS-18) — but simulation archives
+      // share this table, so the environment scope keeps pretend filings out of
+      // live answers without narrowing reads to a single connection.
+      const archives = archiveScope(simulation, "a.connection_key");
       const conditions = [
-        "a.connection_key = ?",
         "a.status = 'filed'",
+        archives.clause,
       ];
-      const bindings: unknown[] = [connectionKey];
+      const bindings: unknown[] = [...archives.bindings];
       if (projectId) {
         conditions.push("a.project_id = ?");
         bindings.push(projectId);
@@ -444,7 +453,10 @@ export function createAssistantToolRegistry(
     async (argumentsValue) => {
       const input = objectValue(argumentsValue);
       if (!input || !hasOnlyKeys(input, [])) return { evidence: [] };
-      const dashboard = await dashboardData(database, connectionKey);
+      // Same environment scope as every other filed-email read here: without it
+      // a simulated session reports the LIVE filed-email count, which is the
+      // isolation failure inverted rather than fixed.
+      const dashboard = await dashboardData(database, { simulation });
       const evidence: Evidence[] = [
         { id: "metric:active-leads", label: "Dashboard metric · Active leads", detail: String(dashboard.metrics.activeLeads) },
         { id: "metric:active-projects", label: "Dashboard metric · Active projects", detail: String(dashboard.metrics.activeProjects) },

@@ -1,4 +1,5 @@
 import type { D1Database } from "../adapters/d1/d1-database";
+import { archiveScope } from "./archive-scope";
 import {
   readTodayProjectMeetings,
   TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT,
@@ -29,9 +30,16 @@ function numeric(value: number | string | null | undefined) {
 
 export async function dashboardData(
   database: D1Database,
-  connectionKey: string,
-  options: { now: number; timeZone: string } = { now: Date.now(), timeZone: "America/New_York" },
+  // now/timeZone are optional so a caller can supply ONLY the environment scope
+  // without having to invent a clock reading. That matters: the assistant's
+  // dashboard tool must not call its injected now() again just to pass it
+  // through, because Today pins that the display-timezone now is captured once.
+  options: { now?: number; timeZone?: string; simulation?: boolean } = {},
 ) {
+  const now = options.now ?? Date.now();
+  const timeZone = options.timeZone ?? "America/New_York";
+  // Simulation filings share this table; a live count must not include them.
+  const filedScope = archiveScope(options.simulation === true);
   const [
     pipeline,
     activeProjects,
@@ -48,10 +56,10 @@ export async function dashboardData(
     database.prepare("SELECT COUNT(*) AS total FROM clients").first<CountRow>(),
     database.prepare("SELECT e.id, e.record_id, e.action, e.actor, e.detail, e.created_at, p.project_number, p.name AS project_name, c.name AS client_name FROM activity_events e LEFT JOIN projects p ON p.id = e.record_id LEFT JOIN clients c ON c.id = p.client_id ORDER BY e.created_at DESC LIMIT 12").all<ActivityRow>(),
     database.prepare("SELECT COUNT(*) AS total FROM project_meetings").first<CountRow>(),
-    database.prepare("SELECT COUNT(*) AS total FROM gmail_file_archives WHERE connection_key = ? AND status = 'filed'").bind(connectionKey).first<CountRow>(),
+    database.prepare(`SELECT COUNT(*) AS total FROM gmail_file_archives WHERE status = 'filed' AND ${filedScope.clause}`).bind(...filedScope.bindings).first<CountRow>(),
     readTodayProjectMeetings(database, {
-      now: options.now,
-      timeZone: options.timeZone,
+      now,
+      timeZone,
       includeUpcoming: true,
       limit: TODAY_PROJECT_MEETINGS_DISPLAY_LIMIT,
     }),
