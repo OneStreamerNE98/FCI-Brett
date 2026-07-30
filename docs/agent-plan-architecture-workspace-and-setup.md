@@ -888,6 +888,7 @@ golden hashes untouched; `npm test` green.
 **Effort:** medium. **Cost:** $0.
 
 ### EDIT-07 · Task management UI (medium, after EDIT-03)
+**Status:** In review — PR #248, July 30, 2026. Source-only and undeployed.
 **Why:** both task endpoints are live and validated (`app/api/v1/tasks/
 route.ts`, `app/api/v1/tasks/[taskId]/route.ts` behind `normalizeTaskPatch`),
 but **no task list, form, or detail view exists anywhere in the product**.

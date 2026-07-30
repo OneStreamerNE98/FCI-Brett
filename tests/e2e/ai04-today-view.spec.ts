@@ -87,7 +87,7 @@ async function mockToday(page: Page, payload: TodayPayload) {
   });
 }
 
-test("Today is the default Assistant tab, Ask is second, and saved rows deep-link honestly", async ({ page }) => {
+test("Today is the default Assistant tab, Ask is second, Tasks is third, and saved rows deep-link honestly", async ({ page }) => {
   const payload = emptyToday();
   payload.overdueTasks = {
     items: [{
@@ -140,9 +140,10 @@ test("Today is the default Assistant tab, Ask is second, and saved rows deep-lin
   await page.goto("/assistant");
 
   const tabs = page.getByRole("tab");
-  await expect(tabs).toHaveText(["Today", "Ask"]);
+  await expect(tabs).toHaveText(["Today", "Ask", "Tasks"]);
   await expect(page.getByRole("tab", { name: "Today", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tab", { name: "Ask", exact: true })).toHaveAttribute("aria-selected", "false");
+  await expect(page.getByRole("tab", { name: "Tasks", exact: true })).toHaveAttribute("aria-selected", "false");
   await expect(page.getByRole("tabpanel", { name: "Today" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "4 saved items to review" })).toBeVisible();
 
@@ -156,6 +157,10 @@ test("Today is the default Assistant tab, Ask is second, and saved rows deep-lin
 
   await page.getByRole("tab", { name: "Today", exact: true }).focus();
   await page.keyboard.press("End");
+  await expect(page.getByRole("tab", { name: "Tasks", exact: true })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Tasks", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel", { name: "Tasks" })).toBeVisible();
+  await page.keyboard.press("ArrowLeft");
   await expect(page.getByRole("tab", { name: "Ask", exact: true })).toBeFocused();
   await expect(page.getByRole("tab", { name: "Ask", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tabpanel", { name: "Ask" })).toBeVisible();
