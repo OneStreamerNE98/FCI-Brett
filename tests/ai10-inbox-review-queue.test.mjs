@@ -189,8 +189,11 @@ class ReviewQueueDatabase {
     subject = "FCI TEST stored review subject",
     sender = "Stored Sender <stored@example.test>",
     clientId = null,
+    suggestedProjectId = null,
     approvedProjectId = null,
     analysisPayload = {},
+    matchReason = "Review required",
+    confidence = "medium",
   }) {
     this.database.prepare(
       `INSERT INTO mail_items (
@@ -200,17 +203,20 @@ class ReviewQueueDatabase {
          label_definition_version, attempted_label_definition_version,
          subject, sender, received_at, failure_attempts, error_code,
          coverage_complete, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 'Review required', NULL, ?,
-                 'prospect', 'medium', ?, ?, NULL, ?, ?, ?, 0, NULL, 1, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?,
+                 'prospect', ?, ?, ?, NULL, ?, ?, ?, 0, NULL, 1, ?, ?)`,
     ).run(
       id,
       connectionKey,
       messageId,
       `thread-${messageId}`,
       clientId,
+      suggestedProjectId,
       approvedProjectId,
       status,
+      matchReason,
       JSON.stringify(analysisPayload),
+      confidence,
       "a".repeat(64),
       application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
       subject,
@@ -369,6 +375,7 @@ test("review queue GET is admin, no-store, snapshot-counted, and network free", 
         subject: "FCI TEST stored review subject",
         sender: "Stored Sender <stored@example.test>",
         receivedAt: Date.parse("2026-07-28T13:00:00.000Z"),
+        analysis: null,
         leadProposal: null,
       }],
       totalCount: 1,
@@ -453,6 +460,57 @@ test("review queue GET exposes only a closed lead proposal for valid lead-intent
       ["mail-unsafe-email", null],
       ["mail-valid-lead", validLeadFields],
     ]);
+  } finally {
+    workerEnvironment.DB = originalDatabase;
+    database.close();
+  }
+});
+
+test("review queue GET exposes a closed server-derived analysis projection", async () => {
+  const database = new ReviewQueueDatabase();
+  const originalDatabase = workerEnvironment.DB;
+  workerEnvironment.DB = database;
+  database.insertReview({
+    id: "mail-valid-analysis",
+    messageId: "gmail-valid-analysis",
+    suggestedProjectId: PROJECT_ID,
+    matchReason: "Server matched the current project.",
+    confidence: "low",
+    analysisPayload: {
+      intents: ["project-update", "schedule", "warranty"],
+      projectId: STALE_PROJECT_ID,
+      confidence: "high",
+      rationale: "Provider values must not cross this boundary.",
+    },
+  });
+  database.insertReview({
+    id: "mail-duplicate-intent",
+    messageId: "gmail-duplicate-intent",
+    analysisPayload: {
+      intents: ["schedule", "schedule"],
+    },
+  });
+  database.insertReview({
+    id: "mail-unknown-intent",
+    messageId: "gmail-unknown-intent",
+    analysisPayload: {
+      intents: ["schedule", "send-email"],
+    },
+  });
+  try {
+    const response = await route.GET(routeRequest());
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    const byId = new Map(body.rows.map((row) => [row.id, row]));
+    assert.deepEqual(byId.get("mail-valid-analysis").analysis, {
+      gmailMessageId: "gmail-valid-analysis",
+      intents: ["project-update", "schedule", "warranty"],
+      projectId: PROJECT_ID,
+      confidence: "low",
+      rationale: "Server matched the current project.",
+    });
+    assert.equal(byId.get("mail-duplicate-intent").analysis, null);
+    assert.equal(byId.get("mail-unknown-intent").analysis, null);
   } finally {
     workerEnvironment.DB = originalDatabase;
     database.close();

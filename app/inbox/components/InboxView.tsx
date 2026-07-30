@@ -1,7 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, FolderOpen, Inbox, ListFilter, Mail, RefreshCw, Reply, ShieldCheck, Sparkles, Users } from "lucide-react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  Building2,
+  CalendarClock,
+  FolderOpen,
+  Inbox,
+  ListFilter,
+  Mail,
+  RefreshCw,
+  Reply,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  Wrench,
+  X,
+} from "lucide-react";
+import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
 import { cachedGetJson } from "../../lib/client-get-cache";
 import {
@@ -65,11 +86,26 @@ export type InboxLeadProposal = Readonly<{
   site: string | null;
   estimatedValue: number | null;
 }>;
+const INBOX_REVIEW_INTENTS = Object.freeze([
+  "lead",
+  "project-update",
+  "schedule",
+  "warranty",
+] as const);
+type InboxReviewIntent = typeof INBOX_REVIEW_INTENTS[number];
+type InboxReviewAnalysis = Readonly<{
+  gmailMessageId: string;
+  intents: readonly InboxReviewIntent[];
+  projectId: string | null;
+  confidence: "high" | "medium" | "low";
+  rationale: string;
+}>;
 type InboxReviewQueueRow = Readonly<{
   id: string;
   subject: string | null;
   sender: string | null;
   receivedAt: number | null;
+  analysis: InboxReviewAnalysis | null;
   leadProposal: InboxLeadProposal | null;
 }>;
 type InboxReviewQueue = Readonly<{
@@ -102,6 +138,17 @@ type InboxViewProps = Readonly<{
     proposal: InboxLeadProposal,
     afterCreate: () => Promise<void>,
   ) => void;
+}>;
+
+type InboxTaskKind = "schedule" | "warranty";
+type ReviewRetirementReason = "manual" | "lead-created";
+type InboxTaskProposal = Readonly<{
+  row: InboxReviewQueueRow;
+  kind: InboxTaskKind;
+  title: string;
+  details: string;
+  dueDate: string;
+  projectId: string;
 }>;
 
 const inboxBucketLabels: Record<InboxBucket, string> = {
@@ -144,6 +191,50 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
       )
     ) {
       return null;
+    }
+    let analysis: InboxReviewAnalysis | null = null;
+    if (row.analysis !== null && row.analysis !== undefined) {
+      if (
+        !row.analysis
+        || typeof row.analysis !== "object"
+        || Array.isArray(row.analysis)
+      ) {
+        return null;
+      }
+      const candidate = row.analysis as Record<string, unknown>;
+      const intentSet = new Set<string>(INBOX_REVIEW_INTENTS);
+      if (
+        Object.keys(candidate).length !== 5
+        || typeof candidate.gmailMessageId !== "string"
+        || !/^[A-Za-z0-9_-]{1,256}$/.test(candidate.gmailMessageId)
+        || !Array.isArray(candidate.intents)
+        || candidate.intents.length === 0
+        || candidate.intents.some((intent) =>
+          typeof intent !== "string" || !intentSet.has(intent)
+        )
+        || new Set(candidate.intents).size !== candidate.intents.length
+        || (
+          candidate.projectId !== null
+          && (
+            typeof candidate.projectId !== "string"
+            || !/^[A-Za-z0-9_-]{1,128}$/.test(candidate.projectId)
+          )
+        )
+        || !["high", "medium", "low"].includes(String(candidate.confidence))
+        || typeof candidate.rationale !== "string"
+        || !candidate.rationale.trim()
+        || candidate.rationale.length > 200
+        || /[\u0000-\u001f\u007f]/.test(candidate.rationale)
+      ) {
+        return null;
+      }
+      analysis = Object.freeze({
+        gmailMessageId: candidate.gmailMessageId,
+        intents: Object.freeze([...candidate.intents]) as readonly InboxReviewIntent[],
+        projectId: candidate.projectId as string | null,
+        confidence: candidate.confidence as InboxReviewAnalysis["confidence"],
+        rationale: candidate.rationale,
+      });
     }
     let leadProposal: InboxLeadProposal | null = null;
     if (row.leadProposal !== null && row.leadProposal !== undefined) {
@@ -208,6 +299,7 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
       subject: row.subject as string | null,
       sender: row.sender as string | null,
       receivedAt: row.receivedAt as number | null,
+      analysis,
       leadProposal,
     }));
   }
@@ -215,6 +307,151 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
     rows: Object.freeze(rows),
     totalCount: Number(record.totalCount),
   });
+}
+
+function taskProposalText(
+  row: InboxReviewQueueRow,
+  kind: InboxTaskKind,
+) {
+  const subject = row.subject?.replace(/\s+/g, " ").trim() || "email request";
+  const prefix = kind === "warranty"
+    ? "Warranty callback"
+    : "Schedule follow-up";
+  const title = `${prefix}: ${subject}`.slice(0, 200);
+  const sender = row.sender?.replace(/\s+/g, " ").trim() || "the email sender";
+  const rationale = row.analysis?.rationale ?? "Review the stored email analysis.";
+  const details = (
+    kind === "warranty"
+      ? `Call back ${sender} about this warranty or service request. ${rationale}`
+      : `Follow up with ${sender} about this schedule request. ${rationale}`
+  ).slice(0, 4_000);
+  return { title, details };
+}
+
+function reviewIntentLabel(intent: InboxReviewIntent) {
+  if (intent === "project-update") return "Project update";
+  if (intent === "schedule") return "Schedule";
+  if (intent === "warranty") return "Warranty callback";
+  return "Lead";
+}
+
+function InboxTaskProposalModal({
+  proposal,
+  projects,
+  saving,
+  error,
+  onChange,
+  onSubmit,
+  onClose,
+}: {
+  proposal: InboxTaskProposal;
+  projects: readonly InboxProject[];
+  saving: boolean;
+  error: string;
+  onChange: (next: InboxTaskProposal) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  const label = proposal.kind === "warranty"
+    ? "Create warranty callback task"
+    : "Create schedule task";
+  return <AccessibleOverlay
+    ariaLabel={label}
+    busy={saving}
+    contentClassName="modal gmail-reply-modal"
+    onClose={onClose}
+  >
+    <header>
+      <div>
+        <p className="eyebrow">Email task proposal</p>
+        <h2>{proposal.kind === "warranty"
+          ? "Review warranty callback"
+          : "Review schedule follow-up"}</h2>
+      </div>
+      <button type="button" aria-label="Close" onClick={onClose} disabled={saving}>
+        <X size={20} aria-hidden="true" />
+      </button>
+    </header>
+    <form onSubmit={(event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      onSubmit();
+    }}>
+      <div className="modal-detail">
+        {error && <p className="workspace-missing" role="alert">{error}</p>}
+        <label>
+          Task title
+          <input
+            data-overlay-initial-focus
+            required
+            maxLength={200}
+            value={proposal.title}
+            onChange={(event) => onChange({
+              ...proposal,
+              title: event.target.value,
+            })}
+            disabled={saving}
+          />
+        </label>
+        <label>
+          Task details
+          <textarea
+            rows={4}
+            maxLength={4_000}
+            value={proposal.details}
+            onChange={(event) => onChange({
+              ...proposal,
+              details: event.target.value,
+            })}
+            disabled={saving}
+          />
+        </label>
+        <label>
+          Due date
+          <input
+            type="date"
+            value={proposal.dueDate}
+            onChange={(event) => onChange({
+              ...proposal,
+              dueDate: event.target.value,
+            })}
+            disabled={saving}
+          />
+        </label>
+        <label>
+          Project
+          <select
+            value={proposal.projectId}
+            onChange={(event) => onChange({
+              ...proposal,
+              projectId: event.target.value,
+            })}
+            disabled={saving}
+          >
+            <option value="">No linked project</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>
+              {project.number} — {project.name}
+            </option>)}
+          </select>
+        </label>
+        <p className="form-help">
+          <ShieldCheck size={14} aria-hidden="true" /> This is a proposal from stored
+          analysis. Nothing is created until you submit this form.
+        </p>
+      </div>
+      <footer className="modal-footer">
+        <button type="button" className="soft-button" onClick={onClose} disabled={saving}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="primary-button"
+          disabled={saving || !proposal.title.trim()}
+        >
+          {saving ? "Creating…" : label}
+        </button>
+      </footer>
+    </form>
+  </AccessibleOverlay>;
 }
 
 function inboxAnalysisCoverage(value: unknown): InboxAnalysisCoverage | null {
@@ -321,6 +558,9 @@ export function InboxView({
   );
   const [leadRetirementErrorIds, setLeadRetirementErrorIds] =
     useState<ReadonlySet<string>>(() => new Set());
+  const [taskProposal, setTaskProposal] = useState<InboxTaskProposal | null>(null);
+  const [taskSaving, setTaskSaving] = useState(false);
+  const [taskError, setTaskError] = useState("");
   const [accountSettled, setAccountSettled] = useState(false);
   const analysisAutoStartedRef = useRef(false);
   const analysisInFlightRef = useRef<Promise<InboxAnalysisCoverage | null> | null>(null);
@@ -602,9 +842,26 @@ export function InboxView({
     }
   }
 
+  function removeReviewRow(row: InboxReviewQueueRow) {
+    // The accepted row unmounts its focused action, so name the next focus
+    // target before it goes — the neighbour below, else above, else the
+    // empty-state heading. TodayPanel's complete-in-place sets the precedent.
+    setReviewRows((current) => {
+      const index = current.findIndex((item) => item.id === row.id);
+      const remaining = current.filter((item) => item.id !== row.id);
+      const next = index >= 0
+        ? remaining[index] ?? remaining[index - 1] ?? null
+        : null;
+      setFocusReviewRowId(next?.id ?? null);
+      restoreEmptyQueueFocusRef.current = next === null;
+      return remaining;
+    });
+    setReviewTotalCount((current) => Math.max(0, current - 1));
+  }
+
   async function markReviewed(
     row: InboxReviewQueueRow,
-    reason: "manual" | "lead-created" = "manual",
+    reason: ReviewRetirementReason = "manual",
   ) {
     if (markReviewedInFlightRef.current) return false;
     markReviewedInFlightRef.current = true;
@@ -627,20 +884,7 @@ export function InboxView({
         throw new Error(body.error ?? "The message could not be marked reviewed.");
       }
       if (requestId !== reviewQueueRequestIdRef.current) return false;
-      // The dismissed row unmounts its own focused button, so name the next
-      // focus target before it goes — the neighbour below, else above, else the
-      // empty-state heading. TodayPanel's complete-in-place sets the precedent.
-      setReviewRows((current) => {
-        const index = current.findIndex((item) => item.id === row.id);
-        const remaining = current.filter((item) => item.id !== row.id);
-        const next = index >= 0
-          ? remaining[index] ?? remaining[index - 1] ?? null
-          : null;
-        setFocusReviewRowId(next?.id ?? null);
-        restoreEmptyQueueFocusRef.current = next === null;
-        return remaining;
-      });
-      setReviewTotalCount((current) => Math.max(0, current - 1));
+      removeReviewRow(row);
       setLeadRetirementErrorIds((current) => {
         if (!current.has(row.id)) return current;
         const next = new Set(current);
@@ -713,6 +957,129 @@ export function InboxView({
     setFilingMessage(message);
     setFilingProjectId("");
     setFilingPreview(null);
+  }
+
+  function reviewMessage(row: InboxReviewQueueRow): WorkspaceMessage | null {
+    if (!row.analysis) return null;
+    return {
+      id: row.analysis.gmailMessageId,
+      from: row.sender,
+      subject: row.subject,
+      date: row.receivedAt === null
+        ? null
+        : new Date(row.receivedAt).toISOString(),
+      snippet: `Stored analysis: ${row.analysis.rationale}`,
+    };
+  }
+
+  function acceptProjectUpdate(row: InboxReviewQueueRow) {
+    const message = reviewMessage(row);
+    if (!message || !row.analysis?.intents.includes("project-update")) return;
+    const projectId = projects.some((project) =>
+      project.id === row.analysis?.projectId
+    )
+      ? row.analysis.projectId
+      : null;
+    if (projectId) {
+      acceptTriageSuggestion(message, {
+        messageId: row.analysis.gmailMessageId,
+        projectId,
+        confidence: row.analysis.confidence,
+        rationale: row.analysis.rationale,
+      });
+      return;
+    }
+    openFilingReview(message);
+  }
+
+  function openTaskProposal(row: InboxReviewQueueRow, kind: InboxTaskKind) {
+    if (
+      !row.analysis
+      || !row.analysis.intents.includes(kind)
+    ) {
+      return;
+    }
+    const text = taskProposalText(row, kind);
+    const projectId = row.analysis.projectId
+      && projects.some((project) => project.id === row.analysis?.projectId)
+      ? row.analysis.projectId
+      : "";
+    setTaskProposal({
+      row,
+      kind,
+      title: text.title,
+      details: text.details,
+      dueDate: "",
+      projectId,
+    });
+    setTaskError("");
+  }
+
+  function closeTaskProposal() {
+    if (taskSaving) return;
+    setTaskProposal(null);
+    setTaskError("");
+  }
+
+  async function createTaskFromProposal() {
+    if (!taskProposal || taskSaving || !taskProposal.row.analysis) return;
+    const title = taskProposal.title.replace(/\s+/g, " ").trim();
+    if (!title) {
+      setTaskError("Enter a task title.");
+      return;
+    }
+    const proposal = taskProposal;
+    setTaskSaving(true);
+    setTaskError("");
+    try {
+      const response = await fetch("/api/v1/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          details: proposal.details.trim() || null,
+          status: "open",
+          dueDate: proposal.dueDate || null,
+          projectId: proposal.projectId || null,
+          source: "email",
+          sourceRef: proposal.row.analysis.gmailMessageId,
+          inboxReviewId: proposal.row.id,
+          inboxReviewIntent: proposal.kind,
+        }),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        task?: { id?: unknown };
+        inboxReview?: { id?: unknown; status?: unknown };
+        error?: string;
+      };
+      if (
+        !response.ok
+        || !data.task
+        || typeof data.task.id !== "string"
+        || !data.task.id
+        || data.inboxReview?.id !== proposal.row.id
+        || data.inboxReview?.status !== "accepted"
+      ) {
+        throw new Error(data.error ?? "The task could not be created.");
+      }
+      setTaskProposal(null);
+      removeReviewRow(proposal.row);
+      notify(
+        proposal.kind === "warranty"
+          ? "Warranty callback task created and message removed from the review queue."
+          : "Schedule task created and message removed from the review queue.",
+        "success",
+      );
+      await loadReviewQueue();
+    } catch (taskCreationError) {
+      setTaskError(
+        taskCreationError instanceof Error
+          ? taskCreationError.message
+          : "The task could not be created.",
+      );
+    } finally {
+      setTaskSaving(false);
+    }
   }
 
   function acceptTriageSuggestion(
@@ -1077,6 +1444,11 @@ export function InboxView({
                       <strong>{row.sender ?? "Unknown sender"}</strong>
                       <h3>{row.subject ?? "(No subject)"}</h3>
                       <p>Stored analysis · review required</p>
+                      {row.analysis && <p>
+                        Suggested actions: {row.analysis.intents
+                          .map(reviewIntentLabel)
+                          .join(" · ")}
+                      </p>}
                       {leadRetirementErrorIds.has(row.id) && <p role="status">
                         Lead created, but this message is still in review. Use Mark reviewed to retire it when the queue is available.
                       </p>}
@@ -1109,6 +1481,47 @@ export function InboxView({
                         <Users size={14} />
                         Create lead
                       </button>}
+                      {row.analysis?.intents.includes("project-update") && <button
+                        className="soft-button"
+                        type="button"
+                        onClick={() => {
+                          if (markingReviewId !== null) return;
+                          acceptProjectUpdate(row);
+                        }}
+                        aria-disabled={markingReviewId !== null}
+                        aria-label={`Review project update: ${row.subject ?? row.sender ?? "message"}`}
+                      >
+                        <FolderOpen size={14} aria-hidden="true" />
+                        Review project update
+                      </button>}
+                      {row.analysis?.intents.includes("schedule")
+                        && <button
+                          className="soft-button"
+                          type="button"
+                          onClick={() => {
+                            if (markingReviewId !== null) return;
+                            openTaskProposal(row, "schedule");
+                          }}
+                          aria-disabled={markingReviewId !== null}
+                          aria-label={`Create schedule task: ${row.subject ?? row.sender ?? "message"}`}
+                        >
+                          <CalendarClock size={14} aria-hidden="true" />
+                          Create schedule task
+                        </button>}
+                      {row.analysis?.intents.includes("warranty")
+                        && <button
+                          className="soft-button"
+                          type="button"
+                          onClick={() => {
+                            if (markingReviewId !== null) return;
+                            openTaskProposal(row, "warranty");
+                          }}
+                          aria-disabled={markingReviewId !== null}
+                          aria-label={`Create warranty callback task: ${row.subject ?? row.sender ?? "message"}`}
+                        >
+                          <Wrench size={14} aria-hidden="true" />
+                          Create warranty callback task
+                        </button>}
                       <button
                         className="soft-button"
                         ref={(node) => {
@@ -1248,6 +1661,18 @@ export function InboxView({
       onPreview={previewGmailFiling}
       onConfirm={confirmGmailFiling}
       onClose={closeFilingReview}
+    />}
+    {taskProposal && <InboxTaskProposalModal
+      proposal={taskProposal}
+      projects={projects}
+      saving={taskSaving}
+      error={taskError}
+      onChange={(next) => {
+        setTaskProposal(next);
+        setTaskError("");
+      }}
+      onSubmit={() => void createTaskFromProposal()}
+      onClose={closeTaskProposal}
     />}
     {replyMessage && <GmailReplyModal
       message={replyMessage}

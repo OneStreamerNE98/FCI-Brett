@@ -5,6 +5,8 @@ import { createServer } from "vite";
 
 const OFFICE_EMAIL = "admincrm@cherryhillfci.com";
 const SECOND_OFFICE_EMAIL = "task-editor@example.test";
+const REVIEW_ADMIN_EMAIL = "inbox-review-admin@example.test";
+const REVIEW_VALIDATION_ADMIN_EMAIL = "inbox-review-validation@example.test";
 const PROJECT_ID = "33333333-3333-4333-8333-333333333333";
 const LEAD_ID = "55555555-5555-4555-8555-555555555555";
 const MISSING_PROJECT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -13,6 +15,9 @@ const TASK_ID = "11111111-1111-4111-8111-111111111111";
 const CREATE_ACTIVITY_ID = "22222222-2222-4222-8222-222222222222";
 const COMPLETE_ACTIVITY_ID = "44444444-4444-4444-8444-444444444444";
 const REOPEN_ACTIVITY_ID = "77777777-7777-4777-8777-777777777777";
+const REVIEW_ID = "99999999-9999-4999-8999-999999999999";
+const CONNECTION_KEY = "workspace-simulation";
+const GMAIL_MESSAGE_ID = "gmail-ai11-task-accept";
 const CREATED_AT = Date.UTC(2026, 6, 23, 12, 0, 0);
 const COMPLETED_AT = CREATED_AT + 60_000;
 
@@ -45,14 +50,18 @@ class StatefulD1Database {
   reset({
     projectIds = [PROJECT_ID],
     leadIds = [LEAD_ID],
+    mailItems = [],
   } = {}) {
     this.tasks = new Map();
     this.meetings = new Map();
     this.activities = [];
+    this.mailItems = new Map(mailItems.map((item) => [item.id, { ...item }]));
     this.prepared = [];
     this.projectIds = new Set(projectIds);
     this.leadIds = new Set(leadIds);
     this.taskReadBarrier = null;
+    this.failNextTaskInsert = false;
+    this.failNextActivityInsert = false;
   }
 
   armConcurrentTaskReads() {
@@ -138,10 +147,74 @@ class StatefulD1Database {
   }
 
   async batch(statements) {
+    const tasksSnapshot = new Map(
+      [...this.tasks].map(([id, task]) => [id, { ...task }]),
+    );
+    const mailItemsSnapshot = new Map(
+      [...this.mailItems].map(([id, item]) => [id, { ...item }]),
+    );
+    const activitiesSnapshot = this.activities.map((activity) => ({ ...activity }));
     const results = [];
     let previousChanges = 0;
-    for (const statement of statements) {
+    try {
+      for (const statement of statements) {
+      if (statement.sql.startsWith("UPDATE mail_items SET status = 'accepted'")) {
+        const reviewId = statement.values.find((value) => this.mailItems.has(value));
+        const current = reviewId ? this.mailItems.get(reviewId) : null;
+        const connectionKey = statement.values.find((value) => value === CONNECTION_KEY);
+        const gmailMessageId = statement.values.find((value) => value === GMAIL_MESSAGE_ID);
+        const intent = statement.values.find((value) =>
+          value === "schedule" || value === "warranty"
+        );
+        const acceptedAt = statement.values.find((value) =>
+          Number.isSafeInteger(value) && value >= CREATED_AT
+        );
+        const approvedProjectId = statement.values.find((value) =>
+          value === PROJECT_ID || value === null
+        ) ?? null;
+        let storedIntents = [];
+        if (current) {
+          try {
+            const payload = JSON.parse(current.analysis_payload);
+            if (Array.isArray(payload?.intents)) storedIntents = payload.intents;
+          } catch {
+            storedIntents = [];
+          }
+        }
+        if (
+          !current
+          || current.status !== "needs-review"
+          || current.connection_key !== connectionKey
+          || current.gmail_message_id !== gmailMessageId
+          || !storedIntents.includes(intent)
+        ) {
+          previousChanges = 0;
+          results.push({ meta: { changes: 0 } });
+          continue;
+        }
+        this.mailItems.set(reviewId, {
+          ...current,
+          status: "accepted",
+          approved_project_id: approvedProjectId,
+          attempted_label_definition_version: null,
+          failure_attempts: 0,
+          error_code: null,
+          updated_at: acceptedAt,
+        });
+        previousChanges = 1;
+        results.push({ meta: { changes: 1 } });
+        continue;
+      }
       if (statement.sql.startsWith("INSERT INTO tasks ")) {
+        if (this.failNextTaskInsert) {
+          this.failNextTaskInsert = false;
+          throw new Error("simulated D1 task insert failure");
+        }
+        if (statement.sql.includes("WHERE changes() = 1") && previousChanges !== 1) {
+          previousChanges = 0;
+          results.push({ meta: { changes: 0 } });
+          continue;
+        }
         const [
           id,
           title,
@@ -262,14 +335,29 @@ class StatefulD1Database {
         continue;
       }
       if (statement.sql.startsWith("INSERT INTO activity_events ")) {
+        if (this.failNextActivityInsert) {
+          this.failNextActivityInsert = false;
+          throw new Error("simulated D1 activity insert failure");
+        }
         const [id, recordId, action, actor, detail, createdAt] = statement.values;
+        if (
+          statement.sql.includes("EXISTS (SELECT 1 FROM tasks")
+          && !this.tasks.has(recordId)
+        ) {
+          previousChanges = 0;
+          results.push({ meta: { changes: 0 } });
+          continue;
+        }
         if (statement.sql.includes("changes() = 1")) {
           const task = this.tasks.get(statement.values[6]);
+          const versionGuarded = statement.sql.includes("version = ?");
           if (
             previousChanges !== 1
             || !task
-            || String(task.version) !== String(statement.values[7])
-            || task.updated_at !== statement.values[8]
+            || versionGuarded && (
+              String(task.version) !== String(statement.values[7])
+              || task.updated_at !== statement.values[8]
+            )
           ) {
             previousChanges = 0;
             results.push({ meta: { changes: 0 } });
@@ -282,8 +370,14 @@ class StatefulD1Database {
         continue;
       }
       throw new Error(`Unexpected D1 batch statement: ${statement.sql}`);
+      }
+      return results;
+    } catch (error) {
+      this.tasks = tasksSnapshot;
+      this.mailItems = mailItemsSnapshot;
+      this.activities = activitiesSnapshot;
+      throw error;
     }
-    return results;
   }
 }
 
@@ -291,8 +385,8 @@ const database = new StatefulD1Database();
 const originalNodeEnvironment = process.env.NODE_ENV;
 process.env.NODE_ENV = "test";
 const workerEnvironment = {
-  FCI_OFFICE_EMAILS: `${OFFICE_EMAIL},${SECOND_OFFICE_EMAIL}`,
-  FCI_ADMIN_EMAILS: OFFICE_EMAIL,
+  FCI_OFFICE_EMAILS: `${OFFICE_EMAIL},${SECOND_OFFICE_EMAIL},${REVIEW_ADMIN_EMAIL},${REVIEW_VALIDATION_ADMIN_EMAIL}`,
+  FCI_ADMIN_EMAILS: `${OFFICE_EMAIL},${REVIEW_ADMIN_EMAIL},${REVIEW_VALIDATION_ADMIN_EMAIL}`,
   DB: database,
 };
 const deferredChatTasks = [];
@@ -650,7 +744,7 @@ test("D1 task routes round-trip create, list, and completion with activity evide
     .filter(({ sql }) => sql.startsWith("INSERT INTO activity_events "));
   assert.equal(taskActivityInserts.length > 0, true);
   assert.equal(
-    taskActivityInserts.every(({ sql }) => sql.includes("EXISTS (SELECT 1 FROM tasks")),
+    taskActivityInserts.every(({ sql }) => /EXISTS\s*\(\s*SELECT 1 FROM tasks/u.test(sql)),
     true,
   );
   assert.equal(
@@ -659,6 +753,196 @@ test("D1 task routes round-trip create, list, and completion with activity evide
       .every(({ sql }) => sql.includes("AND EXISTS (SELECT 1 FROM tasks")),
     true,
   );
+});
+
+test("D1 task route atomically accepts a matching schedule review through the existing POST", async () => {
+  database.reset({ mailItems: [inboxReviewRow()] });
+  const requestBody = {
+    title: "Schedule the customer-requested measure",
+    details: "Proposed from the reviewed email. Confirm the exact time before committing.",
+    projectId: PROJECT_ID,
+    source: "email",
+    sourceRef: GMAIL_MESSAGE_ID,
+    inboxReviewId: REVIEW_ID,
+    inboxReviewIntent: "schedule",
+  };
+  const response = await tasksRoute.POST(taskRequest(
+    "/api/v1/tasks",
+    "POST",
+    requestBody,
+    REVIEW_ADMIN_EMAIL,
+  ));
+
+  assert.equal(response.status, 201);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  const body = await response.json();
+  assert.equal(body.task.source, "email");
+  assert.equal(body.task.sourceRef, GMAIL_MESSAGE_ID);
+  assert.deepEqual(body.inboxReview, { id: REVIEW_ID, status: "accepted" });
+  assert.equal(database.tasks.size, 1);
+  assert.deepEqual(
+    database.activities.map(({ action }) => action),
+    ["Task created"],
+  );
+  assert.deepEqual(database.mailItems.get(REVIEW_ID), {
+    ...inboxReviewRow(),
+    status: "accepted",
+    approved_project_id: PROJECT_ID,
+    attempted_label_definition_version: null,
+    failure_attempts: 0,
+    error_code: null,
+    updated_at: database.mailItems.get(REVIEW_ID).updated_at,
+  });
+  assert.equal(
+    Number.isSafeInteger(database.mailItems.get(REVIEW_ID).updated_at),
+    true,
+  );
+
+  const reviewUpdate = database.prepared.find(({ sql }) =>
+    sql.startsWith("UPDATE mail_items SET status = 'accepted'"));
+  assert.ok(reviewUpdate);
+  assert.match(reviewUpdate.sql, /status = 'needs-review'/u);
+  assert.match(reviewUpdate.sql, /analysis_payload/u);
+  assert.match(reviewUpdate.sql, /json_valid\(analysis_payload\) = 1/u);
+  assert.match(reviewUpdate.sql, /json_type\(analysis_payload, '\$\.intents'\) = 'array'/u);
+  assert.match(reviewUpdate.sql, /stored_intent\.type = 'text'/u);
+  const guardedTaskInsert = database.prepared.find(({ sql }) =>
+    sql.startsWith("INSERT INTO tasks ") && sql.includes("changes() = 1"));
+  assert.ok(guardedTaskInsert, "task creation is fenced by the accepted-row update");
+
+  const repeated = await tasksRoute.POST(taskRequest(
+    "/api/v1/tasks",
+    "POST",
+    requestBody,
+    REVIEW_ADMIN_EMAIL,
+  ));
+  assert.equal(repeated.status, 409);
+  assert.deepEqual(await repeated.json(), {
+    error: "Inbox review changed since it was loaded.",
+  });
+  assert.equal(database.tasks.size, 1);
+  assert.equal(database.activities.length, 1);
+});
+
+test("D1 task route keeps a stale or mismatched review atomic and admin-only", async () => {
+  for (const row of [
+    inboxReviewRow({ status: "dismissed" }),
+    inboxReviewRow({
+      analysis_payload: JSON.stringify({ intents: ["project-update"] }),
+    }),
+    inboxReviewRow({
+      analysis_payload: JSON.stringify({ intents: "schedule" }),
+    }),
+    inboxReviewRow({
+      analysis_payload: "{not-json",
+    }),
+    inboxReviewRow({
+      connection_key: "another-workspace",
+    }),
+    inboxReviewRow({
+      gmail_message_id: "another-gmail-message",
+    }),
+  ]) {
+    database.reset({ mailItems: [row] });
+    const response = await tasksRoute.POST(taskRequest("/api/v1/tasks", "POST", {
+      title: "Must not be created",
+      source: "email",
+      sourceRef: GMAIL_MESSAGE_ID,
+      inboxReviewId: REVIEW_ID,
+      inboxReviewIntent: "schedule",
+    }, REVIEW_ADMIN_EMAIL));
+    assert.equal(response.status, 409);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(database.tasks.size, 0);
+    assert.deepEqual(database.activities, []);
+    assert.deepEqual(database.mailItems.get(REVIEW_ID), row);
+  }
+
+  database.reset({ mailItems: [inboxReviewRow()] });
+  const forbidden = await tasksRoute.POST(taskRequest(
+    "/api/v1/tasks",
+    "POST",
+    {
+      title: "Non-admin must not accept inbox work",
+      source: "email",
+      sourceRef: GMAIL_MESSAGE_ID,
+      inboxReviewId: REVIEW_ID,
+      inboxReviewIntent: "schedule",
+    },
+    SECOND_OFFICE_EMAIL,
+  ));
+  assert.equal(forbidden.status, 403);
+  assert.equal(database.tasks.size, 0);
+  assert.deepEqual(database.activities, []);
+  assert.deepEqual(database.mailItems.get(REVIEW_ID), inboxReviewRow());
+});
+
+test("D1 task route rejects malformed review composition before persistence", async () => {
+  for (const body of [
+    {
+      title: "Missing the paired intent",
+      source: "email",
+      sourceRef: GMAIL_MESSAGE_ID,
+      inboxReviewId: REVIEW_ID,
+    },
+    {
+      title: "Unsupported accept action",
+      source: "email",
+      sourceRef: GMAIL_MESSAGE_ID,
+      inboxReviewId: REVIEW_ID,
+      inboxReviewIntent: "project-update",
+    },
+    {
+      title: "Review accepts cannot masquerade as manual work",
+      source: "manual",
+      sourceRef: GMAIL_MESSAGE_ID,
+      inboxReviewId: REVIEW_ID,
+      inboxReviewIntent: "schedule",
+    },
+  ]) {
+    database.reset({ mailItems: [inboxReviewRow()] });
+    const response = await tasksRoute.POST(taskRequest(
+      "/api/v1/tasks",
+      "POST",
+      body,
+      REVIEW_VALIDATION_ADMIN_EMAIL,
+    ));
+    assert.equal(response.status, 400);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(database.tasks.size, 0);
+    assert.deepEqual(database.activities, []);
+    assert.deepEqual(database.mailItems.get(REVIEW_ID), inboxReviewRow());
+  }
+});
+
+test("D1 task adapter rolls the review decision back when task persistence fails", async () => {
+  const row = inboxReviewRow();
+  database.reset({ mailItems: [row] });
+  database.failNextTaskInsert = true;
+  const repository = createD1TaskRepository(database);
+
+  await assert.rejects(
+    repository.create(inboxReviewTaskCreationIntent("warranty")),
+    /simulated D1 task insert failure/u,
+  );
+  assert.equal(database.tasks.size, 0);
+  assert.deepEqual(database.activities, []);
+  assert.deepEqual(database.mailItems.get(REVIEW_ID), row);
+});
+
+test("D1 task adapter rolls the review decision back when audit persistence fails", async () => {
+  const row = inboxReviewRow();
+  database.reset({ mailItems: [row] });
+  database.failNextActivityInsert = true;
+  const repository = createD1TaskRepository(database);
+
+  await assert.rejects(
+    repository.create(inboxReviewTaskCreationIntent()),
+    /simulated D1 activity insert failure/u,
+  );
+  assert.equal(database.tasks.size, 0);
+  assert.deepEqual(database.activities, []);
+  assert.deepEqual(database.mailItems.get(REVIEW_ID), row);
 });
 
 test("D1 task route rejects a second write at the same version without audit evidence", async () => {
@@ -953,6 +1237,45 @@ function taskCreationIntent(overrides = {}) {
   };
 }
 
+function inboxReviewRow(overrides = {}) {
+  return {
+    id: REVIEW_ID,
+    connection_key: CONNECTION_KEY,
+    gmail_message_id: GMAIL_MESSAGE_ID,
+    status: "needs-review",
+    approved_project_id: null,
+    analysis_payload: JSON.stringify({
+      intents: ["schedule", "warranty"],
+    }),
+    attempted_label_definition_version: "catalog-prior-attempt",
+    failure_attempts: 2,
+    error_code: "analysis_failed",
+    updated_at: CREATED_AT,
+    ...overrides,
+  };
+}
+
+function inboxReviewTaskCreationIntent(
+  intent = "schedule",
+  overrides = {},
+) {
+  return {
+    ...taskCreationIntent({
+      source: "email",
+      source_ref: GMAIL_MESSAGE_ID,
+      ...overrides,
+    }),
+    inboxReview: {
+      id: REVIEW_ID,
+      connectionKey: CONNECTION_KEY,
+      gmailMessageId: GMAIL_MESSAGE_ID,
+      intent,
+      approvedProjectId: PROJECT_ID,
+      acceptedAt: CREATED_AT,
+    },
+  };
+}
+
 function postgresTaskRow(overrides = {}) {
   const task = taskRow(overrides);
   return {
@@ -1001,6 +1324,131 @@ test("PostgreSQL task create atomically stores the row and activity evidence", a
     outcome: "created",
     value: task,
   });
+  client.assertComplete();
+});
+
+test("PostgreSQL task create atomically accepts a matching inbox review", async () => {
+  const intent = inboxReviewTaskCreationIntent("warranty");
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    pgStep(
+      /UPDATE mail_items[\s\S]*status = 'accepted'[\s\S]*status = 'needs-review'/u,
+      pgResult([{ id: REVIEW_ID }], 1),
+      ({ sql, values }) => {
+        assert.match(sql, /connection_key/u);
+        assert.match(sql, /gmail_message_id/u);
+        assert.match(sql, /analysis_payload/u);
+        assert.match(
+          sql,
+          /pg_catalog\.jsonb_typeof\(analysis_payload -> 'intents'\) = 'array'/u,
+        );
+        assert.equal(values.includes(REVIEW_ID), true);
+        assert.equal(values.includes(CONNECTION_KEY), true);
+        assert.equal(values.includes(GMAIL_MESSAGE_ID), true);
+        assert.equal(values.includes("warranty"), true);
+        assert.equal(values.includes(PROJECT_ID), true);
+      },
+    ),
+    pgStep(/INSERT INTO tasks/u, pgResult([postgresTaskRow({
+      source: "email",
+      source_ref: GMAIL_MESSAGE_ID,
+    })], 1)),
+    pgStep(/INSERT INTO activity_events[\s\S]*task_id/u, pgResult([], 1)),
+    pgStep(/^COMMIT$/u),
+  ]);
+  const repository = createPostgresTaskRepository(new ScriptedPostgresPool(client), {
+    schema: "task_test",
+  });
+
+  assert.deepEqual(await repository.create(intent), {
+    outcome: "review-accepted",
+    value: taskRow({
+      source: "email",
+      source_ref: GMAIL_MESSAGE_ID,
+    }),
+    inboxReview: {
+      id: REVIEW_ID,
+      status: "accepted",
+    },
+  });
+  client.assertComplete();
+});
+
+test("PostgreSQL stale inbox review creates no task or audit", async () => {
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    pgStep(
+      /UPDATE mail_items[\s\S]*status = 'needs-review'/u,
+      pgResult([], 0),
+    ),
+    pgStep(/^COMMIT$/u),
+  ]);
+  const repository = createPostgresTaskRepository(new ScriptedPostgresPool(client), {
+    schema: "task_test",
+  });
+
+  assert.deepEqual(
+    await repository.create(inboxReviewTaskCreationIntent()),
+    { outcome: "review-not-found" },
+  );
+  assert.equal(
+    client.queries.some(({ sql }) =>
+      sql.startsWith("INSERT INTO tasks")
+      || sql.startsWith("INSERT INTO activity_events")),
+    false,
+  );
+  client.assertComplete();
+});
+
+test("PostgreSQL rolls back the inbox review when task persistence fails", async () => {
+  const taskError = new Error("simulated PostgreSQL task insert failure");
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    pgStep(
+      /UPDATE mail_items[\s\S]*status = 'needs-review'/u,
+      pgResult([{ id: REVIEW_ID }], 1),
+    ),
+    pgErrorStep(/INSERT INTO tasks/u, taskError),
+    pgStep(/^ROLLBACK$/u),
+  ]);
+  const repository = createPostgresTaskRepository(new ScriptedPostgresPool(client), {
+    schema: "task_test",
+  });
+
+  await assert.rejects(
+    repository.create(inboxReviewTaskCreationIntent()),
+    /simulated PostgreSQL task insert failure/u,
+  );
+  assert.equal(
+    client.queries.some(({ sql }) => sql.startsWith("INSERT INTO activity_events")),
+    false,
+  );
+  client.assertComplete();
+});
+
+test("PostgreSQL rolls back the inbox review and task when audit persistence fails", async () => {
+  const activityError = new Error("simulated PostgreSQL activity insert failure");
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    pgStep(
+      /UPDATE mail_items[\s\S]*status = 'needs-review'/u,
+      pgResult([{ id: REVIEW_ID }], 1),
+    ),
+    pgStep(/INSERT INTO tasks/u, pgResult([postgresTaskRow({
+      source: "email",
+      source_ref: GMAIL_MESSAGE_ID,
+    })], 1)),
+    pgErrorStep(/INSERT INTO activity_events[\s\S]*task_id/u, activityError),
+    pgStep(/^ROLLBACK$/u),
+  ]);
+  const repository = createPostgresTaskRepository(new ScriptedPostgresPool(client), {
+    schema: "task_test",
+  });
+
+  await assert.rejects(
+    repository.create(inboxReviewTaskCreationIntent()),
+    /simulated PostgreSQL activity insert failure/u,
+  );
   client.assertComplete();
 });
 

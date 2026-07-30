@@ -61,6 +61,11 @@ export const INBOX_ANALYSIS_SWEEP_DEADLINE_MS = 55_000;
 const CAUGHT_UP_MESSAGE = "You're caught up";
 const OLDER_PENDING_MESSAGE = "Older messages not yet analyzed";
 const INBOX_ANALYSIS_INTENT_SET = new Set<string>(INBOX_ANALYSIS_INTENTS);
+const INBOX_ANALYSIS_CONFIDENCE_SET = new Set([
+  "high",
+  "medium",
+  "low",
+]);
 const REVIEW_LEAD_FIELD_LIMITS = Object.freeze({
   company: 180,
   contactName: 160,
@@ -1321,12 +1326,46 @@ function reviewQueueLeadProposal(item: MailItem) {
   });
 }
 
+function reviewQueueAnalysis(item: MailItem) {
+  const payload = item.analysisPayload;
+  if (
+    !payload
+    || !Array.isArray(payload.intents)
+    || payload.intents.length === 0
+    || payload.intents.some((intent) =>
+      typeof intent !== "string" || !INBOX_ANALYSIS_INTENT_SET.has(intent)
+    )
+    || new Set(payload.intents).size !== payload.intents.length
+    || typeof item.confidence !== "string"
+    || !INBOX_ANALYSIS_CONFIDENCE_SET.has(item.confidence)
+    || typeof item.matchReason !== "string"
+  ) {
+    return null;
+  }
+  const rationale = item.matchReason.replace(/\s+/g, " ").trim();
+  if (
+    !rationale
+    || rationale.length > 200
+    || /[\u0000-\u001f\u007f]/.test(item.matchReason)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    gmailMessageId: item.gmailMessageId,
+    intents: Object.freeze([...payload.intents]),
+    projectId: item.suggestedProjectId,
+    confidence: item.confidence,
+    rationale,
+  });
+}
+
 function reviewQueueRow(item: MailItem) {
   return Object.freeze({
     id: item.id,
     subject: item.subject,
     sender: item.sender,
     receivedAt: item.receivedAt,
+    analysis: reviewQueueAnalysis(item),
     leadProposal: reviewQueueLeadProposal(item),
   });
 }
