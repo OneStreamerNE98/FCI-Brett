@@ -20,6 +20,7 @@ type ModalExpectation = Readonly<{
   dialogName: string;
   readyRecord?: RegExp;
   readyEmptyHeading?: string;
+  alignedControlPairs: readonly (readonly [string, string])[];
   hints: readonly HintExpectation[];
 }>;
 
@@ -30,6 +31,7 @@ const auditedModals: readonly ModalExpectation[] = [
     openButton: "Add lead",
     dialogName: "Add a lead",
     readyEmptyHeading: "No active leads",
+    alignedControlPairs: [['input[name="value"]', 'input[name="site"]']],
     hints: [
       { label: "About lead estimated value", text: leadEstimatedValueHint, resolvedAnchor: "left" },
     ],
@@ -40,6 +42,7 @@ const auditedModals: readonly ModalExpectation[] = [
     openButton: "Add client",
     dialogName: "Add a client",
     readyRecord: /Open client E2E Regression Client/u,
+    alignedControlPairs: [['select[name="industry"]', 'select[name="status"]']],
     hints: [
       { label: "About client status", text: clientStatusHint, resolvedAnchor: "right" },
     ],
@@ -50,6 +53,10 @@ const auditedModals: readonly ModalExpectation[] = [
     openButton: "New project",
     dialogName: "Create a project",
     readyRecord: /E2E Mobile Metadata Project/u,
+    alignedControlPairs: [
+      ['select[name="status"]', 'input[name="value"]'],
+      ['select[name="flooringCategory"]', 'input[name="squareFeet"]'],
+    ],
     hints: [
       { label: "About project status", text: projectStatusHint, resolvedAnchor: "left" },
       { label: "About flooring category", text: projectFlooringCategoryHint, resolvedAnchor: "left" },
@@ -190,6 +197,15 @@ test.describe("HINT-02-B FloorOps modal hints", () => {
           await expect(hintContainer).not.toHaveClass(/info-hint-anchor-left/u);
         }
         await page.keyboard.press("Escape");
+      }
+      for (const [leftSelector, rightSelector] of modalExpectation.alignedControlPairs) {
+        const [leftBox, rightBox] = await Promise.all([
+          dialog.locator(leftSelector).boundingBox(),
+          dialog.locator(rightSelector).boundingBox(),
+        ]);
+        expect(leftBox).not.toBeNull();
+        expect(rightBox).not.toBeNull();
+        expect(Math.abs((leftBox?.y ?? 0) - (rightBox?.y ?? 0))).toBeLessThanOrEqual(0.5);
       }
 
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
