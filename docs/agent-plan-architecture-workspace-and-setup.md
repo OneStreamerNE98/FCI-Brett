@@ -1016,6 +1016,33 @@ removes both failure modes. The current dead-end is **deliberate and pinned**
 enhancement, not a defect — but it is the natural EDIT-08, or a rider on
 EDIT-03's concurrency foundation.
 
+### EDIT-08 · Read a single task by id (small, after EDIT-07)
+**Filed July 30, 2026 on the owner's decision**, from the EDIT-07 review residual above.
+**Why:** `app/api/v1/tasks/[taskId]/route.ts` exports **only `PATCH`**. There is no way to
+read one task. Two consequences, both live today: the EDIT-07 conflict recovery
+(`readCurrentTask` in `TaskManagementPanel.tsx`) must fetch up to **four capped lists** and
+scan them for an exact version match, and a task beyond the 200-row cap can therefore
+**never** be recovered from a 409 at all — the editor dead-ends and the user's draft is
+unsaveable. A by-id read collapses four requests into one and removes both failure modes.
+**Do:** add `export async function GET` to the existing
+`app/api/v1/tasks/[taskId]/route.ts` — **no new route file**. Keep the established shape:
+`requireOfficeUser` ahead of all work, no-store helpers, 404 for a missing id, and the same
+record shape `isTaskManagementRecord` already validates so the client needs no new parser.
+Then re-point `readCurrentTask` at it and delete the four-search fallback.
+**Deliberately in scope:** the e2e spec
+`tests/e2e/edit07-task-management-ui.spec.ts:402` ("a rejected 409 recovery read disables
+re-apply and cannot issue a second PATCH") pins the **current** dead-end as intended
+behaviour. It must be re-pointed **consciously** and the packet must say so — that spec is a
+recorded design decision, not a safety rail, and silently editing it is the failure mode
+this ledger keeps warning about.
+**Accept:** a 409 on a task outside the first 200 rows recovers and re-applies successfully;
+the by-id read is admin/office-gated identically to `PATCH` and returns 401/403 before any
+database work; `GET` adds no write keyword to the route; the four-search fallback is gone;
+the re-pointed e2e spec asserts successful recovery rather than the dead-end, with the
+change explained in the PR; `npm test`, `npm run test:e2e`, `npm run lint` all named with
+outcomes.
+**Effort:** small. **Cost:** $0.
+
 ---
 
 # Workstream B — Google Workspace connection & data flows (WS)
@@ -2176,6 +2203,36 @@ status visible while collapsed) in addition to manual collapse/expand + axe;
 collapsed state is presentation-only; no golden impact (settings surfaces
 are not golden-hashed); Guide impact stated per the currency rule.
 **Effort:** small-medium. **Cost:** $0.
+
+### SET-39 · Visible build stamp tied to the deployed commit (small, no deps)
+**Filed July 30, 2026 on the owner's decision.**
+**Why:** the app displays **no version or build identifier anywhere**, and until the owner
+created the canonical deployment log (GitHub issue #258) there was no record of what was
+live at all. The cost of that was concrete and recent: this file carried
+`Deployment baseline: adc79b8 … version 40` from **July 19** through eleven days of merges,
+an agent quoted it to the owner as current fact, and produced two different wrong counts of
+"undeployed" work ("61", then "75") before the owner said he could see that day's merges
+running on the live site. Issue #258 fixes the *record*; it does not make the answer
+readable from the screen. Anyone looking at the app still cannot tell which commit they are
+looking at, which is exactly how a stale claim went unchallenged for eleven days.
+**Do:** surface the deployed commit SHA (short form) and build time in the UI, in one
+low-traffic place — the natural home is the Settings → Data & security or Testing & launch
+area beside the existing read-only cards, **not** the top bar or any dashboard surface
+(golden hashes, and no new nav). Source it from the build rather than a hand-maintained
+constant: a build-time environment value baked at compile time, so it **cannot** be edited
+into a lie the way the ledger line was. Render it as plain text with a copy affordance so it
+can be pasted into an issue #258 entry. If the value is absent (local dev), say so honestly
+— `Build identifier unavailable` — rather than printing a placeholder that reads like a
+real SHA.
+**Deliberately excluded:** no update-checking, no "new version available" prompt, no
+telemetry, no phoning home. This is a label, not a mechanism.
+**Accept:** the deployed short SHA and build time render in exactly one Settings location
+and match the commit recorded in the newest issue #258 entry; the value comes from the
+build, not from a checked-in constant; a missing value renders an honest unavailable state
+rather than a fake one; no new nav item, page, or Settings section; **golden hashes
+untouched** (this must not touch Overview or Reports markup); `npm test`,
+`npm run test:e2e`, `npm run lint` all named with outcomes.
+**Effort:** small. **Cost:** $0.
 
 ---
 
