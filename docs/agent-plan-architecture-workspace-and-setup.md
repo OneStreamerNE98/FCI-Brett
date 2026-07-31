@@ -3781,8 +3781,14 @@ remain the only dispatch authority).
   Sheets reads" premise was false (no scheduler exists and repo law forbids one); the
   packet now specifies an on-demand admin-triggered read with a durable watermark, on the
   AI-10 precedent. GI-01 is dispatchable.
-- Nightly-review program: nights 2–5 and 9–10 pending the owner's kickoff; its specs live
-  outside the repo — owner to decide enshrine vs retire before the next night runs.
+- Nightly-review program: nights 2–5 and 9–10 remain pending the owner's kickoff, but the
+  enshrine-vs-retire decision is **settled — the owner chose enshrine, July 30, 2026.**
+  Their specs now live in `docs/nightly-reviews/SPECS.md` rather than in a chat session, so
+  a kickoff no longer depends on a transcript surviving. Those six specs are **reconstructed
+  from the program rules and the four completed nights, not recovered verbatim**; judgement
+  calls are marked `[reconstructed]` and the owner's memory outranks the file. The program
+  rules and co-run matrix in `docs/nightly-reviews/README.md` are recovered and
+  authoritative.
 
 **Open owner decisions (recorded homes only when decided):**
 - Flooring-specific intents: selection/sample decision; change-order/approval (plan PART 1).
