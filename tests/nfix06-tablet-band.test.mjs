@@ -47,8 +47,8 @@ test("NFIX-06 gives the Inbox toolbar and search their own rows through the tabl
   assert.match(rules.get(".gmail-search-help") ?? "", /max-width:none/);
 });
 
-test("NFIX-06 promotes Projects rows through the measured 900px edge", () => {
-  const { body, rules } = mediaRules(globals, "min-width:821px) and (max-width:900px");
+test("NFIX-06 promotes Projects rows through the measured 960px edge", () => {
+  const { body, rules } = mediaRules(globals, "min-width:821px) and (max-width:960px");
   assert.match(rules.get(".projects-table-head") ?? "", /display:none/);
   assert.match(
     rules.get(".projects-table-row") ?? "",
@@ -65,6 +65,8 @@ test("NFIX-06 promotes Projects rows through the measured 900px edge", () => {
 });
 
 test("NFIX-06 contains the Testing & launch setup action inside its tablet card", () => {
+  // Its own 900 bound on purpose: the card right edge is a constant x=896, so 821-900
+  // covers the whole failing range. Projects needs 960; this does not.
   const { rules } = mediaRules(globals, "min-width:821px) and (max-width:900px");
   assert.match(rules.get(".test-launch .settings-heading") ?? "", /display:grid/);
   assert.match(rules.get(".test-launch .settings-heading") ?? "", /gap:12px/);
