@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Building2,
   CircleAlert,
+  Clock3,
+  Copy,
   Globe2,
   Mail,
   RefreshCw,
@@ -13,6 +15,8 @@ import {
   UserRoundCheck,
   Users,
 } from "lucide-react";
+import { BUILD_INFORMATION } from "../../lib/build-information";
+import styles from "./DataSecurityPanel.module.css";
 
 const PhoneInstallPanel = dynamic(
   () => import("../../PhoneInstallPanel").then((module) => module.PhoneInstallPanel),
@@ -27,6 +31,7 @@ type DevelopmentAccess = {
   adminEmails: string[];
 };
 type LoadState = "loading" | "ready" | "error";
+type CopyState = "idle" | "copied" | "error";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -64,6 +69,59 @@ function IdentifierSummary({
       <small>{identifiers.length > 0 ? identifiers.join(", ") : "None configured"}</small>
     </span>
   </div>;
+}
+
+function BuildInformationCard() {
+  const [copyState, setCopyState] = useState<CopyState>("idle");
+
+  async function copyBuildInformation() {
+    if (!BUILD_INFORMATION) return;
+
+    try {
+      await navigator.clipboard.writeText(
+        `Commit: ${BUILD_INFORMATION.commitSha}\nBuild time: ${BUILD_INFORMATION.builtAt}`,
+      );
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  }
+
+  return <section className={`panel settings-form-panel ${styles.buildInformation}`} aria-labelledby="build-information-heading">
+    <div className="settings-heading">
+      <div>
+        <p className="eyebrow">Deployment reference</p>
+        <h2 id="build-information-heading">Build information</h2>
+        <p>Use this read-only identifier when recording or checking a deployment in GitHub issue #258.</p>
+      </div>
+      <Clock3 size={22} aria-hidden="true" />
+    </div>
+
+    {BUILD_INFORMATION ? <div className={`settings-data-notice ${styles.buildData}`} role="note">
+      <Settings size={19} aria-hidden="true" />
+      <div>
+        <strong>Commit <code>{BUILD_INFORMATION.commitSha}</code></strong>
+        <span>Built <time dateTime={BUILD_INFORMATION.builtAt}>{BUILD_INFORMATION.builtAt}</time></span>
+        <span className="sr-only" role="status" aria-live="polite">
+          {copyState === "copied"
+            ? "Build information copied."
+            : copyState === "error"
+              ? "Build information could not be copied."
+              : ""}
+        </span>
+      </div>
+      <button type="button" className="soft-button" onClick={() => void copyBuildInformation()}>
+        <Copy size={14} aria-hidden="true" />
+        {copyState === "copied" ? "Copied" : "Copy build details"}
+      </button>
+    </div> : <div className={`settings-data-notice ${styles.buildData}`} role="status">
+      <CircleAlert size={19} aria-hidden="true" />
+      <div>
+        <strong>Build identifier unavailable</strong>
+        <span>This local build was not supplied verified commit and build-time metadata.</span>
+      </div>
+    </div>}
+  </section>;
 }
 
 function WhoHasAccessCard() {
@@ -175,6 +233,6 @@ export function DataSecurityPanel() {
   return <>
     <section className="panel settings-form-panel"><div className="settings-heading"><div><p className="eyebrow">Safety & access</p><h2>Data & security</h2><p>These safeguards protect the development workspace and identify what must be completed before staff-wide production use.</p></div></div><div className="settings-security-list"><div><ShieldCheck size={18} /><span><strong>Review-first email filing</strong><small>Messages retain Inbox; project copies and FCI/Filed occur only after a direct approval.</small></span></div><div><Users size={18} /><span><strong>One administrator-approved Workspace connection</strong><small>The company connection supplies Gmail, Calendar, Shared Drive, and Sheets. Consumer Google accounts are rejected in live mode.</small></span></div><div><Building2 size={18} /><span><strong>Local Workspace simulation is isolated</strong><small>Simulation uses local sample data, creates no OAuth tokens, and never sends requests to Google services.</small></span></div><div><Settings size={18} /><span><strong>Installable development web app</strong><small>This development site includes a web-app manifest. The future production app will be installed from its Google Cloud address.</small></span></div></div><PhoneInstallPanel /></section>
     <WhoHasAccessCard />
+    <BuildInformationCard />
   </>;
 }
-
