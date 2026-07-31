@@ -1021,7 +1021,7 @@ enhancement, not a defect — but it is the natural EDIT-08, or a rider on
 EDIT-03's concurrency foundation.
 
 ### EDIT-08 · Read a single task by id (small, after EDIT-07)
-**Status:** In progress — `codex/edit08-task-by-id`
+**Status:** Complete — PR #265, July 31, 2026. Source-only and undeployed. `GET` was added to the existing `[taskId]` route rather than a new file; auth runs ahead of all work; the four capped-list searches in `readCurrentTask` are gone. The dead-end e2e decision at `edit07-task-management-ui.spec.ts:402` was re-pointed **consciously** to assert successful row-201 recovery and re-apply, as the packet required.
 **Filed July 30, 2026 on the owner's decision**, from the EDIT-07 review residual above.
 **Why:** `app/api/v1/tasks/[taskId]/route.ts` exports **only `PATCH`**. There is no way to
 read one task. Two consequences, both live today: the EDIT-07 conflict recovery
@@ -2210,7 +2210,7 @@ are not golden-hashed); Guide impact stated per the currency rule.
 **Effort:** small-medium. **Cost:** $0.
 
 ### SET-39 · Visible build stamp tied to the deployed commit (small, no deps)
-**Status:** In progress — `codex/set39-build-stamp`
+**Status:** Complete — PR #263, July 31, 2026. Source-only and undeployed. The value is baked at build time via `build/build-information.mjs` and `vite.config.ts` — **not a checked-in constant**, which was the point: a constant can be edited into a lie the way this file's own deployment line was. **The card stays blank until a deploy supplies BOTH `FCI_BUILD_COMMIT_SHA` and `FCI_BUILD_TIMESTAMP`**; missing either renders `Build identifier unavailable` rather than a plausible fake. Recording that pairing in a runbook is DOC-06.
 **Guide impact:** None — the read-only build label does not change any owner setup or acceptance step.
 **Filed July 30, 2026 on the owner's decision.**
 **Why:** the app displays **no version or build identifier anywhere**, and until the owner
@@ -2876,10 +2876,9 @@ regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
 ### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026)
-**Status:** In progress — `codex/des11b-width-toggle`
+**Status:** Complete — PR #252 + PR #261, July 31, 2026. Source-only and undeployed. **Both sub-scopes shipped**: A the persisted span model, B the curated width toggles. The owner's July 24 movable-and-resizable dashboard design is delivered end to end. Golden hashes byte-identical throughout — verified on the merged tree, not assumed. The `app/FloorOpsApp.tsx` queue slot and the `app/globals.css` lock are both free.
 
-**SUB-SCOPE A IS COMPLETE — PR #252, July 30, 2026. Source-only and undeployed. ONLY
-SUB-SCOPE B REMAINS CLAIMABLE.** The packet carries no status line because B is still
+**Historical note, retained deliberately — sub-scope A shipped first in PR #252 and B in PR #261.** The packet carries no status line because B is still
 open and the dispatch law reads "available if and only if it has no status line" — but a
 claimant must take **B only**. Do not rebuild A.
 
@@ -3437,7 +3436,28 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
-**Status:** In progress — `codex/ai11a-typed-accepts`
+**SUB-SCOPE (a) IS COMPLETE — PR #255, July 31, 2026. Source-only and undeployed. ONLY
+(b), (c) AND (d) REMAIN CLAIMABLE.** The packet carries no status line because those three
+are still open and the dispatch law reads "available if and only if it has no status line" —
+but a claimant must take **(b), (c) or (d) only, in that order**. Do not rebuild (a).
+
+**(a), merged in PR #255 — do not redo:** the three typed accepts (project-update → the
+existing filing path; schedule and warranty → `POST /api/v1/tasks` with `source:"email"`,
+retiring the review row atomically in the same transaction), plus a review fix for a defect
+the packet's own amendment had missed.
+
+**That fix is worth reading before building (d).** Codex's independent audit (PR #256) found
+that a lead accepted through **Create lead** was stored as `dismissed`, identical to a manual
+**Mark reviewed** — so the activity view (d) plans would have misreported every lead accept
+and corrupted its per-label counts. The amendment above claimed outcomes were already
+answerable and only attribution was missing; **that was wrong — the outcome itself was wrong
+first.** The route now takes a server-validated `outcome` narrowed to
+`MailItemReviewOutcome = "accepted" | "dismissed"` (deliberately narrower than
+`MailItemStatus`, so the sweep-only terminal states cannot be reached by a human retirement),
+both adapters **bind** the status rather than interpolating it and re-guard the value, and a
+lead accept now records `accepted`. **(d) can therefore trust `mail_items.status` for
+outcomes — but still needs `reviewed_by`/`reviewed_at` for attribution**, which remains
+unbuilt exactly as the amendment specifies.
 
 **Why:** AI-10 deliberately ships one accept action; three intents accumulate in the queue with
 only a manual "mark reviewed" exit, and spec §12 decisions 5–6 name this packet as their
@@ -3544,7 +3564,7 @@ file) and for SET-06's wiring fix (their copy must describe the fixed behavior).
 the existing e2e pattern.
 
 ### HINT-02-B · Adoption, FloorOpsApp modals (small; ONE FloorOpsApp queue slot at the tail, after AI-02)
-**Status:** In progress — `codex/hint02b-floorops-modals`
+**Status:** Complete — PR #262, July 31, 2026. Source-only and undeployed. All five recommended-tier hints shipped with verbatim audit copy and placement-specific anchors, mutation-pinned. Golden hashes byte-identical, verified on the combined tree alongside DES-11(B). Two guards were added beyond the packet's ask: the forms-audit budget is now **mechanically enforced** (`previousFormsAuditHintCount + hints.length <= 20`, currently 12/20) rather than merely stated, and the FollowUpResultModal exclusion is asserted as an **absence** (`doesNotMatch(followUpResultModal, /<WorkspaceInfoHint\b/)`) so the label-fix routing cannot be quietly reversed. **The `app/FloorOpsApp.tsx` queue slot is free again.**
 **Do:** the recommended-tier hints in LeadModal, ClientModal, and
 NewProjectModal per the audit table — written against post-DES-05/07 component
 names. (FollowUpResultModal's "Post-installation callback" is a LABEL FIX per
