@@ -250,6 +250,60 @@ cards, features/maps, and repo internals were not read by any lens.
 
 ---
 
+### Night 2 — Tablet & awkward middles (run July 31, 2026; solo)
+
+Scan-first over `origin/main` at `c0f7b47`: 102 page-views (17 routes ×
+768/834/1024/600/720/900) against the seeded e2e server using the newly
+committed scanner [`tools/nightly/layout-scan.mjs`](../tools/nightly/layout-scan.mjs),
+then live `elementFromPoint` hit-testing of every candidate. Summary page:
+[`nightly-reviews/night-02-tablet-awkward-middles.md`](nightly-reviews/night-02-tablet-awkward-middles.md).
+**Two of three scan passes were discarded as invalid** — see that page's
+coverage-honesty section, which is the substantive part of this night.
+
+#### N2-1 · Inbox search input is unreachable by pointer at tablet widths (P2)
+
+At 834 the Inbox toolbar's three controls share one 34px row: mailbox `select`
+x293–421, `Load messages` button x402–522, search `input` x430–613. The button
+overlaps the select by 19px and the input by 92px. Hit-testing resolves the
+button on top, so the button itself is fine — the **search input** is blocked
+at **5/5** sample points (button at 5/25/50%, the `Inbox status` aside at 75%,
+the `Provider` div at 95%). At 900 it is blocked 4/5; at 1024, 2/5; at 768 the
+toolbar collapses and the row is clean. Clicking the search field activates
+Load messages instead. Verified live, not from rectangle geometry, and
+confirmed visually — the button is painted over the field and the
+"Search this Gma…" label truncates mid-word at the card edge. P2 not P1: the
+Inbox is admin-only, still `Dev`-badged, and keyboard tab order is unaffected —
+only pointer input is blocked. P2 not P3: a form control that cannot be clicked
+at three of six tested widths is broken, not untidy.
+
+#### N2-2 · Google Workspace resource-action rows overlap at 834/900 (P3)
+
+Inside `_resourceItemActions_`: `Open` over `Ensure spreadsheets` (77×19px),
+`Open` over `Open` (60×6px), `Open` over the info-hint trigger (34×12px), six
+overlapping pairs at each of 834 and 900. All `position: static`, opacity 1,
+pointer-events auto — real geometric collisions in an action row, not stacking
+artifacts. Lower severity than N2-1 because each control retains a clickable
+majority; no control was found fully blocked.
+
+#### N2-3 · Leads board overflow — REFUTED (no action)
+
+The scan reported 10 overflowing elements on `/leads` at each of 600/720/768
+(30 hits, the single largest cluster in the run). All are the intended Kanban
+scroller: `.board` is `overflow-x:auto; display:flex` under
+`@media (max-width:820px)`, measured `scrollWidth 1082 > clientWidth 736` with
+`scrollable: true`; at 900 it reverts to `display:grid` with no overflow.
+Recorded so a later night does not re-file it.
+
+**Coverage honesty (summary; full version on the night page).** Pass 1 lost 64
+of 102 page-views to a dev server killed by shell exit. Pass 2 lost 6 to a bug
+in this scanner — its vacuity heuristic matched `vite` inside the word
+**"Invite"**. Only pass 3 (0 vacuous) is reported. No interaction states, no
+orientation changes, no real tablet hardware, no touch-contact geometry.
+Zero page-level horizontal overflow is a weak signal here because `html, body`
+carry `overflow-x: hidden`, which clips rather than scrolls.
+
+---
+
 ## Packets
 
 ### NFIX-01 · Sheets mirror sync robustness: lease, write order, status recovery (small-medium)
