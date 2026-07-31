@@ -812,6 +812,51 @@ button { color:inherit; }
 .chat-routing-fieldset:disabled .settings-checkbox,.chat-routing-fieldset:disabled .chat-space-select{cursor:not-allowed;background:#f5f2ee;color:#746d67}
 .settings-security-list strong{overflow-wrap:anywhere;word-break:break-word}
 
+/* NFIX-06: keep the awkward tablet band reachable without changing desktop or phone markup. */
+@media (min-width:821px) and (max-width:1100px){
+  .inbox-layout{grid-template-columns:1fr}
+  .live-inbox-toolbar{align-items:stretch;flex-direction:column}
+  .live-inbox-toolbar>div:first-child{flex-wrap:wrap}
+  .live-inbox-toolbar input{width:min(100%,320px)}
+  .gmail-search-help{width:100%;max-width:none}
+}
+
+/* Upper bound is 960, not 900. While the desktop grid overflows, its tracks stay pinned at
+   min-content, so the value cell's right edge is a CONSTANT x=881 and the chevron's is
+   x=912 regardless of viewport; .projects-table{overflow:hidden} clips at panel-right
+   (W-31) and nothing scrolls back. The value is therefore only fully visible at W>=912 and
+   the chevron at W>=943, and the grid stops overflowing entirely at W=961. A 900 bound left
+   901-942 still broken — an iPad Pro 11" in landscape lands in that gap. Derived from the
+   cascade rather than from viewport clearance, which is what produced the wrong bound. */
+@media (min-width:821px) and (max-width:960px){
+  .projects-table-head{display:none}
+  .projects-table-row{grid-template-columns:minmax(0,1fr) auto 18px;gap:9px 12px;align-items:start}
+  .project-row-identity{grid-column:1;grid-row:1;min-width:0}
+  .project-row-status{grid-column:2;grid-row:1}
+  .projects-table-row>svg{grid-column:3;grid-row:1;margin-top:3px}
+  .project-row-details{grid-column:1/4;grid-row:2;display:grid!important;grid-template-columns:minmax(110px,auto) minmax(0,1fr);gap:8px 14px;align-items:center}
+  .project-row-details strong,.project-row-details small{margin:0;font-size:12px}
+  .project-row-details small{min-width:0;overflow-wrap:anywhere}
+  /* No font-size here on purpose. A `font-size:13px!important` was dropped: it is dead,
+     because `.projects-table-row strong` sits in the `font-size:12px!important` selector
+     list above at specificity (0,1,1) and beats `.project-row-value` at (0,1,0) — important
+     author declarations resolve on specificity before source order, and media queries add
+     none. The identical declaration in the <=820px block has therefore always been a no-op
+     too, so 12px is what this row has ALWAYS rendered at every width. Making 13px win would
+     be a visual change nobody has reviewed, not a fix. Left as a separate cleanup. */
+  .project-row-value{grid-column:1/4;grid-row:3;display:flex!important;align-items:baseline;gap:7px}
+  .project-row-value>span{display:inline;color:#655f59;font-size:12px;font-weight:600}
+}
+
+/* Testing & launch keeps its own 900 bound, deliberately NOT widened with Projects above.
+   Its card's right edge is a constant x=896 and is clipped by .app-shell{overflow-x:hidden}
+   only while W < 896, so 821-900 already covers the whole failing range with 4px to spare.
+   Folding it into the 960 block would stack this heading at 901-960 where it renders fine. */
+@media (min-width:821px) and (max-width:900px){
+  .test-launch .settings-heading{display:grid;gap:12px}
+  .test-launch .settings-heading>.primary-button{width:100%}
+}
+
 @media (max-width:700px){
   .chat-routing-list>li{grid-template-columns:1fr}
 }
