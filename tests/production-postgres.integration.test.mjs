@@ -106,6 +106,8 @@ test(
           "file_versions",
           "files",
           "filing_rules",
+          "google_form_lead_intake_watermarks",
+          "google_form_lead_reviews",
           "idempotency_requests",
           "integration_connection_scopes",
           "integration_connections",
