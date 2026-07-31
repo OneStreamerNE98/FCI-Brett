@@ -57,8 +57,8 @@ type StoredPreferences = {
   replySignature: string;
   notificationPreferences: Record<string, boolean>;
   pageLayouts: {
-    overview: { order: string[]; hidden: string[] };
-    reports: { order: string[]; hidden: string[] };
+    overview: { order: string[]; hidden: string[]; fullWidth: string[] };
+    reports: { order: string[]; hidden: string[]; fullWidth: string[] };
   };
 };
 
@@ -262,6 +262,133 @@ test("keyboard-only Overview reorder and hide persist, while Reset restores byte
     await expect(page.locator(".dashboard-grid")).toHaveCount(2);
     expect(await overviewLegacyMarkup(page)).toBe(defaultMarkup);
     await expect(editLayout).toBeFocused();
+  } finally {
+    await restoreStoredPreferences(page, originalPreferences).catch(() => undefined);
+  }
+});
+
+test("curated width toggles are accessible, persist their paired spans, and Reset restores the default digest", async ({ page }) => {
+  test.skip(process.env.FCI_E2E_EXTERNAL_SERVER === "true", "Persistence requires the isolated local simulation database.");
+  await mockLegacySectionRecords(page);
+  await page.goto("/");
+  const originalPreferences = await readStoredPreferences(page);
+  const overviewOrder = ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"];
+  const reportsOrder = ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"];
+  const expectedLeadFullSpans = [
+    ["metrics", "full"],
+    ["todays-meetings", "full"],
+    ["lead-pipeline", "full"],
+    ["scheduling", "half"],
+    ["active-projects", "half"],
+    ["gmail-project-inbox", "full"],
+  ];
+
+  try {
+    await restoreStoredPreferences(page, {
+      ...originalPreferences,
+      pageLayouts: {
+        overview: { order: overviewOrder, hidden: [], fullWidth: [] },
+        reports: { order: reportsOrder, hidden: [], fullWidth: [] },
+      },
+    });
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    await waitForLiveRecords(page);
+    const defaultMarkup = await overviewLegacyMarkup(page);
+    expect(legacyDigest(defaultMarkup)).toBe(OVERVIEW_LEGACY_SECTIONS_SHA256);
+
+    const widthToggleAccessibleNames: Record<string, string> = {
+      "lead-pipeline": "Full width for Lead pipeline",
+      scheduling: "Full width for Scheduling",
+      "active-projects": "Full width for Active projects",
+      "gmail-project-inbox": "Full width for Gmail project inbox",
+      "pipeline-by-stage": "Full width for Pipeline by stage",
+      "projects-by-status": "Full width for Projects by status",
+    };
+
+    for (const surface of [
+      {
+        path: "/",
+        title: "Overview",
+        toggleKeys: ["lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"],
+      },
+      {
+        path: "/reports",
+        title: "Reports",
+        toggleKeys: ["pipeline-by-stage", "projects-by-status"],
+      },
+    ]) {
+      for (const viewport of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        await page.goto(surface.path);
+        await waitForLiveRecords(page);
+        await page.getByRole("button", { name: `Edit ${surface.title} layout` }).click();
+
+        const editor = page.getByRole("region", { name: `${surface.title} layout editor` });
+        await expect(editor.getByText("Width applies on wide screens.", { exact: true })).toBeVisible();
+        const toggles = page.locator("[data-layout-width-toggle]");
+        await expect(toggles).toHaveCount(surface.toggleKeys.length);
+        expect(await toggles.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("data-layout-width-toggle")))).toEqual(surface.toggleKeys);
+
+        for (const key of surface.toggleKeys) {
+          const toggle = page.locator(`[data-layout-width-toggle="${key}"]`);
+          await expect(toggle).toBeVisible();
+          await expect(toggle).toHaveAccessibleName(widthToggleAccessibleNames[key]);
+          await expect(toggle).toHaveAttribute("aria-pressed", "false");
+          const bounds = await toggle.boundingBox();
+          expect(bounds).not.toBeNull();
+          expect(bounds?.width).toBeGreaterThanOrEqual(44);
+          expect(bounds?.height).toBeGreaterThanOrEqual(44);
+        }
+
+        await assertNoHorizontalOverflow(page);
+        await assertNoSeriousAxeViolations(page);
+      }
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    await waitForLiveRecords(page);
+    await page.getByRole("button", { name: "Edit Overview layout" }).click();
+    const leadFullWidth = page.locator('[data-layout-width-toggle="lead-pipeline"]');
+    await leadFullWidth.focus();
+    await expect(leadFullWidth).toBeFocused();
+    await expect(leadFullWidth).toHaveAccessibleName("Full width for Lead pipeline");
+    await page.keyboard.press("Space");
+    await expect(leadFullWidth).toBeFocused();
+    await expect(leadFullWidth).toHaveAccessibleName("Full width for Lead pipeline");
+    await expect(leadFullWidth).toHaveAttribute("aria-pressed", "true");
+
+    const arrangedSpans = () => page.locator("[data-page-layout-section]").evaluateAll((sections) => sections.map((section) => [
+      section.getAttribute("data-page-layout-section"),
+      section.getAttribute("data-page-layout-size"),
+    ]));
+    await expect.poll(arrangedSpans).toEqual(expectedLeadFullSpans);
+
+    const editor = page.getByRole("region", { name: "Overview layout editor" });
+    await editor.getByRole("button", { name: "Done" }).click();
+    await expect(editor).toHaveCount(0);
+    expect((await readStoredPreferences(page)).pageLayouts.overview.fullWidth).toEqual(["lead-pipeline"]);
+
+    await page.reload();
+    await waitForLiveRecords(page);
+    await expect.poll(arrangedSpans).toEqual(expectedLeadFullSpans);
+    await page.getByRole("button", { name: "Edit Overview layout" }).click();
+    await expect(page.locator('[data-layout-width-toggle="lead-pipeline"]')).toHaveAttribute("aria-pressed", "true");
+
+    const resetEditor = page.getByRole("region", { name: "Overview layout editor" });
+    await resetEditor.getByRole("button", { name: "Reset to default" }).click();
+    await expect(page.locator('[data-layout-width-toggle="lead-pipeline"]')).toHaveAttribute("aria-pressed", "false");
+    await resetEditor.getByRole("button", { name: "Done" }).click();
+    await expect(page.locator(".page-layout-grid-overview")).toHaveCount(0);
+    expect((await readStoredPreferences(page)).pageLayouts.overview.fullWidth).toEqual([]);
+
+    await page.reload();
+    await waitForLiveRecords(page);
+    const resetMarkup = await overviewLegacyMarkup(page);
+    expect(resetMarkup).toBe(defaultMarkup);
+    expect(legacyDigest(resetMarkup)).toBe(OVERVIEW_LEGACY_SECTIONS_SHA256);
   } finally {
     await restoreStoredPreferences(page, originalPreferences).catch(() => undefined);
   }

@@ -123,6 +123,16 @@
   padding: 5px 8px;
 }
 
+.sectionControls button.widthToggle {
+  min-height: var(--target-min);
+}
+
+.sectionControls button.widthToggle[aria-pressed="true"] {
+  border-color: #356b52;
+  background: #356b52;
+  color: #fff;
+}
+
 .sectionControls button:disabled,
 .addRow button:disabled {
   cursor: not-allowed;

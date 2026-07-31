@@ -204,39 +204,23 @@ export function TaskManagementPanel({
 
   async function readCurrentTask(taskId: string, currentVersion: string) {
     const requestId = ++requestIdRef.current;
-    const searches = [
-      taskManagementSearch(appliedFilters),
-      taskManagementSearch(EMPTY_TASK_FILTERS),
-      taskManagementSearch({ ...EMPTY_TASK_FILTERS, status: "open" }),
-      taskManagementSearch({ ...EMPTY_TASK_FILTERS, status: "done" }),
-    ].filter((search, index, candidates) => candidates.indexOf(search) === index);
-
     try {
-      for (const [index, search] of searches.entries()) {
-        const response = await fetch(`/api/v1/tasks?${search}`);
-        const data = await response.json().catch(() => ({})) as {
-          tasks?: unknown[];
-        };
-        if (
-          !response.ok
-          || !Array.isArray(data.tasks)
-          || !data.tasks.every(isTaskManagementRecord)
-          || requestId !== requestIdRef.current
-        ) {
-          return null;
-        }
-        if (index === 0) setTasks(data.tasks);
-        const current = data.tasks.find((candidate) => (
-          isTaskManagementRecord(candidate)
-          && candidate.id === taskId
-          && candidate.version === currentVersion
-        ));
-        if (current && isTaskManagementRecord(current)) return current;
+      const response = await fetch(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
+      const data = await response.json().catch(() => ({})) as {
+        task?: unknown;
+      };
+      if (
+        !response.ok
+        || !isTaskManagementRecord(data.task)
+        || data.task.version !== currentVersion
+        || requestId !== requestIdRef.current
+      ) {
+        return null;
       }
+      return data.task;
     } catch {
       return null;
     }
-    return null;
   }
 
   async function saveEditDraft(nextDraft: TaskManagementDraft, success: string) {
@@ -274,7 +258,7 @@ export function TaskManagementPanel({
         if (!current) {
           setConflict({ current: null });
           setEditorError(
-            "This task changed, but its exact saved version could not be found in the bounded task results. Close this editor, refresh the list, then open the task again.",
+            "This task changed, but its latest saved version could not be loaded. Close this editor, refresh the list, then open the task again.",
           );
           return;
         }

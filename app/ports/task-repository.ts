@@ -12,14 +12,28 @@ export type TaskActivityIntent = {
 
 export type TaskCreationIntent = {
   task: TaskRow;
-  activities: TaskActivityIntent[];
+  activities: [TaskActivityIntent, ...TaskActivityIntent[]];
+  inboxReview?: {
+    id: string;
+    connectionKey: string;
+    gmailMessageId: string;
+    intent: "schedule" | "warranty";
+    approvedProjectId: string | null;
+    acceptedAt: number;
+  };
 };
 
 export type TaskCreationRepositoryResult =
   | { outcome: "created"; value: TaskRow }
+  | {
+      outcome: "review-accepted";
+      value: TaskRow;
+      inboxReview: { id: string; status: "accepted" };
+    }
   | { outcome: "identifier-collision" }
   | { outcome: "project-not-found" }
-  | { outcome: "lead-not-found" };
+  | { outcome: "lead-not-found" }
+  | { outcome: "review-not-found" };
 
 export type TaskUpdateIntent = {
   task: TaskRow;

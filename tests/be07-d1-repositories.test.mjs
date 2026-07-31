@@ -427,9 +427,11 @@ test("mail-item adapter maps nullable relationships, bounds list size, and upser
   const dismissal = database.statements.at(-1);
   assert.match(
     dismissal.sql,
-    /^UPDATE mail_items SET status = 'dismissed'/u,
+    // The retirement status is now bound, not a literal, so a row records whether it
+    // was accepted or dismissed rather than collapsing every exit to "dismissed".
+    /^UPDATE mail_items SET status = \?/u,
   );
-  assert.deepEqual(dismissal.values, [33, "mail-1", "google-workspace"]);
+  assert.deepEqual(dismissal.values, ["dismissed", 33, "mail-1", "google-workspace"]);
   assert.equal(database.runs.length, 3);
 });
 

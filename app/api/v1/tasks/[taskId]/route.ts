@@ -5,14 +5,29 @@ import { createD1TaskRepository } from "../../../../adapters/d1/task-repository"
 import { updateTask } from "../../../../application/task-operations";
 import { AUTHORIZATION_CAPABILITIES } from "../../../../application/authorization-capabilities";
 import { creationAuthorizationFor } from "../../../../application/creation-authorization";
-import { MAX_TASK_BODY_BYTES } from "../../../../domain/task";
+import { MAX_TASK_BODY_BYTES, taskResponse } from "../../../../domain/task";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../../lib/development-request-rate-limit";
-import { noStoreJson as json } from "../../../../lib/no-store-json";
+import { noStoreJson as json, noStoreResponse } from "../../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
 
 type RouteContext = { params: Promise<{ taskId: string }> };
+
+export async function GET(request: NextRequest, context: RouteContext) {
+  const auth = requireOfficeUser(request);
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const { taskId } = await context.params;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(taskId)) {
+    return json({ error: "Task identifier is invalid." }, 400);
+  }
+  await ensureWorkspaceSchema();
+  const task = await createD1TaskRepository(
+    env.DB as unknown as D1Database,
+  ).findById(taskId);
+  if (!task) return json({ error: "Task not found." }, 404);
+  return json({ task: taskResponse(task) });
+}
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const originError = requireSameOrigin(request);

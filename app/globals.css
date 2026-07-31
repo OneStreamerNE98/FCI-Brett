@@ -910,3 +910,8 @@ button { color:inherit; }
   }
   .toast>.toast-dismiss{width:var(--target-min)}
 }
+
+.modal-hinted-field{min-width:0;margin-bottom:14px}
+.modal-hint-label-row{display:flex;min-width:0;align-items:center;justify-content:space-between;gap:7px}
+.modal-hint-label-row>label{min-width:0;margin-bottom:0}
+@media (min-width:561px){.modal-hint-form-row>label{padding-top:16px}}

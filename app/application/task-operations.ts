@@ -6,7 +6,10 @@ import {
   taskResponse,
   type TaskRow,
 } from "../domain/task";
-import type { TaskActivityIntent, TaskRepository } from "../ports/task-repository";
+import type {
+  TaskCreationIntent,
+  TaskRepository,
+} from "../ports/task-repository";
 import { AUTHORIZATION_CAPABILITIES } from "./authorization-capabilities";
 import type { CreationAuthorizationContext } from "./creation-authorization";
 
@@ -22,10 +25,15 @@ export type CreateTaskResult =
         | "invalid"
         | "identifier-collision"
         | "project-not-found"
-        | "lead-not-found";
+        | "lead-not-found"
+        | "review-not-found";
       message: string;
     }
-  | { ok: true; value: ReturnType<typeof taskResponse> };
+  | {
+      ok: true;
+      value: ReturnType<typeof taskResponse>;
+      inboxReview?: { id: string; status: "accepted" };
+    };
 
 export type UpdateTaskResult =
   | {
@@ -45,6 +53,11 @@ type TaskOperationDependencies = {
   repository: TaskRepository;
   newId: () => string;
   now: () => number;
+  inboxReview?: {
+    id: string;
+    connectionKey: string;
+    intent: "schedule" | "warranty";
+  };
 };
 
 export async function listTasks(
@@ -83,6 +96,20 @@ export async function createTask(
   const validation = normalizeTaskCreation(input as Record<string, unknown>);
   if (!validation.ok) return { ok: false, kind: "invalid", message: validation.message };
   const values = validation.value;
+  if (
+    dependencies.inboxReview
+    && (
+      values.source !== "email"
+      || values.sourceRef === null
+      || !/^[A-Za-z0-9_-]{1,256}$/.test(values.sourceRef)
+    )
+  ) {
+    return {
+      ok: false,
+      kind: "invalid",
+      message: "Inbox review tasks must use the stored Gmail message as their email source.",
+    };
+  }
   const createdAt = dependencies.now();
   const id = dependencies.newId();
   const task: TaskRow = {
@@ -102,7 +129,7 @@ export async function createTask(
     completed_at: values.status === "done" ? createdAt : null,
     version: "1",
   };
-  const activities: TaskActivityIntent[] = [{
+  const activities: TaskCreationIntent["activities"] = [{
     id: dependencies.newId(),
     recordId: id,
     action: "Task created" as const,
@@ -120,7 +147,20 @@ export async function createTask(
       createdAt,
     });
   }
-  const result = await dependencies.repository.create({ task, activities });
+  const result = await dependencies.repository.create({
+    task,
+    activities,
+    ...(dependencies.inboxReview
+      ? {
+          inboxReview: {
+            ...dependencies.inboxReview,
+            gmailMessageId: values.sourceRef!,
+            approvedProjectId: task.project_id,
+            acceptedAt: createdAt,
+          },
+        }
+      : {}),
+  });
   if (result.outcome === "identifier-collision") {
     return {
       ok: false,
@@ -134,7 +174,28 @@ export async function createTask(
   if (result.outcome === "lead-not-found") {
     return { ok: false, kind: result.outcome, message: "Lead not found." };
   }
-  return { ok: true, value: taskResponse(result.value) };
+  if (result.outcome === "review-not-found") {
+    return {
+      ok: false,
+      kind: result.outcome,
+      message: "Inbox review changed since it was loaded.",
+    };
+  }
+  if (
+    dependencies.inboxReview
+      ? result.outcome !== "review-accepted"
+        || result.inboxReview.id !== dependencies.inboxReview.id
+      : result.outcome !== "created"
+  ) {
+    throw new Error("Task repository returned inconsistent inbox review evidence.");
+  }
+  return {
+    ok: true,
+    value: taskResponse(result.value),
+    ...(result.outcome === "review-accepted"
+      ? { inboxReview: result.inboxReview }
+      : {}),
+  };
 }
 
 export async function updateTask(

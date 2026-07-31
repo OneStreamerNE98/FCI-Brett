@@ -98,15 +98,10 @@ test("tasks list, filter, create, edit, reopen, and re-apply a saved conflict th
     }),
   ];
   const reads: string[] = [];
+  const itemReads: string[] = [];
   const posts: unknown[] = [];
   const patches: Array<{ id: string; body: Record<string, unknown> }> = [];
   let conflictOnce = true;
-  let conflictRecovery = false;
-  const overflowTasks = Array.from({ length: 201 }, (_, index) => task({
-    id: `task-overflow-${index}`,
-    title: `Overflow task ${index}`,
-    projectId: "other-project",
-  }));
   let releaseTaskCreatedPatch = () => {};
   let taskCreatedPatchStarted = () => {};
   const taskCreatedPatchRelease = new Promise<void>((resolve) => {
@@ -125,16 +120,25 @@ test("tasks list, filter, create, edit, reopen, and re-apply a saved conflict th
       const projectId = url.searchParams.get("projectId");
       const assigneeEmail = url.searchParams.get("assigneeEmail");
       const dueBefore = url.searchParams.get("dueBefore");
-      const sourceRows = conflictRecovery && !projectId
-        ? overflowTasks.slice(0, 200)
-        : tasks;
-      const visible = sourceRows.filter((row) => (
+      const visible = tasks.filter((row) => (
         (!status || row.status === status)
         && (!projectId || row.projectId === projectId)
         && (!assigneeEmail || row.assigneeEmail === assigneeEmail)
         && (!dueBefore || Boolean(row.dueDate && row.dueDate <= dueBefore))
       ));
       await fulfillJson(route, 200, { tasks: visible });
+      return;
+    }
+
+    if (request.method() === "GET" && url.pathname.startsWith("/api/v1/tasks/")) {
+      const id = decodeURIComponent(url.pathname.slice("/api/v1/tasks/".length));
+      itemReads.push(id);
+      const current = tasks.find((row) => row.id === id);
+      await fulfillJson(
+        route,
+        current ? 200 : 404,
+        current ? { task: current } : { error: "Task not found." },
+      );
       return;
     }
 
@@ -167,7 +171,6 @@ test("tasks list, filter, create, edit, reopen, and re-apply a saved conflict th
       }
       if (id === "task-conflict" && conflictOnce) {
         conflictOnce = false;
-        conflictRecovery = true;
         tasks[index] = {
           ...tasks[index],
           title: "Saved by another user",
@@ -305,7 +308,7 @@ test("tasks list, filter, create, edit, reopen, and re-apply a saved conflict th
   await conflictDialog.getByRole("button", { name: "Save changes" }).click();
   await expect(conflictDialog.getByText("Saved value: Saved by another user", { exact: true })).toBeVisible();
   await expect(conflictDialog.getByRole("button", { name: "Re-apply changes" })).toBeVisible();
-  expect(overflowTasks).toHaveLength(201);
+  expect(itemReads.at(-1)).toBe("task-conflict");
   expect(reads.at(-1)).toContain("projectId=e2e-project-001");
   await conflictDialog.getByRole("button", { name: "Re-apply changes" }).click();
   await expect(page.getByRole("button", { name: "Edit task Send customer recap" })).toBeVisible();
@@ -324,88 +327,12 @@ test("tasks list, filter, create, edit, reopen, and re-apply a saved conflict th
   }]);
 });
 
-test("a conflict outside every bounded list result never invents saved values or re-applies", async ({ page }) => {
+test("a rejected by-id recovery read never invents saved values or re-applies", async ({ page }) => {
   await mockEmptyToday(page);
   const savedTask = task({
-    id: "task-filtered-conflict",
-    title: "Review installation notes",
-    projectId: "e2e-project-001",
-  });
-  const overflowTasks = Array.from({ length: 201 }, (_, index) => task({
-    id: `task-unrelated-${index}`,
-    title: `Unrelated task ${index}`,
-    projectId: "other-project",
-  }));
-  let conflicted = false;
-  let patchCount = 0;
-
-  await page.route(/\/api\/v1\/tasks(?:\/[^?]+)?(?:\?.*)?$/u, async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (request.method() === "GET" && url.pathname === "/api/v1/tasks") {
-      const projectId = url.searchParams.get("projectId");
-      const status = url.searchParams.get("status");
-      if (!conflicted) {
-        await fulfillJson(route, 200, {
-          tasks: !projectId || projectId === savedTask.projectId ? [savedTask] : [],
-        });
-        return;
-      }
-      const bounded = overflowTasks.slice(0, 200).filter((row) => (
-        (!projectId || row.projectId === projectId)
-        && (!status || row.status === status)
-      ));
-      await fulfillJson(route, 200, { tasks: bounded });
-      return;
-    }
-    if (
-      request.method() === "PATCH"
-      && url.pathname === "/api/v1/tasks/task-filtered-conflict"
-    ) {
-      patchCount += 1;
-      conflicted = true;
-      savedTask.projectId = "other-project";
-      savedTask.version = "2";
-      await fulfillJson(route, 409, {
-        error: "Task changed since it was loaded.",
-        currentVersion: "2",
-      });
-      return;
-    }
-    await route.fallback();
-  });
-
-  await page.goto("/assistant");
-  const tasksTab = page.getByRole("tab", { name: "Tasks", exact: true });
-  await expect(async () => {
-    await tasksTab.click();
-    await expect(tasksTab).toHaveAttribute("aria-selected", "true", { timeout: 500 });
-  }).toPass({ intervals: [100, 250, 500], timeout: 10_000 });
-
-  const filters = page.getByRole("form", { name: "Task filters" });
-  await filters.getByLabel("Project").selectOption("e2e-project-001");
-  await filters.getByRole("button", { name: "Apply filters" }).click();
-  await page.getByRole("button", { name: "Edit task Review installation notes" }).click();
-  const dialog = page.getByRole("dialog", { name: "Edit task Review installation notes" });
-  await dialog.getByLabel("Title").fill("Review revised installation notes");
-  await dialog.getByRole("button", { name: "Save changes" }).click();
-
-  await expect(dialog.getByRole("alert")).toContainText(
-    "its exact saved version could not be found in the bounded task results",
-  );
-  await expect(dialog.getByText(/^Saved value:/u)).toHaveCount(0);
-  await expect(dialog.getByRole("button", { name: "Refresh list to continue" })).toBeDisabled();
-  expect(overflowTasks).toHaveLength(201);
-  expect(patchCount).toBe(1);
-});
-
-test("a rejected 409 recovery read disables re-apply and cannot issue a second PATCH", async ({ page }) => {
-  await mockEmptyToday(page);
-  const savedTask = task({
-    id: "task-recovery-failed",
+    id: "task-recovery-rejected",
     title: "Confirm closeout photos",
   });
-  let conflicted = false;
   let patchCount = 0;
   let recoveryReadCount = 0;
 
@@ -413,20 +340,23 @@ test("a rejected 409 recovery read disables re-apply and cannot issue a second P
     const request = route.request();
     const url = new URL(request.url());
     if (request.method() === "GET" && url.pathname === "/api/v1/tasks") {
-      if (conflicted) {
-        recoveryReadCount += 1;
-        await route.abort("failed");
-        return;
-      }
       await fulfillJson(route, 200, { tasks: [savedTask] });
       return;
     }
     if (
+      request.method() === "GET"
+      && url.pathname === "/api/v1/tasks/task-recovery-rejected"
+    ) {
+      recoveryReadCount += 1;
+      await route.abort("failed");
+      return;
+    }
+    if (
       request.method() === "PATCH"
-      && url.pathname === "/api/v1/tasks/task-recovery-failed"
+      && url.pathname === "/api/v1/tasks/task-recovery-rejected"
     ) {
       patchCount += 1;
-      conflicted = true;
+      savedTask.title = "Saved by another user";
       savedTask.version = "2";
       await fulfillJson(route, 409, {
         error: "Task changed since it was loaded.",
@@ -450,12 +380,101 @@ test("a rejected 409 recovery read disables re-apply and cannot issue a second P
   await dialog.getByRole("button", { name: "Save changes" }).click();
 
   await expect(dialog.getByRole("alert")).toContainText(
-    "its exact saved version could not be found in the bounded task results",
+    "its latest saved version could not be loaded",
   );
-  const blockedReapply = dialog.getByRole("button", { name: "Refresh list to continue" });
-  await expect(blockedReapply).toBeDisabled();
+  await expect(dialog.getByText(/^Saved value:/u)).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Refresh list to continue" })).toBeDisabled();
   await expect(dialog.getByRole("button", { name: "Re-apply changes" })).toHaveCount(0);
-  await blockedReapply.click({ force: true });
+  await dialog.getByRole("button", { name: "Refresh list to continue" }).click({ force: true });
   expect(recoveryReadCount).toBe(1);
   expect(patchCount).toBe(1);
+});
+
+test("a 409 on a task outside the first 200 rows recovers by id and re-applies successfully", async ({ page }) => {
+  await mockEmptyToday(page);
+  const savedTask = task({
+    id: "task-outside-cap",
+    title: "Review installation notes",
+    projectId: "e2e-project-001",
+  });
+  const overflowTasks = Array.from({ length: 200 }, (_, index) => task({
+    id: `task-unrelated-${index}`,
+    title: `Unrelated task ${index}`,
+    projectId: "other-project",
+  }));
+  const boundedRows = [...overflowTasks, savedTask];
+  let conflicted = false;
+  let itemReadCount = 0;
+  const patchBodies: Record<string, unknown>[] = [];
+
+  await page.route(/\/api\/v1\/tasks(?:\/[^?]+)?(?:\?.*)?$/u, async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === "/api/v1/tasks") {
+      await fulfillJson(route, 200, {
+        tasks: conflicted ? boundedRows.slice(0, 200) : [savedTask],
+      });
+      return;
+    }
+    if (
+      request.method() === "GET"
+      && url.pathname === "/api/v1/tasks/task-outside-cap"
+    ) {
+      itemReadCount += 1;
+      await fulfillJson(route, 200, { task: savedTask });
+      return;
+    }
+    if (
+      request.method() === "PATCH"
+      && url.pathname === "/api/v1/tasks/task-outside-cap"
+    ) {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      patchBodies.push(body);
+      if (!conflicted) {
+        conflicted = true;
+        savedTask.title = "Saved by another user";
+        savedTask.projectId = "other-project";
+        savedTask.version = "2";
+        savedTask.updatedAt = now + 1;
+        await fulfillJson(route, 409, {
+          error: "Task changed since it was loaded.",
+          currentVersion: "2",
+        });
+        return;
+      }
+      savedTask.title = String(body.title);
+      savedTask.version = "3";
+      savedTask.updatedAt = now + 2;
+      await fulfillJson(route, 200, { task: savedTask });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/assistant");
+  const tasksTab = page.getByRole("tab", { name: "Tasks", exact: true });
+  await expect(async () => {
+    await tasksTab.click();
+    await expect(tasksTab).toHaveAttribute("aria-selected", "true", { timeout: 500 });
+  }).toPass({ intervals: [100, 250, 500], timeout: 10_000 });
+
+  await page.getByRole("button", { name: "Edit task Review installation notes" }).click();
+  const dialog = page.getByRole("dialog", { name: "Edit task Review installation notes" });
+  await dialog.getByLabel("Title").fill("Review revised installation notes");
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+
+  await expect(dialog.getByText("Saved value: Saved by another user", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Re-apply changes" }).click();
+  await expect(dialog).toHaveCount(0);
+
+  expect(boundedRows).toHaveLength(201);
+  expect(boundedRows.slice(0, 200)).not.toContain(savedTask);
+  expect(itemReadCount).toBe(1);
+  expect(patchBodies).toEqual([{
+    version: "1",
+    title: "Review revised installation notes",
+  }, {
+    version: "2",
+    title: "Review revised installation notes",
+  }]);
 });

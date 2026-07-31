@@ -1017,6 +1017,7 @@ enhancement, not a defect — but it is the natural EDIT-08, or a rider on
 EDIT-03's concurrency foundation.
 
 ### EDIT-08 · Read a single task by id (small, after EDIT-07)
+**Status:** In progress — `codex/edit08-task-by-id`
 **Filed July 30, 2026 on the owner's decision**, from the EDIT-07 review residual above.
 **Why:** `app/api/v1/tasks/[taskId]/route.ts` exports **only `PATCH`**. There is no way to
 read one task. Two consequences, both live today: the EDIT-07 conflict recovery
@@ -2205,6 +2206,8 @@ are not golden-hashed); Guide impact stated per the currency rule.
 **Effort:** small-medium. **Cost:** $0.
 
 ### SET-39 · Visible build stamp tied to the deployed commit (small, no deps)
+**Status:** In progress — `codex/set39-build-stamp`
+**Guide impact:** None — the read-only build label does not change any owner setup or acceptance step.
 **Filed July 30, 2026 on the owner's decision.**
 **Why:** the app displays **no version or build identifier anywhere**, and until the owner
 created the canonical deployment log (GitHub issue #258) there was no record of what was
@@ -2869,6 +2872,8 @@ regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
 ### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026)
+**Status:** In progress — `codex/des11b-width-toggle`
+
 **SUB-SCOPE A IS COMPLETE — PR #252, July 30, 2026. Source-only and undeployed. ONLY
 SUB-SCOPE B REMAINS CLAIMABLE.** The packet carries no status line because B is still
 open and the dispatch law reads "available if and only if it has no status line" — but a
@@ -3428,6 +3433,8 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
+**Status:** In progress — `codex/ai11a-typed-accepts`
+
 **Why:** AI-10 deliberately ships one accept action; three intents accumulate in the queue with
 only a manual "mark reviewed" exit, and spec §12 decisions 5–6 name this packet as their
 implementing packet. Nothing else owns the label catalog editor at all.
@@ -3533,6 +3540,7 @@ file) and for SET-06's wiring fix (their copy must describe the fixed behavior).
 the existing e2e pattern.
 
 ### HINT-02-B · Adoption, FloorOpsApp modals (small; ONE FloorOpsApp queue slot at the tail, after AI-02)
+**Status:** In progress — `codex/hint02b-floorops-modals`
 **Do:** the recommended-tier hints in LeadModal, ClientModal, and
 NewProjectModal per the audit table — written against post-DES-05/07 component
 names. (FollowUpResultModal's "Post-installation callback" is a LABEL FIX per
