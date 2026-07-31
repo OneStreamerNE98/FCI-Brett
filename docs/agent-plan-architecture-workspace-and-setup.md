@@ -17,8 +17,27 @@ amendments. Workstream F (dashboard design, DES-01…DES-09; design authority
 `docs/dashboard-design-spec.md`) was added July 22, 2026, and Workstream G (AI
 assistant & automation, AI-01…AI-09 with gated Tier-2 stubs; design authority
 `docs/ai-assistant-spec.md`) on July 23, 2026.
-Deployment baseline: `adc79b8`, private Sites development version 40,
-which includes PR #30. The later source changes are not deployed.
+**Deployment (corrected July 30, 2026 — the previous claim here was eleven days stale and
+wrong).** This document previously read *"Deployment baseline: `adc79b8`, private Sites
+development version 40 … the later source changes are not deployed."* That line was last
+edited **July 19, 2026** and was never updated again, while merges continued for eleven
+days. It was quoted as current fact during the July 30 session and was false.
+
+**How deployment actually works:** the owner asks ChatGPT to deploy the private Sites app
+from GitHub, and it deploys. It is **owner-triggered and on demand** — there is no GitHub
+Actions deployment (`.github/workflows/cloud-run-image.yml` publishes an image only on
+manual dispatch and states outright that it does not deploy). So the live site reflects
+`main` **as of the owner's most recent deploy request**, not a commit pinned in this file.
+
+**Therefore no commit or version number is recorded here on purpose.** Any such number
+rots the moment the next deploy happens and then misleads whoever reads it — which is
+exactly what happened. To learn what is live, ask the owner when they last deployed, or
+read it from the running app. Do not infer it from this document, and do not infer it from
+packet status lines (see the note on the "undeployed" label below).
+
+**Known gap worth closing:** the app displays no version or build stamp anywhere, and no
+release record exists, so "what is live?" currently has no self-serve answer. A visible
+build stamp would make this question answerable by looking instead of by asking.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
 
@@ -92,9 +111,10 @@ below, which also covers the state of GitHub itself (issues/PRs).
 4. **The D1 drizzle sequence is append-only.** Never drop or alter existing D1 tables; the
    dev environment is the only live environment. To add a migration, **list `drizzle/` and
    append one past the highest-numbered file** — again, read the directory rather than a
-   quoted number. Snapshot for sanity-checking only, July 26, 2026: the highest is
-   **0019** (`0019_demonic_lady_vermin.sql`), so the next is 0020. Files ahead of what the
-   Sites environment has applied are source-only until deployed.
+   quoted number. Snapshot for sanity-checking only, July 30, 2026: the highest is
+   **0022** (`0022_mean_darkhawk.sql`), so the next is 0023. **This number goes stale every
+   time a migration lands — the directory is the authority, never this sentence.** The
+   previous snapshot here said 0019 and was four migrations behind within four days.
 5. **Single-user / test-data boundary holds.** Only `FCI TEST — DO NOT USE` records in any
    live Workspace step; no second user and no real client data until the development
    acceptance run (WS-11) passes.
@@ -128,9 +148,31 @@ below, which also covers the state of GitHub itself (issues/PRs).
    re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
    entries in that ledger.
 
+## What "Source-only and undeployed" means in a packet status
+
+**It is a snapshot of the moment that packet merged, not a live deployment record.** The
+phrase appears in roughly 90 status lines across this file. Each was written by whoever
+merged that packet, and **none of them is ever revisited after a deploy** — there is no
+process that goes back and clears them.
+
+So the phrase means *"as of this packet's merge, it had not yet been deployed."* It does
+**not** mean the work is absent from the live site today. Deployment is owner-triggered
+from GitHub on demand (see the deployment note near the top), so a single deploy silently
+makes dozens of these labels obsolete at once, and nothing updates them.
+
+**Do not count these labels to estimate what is unshipped.** During the July 30 session
+that was attempted twice, producing "61 undeployed packets" and then "75", both presented
+to the owner as fact. The owner then pointed out he could see record editing — merged that
+same day — running on the live site. The labels were the wrong instrument; the running app
+is the authority. `docs/flooring-kpis.md` carries a similar frozen line ("Source-only and
+undeployed · Migration 0012 not applied to Sites", pinned July 21) and is stale for the
+same reason.
+
+To answer "is this live?", ask the owner when they last deployed, or look at the app.
+
 ## Current state in one page
 
-- **Live today:** Cloudflare Sites/Workers app, D1 database (drizzle 0000–0011), R2 for
+- **Live today:** Cloudflare Sites/Workers app, D1 database, R2 for
   uploads, ChatGPT sign-in with office/admin allowlists
   (`app/lib/workspace-auth.ts`), `GOOGLE_INTEGRATION_MODE=simulation` — durable simulated
   Gmail/Drive/Calendar/Sheets, partitioned from live data by connectionKey
