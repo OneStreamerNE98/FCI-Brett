@@ -6,8 +6,16 @@ elastic: skip, repeat, or pause freely). Each night: automated layout/static
 scans gather measured evidence first, then 2–3 focused review lenses
 adjudicate it, every substantive finding is adversarially verified, and the
 night ends with a summary page here plus ready-to-fire fix tasks for the
-morning. Full program design: the approved plan of July 24 (orchestrator
-session); findings ledger: [`../nightly-review-2026-07-findings.md`](../nightly-review-2026-07-findings.md).
+morning. Findings ledger: [`../nightly-review-2026-07-findings.md`](../nightly-review-2026-07-findings.md).
+
+**Specs for the six un-run nights (2–5, 9, 10) are in
+[`SPECS.md`](SPECS.md)** — enshrined July 30, 2026 on the owner's decision.
+Until then the program design for those nights lived only in the July 24
+orchestrator chat session and would have been lost with it. Those six specs
+are **reconstructed from the program rules and the four completed nights, not
+recovered verbatim**; judgement calls are marked `[reconstructed]` in that
+file. The program rules and co-run matrix below are recovered and
+authoritative.
 
 **Program rules (five lines):** kickoff-triggered, never scheduled blind ·
 every finding deduplicated against the open packet backlog AND prior nights
