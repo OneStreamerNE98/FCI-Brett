@@ -346,6 +346,57 @@ touch-contact geometry. Zero page-level horizontal overflow is a weak signal
 here because `html, body` carry `overflow-x: hidden`, which clips rather than
 scrolls.
 
+### Night 6b — Architecture & duplication re-run (run July 31, 2026; solo)
+
+Pure-static re-run of `origin/main` at `5cf8e65`: three independent lenses
+covering the five EDIT paths, task-adapter parity, repository-wide
+`mail_items` writers, zero-reference exports, import direction, and dedup
+against every published night plus the open backlog. Summary page:
+[`nightly-reviews/night-06b-architecture-duplication.md`](nightly-reviews/night-06b-architecture-duplication.md).
+
+#### N6b-1 · Five EDIT paths repeat the patch/CAS/conflict state machine (P3)
+Lead, project, client, contact, and task editing independently perform the
+same validate → load → version-conflict projection → owned-key merge → labeled
+before/after diff → no-op → guarded update/audit → conflict re-read sequence.
+Four server conflict projectors and five client re-apply flows repeat the same
+mechanics too. Entity authorization and disclosure differ, so a generic
+orchestration mega-helper would hide important policy. No behavior defect was
+demonstrated. **Disposition: owner-gated refactor proposal** — if approved,
+extract only pure patch/conflict mechanics and leave entity policy explicit.
+
+#### N6b-2 · `mail_items` writer census misses adapter-level task accepts (P3)
+AI-11(a) correctly retires schedule/warranty review rows in the same D1 batch
+or PostgreSQL transaction that creates the task and activity. Its success and
+rollback behavior is pinned. The existing AI-10 census walks API route files
+only, however, so neither task-adapter mutation is visible and another
+adapter-level writer could pass unnoticed. `mail_items` is intentionally
+multi-mutator; the analysis route is its sole **creator**, not its sole writer.
+→ NFIX-07 (split the creator law from a repository-wide approved-mutator
+census; do not break the task transaction).
+
+#### N6b-3 · 23 post-NFIX-03 declarations are unnecessarily exported (P3)
+Twenty-three runtime constants/helpers added by the assistant, inbox-analysis,
+task-management, simulation, mail-item, and Drive work have genuine same-file
+uses but zero external source/test/tool references. This is export-surface
+drift, not dead runtime code; module-local type exports remain excluded under
+the original N6 convention. → NFIX-07 (remove only `export` modifiers with a
+repo-wide reference pin).
+
+Verified without re-filing: N6-1 remains open and has expanded from five to
+nine D1-coupled application readers; the original eight N6-4 symbols remain
+deleted; NFIX-03's shared helpers remain adopted at its pinned sites; D1 and
+PostgreSQL task adapters match on valid operations while memory deliberately
+fails closed for cross-aggregate review acceptance. N6-3's FIX-17-removed CSS
+families remain absent while its corrected live selector remains. PostgreSQL's
+UUID-only task read is recorded as a future legacy-ID migration caveat, not a
+live runtime defect.
+
+Coverage honesty: pure static only as required — no server, browser, captures,
+or Playwright. No live PostgreSQL integration or D1-to-PostgreSQL legacy-ID
+migration was exercised. The export census was lexical because the isolated
+worktree could not resolve a TypeScript compiler; barrel/namespace imports
+were checked, but computed dynamic access remains a weaker-method residual.
+
 ---
 
 ## Packets
@@ -461,4 +512,24 @@ a combined rate (test-asserted) AND `docs/flooring-kpis.md` + pure-helper
 tests updated in the same PR; "Last synced" renders a locale timestamp;
 `npm test` green; no other behavior change. Owner dispatch of this packet is
 the sign-off on the grouping-definition refinement.
+**Effort:** small. **Cost:** $0.
+
+### NFIX-07 · Restore post-EDIT architecture hygiene (small)
+
+**Why:** Night 6b N6b-2/N6b-3 — AI-11(a)'s intentional task-adapter
+`mail_items` mutations sit below the route-only writer census, while the
+analysis route is still described as the only writer instead of the only
+creator; 23 live module-local declarations added after NFIX-03 also expose
+public names that no other module consumes.
+**Do:** split the current source law into a repository-wide sole-creator
+census plus an explicit approved-mutator census that includes both task
+adapters; correct AI-10's “only-writer persistence route” wording to “only
+creator”; preserve the atomic mail-item/task/activity batch/transaction; and
+remove only the 23 verified-unnecessary runtime `export` modifiers. Do not
+move the review transition through a second repository or transaction.
+**Accept:** a mutation-sensitive source guard fails for any unlisted
+`mail_items` creator or mutator anywhere under `app`; the D1 and PostgreSQL
+task-accept success/rollback tests remain green; the 23 declarations remain
+live internally but have no exported surface; no response, persistence, or
+user-visible behavior changes; `npm test` and `npm run lint` are green.
 **Effort:** small. **Cost:** $0.
