@@ -20,9 +20,13 @@ then live hit-testing of every candidate before filing.
 - **Three scan passes were required.** Passes 1 and 2 were discarded; only
   pass 3 is trustworthy. See Coverage honesty — this is the most important
   section on this page.
-- Every candidate was verified by **live `elementFromPoint` hit-testing**, not
-  by rectangle geometry alone. That distinction changed the disposition of
-  all three candidates.
+- Every filed candidate was verified by **live `elementFromPoint` hit-testing**,
+  not by rectangle geometry alone. That distinction changed the disposition of
+  every one of them.
+- **Adjudication took two rounds.** Round 1 examined only the three largest
+  clusters. Round 2 — prompted by the owner asking whether the testing was
+  actually complete — covered the 14 remaining hits and produced N2-4 (a P2
+  more severe than anything in the original filing) and N2-5.
 
 ## What we found
 
@@ -31,8 +35,10 @@ then live hit-testing of every candidate before filing.
 | N2-1 | P2 | Inbox toolbar: the Gmail search input is **unreachable by pointer** at 834 (blocked at 5/5 sample points), 900 (4/5) and partly 1024 (2/5) — the "Load messages" button and the status aside are painted over it, so clicking the search field activates Load messages instead | New — proposed NFIX packet |
 | N2-2 | P3 | Settings → Google Workspace resource-action rows overlap at 834/900: `Open` over `Ensure spreadsheets` (77×19px), `Open` over `Open` (60×6px), `Open` over the info-hint trigger (34×12px), all inside `_resourceItemActions_` | New — proposed NFIX packet |
 | N2-3 | — | Leads board horizontal overflow at 600/720/768 — **REFUTED.** `.board` is `overflow-x:auto; display:flex` under `@media (max-width:820px)`; measured `scrollWidth 1082 > clientWidth 736` and `scrollable: true`. The intended Kanban scroller, not a defect | No action |
-| N2-4 | — | Zero page-level horizontal overflow at every width — **clean**, but see the caveat below | No action |
-| N2-5 | — | Zero WCAG 2.2 SC 2.5.8 target-size or spacing failures across all 102 page-views | No action |
+| N2-4 | P2 | Projects table: **"Estimated value" is 94.6% clipped at 834 and unreachable** — value rect `left 831` in an 834 viewport, `.projects-table` is `overflow-x: hidden` and **not scrollable**. Fits at 900 and 1024; reflows to a stacked layout at 768. A single-width band | New — proposed NFIX packet |
+| N2-5 | P3 | Settings → Testing & launch: the `Open Google Workspace setup` primary button is **40px (19%) clipped** at 834, label included. Still clickable at 10%/50%, so visual truncation rather than unreachability. **NFIX-04 fixed this surface at 360/390/430 only** — the fix was phone-scoped and never covered the tablet band | New — extends NFIX-04's scope |
+| N2-6 | — | Zero page-level horizontal overflow at every width — **clean**, but see the caveat below | No action |
+| N2-7 | — | Zero WCAG 2.2 SC 2.5.8 target-size or spacing failures across all 102 page-views | No action |
 
 ### N2-1 detail (the one that matters)
 
@@ -58,6 +64,37 @@ its `Dev` badge, and the field has a keyboard path (tab order is unaffected —
 only pointer input is blocked). It is not P3 because a form control that
 cannot be clicked at three of the six tested widths is broken, not untidy.
 
+### N2-4 detail (found only after the owner challenged the first pass)
+
+At 834 the Projects row's value cell begins at `x=831` in an 834px viewport — 3px
+of a 50px element inside the frame, **94.6% clipped**. `.projects-table` carries
+`overflow-x: hidden` and reports `scrollWidth === clientWidth`, so there is no
+scroll to recover it: the figure `$125,000` cannot be reached by any means.
+
+It is a **single-width defect**. At 768 the table reflows to a stacked layout
+(value rect `left 34, width 700`, fully visible); at 900 and 1024 it fits with
+19px and 80px to spare. Only the 821–899 band fails, which is the precise reason
+this night's width list included the awkward middles rather than only the
+standard tablet sizes.
+
+The site address in the same row also truncates mid-word at 834
+("Cherr…", "Hill, N"), which is the same root cause and should be fixed with it.
+
+### N2-5 detail (a completed fix with a coverage gap)
+
+`NFIX-04 · Phone polish: testing-launch overflow…` is **Complete (PR #203)** and
+its recorded proof is *"zero overflow/gap findings across the four affected
+routes at 360/390/430"*. That proof is honest and it holds — but it is
+**phone-scoped**. The same surface still clips at 834: the primary button spans
+`667–874` in an 834px viewport, so 40px including part of its label is cut off
+by `div.app-shell`'s `overflow-x: hidden`.
+
+This is filed as extending NFIX-04's scope rather than as an unrelated defect,
+because it is the same surface and almost certainly the same rule set stopping at
+a phone breakpoint. **A fix verified only at the widths it targeted is not a fix
+verified everywhere** — worth recording as a pattern, since NFIX-04's evidence
+was otherwise exemplary.
+
 ## Recommended
 
 Both findings are CSS-only and reachable without touching `app/FloorOpsApp.tsx`
@@ -75,6 +112,35 @@ None yet — filed for the owner's dispatch decision alongside the Night 6
 re-run currently queued for Codex.
 
 ## Coverage honesty
+
+**The first adjudication pass was incomplete and this page originally said
+otherwise.** The scan itself was complete — 102/102 page-views, 17 routes × 6
+widths, no missing combinations, zero errors, zero vacuous. But adjudication
+examined only the three largest clusters (leads, settings-google-workspace,
+inbox) and left **14 element-overflow hits on `/projects`, `/reports` and
+`/settings?section=testing-launch` unexamined**, while the page claimed every
+candidate had been verified. The owner asked whether the testing was actually
+complete; it was not. Re-adjudicating those 14 produced **N2-4, a P2 more severe
+than anything in the original filing**, and N2-5.
+
+The lesson is specific: *filing from the biggest clusters is not adjudication.*
+A 3-hit cluster on `/projects` hid a fully-clipped monetary value, while a
+30-hit cluster on `/leads` was entirely by design.
+
+**A capture-method error is also recorded.** The first screenshot of
+Testing & launch showed page content shifted left with letters clipped
+("ONTROL CENTER", "anage shared"). That was an artifact of the capture script
+calling `scrollIntoView` on the overflowing element, not the app's state.
+Re-measured with `scrollX: 0` confirmed. The finding survived, but the original
+evidence for it was wrong and would have overstated the defect.
+
+**Method deviation from the program spec.** The program calls for 2–3 focused
+review lenses to adjudicate the scan output. This night used direct adjudication
+plus live `elementFromPoint` hit-testing instead. Hit-testing is stronger than a
+lens for layout questions — it is what refuted N2-3 and correctly identified the
+victim in N2-1 — but it is not what the spec asks for, and the missed 14 hits are
+plausibly the cost of skipping the lens structure. Recorded so the next scan
+night either runs the lenses or amends the spec.
 
 **Two of the three scan passes were invalid, and the first one would have
 passed silently as an all-clear.**

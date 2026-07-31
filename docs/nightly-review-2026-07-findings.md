@@ -285,6 +285,37 @@ pointer-events auto — real geometric collisions in an action row, not stacking
 artifacts. Lower severity than N2-1 because each control retains a clickable
 majority; no control was found fully blocked.
 
+#### N2-4 · Projects "Estimated value" is clipped and unreachable at 834 (P2)
+
+The value cell begins at `x=831` in an 834px viewport — 3px of a 50px element
+inside the frame, **94.6% clipped**. `.projects-table` carries
+`overflow-x: hidden` and reports `scrollWidth === clientWidth`, so no scroll can
+recover it: `$125,000` cannot be reached by any means. The site address in the
+same row truncates mid-word ("Cherr…", "Hill, N") from the same cause.
+
+**Single-width band.** At 768 the table reflows to a stacked layout (value fully
+visible); at 900 and 1024 it fits with 19px and 80px to spare. Only 821–899
+fails — which is exactly why this night's width list included the awkward
+middles rather than only standard tablet sizes.
+
+Found in adjudication round 2. Round 1 skipped it: `/projects` produced 3 hits
+against `/leads`' 30, and the 30 were entirely by design while the 3 hid this.
+
+#### N2-5 · Testing & launch still clips at tablet widths — NFIX-04 was phone-scoped (P3)
+
+The `Open Google Workspace setup` primary button spans `667–874` in an 834px
+viewport, so 40px (19%) including part of its label is cut off by
+`div.app-shell`'s `overflow-x: hidden`. Clickable at 10% and 50%, so this is
+visual truncation rather than unreachability.
+
+`NFIX-04` is **Complete (PR #203)** and its recorded proof — *"zero overflow/gap
+findings across the four affected routes at 360/390/430"* — is honest and holds.
+It is simply **phone-scoped**, and the tablet band was never in its coverage.
+Filed as extending NFIX-04 rather than as a new unrelated defect: same surface,
+almost certainly the same rules stopping at a phone breakpoint. Recorded as a
+pattern worth watching — **a fix verified only at the widths it targeted is not
+a fix verified everywhere.**
+
 #### N2-3 · Leads board overflow — REFUTED (no action)
 
 The scan reported 10 overflowing elements on `/leads` at each of 600/720/768
@@ -294,13 +325,26 @@ scroller: `.board` is `overflow-x:auto; display:flex` under
 `scrollable: true`; at 900 it reverts to `display:grid` with no overflow.
 Recorded so a later night does not re-file it.
 
-**Coverage honesty (summary; full version on the night page).** Pass 1 lost 64
-of 102 page-views to a dev server killed by shell exit. Pass 2 lost 6 to a bug
-in this scanner — its vacuity heuristic matched `vite` inside the word
-**"Invite"**. Only pass 3 (0 vacuous) is reported. No interaction states, no
-orientation changes, no real tablet hardware, no touch-contact geometry.
-Zero page-level horizontal overflow is a weak signal here because `html, body`
-carry `overflow-x: hidden`, which clips rather than scrolls.
+**Coverage honesty (summary; full version on the night page).** The scan was
+complete — 102/102 page-views, zero vacuous — but **adjudication took two rounds
+and the night page originally claimed otherwise.** Round 1 examined only the
+three largest clusters and left 14 hits unexamined; the owner asked whether the
+testing was complete, and round 2 produced N2-4 and N2-5. Filing from the
+biggest clusters is not adjudication: a 3-hit cluster hid a fully-clipped
+monetary value while a 30-hit cluster was entirely by design.
+
+Also recorded: pass 1 lost 64 of 102 page-views to a dev server killed by shell
+exit; pass 2 lost 6 to a bug in this scanner — its vacuity heuristic matched
+`vite` inside the word **"Invite"**. Only pass 3 is reported. One screenshot was
+invalidated by the capture script calling `scrollIntoView`, which shifted the
+page and overstated the defect; re-measured at `scrollX: 0`. The program's 2–3
+lens structure was **not** run — direct adjudication plus hit-testing was used
+instead, and the missed 14 hits are plausibly the cost of that.
+
+Not covered: interaction states, orientation changes, real tablet hardware,
+touch-contact geometry. Zero page-level horizontal overflow is a weak signal
+here because `html, body` carry `overflow-x: hidden`, which clips rather than
+scrolls.
 
 ---
 

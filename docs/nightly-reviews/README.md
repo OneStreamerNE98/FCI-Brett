@@ -29,7 +29,7 @@ review-and-merge loop.
 | Night | Theme | Status | Run date | Findings | Summary |
 |---|---|---|---|---|---|
 | 1 | Responsive: phones (360/375/390/430) | complete (co-run with 7) | July 25, 2026 | 5 (1 P2) | [night-01](night-01-phone-viewports.md) |
-| 2 | Tablet & awkward middles (768–1024 + 600–900) | complete (solo) | July 31, 2026 | 2 (1 P2) | [night-02](night-02-tablet-awkward-middles.md) |
+| 2 | Tablet & awkward middles (768–1024 + 600–900) | complete (solo) | July 31, 2026 | 4 (2 P2) | [night-02](night-02-tablet-awkward-middles.md) |
 | 3 | Spacing & alignment (1280/1440 + rhythm) | pending | — | — | — |
 | 4 | Collapsible cards & disclosure (owner-gated spec) | pending | — | — | — |
 | 5 | Design-system conformance | pending | — | — | — |
