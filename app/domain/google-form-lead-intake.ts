@@ -220,15 +220,30 @@ function blockedRealDataDraft(sourceRow: number) {
   );
 }
 
-function normalizedRow(value: readonly unknown[]) {
-  if (value.length > GOOGLE_FORM_LEAD_HEADERS.length) return null;
+function sanitizedRow(value: readonly unknown[]) {
   const cells: string[] = [];
+  const reasons: string[] = [];
   for (let index = 0; index < GOOGLE_FORM_LEAD_HEADERS.length; index += 1) {
     const normalized = normalizedCell(value[index], CELL_MAXIMUMS[index] ?? 0);
-    if (normalized === null) return null;
-    cells.push(normalized);
+    if (normalized === null) {
+      cells.push("");
+      reasons.push(`${GOOGLE_FORM_LEAD_HEADERS[index]} contains an unsupported or oversized value.`);
+    } else {
+      cells.push(normalized);
+    }
   }
-  return Object.freeze(cells);
+  if (value.length > GOOGLE_FORM_LEAD_HEADERS.length) {
+    reasons.push("Unexpected response columns are not supported.");
+  }
+  return Object.freeze({
+    cells: Object.freeze(cells),
+    reasons: Object.freeze(reasons),
+  });
+}
+
+function hasTestMarker(value: string) {
+  return value === FIRST_RUN_IMPORT_TEST_MARKER
+    || value.startsWith(`${FIRST_RUN_IMPORT_TEST_MARKER} `);
 }
 
 /** Pure mapping/watermark input shared by the on-demand trigger and future WS-12. */
@@ -251,26 +266,14 @@ export async function mapGoogleFormLeadRows(input: Readonly<{
   const drafts: GoogleFormLeadReviewDraft[] = [];
   for (let index = 0; index < input.rows.length; index += 1) {
     const sourceRow = input.firstSourceRow + index;
-    const cells = normalizedRow(input.rows[index] ?? []);
-    if (!cells) {
-      if (!FIRST_RUN_IMPORT_REAL_DATA_ALLOWED) {
-        drafts.push(blockedRealDataDraft(sourceRow));
-        continue;
-      }
-      drafts.push(invalidDraft(
-        sourceRow,
-        null,
-        proposalFromCells([]),
-        ["This response contains unsupported or oversized values."],
-      ));
-      continue;
-    }
+    const sanitized = sanitizedRow(input.rows[index] ?? []);
+    const cells = sanitized.cells;
 
     const submittedAt = cells[0] || null;
     const proposal = proposalFromCells(cells);
     if (
       !FIRST_RUN_IMPORT_REAL_DATA_ALLOWED
-      && !proposal.company.startsWith(FIRST_RUN_IMPORT_TEST_MARKER)
+      && !hasTestMarker(proposal.company)
     ) {
       drafts.push(blockedRealDataDraft(sourceRow));
       continue;
@@ -280,8 +283,9 @@ export async function mapGoogleFormLeadRows(input: Readonly<{
       !proposal.company ? "Name is required." : null,
       !proposal.site ? "Address is required." : null,
     ].filter((reason): reason is string => reason !== null);
-    if (missing.length > 0) {
-      drafts.push(invalidDraft(sourceRow, submittedAt, proposal, missing));
+    const invalidReasons = [...sanitized.reasons, ...missing];
+    if (invalidReasons.length > 0) {
+      drafts.push(invalidDraft(sourceRow, submittedAt, proposal, invalidReasons));
       continue;
     }
 

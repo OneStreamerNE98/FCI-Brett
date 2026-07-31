@@ -107,7 +107,7 @@ test("lead PATCH checks the admin-only field before reads and scopes authorized 
   assert.doesNotMatch(responseProjection, /contactEmail: authorizedOfficeEmail/u);
   assert.match(collectionRoute, /result\.value\.map\(\(lead\) =>\s+authorizedLeadPayload\(lead, auth\.user\.email\)/u);
   assert.match(collectionRoute, /authorizedLeadPayload\(result\.value, auth\.user\.email\)/u);
-  assert.match(collectionRoute, /authorizedLeadOwnerEmail\(parsed\.body\.ownerEmail, auth\.user\.email\)/u);
+  assert.match(collectionRoute, /authorizedLeadOwnerEmail\(leadRequest\.body\.ownerEmail, auth\.user\.email\)/u);
 });
 
 test("LeadModal create mode accepts prefill and the edit surface keeps all terminal statuses", async () => {

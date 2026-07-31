@@ -34,6 +34,7 @@ const CREATED_AT = Date.UTC(2026, 6, 19, 12, 0, 0);
 const UPDATED_AT = CREATED_AT + 1_000;
 const LEAD_ID = "11111111-1111-4111-8111-111111111111";
 const LEAD_ACTIVITY_ID = "22222222-2222-4222-8222-222222222222";
+const FORM_LEAD_REVIEW_ID = "abcdefab-cdef-4abc-8def-abcdefabcdef";
 const PROJECT_ID = "33333333-3333-4333-8333-333333333333";
 const MEETING_ID = "44444444-4444-4444-8444-444444444444";
 const MEETING_ACTIVITY_ID = "55555555-5555-4555-8555-555555555555";
@@ -70,6 +71,18 @@ function leadIntent(overrides = {}) {
       actor: lead.created_by,
       detail: `${lead.lead_number} · ${lead.company} · ${lead.project_name}`,
       createdAt: lead.created_at,
+    },
+  };
+}
+
+function formLeadIntent(overrides = {}) {
+  const intent = leadIntent({ source: "Google Form", ...overrides });
+  return {
+    ...intent,
+    formLeadReview: {
+      id: FORM_LEAD_REVIEW_ID,
+      connectionKey: "workspace-simulation",
+      acceptedAt: intent.lead.created_at,
     },
   };
 }
@@ -355,6 +368,124 @@ test("PostgreSQL lead create atomically stores activity, outbox, and idempotent 
   client.assertComplete();
 });
 
+test("PostgreSQL Google Form lead acceptance locks and retires the review in the creation transaction", async () => {
+  const intent = formLeadIntent();
+  intent.formLeadReview.id = FORM_LEAD_REVIEW_ID.toUpperCase();
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    step(/INSERT INTO idempotency_requests/, result([{ id: creationRequest().idempotencyRequestId }], 1), ({ values }) => {
+      assert.equal(values[4], calculatePostgresLeadCreationFingerprint(intent));
+    }),
+    step(/FROM google_form_lead_reviews[\s\S]*status = 'needs-review'[\s\S]*FOR UPDATE/, result([
+      { id: FORM_LEAD_REVIEW_ID },
+    ], 1), ({ values }) => {
+      assert.deepEqual(values, [FORM_LEAD_REVIEW_ID, "workspace-simulation"]);
+    }),
+    step(/INSERT INTO leads/, result([postgresLeadRow({ source: "Google Form" })], 1)),
+    step(/INSERT INTO activity_events[\s\S]*lead_id/, result([], 1)),
+    step(/INSERT INTO outbox_events[\s\S]*'lead\.created'/, result([], 1)),
+    step(/UPDATE google_form_lead_reviews[\s\S]*accepted_lead_id = \$3/, result([], 1), ({ values }) => {
+      assert.deepEqual(values, [
+        intent.lead.created_by,
+        new Date(intent.lead.created_at),
+        intent.lead.id,
+        FORM_LEAD_REVIEW_ID,
+        "workspace-simulation",
+      ]);
+    }),
+    step(/UPDATE idempotency_requests[\s\S]*status = 'completed'/, result([{ version: "2" }], 1)),
+    step(/^COMMIT$/),
+  ]);
+  const repository = createPostgresLeadRepository(new ScriptedPostgresPool(client), {
+    schema: "repository_test",
+    request: creationRequest(),
+  });
+
+  const accepted = await repository.create(intent);
+  assert.equal(accepted.outcome, "review-accepted");
+  assert.equal(accepted.replayed, false);
+  assert.deepEqual(accepted.formLeadReview, {
+    id: FORM_LEAD_REVIEW_ID.toUpperCase(),
+    status: "accepted",
+  });
+  assert.deepEqual(accepted.value.row, intent.lead);
+  const queryOrder = client.queries.map(({ sql }) => sql);
+  assert.ok(
+    queryOrder.findIndex((sql) => /FOR UPDATE/u.test(sql))
+      < queryOrder.findIndex((sql) => /INSERT INTO leads/u.test(sql)),
+  );
+  assert.ok(
+    queryOrder.findIndex((sql) => /UPDATE google_form_lead_reviews/u.test(sql))
+      < queryOrder.findIndex((sql) => /status = 'completed'/u.test(sql)),
+  );
+  client.assertComplete();
+});
+
+test("PostgreSQL Google Form lead acceptance rolls back its idempotency claim when the review is gone", async () => {
+  const intent = formLeadIntent();
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    step(/INSERT INTO idempotency_requests/, result([{ id: creationRequest().idempotencyRequestId }], 1)),
+    step(/FROM google_form_lead_reviews[\s\S]*FOR UPDATE/, result([], 0)),
+    step(/^ROLLBACK$/),
+  ]);
+  const repository = createPostgresLeadRepository(new ScriptedPostgresPool(client), {
+    schema: "repository_test",
+    request: creationRequest(),
+  });
+
+  assert.deepEqual(await repository.create(intent), { outcome: "review-not-found" });
+  assert.equal(client.queries.some(({ sql }) => /INSERT INTO leads/u.test(sql)), false);
+  assert.equal(client.queries.some(({ sql }) => /status = 'completed'/u.test(sql)), false);
+  client.assertComplete();
+});
+
+test("PostgreSQL Google Form lead replay returns matching acceptance evidence without touching the review", async () => {
+  const original = formLeadIntent();
+  const retry = formLeadIntent({
+    id: "88888888-8888-4888-8888-888888888888",
+    lead_number: "L-2026-88888888",
+    created_at: CREATED_AT + 50_000,
+    updated_at: UPDATED_AT + 50_000,
+  });
+  retry.activity.recordId = retry.lead.id;
+  retry.activity.createdAt = retry.lead.created_at;
+  retry.formLeadReview.acceptedAt = retry.lead.created_at;
+  const stored = { row: original.lead, version: "1" };
+  assert.equal(
+    calculatePostgresLeadCreationFingerprint(original),
+    calculatePostgresLeadCreationFingerprint(retry),
+  );
+  const client = new ScriptedPostgresClient([
+    ...transactionSteps(),
+    step(/INSERT INTO idempotency_requests/, result([], 0)),
+    step(/SELECT request_fingerprint[\s\S]*FOR UPDATE/, result([{
+      request_fingerprint: calculatePostgresLeadCreationFingerprint(original),
+      status: "completed",
+      response_status: 201,
+      response_body: stored,
+      version: "2",
+    }], 1)),
+    step(/^COMMIT$/),
+  ]);
+  const repository = createPostgresLeadRepository(new ScriptedPostgresPool(client), {
+    schema: "repository_test",
+    request: creationRequest(),
+  });
+
+  const replay = await repository.create(retry);
+  assert.equal(replay.outcome, "review-accepted");
+  assert.equal(replay.replayed, true);
+  assert.deepEqual(replay.formLeadReview, {
+    id: FORM_LEAD_REVIEW_ID,
+    status: "accepted",
+  });
+  assert.deepEqual(replay.value, stored);
+  assert.equal(client.queries.some(({ sql }) => /google_form_lead_reviews/u.test(sql)), false);
+  assert.equal(client.queries.some(({ sql }) => /INSERT INTO leads/u.test(sql)), false);
+  client.assertComplete();
+});
+
 test("PostgreSQL lead fingerprints exclude generated IDs and timestamps", () => {
   const first = leadIntent();
   const second = leadIntent({
@@ -368,6 +499,25 @@ test("PostgreSQL lead fingerprints exclude generated IDs and timestamps", () => 
   assert.equal(
     calculatePostgresLeadCreationFingerprint(first),
     calculatePostgresLeadCreationFingerprint(second),
+  );
+  const firstReview = formLeadIntent();
+  const uppercaseReview = formLeadIntent();
+  uppercaseReview.formLeadReview.id = FORM_LEAD_REVIEW_ID.toUpperCase();
+  assert.equal(
+    calculatePostgresLeadCreationFingerprint(firstReview),
+    calculatePostgresLeadCreationFingerprint(uppercaseReview),
+  );
+  const secondReview = formLeadIntent();
+  secondReview.formLeadReview.id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  assert.notEqual(
+    calculatePostgresLeadCreationFingerprint(firstReview),
+    calculatePostgresLeadCreationFingerprint(secondReview),
+  );
+  const otherConnection = formLeadIntent();
+  otherConnection.formLeadReview.connectionKey = "workspace-secondary";
+  assert.notEqual(
+    calculatePostgresLeadCreationFingerprint(firstReview),
+    calculatePostgresLeadCreationFingerprint(otherConnection),
   );
 });
 

@@ -10,7 +10,7 @@ import type {
   GoogleFormLeadReviewRecord,
   GoogleFormLeadReviewState,
   GoogleFormLeadReviewStatus,
-  RetireGoogleFormLeadReviewInput,
+  DismissGoogleFormLeadReviewInput,
   SaveGoogleFormLeadBatchInput,
 } from "../../ports/google-form-lead-intake";
 import type { D1Database } from "./d1-database";
@@ -173,7 +173,7 @@ function assertSaveBatch(input: SaveGoogleFormLeadBatchInput) {
   }
 }
 
-function assertRetire(input: RetireGoogleFormLeadReviewInput) {
+function assertDismiss(input: DismissGoogleFormLeadReviewInput) {
   if (!CONNECTION_KEY_PATTERN.test(input.connectionKey) || !OPAQUE_ID_PATTERN.test(input.reviewId)) {
     throw new TypeError("Google Form review identity is invalid");
   }
@@ -181,11 +181,6 @@ function assertRetire(input: RetireGoogleFormLeadReviewInput) {
   if (!Number.isSafeInteger(input.reviewedAt) || input.reviewedAt < 0) {
     throw new TypeError("Google Form review timestamp is invalid");
   }
-  if (
-    (input.outcome === "accepted" && !input.acceptedLeadId)
-    || (input.outcome === "dismissed" && input.acceptedLeadId !== null)
-    || (input.acceptedLeadId !== null && !OPAQUE_ID_PATTERN.test(input.acceptedLeadId))
-  ) throw new TypeError("Google Form review lead disposition is invalid");
 }
 
 const REVIEW_SELECT = `SELECT id, connection_key, spreadsheet_id, source_row,
@@ -269,39 +264,20 @@ export function createD1GoogleFormLeadIntakeRepository(
       return Object.freeze({ inserted, watermark });
     },
 
-    async retireReview(input) {
-      assertRetire(input);
-      const result = input.outcome === "accepted"
-        ? await database.prepare(
-          `UPDATE google_form_lead_reviews
-           SET status = 'accepted', reviewed_by = ?, reviewed_at = ?, updated_at = ?,
-               accepted_lead_id = ?
-           WHERE id = ? AND connection_key = ? AND status = 'needs-review'
-             AND EXISTS (
-               SELECT 1 FROM leads WHERE id = ? AND created_by = ? LIMIT 1
-             )`,
-        ).bind(
-          input.actor,
-          input.reviewedAt,
-          input.reviewedAt,
-          input.acceptedLeadId,
-          input.reviewId,
-          input.connectionKey,
-          input.acceptedLeadId,
-          input.actor,
-        ).run()
-        : await database.prepare(
-          `UPDATE google_form_lead_reviews
-           SET status = 'dismissed', reviewed_by = ?, reviewed_at = ?, updated_at = ?,
-               accepted_lead_id = NULL
-           WHERE id = ? AND connection_key = ? AND status = 'needs-review'`,
-        ).bind(
-          input.actor,
-          input.reviewedAt,
-          input.reviewedAt,
-          input.reviewId,
-          input.connectionKey,
-        ).run();
+    async dismissReview(input) {
+      assertDismiss(input);
+      const result = await database.prepare(
+        `UPDATE google_form_lead_reviews
+         SET status = 'dismissed', reviewed_by = ?, reviewed_at = ?, updated_at = ?,
+             accepted_lead_id = NULL
+         WHERE id = ? AND connection_key = ? AND status = 'needs-review'`,
+      ).bind(
+        input.actor,
+        input.reviewedAt,
+        input.reviewedAt,
+        input.reviewId,
+        input.connectionKey,
+      ).run();
       return result.meta.changes === 1;
     },
   };

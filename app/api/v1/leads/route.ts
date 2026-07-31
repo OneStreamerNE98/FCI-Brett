@@ -10,10 +10,35 @@ import { ensureWorkspaceSchema } from "../_workspace-data";
 import { MAX_LEAD_BODY_BYTES } from "../../../domain/lead";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
+import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
 import {
   authorizedLeadOwnerEmail,
   authorizedLeadPayload,
 } from "../../../lib/authorized-lead-response";
+
+const FORM_LEAD_REVIEW_ID_PATTERN = /^[A-Za-z0-9_-]{1,256}$/u;
+
+function leadRequestBody(body: Record<string, unknown>) {
+  if (!Object.hasOwn(body, "formLeadReviewId")) {
+    return { ok: true as const, body, formLeadReview: undefined };
+  }
+  if (
+    typeof body.formLeadReviewId !== "string"
+    || !FORM_LEAD_REVIEW_ID_PATTERN.test(body.formLeadReviewId)
+  ) {
+    return {
+      ok: false as const,
+      error: "Google Form review details are invalid.",
+    };
+  }
+  const leadBody = { ...body };
+  delete leadBody.formLeadReviewId;
+  return {
+    ok: true as const,
+    body: leadBody,
+    formLeadReview: { id: body.formLeadReviewId },
+  };
+}
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -49,12 +74,18 @@ export async function POST(request: NextRequest) {
     tooLargeMessage: "Lead details are too large.",
   });
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+  const leadRequest = leadRequestBody(parsed.body);
+  if (!leadRequest.ok) return NextResponse.json({ error: leadRequest.error }, { status: 400 });
+  if (leadRequest.formLeadReview) {
+    const admin = requireOfficeUser(request, { admin: true });
+    if ("response" in admin) return admin.response;
+  }
   if (
-    Object.hasOwn(parsed.body, "ownerEmail")
-    && parsed.body.ownerEmail !== null
+    Object.hasOwn(leadRequest.body, "ownerEmail")
+    && leadRequest.body.ownerEmail !== null
     && (
-      typeof parsed.body.ownerEmail !== "string"
-      || !authorizedLeadOwnerEmail(parsed.body.ownerEmail, auth.user.email)
+      typeof leadRequest.body.ownerEmail !== "string"
+      || !authorizedLeadOwnerEmail(leadRequest.body.ownerEmail, auth.user.email)
     )
   ) {
     return NextResponse.json(
@@ -64,7 +95,7 @@ export async function POST(request: NextRequest) {
   }
   await ensureWorkspaceSchema();
   const result = await createLead(
-    parsed.body,
+    leadRequest.body,
     creationAuthorizationFor({
       actorId: auth.user.email,
       capabilities: [AUTHORIZATION_CAPABILITIES.leadsCreate],
@@ -73,25 +104,50 @@ export async function POST(request: NextRequest) {
       repository: createD1LeadRepository(env.DB as unknown as D1Database),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
+      ...(leadRequest.formLeadReview
+        ? {
+            formLeadReview: {
+              id: leadRequest.formLeadReview.id,
+              connectionKey: getGoogleRuntimeConfig().connectionKey,
+            },
+          }
+        : {}),
     },
   );
   if (!result.ok) {
     const status = result.kind === "forbidden" ? 403 : result.kind === "invalid" ? 400 : 409;
-    return NextResponse.json({ error: result.message }, { status });
+    return NextResponse.json({
+      error: result.message,
+      ...(result.kind === "review-not-found"
+        ? { code: "form_lead_review_not_found" }
+        : {}),
+    }, { status });
   }
-  queueGoogleChatNotification(
-    {
-      eventType: "lead.created",
-      entityId: result.value.id,
-      leadNumber: result.value.leadNumber,
-      company: result.value.company,
-      projectName: result.value.projectName,
-    },
-    auth.user.email,
-    request.nextUrl.origin,
-  );
+  if (result.formLeadReview?.replayed !== true) {
+    queueGoogleChatNotification(
+      {
+        eventType: "lead.created",
+        entityId: result.value.id,
+        leadNumber: result.value.leadNumber,
+        company: result.value.company,
+        projectName: result.value.projectName,
+      },
+      auth.user.email,
+      request.nextUrl.origin,
+    );
+  }
   return NextResponse.json(
-    { lead: authorizedLeadPayload(result.value, auth.user.email) },
+    {
+      lead: authorizedLeadPayload(result.value, auth.user.email),
+      ...(result.formLeadReview
+        ? {
+            formLeadReview: {
+              id: result.formLeadReview.id,
+              status: result.formLeadReview.status,
+            },
+          }
+        : {}),
+    },
     { status: 201 },
   );
 }

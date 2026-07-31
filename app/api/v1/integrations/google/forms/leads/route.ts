@@ -248,27 +248,14 @@ export async function POST(request: NextRequest) {
 function reviewDisposition(body: Record<string, unknown>) {
   const keys = Object.keys(body);
   if (
-    keys.some((key) => key !== "id" && key !== "outcome" && key !== "leadId")
+    keys.length !== 2
+    || keys.some((key) => key !== "id" && key !== "outcome")
     || typeof body.id !== "string" || !REVIEW_ID_PATTERN.test(body.id)
-    || (body.outcome !== "accepted" && body.outcome !== "dismissed")
+    || body.outcome !== "dismissed"
   ) return null;
-  if (body.outcome === "accepted") {
-    if (
-      keys.length !== 3
-      || typeof body.leadId !== "string"
-      || !REVIEW_ID_PATTERN.test(body.leadId)
-    ) return null;
-    return Object.freeze({
-      id: body.id,
-      outcome: body.outcome,
-      acceptedLeadId: body.leadId,
-    });
-  }
-  if (keys.length !== 2 || Object.hasOwn(body, "leadId")) return null;
   return Object.freeze({
     id: body.id,
     outcome: body.outcome,
-    acceptedLeadId: null,
   });
 }
 
@@ -297,19 +284,15 @@ export async function PATCH(request: NextRequest) {
     const setup = await getEffectiveGoogleRuntimeSetup();
     const retired = await createD1GoogleFormLeadIntakeRepository(
       env.DB as unknown as D1Database,
-    ).retireReview({
+    ).dismissReview({
       connectionKey: setup.config.connectionKey,
       reviewId: disposition.id,
-      outcome: disposition.outcome,
-      acceptedLeadId: disposition.acceptedLeadId,
       actor: auth.user.email,
       reviewedAt: Date.now(),
     });
     if (!retired) {
       return noStoreJson({
-        error: disposition.outcome === "accepted"
-          ? "The lead exists, but this review could not be retired. It remains visible so the result can be reconciled safely."
-          : "This response was already reviewed or is no longer available.",
+        error: "This response was already reviewed or is no longer available.",
         code: "form_lead_review_not_retired",
       }, 409);
     }

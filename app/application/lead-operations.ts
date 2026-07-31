@@ -19,18 +19,29 @@ export type ListLeadsResult =
 export type CreateLeadResult =
   | {
       ok: false;
-      kind: "forbidden" | "invalid" | "identifier-collision" | "idempotency-conflict" | "in-progress";
+      kind:
+        | "forbidden"
+        | "invalid"
+        | "identifier-collision"
+        | "idempotency-conflict"
+        | "in-progress"
+        | "review-not-found";
       message: string;
     }
   | {
       ok: true;
       value: ReturnType<typeof leadResponse> & { version?: string };
+      formLeadReview?: { id: string; status: "accepted"; replayed: boolean };
     };
 
 export type LeadOperationDependencies = {
   repository: Pick<LeadRepository, "list" | "create">;
   newId: () => string;
   now: () => number;
+  formLeadReview?: {
+    id: string;
+    connectionKey: string;
+  };
 };
 
 export async function listLeads(
@@ -63,6 +74,13 @@ export async function createLead(
       ok: false,
       kind: "invalid",
       message: "Enter a valid company, contact, project, source, stage, site, value, next action, owner email, and status.",
+    };
+  }
+  if (dependencies.formLeadReview && values.source !== "Google Form") {
+    return {
+      ok: false,
+      kind: "invalid",
+      message: "Google Form review leads must preserve their Google Form source.",
     };
   }
 
@@ -100,6 +118,14 @@ export async function createLead(
       detail: `${leadNumber} · ${values.company} · ${values.projectName}`,
       createdAt,
     },
+    ...(dependencies.formLeadReview
+      ? {
+          formLeadReview: {
+            ...dependencies.formLeadReview,
+            acceptedAt: createdAt,
+          },
+        }
+      : {}),
   });
 
   if (result.outcome === "identifier-collision") {
@@ -110,6 +136,32 @@ export async function createLead(
   }
   if (result.outcome === "in-progress") {
     return { ok: false, kind: result.outcome, message: "This lead request is already being processed. Retry with the same request key." };
+  }
+  if (result.outcome === "review-not-found") {
+    return {
+      ok: false,
+      kind: result.outcome,
+      message: "The Google Form review changed since it was loaded. Reload the queue before trying again.",
+    };
+  }
+  if (dependencies.formLeadReview) {
+    if (
+      result.outcome !== "review-accepted"
+      || result.formLeadReview.id !== dependencies.formLeadReview.id
+    ) {
+      throw new Error("Lead repository returned inconsistent Google Form review evidence.");
+    }
+    return {
+      ok: true,
+      value: { ...leadResponse(result.value.row), version: result.value.version },
+      formLeadReview: {
+        ...result.formLeadReview,
+        replayed: result.replayed,
+      },
+    };
+  }
+  if (result.outcome === "review-accepted") {
+    throw new Error("Lead repository accepted an unexpected Google Form review.");
   }
   if (result.outcome === "accepted") {
     return { ok: true, value: { ...leadResponse(result.value.row), version: result.value.version } };

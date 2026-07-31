@@ -14,22 +14,22 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   });
 }
 
-function review() {
+function review(sourceRow = 2) {
   return {
-    id: REVIEW_ID,
-    sourceRow: 2,
+    id: sourceRow === 2 ? REVIEW_ID : `gi01-review-e2e-${sourceRow}`,
+    sourceRow,
     submittedAt: "2026-07-31T13:00:00Z",
     state: "ready",
     status: "needs-review",
     proposal: {
-      company: "FCI TEST — DO NOT USE — GI-01 Form Lead",
-      contactName: "FCI TEST — DO NOT USE — GI-01 Form Lead",
-      contactEmail: "gi01-form@example.test",
+      company: `FCI TEST — DO NOT USE — GI-01 Form Lead ${sourceRow}`,
+      contactName: `FCI TEST — DO NOT USE — GI-01 Form Lead ${sourceRow}`,
+      contactEmail: `gi01-form-${sourceRow}@example.test`,
       contactPhone: null,
       projectName: "Luxury vinyl plank flooring — Lobby and two offices",
       source: "Google Form",
       stage: "New inquiry",
-      site: "101 Simulation Way, Cherry Hill, NJ",
+      site: `${sourceRow} Simulation Way, Cherry Hill, NJ`,
       estimatedValue: null,
       nextAction: "Follow up using preferred contact: gi01-form@example.test",
       nextActionAt: null,
@@ -76,18 +76,20 @@ async function routeMirror(page: Page) {
   }));
 }
 
-test("GI-01 simulation requires human completion and preserves retry-only retirement after a thrown PATCH", async ({ page }) => {
+test("GI-01 simulation requires human completion and accepts a review through one lead POST", async ({ page }) => {
   let queue = [review()];
   let checkCalls = 0;
+  let getCalls = 0;
   let leadPosts = 0;
-  let retireCalls = 0;
+  let reviewPatches = 0;
   const leadBodies: unknown[] = [];
-  const retireBodies: unknown[] = [];
+  const idempotencyKeys: Array<string | null> = [];
 
   await routeMirror(page);
   await page.route("**/api/v1/integrations/google/forms/leads", async (route) => {
     const method = route.request().method();
     if (method === "GET") {
+      getCalls += 1;
       await fulfillJson(route, intake(queue));
       return;
     }
@@ -102,14 +104,8 @@ test("GI-01 simulation requires human completion and preserves retry-only retire
       });
       return;
     }
-    retireCalls += 1;
-    retireBodies.push(route.request().postDataJSON());
-    if (retireCalls === 1) {
-      await route.abort("connectionfailed");
-      return;
-    }
-    queue = [];
-    await fulfillJson(route, { outcome: "accepted" });
+    reviewPatches += 1;
+    await fulfillJson(route, { error: "Acceptance must use the lead route." }, 400);
   });
   await page.route("**/api/v1/leads", async (route) => {
     if (route.request().method() !== "POST") {
@@ -118,8 +114,11 @@ test("GI-01 simulation requires human completion and preserves retry-only retire
     }
     leadPosts += 1;
     leadBodies.push(route.request().postDataJSON());
+    idempotencyKeys.push(route.request().headers()["idempotency-key"] ?? null);
+    queue = [];
     await fulfillJson(route, {
       lead: { id: LEAD_ID, leadNumber: "LEAD-260731-001" },
+      formLeadReview: { id: REVIEW_ID, status: "accepted" },
     }, 201);
   });
 
@@ -134,35 +133,184 @@ test("GI-01 simulation requires human completion and preserves retry-only retire
   await expect(panel.getByText("No new form responses were found.", { exact: true })).toBeVisible();
   expect(checkCalls).toBe(1);
 
+  const getCallsBeforeAccept = getCalls;
   await panel.getByLabel("Estimated value").fill("125000");
   await panel.getByRole("button", { name: "Create lead" }).click();
 
-  await expect(panel.getByRole("alert").filter({
-    hasText: "Lead LEAD-260731-001 was created, but the queue update failed.",
-  })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Retry retire review" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Dismiss" })).toBeDisabled();
+  await expect(panel.getByText("No form responses need review", { exact: true })).toBeVisible();
   expect(leadPosts).toBe(1);
-  expect(retireCalls).toBe(1);
+  expect(getCalls).toBe(getCallsBeforeAccept + 1);
+  expect(reviewPatches).toBe(0);
+  expect(idempotencyKeys).toEqual([REVIEW_ID]);
   expect(leadBodies).toEqual([expect.objectContaining({
     source: "Google Form",
     stage: "New inquiry",
     estimatedValue: 125000,
     ownerEmail: ADMIN_EMAIL,
+    formLeadReviewId: REVIEW_ID,
   })]);
-
-  await panel.getByRole("button", { name: "Retry retire review" }).click();
-  await expect(panel.getByRole("button", { name: "Retry retire review" })).toHaveCount(0);
-  await expect(panel.getByText("No form responses need review", { exact: true })).toBeVisible();
-  expect(leadPosts).toBe(1);
-  expect(retireCalls).toBe(2);
-  expect(retireBodies).toEqual([
-    { id: REVIEW_ID, outcome: "accepted", leadId: LEAD_ID },
-    { id: REVIEW_ID, outcome: "accepted", leadId: LEAD_ID },
-  ]);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(panel).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).include("main").analyze();
   expect(accessibility.violations).toEqual([]);
+});
+
+test("GI-01 response loss after commit retires the review without a duplicate retry", async ({ page }) => {
+  let queue = [review()];
+  let leadPosts = 0;
+  let reviewPatches = 0;
+
+  await routeMirror(page);
+  await page.route("**/api/v1/integrations/google/forms/leads", async (route) => {
+    if (route.request().method() === "GET") {
+      await fulfillJson(route, intake(queue));
+      return;
+    }
+    if (route.request().method() === "PATCH") {
+      reviewPatches += 1;
+      await fulfillJson(route, { error: "Acceptance must use the lead route." }, 400);
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route("**/api/v1/leads", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    leadPosts += 1;
+    queue = [];
+    await route.abort("connectionfailed");
+  });
+
+  await page.goto("/settings?section=client-directory");
+  const panel = page.getByRole("region", { name: "Google Forms responses" });
+  const row = panel.locator("article").filter({ hasText: "Response Sheet row 2" });
+  await panel.getByLabel("Estimated value").fill("125000");
+  await row.getByRole("button", { name: "Create lead" }).click();
+
+  await expect(row.getByRole("alert")).toContainText(
+    "The lead result could not be confirmed. Reload the queue before trying again.",
+  );
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("button", { name: "Create lead" })).toBeDisabled();
+  await expect(row.getByRole("button", { name: "Dismiss" })).toBeDisabled();
+  expect(leadPosts).toBe(1);
+  expect(reviewPatches).toBe(0);
+
+  await page.reload();
+  await expect(panel.getByText("No form responses need review", { exact: true })).toBeVisible();
+  await expect(row).toHaveCount(0);
+  expect(leadPosts).toBe(1);
+  expect(reviewPatches).toBe(0);
+});
+
+test("GI-01 rejects mismatched acceptance evidence without refetching or retiring the visible row", async ({ page }) => {
+  let getCalls = 0;
+  let leadPosts = 0;
+
+  await routeMirror(page);
+  await page.route("**/api/v1/integrations/google/forms/leads", async (route) => {
+    if (route.request().method() === "GET") {
+      getCalls += 1;
+      await fulfillJson(route, intake([review()]));
+      return;
+    }
+    await route.fallback();
+  });
+  await page.route("**/api/v1/leads", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    leadPosts += 1;
+    await fulfillJson(route, {
+      lead: { id: LEAD_ID, leadNumber: "LEAD-260731-001" },
+      formLeadReview: { id: "a-different-review", status: "accepted" },
+    }, 201);
+  });
+
+  await page.goto("/settings?section=client-directory");
+  const panel = page.getByRole("region", { name: "Google Forms responses" });
+  const row = panel.locator("article").filter({ hasText: "Response Sheet row 2" });
+  await panel.getByLabel("Estimated value").fill("125000");
+  await row.getByRole("button", { name: "Create lead" }).click();
+
+  await expect(row.getByRole("alert")).toContainText(
+    "The lead result could not be confirmed. Reload the queue before trying again.",
+  );
+  await expect(row).toBeVisible();
+  await expect(row.getByRole("button", { name: "Create lead" })).toBeDisabled();
+  await expect(row.getByRole("button", { name: "Dismiss" })).toBeDisabled();
+  expect(getCalls).toBe(1);
+  expect(leadPosts).toBe(1);
+});
+
+test("GI-01 retirement refetches the capped queue so the next server row appears", async ({ page }) => {
+  const firstPage = Array.from({ length: 50 }, (_, index) => review(index + 2));
+  const nextPage = [review(52)];
+  let getCalls = 0;
+  let retireCalls = 0;
+
+  await routeMirror(page);
+  await page.route("**/api/v1/integrations/google/forms/leads", async (route) => {
+    if (route.request().method() === "GET") {
+      getCalls += 1;
+      await fulfillJson(route, intake(getCalls === 1 ? firstPage : nextPage));
+      return;
+    }
+    if (route.request().method() === "PATCH") {
+      retireCalls += 1;
+      await fulfillJson(route, { outcome: "dismissed" });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/settings?section=client-directory");
+  const panel = page.getByRole("region", { name: "Google Forms responses" });
+  await expect(panel.getByText(/Response Sheet row 2(?:\s|·)/u)).toBeVisible();
+  await panel.locator("article").filter({ hasText: /Response Sheet row 2\s*·/u })
+    .getByRole("button", { name: "Dismiss" }).click();
+
+  await expect(panel.getByText(/Response Sheet row 52(?:\s|·)/u)).toBeVisible();
+  await expect(panel.getByText(/Response Sheet row 2(?:\s|·)/u)).toHaveCount(0);
+  await expect(panel.getByText("No form responses need review", { exact: true })).toHaveCount(0);
+  expect(getCalls).toBe(2);
+  expect(retireCalls).toBe(1);
+});
+
+test("GI-01 keeps a retired row visible when the queue refresh fails", async ({ page }) => {
+  let getCalls = 0;
+
+  await routeMirror(page);
+  await page.route("**/api/v1/integrations/google/forms/leads", async (route) => {
+    if (route.request().method() === "GET") {
+      getCalls += 1;
+      if (getCalls === 1) {
+        await fulfillJson(route, intake([review()]));
+      } else {
+        await fulfillJson(route, { error: "Temporary queue read failure." }, 503);
+      }
+      return;
+    }
+    if (route.request().method() === "PATCH") {
+      await fulfillJson(route, { outcome: "dismissed" });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/settings?section=client-directory");
+  const panel = page.getByRole("region", { name: "Google Forms responses" });
+  const row = panel.locator("article").filter({ hasText: "Response Sheet row 2" });
+  await row.getByRole("button", { name: "Dismiss" }).click();
+
+  await expect(panel.getByText(
+    /The review was saved, but the queue could not be refreshed\./u,
+  ).first()).toBeVisible();
+  await expect(row).toBeVisible();
+  await expect(panel.getByText("No form responses need review", { exact: true })).toHaveCount(0);
+  expect(getCalls).toBe(2);
 });

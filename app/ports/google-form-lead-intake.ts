@@ -67,11 +67,9 @@ export type SaveGoogleFormLeadBatchInput = Readonly<{
   actor: string;
 }>;
 
-export type RetireGoogleFormLeadReviewInput = Readonly<{
+export type DismissGoogleFormLeadReviewInput = Readonly<{
   connectionKey: string;
   reviewId: string;
-  outcome: "accepted" | "dismissed";
-  acceptedLeadId: string | null;
   actor: string;
   reviewedAt: number;
 }>;
@@ -89,5 +87,5 @@ export interface GoogleFormLeadIntakeRepository {
     inserted: number;
     watermark: GoogleFormLeadIntakeWatermark;
   }>>;
-  retireReview(input: RetireGoogleFormLeadReviewInput): Promise<boolean>;
+  dismissReview(input: DismissGoogleFormLeadReviewInput): Promise<boolean>;
 }

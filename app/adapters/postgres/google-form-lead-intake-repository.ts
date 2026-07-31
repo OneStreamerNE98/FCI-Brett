@@ -10,7 +10,7 @@ import type {
   GoogleFormLeadReviewRecord,
   GoogleFormLeadReviewState,
   GoogleFormLeadReviewStatus,
-  RetireGoogleFormLeadReviewInput,
+  DismissGoogleFormLeadReviewInput,
   SaveGoogleFormLeadBatchInput,
 } from "../../ports/google-form-lead-intake";
 import { withPostgresTransaction, type PostgresPool } from "./postgres-database";
@@ -158,7 +158,7 @@ function assertSaveBatch(input: SaveGoogleFormLeadBatchInput) {
   }
 }
 
-function assertRetire(input: RetireGoogleFormLeadReviewInput) {
+function assertDismiss(input: DismissGoogleFormLeadReviewInput) {
   if (!CONNECTION_KEY_PATTERN.test(input.connectionKey) || !isPostgresUuid(input.reviewId)) {
     throw new TypeError("PostgreSQL Google Form review identity is invalid");
   }
@@ -166,11 +166,6 @@ function assertRetire(input: RetireGoogleFormLeadReviewInput) {
   if (!Number.isSafeInteger(input.reviewedAt) || input.reviewedAt < 0) {
     throw new TypeError("PostgreSQL Google Form review timestamp is invalid");
   }
-  if (
-    (input.outcome === "accepted" && !input.acceptedLeadId)
-    || (input.outcome === "dismissed" && input.acceptedLeadId !== null)
-    || (input.acceptedLeadId !== null && !isPostgresUuid(input.acceptedLeadId))
-  ) throw new TypeError("PostgreSQL Google Form review lead disposition is invalid");
 }
 
 const REVIEW_SELECT = `SELECT id::text AS id, connection_key, spreadsheet_id,
@@ -283,35 +278,16 @@ export function createPostgresGoogleFormLeadIntakeRepository(
       });
     },
 
-    async retireReview(input) {
-      assertRetire(input);
+    async dismissReview(input) {
+      assertDismiss(input);
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
-        const result = input.outcome === "accepted"
-          ? await client.query(
-            `UPDATE google_form_lead_reviews AS review
-             SET status = 'accepted', reviewed_by = $1, reviewed_at = $2,
-                 updated_at = $2, accepted_lead_id = $3
-             WHERE review.id = $4 AND review.connection_key = $5
-               AND review.status = 'needs-review'
-               AND EXISTS (
-                 SELECT 1 FROM leads
-                 WHERE leads.id = $3 AND leads.created_by = $1
-               )`,
-            [
-              input.actor,
-              new Date(input.reviewedAt),
-              input.acceptedLeadId,
-              input.reviewId,
-              input.connectionKey,
-            ],
-          )
-          : await client.query(
-            `UPDATE google_form_lead_reviews
-             SET status = 'dismissed', reviewed_by = $1, reviewed_at = $2,
-                 updated_at = $2, accepted_lead_id = NULL
-             WHERE id = $3 AND connection_key = $4 AND status = 'needs-review'`,
-            [input.actor, new Date(input.reviewedAt), input.reviewId, input.connectionKey],
-          );
+        const result = await client.query(
+          `UPDATE google_form_lead_reviews
+           SET status = 'dismissed', reviewed_by = $1, reviewed_at = $2,
+               updated_at = $2, accepted_lead_id = NULL
+           WHERE id = $3 AND connection_key = $4 AND status = 'needs-review'`,
+          [input.actor, new Date(input.reviewedAt), input.reviewId, input.connectionKey],
+        );
         if (result.rowCount === 0) return false;
         if (result.rowCount !== 1) throw new Error("PostgreSQL Google Form review retirement was ambiguous");
         return true;

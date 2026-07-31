@@ -353,7 +353,7 @@ test("creates and closes a runtime composition through injected pool dependencie
   assert.equal(typeof composition.repositories.mailItems.markCoverageComplete, "function");
   assert.equal(typeof composition.repositories.googleFormLeadIntake.getWatermark, "function");
   assert.equal(typeof composition.repositories.googleFormLeadIntake.saveBatch, "function");
-  assert.equal(typeof composition.repositories.googleFormLeadIntake.retireReview, "function");
+  assert.equal(typeof composition.repositories.googleFormLeadIntake.dismissReview, "function");
   await composition.close();
   assert.deepEqual(events, ["pool.end", "connector.close"]);
 });

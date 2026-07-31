@@ -20,6 +20,7 @@ import {
   parsePostgresNumericSafeInteger,
   parsePostgresPositiveBigint,
   parsePostgresTimestamp,
+  parsePostgresUuid,
 } from "./postgres-values";
 
 type PostgresLeadRepositoryOptions = {
@@ -64,6 +65,13 @@ const LEAD_IDENTIFIER_CONSTRAINTS = [
   "outbox_events_event_key_key",
   "idempotency_requests_pkey",
 ] as const;
+
+class FormLeadReviewNotFoundError extends Error {
+  constructor() {
+    super("PostgreSQL Google Form review was not available for lead creation");
+    this.name = "FormLeadReviewNotFoundError";
+  }
+}
 
 function requiredText(value: unknown, label: string) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is invalid`);
@@ -163,7 +171,17 @@ function normalizedLeadFields(lead: LeadRow) {
 
 function leadCreationFingerprintInput(intent: LeadCreationIntent) {
   const values = normalizedLeadFields(intent.lead);
-  return { version: 1, ...values };
+  return intent.formLeadReview
+    ? {
+        version: 1,
+        ...values,
+        formLeadReviewId: parsePostgresUuid(
+          intent.formLeadReview.id,
+          "PostgreSQL Google Form review ID",
+        ),
+        formLeadReviewConnectionKey: intent.formLeadReview.connectionKey,
+      }
+    : { version: 1, ...values };
 }
 
 export function calculatePostgresLeadCreationFingerprint(intent: LeadCreationIntent) {
@@ -186,6 +204,16 @@ function assertLeadCreationIntent(intent: LeadCreationIntent) {
   }
   if (intent.activity.actor !== intent.lead.created_by || !intent.lead.created_by.trim()) {
     throw new TypeError("PostgreSQL lead creation actor must match its activity evidence");
+  }
+  if (intent.formLeadReview) {
+    parsePostgresUuid(intent.formLeadReview.id, "PostgreSQL Google Form review ID");
+    if (
+      !/^[a-z][a-z0-9_-]{0,127}$/u.test(intent.formLeadReview.connectionKey)
+      || intent.formLeadReview.acceptedAt !== intent.lead.created_at
+      || intent.lead.source !== "Google Form"
+    ) {
+      throw new TypeError("PostgreSQL Google Form lead acceptance evidence is invalid");
+    }
   }
   for (const timestamp of [intent.lead.created_at, intent.lead.updated_at, intent.activity.createdAt]) {
     if (!Number.isSafeInteger(timestamp)) {
@@ -249,6 +277,9 @@ export function createPostgresLeadRepository(
 
     async create(intent) {
       assertLeadCreationIntent(intent);
+      const formLeadReviewId = intent.formLeadReview
+        ? parsePostgresUuid(intent.formLeadReview.id, "PostgreSQL Google Form review ID")
+        : null;
       if (!options.request) {
         throw new TypeError("PostgreSQL lead creation requires an idempotency request context");
       }
@@ -268,7 +299,34 @@ export function createPostgresLeadRepository(
             throw new Error("Stored PostgreSQL lead failure response is invalid");
           }
           if (claim.outcome === "replayed") {
-            return { outcome: "accepted" as const, value: claim.value, replayed: true };
+            return intent.formLeadReview
+              ? {
+                  outcome: "review-accepted" as const,
+                  value: claim.value,
+                  formLeadReview: {
+                    id: intent.formLeadReview.id,
+                    status: "accepted" as const,
+                  },
+                  replayed: true,
+                }
+              : { outcome: "accepted" as const, value: claim.value, replayed: true };
+          }
+
+          if (intent.formLeadReview) {
+            const review = await client.query<{ id: unknown }>(
+              `SELECT id::text AS id
+               FROM google_form_lead_reviews
+               WHERE id = $1 AND connection_key = $2 AND status = 'needs-review'
+               FOR UPDATE`,
+              [formLeadReviewId, intent.formLeadReview.connectionKey],
+            );
+            if (review.rowCount === 0) throw new FormLeadReviewNotFoundError();
+            if (
+              review.rowCount !== 1
+              || review.rows[0]?.id !== formLeadReviewId
+            ) {
+              throw new Error("PostgreSQL Google Form review lock was ambiguous");
+            }
           }
 
           const lead = intent.lead;
@@ -323,6 +381,24 @@ export function createPostgresLeadRepository(
               new Date(lead.created_at),
             ],
           );
+          if (intent.formLeadReview) {
+            const review = await client.query(
+              `UPDATE google_form_lead_reviews
+               SET status = 'accepted', reviewed_by = $1, reviewed_at = $2,
+                   updated_at = $2, accepted_lead_id = $3
+               WHERE id = $4 AND connection_key = $5 AND status = 'needs-review'`,
+              [
+                lead.created_by,
+                new Date(intent.formLeadReview.acceptedAt),
+                lead.id,
+                formLeadReviewId,
+                intent.formLeadReview.connectionKey,
+              ],
+            );
+            if (review.rowCount !== 1) {
+              throw new Error("PostgreSQL Google Form review was not accepted exactly once");
+            }
+          }
           await completePostgresCreation(
             client,
             POSTGRES_CREATION_OPERATIONS.lead,
@@ -331,9 +407,22 @@ export function createPostgresLeadRepository(
             request,
             value,
           );
-          return { outcome: "accepted" as const, value, replayed: false };
+          return intent.formLeadReview
+            ? {
+                outcome: "review-accepted" as const,
+                value,
+                formLeadReview: {
+                  id: intent.formLeadReview.id,
+                  status: "accepted" as const,
+                },
+                replayed: false,
+              }
+            : { outcome: "accepted" as const, value, replayed: false };
         });
       } catch (error) {
+        if (error instanceof FormLeadReviewNotFoundError) {
+          return { outcome: "review-not-found" };
+        }
         if (postgresConstraint(error, "23505", LEAD_IDENTIFIER_CONSTRAINTS)) {
           return { outcome: "identifier-collision" };
         }

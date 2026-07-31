@@ -190,7 +190,7 @@ function FormLeadReviewCard({
 }: {
   review: FormLeadReview;
   actorEmail: string;
-  onRetired: (id: string) => void;
+  onRetired: () => Promise<void>;
 }) {
   const proposal = review.proposal;
   const [company, setCompany] = useState(proposal.company);
@@ -210,37 +210,17 @@ function FormLeadReviewCard({
   );
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
-  const [createdLead, setCreatedLead] = useState<Readonly<{
+  const [requiresReload, setRequiresReload] = useState(false);
+  const [acceptedLead, setAcceptedLead] = useState<Readonly<{
     id: string;
     label: string;
   }> | null>(null);
-
-  async function retireAccepted(lead: Readonly<{ id: string; label: string }>) {
-    const response = await fetch(FORM_LEAD_PATH, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ id: review.id, outcome: "accepted", leadId: lead.id }),
-    });
-    const body = await response.json().catch(() => null) as unknown;
-    if (!response.ok) {
-      setCreatedLead(lead);
-      throw new Error(responseError(
-        body,
-        `Lead ${lead.label} was created, but this response remains in the queue. Do not create it again; retry retiring the review.`,
-      ));
-    }
-    onRetired(review.id);
-  }
 
   async function createLead(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setWorking(true);
     setError("");
     try {
-      if (createdLead) {
-        await retireAccepted(createdLead);
-        return;
-      }
       const amount = Number(estimatedValue);
       if (!estimatedValue.trim() || !Number.isSafeInteger(amount) || amount < 0) {
         throw new Error("Enter a non-negative whole-dollar estimated value before creating the lead.");
@@ -251,7 +231,11 @@ function FormLeadReviewCard({
       }
       const response = await fetch(LEADS_PATH, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "Idempotency-Key": review.id,
+        },
         body: JSON.stringify({
           company,
           contactName,
@@ -266,7 +250,11 @@ function FormLeadReviewCard({
           nextActionAt: dueAt,
           ownerEmail: actorEmail,
           status: "active",
+          formLeadReviewId: review.id,
         }),
+      }).catch(() => {
+        setRequiresReload(true);
+        throw new Error("The lead result could not be confirmed. Reload the queue before trying again.");
       });
       const body = await response.json().catch(() => null) as unknown;
       const lead = isRecord(body) && isRecord(body.lead)
@@ -274,13 +262,29 @@ function FormLeadReviewCard({
         && typeof body.lead.leadNumber === "string"
         ? { id: body.lead.id, label: body.lead.leadNumber }
         : null;
-      if (!response.ok || !lead) {
-        throw new Error(responseError(body, "The lead could not be created. This response remains in the queue."));
+      const acceptedReview = isRecord(body) && isRecord(body.formLeadReview)
+        && body.formLeadReview.id === review.id
+        && body.formLeadReview.status === "accepted";
+      if (!response.ok || !lead || !acceptedReview) {
+        if (
+          response.ok
+          || response.status === 409
+          || response.status >= 500
+          || (isRecord(body) && body.code === "form_lead_review_not_found")
+        ) {
+          setRequiresReload(true);
+        }
+        throw new Error(responseError(
+          body,
+          "The lead result could not be confirmed. Reload the queue before trying again.",
+        ));
       }
-      setCreatedLead(lead);
-      await retireAccepted(lead);
+      setAcceptedLead(lead);
+      await onRetired();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "This response remains in the queue.");
+      setError(caught instanceof Error
+        ? caught.message
+        : "The lead result could not be confirmed. Reload the queue before trying again.");
     } finally {
       setWorking(false);
     }
@@ -297,7 +301,7 @@ function FormLeadReviewCard({
       });
       const body = await response.json().catch(() => null) as unknown;
       if (!response.ok) throw new Error(responseError(body, "The response could not be dismissed."));
-      onRetired(review.id);
+      await onRetired();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The response remains in the queue.");
     } finally {
@@ -345,16 +349,16 @@ function FormLeadReviewCard({
       <label><span>Next action date</span><input type="datetime-local" value={nextActionAt} onChange={(event) => setNextActionAt(event.target.value)} /></label>
       <label className={styles.fullField}><span>Next action</span><textarea value={nextAction} onChange={(event) => setNextAction(event.target.value)} required maxLength={500} /></label>
       <p className={styles.ownerLine}>Owner: <strong>{actorEmail}</strong></p>
-      {createdLead && <div className={styles.createdWarning} role="alert">
+      {acceptedLead && <div className={styles.createdWarning} role="alert">
         <CircleAlert size={16} aria-hidden="true" />
-        <span>Lead {createdLead.label} was created, but the queue update failed. This row stays visible. Retry retirement; do not create the lead again.</span>
+        <span>Lead {acceptedLead.label} and its review were saved, but the queue refresh failed. Reload before reviewing another response.</span>
       </div>}
       {error && <div className={styles.error} role="alert">{error}</div>}
       <footer className={styles.reviewActions}>
-        <button type="button" className="soft-button" onClick={() => void dismiss()} disabled={working || Boolean(createdLead)}>Dismiss</button>
-        <button type="submit" className="primary-button" disabled={working}>
-          {createdLead ? <RefreshCw size={16} aria-hidden="true" /> : <UserPlus size={16} aria-hidden="true" />}
-          {working ? "Saving…" : createdLead ? "Retry retire review" : "Create lead"}
+        <button type="button" className="soft-button" onClick={() => void dismiss()} disabled={working || Boolean(acceptedLead) || requiresReload}>Dismiss</button>
+        <button type="submit" className="primary-button" disabled={working || Boolean(acceptedLead) || requiresReload}>
+          {acceptedLead ? <CheckCircle2 size={16} aria-hidden="true" /> : <UserPlus size={16} aria-hidden="true" />}
+          {working ? "Saving…" : acceptedLead ? "Review accepted" : "Create lead"}
         </button>
       </footer>
     </form>
@@ -403,6 +407,24 @@ function GoogleFormLeadIntakeCard({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
+  async function refreshAfterRetirement() {
+    setLoading(true);
+    setError("");
+    setMessage("");
+    try {
+      setIntake(await fetchFormLeadIntake());
+    } catch (caught) {
+      const detail = caught instanceof Error
+        ? caught.message
+        : "Google Form lead intake could not be loaded.";
+      const refreshError = `The review was saved, but the queue could not be refreshed. The visible rows may be stale; reload before reviewing another response. ${detail}`;
+      setError(refreshError);
+      throw new Error(refreshError);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const queue = intake?.queue ?? [];
   return <section className={`panel ${styles.intakePanel}`} aria-labelledby="google-form-lead-intake-heading">
     <div className="settings-heading">
@@ -433,9 +455,7 @@ function GoogleFormLeadIntakeCard({ isAdmin }: { isAdmin: boolean }) {
         key={review.id}
         review={review}
         actorEmail={intake?.actorEmail ?? ""}
-        onRetired={(id) => setIntake((current) => current
-          ? { ...current, queue: current.queue.filter((item) => item.id !== id) }
-          : current)}
+        onRetired={refreshAfterRetirement}
       />)}
     </div>}
   </section>;
