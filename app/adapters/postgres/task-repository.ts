@@ -50,7 +50,10 @@ const TASK_IDENTIFIER_CONSTRAINTS = [
   "tasks_pkey",
   "activity_events_pkey",
 ] as const;
-const TASK_PROJECT_REFERENCE_CONSTRAINTS = ["tasks_project_id_fkey"] as const;
+const TASK_PROJECT_REFERENCE_CONSTRAINTS = [
+  "tasks_project_id_fkey",
+  "mail_items_approved_project_id_fkey",
+] as const;
 const TASK_LEAD_REFERENCE_CONSTRAINTS = ["tasks_lead_id_fkey"] as const;
 
 function requiredText(value: unknown, label: string) {
@@ -143,6 +146,33 @@ function assertNormalizedTask(task: TaskRow) {
 function assertCreationIntent(intent: TaskCreationIntent) {
   assertUuid(intent.task.id, "PostgreSQL task ID");
   assertNormalizedTask(intent.task);
+  const created = intent.activities[0];
+  if (
+    !created
+    || created.action !== "Task created"
+    || created.recordId !== intent.task.id
+    || created.actor !== intent.task.created_by
+    || created.createdAt !== intent.task.created_at
+  ) {
+    throw new TypeError("PostgreSQL task creation evidence is invalid");
+  }
+  if (intent.inboxReview) {
+    const review = intent.inboxReview;
+    if (
+      !review.id.trim()
+      || review.id.length > 512
+      || /[\u0000-\u001f\u007f]/.test(review.id)
+      || !/^[a-z][a-z0-9_-]{0,127}$/.test(review.connectionKey)
+      || !/^[A-Za-z0-9_-]{1,256}$/.test(review.gmailMessageId)
+      || !["schedule", "warranty"].includes(review.intent)
+      || review.gmailMessageId !== intent.task.source_ref
+      || intent.task.source !== "email"
+      || review.approvedProjectId !== intent.task.project_id
+      || review.acceptedAt !== intent.task.created_at
+    ) {
+      throw new TypeError("PostgreSQL inbox review task evidence is invalid");
+    }
+  }
   for (const activity of intent.activities) {
     assertUuid(activity.id, "PostgreSQL task activity ID");
     if (
@@ -319,6 +349,34 @@ LIMIT ${limit}`,
           pool,
           { schema: options.schema },
           async (client) => {
+            if (intent.inboxReview) {
+              const review = intent.inboxReview;
+              const accepted = await client.query<{ id: unknown }>(
+                `UPDATE mail_items SET
+                   status = 'accepted', approved_project_id = $1,
+                   attempted_label_definition_version = NULL,
+                   failure_attempts = 0, error_code = NULL, updated_at = $2
+                 WHERE id = $3 AND connection_key = $4
+                   AND gmail_message_id = $5 AND status = 'needs-review'
+                   AND pg_catalog.jsonb_typeof(analysis_payload -> 'intents') = 'array'
+                   AND analysis_payload -> 'intents' ? $6
+                 RETURNING id`,
+                [
+                  review.approvedProjectId,
+                  new Date(review.acceptedAt),
+                  review.id,
+                  review.connectionKey,
+                  review.gmailMessageId,
+                  review.intent,
+                ],
+              );
+              if (accepted.rowCount === 0) {
+                return { outcome: "review-not-found" as const };
+              }
+              if (accepted.rowCount !== 1 || !accepted.rows[0]) {
+                throw new Error("PostgreSQL inbox review was not accepted exactly once");
+              }
+            }
             const inserted = await client.query<TaskDatabaseRow>(
               `INSERT INTO tasks (
                  id, title, details, status, due_date, project_id, lead_id,
@@ -341,10 +399,17 @@ LIMIT ${limit}`,
             for (const activity of intent.activities) {
               await insertActivity(client, activity, "task-create");
             }
-            return {
-              outcome: "created" as const,
-              value: taskRowFromPostgres(inserted.rows[0]),
-            };
+            const value = taskRowFromPostgres(inserted.rows[0]);
+            return intent.inboxReview
+              ? {
+                  outcome: "review-accepted" as const,
+                  value,
+                  inboxReview: {
+                    id: intent.inboxReview.id,
+                    status: "accepted" as const,
+                  },
+                }
+              : { outcome: "created" as const, value };
           },
         );
       } catch (error) {

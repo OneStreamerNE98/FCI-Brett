@@ -601,7 +601,11 @@ test("overlapping D1 normalized-name candidates admit one client and one typed d
     );
     assert.match(
       clientSource,
-      /UPDATE clients SET name = \?, normalized_name_key = \?[\s\S]*normalizeClientNameKey\(values\.name\)/u,
+      /const normalizedNameKey = !nameChanged[\s\S]*existingName\?\.normalizedNameKey === null[\s\S]*normalizeClientNameKey\(values\.name\)/u,
+    );
+    assert.match(
+      clientSource,
+      /UPDATE clients SET name = \?, normalized_name_key = \?[\s\S]*values\.name,\s*normalizedNameKey,/u,
     );
     assert.match(
       importSource,
@@ -650,28 +654,53 @@ test("a legacy near-duplicate client stays editable when its name does not chang
     });
     assert.equal(archived.outcome, "updated");
     assert.equal(archived.value.status, "archived");
+    assert.equal(database.normalizedNameKey("client-legacy-a"), null);
 
-    // A genuine rename into the sibling's key is still rejected.
-    const collision = await repository.update({
+    const updatedSibling = await repository.update({
       clientId: "client-legacy-b",
       expectedVersion: "1",
       values: {
-        name: "FCI TEST — DO NOT USE Legacy  Twin",
+        name: "FCI TEST — DO NOT USE Legacy Twin",
         status: "active",
-        industry: null,
+        industry: "Hospitality",
       },
       updatedAt: UPDATED_AT + 2,
+      updatedBy: "office@example.test",
+      activity: {
+        id: "activity-legacy-industry",
+        recordId: "client-legacy-b",
+        action: "Client fields updated",
+        actor: "office@example.test",
+        detail: "Industry: Not set → Hospitality",
+        createdAt: UPDATED_AT + 2,
+      },
+    });
+    assert.equal(updatedSibling.outcome, "updated");
+    assert.equal(updatedSibling.value.industry, "Hospitality");
+    assert.equal(database.normalizedNameKey("client-legacy-b"), null);
+
+    // A genuine rename into an existing client's key is still rejected.
+    const collision = await repository.update({
+      clientId: "client-legacy-b",
+      expectedVersion: "2",
+      values: {
+        name: "FCI TEST — DO NOT USE Beta",
+        status: "active",
+        industry: "Hospitality",
+      },
+      updatedAt: UPDATED_AT + 3,
       updatedBy: "office@example.test",
       activity: {
         id: "activity-legacy-collision",
         recordId: "client-legacy-b",
         action: "Client fields updated",
         actor: "office@example.test",
-        detail: "Name: b → a",
-        createdAt: UPDATED_AT + 2,
+        detail: "Name: Legacy Twin → Beta",
+        createdAt: UPDATED_AT + 3,
       },
     });
     assert.equal(collision.outcome, "duplicate");
+    assert.equal(database.normalizedNameKey("client-legacy-b"), null);
   } finally {
     database.close();
   }

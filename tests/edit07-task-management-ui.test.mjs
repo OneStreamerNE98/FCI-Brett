@@ -85,7 +85,7 @@ test("task form helpers expose every PATCH field and send changed keys only", ()
   });
 });
 
-test("task filters map to the existing closed GET query without introducing an endpoint", () => {
+test("task filters map to the existing closed collection GET query", () => {
   assert.equal(
     taskManagementSearch({
       status: "done",
@@ -110,9 +110,9 @@ test("a full page of task results is disclosed as possibly incomplete", async ()
   // The API rejects any limit above MAX_TASK_LIST_RESULTS, so the client cannot request
   // one extra row to detect truncation — a full page is the only available signal, and
   // the panel must not present it as the whole set. The default filter carries no status,
-  // so completed tasks occupy the same budget, and the server orders undated rows last
-  // (`ORDER BY due_date IS NULL, due_date, ...`), which makes a new undated task the
-  // first thing to disappear.
+  // so completed tasks occupy the same budget. The server orders undated rows after every
+  // dated row (`ORDER BY due_date IS NULL, due_date, ...`); within the undated group,
+  // older rows fall off before newer ones because updated_at sorts descending.
   assert.equal(TASK_MANAGEMENT_RESULT_LIMIT, MAX_TASK_LIST_RESULTS);
   const panel = await read("app/assistant/components/TaskManagementPanel.tsx");
   assert.match(
@@ -131,12 +131,13 @@ test("conflict helpers expose saved values and reject malformed task payloads", 
   assert.equal(taskManagementSavedValue({ ...saved, dueDate: null }, "dueDate"), "Not set");
 });
 
-test("the Assistant task surface uses only the finished task APIs and preserves review-safe conflicts", async () => {
-  const [assistant, panel, helper, today] = await Promise.all([
+test("the Assistant task surface uses the exact-task GET for review-safe conflict recovery", async () => {
+  const [assistant, panel, helper, today, itemRoute] = await Promise.all([
     read("app/assistant/components/AssistantView.tsx"),
     read("app/assistant/components/TaskManagementPanel.tsx"),
     read("app/assistant/task-management.ts"),
     read("app/assistant/components/TodayPanel.tsx"),
+    read("app/api/v1/tasks/[taskId]/route.ts"),
   ]);
 
   assert.match(assistant, /type AssistantTab = "today" \| "ask" \| "tasks"/u);
@@ -144,6 +145,7 @@ test("the Assistant task surface uses only the finished task APIs and preserves 
   assert.match(panel, /fetch\(`\/api\/v1\/tasks\?\$\{taskManagementSearch\(nextFilters\)\}`\)/u);
   assert.match(panel, /fetch\("\/api\/v1\/tasks"/u);
   assert.match(panel, /fetch\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(editor\.task\.id\)\}`/u);
+  assert.match(panel, /fetch\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}`\)/u);
   assert.doesNotMatch(panel, /method: "DELETE"|\/api\/v1\/tasks\/[^$]/u);
   assert.match(panel, /body: JSON\.stringify\(patch\)/u);
   assert.match(panel, /This task changed after you opened it\./u);
@@ -152,8 +154,9 @@ test("the Assistant task surface uses only the finished task APIs and preserves 
   assert.match(panel, /Reopen task/u);
   assert.match(panel, /fallbackFocusRef=\{stableFocusRef\}/u);
   assert.match(panel, /<fieldset className=\{styles\.formGrid\} disabled=\{saving\}>/u);
-  assert.match(panel, /taskManagementSearch\(appliedFilters\)/u);
-  assert.match(panel, /candidate\.id === taskId[\s\S]*candidate\.version === currentVersion/u);
+  assert.match(panel, /loadTasks\(appliedFilters\)/u);
+  assert.match(panel, /data\.task\.version !== currentVersion/u);
+  assert.doesNotMatch(panel, /const searches =|for \(const \[index, search\] of searches/u);
   assert.match(panel, /conflict && !conflict\.current[\s\S]*"Refresh list to continue"/u);
   assert.doesNotMatch(panel, /fetch\("\/api\/v1\/tasks\?limit=200"\)/u);
   assert.doesNotMatch(panel, /requestAnimationFrame/u);
@@ -167,9 +170,31 @@ test("the Assistant task surface uses only the finished task APIs and preserves 
   assert.match(today, /body: JSON\.stringify\(\{ status: "done" \}\)/u);
   assert.match(today, /today\.overdueTasks\.total\s*\+\s*today\.dueTodayTasks\.total/u);
   assert.doesNotMatch(today, /TaskManagementPanel|Reopen task/u);
+
+  const getStart = itemRoute.indexOf("export async function GET");
+  const patchStart = itemRoute.indexOf("export async function PATCH");
+  assert.ok(getStart >= 0 && patchStart > getStart);
+  const getHandler = itemRoute.slice(getStart, patchStart);
+  assert.ok(
+    getHandler.indexOf("requireOfficeUser(request)") < getHandler.indexOf("context.params"),
+    "the office gate must run before route parameters or database work",
+  );
+  assert.ok(
+    getHandler.indexOf("context.params") < getHandler.indexOf("ensureWorkspaceSchema()"),
+    "the task identifier must be validated before database work",
+  );
+  assert.match(getHandler, /noStoreResponse\(auth\.response\)/u);
+  assert.match(getHandler, /\.findById\(taskId\)/u);
+  assert.match(getHandler, /json\(\{ error: "Task not found\." \}, 404\)/u);
+  assert.match(getHandler, /json\(\{ task: taskResponse\(task\) \}\)/u);
+  assert.doesNotMatch(
+    getHandler,
+    /\b(?:INSERT|UPDATE|DELETE|UPSERT|REPLACE|ALTER|DROP|TRUNCATE)\b/iu,
+    "the exact-task GET must remain read-only",
+  );
 });
 
-test("EDIT-07 adds no task route and no second task table", async () => {
+test("EDIT-08 adds no new task route file and no second task table", async () => {
   const routeEntries = await readdir(new URL("app/api/v1/tasks/", root), {
     withFileTypes: true,
   });

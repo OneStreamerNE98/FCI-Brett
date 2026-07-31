@@ -8,7 +8,7 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 - [settings-guide.md](settings-guide.md) — the plain-English manual: using the app (everyone) + administering it, panel by panel.
 - [task-checklists/](task-checklists/README.md) — the owner's setup/readiness status board (checklists 00–11).
 - [brett-handoff.md](brett-handoff.md) — the one-page read-only-first Google inventory handoff for Brett.
-- [nightly-reviews/](nightly-reviews/README.md) — the nightly review program: what ran each night, findings, recommendations.
+- [nightly-reviews/](nightly-reviews/README.md) — the nightly review program: what ran each night, findings, recommendations. Specs for the six un-run nights live in [nightly-reviews/SPECS.md](nightly-reviews/SPECS.md).
 - [20-user-product-and-architecture-review.md](20-user-product-and-architecture-review.md) — how the app serves a ~20-person org.
 
 ## For admins & staff
@@ -28,6 +28,7 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 
 ## Findings & reviews
 
+- [independent-audit-2026-07-30-self-reviewed-changes.md](independent-audit-2026-07-30-self-reviewed-changes.md) — independent source audit of five self-reviewed behavior changes and their ledger claims.
 - [full-review-2026-07-21-findings.md](full-review-2026-07-21-findings.md) — the July-21 full-codebase review (F-findings, FIX-01…12).
 - [full-review-2026-07-24-findings.md](full-review-2026-07-24-findings.md) — the July-23/24 holistic post-wave review (H-findings, FIX-13…19).
 - [nightly-review-2026-07-findings.md](nightly-review-2026-07-findings.md) — the rolling nightly-program ledger (N-findings, NFIX packets).

@@ -71,12 +71,18 @@ function contactRow(row: D1ContactRow): ContactRow {
   };
 }
 
-async function currentClientName(database: D1Database, clientId: string) {
+async function currentClientNameState(database: D1Database, clientId: string) {
   const row = await database
-    .prepare("SELECT name FROM clients WHERE id = ?")
+    .prepare("SELECT name, normalized_name_key FROM clients WHERE id = ?")
     .bind(clientId)
-    .first<{ name: unknown }>();
-  return row && typeof row.name === "string" ? row.name : null;
+    .first<{ name: unknown; normalized_name_key: unknown }>();
+  if (!row || typeof row.name !== "string") return null;
+  return {
+    name: row.name,
+    normalizedNameKey: typeof row.normalized_name_key === "string"
+      ? row.normalized_name_key
+      : null,
+  };
 }
 
 async function currentClientVersion(database: D1Database, clientId: string) {
@@ -205,9 +211,12 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
       // forever — making them permanently uneditable, including the archive transition this
       // packet exists to deliver. A genuine rename into a taken key is still rejected below,
       // both by the UPDATE's own NOT EXISTS guard and by the post-failure recheck.
-      const existingName = await currentClientName(database, intent.clientId);
+      const existingName = await currentClientNameState(database, intent.clientId);
       const nameChanged = existingName === null
-        || normalizeClientNameKey(existingName) !== normalizeClientNameKey(values.name);
+        || normalizeClientNameKey(existingName.name) !== normalizeClientNameKey(values.name);
+      const normalizedNameKey = !nameChanged && existingName?.normalizedNameKey === null
+        ? null
+        : normalizeClientNameKey(values.name);
       if (nameChanged && await duplicateClientName(database, intent.clientId, values.name)) {
         const existingVersion = await currentClientVersion(database, intent.clientId);
         if (!existingVersion) return { outcome: "client-not-found" };
@@ -222,7 +231,7 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
           database.prepare("UPDATE clients SET name = ?, normalized_name_key = ?, status = ?, industry = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND NOT EXISTS (SELECT 1 FROM clients AS duplicate WHERE duplicate.id <> ? AND LOWER(duplicate.name) = LOWER(?) LIMIT 1)")
             .bind(
               values.name,
-              normalizeClientNameKey(values.name),
+              normalizedNameKey,
               values.status,
               values.industry,
               intent.updatedAt,

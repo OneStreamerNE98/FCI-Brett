@@ -1,12 +1,14 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
+import { readBuildInformation } from "./build/build-information.mjs";
 import { sites } from "./build/sites-vite-plugin";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
 
 const { d1, r2 } = hostingConfig;
+const buildInformation = readBuildInformation(process.env);
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
@@ -62,6 +64,15 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    // SET-39: Sites source packaging must set FCI_BUILD_COMMIT_SHA to the
+    // exact source commit used as the saved version's commit_sha and
+    // FCI_BUILD_TIMESTAMP to the UTC instant recorded in issue #258.
+    // This compile-time replacement is the only source of the visible
+    // deployment identity. Builds without both verified values render the
+    // explicit unavailable state instead of a commit-like placeholder.
+    define: {
+      __FCI_BUILD_INFORMATION__: JSON.stringify(buildInformation),
+    },
     // E2E identities must come only from Playwright's explicit environment.
     // A contributor's local overrides would otherwise make role tests untruthful.
     envFile: isE2eRuntime ? false : undefined,
