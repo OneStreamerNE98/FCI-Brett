@@ -3533,6 +3533,7 @@ file) and for SET-06's wiring fix (their copy must describe the fixed behavior).
 the existing e2e pattern.
 
 ### HINT-02-B · Adoption, FloorOpsApp modals (small; ONE FloorOpsApp queue slot at the tail, after AI-02)
+**Status:** In progress — `codex/hint02b-floorops-modals`
 **Do:** the recommended-tier hints in LeadModal, ClientModal, and
 NewProjectModal per the audit table — written against post-DES-05/07 component
 names. (FollowUpResultModal's "Post-installation callback" is a LABEL FIX per
