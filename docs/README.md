@@ -55,4 +55,5 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 
 ## Runbooks (operators)
 
+- [runbooks/deployment.md](runbooks/deployment.md) — owner procedure for deploying the private Sites app, stamping the build, recording issue #258, and verifying the result.
 - [runbooks/google-cloud/](runbooks/google-cloud/) — production Google Cloud operational runbooks.
