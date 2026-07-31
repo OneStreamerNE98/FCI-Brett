@@ -17,8 +17,38 @@ amendments. Workstream F (dashboard design, DES-01…DES-09; design authority
 `docs/dashboard-design-spec.md`) was added July 22, 2026, and Workstream G (AI
 assistant & automation, AI-01…AI-09 with gated Tier-2 stubs; design authority
 `docs/ai-assistant-spec.md`) on July 23, 2026.
-Deployment baseline: `adc79b8`, private Sites development version 40,
-which includes PR #30. The later source changes are not deployed.
+**Deployment (corrected July 30, 2026 — the previous claim here was eleven days stale and
+wrong).** This document previously read *"Deployment baseline: `adc79b8`, private Sites
+development version 40 … the later source changes are not deployed."* That line was last
+edited **July 19, 2026** and was never updated again, while merges continued for eleven
+days. It was quoted as current fact during the July 30 session and was false.
+
+**How deployment actually works:** the owner asks ChatGPT to deploy the private Sites app
+from GitHub, and it deploys. It is **owner-triggered and on demand** — there is no GitHub
+Actions deployment (`.github/workflows/cloud-run-image.yml` publishes an image only on
+manual dispatch and states outright that it does not deploy). So the live site reflects
+`main` **as of the owner's most recent deploy request**, not a commit pinned in this file.
+
+**Therefore no commit or version number is recorded here on purpose.** Any such number
+rots the moment the next deploy happens and then misleads whoever reads it — which is
+exactly what happened.
+
+**THE CANONICAL DEPLOYMENT RECORD IS GITHUB ISSUE #258** —
+<https://github.com/OneStreamerNE98/FCI-Brett/issues/258>, "ChatGPT Sites deployment log
+(canonical)", created by the owner July 30, 2026. Every deployment is appended there as a
+comment with its Eastern and UTC timestamp, the exact source branch and commit SHA, the
+Sites version, the result, the live URL, and whether source, hosted configuration,
+migrations, or live data changed. **Read the newest entry there to learn what is live.** Do
+not infer it from this document, and do not infer it from packet status lines (see the note
+on the "undeployed" label below).
+
+For orientation only — this will go stale, the issue will not: the first recorded entry is
+`origin/main` at `dafb81d` deployed 2026-07-30 23:43Z as Sites version 55, succeeded,
+deployment only.
+
+**Remaining gap:** the app itself still displays no version or build stamp, so the answer
+requires opening the issue rather than looking at the screen. A visible build stamp tied to
+the deployed SHA would close that, and is worth its own packet.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
 
@@ -92,9 +122,10 @@ below, which also covers the state of GitHub itself (issues/PRs).
 4. **The D1 drizzle sequence is append-only.** Never drop or alter existing D1 tables; the
    dev environment is the only live environment. To add a migration, **list `drizzle/` and
    append one past the highest-numbered file** — again, read the directory rather than a
-   quoted number. Snapshot for sanity-checking only, July 26, 2026: the highest is
-   **0019** (`0019_demonic_lady_vermin.sql`), so the next is 0020. Files ahead of what the
-   Sites environment has applied are source-only until deployed.
+   quoted number. Snapshot for sanity-checking only, July 30, 2026: the highest is
+   **0022** (`0022_mean_darkhawk.sql`), so the next is 0023. **This number goes stale every
+   time a migration lands — the directory is the authority, never this sentence.** The
+   previous snapshot here said 0019 and was four migrations behind within four days.
 5. **Single-user / test-data boundary holds.** Only `FCI TEST — DO NOT USE` records in any
    live Workspace step; no second user and no real client data until the development
    acceptance run (WS-11) passes.
@@ -128,9 +159,31 @@ below, which also covers the state of GitHub itself (issues/PRs).
    re-litigate visuals; coordinate Settings component work with the relevant Phase 3/4
    entries in that ledger.
 
+## What "Source-only and undeployed" means in a packet status
+
+**It is a snapshot of the moment that packet merged, not a live deployment record.** The
+phrase appears in roughly 90 status lines across this file. Each was written by whoever
+merged that packet, and **none of them is ever revisited after a deploy** — there is no
+process that goes back and clears them.
+
+So the phrase means *"as of this packet's merge, it had not yet been deployed."* It does
+**not** mean the work is absent from the live site today. Deployment is owner-triggered
+from GitHub on demand (see the deployment note near the top), so a single deploy silently
+makes dozens of these labels obsolete at once, and nothing updates them.
+
+**Do not count these labels to estimate what is unshipped.** During the July 30 session
+that was attempted twice, producing "61 undeployed packets" and then "75", both presented
+to the owner as fact. The owner then pointed out he could see record editing — merged that
+same day — running on the live site. The labels were the wrong instrument; the running app
+is the authority. `docs/flooring-kpis.md` carries a similar frozen line ("Source-only and
+undeployed · Migration 0012 not applied to Sites", pinned July 21) and is stale for the
+same reason.
+
+To answer "is this live?", ask the owner when they last deployed, or look at the app.
+
 ## Current state in one page
 
-- **Live today:** Cloudflare Sites/Workers app, D1 database (drizzle 0000–0011), R2 for
+- **Live today:** Cloudflare Sites/Workers app, D1 database, R2 for
   uploads, ChatGPT sign-in with office/admin allowlists
   (`app/lib/workspace-auth.ts`), `GOOGLE_INTEGRATION_MODE=simulation` — durable simulated
   Gmail/Drive/Calendar/Sheets, partitioned from live data by connectionKey
@@ -940,11 +993,19 @@ says so.** `MAX_TASK_LIST_RESULTS` (200) is a hard server ceiling: a request
 above it is rejected (`app/domain/task.ts:304`), so the client cannot fetch
 one extra row to detect truncation and a full page is the only available
 signal. Three things compound — the panel's default filter carries **no
-status**, so completed tasks consume the same budget; the server orders
-`due_date IS NULL, due_date, updated_at DESC`, so **undated rows sort last and
-fall off first**; and a newly created task with no due date is therefore
-exactly what goes missing. A full page now renders an honest notice naming
-both the cap and the ordering. Pagination is **not** built.
+status**, so completed tasks consume the same budget; and the server orders
+`due_date IS NULL, due_date, updated_at DESC` (PostgreSQL: `due_date NULLS
+LAST, updated_at DESC, id`), so **undated rows sort after every dated row** and
+are the group at risk once the cap is reached. A full page now renders an
+honest notice naming both the cap and the ordering. Pagination is **not** built.
+**Corrected July 30, 2026 by independent audit (PR #256):** this residual
+previously said "a newly created task with no due date is therefore exactly
+what goes missing." That overstated it. Within the undated group the secondary
+sort is `updated_at DESC`, so the **newest** undated task is retained ahead of
+older undated ones; the **oldest** undated tasks fall off first. A brand-new
+undated task is only lost when 200 dated tasks consume the entire cap before
+the undated group is reached. The shipped notice was correct; the ledger prose
+describing it was not.
 **Open follow-up worth its own packet (owner decision):** there is **no
 `GET /api/v1/tasks/[taskId]`** — only `PATCH`. So the 409 recovery
 (`readCurrentTask`) must scan up to four capped lists hunting an exact version
