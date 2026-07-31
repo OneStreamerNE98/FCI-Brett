@@ -4,6 +4,7 @@ import { type DragEvent, type ReactNode, useEffect, useRef, useState } from "rea
 import { ArrowDown, ArrowUp, Check, GripVertical, Plus, RotateCcw, Settings2, X } from "lucide-react";
 import {
   defaultPageLayout,
+  PAGE_LAYOUT_RESIZABLE_SECTIONS,
   pageLayoutSectionCatalog,
   type PageLayout,
   type PageLayoutPage,
@@ -60,6 +61,7 @@ export function PageLayoutEditor({ page, layout, isAdmin, enabled, loadError, on
   >(null);
   const catalog = pageLayoutSectionCatalog(page, isAdmin);
   const labels = new Map(catalog.map((entry) => [entry.key, entry.label]));
+  const resizableKeys = PAGE_LAYOUT_RESIZABLE_SECTIONS[page] as readonly PageLayoutSectionKey[];
   const activeLayout = editing ? draft : layout;
   const visibleKeys = activeLayout.order.filter((key) => !activeLayout.hidden.includes(key));
   const hiddenKeys = activeLayout.order.filter((key) => activeLayout.hidden.includes(key));
@@ -101,6 +103,15 @@ export function PageLayoutEditor({ page, layout, isAdmin, enabled, loadError, on
       const neighbor = currentVisible[visibleIndex + direction];
       return neighbor ? { ...current, order: swapSection(current.order, key, neighbor) } : current;
     });
+  }
+
+  function toggleFullWidth(key: PageLayoutSectionKey) {
+    setDraft((current) => ({
+      ...current,
+      fullWidth: current.fullWidth.includes(key)
+        ? current.fullWidth.filter((fullWidthKey) => fullWidthKey !== key)
+        : [...current.fullWidth, key],
+    }));
   }
 
   function dropRelativeTo(targetKey: PageLayoutSectionKey, afterTarget: boolean, droppedKey?: PageLayoutSectionKey) {
@@ -147,7 +158,7 @@ export function PageLayoutEditor({ page, layout, isAdmin, enabled, loadError, on
 
   const editor = editing ? <section className={styles.editor} aria-label={`${title} layout editor`}>
     <div className={styles.editorHeading}>
-      <div><strong>Edit {title} layout</strong><span>Drag sections or use Move up and Move down. Hiding changes presentation only.</span></div>
+      <div><strong>Edit {title} layout</strong><span>Drag sections or use Move up and Move down. Hiding changes presentation only.</span><span>Width applies on wide screens.</span></div>
       <div className={styles.editorActions}>
         <button type="button" className="soft-button" onClick={() => setDraft(defaultPageLayout(page, isAdmin))} disabled={saving}><RotateCcw size={15} aria-hidden="true" /> Reset to default</button>
         <button type="button" className="primary-button" onClick={() => void finishEditing()} disabled={saving}><Check size={15} aria-hidden="true" /> {saving ? "Saving…" : "Done"}</button>
@@ -194,6 +205,15 @@ export function PageLayoutEditor({ page, layout, isAdmin, enabled, loadError, on
         ><GripVertical size={17} aria-hidden="true" /></span>
         <strong>{labels.get(key)}</strong>
         <span className={styles.keyboardControls}>
+          {resizableKeys.includes(key) ? <button
+            type="button"
+            className={styles.widthToggle}
+            data-layout-width-toggle={key}
+            aria-pressed={draft.fullWidth.includes(key)}
+            aria-label={`Full width for ${labels.get(key)}`}
+            onClick={() => toggleFullWidth(key)}
+            disabled={saving}
+          >Full width</button> : null}
           <button type="button" onClick={() => moveSection(key, -1)} disabled={saving || index <= 0} aria-label={`Move ${labels.get(key)} up`}><ArrowUp size={14} aria-hidden="true" /> Move up</button>
           <button type="button" onClick={() => moveSection(key, 1)} disabled={saving || index < 0 || index >= visibleKeys.length - 1} aria-label={`Move ${labels.get(key)} down`}><ArrowDown size={14} aria-hidden="true" /> Move down</button>
           <button
