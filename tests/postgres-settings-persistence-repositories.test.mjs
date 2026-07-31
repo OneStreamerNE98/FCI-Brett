@@ -453,8 +453,11 @@ test("PostgreSQL dismissal is one guarded status transition with no relationship
     assert.match(sql, /^UPDATE mail_items/u);
     assert.match(
       sql,
-      /WHERE id = \$2\s+AND connection_key = \$3\s+AND status = 'needs-review'/u,
+      // Positions shifted by one: the retirement status is now $1 (bound, not a
+      // literal) so the row records accepted vs dismissed. Mirrors the D1 adapter.
+      /WHERE id = \$3\s+AND connection_key = \$4\s+AND status = 'needs-review'/u,
     );
+    assert.match(sql, /^UPDATE mail_items\s+SET status = \$1/u);
     assert.doesNotMatch(sql, /clients|projects/u);
     return result([], 1);
   });
@@ -470,9 +473,11 @@ test("PostgreSQL dismissal is one guarded status transition with no relationship
     ),
     true,
   );
+  // The retirement status leads the bound values now, matching D1. Defaulting the
+  // fourth argument keeps a hand dismissal recording "dismissed".
   assert.deepEqual(
     dataQuery(pool, /^UPDATE mail_items/u).values,
-    [new Date(UPDATED_AT), "mail-1", "google-workspace"],
+    ["dismissed", new Date(UPDATED_AT), "mail-1", "google-workspace"],
   );
 });
 

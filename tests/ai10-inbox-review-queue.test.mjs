@@ -544,7 +544,11 @@ test("Mark reviewed dismisses an orphaned relationship atomically and failures s
 
     const prepare = database.prepare.bind(database);
     database.prepare = (sql) => {
-      if (/^UPDATE mail_items SET status = 'dismissed'/u.test(sql)) {
+      // Re-pointed: the retirement status is now a BOUND parameter, not a literal, so
+      // the row can record whether it was accepted or dismissed. Matching the old
+      // literal here would silently stop injecting the fault and the test would pass
+      // without ever exercising the failure path.
+      if (/^UPDATE mail_items SET status = \?/u.test(sql)) {
         throw new Error("Injected queue update failure");
       }
       return prepare(sql);

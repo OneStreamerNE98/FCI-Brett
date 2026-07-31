@@ -77,3 +77,45 @@ test("AI-11(a) adds no component module and leaves the assistant application tre
     /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/u,
   );
 });
+
+test("every typed accept records why the row left the queue, not just that it left", async () => {
+  // Found by independent audit (PR #256): AI-11(a) retires schedule and warranty accepts
+  // as "accepted" through the task route's atomic retirement, but the lead accept went
+  // through the PATCH, which hardcoded "dismissed". That made a lead accepted via
+  // Create lead indistinguishable from a manual Mark reviewed, so the AI-11(d) activity
+  // view and its per-label accept/dismiss counts would misreport every lead accept.
+  // Worse than uniform: leads read as dismissals while tasks read as accepts.
+  const [route, view, port, d1, postgres] = await Promise.all([
+    read("app/api/v1/inbox-analysis/route.ts"),
+    read("app/inbox/components/InboxView.tsx"),
+    read("app/ports/mail-item-repository.ts"),
+    read("app/adapters/d1/mail-item-repository.ts"),
+    read("app/adapters/postgres/mail-item-repository.ts"),
+  ]);
+
+  // The outcome is server-validated to exactly two values and defaults to dismissed.
+  assert.match(route, /outcome !== "accepted" && outcome !== "dismissed"/u);
+  assert.match(route, /body\.outcome === undefined \? "dismissed" : body\.outcome/u);
+  assert.match(route, /status: update\.outcome/u);
+
+  // The lead accept sends "accepted"; a hand dismissal stays "dismissed".
+  assert.match(view, /outcome: reason === "lead-created" \? "accepted" : "dismissed"/u);
+
+  // The port narrows the outcome below MailItemStatus so the sweep-only terminal
+  // states cannot be reached through a human retirement path.
+  assert.match(port, /MailItemReviewOutcome = "accepted" \| "dismissed"/u);
+
+  // Both adapters BIND the status rather than interpolating it, and both re-guard it.
+  for (const [name, source] of [["d1", d1], ["postgres", postgres]]) {
+    assert.match(
+      source,
+      /outcome !== "accepted" && outcome !== "dismissed"\) return false/u,
+      `${name} adapter must re-guard the outcome`,
+    );
+    assert.doesNotMatch(
+      source,
+      /SET status = '(accepted|dismissed)'/u,
+      `${name} adapter must not hardcode a retirement status`,
+    );
+  }
+});

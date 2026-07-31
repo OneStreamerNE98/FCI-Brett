@@ -877,7 +877,15 @@ export function InboxView({
       const response = await fetch("/api/v1/inbox-analysis", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: row.id }),
+        // A lead accept retires the row as "accepted"; a hand dismissal as "dismissed".
+        // The schedule and warranty accepts already record "accepted" through the task
+        // route's atomic retirement, so without this the lead path would be the one
+        // typed accept stored as a dismissal — worse than uniform, because the activity
+        // view would then show leads as dismissals while showing tasks as accepts.
+        body: JSON.stringify({
+          id: row.id,
+          outcome: reason === "lead-created" ? "accepted" : "dismissed",
+        }),
       });
       const body = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) {

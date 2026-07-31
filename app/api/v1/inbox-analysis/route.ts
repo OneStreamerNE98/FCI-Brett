@@ -163,8 +163,11 @@ function parseSweepRequest(body: Record<string, unknown>) {
 }
 
 function parseMarkReviewedRequest(body: Record<string, unknown>) {
+  const keys = Object.keys(body);
   if (
-    Object.keys(body).length !== 1
+    keys.length < 1
+    || keys.length > 2
+    || keys.some((key) => key !== "id" && key !== "outcome")
     || typeof body.id !== "string"
     || !body.id.trim()
     || body.id.length > 512
@@ -172,7 +175,14 @@ function parseMarkReviewedRequest(body: Record<string, unknown>) {
   ) {
     return null;
   }
-  return Object.freeze({ id: body.id });
+  // Server-validated against exactly two values, defaulting to "dismissed". A typed
+  // accept that produced a record sends "accepted", so the stored row records WHY it
+  // left the queue. Without it an accepted lead is indistinguishable from a manual
+  // dismissal and the AI-11(d) activity view would misreport every accept along with
+  // its per-label counts. Anything else is a 400, never a silent coercion.
+  const outcome = body.outcome === undefined ? "dismissed" : body.outcome;
+  if (outcome !== "accepted" && outcome !== "dismissed") return null;
+  return Object.freeze({ id: body.id, outcome });
 }
 
 function singleLineSnapshot(value: string | null, maximum: number) {
@@ -1427,11 +1437,12 @@ export async function PATCH(request: NextRequest) {
       update.id,
       connectionKey,
       Date.now(),
+      update.outcome,
     );
     if (!dismissed) {
       return noStoreJson({ error: "Inbox review row not found." }, 404);
     }
-    return noStoreJson({ id: update.id, status: "dismissed" });
+    return noStoreJson({ id: update.id, status: update.outcome });
   } catch {
     return noStoreJson(
       { error: "Inbox review row could not be marked reviewed." },
