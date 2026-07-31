@@ -345,21 +345,25 @@ WHERE connection_key = $1 AND coverage_complete = false`,
       });
     },
 
-    async dismissNeedsReview(id, connectionKey, updatedAt) {
+    async dismissNeedsReview(id, connectionKey, updatedAt, outcome = "dismissed") {
       if (!boundedText(id, 512)) return false;
+      // Mirrors the D1 adapter exactly: the outcome is BOUND, never interpolated, and
+      // re-guarded here so a future caller cannot widen it into an arbitrary status.
+      if (outcome !== "accepted" && outcome !== "dismissed") return false;
       const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         const result = await client.query(
           `UPDATE mail_items
-SET status = 'dismissed',
+SET status = $1,
     attempted_label_definition_version = NULL,
     failure_attempts = 0,
     error_code = NULL,
-    updated_at = $1
-WHERE id = $2
-  AND connection_key = $3
+    updated_at = $2
+WHERE id = $3
+  AND connection_key = $4
   AND status = 'needs-review'`,
           [
+            outcome,
             persistenceDate(updatedAt, "PostgreSQL mail item updated_at"),
             id,
             normalizedConnectionKey,

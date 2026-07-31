@@ -3428,6 +3428,8 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
+**Status:** In progress — `codex/ai11a-typed-accepts`
+
 **Why:** AI-10 deliberately ships one accept action; three intents accumulate in the queue with
 only a manual "mark reviewed" exit, and spec §12 decisions 5–6 name this packet as their
 implementing packet. Nothing else owns the label catalog editor at all.

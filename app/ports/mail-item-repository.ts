@@ -1,5 +1,12 @@
 import type { MailItem, MailItemStatus } from "../domain/mail-item";
 
+/**
+ * The two terminal states a needs-review row may be retired into. Narrower than
+ * MailItemStatus on purpose: `skipped-noise` and `failed` are set by the sweep, never
+ * by a human retiring a row, so they must not be reachable through this path.
+ */
+export type MailItemReviewOutcome = "accepted" | "dismissed";
+
 export type MailItemUpsertResult =
   | Readonly<{ outcome: "saved" }>
   | Readonly<{ outcome: "existing-preserved" }>
@@ -35,10 +42,19 @@ export interface MailItemRepository {
     limit?: number,
   ): Promise<MailItem[]>;
   markCoverageComplete(connectionKey: string): Promise<void>;
+  /**
+   * Retires a needs-review row. `outcome` records WHY it left the queue: `accepted`
+   * when a typed accept produced a record, `dismissed` when a human retired it by
+   * hand. Without this distinction an accepted lead is indistinguishable from a
+   * manual dismissal, so the AI-11(d) activity view and its per-label accept/dismiss
+   * counts would misreport every accept. Defaults to `dismissed` so existing callers
+   * keep their behaviour.
+   */
   dismissNeedsReview(
     id: string,
     connectionKey: string,
     updatedAt: number,
+    outcome?: MailItemReviewOutcome,
   ): Promise<boolean>;
   insertIfAbsent(item: MailItem): Promise<MailItemUpsertResult>;
   upsert(item: MailItem): Promise<MailItemUpsertResult>;

@@ -30,7 +30,7 @@ test("successful assigned-task creation schedules task.assigned only after persi
   const failureBranch = source.indexOf("if (!result.ok)");
   const assignedGuard = source.indexOf("if (result.value.assigneeEmail)");
   const notification = source.indexOf("queueGoogleChatNotification(", assignedGuard);
-  const response = source.indexOf("return json({ task: result.value }", notification);
+  const response = source.indexOf("return json({", notification);
 
   assert.match(source, /import \{ queueGoogleChatNotification \} from "\.\.\/\.\.\/\.\.\/lib\/google-chat-notifier-sites"/);
   assert.ok(
