@@ -2812,6 +2812,8 @@ regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
 ### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026)
+**Status:** In progress — `codex/des11b-width-toggle`
+
 **SUB-SCOPE A IS COMPLETE — PR #252, July 30, 2026. Source-only and undeployed. ONLY
 SUB-SCOPE B REMAINS CLAIMABLE.** The packet carries no status line because B is still
 open and the dispatch law reads "available if and only if it has no status line" — but a
