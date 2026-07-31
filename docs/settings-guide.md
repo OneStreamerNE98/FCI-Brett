@@ -334,6 +334,17 @@ If the mirror is not configured, the card links directly to **Google Workspace �
 
 **Updated July 25, 2026.** Administrators can use **First-run data import** below the mirror cards to review existing clients first and projects second, in batches of up to 10 rows. The preferred source is a blueprint spreadsheet with the clearly marked **Clients Import** and **Projects Import** tabs; a bounded CSV is the alternative. Previewing never creates records. The administrator must select each ready row (or use **Select all ready rows**) and confirm it. Client duplicates are reviewed by email, phone, or address; the readable client address is not saved, only a one-way duplicate-check fingerprint (an unsalted SHA-256 digest of the normalized address) for safe re-runs — it cannot be read back by inspection, but because street addresses are low-entropy it is a stable identifier, not a privacy guarantee. Every project must match one saved client by code, name, or email, and an unmatched project never creates a client for itself. Once records exist, the import tools collapse until an administrator explicitly reopens them. This source build remains development-only: every imported client or project name must begin with **FCI TEST — DO NOT USE**, and real client data stays blocked until the WS-11 acceptance gate and owner launch approval are complete.
 
+Below the import card, **Google Forms responses** is a separate review-first queue.
+An administrator presses **Check for new form responses** to read at most 25 rows
+from the linked response Sheet. The app records the last processed row and check time,
+so repeating the action with no new rows is a no-op. Possible duplicates use the same
+matching rules as first-run import, malformed rows stay visible for correction, and
+the estimated value stays blank until a person enters it. Submitting a completed row
+uses the ordinary lead-creation route; only after that succeeds does the review leave
+the queue. If the queue update fails, the created lead is named and the row remains
+visible with a retry action so the administrator does not create it twice. Real-data
+rows do not advance the watermark while the WS-11/owner gate is closed.
+
 > [SCREENSHOT 6 — see Screenshot index]
 
 ### 6. Workflow & notifications

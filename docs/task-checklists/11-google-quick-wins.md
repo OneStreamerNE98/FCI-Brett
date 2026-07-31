@@ -23,6 +23,30 @@ context: the owner integration budget is ≤$50/month; everything on this page i
 - [ ] Record the booking-page link in the configuration inventory and start including
       it in estimate follow-up emails.
 
+## Google Forms lead intake
+
+- [ ] In Google Forms (signed in as the approved connection account), create the
+      lead form with **Name**, **Address**, **Rooms**, **Flooring Type**, and
+      **Preferred Contact** questions. Keep those labels and capitalization exact,
+      and do not enable automatic email collection because its extra response column
+      is outside the six-column intake contract. Keep the form private to test responders until
+      WS-11 and the owner launch gate allow real client data.
+- [ ] Link the form to a Google Sheets response spreadsheet and leave the six
+      response columns in their generated order: **Timestamp**, **Name**,
+      **Address**, **Rooms**, **Flooring Type**, **Preferred Contact**.
+- [ ] Record the Google Form ID: `________________________________________`.
+- [ ] Record the linked response Sheet ID: `________________________________________`,
+      then set that same Sheet ID as
+      `GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID` in the hosted environment.
+- [ ] In **Settings → Client Directory**, press **Check for new form responses**
+      with test-only rows. Confirm each row enters the review queue and that a
+      lead exists only after an administrator completes and submits its form.
+
+The app does not poll this Sheet in the background. GI-01 reads at most 25 rows
+when an administrator presses the check button and records a durable row/time
+watermark. A repeat check with no new rows does no work. WS-12 owns any future
+background trigger; it must reuse this mapping and queue unchanged.
+
 ## Professional outbound identity (`ops@`)
 
 - [ ] In Gmail (connection account) → Settings → Accounts → **Send mail as**, add and
@@ -63,8 +87,10 @@ context: the owner integration budget is ≤$50/month; everything on this page i
 
 ## Completion result
 
-This checklist is complete when the booking link is in use, the `ops@` alias is
-verified, the Looker Studio dashboard is shared, office browsers pin the PWA, the
-holidays calendar exists with its ID recorded, and the Workspace edition is recorded.
-Nothing on this page changes application code, hosted configuration, scopes, or
-deployment state.
+This checklist is complete when the booking link is in use, the Forms and response
+Sheet IDs are recorded, the `ops@` alias is verified, the Looker Studio dashboard is
+shared, office browsers pin the PWA, the holidays calendar exists with its ID recorded,
+and the Workspace edition is recorded.
+Completing the Forms intake item changes the one named hosted configuration value;
+the checklist itself does not change application code, OAuth scopes, or deployment
+state.

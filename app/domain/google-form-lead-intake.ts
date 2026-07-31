@@ -1,0 +1,319 @@
+import {
+  FIRST_RUN_IMPORT_REAL_DATA_ALLOWED,
+  FIRST_RUN_IMPORT_TEST_MARKER,
+  matchFirstRunClientDuplicates,
+} from "./first-run-import.ts";
+import type {
+  FirstRunImportStoredClient,
+} from "../ports/first-run-import-repository.ts";
+import type {
+  GoogleFormLeadProposal,
+  GoogleFormLeadReviewDraft,
+  GoogleFormLeadReviewState,
+} from "../ports/google-form-lead-intake.ts";
+
+export const GOOGLE_FORM_LEAD_MAX_ROWS = 25;
+export const GOOGLE_FORM_LEAD_REVIEW_LIMIT = 50;
+export const GOOGLE_FORM_LEAD_HEADERS = Object.freeze([
+  "Timestamp",
+  "Name",
+  "Address",
+  "Rooms",
+  "Flooring Type",
+  "Preferred Contact",
+] as const);
+
+export const GOOGLE_FORM_LEAD_REVIEW_STATES = Object.freeze([
+  "ready",
+  "duplicate",
+  "invalid",
+  "blocked-real-data",
+] as const);
+export const GOOGLE_FORM_LEAD_REVIEW_STATUSES = Object.freeze([
+  "needs-review",
+  "accepted",
+  "dismissed",
+] as const);
+
+const CELL_MAXIMUMS = Object.freeze([100, 180, 300, 160, 160, 254] as const);
+
+export class GoogleFormLeadIntakeValidationError extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(code: string, message: string, status = 400) {
+    super(message);
+    this.name = "GoogleFormLeadIntakeValidationError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function normalizedCell(value: unknown, maximum: number) {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value !== "string") return null;
+  const normalized = value.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  if (
+    normalized.length > maximum
+    || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(normalized)
+  ) return null;
+  return normalized;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function parseGoogleFormLeadProposal(value: unknown) {
+  if (!isRecord(value)) return null;
+  const expectedKeys = [
+    "company", "contactName", "contactEmail", "contactPhone", "projectName",
+    "source", "stage", "site", "estimatedValue", "nextAction", "nextActionAt",
+    "rooms", "flooringType", "preferredContact",
+  ];
+  if (
+    Object.keys(value).length !== expectedKeys.length
+    || Object.keys(value).some((key) => !expectedKeys.includes(key))
+  ) return null;
+  const company = normalizedCell(value.company, 180);
+  const contactName = normalizedCell(value.contactName, 160);
+  const contactEmail = value.contactEmail === null
+    ? null
+    : normalizedCell(value.contactEmail, 254);
+  const contactPhone = value.contactPhone === null
+    ? null
+    : normalizedCell(value.contactPhone, 40);
+  const project = normalizedCell(value.projectName, 180);
+  const source = normalizedCell(value.source, 80);
+  const stage = normalizedCell(value.stage, 80);
+  const site = normalizedCell(value.site, 300);
+  const nextAction = normalizedCell(value.nextAction, 500);
+  const rooms = value.rooms === null ? null : normalizedCell(value.rooms, 160);
+  const flooringType = value.flooringType === null
+    ? null
+    : normalizedCell(value.flooringType, 160);
+  const preferredContact = value.preferredContact === null
+    ? null
+    : normalizedCell(value.preferredContact, 254);
+  if (
+    company === null || contactName === null
+    || (value.contactEmail !== null && !contactEmail)
+    || (value.contactPhone !== null && !contactPhone) || project === null || !source
+    || !stage || site === null || !nextAction || (value.rooms !== null && !rooms)
+    || (value.flooringType !== null && !flooringType)
+    || (value.preferredContact !== null && !preferredContact)
+    || (value.estimatedValue !== null
+      && (!Number.isSafeInteger(value.estimatedValue) || Number(value.estimatedValue) < 0))
+    || (value.nextActionAt !== null
+      && (!Number.isSafeInteger(value.nextActionAt) || Number(value.nextActionAt) < 0))
+  ) return null;
+  if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(contactEmail.toLowerCase())) {
+    return null;
+  }
+  return Object.freeze({
+    company,
+    contactName,
+    contactEmail: contactEmail ? contactEmail.toLowerCase() : null,
+    contactPhone: contactPhone || null,
+    projectName: project,
+    source,
+    stage,
+    site,
+    estimatedValue: value.estimatedValue === null ? null : Number(value.estimatedValue),
+    nextAction,
+    nextActionAt: value.nextActionAt === null ? null : Number(value.nextActionAt),
+    rooms: rooms || null,
+    flooringType: flooringType || null,
+    preferredContact: preferredContact || null,
+  }) satisfies GoogleFormLeadProposal;
+}
+
+export function parseGoogleFormLeadReasons(value: unknown) {
+  if (!Array.isArray(value) || value.length > 12) return null;
+  const reasons = value.map((reason) => normalizedCell(reason, 300));
+  return reasons.some((reason) => !reason)
+    ? null
+    : Object.freeze(reasons as string[]);
+}
+
+function parsePreferredContact(value: string) {
+  const normalized = value.toLowerCase();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized)) {
+    return { email: normalized, phone: null } as const;
+  }
+  const digits = value.replace(/\D/gu, "");
+  if (value.length <= 40 && digits.length >= 7 && digits.length <= 18) {
+    return { email: null, phone: value } as const;
+  }
+  return { email: null, phone: null } as const;
+}
+
+function projectName(flooringType: string, rooms: string) {
+  if (flooringType && rooms) return `${flooringType} flooring — ${rooms}`.slice(0, 180);
+  if (flooringType) return `${flooringType} flooring inquiry`.slice(0, 180);
+  if (rooms) return `Flooring inquiry — ${rooms}`.slice(0, 180);
+  return "Flooring inquiry";
+}
+
+function proposalFromCells(cells: readonly string[]): GoogleFormLeadProposal {
+  const [, name, address, rooms, flooringType, preferredContact] = cells;
+  const contact = parsePreferredContact(preferredContact ?? "");
+  return Object.freeze({
+    company: name ?? "",
+    contactName: name ?? "",
+    contactEmail: contact.email,
+    contactPhone: contact.phone,
+    projectName: projectName(flooringType ?? "", rooms ?? ""),
+    source: "Google Form",
+    stage: "New inquiry",
+    site: address ?? "",
+    estimatedValue: null,
+    nextAction: preferredContact
+      ? `Follow up using preferred contact: ${preferredContact}`.slice(0, 500)
+      : "Confirm the preferred contact method and schedule a site visit.",
+    nextActionAt: null,
+    rooms: rooms || null,
+    flooringType: flooringType || null,
+    preferredContact: preferredContact || null,
+  });
+}
+
+function invalidDraft(
+  sourceRow: number,
+  submittedAt: string | null,
+  proposal: GoogleFormLeadProposal,
+  reasons: readonly string[],
+  state: GoogleFormLeadReviewState = "invalid",
+): GoogleFormLeadReviewDraft {
+  return Object.freeze({
+    sourceRow,
+    submittedAt,
+    state,
+    proposal,
+    reasons: Object.freeze([...reasons]),
+  });
+}
+
+function blockedRealDataDraft(sourceRow: number) {
+  const redacted = Object.freeze({
+    company: "Blocked real-data response",
+    contactName: "Blocked real-data response",
+    contactEmail: null,
+    contactPhone: null,
+    projectName: "Blocked real-data response",
+    source: "Google Form",
+    stage: "New inquiry",
+    site: "Not stored while the real-data gate is closed",
+    estimatedValue: null,
+    nextAction: "Owner launch approval is required before this response can be reviewed.",
+    nextActionAt: null,
+    rooms: null,
+    flooringType: null,
+    preferredContact: null,
+  });
+  return invalidDraft(
+    sourceRow,
+    null,
+    redacted,
+    ["Real client responses stay blocked until WS-11 and owner launch approval."],
+    "blocked-real-data",
+  );
+}
+
+function normalizedRow(value: readonly unknown[]) {
+  if (value.length > GOOGLE_FORM_LEAD_HEADERS.length) return null;
+  const cells: string[] = [];
+  for (let index = 0; index < GOOGLE_FORM_LEAD_HEADERS.length; index += 1) {
+    const normalized = normalizedCell(value[index], CELL_MAXIMUMS[index] ?? 0);
+    if (normalized === null) return null;
+    cells.push(normalized);
+  }
+  return Object.freeze(cells);
+}
+
+/** Pure mapping/watermark input shared by the on-demand trigger and future WS-12. */
+export async function mapGoogleFormLeadRows(input: Readonly<{
+  rows: readonly (readonly unknown[])[];
+  firstSourceRow: number;
+  clients: readonly FirstRunImportStoredClient[];
+}>) {
+  if (
+    !Number.isSafeInteger(input.firstSourceRow)
+    || input.firstSourceRow < 2
+    || input.rows.length > GOOGLE_FORM_LEAD_MAX_ROWS
+  ) {
+    throw new GoogleFormLeadIntakeValidationError(
+      "form_lead_rows_invalid",
+      "Google Form response rows must use a bounded Sheet range.",
+    );
+  }
+
+  const drafts: GoogleFormLeadReviewDraft[] = [];
+  for (let index = 0; index < input.rows.length; index += 1) {
+    const sourceRow = input.firstSourceRow + index;
+    const cells = normalizedRow(input.rows[index] ?? []);
+    if (!cells) {
+      if (!FIRST_RUN_IMPORT_REAL_DATA_ALLOWED) {
+        drafts.push(blockedRealDataDraft(sourceRow));
+        continue;
+      }
+      drafts.push(invalidDraft(
+        sourceRow,
+        null,
+        proposalFromCells([]),
+        ["This response contains unsupported or oversized values."],
+      ));
+      continue;
+    }
+
+    const submittedAt = cells[0] || null;
+    const proposal = proposalFromCells(cells);
+    if (
+      !FIRST_RUN_IMPORT_REAL_DATA_ALLOWED
+      && !proposal.company.startsWith(FIRST_RUN_IMPORT_TEST_MARKER)
+    ) {
+      drafts.push(blockedRealDataDraft(sourceRow));
+      continue;
+    }
+    const missing = [
+      !submittedAt ? "Timestamp is required." : null,
+      !proposal.company ? "Name is required." : null,
+      !proposal.site ? "Address is required." : null,
+    ].filter((reason): reason is string => reason !== null);
+    if (missing.length > 0) {
+      drafts.push(invalidDraft(sourceRow, submittedAt, proposal, missing));
+      continue;
+    }
+
+    const duplicateIssues = await matchFirstRunClientDuplicates({
+      name: proposal.company,
+      email: proposal.contactEmail,
+      phone: proposal.contactPhone,
+      address: proposal.site,
+    }, input.clients);
+    drafts.push(Object.freeze({
+      sourceRow,
+      submittedAt,
+      state: duplicateIssues.length > 0 ? "duplicate" : "ready",
+      proposal,
+      reasons: Object.freeze(duplicateIssues.map(({ message }) => message)),
+    }));
+  }
+  return Object.freeze(drafts);
+}
+
+export function assertGoogleFormLeadHeaders(value: readonly (readonly unknown[])[]) {
+  const row = value[0];
+  const normalized = row?.map((cell) => normalizedCell(cell, 80));
+  if (
+    !normalized
+    || normalized.length !== GOOGLE_FORM_LEAD_HEADERS.length
+    || normalized.some((cell, index) => cell !== GOOGLE_FORM_LEAD_HEADERS[index])
+  ) {
+    throw new GoogleFormLeadIntakeValidationError(
+      "form_lead_headers_invalid",
+      `The response Sheet must use these columns in order: ${GOOGLE_FORM_LEAD_HEADERS.join(", ")}.`,
+      409,
+    );
+  }
+}

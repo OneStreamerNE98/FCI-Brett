@@ -2434,6 +2434,8 @@ scope, API key, or billing attachment. GI packets follow the same guardrails, st
 rules, and draft-PR workflow as Workstreams A–D.
 
 ### GI-01 · Google Forms lead intake (small, after SET-16)
+**Status:** In progress — `codex/gi01-forms-lead-intake`
+
 **Why:** A public lead form replaces ad-hoc phone/email capture, feeding the same
 pipeline the app already mirrors.
 **Do:** Owner creates the lead form in Forms UI (name, address, rooms, flooring type,

@@ -6,6 +6,7 @@ export const DEVELOPMENT_RATE_LIMIT_SCOPES = [
   "inbox-analysis",
   "uploads",
   "google-sheets-sync",
+  "google-form-lead-intake",
   "project-drive-provisioning",
   "tasks",
 ] as const;

@@ -18,6 +18,7 @@ const productionMigrationModules = new Set([
   join(appRoot, "platform", "postgres", "task-schema.ts"),
   join(appRoot, "platform", "postgres", "core-record-concurrency-schema.ts"),
   join(appRoot, "platform", "postgres", "mail-item-analysis-schema.ts"),
+  join(appRoot, "platform", "postgres", "google-form-lead-intake-schema.ts"),
 ]);
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
@@ -31,6 +32,7 @@ const projectSegmentMigrationPrefix = "0019_";
 const coreRecordConcurrencyMigrationPrefix = "0020_";
 const mailItemAnalysisMigrationPrefix = "0021_";
 const clientNormalizedNameMigrationPrefix = "0022_";
+const googleFormLeadIntakeMigrationPrefix = "0023_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -56,6 +58,9 @@ const requiredDevelopmentIndexes = [
   "mail_items_profile_message_unique",
   "mail_items_profile_status_idx",
   "clients_normalized_name_key_unique_idx",
+  "google_form_lead_watermarks_scope_unique",
+  "google_form_lead_reviews_source_unique",
+  "google_form_lead_reviews_queue_idx",
 ];
 
 async function sourceFiles(directory) {
@@ -710,11 +715,54 @@ test("adds the nullable atomic D1 client-name key in generated migration 0022", 
     isUnique: true,
     where: "\"clients\".\"normalized_name_key\" IS NOT NULL",
   });
-  assert.deepEqual(journal.entries.at(-1), {
+  const journalEntry = journal.entries.find(({ idx }) => idx === 22);
+  assert.deepEqual(journalEntry, {
     idx: 22,
     version: "6",
-    when: journal.entries.at(-1).when,
+    when: journalEntry.when,
     tag: "0022_mean_darkhawk",
+    breakpoints: true,
+  });
+});
+
+test("adds GI-01's bounded watermark and review-first queue in generated migration 0023", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(googleFormLeadIntakeMigrationPrefix));
+  assert.equal(migration, "0023_smiling_silvermane.sql");
+  assert.equal(
+    files.filter((file) => file.startsWith(googleFormLeadIntakeMigrationPrefix)).length,
+    1,
+  );
+  const [migrationSql, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0022_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0023_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.match(migrationSql, /CREATE TABLE `google_form_lead_intake_watermarks`/u);
+  assert.match(migrationSql, /CREATE TABLE `google_form_lead_reviews`/u);
+  assert.match(migrationSql, /`accepted_lead_id` text/u);
+  assert.match(migrationSql, /CREATE UNIQUE INDEX `google_form_lead_watermarks_scope_unique`/u);
+  assert.match(migrationSql, /CREATE UNIQUE INDEX `google_form_lead_reviews_source_unique`/u);
+  assert.match(migrationSql, /CREATE INDEX `google_form_lead_reviews_queue_idx`/u);
+  assert.doesNotMatch(
+    migrationSql,
+    /\b(?:DROP|UPDATE|DELETE|TRUNCATE|RENAME|ALTER TABLE)\b/iu,
+  );
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  for (const [table, value] of Object.entries(previousSnapshot.tables)) {
+    assert.deepEqual(snapshot.tables[table], value);
+  }
+  assert.deepEqual(
+    Object.keys(snapshot.tables).filter((table) => !Object.hasOwn(previousSnapshot.tables, table)).sort(),
+    ["google_form_lead_intake_watermarks", "google_form_lead_reviews"],
+  );
+  const journalEntry = journal.entries.at(-1);
+  assert.deepEqual(journalEntry, {
+    idx: 23,
+    version: "6",
+    when: journalEntry.when,
+    tag: "0023_smiling_silvermane",
     breakpoints: true,
   });
 });

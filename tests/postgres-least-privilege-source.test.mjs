@@ -280,6 +280,8 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     ["filing_rules", ["SELECT", "INSERT", "UPDATE", "DELETE"]],
     ["mail_items", ["SELECT", "INSERT", "UPDATE"]],
     ["tasks", ["SELECT", "INSERT", "UPDATE"]],
+    ["google_form_lead_intake_watermarks", ["SELECT", "INSERT", "UPDATE"]],
+    ["google_form_lead_reviews", ["SELECT", "INSERT", "UPDATE"]],
   ]) {
     assert.deepEqual(
       EXPECTED_RUNTIME_TABLE_ACCESS.find((entry) => entry.table === table)?.privileges,

@@ -128,6 +128,8 @@ GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.user_preferences TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fci_app.filing_rules TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.mail_items TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.tasks TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.google_form_lead_intake_watermarks TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.google_form_lead_reviews TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.activity_events TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.idempotency_requests TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.outbox_events TO fci_runtime;

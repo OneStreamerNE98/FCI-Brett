@@ -98,6 +98,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "mail_item_analysis",
       checksum: "sha256:46904428caf2572fd63079820a5ebf9b5b04e5390bcc7c69a69a8249431430bc",
     }),
+    Object.freeze({
+      version: 13,
+      name: "google_form_lead_intake",
+      checksum: "sha256:b43b293f373434363f734d1fae865aa3c961d7259ca1b943232087a8fe70baab",
+    }),
   ]);
 
 /**
@@ -157,6 +162,8 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("filing_rules", ["SELECT", "INSERT", "UPDATE", "DELETE"]),
     runtimeTableAccess("mail_items", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("tasks", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("google_form_lead_intake_watermarks", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("google_form_lead_reviews", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("activity_events", ["INSERT"]),
     runtimeTableAccess("idempotency_requests", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("outbox_events", ["SELECT", "INSERT", "UPDATE"]),

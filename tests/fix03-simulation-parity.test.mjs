@@ -1580,6 +1580,8 @@ test("FIX-03 local simulation matches durable integration contracts and resets o
     state.queries.filter((query) => query.sql.startsWith("DELETE FROM ")).map((query) => query.sql),
     [
       "DELETE FROM activity_events WHERE action GLOB 'workspace_simulation.*'",
+      "DELETE FROM google_form_lead_reviews WHERE connection_key = ?",
+      "DELETE FROM google_form_lead_intake_watermarks WHERE connection_key = ?",
       "DELETE FROM mail_items WHERE connection_key = ?",
       "DELETE FROM gmail_file_archive_artifacts WHERE archive_id IN (SELECT id FROM gmail_file_archives WHERE connection_key = ?)",
       "DELETE FROM gmail_file_archives WHERE connection_key = ?",

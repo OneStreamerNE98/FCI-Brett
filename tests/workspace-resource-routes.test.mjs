@@ -616,11 +616,23 @@ test("simulation reset deletes registry rows only for the simulation connection 
     ADMIN_EMAIL,
     "POST",
   ));
+  const formLeadReviewDeletes = database.queries.filter((query) => /DELETE FROM google_form_lead_reviews/u.test(query.sql));
+  const formLeadWatermarkDeletes = database.queries.filter((query) => /DELETE FROM google_form_lead_intake_watermarks/u.test(query.sql));
   const mailItemDeletes = database.queries.filter((query) => /DELETE FROM mail_items/u.test(query.sql));
   const registryDeletes = database.queries.filter((query) => /DELETE FROM workspace_resources/u.test(query.sql));
   const blueprintDeletes = database.queries.filter((query) => /DELETE FROM workspace_blueprints/u.test(query.sql));
 
   assert.equal(response.status, 200);
+  assert.equal(formLeadReviewDeletes.length, 1);
+  assert.deepEqual(formLeadReviewDeletes[0].values, ["workspace-simulation"]);
+  assert.match(formLeadReviewDeletes[0].sql, /WHERE connection_key = \?/u);
+  assert.equal(formLeadWatermarkDeletes.length, 1);
+  assert.deepEqual(formLeadWatermarkDeletes[0].values, ["workspace-simulation"]);
+  assert.match(formLeadWatermarkDeletes[0].sql, /WHERE connection_key = \?/u);
+  assert.ok(
+    database.queries.indexOf(formLeadReviewDeletes[0]) < database.queries.indexOf(formLeadWatermarkDeletes[0]),
+    "simulation reset must remove queued reviews before their durable watermark",
+  );
   assert.equal(mailItemDeletes.length, 1);
   assert.deepEqual(mailItemDeletes[0].values, ["workspace-simulation"]);
   assert.match(mailItemDeletes[0].sql, /WHERE connection_key = \?/u);
