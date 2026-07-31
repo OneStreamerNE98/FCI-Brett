@@ -462,3 +462,26 @@ tests updated in the same PR; "Last synced" renders a locale timestamp;
 `npm test` green; no other behavior change. Owner dispatch of this packet is
 the sign-off on the grouping-definition refinement.
 **Effort:** small. **Cost:** $0.
+
+### NFIX-06 · Tablet-band clipping and overlap fixes (small)
+**Status:** In progress — `codex/nfix06-tablet-band`
+
+**Why:** Night 2 N2-1/N2-4/N2-5 — at 834px the Projects table clips 94.6%
+of the Estimated value cell and truncates the site address with no horizontal
+scroll recovery; the Inbox search input loses pointer hit-testing to the Load
+messages button and adjacent status content at 834/900 (and partly 1024); and
+Testing & launch clips 40px of its Google Workspace setup action at 834,
+outside NFIX-04's phone-only proof.
+**Do:** keep the fix CSS-only: reuse the Projects row's existing stacked
+representation through the measured 900px edge (the seeded acceptance scan
+found its chevron still 12px beyond the viewport there); give the Inbox layout, toolbar,
+and search help enough rows through the awkward tablet widths; and extend the
+Testing & launch heading/action stack through the measured 900px edge. Do not change the Leads
+board's intentional `overflow-x:auto` scroller, application markup, or golden
+hashes.
+**Accept:** the committed Night 2 scanner at 768/834/900/1024 reports zero
+element-overflow hits on `/projects`, zero overlaps on `/inbox` at 834/900,
+and `vacuousPageViews: 0`; Testing & launch keeps its setup action in-viewport
+at 834; the page-layout golden constants remain byte-identical and the focused
+golden spec passes; `npm test`, `npm run test:e2e`, and `npm run lint` are green.
+**Effort:** small. **Cost:** $0.
