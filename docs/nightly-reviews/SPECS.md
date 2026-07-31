@@ -1,4 +1,9 @@
-# Pending night specs (2–5, 9, 10)
+# Pending night specs (3–5, 9, 10)
+
+> **Night 2 ran July 31, 2026** — see
+> [`night-02-tablet-awkward-middles.md`](night-02-tablet-awkward-middles.md). Its spec is
+> retained below as the worked example of the format, and because Night 3 consumes its scan
+> data. Nights 3, 4, 5, 9 and 10 remain pending the owner's kickoff.
 
 **Enshrined July 30, 2026 on the owner's decision.** Until now the design for the six
 un-run nights lived only in the July 24 orchestrator chat session — not in this repo — and
@@ -110,11 +115,21 @@ cross-width comparison rather than re-scanning those widths.
 and is each one deliberate; (2) *alignment* — card edges, heading baselines, and control
 rows across adjacent sections; (3) *synthesis and dedup*.
 
-**Hard constraint.** The Overview and Reports dashboards are byte-pinned by golden hashes.
-Any spacing finding inside `.metrics-grid`, `.dashboard-grid`, `.business-kpis`,
-`.reports-grid`, or `.client-directory-banner` is **file-only** — it may not be fixed by a
-nightly-derived packet without an owner-approved regeneration, which this program never
-does (rule 3).
+**Constraint, corrected July 31, 2026 by adversarial audit.** The Overview and Reports
+dashboards are byte-pinned by golden hashes over `.metrics-grid`, `.dashboard-grid`,
+`.business-kpis`, `.reports-grid` and `.client-directory-banner`. This spec previously said
+any spacing finding inside those regions is **file-only** and unfixable without a
+regeneration. **That overstated rule 3.** The digests hash `outerHTML` — **markup, not
+computed style** — so a fix that changes only a CSS *value* (a gap, a padding, a token
+reference in a stylesheet) leaves both constants byte-identical and is perfectly shippable.
+
+What is genuinely blocked is a fix that changes the **markup** inside those containers:
+adding or removing an element, changing a class attribute, reordering children. Those move
+the digest and would require a regeneration this program never performs.
+
+So the real test is *"does the fix touch markup or only CSS?"* — not *"is it inside a
+hashed region?"* **Verify by running `tests/e2e/page-layouts.spec.ts` rather than
+by reasoning about it**, exactly as DES-11 did.
 
 **Accept:** off-scale values enumerated with their computed values and sources; each
 finding states whether the fix is reachable without golden regeneration; deduped; verified;
@@ -198,10 +213,19 @@ client-side; payload sizes for the heaviest routes; and time-to-interactive on t
 dashboards, which carry the most markup.
 
 **Specific suspects, already known and worth measuring rather than assuming
-[reconstructed]:** the task list requests 200 rows and filters client-side; the operations
-health card issues three category queries; every Gmail request performs a live,
-non-retryable refresh grant with no cache (`_route-helpers.ts` / `google-oauth.ts`), which
-is recorded in the plan as a rate-limit concern at scale.
+[reconstructed]:** the operations health card issues three category queries; every Gmail
+request performs a live, non-retryable refresh grant with no cache
+(`_route-helpers.ts` / `google-oauth.ts`), which is recorded in the plan as a rate-limit
+concern at scale.
+
+**CORRECTED July 31, 2026 by adversarial audit.** This list previously named a third
+suspect — *"the task list requests 200 rows and filters client-side"* — which is **false**.
+`taskManagementSearch` (`app/assistant/task-management.ts:141-150`) puts `status`,
+`assigneeEmail`, `dueBefore` and `projectId` into the query string and the API filters
+server-side (`app/api/v1/tasks/route.ts:120`). The 200 is a result cap, not a
+fetch-everything-then-filter pattern. Night 9 would have been chartered to measure
+something that does not exist. **Verify each remaining suspect against source before
+measuring it** — these are reconstructed, and one of three was wrong.
 
 **Accept:** every finding carries a measurement, the method, and the run count; no
 finding rests on a single sample; the quiet-machine condition is stated; deduped; verified;

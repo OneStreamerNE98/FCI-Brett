@@ -1546,7 +1546,18 @@ export function InboxView({
                         }}
                         onClick={() => {
                           if (markingReviewId !== null) return;
-                          void markReviewed(row);
+                          // A row whose lead was already created retires as "lead-created"
+                          // even when the user reaches this button, because the banner sends
+                          // them here after a failed retirement and Create lead is gone by
+                          // then. Sending the default "manual" would write "dismissed" for a
+                          // row that HAS a lead — reintroducing exactly the misreporting the
+                          // outcome fix exists to prevent, and irreversibly, since the
+                          // adapters guard `status = 'needs-review'` and the row is terminal
+                          // after one write.
+                          void markReviewed(
+                            row,
+                            leadCreatedRowIds.has(row.id) ? "lead-created" : "manual",
+                          );
                         }}
                         aria-disabled={markingReviewId !== null}
                         aria-label={`Mark reviewed: ${row.subject ?? row.sender ?? "message"}`}
