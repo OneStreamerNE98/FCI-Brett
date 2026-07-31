@@ -6,7 +6,6 @@ import { AdministratorActionButton } from "../../components/AdministratorActionB
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
 import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
-import { AiAssistantSettingsCard } from "./AiAssistantSettingsCard";
 import { ChatNotificationSettingsCard } from "./ChatNotificationSettingsCard";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 import styles from "./WorkspaceDefaultsPanel.module.css";
@@ -79,7 +78,6 @@ function PlannedSettingField({
 function WorkflowSettingsStack({ children, notify, isAdmin }: { children: ReactNode; notify: Notify; isAdmin: boolean }) {
   return <div className="settings-panel-stack">
     {children}
-    <AiAssistantSettingsCard notify={notify} isAdmin={isAdmin} />
     <ChatNotificationSettingsCard notify={notify} isAdmin={isAdmin} />
   </div>;
 }

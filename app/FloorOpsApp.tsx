@@ -63,6 +63,7 @@ import {
   type ProjectStatusFilter,
   type SettingsSection,
 } from "./lib/operations-routes";
+import { AiAssistantSettingsCard } from "./settings/components/AiAssistantSettingsCard";
 import { DataSecurityPanel } from "./settings/components/DataSecurityPanel";
 import { DirectorySyncPanel } from "./settings/components/DirectorySyncPanel";
 import { GoogleWorkspacePanel } from "./settings/components/GoogleWorkspacePanel";
@@ -2115,6 +2116,7 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, onCurrentU
       {isAdmin && visibleSection === "Inbox & file rules" && <InboxRulesPanel rules={rules} onAddRule={onAddRule} onUpdateRule={onUpdateRule} onDeleteRule={onDeleteRule} />}
       {isAdmin && visibleSection === "Client Directory" && <DirectorySyncPanel mirror={sheetMirror} syncing={syncingSheet} onSync={onSyncGoogleSheet} onImportConfirmed={onImportConfirmed} onConfigure={() => { onSection("Google Workspace"); notify("Open the Workspace checklist to connect Google Sheets", "info"); }} isAdmin={isAdmin} />}
       {isAdmin && visibleSection === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}
+      {isAdmin && visibleSection === "AI assistant" && <AiAssistantSettingsCard notify={notify} isAdmin={isAdmin} />}
       {isAdmin && visibleSection === "Data & security" && <DataSecurityPanel />}
       {isAdmin && visibleSection === "Testing & launch" && <TestingLaunchPanel onGoogleSetup={() => onSection("Google Workspace")} />}
     </div></>;

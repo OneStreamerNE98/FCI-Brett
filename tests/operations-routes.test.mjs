@@ -42,6 +42,7 @@ test("only bounded non-default page state is included in durable URLs", () => {
   assert.equal(operationsHref("Projects", { projectLifecycle: "mobilizing" }), "/projects?status=mobilizing");
   assert.equal(operationsHref("Settings", { settingsSection: "My settings" }), "/settings");
   assert.equal(operationsHref("Settings", { settingsSection: "Google Workspace" }), "/settings?section=google-workspace");
+  assert.equal(operationsHref("Settings", { settingsSection: "AI assistant" }), "/settings?section=ai-assistant");
   assert.equal(operationsHref("Inbox", { inboxBucket: "inbox" }), "/inbox");
   assert.equal(operationsHref("Inbox", { inboxBucket: "needs-review" }), "/inbox?bucket=needs-review");
 });
@@ -54,6 +55,7 @@ test("keeps every SET-07 Settings slug pinned while My settings remains the cano
     ["Inbox & file rules", "/settings?section=inbox-rules"],
     ["Client Directory", "/settings?section=client-directory"],
     ["Workflow & notifications", "/settings?section=workflow-notifications"],
+    ["AI assistant", "/settings?section=ai-assistant"],
     ["Data & security", "/settings?section=data-security"],
     ["Testing & launch", "/settings?section=testing-launch"],
   ];
@@ -66,6 +68,7 @@ test("keeps every SET-07 Settings slug pinned while My settings remains the cano
 
 test("route-state readers fail safely on invalid or duplicate values", () => {
   assert.equal(settingsSectionFromSearch("section=calendar"), "Calendar & appointments");
+  assert.equal(settingsSectionFromSearch("section=ai-assistant"), "AI assistant");
   assert.equal(settingsSectionFromSearch("section=unknown"), "My settings");
   assert.equal(settingsSectionFromSearch("section=calendar&section=data-security"), "My settings");
   assert.equal(leadStageFromSearch("stage=new-inquiry"), "new-inquiry");

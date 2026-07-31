@@ -311,6 +311,7 @@ test("Workspace cross-links target stage anchors while rendered personal setting
     ["Inbox & file rules", "inbox-rules"],
     ["Client Directory", "client-directory"],
     ["Workflow & notifications", "workflow-notifications"],
+    ["AI assistant", "ai-assistant"],
     ["Data & security", "data-security"],
     ["Testing & launch", "testing-launch"],
   ]) {

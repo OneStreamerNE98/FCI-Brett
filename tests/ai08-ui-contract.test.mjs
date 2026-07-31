@@ -16,6 +16,7 @@ const SETTINGS_COPY = {
     "Task extraction from meetings",
   ],
   footer: "The assistant reads saved records and drafts text. It never sends email, never files messages, and never creates records without your confirmation.",
+  dataAtRest: "Inbox analysis stores the email subject, sender, received date, and analysis result in the app database. This can include customer names and subject lines. Turning Inbox analysis off stops future sweeps but does not erase saved results.",
   missing: "Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.",
 };
 
@@ -48,6 +49,7 @@ test("pins the AI-08 settings and help copy to the canonical section-9 contract"
     SETTINGS_COPY.title,
     ...SETTINGS_COPY.toggles,
     SETTINGS_COPY.footer,
+    SETTINGS_COPY.dataAtRest,
     SETTINGS_COPY.missing,
     HELP_COPY.title,
     HELP_COPY.intro,
@@ -64,6 +66,7 @@ test("pins the AI-08 settings and help copy to the canonical section-9 contract"
     SETTINGS_COPY.title,
     ...SETTINGS_COPY.toggles,
     SETTINGS_COPY.footer,
+    SETTINGS_COPY.dataAtRest,
     SETTINGS_COPY.missing,
   ]) {
     assert.ok(card.includes(text), `AI settings card must render the exact copy: ${text}`);
@@ -93,8 +96,9 @@ test("pins the AI-08 settings and help copy to the canonical section-9 contract"
   }
 });
 
-test("keeps the AI card in the zero-queue workflow stack and office read-only My settings surface", async () => {
-  const [defaults, personal, routes, navigation] = await Promise.all([
+test("moves the admin AI card to its owner-approved section while preserving the office My settings mirror", async () => {
+  const [app, defaults, personal, routes, navigation] = await Promise.all([
+    read("app/FloorOpsApp.tsx"),
     read("app/settings/components/WorkspaceDefaultsPanel.tsx"),
     read("app/settings/components/MySettingsPanel.tsx"),
     read("app/lib/operations-routes.ts"),
@@ -103,8 +107,14 @@ test("keeps the AI card in the zero-queue workflow stack and office read-only My
 
   assert.match(
     defaults,
-    /\{children\}\s*<AiAssistantSettingsCard notify=\{notify\} isAdmin=\{isAdmin\} \/>\s*<ChatNotificationSettingsCard notify=\{notify\} isAdmin=\{isAdmin\} \/>/u,
-    "the AI card must stay between the workflow child and Chat without creating another queue",
+    /\{children\}\s*<ChatNotificationSettingsCard notify=\{notify\} isAdmin=\{isAdmin\} \/>/u,
+    "Workflow & notifications must retain Chat routing after the AI controls move",
+  );
+  assert.doesNotMatch(defaults, /AiAssistantSettingsCard/u, "AI-11(b) moves rather than duplicates the admin controls");
+  assert.match(
+    app,
+    /isAdmin && visibleSection === "AI assistant" && <AiAssistantSettingsCard notify=\{notify\} isAdmin=\{isAdmin\} \/>/u,
+    "the dedicated AI assistant section must own the single editable card",
   );
   assert.match(
     personal,
@@ -122,10 +132,15 @@ test("keeps the AI card in the zero-queue workflow stack and office read-only My
     "Inbox & file rules",
     "Client Directory",
     "Workflow & notifications",
+    "AI assistant",
     "Data & security",
     "Testing & launch",
   ]);
-  assert.doesNotMatch(navigation, /AI assistant/iu, "AI-08 must not add a Settings section");
+  assert.match(
+    navigation,
+    /COMPANY_SECTIONS\.map\(\(companySection\) => <SectionButton key=\{companySection\} section=\{companySection\} label=\{companySection\}/u,
+    "AI-11(b) owner approval re-points AI-08's no-section pin: every company catalog entry, including AI assistant, must render in navigation",
+  );
 });
 
 test("uses native disclosure semantics and keeps help isolated to the Assistant view", async () => {

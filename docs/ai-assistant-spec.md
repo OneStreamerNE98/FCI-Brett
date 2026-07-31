@@ -249,8 +249,8 @@ authorization foundation is accepted, plus its listed gate.
 
 ## 9. Settings & help copy (canonical)
 
-**AiAssistantSettingsCard** (Workflow & notifications; admin sees controls,
-office sees read-only state):
+**AiAssistantSettingsCard** (dedicated **AI assistant** Settings section for
+administrator controls; **My settings** retains the office read-only mirror):
 
 - Title: `AI assistant`
 - Provider row: `Provider` → `OpenAI` · `API key` → `Configured` | `Missing`
@@ -262,6 +262,10 @@ office sees read-only state):
 - Footer caption: `The assistant reads saved records and drafts text. It
   never sends email, never files messages, and never creates records without
   your confirmation.`
+- Data-at-rest disclosure: `Inbox analysis stores the email subject, sender,
+  received date, and analysis result in the app database. This can include
+  customer names and subject lines. Turning Inbox analysis off stops future
+  sweeps but does not erase saved results.`
 - Key-Missing state: `Add OPENAI_API_KEY to the hosting environment to enable
   AI features. Everything else keeps working without it.`
 
@@ -441,16 +445,16 @@ written down as such rather than absorbed silently.
    nest the card; it is a recorded design decision, not a safety rail, and the owner — who could
    not find the AI settings himself — has chosen to change it. The read-only mirror in
    *My settings* stays so office users can still see what is on without changing it.
-   **Implementing packet for the new section: AI-11, not AI-10.** AI-10 adds only the binding
-   `inboxAnalysis` kill switch to the existing card in *Workflow & notifications* (and its
-   office read-only mirror); AI-11 still owns the new section, the navigation re-points above,
-   and decision 6's expanded settings-card disclosure. Until AI-11 lands, the section decision
-   is recorded but not shipped.
+   **Implementing packet for the new section: AI-11, not AI-10.** AI-10 added only the binding
+   `inboxAnalysis` kill switch to the then-existing card in *Workflow & notifications* (and its
+   office read-only mirror); AI-11(b) moves the administrator controls into the dedicated
+   section, preserves that office mirror, re-points the navigation contracts above, and adds
+   decision 6's expanded settings-card disclosure.
 
 6. **Data at rest.** A minimal display snapshot (subject, sender, received date) persists on
    each analysis row so the queue renders without a per-message Gmail round-trip and survives a
    message being moved in Gmail. This places customer names and subject lines in the app
    database — a new fact for this app, now stated here and in the settings guide. AI-10's
-   persisted fields live on `mail_items`; the settings card receives the fuller data-at-rest
-   disclosure **when AI-11 builds its dedicated section** (see decision 5), exactly as the
-   bounded-body-read decision already is.
+   persisted fields live on `mail_items`; AI-11(b)'s dedicated settings card carries the fuller
+   data-at-rest disclosure (see decision 5), exactly as the bounded-body-read decision already
+   is.
