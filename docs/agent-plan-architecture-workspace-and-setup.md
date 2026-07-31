@@ -31,13 +31,24 @@ manual dispatch and states outright that it does not deploy). So the live site r
 
 **Therefore no commit or version number is recorded here on purpose.** Any such number
 rots the moment the next deploy happens and then misleads whoever reads it — which is
-exactly what happened. To learn what is live, ask the owner when they last deployed, or
-read it from the running app. Do not infer it from this document, and do not infer it from
-packet status lines (see the note on the "undeployed" label below).
+exactly what happened.
 
-**Known gap worth closing:** the app displays no version or build stamp anywhere, and no
-release record exists, so "what is live?" currently has no self-serve answer. A visible
-build stamp would make this question answerable by looking instead of by asking.
+**THE CANONICAL DEPLOYMENT RECORD IS GITHUB ISSUE #258** —
+<https://github.com/OneStreamerNE98/FCI-Brett/issues/258>, "ChatGPT Sites deployment log
+(canonical)", created by the owner July 30, 2026. Every deployment is appended there as a
+comment with its Eastern and UTC timestamp, the exact source branch and commit SHA, the
+Sites version, the result, the live URL, and whether source, hosted configuration,
+migrations, or live data changed. **Read the newest entry there to learn what is live.** Do
+not infer it from this document, and do not infer it from packet status lines (see the note
+on the "undeployed" label below).
+
+For orientation only — this will go stale, the issue will not: the first recorded entry is
+`origin/main` at `dafb81d` deployed 2026-07-30 23:43Z as Sites version 55, succeeded,
+deployment only.
+
+**Remaining gap:** the app itself still displays no version or build stamp, so the answer
+requires opening the issue rather than looking at the screen. A visible build stamp tied to
+the deployed SHA would close that, and is worth its own packet.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
 
@@ -982,11 +993,19 @@ says so.** `MAX_TASK_LIST_RESULTS` (200) is a hard server ceiling: a request
 above it is rejected (`app/domain/task.ts:304`), so the client cannot fetch
 one extra row to detect truncation and a full page is the only available
 signal. Three things compound — the panel's default filter carries **no
-status**, so completed tasks consume the same budget; the server orders
-`due_date IS NULL, due_date, updated_at DESC`, so **undated rows sort last and
-fall off first**; and a newly created task with no due date is therefore
-exactly what goes missing. A full page now renders an honest notice naming
-both the cap and the ordering. Pagination is **not** built.
+status**, so completed tasks consume the same budget; and the server orders
+`due_date IS NULL, due_date, updated_at DESC` (PostgreSQL: `due_date NULLS
+LAST, updated_at DESC, id`), so **undated rows sort after every dated row** and
+are the group at risk once the cap is reached. A full page now renders an
+honest notice naming both the cap and the ordering. Pagination is **not** built.
+**Corrected July 30, 2026 by independent audit (PR #256):** this residual
+previously said "a newly created task with no due date is therefore exactly
+what goes missing." That overstated it. Within the undated group the secondary
+sort is `updated_at DESC`, so the **newest** undated task is retained ahead of
+older undated ones; the **oldest** undated tasks fall off first. A brand-new
+undated task is only lost when 200 dated tasks consume the entire cap before
+the undated group is reached. The shipped notice was correct; the ledger prose
+describing it was not.
 **Open follow-up worth its own packet (owner decision):** there is **no
 `GET /api/v1/tasks/[taskId]`** — only `PATCH`. So the 409 recovery
 (`readCurrentTask`) must scan up to four capped lists hunting an exact version
