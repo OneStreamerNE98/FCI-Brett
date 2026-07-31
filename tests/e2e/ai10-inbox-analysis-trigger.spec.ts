@@ -360,9 +360,11 @@ test("Needs review renders the stored queue, continues bounded coverage, and dis
   await expect(page.getByText("FCI TEST stored queue subject", { exact: true })).toHaveCount(0);
   await expect(page.getByText("No messages need review", { exact: true })).toBeVisible();
   await expect(page.getByText("0 stored messages need review.", { exact: true })).toBeVisible();
+  // A hand dismissal must record "dismissed" — this is the control case for the
+  // accepted-vs-dismissed distinction the lead path exercises below.
   expect(calls.at(-2)).toEqual({
     method: "PATCH",
-    body: { id: "mail-item-ai10-review" },
+    body: { id: "mail-item-ai10-review", outcome: "dismissed" },
   });
   expect(calls.at(-1)?.method).toBe("GET");
   expect(gmailQueueReads).toEqual([]);
@@ -460,7 +462,11 @@ test("a lead-intent review row opens one prefilled lead review and retires only 
     status: "active",
   }));
   expect(typeof leadPosts[0].nextActionAt).toBe("string");
-  expect(reviewPatches).toEqual([{ id: leadReviewRow.id }]);
+  // The behavioural proof of the accepted-vs-dismissed fix: a lead created from the
+  // queue retires the row as "accepted", so it is distinguishable from the hand
+  // dismissal asserted above. Without this the AI-11(d) activity view would report
+  // every lead accept as a dismissal.
+  expect(reviewPatches).toEqual([{ id: leadReviewRow.id, outcome: "accepted" }]);
 });
 
 test("a failed lead retirement stays honest after another row is created and retired", async ({ page }) => {
