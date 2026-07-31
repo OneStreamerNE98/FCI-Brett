@@ -114,4 +114,6 @@ CREATE TABLE google_form_lead_reviews (
 `.trim(),
   `CREATE INDEX google_form_lead_reviews_queue_idx
    ON google_form_lead_reviews (connection_key, status, source_row, id)`,
+  `CREATE INDEX google_form_lead_reviews_accepted_lead_idx
+   ON google_form_lead_reviews (accepted_lead_id)`,
 ] as const;
