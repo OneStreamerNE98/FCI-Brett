@@ -37,6 +37,39 @@ Start with [`docs/README.md`](docs/README.md), the audience-grouped index of eve
 5. Open a pull request with a concise summary, verification evidence, and data/security impact note.
 6. Do not deploy, change hosted configuration, migrate data, or merge to production without owner approval.
 
+## Deploying the Sites app — record every deployment
+
+The owner deploys the private ChatGPT Sites app from GitHub on demand. **There is no
+GitHub Actions deployment** — `.github/workflows/cloud-run-image.yml` publishes an image on
+manual dispatch and states outright that it does not deploy. So merging is **not** deploying:
+merged code sits inert in `main` until the owner deploys.
+
+**If you perform a deployment, you must do both of the following.**
+
+**1. Set the build-stamp variables in the build environment — both, or neither.**
+`FCI_BUILD_COMMIT_SHA` (short SHA) and `FCI_BUILD_TIMESTAMP` (ISO-8601 UTC) are read at
+**build** time by `build/build-information.mjs` and baked into the bundle by `vite.config.ts`.
+`build-information.mjs` **throws if exactly one is supplied**, and the Settings → Data &
+security card renders `Build identifier unavailable` when both are absent. Nothing in this
+repo sets them; the deploy step must.
+
+**2. Append an entry to the canonical deployment log — GitHub issue #258**,
+<https://github.com/OneStreamerNE98/FCI-Brett/issues/258> ("ChatGPT Sites deployment log
+(canonical)"), as a **new comment**, carrying:
+
+- deployment timestamp in **Eastern and UTC**;
+- the exact GitHub **source branch and commit SHA**;
+- the **ChatGPT Sites version** and the deployment **result**;
+- the **live URL**;
+- whether **source files, hosted configuration, migrations, or live data** changed.
+
+**Why this rule exists.** This file previously carried a deployment baseline that went
+**eleven days stale**; an agent quoted it as current fact and produced two different wrong
+counts of unshipped work before the owner pointed out he could see that day's merges running.
+Issue #258 is the record; the build stamp makes it visible in the app; this rule is what makes
+both happen. **Never write a commit SHA, version number, or "what is live" claim into a repo
+file** — read the newest #258 entry instead. That is the mistake this rule replaces.
+
 ## Multi-agent coordination
 
 Multiple AI agents work this repository from separate clones. Each agent is its own
