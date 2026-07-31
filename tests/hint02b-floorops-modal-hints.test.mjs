@@ -10,7 +10,7 @@ const hints = [
   {
     modal: "LeadModal",
     constant: "LEAD_ESTIMATED_VALUE_HINT",
-    label: "About lead estimated value",
+    label: "Lead value help",
     text: "Your rough estimate of the job's size before it's quoted. Feeds pipeline totals; it is not a committed contract amount.",
     anchor: "auto",
     fieldId: "lead-estimated-value",
@@ -18,7 +18,7 @@ const hints = [
   {
     modal: "ClientModal",
     constant: "CLIENT_STATUS_HINT",
-    label: "About client status",
+    label: "Client lifecycle help",
     text: "Active is a current working account, Prospect is not yet won, Inactive is dormant or closed.",
     anchor: "right",
     fieldId: "new-client-status",
@@ -26,7 +26,7 @@ const hints = [
   {
     modal: "NewProjectModal",
     constant: "PROJECT_STATUS_HINT",
-    label: "About project status",
+    label: "Project phase help",
     text: "Planning is pre-work, Mobilizing is readying crews and materials, Installation is the active install, Closeout is punch list and wrap-up.",
     anchor: "auto",
     fieldId: "new-project-status",
@@ -34,7 +34,7 @@ const hints = [
   {
     modal: "NewProjectModal",
     constant: "PROJECT_FLOORING_CATEGORY_HINT",
-    label: "About flooring category",
+    label: "Flooring selection help",
     text: "The main material for this job. Use Specialty for niche products and Mixed when no single category dominates.",
     anchor: "auto",
     fieldId: "new-project-flooring-category",
@@ -42,7 +42,7 @@ const hints = [
   {
     modal: "NewProjectModal",
     constant: "PROJECT_ESTIMATED_VALUE_HINT",
-    label: "About project estimated value",
+    label: "Project value help",
     text: "Expected job value before booking. If a contract value is later recorded, reporting prefers that figure.",
     anchor: "right",
     fieldId: "new-project-estimated-value",

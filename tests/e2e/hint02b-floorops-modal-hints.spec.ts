@@ -18,8 +18,6 @@ type ModalExpectation = Readonly<{
   pageHeading: string;
   openButton: string;
   dialogName: string;
-  readyRecord?: RegExp;
-  readyEmptyHeading?: string;
   alignedControlPairs: readonly (readonly [string, string])[];
   hints: readonly HintExpectation[];
 }>;
@@ -30,10 +28,9 @@ const auditedModals: readonly ModalExpectation[] = [
     pageHeading: "Leads & opportunities",
     openButton: "Add lead",
     dialogName: "Add a lead",
-    readyEmptyHeading: "No active leads",
     alignedControlPairs: [['input[name="value"]', 'input[name="site"]']],
     hints: [
-      { label: "About lead estimated value", text: leadEstimatedValueHint, resolvedAnchor: "left" },
+      { label: "Lead value help", text: leadEstimatedValueHint, resolvedAnchor: "left" },
     ],
   },
   {
@@ -41,10 +38,9 @@ const auditedModals: readonly ModalExpectation[] = [
     pageHeading: "Clients",
     openButton: "Add client",
     dialogName: "Add a client",
-    readyRecord: /Open client E2E Regression Client/u,
     alignedControlPairs: [['select[name="industry"]', 'select[name="status"]']],
     hints: [
-      { label: "About client status", text: clientStatusHint, resolvedAnchor: "right" },
+      { label: "Client lifecycle help", text: clientStatusHint, resolvedAnchor: "right" },
     ],
   },
   {
@@ -52,15 +48,14 @@ const auditedModals: readonly ModalExpectation[] = [
     pageHeading: "Projects",
     openButton: "New project",
     dialogName: "Create a project",
-    readyRecord: /E2E Mobile Metadata Project/u,
     alignedControlPairs: [
       ['select[name="status"]', 'input[name="value"]'],
       ['select[name="flooringCategory"]', 'input[name="squareFeet"]'],
     ],
     hints: [
-      { label: "About project status", text: projectStatusHint, resolvedAnchor: "left" },
-      { label: "About flooring category", text: projectFlooringCategoryHint, resolvedAnchor: "left" },
-      { label: "About project estimated value", text: projectEstimatedValueHint, resolvedAnchor: "right" },
+      { label: "Project phase help", text: projectStatusHint, resolvedAnchor: "left" },
+      { label: "Flooring selection help", text: projectFlooringCategoryHint, resolvedAnchor: "left" },
+      { label: "Project value help", text: projectEstimatedValueHint, resolvedAnchor: "right" },
     ],
   },
 ];
@@ -108,22 +103,26 @@ async function expectNoSeriousAxeViolations(page: Page, include: string) {
   expect(results.violations.filter(({ impact }) => impact === "serious" || impact === "critical")).toEqual([]);
 }
 
+async function openAuditedModal(page: Page, modalExpectation: ModalExpectation) {
+  await page.goto(modalExpectation.path);
+  await expect(page.getByRole("heading", { level: 1, name: modalExpectation.pageHeading })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Loading live records" })).toHaveCount(0);
+  const openButton = page.getByRole("button", { name: modalExpectation.openButton, exact: true });
+  await expect(openButton).toBeVisible();
+  await expect(openButton).toBeEnabled();
+  await openButton.click();
+
+  const dialog = page.getByRole("dialog", { name: modalExpectation.dialogName, exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 test.describe("HINT-02-B FloorOps modal hints", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("at 390px the five audited hints keep exact copy, unique descriptions, focus/Escape behavior, containment, and axe coverage", async ({ page }) => {
     for (const modalExpectation of auditedModals) {
-      await page.goto(modalExpectation.path);
-      await expect(page.getByRole("heading", { level: 1, name: modalExpectation.pageHeading })).toBeVisible();
-      if (modalExpectation.readyRecord) {
-        await expect(page.getByRole("button", { name: modalExpectation.readyRecord })).toBeVisible();
-      } else if (modalExpectation.readyEmptyHeading) {
-        await expect(page.getByRole("heading", { level: 2, name: modalExpectation.readyEmptyHeading })).toBeVisible();
-      }
-      await page.getByRole("button", { name: modalExpectation.openButton, exact: true }).click();
-
-      const dialog = page.getByRole("dialog", { name: modalExpectation.dialogName, exact: true });
-      await expect(dialog).toBeVisible();
+      const dialog = await openAuditedModal(page, modalExpectation);
       await expect(dialog.locator(".info-hint-trigger")).toHaveCount(modalExpectation.hints.length);
 
       const descriptionIds = [];
@@ -144,14 +143,9 @@ test.describe("HINT-02-B FloorOps modal hints", () => {
   });
 
   test("at 390px a hover-opened lead hint consumes Escape before the modal closes", async ({ page }) => {
-    await page.goto("/leads");
-    await expect(page.getByRole("heading", { level: 1, name: "Leads & opportunities" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "No active leads" })).toBeVisible();
-    await page.getByRole("button", { name: "Add lead", exact: true }).click();
-
-    const dialog = page.getByRole("dialog", { name: "Add a lead", exact: true });
+    const dialog = await openAuditedModal(page, auditedModals[0]);
     const clientCompany = dialog.getByRole("textbox", { name: "Client company", exact: true });
-    const trigger = dialog.getByRole("button", { name: "About lead estimated value", exact: true });
+    const trigger = dialog.getByRole("button", { name: "Lead value help", exact: true });
     const descriptionId = await trigger.getAttribute("aria-describedby");
     expect(descriptionId).toBeTruthy();
     const tooltip = page.locator(`[id="${descriptionId}"]`);
@@ -176,16 +170,7 @@ test.describe("HINT-02-B FloorOps modal hints", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
 
     for (const modalExpectation of auditedModals) {
-      await page.goto(modalExpectation.path);
-      if (modalExpectation.readyRecord) {
-        await expect(page.getByRole("button", { name: modalExpectation.readyRecord })).toBeVisible();
-      } else if (modalExpectation.readyEmptyHeading) {
-        await expect(page.getByRole("heading", { level: 2, name: modalExpectation.readyEmptyHeading })).toBeVisible();
-      }
-      await page.getByRole("button", { name: modalExpectation.openButton, exact: true }).click();
-
-      const dialog = page.getByRole("dialog", { name: modalExpectation.dialogName, exact: true });
-      await expect(dialog).toBeVisible();
+      const dialog = await openAuditedModal(page, modalExpectation);
       for (const hint of modalExpectation.hints) {
         const trigger = dialog.getByRole("button", { name: hint.label, exact: true });
         const hintContainer = trigger.locator("..");
