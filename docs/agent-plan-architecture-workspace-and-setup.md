@@ -2205,6 +2205,8 @@ are not golden-hashed); Guide impact stated per the currency rule.
 **Effort:** small-medium. **Cost:** $0.
 
 ### SET-39 · Visible build stamp tied to the deployed commit (small, no deps)
+**Status:** In progress — `codex/set39-build-stamp`
+**Guide impact:** None — the read-only build label does not change any owner setup or acceptance step.
 **Filed July 30, 2026 on the owner's decision.**
 **Why:** the app displays **no version or build identifier anywhere**, and until the owner
 created the canonical deployment log (GitHub issue #258) there was no record of what was
