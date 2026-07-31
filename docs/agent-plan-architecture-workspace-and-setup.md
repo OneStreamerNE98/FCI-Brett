@@ -42,13 +42,10 @@ migrations, or live data changed. **Read the newest entry there to learn what is
 not infer it from this document, and do not infer it from packet status lines (see the note
 on the "undeployed" label below).
 
-For orientation only — this will go stale, the issue will not: the first recorded entry is
-`origin/main` at `dafb81d` deployed 2026-07-30 23:43Z as Sites version 55, succeeded,
-deployment only.
-
-**Remaining gap:** the app itself still displays no version or build stamp, so the answer
-requires opening the issue rather than looking at the screen. A visible build stamp tied to
-the deployed SHA would close that, and is worth its own packet.
+For the ordered owner procedure — including the build stamp, issue-comment template, and
+on-screen verification — use the
+[`deployment runbook`](runbooks/deployment.md). This ledger explains what is true; the
+runbook explains what to do.
 
 Ledger introduced on `main` by PR #31 at `88b5b01` on July 19, 2026.
 
@@ -258,6 +255,26 @@ checklists.
 **Accept:** the README is a ledger pointer, current/deployed version wording is explicit,
 historical release evidence remains truthful, no migration wording implies v1–v5 were
 applied, and `npm test` passes.
+
+### DOC-06 · Deployment procedure runbook (small, no deps)
+**Status:** In progress — `codex/doc06-deployment-runbook`
+
+**Why:** Issue #258 is the canonical deployment log and SET-39 exposes build identity in
+Settings, but no operator procedure connects the owner-triggered Sites deployment, the
+two required build-time values, the chronological issue comment, and the on-screen
+verification. Without that connection, the build card can remain honestly unavailable
+and the deployment record can drift again.
+**Do:** Add a short owner-facing deployment runbook that names the manual ChatGPT Sites
+flow, the image-only GitHub workflow boundary, the all-or-nothing build stamp, the complete
+issue #258 comment template, and the Settings verification. Index it under operator
+runbooks and link it from the deployment note above. Do not automate deployment or issue
+updates, and do not copy a current deployment claim into the repository.
+**Files:** `docs/runbooks/deployment.md`, `docs/README.md`, this ledger, and focused
+source-contract coverage.
+**Accept:** the runbook covers the owner trigger, non-deploying workflow, source-verified
+build variable pair, issue-comment record, Settings verification, and the merging-is-not-
+deploying boundary; the docs index and ledger link it; no actual deployed commit, Sites
+version, or current-live claim is introduced; `npm test` and `npm run lint` pass.
 
 ### BE-02 · Bounded request bodies on five dev mutation routes (small, no deps)
 **Status:** Complete — PR #36, July 19, 2026. Source-only and not deployed.
