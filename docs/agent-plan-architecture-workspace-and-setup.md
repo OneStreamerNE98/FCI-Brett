@@ -1017,6 +1017,7 @@ enhancement, not a defect — but it is the natural EDIT-08, or a rider on
 EDIT-03's concurrency foundation.
 
 ### EDIT-08 · Read a single task by id (small, after EDIT-07)
+**Status:** In progress — `codex/edit08-task-by-id`
 **Filed July 30, 2026 on the owner's decision**, from the EDIT-07 review residual above.
 **Why:** `app/api/v1/tasks/[taskId]/route.ts` exports **only `PATCH`**. There is no way to
 read one task. Two consequences, both live today: the EDIT-07 conflict recovery
@@ -2205,6 +2206,8 @@ are not golden-hashed); Guide impact stated per the currency rule.
 **Effort:** small-medium. **Cost:** $0.
 
 ### SET-39 · Visible build stamp tied to the deployed commit (small, no deps)
+**Status:** In progress — `codex/set39-build-stamp`
+**Guide impact:** None — the read-only build label does not change any owner setup or acceptance step.
 **Filed July 30, 2026 on the owner's decision.**
 **Why:** the app displays **no version or build identifier anywhere**, and until the owner
 created the canonical deployment log (GitHub issue #258) there was no record of what was
@@ -2869,6 +2872,8 @@ regenerates them (then stated in the PR).
 **Effort:** small. **Cost:** $0.
 
 ### DES-11 · Curated movable & resizable dashboard cards (owner enhancement, July 24, 2026)
+**Status:** In progress — `codex/des11b-width-toggle`
+
 **SUB-SCOPE A IS COMPLETE — PR #252, July 30, 2026. Source-only and undeployed. ONLY
 SUB-SCOPE B REMAINS CLAIMABLE.** The packet carries no status line because B is still
 open and the dispatch law reads "available if and only if it has no status line" — but a
@@ -3428,6 +3433,8 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
+**Status:** In progress — `codex/ai11a-typed-accepts`
+
 **Why:** AI-10 deliberately ships one accept action; three intents accumulate in the queue with
 only a manual "mark reviewed" exit, and spec §12 decisions 5–6 name this packet as their
 implementing packet. Nothing else owns the label catalog editor at all.
@@ -3782,8 +3789,14 @@ remain the only dispatch authority).
   Sheets reads" premise was false (no scheduler exists and repo law forbids one); the
   packet now specifies an on-demand admin-triggered read with a durable watermark, on the
   AI-10 precedent. GI-01 is dispatchable.
-- Nightly-review program: nights 2–5 and 9–10 pending the owner's kickoff; its specs live
-  outside the repo — owner to decide enshrine vs retire before the next night runs.
+- Nightly-review program: nights 2–5 and 9–10 remain pending the owner's kickoff, but the
+  enshrine-vs-retire decision is **settled — the owner chose enshrine, July 30, 2026.**
+  Their specs now live in `docs/nightly-reviews/SPECS.md` rather than in a chat session, so
+  a kickoff no longer depends on a transcript surviving. Those six specs are **reconstructed
+  from the program rules and the four completed nights, not recovered verbatim**; judgement
+  calls are marked `[reconstructed]` and the owner's memory outranks the file. The program
+  rules and co-run matrix in `docs/nightly-reviews/README.md` are recovered and
+  authoritative.
 
 **Open owner decisions (recorded homes only when decided):**
 - Flooring-specific intents: selection/sample decision; change-order/approval (plan PART 1).

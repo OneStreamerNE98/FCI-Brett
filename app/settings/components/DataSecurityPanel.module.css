@@ -1,0 +1,17 @@
+.buildInformation {
+  min-height: 0;
+  align-self: start;
+}
+
+@media (max-width: 560px) {
+  .buildData {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .buildData > button {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 4px;
+  }
+}
