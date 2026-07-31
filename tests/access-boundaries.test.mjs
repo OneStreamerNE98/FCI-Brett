@@ -108,7 +108,10 @@ test("task reads and mutations reject non-office identities before body or datab
     server: { middlewareMode: true, hmr: { port: 24714 } },
   });
   try {
-    const tasksRoute = await vite.ssrLoadModule("/app/api/v1/tasks/route.ts");
+    const [tasksRoute, taskRoute] = await Promise.all([
+      vite.ssrLoadModule("/app/api/v1/tasks/route.ts"),
+      vite.ssrLoadModule("/app/api/v1/tasks/[taskId]/route.ts"),
+    ]);
     const url = new URL("https://fci.example.test/api/v1/tasks");
     const request = new Request(url, {
       method: "POST",
@@ -126,13 +129,32 @@ test("task reads and mutations reject non-office identities before body or datab
     });
     Object.defineProperty(readRequest, "nextUrl", { value: url });
     const readResponse = await tasksRoute.GET(readRequest);
+    const itemUrl = new URL("https://fci.example.test/api/v1/tasks/task-access-check");
+    const itemRequest = new Request(itemUrl, {
+      headers: { "oai-authenticated-user-email": "outsider@example.test" },
+    });
+    Object.defineProperty(itemRequest, "nextUrl", { value: itemUrl });
+    const itemReadResponse = await taskRoute.GET(itemRequest, {
+      params: Promise.resolve({ taskId: "task-access-check" }),
+    });
+    const signedOutRequest = new Request(itemUrl);
+    Object.defineProperty(signedOutRequest, "nextUrl", { value: itemUrl });
+    const signedOutItemReadResponse = await taskRoute.GET(signedOutRequest, {
+      params: Promise.resolve({ taskId: "task-access-check" }),
+    });
 
-    for (const response of [mutationResponse, readResponse]) {
+    for (const response of [mutationResponse, readResponse, itemReadResponse]) {
       assert.equal(response.status, 403);
       assert.deepEqual(await response.json(), {
         error: "Your account is not allowed to access this workspace.",
       });
     }
+    assert.equal(itemReadResponse.headers.get("cache-control"), "no-store");
+    assert.equal(signedOutItemReadResponse.status, 401);
+    assert.equal(signedOutItemReadResponse.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await signedOutItemReadResponse.json(), {
+      error: "Sign in with ChatGPT to use this workspace.",
+    });
   } finally {
     await vite.close();
     if (previousEnvironment === undefined) delete globalThis.__FCI_TEST_CLOUDFLARE_ENV__;

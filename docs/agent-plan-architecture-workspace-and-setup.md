@@ -1017,6 +1017,7 @@ enhancement, not a defect — but it is the natural EDIT-08, or a rider on
 EDIT-03's concurrency foundation.
 
 ### EDIT-08 · Read a single task by id (small, after EDIT-07)
+**Status:** In progress — `codex/edit08-task-by-id`
 **Filed July 30, 2026 on the owner's decision**, from the EDIT-07 review residual above.
 **Why:** `app/api/v1/tasks/[taskId]/route.ts` exports **only `PATCH`**. There is no way to
 read one task. Two consequences, both live today: the EDIT-07 conflict recovery
