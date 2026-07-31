@@ -61,6 +61,11 @@ export const INBOX_ANALYSIS_SWEEP_DEADLINE_MS = 55_000;
 const CAUGHT_UP_MESSAGE = "You're caught up";
 const OLDER_PENDING_MESSAGE = "Older messages not yet analyzed";
 const INBOX_ANALYSIS_INTENT_SET = new Set<string>(INBOX_ANALYSIS_INTENTS);
+const INBOX_ANALYSIS_CONFIDENCE_SET = new Set([
+  "high",
+  "medium",
+  "low",
+]);
 const REVIEW_LEAD_FIELD_LIMITS = Object.freeze({
   company: 180,
   contactName: 160,
@@ -158,8 +163,11 @@ function parseSweepRequest(body: Record<string, unknown>) {
 }
 
 function parseMarkReviewedRequest(body: Record<string, unknown>) {
+  const keys = Object.keys(body);
   if (
-    Object.keys(body).length !== 1
+    keys.length < 1
+    || keys.length > 2
+    || keys.some((key) => key !== "id" && key !== "outcome")
     || typeof body.id !== "string"
     || !body.id.trim()
     || body.id.length > 512
@@ -167,7 +175,14 @@ function parseMarkReviewedRequest(body: Record<string, unknown>) {
   ) {
     return null;
   }
-  return Object.freeze({ id: body.id });
+  // Server-validated against exactly two values, defaulting to "dismissed". A typed
+  // accept that produced a record sends "accepted", so the stored row records WHY it
+  // left the queue. Without it an accepted lead is indistinguishable from a manual
+  // dismissal and the AI-11(d) activity view would misreport every accept along with
+  // its per-label counts. Anything else is a 400, never a silent coercion.
+  const outcome = body.outcome === undefined ? "dismissed" : body.outcome;
+  if (outcome !== "accepted" && outcome !== "dismissed") return null;
+  return Object.freeze({ id: body.id, outcome });
 }
 
 function singleLineSnapshot(value: string | null, maximum: number) {
@@ -1321,12 +1336,46 @@ function reviewQueueLeadProposal(item: MailItem) {
   });
 }
 
+function reviewQueueAnalysis(item: MailItem) {
+  const payload = item.analysisPayload;
+  if (
+    !payload
+    || !Array.isArray(payload.intents)
+    || payload.intents.length === 0
+    || payload.intents.some((intent) =>
+      typeof intent !== "string" || !INBOX_ANALYSIS_INTENT_SET.has(intent)
+    )
+    || new Set(payload.intents).size !== payload.intents.length
+    || typeof item.confidence !== "string"
+    || !INBOX_ANALYSIS_CONFIDENCE_SET.has(item.confidence)
+    || typeof item.matchReason !== "string"
+  ) {
+    return null;
+  }
+  const rationale = item.matchReason.replace(/\s+/g, " ").trim();
+  if (
+    !rationale
+    || rationale.length > 200
+    || /[\u0000-\u001f\u007f]/.test(item.matchReason)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    gmailMessageId: item.gmailMessageId,
+    intents: Object.freeze([...payload.intents]),
+    projectId: item.suggestedProjectId,
+    confidence: item.confidence,
+    rationale,
+  });
+}
+
 function reviewQueueRow(item: MailItem) {
   return Object.freeze({
     id: item.id,
     subject: item.subject,
     sender: item.sender,
     receivedAt: item.receivedAt,
+    analysis: reviewQueueAnalysis(item),
     leadProposal: reviewQueueLeadProposal(item),
   });
 }
@@ -1388,11 +1437,12 @@ export async function PATCH(request: NextRequest) {
       update.id,
       connectionKey,
       Date.now(),
+      update.outcome,
     );
     if (!dismissed) {
       return noStoreJson({ error: "Inbox review row not found." }, 404);
     }
-    return noStoreJson({ id: update.id, status: "dismissed" });
+    return noStoreJson({ id: update.id, status: update.outcome });
   } catch {
     return noStoreJson(
       { error: "Inbox review row could not be marked reviewed." },

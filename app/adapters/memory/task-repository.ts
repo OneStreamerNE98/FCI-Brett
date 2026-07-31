@@ -1,5 +1,6 @@
 import type { TaskListFilters, TaskRow } from "../../domain/task";
 import type {
+  TaskActivityIntent,
   TaskCreationIntent,
   TaskRepository,
   TaskUpdateIntent,
@@ -40,7 +41,7 @@ function compareTasks(left: TaskRow, right: TaskRow) {
 /** Local-only adapter used by task application and provider contract tests. */
 export class MemoryTaskRepository implements TaskRepository {
   readonly #tasks = new Map<string, TaskRow>();
-  readonly #activities: TaskCreationIntent["activities"] = [];
+  readonly #activities: TaskActivityIntent[] = [];
   readonly #projectIds: Set<string>;
   readonly #leadIds: Set<string>;
 
@@ -67,6 +68,10 @@ export class MemoryTaskRepository implements TaskRepository {
   }
 
   async create(intent: TaskCreationIntent) {
+    // The local task adapter has no mail-item store with which it could make
+    // review acceptance atomic. Refuse the composed write instead of creating
+    // a task while leaving the review row pending.
+    if (intent.inboxReview) return { outcome: "review-not-found" as const };
     if (intent.task.project_id && !this.#projectIds.has(intent.task.project_id)) {
       return { outcome: "project-not-found" as const };
     }
