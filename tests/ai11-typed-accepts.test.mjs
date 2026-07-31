@@ -101,6 +101,18 @@ test("every typed accept records why the row left the queue, not just that it le
   // The lead accept sends "accepted"; a hand dismissal stays "dismissed".
   assert.match(view, /outcome: reason === "lead-created" \? "accepted" : "dismissed"/u);
 
+  // Found by adversarial audit of this very fix: the RECOVERY path was still wrong. When a
+  // lead is created but its retirement PATCH fails, the banner sends the user to Mark
+  // reviewed — and Create lead is gone by then, because leadCreatedRowIds is append-only.
+  // Passing the default "manual" there writes "dismissed" for a row that HAS a lead, which
+  // is the exact misreporting this whole change exists to prevent, and it is irreversible:
+  // both adapters guard `status = 'needs-review'`, so the row is terminal after one write.
+  assert.match(
+    view,
+    /markReviewed\(\s*row,\s*leadCreatedRowIds\.has\(row\.id\) \? "lead-created" : "manual",?\s*\)/u,
+    "the Mark reviewed control must retire a lead-created row as lead-created, not manual",
+  );
+
   // The port narrows the outcome below MailItemStatus so the sweep-only terminal
   // states cannot be reached through a human retirement path.
   assert.match(port, /MailItemReviewOutcome = "accepted" \| "dismissed"/u);

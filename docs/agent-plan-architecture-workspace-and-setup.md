@@ -162,7 +162,11 @@ below, which also covers the state of GitHub itself (issues/PRs).
 ## What "Source-only and undeployed" means in a packet status
 
 **It is a snapshot of the moment that packet merged, not a live deployment record.** The
-phrase appears in roughly 90 status lines across this file. Each was written by whoever
+phrase appears on **62 `**Status:**` lines** carrying the exact wording "Source-only and
+undeployed" (80 carry some Source-only variant; 74 carry "undeployed" or "not deployed" in
+any form). An earlier version of this paragraph said "roughly 90", which matched no counting
+method — recorded because an unverifiable number in a section about unverifiable numbers is
+the wrong kind of irony. Each was written by whoever
 merged that packet, and **none of them is ever revisited after a deploy** — there is no
 process that goes back and clears them.
 

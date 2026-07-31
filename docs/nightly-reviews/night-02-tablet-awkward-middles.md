@@ -64,6 +64,26 @@ its `Dev` badge, and the field has a keyboard path (tab order is unaffected —
 only pointer input is blocked). It is not P3 because a form control that
 cannot be clicked at three of the six tested widths is broken, not untidy.
 
+### N2-4 — three corrections from the July 31 adversarial audit
+
+The finding stands; three statements about it did not.
+
+1. **The clipping box is misidentified.** This page attributed the clip to
+   `.projects-table{overflow:hidden}`. That rule is real, but the actual clipping boundary
+   is the row's own paint containment from `content-visibility:auto`
+   (`app/globals.css:143`), which applies `contain: layout style paint`. An implementer
+   following the original diagnosis would have edited the wrong box.
+2. **The "only 821–899 fails" band is wrong.** It was derived from clearance against the
+   *viewport* rather than against the clipping box. The row content-box left is a constant
+   294px and its content width is `W − 342`, so **900 is still clipped**. NFIX-06 (PR #267)
+   scoped its fix `821–900` inclusive, which covers the real case — but this page's band
+   was not the reason.
+3. **"Cannot be reached by any means" is false.** The row's `accessibleDescription`
+   (`app/FloorOpsApp.tsx:2009`) ends `Estimated value ${project.value}.` and renders into an
+   `sr-only` span, so the figure **is** available to assistive technology. The defect is
+   that it is invisible to a sighted pointer user, which is still a P2 — but the stronger
+   claim was the stated basis for the severity and it was not true.
+
 ### N2-4 detail (found only after the owner challenged the first pass)
 
 At 834 the Projects row's value cell begins at `x=831` in an 834px viewport — 3px
@@ -174,7 +194,19 @@ pointer targeting, not finger contact geometry. `/management/access` renders an
 than it appears: `html, body` carry `overflow-x: hidden`, so overflowing
 content is *clipped rather than scrollable* and cannot produce a page-scroll
 signal. The element-level overflow probe is the meaningful one at these widths,
-and it is what surfaced the 55 element-overflow hits that resolved to N2-3.
+and it is what surfaced the element-overflow hits. **Corrected:** this sentence previously
+said "the 55 element-overflow hits that resolved to N2-3", conflating the run's 55-hit total
+with the 30 hits on `/leads` that N2-3 actually refuted. The remaining 25 split across
+`/inbox`, `/settings?section=google-workspace`, `/projects`, `/reports` and
+`/settings?section=testing-launch`, and produced N2-1, N2-2, N2-4 and N2-5.
+
+**A further scanner limitation, found by the same audit:** the element-overflow probe
+compares each rect against `document.documentElement.clientWidth` — the **viewport** — never
+against the element's own scroll or clip container. Anything clipped by an inner box that
+does not itself reach the viewport edge produces **zero hits**. N2-4 registered only because
+`.projects-table`'s clip edge happens to sit near the viewport edge at 834. Other clipped
+content elsewhere in the app would be invisible to this probe, so a clean overflow result
+from this scanner is weaker evidence than it appears.
 
 **Dedup.** Checked against Night 1 (phone widths — no overlap in route/width
 space), Nights 6, 7 and 8 (static/architecture — different evidence class), and
