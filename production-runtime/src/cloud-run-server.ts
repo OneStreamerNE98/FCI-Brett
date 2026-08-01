@@ -28,6 +28,9 @@ import {
 import {
   createEmployeeRequestRateLimit,
 } from "../../app/platform/google-cloud/request-rate-limit.ts";
+import {
+  GOOGLE_FORM_LEAD_REVIEW_CONNECTION_KEY,
+} from "../../app/domain/lead-creation-request.ts";
 
 export type CloudRunFoundationDependencies = Readonly<{
   loadConfig?: (environment: ProductionEnvironment) => ProductionConfig;
@@ -81,6 +84,7 @@ export async function startCloudRunFoundation(
     adminAccess: composition.repositories.adminAccess,
     audit: composition.repositories.securityAudit,
     coreRecords: composition.repositories,
+    formLeadReviewConnectionKey: GOOGLE_FORM_LEAD_REVIEW_CONNECTION_KEY,
     ...(config.employeeOidc
       ? {
           oidc: createEmployeeOidcClient(config.employeeOidc),

@@ -224,16 +224,27 @@ export async function POST(request: NextRequest) {
     const uniqueRows = [...new Map(
       keyedRows.map((row) => [row.submissionKey, row] as const),
     ).values()];
-    const processedKeys = new Set(await repository.findProcessedSubmissionKeys(
+    const processedSubmissions = await repository.findProcessedSubmissions(
       setup.config.connectionKey,
       intake.spreadsheetId,
       uniqueRows.map(({ submissionKey }) => submissionKey),
-    ));
-    const unseenRows = uniqueRows.filter(({ submissionKey }) => !processedKeys.has(submissionKey));
+    );
+    const processedByKey = new Map(
+      processedSubmissions.map((submission) => [submission.submissionKey, submission] as const),
+    );
+    const unseenRows = uniqueRows.filter(
+      ({ submissionKey }) => !processedByKey.has(submissionKey),
+    );
+    const observedPositions = uniqueRows.flatMap(({ submissionKey, sourceRow }) => {
+      const processed = processedByKey.get(submissionKey);
+      return processed?.status === "needs-review" && processed.sourceRow !== sourceRow
+        ? [Object.freeze({ submissionKey, sourceRow })]
+        : [];
+    });
     const checkpoint = keyedRows.at(-1)!;
     const checkpointUnchanged = watermark?.lastProcessedRow === checkpoint.sourceRow
       && watermark.lastProcessedSubmissionKey === checkpoint.submissionKey;
-    if (unseenRows.length === 0 && checkpointUnchanged) {
+    if (unseenRows.length === 0 && observedPositions.length === 0 && checkpointUnchanged) {
       return noStoreJson({
         processed: 0,
         inserted: 0,
@@ -271,6 +282,7 @@ export async function POST(request: NextRequest) {
         ...draft,
         id: crypto.randomUUID(),
       })),
+      observedPositions,
       lastProcessedRow: checkpoint.sourceRow,
       lastProcessedSubmissionKey: checkpoint.submissionKey,
       processedAt,

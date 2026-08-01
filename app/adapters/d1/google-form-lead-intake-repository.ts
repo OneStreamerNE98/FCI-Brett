@@ -2,6 +2,7 @@ import {
   GOOGLE_FORM_LEAD_REVIEW_STATES,
   GOOGLE_FORM_LEAD_REVIEW_STATUSES,
   GoogleFormLeadReviewDraftValidationError,
+  isGoogleFormLeadPositionBatch,
   isGoogleFormLeadSubmissionKey,
   parseGoogleFormLeadProposal,
   parseGoogleFormLeadReasons,
@@ -9,6 +10,7 @@ import {
 import type {
   GoogleFormLeadIntakeRepository,
   GoogleFormLeadIntakeWatermark,
+  GoogleFormLeadProcessedSubmission,
   GoogleFormLeadReviewRecord,
   GoogleFormLeadReviewState,
   GoogleFormLeadReviewStatus,
@@ -42,6 +44,12 @@ type ReviewRow = Readonly<{
   reviewed_by: unknown;
   reviewed_at: unknown;
   accepted_lead_id: unknown;
+}>;
+
+type ProcessedSubmissionRow = Readonly<{
+  submission_key: unknown;
+  source_row: unknown;
+  status: unknown;
 }>;
 
 const CONNECTION_KEY_PATTERN = /^[a-z][a-z0-9_-]{0,127}$/u;
@@ -160,6 +168,25 @@ function reviewFromRow(row: ReviewRow): GoogleFormLeadReviewRecord {
   });
 }
 
+function processedSubmissionFromRow(
+  row: ProcessedSubmissionRow,
+): GoogleFormLeadProcessedSubmission {
+  const submissionKey = row.submission_key;
+  const sourceRow = safeInteger(row.source_row, 2);
+  const status = boundedText(row.status, 32);
+  if (
+    !isGoogleFormLeadSubmissionKey(submissionKey)
+    || sourceRow === null
+    || !status
+    || !(GOOGLE_FORM_LEAD_REVIEW_STATUSES as readonly string[]).includes(status)
+  ) throw new Error("D1 Google Form processed submission is invalid");
+  return Object.freeze({
+    submissionKey,
+    sourceRow,
+    status: status as GoogleFormLeadReviewStatus,
+  });
+}
+
 function assertSaveBatch(input: SaveGoogleFormLeadBatchInput) {
   assertScope(input.connectionKey, input.spreadsheetId);
   assertActor(input.actor);
@@ -181,6 +208,9 @@ function assertSaveBatch(input: SaveGoogleFormLeadBatchInput) {
       || !parseGoogleFormLeadProposal(review.proposal)
       || !parseGoogleFormLeadReasons(review.reasons)
     ) throw new GoogleFormLeadReviewDraftValidationError(review.sourceRow);
+  }
+  if (!isGoogleFormLeadPositionBatch(input.reviews, input.observedPositions)) {
+    throw new TypeError("Google Form intake positions are invalid");
   }
 }
 
@@ -216,27 +246,22 @@ export function createD1GoogleFormLeadIntakeRepository(
   return {
     getWatermark: readWatermark,
 
-    async findProcessedSubmissionKeys(connectionKey, spreadsheetId, submissionKeys) {
+    async findProcessedSubmissions(connectionKey, spreadsheetId, submissionKeys) {
       assertScope(connectionKey, spreadsheetId);
       if (
         submissionKeys.length > 25
+        || new Set(submissionKeys).size !== submissionKeys.length
         || submissionKeys.some((key) => !isGoogleFormLeadSubmissionKey(key))
       ) throw new TypeError("Google Form submission-key query is invalid");
       if (submissionKeys.length === 0) return Object.freeze([]);
       const placeholders = submissionKeys.map(() => "?").join(", ");
       const result = await database.prepare(
-        `SELECT submission_key
+        `SELECT submission_key, source_row, status
          FROM google_form_lead_reviews
          WHERE connection_key = ? AND spreadsheet_id = ?
            AND submission_key IN (${placeholders})`,
-      ).bind(connectionKey, spreadsheetId, ...submissionKeys).all<{ submission_key: unknown }>();
-      const keys = result.results.map(({ submission_key: key }) => {
-        if (!isGoogleFormLeadSubmissionKey(key)) {
-          throw new Error("D1 Google Form submission key is invalid");
-        }
-        return key;
-      });
-      return Object.freeze(keys);
+      ).bind(connectionKey, spreadsheetId, ...submissionKeys).all<ProcessedSubmissionRow>();
+      return Object.freeze(result.results.map(processedSubmissionFromRow));
     },
 
     async listNeedsReview(connectionKey, limit) {
@@ -255,7 +280,21 @@ export function createD1GoogleFormLeadIntakeRepository(
 
     async saveBatch(input) {
       assertSaveBatch(input);
-      const statements = input.reviews.map((review) => database.prepare(
+      const statements = input.observedPositions.map((position) => database.prepare(
+        `UPDATE google_form_lead_reviews
+         SET source_row = ?, updated_at = ?
+         WHERE connection_key = ? AND spreadsheet_id = ? AND submission_key = ?
+           AND status = 'needs-review' AND source_row <> ? AND updated_at <= ?`,
+      ).bind(
+        position.sourceRow,
+        input.processedAt,
+        input.connectionKey,
+        input.spreadsheetId,
+        position.submissionKey,
+        position.sourceRow,
+        input.processedAt,
+      ));
+      statements.push(...input.reviews.map((review) => database.prepare(
         `INSERT INTO google_form_lead_reviews (
            id, connection_key, spreadsheet_id, submission_key, source_row, submitted_at,
            state, status, proposal_json, reasons_json, created_at, updated_at,
@@ -274,7 +313,7 @@ export function createD1GoogleFormLeadIntakeRepository(
         JSON.stringify(review.reasons),
         input.processedAt,
         input.processedAt,
-      ));
+      )));
       statements.push(database.prepare(
         `INSERT INTO google_form_lead_intake_watermarks (
            connection_key, spreadsheet_id, last_processed_row, last_processed_submission_key,
@@ -295,11 +334,14 @@ export function createD1GoogleFormLeadIntakeRepository(
         input.actor,
       ));
       const results = await database.batch(statements);
-      const inserted = results.slice(0, input.reviews.length)
+      const repositioned = results.slice(0, input.observedPositions.length)
+        .reduce((total, result) => total + (result.meta.changes === 1 ? 1 : 0), 0);
+      const inserted = results
+        .slice(input.observedPositions.length, input.observedPositions.length + input.reviews.length)
         .reduce((total, result) => total + (result.meta.changes === 1 ? 1 : 0), 0);
       const watermark = await readWatermark(input.connectionKey, input.spreadsheetId);
       if (!watermark) throw new Error("D1 Google Form intake watermark was not saved");
-      return Object.freeze({ inserted, watermark });
+      return Object.freeze({ inserted, repositioned, watermark });
     },
 
     async dismissReview(input) {

@@ -48,6 +48,7 @@ const PROJECT_A = "55555555-5555-4555-8555-555555555555";
 const PROJECT_B = "66666666-6666-4666-8666-666666666666";
 const UNKNOWN_PROJECT = "77777777-7777-4777-8777-777777777777";
 const FILE_ID = "88888888-8888-4888-8888-888888888888";
+const FORM_LEAD_REVIEW_ID = "89888888-8888-4888-8888-888888888888";
 const INVITATION_ID = "99999999-9999-4999-8999-999999999999";
 const TARGET_USER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SESSION_CREDENTIAL = Buffer.alloc(32, 0x41).toString("base64url");
@@ -574,17 +575,35 @@ async function startHarness(options = {}) {
         async findById() { return null; },
         async create(intent) {
           coreRecordCalls.push({ method: "leads.create", intent });
+          if (intent.formLeadReview && options.formLeadReviewOutcome === "review-not-found") {
+            return { outcome: "review-not-found" };
+          }
           const businessLead = { ...intent.lead };
           for (const key of ["id", "lead_number", "created_at", "updated_at", "created_by"]) {
             delete businessLead[key];
           }
-          return accepted(
+          const result = accepted(
             "leads",
             request,
             intent.lead.created_by,
-            businessLead,
+            {
+              ...businessLead,
+              ...(intent.formLeadReview
+                ? {
+                    formLeadReviewId: intent.formLeadReview.id,
+                    formLeadReviewConnectionKey: intent.formLeadReview.connectionKey,
+                  }
+                : {}),
+            },
             { row: intent.lead, version: "1" },
           );
+          if (!intent.formLeadReview || result.outcome !== "accepted") return result;
+          return {
+            outcome: "review-accepted",
+            value: result.value,
+            formLeadReview: { id: intent.formLeadReview.id, status: "accepted" },
+            replayed: result.replayed,
+          };
         },
         async update() { throw new Error("unexpected lead update"); },
       };
@@ -631,6 +650,7 @@ async function startHarness(options = {}) {
     adminAccess,
     audit,
     coreRecords,
+    formLeadReviewConnectionKey: "google-workspace",
     testActions: actions,
     testMode: true,
     providerActions: options.providerActions,
@@ -996,6 +1016,108 @@ test("core create routes preserve replay, conflict, principal, operation, and en
     }
   } finally {
     await running.close();
+  }
+});
+
+test("production lead creation accepts a Google Form review only for an administrator and returns atomic evidence", async () => {
+  const input = {
+    company: "FCI TEST — DO NOT USE Form Lead",
+    contactName: "FCI TEST — DO NOT USE Form Contact",
+    projectName: "FCI TEST — DO NOT USE Form Project",
+    source: "Google Form",
+    stage: "New inquiry",
+    site: "88 Review Way",
+    estimatedValue: 25_000,
+    nextAction: "Schedule a site visit",
+    formLeadReviewId: FORM_LEAD_REVIEW_ID,
+  };
+  const admin = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+  try {
+    const accepted = await admin.request("/api/v1/leads", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers: { "Idempotency-Key": "gi01-production-review" },
+      json: input,
+    });
+    assert.equal(accepted.status, 201);
+    const body = await json(accepted);
+    assert.equal(body.data.source, "Google Form");
+    assert.deepEqual(body.formLeadReview, {
+      id: FORM_LEAD_REVIEW_ID,
+      status: "accepted",
+    });
+    const creation = admin.coreRecordCalls.find(({ method }) => method === "leads.create");
+    assert.deepEqual(creation.intent.formLeadReview, {
+      id: FORM_LEAD_REVIEW_ID,
+      connectionKey: "google-workspace",
+      acceptedAt: NOW,
+    });
+    assert.equal(Object.hasOwn(creation.intent.lead, "formLeadReviewId"), false);
+  } finally {
+    await admin.close();
+  }
+
+  const office = await startHarness({ role: AUTHORIZATION_ROLES.officeOperations });
+  try {
+    const denied = await office.request("/api/v1/leads", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers: { "Idempotency-Key": "gi01-production-office-review" },
+      json: input,
+    });
+    assert.equal(denied.status, 403);
+    assert.deepEqual(await json(denied), { error: "forbidden" });
+    assert.equal(office.coreRecordCalls.length, 0);
+  } finally {
+    await office.close();
+  }
+
+  for (const [suffix, formLeadReviewId] of [
+    ["characters", "invalid review id"],
+    ["non-uuid", "valid-looking-review-id"],
+  ]) {
+    const malformed = await startHarness({ role: AUTHORIZATION_ROLES.administrator });
+    try {
+      const rejected = await malformed.request("/api/v1/leads", {
+        method: "POST",
+        sameOrigin: true,
+        csrf: true,
+        headers: { "Idempotency-Key": `gi01-production-invalid-review-${suffix}` },
+        json: { ...input, formLeadReviewId },
+      });
+      assert.equal(rejected.status, 400);
+      assert.deepEqual(await json(rejected), { error: "invalid_request" });
+      assert.equal(malformed.coreRecordCalls.length, 0);
+    } finally {
+      await malformed.close();
+    }
+  }
+
+  const stale = await startHarness({
+    role: AUTHORIZATION_ROLES.administrator,
+    formLeadReviewOutcome: "review-not-found",
+  });
+  try {
+    const rejected = await stale.request("/api/v1/leads", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers: { "Idempotency-Key": "gi01-production-stale-review" },
+      json: input,
+    });
+    assert.equal(rejected.status, 409);
+    assert.deepEqual(await json(rejected), {
+      error: "The Google Form review changed since it was loaded. Reload the queue before trying again.",
+      code: "form_lead_review_not_found",
+    });
+    assert.equal(
+      stale.coreRecordCalls.filter(({ method }) => method === "leads.create").length,
+      1,
+    );
+  } finally {
+    await stale.close();
   }
 });
 

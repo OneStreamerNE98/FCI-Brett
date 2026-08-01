@@ -2,6 +2,7 @@ import {
   GOOGLE_FORM_LEAD_REVIEW_STATES,
   GOOGLE_FORM_LEAD_REVIEW_STATUSES,
   GoogleFormLeadReviewDraftValidationError,
+  isGoogleFormLeadPositionBatch,
   isGoogleFormLeadSubmissionKey,
   parseGoogleFormLeadProposal,
   parseGoogleFormLeadReasons,
@@ -9,6 +10,7 @@ import {
 import type {
   GoogleFormLeadIntakeRepository,
   GoogleFormLeadIntakeWatermark,
+  GoogleFormLeadProcessedSubmission,
   GoogleFormLeadReviewRecord,
   GoogleFormLeadReviewState,
   GoogleFormLeadReviewStatus,
@@ -53,6 +55,12 @@ type ReviewRow = Record<string, unknown> & {
   reviewed_by: unknown;
   reviewed_at: unknown;
   accepted_lead_id: unknown;
+};
+
+type ProcessedSubmissionRow = Record<string, unknown> & {
+  submission_key: unknown;
+  source_row: unknown;
+  status: unknown;
 };
 
 const CONNECTION_KEY_PATTERN = /^[a-z][a-z0-9_-]{0,127}$/u;
@@ -150,6 +158,22 @@ function reviewFromRow(row: ReviewRow): GoogleFormLeadReviewRecord {
   });
 }
 
+function processedSubmissionFromRow(
+  row: ProcessedSubmissionRow,
+): GoogleFormLeadProcessedSubmission {
+  const submissionKey = row.submission_key;
+  const status = requiredText(row.status, 32, "PostgreSQL Google Form review status");
+  if (
+    !isGoogleFormLeadSubmissionKey(submissionKey)
+    || !(GOOGLE_FORM_LEAD_REVIEW_STATUSES as readonly string[]).includes(status)
+  ) throw new Error("PostgreSQL Google Form processed submission is invalid");
+  return Object.freeze({
+    submissionKey,
+    sourceRow: integer(row.source_row, 2, "PostgreSQL Google Form source row"),
+    status: status as GoogleFormLeadReviewStatus,
+  });
+}
+
 function assertSaveBatch(input: SaveGoogleFormLeadBatchInput) {
   assertScope(input.connectionKey, input.spreadsheetId);
   assertActor(input.actor);
@@ -168,6 +192,9 @@ function assertSaveBatch(input: SaveGoogleFormLeadBatchInput) {
       || !parseGoogleFormLeadProposal(review.proposal)
       || !parseGoogleFormLeadReasons(review.reasons)
     ) throw new GoogleFormLeadReviewDraftValidationError(review.sourceRow);
+  }
+  if (!isGoogleFormLeadPositionBatch(input.reviews, input.observedPositions)) {
+    throw new TypeError("PostgreSQL Google Form intake positions are invalid");
   }
 }
 
@@ -215,27 +242,23 @@ export function createPostgresGoogleFormLeadIntakeRepository(
       });
     },
 
-    async findProcessedSubmissionKeys(connectionKey, spreadsheetId, submissionKeys) {
+    async findProcessedSubmissions(connectionKey, spreadsheetId, submissionKeys) {
       assertScope(connectionKey, spreadsheetId);
       if (
         submissionKeys.length > 25
+        || new Set(submissionKeys).size !== submissionKeys.length
         || submissionKeys.some((key) => !isGoogleFormLeadSubmissionKey(key))
       ) throw new TypeError("PostgreSQL Google Form submission-key query is invalid");
       if (submissionKeys.length === 0) return Object.freeze([]);
       return withPostgresTransaction(pool, { ...transactionOptions, readOnly: true }, async (client) => {
-        const result = await client.query<{ submission_key: unknown }>(
-          `SELECT submission_key
+        const result = await client.query<ProcessedSubmissionRow>(
+          `SELECT submission_key, source_row, status
            FROM google_form_lead_reviews
            WHERE connection_key = $1 AND spreadsheet_id = $2
              AND submission_key = ANY($3::text[])`,
           [connectionKey, spreadsheetId, [...submissionKeys]],
         );
-        return Object.freeze(result.rows.map(({ submission_key: key }) => {
-          if (!isGoogleFormLeadSubmissionKey(key)) {
-            throw new Error("PostgreSQL Google Form submission key is invalid");
-          }
-          return key;
-        }));
+        return Object.freeze(result.rows.map(processedSubmissionFromRow));
       });
     },
 
@@ -260,6 +283,27 @@ export function createPostgresGoogleFormLeadIntakeRepository(
       assertSaveBatch(input);
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         let inserted = 0;
+        let repositioned = 0;
+        for (const position of input.observedPositions) {
+          const observedAt = new Date(input.processedAt);
+          const result = await client.query(
+            `UPDATE google_form_lead_reviews
+             SET source_row = $1, updated_at = $2
+             WHERE connection_key = $3 AND spreadsheet_id = $4 AND submission_key = $5
+               AND status = 'needs-review' AND source_row <> $1 AND updated_at <= $2`,
+            [
+              position.sourceRow,
+              observedAt,
+              input.connectionKey,
+              input.spreadsheetId,
+              position.submissionKey,
+            ],
+          );
+          if (result.rowCount === 1) repositioned += 1;
+          else if (result.rowCount !== 0) {
+            throw new Error("PostgreSQL Google Form position refresh was ambiguous");
+          }
+        }
         for (const review of input.reviews) {
           const result = await client.query(
             `INSERT INTO google_form_lead_reviews (
@@ -316,7 +360,11 @@ export function createPostgresGoogleFormLeadIntakeRepository(
         if (watermarkResult.rowCount !== 1 || !watermarkResult.rows[0]) {
           throw new Error("PostgreSQL Google Form watermark was not saved");
         }
-        return Object.freeze({ inserted, watermark: watermarkFromRow(watermarkResult.rows[0]) });
+        return Object.freeze({
+          inserted,
+          repositioned,
+          watermark: watermarkFromRow(watermarkResult.rows[0]),
+        });
       });
     },
 

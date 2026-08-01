@@ -139,6 +139,47 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     sql,
     /GRANT SELECT, INSERT, UPDATE ON TABLE fci_app\.projects TO fci_runtime;/,
   );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(
+      ({ table }) => table === "google_form_lead_intake_watermarks",
+    )?.privileges,
+    ["SELECT", "INSERT"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(
+      ({ table }) => table === "google_form_lead_intake_watermarks",
+    )?.columns,
+    [
+      "last_processed_row",
+      "last_processed_submission_key",
+      "last_processed_at",
+      "updated_by",
+    ],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(
+      ({ table }) => table === "google_form_lead_reviews",
+    )?.privileges,
+    ["SELECT", "INSERT"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(
+      ({ table }) => table === "google_form_lead_reviews",
+    )?.columns,
+    ["source_row", "status", "reviewed_by", "reviewed_at", "updated_at", "accepted_lead_id"],
+  );
+  assert.match(
+    sql,
+    /GRANT UPDATE \(last_processed_row, last_processed_submission_key, last_processed_at, updated_by\) ON TABLE fci_app\.google_form_lead_intake_watermarks TO fci_runtime;/,
+  );
+  assert.match(
+    sql,
+    /GRANT UPDATE \(source_row, status, reviewed_by, reviewed_at, updated_at, accepted_lead_id\) ON TABLE fci_app\.google_form_lead_reviews TO fci_runtime;/,
+  );
+  assert.doesNotMatch(
+    sql,
+    /GRANT SELECT, INSERT, UPDATE ON TABLE fci_app\.google_form_lead_(?:intake_watermarks|reviews) TO fci_runtime;/,
+  );
   for (const deniedTable of [
     "production_schema_migrations",
     "integration_connection_scopes",
@@ -280,8 +321,8 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     ["filing_rules", ["SELECT", "INSERT", "UPDATE", "DELETE"]],
     ["mail_items", ["SELECT", "INSERT", "UPDATE"]],
     ["tasks", ["SELECT", "INSERT", "UPDATE"]],
-    ["google_form_lead_intake_watermarks", ["SELECT", "INSERT", "UPDATE"]],
-    ["google_form_lead_reviews", ["SELECT", "INSERT", "UPDATE"]],
+    ["google_form_lead_intake_watermarks", ["SELECT", "INSERT"]],
+    ["google_form_lead_reviews", ["SELECT", "INSERT"]],
   ]) {
     assert.deepEqual(
       EXPECTED_RUNTIME_TABLE_ACCESS.find((entry) => entry.table === table)?.privileges,

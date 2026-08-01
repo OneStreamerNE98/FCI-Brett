@@ -4,6 +4,7 @@ import { createClient } from "../../application/create-client";
 import { createProject } from "../../application/create-project";
 import { creationAuthorizationFor } from "../../application/creation-authorization";
 import { createLead, listLeads } from "../../application/lead-operations";
+import { parseLeadCreationRequest } from "../../domain/lead-creation-request";
 import {
   createProjectMeeting,
   listProjectMeetings,
@@ -35,6 +36,7 @@ import type {
 } from "../../ports/security-audit";
 import {
   AUTHORIZATION_ACCESS_DEFAULTS,
+  AUTHORIZATION_ROLES,
   normalizeAuthorizationCompanyEmail,
   resolveEmployeeAccessContext,
   type EmployeeAccessContext,
@@ -181,6 +183,7 @@ export type EmployeeRequestRouterDependencies = Readonly<{
   adminAccess: AdminAccessPersistenceRepository;
   audit: SecurityAuditRepository;
   coreRecords: EmployeeCoreRecordRepositories;
+  formLeadReviewConnectionKey: string;
   /** Closed provider DTOs; absent in the current fail-closed composition. */
   providerActions?: EmployeeRouteProviderActions;
   /** Durable fallback for the explicitly deferrable Gmail filing operation. */
@@ -1474,9 +1477,25 @@ export function createEmployeeRequestRouter(
         const result = await dependencies.authorization.performLeadCreate(
           requestTrace,
           async (context) => {
+            const leadRequest = parseLeadCreationRequest(await jsonBody(request));
+            if (!leadRequest.ok) {
+              throw new HttpFailure(400, "invalid_request");
+            }
+            const formLeadReviewId = leadRequest.formLeadReview
+              ? uuid(leadRequest.formLeadReview.id)
+              : null;
+            if (leadRequest.formLeadReview && !formLeadReviewId) {
+              throw new HttpFailure(400, "invalid_request");
+            }
+            if (
+              leadRequest.formLeadReview
+              && !context.roles.includes(AUTHORIZATION_ROLES.administrator)
+            ) {
+              throw new HttpFailure(403, "forbidden");
+            }
             const createdAt = now();
             return createLead(
-              await jsonBody(request),
+              leadRequest.body,
               creationAuthorizationFor({
                 actorId: context.email,
                 capabilities: [...context.capabilities],
@@ -1491,6 +1510,14 @@ export function createEmployeeRequestRouter(
                 )),
                 newId,
                 now: () => createdAt,
+                ...(leadRequest.formLeadReview
+                  ? {
+                      formLeadReview: {
+                        id: formLeadReviewId!,
+                        connectionKey: dependencies.formLeadReviewConnectionKey,
+                      },
+                    }
+                  : {}),
               },
             );
           },
@@ -1504,10 +1531,25 @@ export function createEmployeeRequestRouter(
               : result.value.kind === "identifier-collision"
                 ? 503
                 : 409;
-          jsonResponse(request, response, status, { error: result.value.message });
+          jsonResponse(request, response, status, {
+            error: result.value.message,
+            ...(result.value.kind === "review-not-found"
+              ? { code: "form_lead_review_not_found" }
+              : {}),
+          });
           return;
         }
-        jsonResponse(request, response, 201, { data: result.value.value });
+        jsonResponse(request, response, 201, {
+          data: result.value.value,
+          ...(result.value.formLeadReview
+            ? {
+                formLeadReview: {
+                  id: result.value.formLeadReview.id,
+                  status: result.value.formLeadReview.status,
+                },
+              }
+            : {}),
+        });
         return;
       }
 

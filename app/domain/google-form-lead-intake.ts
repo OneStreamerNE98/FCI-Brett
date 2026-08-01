@@ -8,6 +8,7 @@ import type {
 } from "../ports/first-run-import-repository.ts";
 import type {
   GoogleFormLeadProposal,
+  GoogleFormLeadObservedPosition,
   GoogleFormLeadReviewDraft,
   GoogleFormLeadReviewState,
 } from "../ports/google-form-lead-intake.ts";
@@ -71,6 +72,33 @@ export class GoogleFormLeadReviewDraftValidationError
 
 export function isGoogleFormLeadSubmissionKey(value: unknown): value is string {
   return typeof value === "string" && SUBMISSION_KEY_PATTERN.test(value);
+}
+
+/**
+ * A bounded Sheet observation may either create a review or refresh the last-seen
+ * row of an existing pending review, but never do both for one stable identity.
+ */
+export function isGoogleFormLeadPositionBatch(
+  reviews: readonly GoogleFormLeadObservedPosition[],
+  observedPositions: readonly GoogleFormLeadObservedPosition[],
+) {
+  if (
+    !Array.isArray(reviews)
+    || !Array.isArray(observedPositions)
+    || reviews.length + observedPositions.length > GOOGLE_FORM_LEAD_MAX_ROWS
+  ) return false;
+  const submissionKeys = new Set<string>();
+  for (const position of [...reviews, ...observedPositions]) {
+    if (
+      !isRecord(position)
+      || !isGoogleFormLeadSubmissionKey(position.submissionKey)
+      || !Number.isSafeInteger(position.sourceRow)
+      || Number(position.sourceRow) < 2
+      || submissionKeys.has(position.submissionKey)
+    ) return false;
+    submissionKeys.add(position.submissionKey);
+  }
+  return true;
 }
 
 function identityCell(value: unknown) {

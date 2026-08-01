@@ -150,6 +150,35 @@ test("keeps read-only readiness metadata equal to the immutable migration regist
 });
 
 test("requires exact runtime privileges and complete migration history through the narrow reader", async () => {
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(
+      ({ table }) => table === "google_form_lead_intake_watermarks",
+    )?.privileges,
+    ["SELECT", "INSERT"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(
+      ({ table }) => table === "google_form_lead_intake_watermarks",
+    )?.columns,
+    [
+      "last_processed_row",
+      "last_processed_submission_key",
+      "last_processed_at",
+      "updated_by",
+    ],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(
+      ({ table }) => table === "google_form_lead_reviews",
+    )?.privileges,
+    ["SELECT", "INSERT"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(
+      ({ table }) => table === "google_form_lead_reviews",
+    )?.columns,
+    ["source_row", "status", "reviewed_by", "reviewed_at", "updated_at", "accepted_lead_id"],
+  );
   const { database, queries, releases } = readyDatabase();
   const probe = createDatabaseReadinessProbe({
     database,

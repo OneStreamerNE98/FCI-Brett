@@ -8,6 +8,7 @@ import { AUTHORIZATION_CAPABILITIES } from "../../../application/authorization-c
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { MAX_LEAD_BODY_BYTES } from "../../../domain/lead";
+import { parseLeadCreationRequest } from "../../../domain/lead-creation-request";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
 import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
@@ -15,30 +16,6 @@ import {
   authorizedLeadOwnerEmail,
   authorizedLeadPayload,
 } from "../../../lib/authorized-lead-response";
-
-const FORM_LEAD_REVIEW_ID_PATTERN = /^[A-Za-z0-9_-]{1,256}$/u;
-
-function leadRequestBody(body: Record<string, unknown>) {
-  if (!Object.hasOwn(body, "formLeadReviewId")) {
-    return { ok: true as const, body, formLeadReview: undefined };
-  }
-  if (
-    typeof body.formLeadReviewId !== "string"
-    || !FORM_LEAD_REVIEW_ID_PATTERN.test(body.formLeadReviewId)
-  ) {
-    return {
-      ok: false as const,
-      error: "Google Form review details are invalid.",
-    };
-  }
-  const leadBody = { ...body };
-  delete leadBody.formLeadReviewId;
-  return {
-    ok: true as const,
-    body: leadBody,
-    formLeadReview: { id: body.formLeadReviewId },
-  };
-}
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -74,7 +51,7 @@ export async function POST(request: NextRequest) {
     tooLargeMessage: "Lead details are too large.",
   });
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
-  const leadRequest = leadRequestBody(parsed.body);
+  const leadRequest = parseLeadCreationRequest(parsed.body);
   if (!leadRequest.ok) return NextResponse.json({ error: leadRequest.error }, { status: 400 });
   if (leadRequest.formLeadReview) {
     const admin = requireOfficeUser(request, { admin: true });

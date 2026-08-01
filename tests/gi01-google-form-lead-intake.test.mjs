@@ -477,6 +477,23 @@ test("GI-01 submission identity uses Timestamp plus content and never the Sheet 
   );
 });
 
+test("GI-01 position refresh batches stay bounded and disjoint from new reviews", () => {
+  const positions = Array.from({ length: 25 }, (_, index) => ({
+    submissionKey: stableKey(`bounded-position-${index}`),
+    sourceRow: index + 2,
+  }));
+  assert.equal(domain.isGoogleFormLeadPositionBatch(positions, []), true);
+  assert.equal(domain.isGoogleFormLeadPositionBatch(positions.slice(0, 24), [positions[24]]), true);
+  assert.equal(domain.isGoogleFormLeadPositionBatch(positions, [
+    { submissionKey: stableKey("overflow"), sourceRow: 27 },
+  ]), false);
+  assert.equal(domain.isGoogleFormLeadPositionBatch([positions[0]], [positions[0]]), false);
+  assert.equal(domain.isGoogleFormLeadPositionBatch([], [{
+    submissionKey: stableKey("invalid-row"),
+    sourceRow: 1,
+  }]), false);
+});
+
 test("GI-01's exported matcher preserves SET-25 mixed stored/import issue ordering", async () => {
   const headers = [
     "Client Code", "Client / Company", "Status", "Industry", "Primary Contact",
@@ -745,6 +762,11 @@ test("GI-01 circular scanning neither skips a response after deletion nor duplic
         (_, index) => `FCI TEST — DO NOT USE — Submission ${index + 1}`,
       ).sort(),
     );
+    const submission14Key = await domain.googleFormLeadSubmissionKey(responseRow(14));
+    assert.equal(database.row(
+      "SELECT source_row FROM google_form_lead_reviews WHERE submission_key = ?",
+      submission14Key,
+    ).source_row, 14);
 
     globalThis.__GI01_TEST_MUTABLE_FORM_LEAD_ROWS__.splice(12, 0, responseRow(99));
     const afterInsertion = await testRoute.POST(request("POST"));
@@ -762,6 +784,15 @@ test("GI-01 circular scanning neither skips a response after deletion nor duplic
         "FCI TEST — DO NOT USE — Submission 99",
       ].sort(),
     );
+    const submission99Key = await domain.googleFormLeadSubmissionKey(responseRow(99));
+    assert.equal(database.row(
+      "SELECT source_row FROM google_form_lead_reviews WHERE submission_key = ?",
+      submission14Key,
+    ).source_row, 15);
+    assert.equal(database.row(
+      "SELECT source_row FROM google_form_lead_reviews WHERE submission_key = ?",
+      submission99Key,
+    ).source_row, 14);
     assert.equal(database.count("google_form_lead_reviews"), 27);
     assert.equal(database.row(
       "SELECT COUNT(DISTINCT submission_key) AS count FROM google_form_lead_reviews",
@@ -796,41 +827,68 @@ test("GI-01 D1 deduplicates stable submissions while source rows and the scan cu
       connectionKey: CONNECTION_KEY,
       spreadsheetId: SHEET_ID,
       reviews: [rowA, rowB],
+      observedPositions: [],
       lastProcessedRow: 3,
       lastProcessedSubmissionKey: rowB.submissionKey,
       processedAt: 100,
       actor: ADMIN_EMAIL,
     });
     assert.equal(first.inserted, 2);
-    const movedRowB = draft("review-3-b", 30, "submission-b");
     const replacementAtRowThree = draft("review-4", 3, "submission-c");
     const overlapping = await repository.saveBatch({
       connectionKey: CONNECTION_KEY,
       spreadsheetId: SHEET_ID,
-      reviews: [movedRowB, replacementAtRowThree],
+      reviews: [replacementAtRowThree],
+      observedPositions: [{ submissionKey: rowB.submissionKey, sourceRow: 30 }],
       lastProcessedRow: 3,
       lastProcessedSubmissionKey: replacementAtRowThree.submissionKey,
       processedAt: 200,
       actor: ADMIN_EMAIL,
     });
     assert.equal(overlapping.inserted, 1);
+    assert.equal(overlapping.repositioned, 1);
     assert.deepEqual(
       (await repository.listNeedsReview(CONNECTION_KEY, 50)).map(({ sourceRow }) => sourceRow),
-      [2, 3, 3],
+      [2, 3, 30],
     );
     assert.deepEqual(
-      [...await repository.findProcessedSubmissionKeys(CONNECTION_KEY, SHEET_ID, [
+      (await repository.findProcessedSubmissions(CONNECTION_KEY, SHEET_ID, [
         rowA.submissionKey,
         rowB.submissionKey,
         stableKey("not-seen"),
-      ])].sort(),
+      ])).map(({ submissionKey }) => submissionKey).sort(),
       [rowA.submissionKey, rowB.submissionKey].sort(),
     );
+
+    const failedReview = draft("review-failed-reposition", 31, "submission-d");
+    database.failWritePattern = /^INSERT INTO google_form_lead_intake_watermarks/u;
+    await assert.rejects(repository.saveBatch({
+      connectionKey: CONNECTION_KEY,
+      spreadsheetId: SHEET_ID,
+      reviews: [failedReview],
+      observedPositions: [{ submissionKey: rowB.submissionKey, sourceRow: 31 }],
+      lastProcessedRow: 31,
+      lastProcessedSubmissionKey: failedReview.submissionKey,
+      processedAt: 250,
+      actor: ADMIN_EMAIL,
+    }), /Injected GI-01 transaction failure/u);
+    assert.equal(database.row(
+      "SELECT source_row FROM google_form_lead_reviews WHERE submission_key = ?",
+      rowB.submissionKey,
+    ).source_row, 30);
+    assert.deepEqual(await repository.findProcessedSubmissions(
+      CONNECTION_KEY,
+      SHEET_ID,
+      [failedReview.submissionKey],
+    ), []);
+    database.failWritePattern = null;
+    database.failWriteMatches = 0;
 
     const wrapped = await repository.saveBatch({
       connectionKey: CONNECTION_KEY,
       spreadsheetId: SHEET_ID,
       reviews: [],
+      observedPositions: [],
       lastProcessedRow: 2,
       lastProcessedSubmissionKey: rowA.submissionKey,
       processedAt: 300,
@@ -857,6 +915,7 @@ test("GI-01 D1 batch rollback retries exactly the still-unprocessed stable submi
     connectionKey: CONNECTION_KEY,
     spreadsheetId: SHEET_ID,
     reviews,
+    observedPositions: [],
     lastProcessedRow: 4,
     lastProcessedSubmissionKey: reviews.at(-1).submissionKey,
     processedAt: 100,
@@ -875,11 +934,11 @@ test("GI-01 D1 batch rollback retries exactly the still-unprocessed stable submi
     assert.equal(recovered.inserted, 3);
     assert.equal(database.count("google_form_lead_reviews"), 3);
     assert.deepEqual(
-      [...await repository.findProcessedSubmissionKeys(
+      (await repository.findProcessedSubmissions(
         CONNECTION_KEY,
         SHEET_ID,
         reviews.map(({ submissionKey }) => submissionKey),
-      )].sort(),
+      )).map(({ submissionKey }) => submissionKey).sort(),
       reviews.map(({ submissionKey }) => submissionKey).sort(),
     );
 
@@ -915,6 +974,7 @@ test("GI-01 review repository exposes dismissal as its only disposition writer",
       connectionKey: CONNECTION_KEY,
       spreadsheetId: SHEET_ID,
       reviews: [draft(reviewId, 2)],
+      observedPositions: [],
       lastProcessedRow: 2,
       lastProcessedSubmissionKey: stableKey(reviewId),
       processedAt: 100,
@@ -932,12 +992,24 @@ test("GI-01 review repository exposes dismissal as its only disposition writer",
       actor: ADMIN_EMAIL,
       reviewedAt: 201,
     }), false);
+    const ignoredPosition = await repository.saveBatch({
+      connectionKey: CONNECTION_KEY,
+      spreadsheetId: SHEET_ID,
+      reviews: [],
+      observedPositions: [{ submissionKey: stableKey(reviewId), sourceRow: 50 }],
+      lastProcessedRow: 50,
+      lastProcessedSubmissionKey: stableKey(reviewId),
+      processedAt: 202,
+      actor: ADMIN_EMAIL,
+    });
+    assert.equal(ignoredPosition.repositioned, 0);
     assert.equal((await repository.listNeedsReview(CONNECTION_KEY, 50)).length, 0);
     const dismissedRow = database.row(
-      "SELECT status, accepted_lead_id FROM google_form_lead_reviews WHERE id = ?",
+      "SELECT status, source_row, accepted_lead_id FROM google_form_lead_reviews WHERE id = ?",
       reviewId,
     );
     assert.equal(dismissedRow.status, "dismissed");
+    assert.equal(dismissedRow.source_row, 2);
     assert.equal(dismissedRow.accepted_lead_id, null);
   } finally {
     database.close();
@@ -1157,6 +1229,7 @@ test("GI-01 D1 lead acceptance rolls back both records when batched evidence fai
       connectionKey: CONNECTION_KEY,
       spreadsheetId: SHEET_ID,
       reviews: [draft(reviewId, 2)],
+      observedPositions: [],
       lastProcessedRow: 2,
       lastProcessedSubmissionKey: stableKey(reviewId),
       processedAt: 100,
@@ -1238,6 +1311,7 @@ test("GI-01 PostgreSQL adapter executes stable-key reads, writes, conflicts, and
       connectionKey: "google-workspace",
       spreadsheetId: WORKSPACE_SHEET_ID,
       reviews: [rowA, rowB],
+      observedPositions: [],
       lastProcessedRow: 3,
       lastProcessedSubmissionKey: rowB.submissionKey,
       processedAt: 100,
@@ -1245,29 +1319,35 @@ test("GI-01 PostgreSQL adapter executes stable-key reads, writes, conflicts, and
     });
     assert.equal(first.inserted, 2);
 
-    const movedA = { ...draft(randomUUID(), 99), submissionKey: rowA.submissionKey };
     const replacement = draft(randomUUID(), 2, "postgres-submission-c");
     const second = await repository.saveBatch({
       connectionKey: "google-workspace",
       spreadsheetId: WORKSPACE_SHEET_ID,
-      reviews: [movedA, replacement],
+      reviews: [replacement],
+      observedPositions: [{ submissionKey: rowA.submissionKey, sourceRow: 99 }],
       lastProcessedRow: 2,
       lastProcessedSubmissionKey: replacement.submissionKey,
       processedAt: 200,
       actor: ADMIN_EMAIL,
     });
     assert.equal(second.inserted, 1);
+    assert.equal(second.repositioned, 1);
     assert.equal(second.watermark.lastProcessedRow, 2);
     assert.equal(second.watermark.lastProcessedSubmissionKey, replacement.submissionKey);
     assert.deepEqual(
-      [...await repository.findProcessedSubmissionKeys(
+      (await repository.findProcessedSubmissions(
         "google-workspace",
         WORKSPACE_SHEET_ID,
         [rowA.submissionKey, rowB.submissionKey, replacement.submissionKey],
-      )].sort(),
+      )).map(({ submissionKey }) => submissionKey).sort(),
       [rowA.submissionKey, rowB.submissionKey, replacement.submissionKey].sort(),
     );
-    assert.equal((await repository.listNeedsReview("google-workspace", 50)).length, 3);
+    const currentReviews = await repository.listNeedsReview("google-workspace", 50);
+    assert.equal(currentReviews.length, 3);
+    assert.equal(
+      currentReviews.find(({ submissionKey }) => submissionKey === rowA.submissionKey).sourceRow,
+      99,
+    );
 
     const recoveryA = draft(randomUUID(), 80, "postgres-recovery-a");
     const recoveryBWithConflictingId = {
@@ -1277,17 +1357,23 @@ test("GI-01 PostgreSQL adapter executes stable-key reads, writes, conflicts, and
       connectionKey: "google-workspace",
       spreadsheetId: WORKSPACE_SHEET_ID,
       reviews: [recoveryA, recoveryBWithConflictingId],
+      observedPositions: [{ submissionKey: rowA.submissionKey, sourceRow: 100 }],
       lastProcessedRow: 81,
       lastProcessedSubmissionKey: recoveryBWithConflictingId.submissionKey,
       processedAt: 250,
       actor: ADMIN_EMAIL,
     }));
+    assert.equal(
+      (await repository.listNeedsReview("google-workspace", 50))
+        .find(({ submissionKey }) => submissionKey === rowA.submissionKey).sourceRow,
+      99,
+    );
     assert.deepEqual(
-      await repository.findProcessedSubmissionKeys(
+      (await repository.findProcessedSubmissions(
         "google-workspace",
         WORKSPACE_SHEET_ID,
         [recoveryA.submissionKey, recoveryBWithConflictingId.submissionKey],
-      ),
+      )).map(({ submissionKey }) => submissionKey),
       [],
     );
     assert.equal(
@@ -1300,6 +1386,7 @@ test("GI-01 PostgreSQL adapter executes stable-key reads, writes, conflicts, and
       connectionKey: "google-workspace",
       spreadsheetId: WORKSPACE_SHEET_ID,
       reviews: [recoveryA, recoveryB],
+      observedPositions: [],
       lastProcessedRow: 81,
       lastProcessedSubmissionKey: recoveryB.submissionKey,
       processedAt: 275,
@@ -1313,11 +1400,11 @@ test("GI-01 PostgreSQL adapter executes stable-key reads, writes, conflicts, and
       reviewedAt: 300,
     }), true);
     assert.deepEqual(
-      await repository.findProcessedSubmissionKeys(
+      (await repository.findProcessedSubmissions(
         "google-workspace",
         WORKSPACE_SHEET_ID,
         [rowB.submissionKey],
-      ),
+      )).map(({ submissionKey }) => submissionKey),
       [rowB.submissionKey],
     );
     const persisted = await pool.query(
@@ -1338,6 +1425,7 @@ test("GI-01 PostgreSQL adapter executes stable-key reads, writes, conflicts, and
       connectionKey: "google-workspace",
       spreadsheetId: WORKSPACE_SHEET_ID,
       reviews: [invalid],
+      observedPositions: [],
       lastProcessedRow: 77,
       lastProcessedSubmissionKey: invalid.submissionKey,
       processedAt: 400,
@@ -1389,6 +1477,8 @@ test("GI-01 source laws pin manual triggering, adapter parity, safe acceptance o
   assert.match(uiSource, /source: FORM_LEAD_SOURCE/u);
   assert.match(uiSource, /Retry queue refresh/u);
   assert.match(uiSource, /FIRST_RUN_IMPORT_TEST_MARKER/u);
+  assert.match(uiSource, /Last observed at response Sheet row \{review\.sourceRow\}/u);
+  assert.doesNotMatch(uiSource, /<small>Response Sheet row \{review\.sourceRow\}/u);
   assert.match(
     uiSource,
     /const acceptedReview = [\s\S]*?body\.formLeadReview\.id === review\.id[\s\S]*?body\.formLeadReview\.status === "accepted";[\s\S]*?if \(!response\.ok \|\| !lead \|\| !acceptedReview\)[\s\S]*?setAcceptedLead\(lead\);[\s\S]*?await onRetired\(\);[\s\S]*?GET-only queue-refresh recovery action/u,
@@ -1400,10 +1490,16 @@ test("GI-01 source laws pin manual triggering, adapter parity, safe acceptance o
   assert.doesNotMatch(uiSource, /queue:\s*current\.queue\.filter/u);
   assert.doesNotMatch(routeSource, /outcome === "accepted"|outcome: "accepted"/u);
   assert.match(routeSource, /outcome !== "dismissed"/u);
-  assert.match(routeSource, /findProcessedSubmissionKeys\(/u);
+  assert.match(routeSource, /findProcessedSubmissions\(/u);
+  assert.match(routeSource, /processed\?\.status === "needs-review"/u);
+  assert.match(routeSource, /observedPositions/u);
   assert.match(routeSource, /googleFormLeadSubmissionKey\(row\.cells\)/u);
   assert.match(routeSource, /firstSourceRow > 2 && remaining > 0[\s\S]*?readRange\(2, remaining\)/u);
   assert.match(postgresIntakeSource, /ON CONFLICT \(connection_key, spreadsheet_id, submission_key\) DO NOTHING/u);
+  assert.match(
+    postgresIntakeSource,
+    /SET source_row = \$1, updated_at = \$2[\s\S]*?status = 'needs-review'[\s\S]*?updated_at <= \$2/u,
+  );
   assert.match(productionSchema, /last_processed_submission_key text NOT NULL/u);
   assert.match(productionSchema, /UNIQUE \(\s*connection_key,\s*spreadsheet_id,\s*submission_key\s*\)/u);
   assert.match(leadRouteSource, /requireOfficeUser\(request, \{ admin: true \}\)/u);

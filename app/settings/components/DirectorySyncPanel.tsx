@@ -344,7 +344,7 @@ function FormLeadReviewCard({
       <div>
         <span className={styles.state}>{stateLabel}</span>
         <h3>{proposal.company || `Response row ${review.sourceRow}`}</h3>
-        <small>Response Sheet row {review.sourceRow}{review.submittedAt ? ` · ${review.submittedAt}` : ""}</small>
+        <small>Last observed at response Sheet row {review.sourceRow}{review.submittedAt ? ` · ${review.submittedAt}` : ""}</small>
       </div>
       <Inbox size={18} aria-hidden="true" />
     </header>

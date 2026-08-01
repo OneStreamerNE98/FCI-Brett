@@ -192,7 +192,7 @@ test("GI-01 retries only the queue read after a created lead's refresh fails", a
 
   await page.goto("/settings?section=client-directory");
   const panel = page.getByRole("region", { name: "Google Forms responses" });
-  const row = panel.locator("article").filter({ hasText: "Response Sheet row 2" });
+  const row = panel.locator("article").filter({ hasText: "Last observed at response Sheet row 2" });
   await row.getByLabel("Estimated value").fill("125000");
   await row.getByRole("button", { name: "Create lead" }).click();
 
@@ -242,7 +242,7 @@ test("GI-01 response loss after commit retires the review without a duplicate re
 
   await page.goto("/settings?section=client-directory");
   const panel = page.getByRole("region", { name: "Google Forms responses" });
-  const row = panel.locator("article").filter({ hasText: "Response Sheet row 2" });
+  const row = panel.locator("article").filter({ hasText: "Last observed at response Sheet row 2" });
   await panel.getByLabel("Estimated value").fill("125000");
   await row.getByRole("button", { name: "Create lead" }).click();
 
@@ -289,7 +289,7 @@ test("GI-01 rejects mismatched acceptance evidence without refetching or retirin
 
   await page.goto("/settings?section=client-directory");
   const panel = page.getByRole("region", { name: "Google Forms responses" });
-  const row = panel.locator("article").filter({ hasText: "Response Sheet row 2" });
+  const row = panel.locator("article").filter({ hasText: "Last observed at response Sheet row 2" });
   await panel.getByLabel("Estimated value").fill("125000");
   await row.getByRole("button", { name: "Create lead" }).click();
 
@@ -326,12 +326,12 @@ test("GI-01 retirement refetches the capped queue so the next server row appears
 
   await page.goto("/settings?section=client-directory");
   const panel = page.getByRole("region", { name: "Google Forms responses" });
-  await expect(panel.getByText(/Response Sheet row 2(?:\s|·)/u)).toBeVisible();
-  await panel.locator("article").filter({ hasText: /Response Sheet row 2\s*·/u })
+  await expect(panel.getByText(/Last observed at response Sheet row 2(?:\s|·)/u)).toBeVisible();
+  await panel.locator("article").filter({ hasText: /Last observed at response Sheet row 2\s*·/u })
     .getByRole("button", { name: "Dismiss" }).click();
 
-  await expect(panel.getByText(/Response Sheet row 52(?:\s|·)/u)).toBeVisible();
-  await expect(panel.getByText(/Response Sheet row 2(?:\s|·)/u)).toHaveCount(0);
+  await expect(panel.getByText(/Last observed at response Sheet row 52(?:\s|·)/u)).toBeVisible();
+  await expect(panel.getByText(/Last observed at response Sheet row 2(?:\s|·)/u)).toHaveCount(0);
   await expect(panel.getByText("No form responses need review", { exact: true })).toHaveCount(0);
   expect(getCalls).toBe(2);
   expect(retireCalls).toBe(1);
@@ -360,7 +360,7 @@ test("GI-01 keeps a retired row visible when the queue refresh fails", async ({ 
 
   await page.goto("/settings?section=client-directory");
   const panel = page.getByRole("region", { name: "Google Forms responses" });
-  const row = panel.locator("article").filter({ hasText: "Response Sheet row 2" });
+  const row = panel.locator("article").filter({ hasText: "Last observed at response Sheet row 2" });
   await row.getByRole("button", { name: "Dismiss" }).click();
 
   await expect(panel.getByText(
