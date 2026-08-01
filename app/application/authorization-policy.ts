@@ -599,7 +599,8 @@ export type OperationDenialReason =
   | "unknown_operation"
   | "missing_capability"
   | "project_required"
-  | "outside_project_scope";
+  | "outside_project_scope"
+  | "administrator_required";
 
 export type OperationDecision =
   | Readonly<{

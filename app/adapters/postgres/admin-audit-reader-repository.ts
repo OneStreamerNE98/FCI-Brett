@@ -104,6 +104,7 @@ const ACTION_LABELS: Readonly<Record<string, string>> = Object.freeze({
 
 const REASON_LABELS: Readonly<Record<string, string>> = Object.freeze({
   absolute_expired: "Session reached its time limit",
+  administrator_required: "Administrator access was required",
   actor_authorization_changed: "Administrator access changed",
   administrator_request: "Administrator request",
   authorization_changed: "Access changed",

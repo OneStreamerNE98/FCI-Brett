@@ -284,26 +284,6 @@ export function createPostgresGoogleFormLeadIntakeRepository(
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         let inserted = 0;
         let repositioned = 0;
-        for (const position of input.observedPositions) {
-          const observedAt = new Date(input.processedAt);
-          const result = await client.query(
-            `UPDATE google_form_lead_reviews
-             SET source_row = $1, updated_at = $2
-             WHERE connection_key = $3 AND spreadsheet_id = $4 AND submission_key = $5
-               AND status = 'needs-review' AND source_row <> $1 AND updated_at <= $2`,
-            [
-              position.sourceRow,
-              observedAt,
-              input.connectionKey,
-              input.spreadsheetId,
-              position.submissionKey,
-            ],
-          );
-          if (result.rowCount === 1) repositioned += 1;
-          else if (result.rowCount !== 0) {
-            throw new Error("PostgreSQL Google Form position refresh was ambiguous");
-          }
-        }
         for (const review of input.reviews) {
           const result = await client.query(
             `INSERT INTO google_form_lead_reviews (
@@ -329,6 +309,30 @@ export function createPostgresGoogleFormLeadIntakeRepository(
           if (result.rowCount === 1) inserted += 1;
           else if (result.rowCount !== 0) throw new Error("PostgreSQL Google Form review insert was invalid");
         }
+        const observedPositions = [
+          ...input.observedPositions,
+          ...input.reviews.map(({ submissionKey, sourceRow }) => ({ submissionKey, sourceRow })),
+        ];
+        for (const position of observedPositions) {
+          const observedAt = new Date(input.processedAt);
+          const result = await client.query(
+            `UPDATE google_form_lead_reviews
+             SET source_row = $1, updated_at = $2
+             WHERE connection_key = $3 AND spreadsheet_id = $4 AND submission_key = $5
+               AND status = 'needs-review' AND source_row <> $1 AND updated_at < $2`,
+            [
+              position.sourceRow,
+              observedAt,
+              input.connectionKey,
+              input.spreadsheetId,
+              position.submissionKey,
+            ],
+          );
+          if (result.rowCount === 1) repositioned += 1;
+          else if (result.rowCount !== 0) {
+            throw new Error("PostgreSQL Google Form position refresh was ambiguous");
+          }
+        }
         await client.query(
           `INSERT INTO google_form_lead_intake_watermarks (
              connection_key, spreadsheet_id, last_processed_row, last_processed_submission_key,
@@ -339,7 +343,7 @@ export function createPostgresGoogleFormLeadIntakeRepository(
              last_processed_submission_key = EXCLUDED.last_processed_submission_key,
              last_processed_at = EXCLUDED.last_processed_at,
              updated_by = EXCLUDED.updated_by
-           WHERE EXCLUDED.last_processed_at >= google_form_lead_intake_watermarks.last_processed_at`,
+           WHERE EXCLUDED.last_processed_at > google_form_lead_intake_watermarks.last_processed_at`,
           [
             input.connectionKey,
             input.spreadsheetId,

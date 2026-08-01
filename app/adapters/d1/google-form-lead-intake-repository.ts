@@ -280,21 +280,7 @@ export function createD1GoogleFormLeadIntakeRepository(
 
     async saveBatch(input) {
       assertSaveBatch(input);
-      const statements = input.observedPositions.map((position) => database.prepare(
-        `UPDATE google_form_lead_reviews
-         SET source_row = ?, updated_at = ?
-         WHERE connection_key = ? AND spreadsheet_id = ? AND submission_key = ?
-           AND status = 'needs-review' AND source_row <> ? AND updated_at <= ?`,
-      ).bind(
-        position.sourceRow,
-        input.processedAt,
-        input.connectionKey,
-        input.spreadsheetId,
-        position.submissionKey,
-        position.sourceRow,
-        input.processedAt,
-      ));
-      statements.push(...input.reviews.map((review) => database.prepare(
+      const statements = input.reviews.map((review) => database.prepare(
         `INSERT INTO google_form_lead_reviews (
            id, connection_key, spreadsheet_id, submission_key, source_row, submitted_at,
            state, status, proposal_json, reasons_json, created_at, updated_at,
@@ -313,6 +299,24 @@ export function createD1GoogleFormLeadIntakeRepository(
         JSON.stringify(review.reasons),
         input.processedAt,
         input.processedAt,
+      ));
+      const observedPositions = [
+        ...input.observedPositions,
+        ...input.reviews.map(({ submissionKey, sourceRow }) => ({ submissionKey, sourceRow })),
+      ];
+      statements.push(...observedPositions.map((position) => database.prepare(
+        `UPDATE google_form_lead_reviews
+         SET source_row = ?, updated_at = ?
+         WHERE connection_key = ? AND spreadsheet_id = ? AND submission_key = ?
+           AND status = 'needs-review' AND source_row <> ? AND updated_at < ?`,
+      ).bind(
+        position.sourceRow,
+        input.processedAt,
+        input.connectionKey,
+        input.spreadsheetId,
+        position.submissionKey,
+        position.sourceRow,
+        input.processedAt,
       )));
       statements.push(database.prepare(
         `INSERT INTO google_form_lead_intake_watermarks (
@@ -324,7 +328,7 @@ export function createD1GoogleFormLeadIntakeRepository(
            last_processed_submission_key = excluded.last_processed_submission_key,
            last_processed_at = excluded.last_processed_at,
            updated_by = excluded.updated_by
-         WHERE excluded.last_processed_at >= google_form_lead_intake_watermarks.last_processed_at`,
+         WHERE excluded.last_processed_at > google_form_lead_intake_watermarks.last_processed_at`,
       ).bind(
         input.connectionKey,
         input.spreadsheetId,
@@ -334,10 +338,10 @@ export function createD1GoogleFormLeadIntakeRepository(
         input.actor,
       ));
       const results = await database.batch(statements);
-      const repositioned = results.slice(0, input.observedPositions.length)
+      const inserted = results.slice(0, input.reviews.length)
         .reduce((total, result) => total + (result.meta.changes === 1 ? 1 : 0), 0);
-      const inserted = results
-        .slice(input.observedPositions.length, input.observedPositions.length + input.reviews.length)
+      const repositioned = results
+        .slice(input.reviews.length, input.reviews.length + observedPositions.length)
         .reduce((total, result) => total + (result.meta.changes === 1 ? 1 : 0), 0);
       const watermark = await readWatermark(input.connectionKey, input.spreadsheetId);
       if (!watermark) throw new Error("D1 Google Form intake watermark was not saved");

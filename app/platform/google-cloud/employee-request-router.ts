@@ -566,6 +566,35 @@ async function jsonBody(request: IncomingMessage): Promise<JsonObject> {
   return Object.freeze({ ...(parsed as Record<string, unknown>) });
 }
 
+type ValidLeadCreationRequest = Extract<
+  ReturnType<typeof parseLeadCreationRequest>,
+  Readonly<{ ok: true }>
+>;
+
+function leadCreationRequestReader(request: IncomingMessage) {
+  let pending: Promise<Readonly<{
+    leadRequest: ValidLeadCreationRequest;
+    formLeadReviewId: string | null;
+  }>> | null = null;
+
+  return () => {
+    pending ??= (async () => {
+      const leadRequest = parseLeadCreationRequest(await jsonBody(request));
+      if (!leadRequest.ok) {
+        throw new HttpFailure(400, "invalid_request");
+      }
+      const formLeadReviewId = leadRequest.formLeadReview
+        ? uuid(leadRequest.formLeadReview.id)
+        : null;
+      if (leadRequest.formLeadReview && !formLeadReviewId) {
+        throw new HttpFailure(400, "invalid_request");
+      }
+      return Object.freeze({ leadRequest, formLeadReviewId });
+    })();
+    return pending;
+  };
+}
+
 function productionProjectCreationBody(body: JsonObject) {
   if (Object.keys(body).some((key) => !PRODUCTION_PROJECT_CREATION_FIELDS.has(key))) {
     throw new HttpFailure(400, "unsupported_project_fields");
@@ -1474,25 +1503,11 @@ export function createEmployeeRequestRouter(
       }
 
       if (matched.kind === "lead_create") {
+        const readLeadRequest = leadCreationRequestReader(request);
         const result = await dependencies.authorization.performLeadCreate(
           requestTrace,
           async (context) => {
-            const leadRequest = parseLeadCreationRequest(await jsonBody(request));
-            if (!leadRequest.ok) {
-              throw new HttpFailure(400, "invalid_request");
-            }
-            const formLeadReviewId = leadRequest.formLeadReview
-              ? uuid(leadRequest.formLeadReview.id)
-              : null;
-            if (leadRequest.formLeadReview && !formLeadReviewId) {
-              throw new HttpFailure(400, "invalid_request");
-            }
-            if (
-              leadRequest.formLeadReview
-              && !context.roles.includes(AUTHORIZATION_ROLES.administrator)
-            ) {
-              throw new HttpFailure(403, "forbidden");
-            }
+            const { leadRequest, formLeadReviewId } = await readLeadRequest();
             const createdAt = now();
             return createLead(
               leadRequest.body,
@@ -1520,6 +1535,20 @@ export function createEmployeeRequestRouter(
                   : {}),
               },
             );
+          },
+          async (context) => {
+            try {
+              const { leadRequest } = await readLeadRequest();
+              return leadRequest.formLeadReview
+                && !context.roles.includes(AUTHORIZATION_ROLES.administrator)
+                ? "administrator_required"
+                : null;
+            } catch {
+              // Preserve the existing sensitive-action audit ordering for an
+              // authorized caller with an invalid body. The memoized rejection
+              // is re-thrown by work immediately after the allowed audit.
+              return null;
+            }
           },
         );
         if (!result.allowed) throw denialFailure(result.reason);

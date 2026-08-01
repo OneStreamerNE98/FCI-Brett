@@ -477,6 +477,76 @@ test("GI-01 submission identity uses Timestamp plus content and never the Sheet 
   );
 });
 
+test("GI-01 submission identity uses effective values while proposals retain formatted values", async () => {
+  const effectiveValues = [
+    46234.5416666667,
+    "FCI TEST — DO NOT USE — Stable formatting",
+    "10 Stable Way",
+    1000,
+    "LVT",
+    "stable@example.test",
+  ];
+  const [usFormatting, alternateFormatting] = await domain.mapGoogleFormLeadRows({
+    clients: [],
+    rows: [
+      {
+        sourceRow: 2,
+        cells: [
+          "7/31/2026 1:00:00 PM",
+          "FCI TEST — DO NOT USE — Stable formatting",
+          "10 Stable Way",
+          "1,000",
+          "LVT",
+          "stable@example.test",
+        ],
+        identityCells: effectiveValues,
+      },
+      {
+        sourceRow: 99,
+        cells: [
+          "31/07/2026 13:00:00",
+          "FCI TEST — DO NOT USE — Stable formatting",
+          "10 Stable Way",
+          "1000",
+          "LVT",
+          "stable@example.test",
+        ],
+        identityCells: effectiveValues,
+      },
+    ],
+  });
+  assert.equal(usFormatting.submissionKey, alternateFormatting.submissionKey);
+  assert.equal(usFormatting.submittedAt, "7/31/2026 1:00:00 PM");
+  assert.equal(alternateFormatting.submittedAt, "31/07/2026 13:00:00");
+  assert.equal(usFormatting.proposal.rooms, "1,000");
+  assert.equal(alternateFormatting.proposal.rooms, "1000");
+});
+
+test("GI-01 submission identity cannot collide across effective value types", async () => {
+  const common = [
+    46234.5416666667,
+    "FCI TEST — DO NOT USE — Typed identity",
+    "10 Stable Way",
+  ];
+  assert.notEqual(
+    await domain.googleFormLeadSubmissionKey([...common, 123, "LVT", true]),
+    await domain.googleFormLeadSubmissionKey([
+      ...common,
+      "number:123",
+      "LVT",
+      "boolean:true",
+    ]),
+  );
+  assert.notEqual(
+    await domain.googleFormLeadSubmissionKey([...common, 123, "LVT", true]),
+    await domain.googleFormLeadSubmissionKey([...common, "123", "LVT", "true"]),
+  );
+  await assert.rejects(
+    domain.googleFormLeadSubmissionKey([...common, Number.NaN, "LVT", true]),
+    (error) => error?.code === "form_lead_identity_invalid",
+  );
+});
+
 test("GI-01 position refresh batches stay bounded and disjoint from new reviews", () => {
   const positions = Array.from({ length: 25 }, (_, index) => ({
     submissionKey: stableKey(`bounded-position-${index}`),
@@ -903,6 +973,66 @@ test("GI-01 D1 deduplicates stable submissions while source rows and the scan cu
   }
 });
 
+test("GI-01 D1 reconciles an insert-race winner without letting an older scan overwrite it", async () => {
+  const database = new Gi01Database();
+  const repository = adapter.createD1GoogleFormLeadIntakeRepository(database);
+  const submissionIdentity = "concurrent-first-observation";
+  const submissionKey = stableKey(submissionIdentity);
+  try {
+    const newer = await repository.saveBatch({
+      connectionKey: CONNECTION_KEY,
+      spreadsheetId: SHEET_ID,
+      reviews: [draft("review-race-newer", 30, submissionIdentity)],
+      observedPositions: [],
+      lastProcessedRow: 30,
+      lastProcessedSubmissionKey: submissionKey,
+      processedAt: 200,
+      actor: ADMIN_EMAIL,
+    });
+    assert.equal(newer.inserted, 1);
+
+    const staleLoser = await repository.saveBatch({
+      connectionKey: CONNECTION_KEY,
+      spreadsheetId: SHEET_ID,
+      reviews: [draft("review-race-stale", 3, submissionIdentity)],
+      observedPositions: [],
+      lastProcessedRow: 3,
+      lastProcessedSubmissionKey: submissionKey,
+      processedAt: 100,
+      actor: ADMIN_EMAIL,
+    });
+    assert.equal(staleLoser.inserted, 0);
+    assert.equal(staleLoser.repositioned, 0);
+    assert.equal(database.row(
+      "SELECT source_row FROM google_form_lead_reviews WHERE submission_key = ?",
+      submissionKey,
+    ).source_row, 30);
+    assert.equal(staleLoser.watermark.lastProcessedRow, 30);
+    assert.equal(staleLoser.watermark.lastProcessedAt, 200);
+
+    const latestLoser = await repository.saveBatch({
+      connectionKey: CONNECTION_KEY,
+      spreadsheetId: SHEET_ID,
+      reviews: [draft("review-race-latest", 40, submissionIdentity)],
+      observedPositions: [],
+      lastProcessedRow: 40,
+      lastProcessedSubmissionKey: submissionKey,
+      processedAt: 300,
+      actor: ADMIN_EMAIL,
+    });
+    assert.equal(latestLoser.inserted, 0);
+    assert.equal(latestLoser.repositioned, 1);
+    assert.equal(database.row(
+      "SELECT source_row FROM google_form_lead_reviews WHERE submission_key = ?",
+      submissionKey,
+    ).source_row, 40);
+    assert.equal(latestLoser.watermark.lastProcessedRow, 40);
+    assert.equal(latestLoser.watermark.lastProcessedAt, 300);
+  } finally {
+    database.close();
+  }
+});
+
 test("GI-01 D1 batch rollback retries exactly the still-unprocessed stable submissions", async () => {
   const database = new Gi01Database();
   const repository = adapter.createD1GoogleFormLeadIntakeRepository(database);
@@ -1091,6 +1221,24 @@ test("GI-01 workspace route acquires a Sheets token, performs the bounded produc
     "LVT",
     `workspace-${index + 1}@example.test`,
   ]);
+  let mainRangeReads = 0;
+  const gridResponse = (rows, startRow, alternateFormatting = false) => ({
+    sheets: [{
+      data: [{
+        startRow,
+        rowData: rows.map((row, rowIndex) => ({
+          values: row.map((formattedValue, columnIndex) => ({
+            formattedValue: columnIndex === 0 && alternateFormatting
+              ? `31/07/2026 15:${String(rowIndex).padStart(2, "0")}:00`
+              : formattedValue,
+            effectiveValue: columnIndex === 0
+              ? { numberValue: 46234.625 + (rowIndex / 1_440) }
+              : { stringValue: formattedValue },
+          })),
+        })),
+      }],
+    }],
+  });
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     providerCalls.push({ url: url.href, init });
@@ -1104,18 +1252,26 @@ test("GI-01 workspace route acquires a Sheets token, performs the bounded produc
     }
     if (url.hostname === "sheets.googleapis.com") {
       assert.equal(new Headers(init.headers).get("authorization"), "Bearer workspace-access-token");
-      const encodedRange = url.pathname.split("/values/")[1] ?? "";
-      const range = decodeURIComponent(encodedRange);
-      if (range === "A1:F1") {
+      const encodedRange = url.pathname.split("/values/")[1];
+      if (encodedRange && decodeURIComponent(encodedRange) === "A1:F1") {
         return new Response(JSON.stringify({ values: [[
           "Timestamp", "Name", "Address", "Rooms", "Flooring Type", "Preferred Contact",
         ]] }), { status: 200, headers: { "content-type": "application/json" } });
       }
+      const range = url.searchParams.get("ranges");
       if (range === "A2:F26") {
-        return new Response(JSON.stringify({ values: providerRows }), {
+        mainRangeReads += 1;
+        return new Response(JSON.stringify(gridResponse(
+          providerRows.slice(0, 25),
+          1,
+          mainRangeReads > 1,
+        )), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
+      }
+      if (range === "A27:F51") {
+        return Response.json({ sheets: [{ data: [{ startRow: 26, rowData: [] }] }] });
       }
       throw new Error(`Unexpected Sheets range ${range}`);
     }
@@ -1134,9 +1290,20 @@ test("GI-01 workspace route acquires a Sheets token, performs the bounded produc
     assert.deepEqual(
       providerCalls
         .filter(({ url }) => url.includes("sheets.googleapis.com"))
-        .map(({ url }) => decodeURIComponent(new URL(url).pathname.split("/values/")[1] ?? ""))
+        .map(({ url }) => {
+          const requestUrl = new URL(url);
+          return requestUrl.searchParams.get("ranges")
+            ?? decodeURIComponent(requestUrl.pathname.split("/values/")[1] ?? "");
+        })
         .sort(),
       ["A1:F1", "A2:F26"],
+    );
+    const gridCall = providerCalls.find(({ url }) => new URL(url).searchParams.has("ranges"));
+    const gridUrl = new URL(gridCall.url);
+    assert.equal(gridUrl.searchParams.get("includeGridData"), "true");
+    assert.equal(
+      gridUrl.searchParams.get("fields"),
+      "sheets(data(startRow,rowData(values(formattedValue,effectiveValue))))",
     );
 
     const current = await route.GET(request("GET"));
@@ -1155,6 +1322,14 @@ test("GI-01 workspace route acquires a Sheets token, performs the bounded produc
     assert.equal(JSON.stringify(currentBody).includes("submissionKey"), false);
     assert.equal(JSON.stringify(currentBody).includes("connectionKey"), false);
     assert.equal(JSON.stringify(currentBody).includes("spreadsheetId"), false);
+
+    const repeated = await route.POST(request("POST"));
+    const repeatedBody = await repeated.json();
+    assert.equal(repeated.status, 200);
+    assert.equal(repeatedBody.processed, 0);
+    assert.equal(repeatedBody.inserted, 0);
+    assert.equal(database.count("google_form_lead_reviews"), 25);
+    assert.equal(mainRangeReads, 2);
   } finally {
     database.close();
   }
@@ -1432,6 +1607,62 @@ test("GI-01 PostgreSQL adapter executes stable-key reads, writes, conflicts, and
       actor: ADMIN_EMAIL,
     }), (error) => error?.code === "form_lead_review_draft_invalid"
       && error?.sourceRow === 77);
+
+    const raceIdentity = "postgres-concurrent-first-observation";
+    const raceKey = stableKey(raceIdentity);
+    const raceNewer = await repository.saveBatch({
+      connectionKey: "google-workspace",
+      spreadsheetId: WORKSPACE_SHEET_ID,
+      reviews: [draft(randomUUID(), 30, raceIdentity)],
+      observedPositions: [],
+      lastProcessedRow: 30,
+      lastProcessedSubmissionKey: raceKey,
+      processedAt: 600,
+      actor: ADMIN_EMAIL,
+    });
+    assert.equal(raceNewer.inserted, 1);
+    const raceStale = await repository.saveBatch({
+      connectionKey: "google-workspace",
+      spreadsheetId: WORKSPACE_SHEET_ID,
+      reviews: [draft(randomUUID(), 3, raceIdentity)],
+      observedPositions: [],
+      lastProcessedRow: 3,
+      lastProcessedSubmissionKey: raceKey,
+      processedAt: 500,
+      actor: ADMIN_EMAIL,
+    });
+    assert.equal(raceStale.inserted, 0);
+    assert.equal(raceStale.repositioned, 0);
+    assert.equal(
+      (await repository.findProcessedSubmissions(
+        "google-workspace",
+        WORKSPACE_SHEET_ID,
+        [raceKey],
+      ))[0].sourceRow,
+      30,
+    );
+    assert.equal(raceStale.watermark.lastProcessedRow, 30);
+    assert.equal(raceStale.watermark.lastProcessedAt, 600);
+    const raceLatest = await repository.saveBatch({
+      connectionKey: "google-workspace",
+      spreadsheetId: WORKSPACE_SHEET_ID,
+      reviews: [draft(randomUUID(), 40, raceIdentity)],
+      observedPositions: [],
+      lastProcessedRow: 40,
+      lastProcessedSubmissionKey: raceKey,
+      processedAt: 700,
+      actor: ADMIN_EMAIL,
+    });
+    assert.equal(raceLatest.inserted, 0);
+    assert.equal(raceLatest.repositioned, 1);
+    assert.equal(
+      (await repository.findProcessedSubmissions(
+        "google-workspace",
+        WORKSPACE_SHEET_ID,
+        [raceKey],
+      ))[0].sourceRow,
+      40,
+    );
   } finally {
     await pool.query(`DROP SCHEMA ${schema} CASCADE`);
     await pool.end();
@@ -1493,12 +1724,22 @@ test("GI-01 source laws pin manual triggering, adapter parity, safe acceptance o
   assert.match(routeSource, /findProcessedSubmissions\(/u);
   assert.match(routeSource, /processed\?\.status === "needs-review"/u);
   assert.match(routeSource, /observedPositions/u);
-  assert.match(routeSource, /googleFormLeadSubmissionKey\(row\.cells\)/u);
+  assert.match(routeSource, /gridValues\([\s\S]*?identityCells: row\.effectiveValues/u);
+  assert.match(routeSource, /googleFormLeadSubmissionKey\(row\.identityCells\)/u);
+  assert.ok(
+    routeSource.indexOf("const processedAt = Date.now();")
+      < routeSource.indexOf("const loaded = await readRows({"),
+    "the observation fence must be captured before the provider read starts",
+  );
   assert.match(routeSource, /firstSourceRow > 2 && remaining > 0[\s\S]*?readRange\(2, remaining\)/u);
   assert.match(postgresIntakeSource, /ON CONFLICT \(connection_key, spreadsheet_id, submission_key\) DO NOTHING/u);
   assert.match(
     postgresIntakeSource,
-    /SET source_row = \$1, updated_at = \$2[\s\S]*?status = 'needs-review'[\s\S]*?updated_at <= \$2/u,
+    /ON CONFLICT \(connection_key, spreadsheet_id, submission_key\) DO NOTHING[\s\S]*?SET source_row = \$1, updated_at = \$2[\s\S]*?status = 'needs-review'[\s\S]*?updated_at < \$2/u,
+  );
+  assert.match(
+    postgresIntakeSource,
+    /WHERE EXCLUDED\.last_processed_at > google_form_lead_intake_watermarks\.last_processed_at/u,
   );
   assert.match(productionSchema, /last_processed_submission_key text NOT NULL/u);
   assert.match(productionSchema, /UNIQUE \(\s*connection_key,\s*spreadsheet_id,\s*submission_key\s*\)/u);

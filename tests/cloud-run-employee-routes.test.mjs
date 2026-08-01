@@ -1070,6 +1070,18 @@ test("production lead creation accepts a Google Form review only for an administ
     assert.equal(denied.status, 403);
     assert.deepEqual(await json(denied), { error: "forbidden" });
     assert.equal(office.coreRecordCalls.length, 0);
+    const authorizationAudits = office.audits.filter(
+      ({ metadata }) => metadata.operation === "leads.create",
+    );
+    assert.deepEqual(authorizationAudits.map(({ action, result, reasonCode }) => ({
+      action,
+      result,
+      reasonCode,
+    })), [{
+      action: "authorization.access_denied",
+      result: "denied",
+      reasonCode: "administrator_required",
+    }]);
   } finally {
     await office.close();
   }
@@ -1090,6 +1102,13 @@ test("production lead creation accepts a Google Form review only for an administ
       assert.equal(rejected.status, 400);
       assert.deepEqual(await json(rejected), { error: "invalid_request" });
       assert.equal(malformed.coreRecordCalls.length, 0);
+      assert.deepEqual(malformed.audits
+        .filter(({ metadata }) => metadata.operation === "leads.create")
+        .map(({ action, result, reasonCode }) => ({ action, result, reasonCode })), [{
+        action: "authorization.access_allowed",
+        result: "succeeded",
+        reasonCode: null,
+      }]);
     } finally {
       await malformed.close();
     }
@@ -1136,6 +1155,20 @@ test("core writes deny missing capabilities before body parsing or repository wo
     assert.equal(running.coreRecordCalls.length, 0);
     assert.ok(running.audits.some(({ action, result }) =>
       action === "authorization.access_denied" && result === "denied"));
+
+    const malformedLead = await running.request("/api/v1/leads", {
+      method: "POST",
+      sameOrigin: true,
+      csrf: true,
+      headers: {
+        "Content-Type": "text/plain",
+        "Idempotency-Key": "gi01-denied-before-lead-body",
+      },
+      body: "this body must remain unread",
+    });
+    assert.equal(malformedLead.status, 403);
+    assert.deepEqual(await json(malformedLead), { error: "forbidden" });
+    assert.equal(running.coreRecordCalls.length, 0);
   } finally {
     await running.close();
   }

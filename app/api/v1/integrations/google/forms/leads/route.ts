@@ -95,14 +95,22 @@ async function readRows(input: Readonly<{
       );
   const readRange = async (sourceRow: number, limit: number) => {
     if (limit < 1) return Object.freeze([]);
-    const values = input.simulation
-      ? googleFormLeadSimulationRows(sourceRow, limit)
-      : Object.freeze((await sheets!.values(
-          `A${sourceRow}:F${sourceRow + limit - 1}`,
-        )).values ?? []);
-    return Object.freeze(values.slice(0, limit).map((cells, index) => Object.freeze({
-      sourceRow: sourceRow + index,
-      cells: Object.freeze([...cells]),
+    if (input.simulation) {
+      return Object.freeze(googleFormLeadSimulationRows(sourceRow, limit)
+        .slice(0, limit)
+        .map((cells, index) => Object.freeze({
+          sourceRow: sourceRow + index,
+          cells: Object.freeze([...cells]),
+          identityCells: Object.freeze([...cells]),
+        })));
+    }
+    const rows = await sheets!.gridValues(
+      `A${sourceRow}:F${sourceRow + limit - 1}`,
+    );
+    return Object.freeze(rows.slice(0, limit).map((row) => Object.freeze({
+      sourceRow: row.sourceRow,
+      cells: row.formattedValues,
+      identityCells: row.effectiveValues,
     })));
   };
   const [headers, firstRows] = await Promise.all([
@@ -195,6 +203,9 @@ export async function POST(request: NextRequest) {
       setup.config.connectionKey,
       intake.spreadsheetId,
     );
+    // Fence persisted positions by when this Sheet observation began. If an
+    // older provider request completes last, its stale snapshot must not win.
+    const processedAt = Date.now();
     const loaded = await readRows({
       simulation: setup.config.simulation,
       spreadsheetId: intake.spreadsheetId,
@@ -219,7 +230,7 @@ export async function POST(request: NextRequest) {
 
     const keyedRows = await Promise.all(loaded.rows.map(async (row) => Object.freeze({
       ...row,
-      submissionKey: await googleFormLeadSubmissionKey(row.cells),
+      submissionKey: await googleFormLeadSubmissionKey(row.identityCells),
     })));
     const uniqueRows = [...new Map(
       keyedRows.map((row) => [row.submissionKey, row] as const),
@@ -274,7 +285,6 @@ export async function POST(request: NextRequest) {
       }, 409);
     }
 
-    const processedAt = Date.now();
     const saved = await repository.saveBatch({
       connectionKey: setup.config.connectionKey,
       spreadsheetId: intake.spreadsheetId,

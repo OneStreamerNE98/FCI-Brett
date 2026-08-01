@@ -16,6 +16,7 @@ import type {
 export type GoogleFormLeadSourceRow = Readonly<{
   sourceRow: number;
   cells: readonly unknown[];
+  identityCells?: readonly unknown[];
 }>;
 
 export const GOOGLE_FORM_LEAD_MAX_ROWS = 25;
@@ -102,9 +103,25 @@ export function isGoogleFormLeadPositionBatch(
 }
 
 function identityCell(value: unknown) {
-  if (value === undefined || value === null) return "";
-  if (typeof value !== "string") return `${typeof value}:${String(value)}`;
-  return value.normalize("NFKC").replace(/\r\n?/gu, "\n");
+  if (value === undefined || value === null || value === "") {
+    return Object.freeze(["empty"] as const);
+  }
+  if (typeof value === "string") {
+    return Object.freeze([
+      "string",
+      value.normalize("NFKC").replace(/\r\n?/gu, "\n"),
+    ] as const);
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Object.freeze(["number", Object.is(value, -0) ? "-0" : String(value)] as const);
+  }
+  if (typeof value === "boolean") {
+    return Object.freeze(["boolean", value] as const);
+  }
+  throw new GoogleFormLeadIntakeValidationError(
+    "form_lead_identity_invalid",
+    "A Google Form response contains an unsupported identity value.",
+  );
 }
 
 async function sha256(value: string) {
@@ -115,7 +132,7 @@ async function sha256(value: string) {
     .join("");
 }
 
-/** Stable Forms identity: normalized Timestamp plus a hash of columns B:F. */
+/** Stable Forms identity: effective Timestamp plus a hash of effective columns B:F. */
 export async function googleFormLeadSubmissionKey(row: readonly unknown[]) {
   const cells = GOOGLE_FORM_LEAD_HEADERS.map((_, index) => identityCell(row[index]));
   const contentHash = await sha256(JSON.stringify(cells.slice(1)));
@@ -332,7 +349,12 @@ export async function mapGoogleFormLeadRows(input: Readonly<{
 }>) {
   if (
     input.rows.length > GOOGLE_FORM_LEAD_MAX_ROWS
-    || input.rows.some(({ sourceRow }) => !Number.isSafeInteger(sourceRow) || sourceRow < 2)
+    || input.rows.some(({ sourceRow, cells, identityCells }) => (
+      !Number.isSafeInteger(sourceRow)
+      || sourceRow < 2
+      || !Array.isArray(cells)
+      || (identityCells !== undefined && !Array.isArray(identityCells))
+    ))
   ) {
     throw new GoogleFormLeadIntakeValidationError(
       "form_lead_rows_invalid",
@@ -343,7 +365,7 @@ export async function mapGoogleFormLeadRows(input: Readonly<{
   const drafts: GoogleFormLeadReviewDraft[] = [];
   for (const row of input.rows) {
     const sourceRow = row.sourceRow;
-    const submissionKey = await googleFormLeadSubmissionKey(row.cells);
+    const submissionKey = await googleFormLeadSubmissionKey(row.identityCells ?? row.cells);
     const sanitized = sanitizedRow(row.cells);
     const cells = sanitized.cells;
 
