@@ -61,8 +61,9 @@ async function mockKpiRecords(page: Page, isAdmin: boolean, projectRows = projec
 async function openKpiReport(page: Page) {
   await page.goto("/reports");
   await expect(page.getByRole("heading", { level: 2, name: "Business KPIs" })).toBeVisible();
-  await page.getByLabel("Reporting month").fill("2026-07");
   await expect(page.getByText("Loading current records", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Reporting month").fill("2026-07");
+  await expect(page.getByText("Jobs completed · July 2026", { exact: true })).toBeVisible();
 }
 
 test("flooring KPIs render Tier-1 and booking-input formulas, month changes, drill-throughs, and accessible responsive layout", async ({ page }) => {
