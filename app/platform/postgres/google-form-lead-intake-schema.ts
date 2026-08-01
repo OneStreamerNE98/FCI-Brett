@@ -11,6 +11,7 @@ CREATE TABLE google_form_lead_intake_watermarks (
   connection_key text NOT NULL,
   spreadsheet_id text NOT NULL,
   last_processed_row integer NOT NULL,
+  last_processed_submission_key text NOT NULL,
   last_processed_at timestamptz NOT NULL,
   updated_by text NOT NULL,
   CONSTRAINT google_form_lead_intake_watermarks_pkey PRIMARY KEY (
@@ -26,6 +27,9 @@ CREATE TABLE google_form_lead_intake_watermarks (
   CONSTRAINT google_form_lead_intake_watermarks_row_check CHECK (
     last_processed_row >= 2
   ),
+  CONSTRAINT google_form_lead_intake_watermarks_submission_key_check CHECK (
+    last_processed_submission_key ~ '^[a-f0-9]{64}$'
+  ),
   CONSTRAINT google_form_lead_intake_watermarks_actor_check CHECK (
     pg_catalog.btrim(updated_by) <> ''
     AND pg_catalog.char_length(updated_by) <= 320
@@ -38,6 +42,7 @@ CREATE TABLE google_form_lead_reviews (
   id uuid CONSTRAINT google_form_lead_reviews_pkey PRIMARY KEY,
   connection_key text NOT NULL,
   spreadsheet_id text NOT NULL,
+  submission_key text NOT NULL,
   source_row integer NOT NULL,
   submitted_at text,
   state text NOT NULL,
@@ -49,10 +54,10 @@ CREATE TABLE google_form_lead_reviews (
   reviewed_by text,
   reviewed_at timestamptz,
   accepted_lead_id uuid REFERENCES leads (id),
-  CONSTRAINT google_form_lead_reviews_source_key UNIQUE (
+  CONSTRAINT google_form_lead_reviews_submission_key UNIQUE (
     connection_key,
     spreadsheet_id,
-    source_row
+    submission_key
   ),
   CONSTRAINT google_form_lead_reviews_connection_key_check CHECK (
     connection_key ~ '^[a-z][a-z0-9_-]{0,127}$'
@@ -61,6 +66,9 @@ CREATE TABLE google_form_lead_reviews (
     spreadsheet_id ~ '^[A-Za-z0-9_-]{1,256}$'
   ),
   CONSTRAINT google_form_lead_reviews_source_row_check CHECK (source_row >= 2),
+  CONSTRAINT google_form_lead_reviews_submission_key_check CHECK (
+    submission_key ~ '^[a-f0-9]{64}$'
+  ),
   CONSTRAINT google_form_lead_reviews_submitted_at_check CHECK (
     submitted_at IS NULL OR (
       pg_catalog.btrim(submitted_at) <> ''

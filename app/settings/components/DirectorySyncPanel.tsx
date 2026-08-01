@@ -12,6 +12,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { AdministratorActionButton } from "../../components/AdministratorActionButton";
+import { FIRST_RUN_IMPORT_TEST_MARKER } from "../../domain/first-run-import";
 import { FirstRunImportCard } from "../../import/components/FirstRunImportCard";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
 import styles from "./DirectorySyncPanel.module.css";
@@ -20,6 +21,7 @@ const SHEET_STATUS_PATH = "/api/v1/integrations/google/sheets/status";
 const FORM_LEAD_PATH = "/api/v1/integrations/google/forms/leads";
 const LEADS_PATH = "/api/v1/leads";
 const CLIENT_DIRECTORY_SHEET_KEY = "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID";
+const FORM_LEAD_SOURCE = "Google Form";
 
 type FormLeadProposal = Readonly<{
   company: string;
@@ -198,7 +200,6 @@ function FormLeadReviewCard({
   const [contactEmail, setContactEmail] = useState(proposal.contactEmail ?? "");
   const [contactPhone, setContactPhone] = useState(proposal.contactPhone ?? "");
   const [projectName, setProjectName] = useState(proposal.projectName);
-  const [source, setSource] = useState(proposal.source);
   const [stage, setStage] = useState(proposal.stage);
   const [site, setSite] = useState(proposal.site);
   const [estimatedValue, setEstimatedValue] = useState(
@@ -242,7 +243,7 @@ function FormLeadReviewCard({
           contactEmail: contactEmail || null,
           contactPhone: contactPhone || null,
           projectName,
-          source,
+          source: FORM_LEAD_SOURCE,
           stage,
           site,
           estimatedValue: amount,
@@ -280,7 +281,11 @@ function FormLeadReviewCard({
         ));
       }
       setAcceptedLead(lead);
-      await onRetired();
+      try {
+        await onRetired();
+      } catch {
+        // The accepted-lead notice provides a GET-only queue-refresh recovery action.
+      }
     } catch (caught) {
       setError(caught instanceof Error
         ? caught.message
@@ -290,9 +295,24 @@ function FormLeadReviewCard({
     }
   }
 
+  async function retryQueueRefresh() {
+    setWorking(true);
+    setError("");
+    try {
+      await onRetired();
+    } catch (caught) {
+      setError(caught instanceof Error
+        ? caught.message
+        : "The queue could not be refreshed. Try again before reviewing another response.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   async function dismiss() {
     setWorking(true);
     setError("");
+    let reviewSaved = false;
     try {
       const response = await fetch(FORM_LEAD_PATH, {
         method: "PATCH",
@@ -301,9 +321,13 @@ function FormLeadReviewCard({
       });
       const body = await response.json().catch(() => null) as unknown;
       if (!response.ok) throw new Error(responseError(body, "The response could not be dismissed."));
+      reviewSaved = true;
       await onRetired();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The response remains in the queue.");
+      const detail = caught instanceof Error ? caught.message : "Google Form lead intake could not be loaded.";
+      setError(reviewSaved
+        ? `The review was saved, but the queue could not be refreshed. The visible rows may be stale; reload before reviewing another response. ${detail}`
+        : detail);
     } finally {
       setWorking(false);
     }
@@ -345,13 +369,16 @@ function FormLeadReviewCard({
       <label><span>Site address</span><input value={site} onChange={(event) => setSite(event.target.value)} required maxLength={300} /></label>
       <label><span>Estimated value</span><input type="number" value={estimatedValue} onChange={(event) => setEstimatedValue(event.target.value)} required min={0} max={2147483647} step={1} placeholder="Required before create" /></label>
       <label><span>Stage</span><input value={stage} onChange={(event) => setStage(event.target.value)} required maxLength={80} /></label>
-      <label><span>Source</span><input value={source} onChange={(event) => setSource(event.target.value)} required maxLength={80} /></label>
+      <label><span>Source</span><input value={FORM_LEAD_SOURCE} readOnly aria-readonly="true" /></label>
       <label><span>Next action date</span><input type="datetime-local" value={nextActionAt} onChange={(event) => setNextActionAt(event.target.value)} /></label>
       <label className={styles.fullField}><span>Next action</span><textarea value={nextAction} onChange={(event) => setNextAction(event.target.value)} required maxLength={500} /></label>
       <p className={styles.ownerLine}>Owner: <strong>{actorEmail}</strong></p>
       {acceptedLead && <div className={styles.createdWarning} role="alert">
         <CircleAlert size={16} aria-hidden="true" />
-        <span>Lead {acceptedLead.label} and its review were saved, but the queue refresh failed. Reload before reviewing another response.</span>
+        <span>Lead {acceptedLead.label} and its review were saved, but the queue refresh failed.</span>
+        <button type="button" className="soft-button" onClick={() => void retryQueueRefresh()} disabled={working}>
+          <RefreshCw size={15} aria-hidden="true" /> {working ? "Refreshing…" : "Retry queue refresh"}
+        </button>
       </div>}
       {error && <div className={styles.error} role="alert">{error}</div>}
       <footer className={styles.reviewActions}>
@@ -413,13 +440,6 @@ function GoogleFormLeadIntakeCard({ isAdmin }: { isAdmin: boolean }) {
     setMessage("");
     try {
       setIntake(await fetchFormLeadIntake());
-    } catch (caught) {
-      const detail = caught instanceof Error
-        ? caught.message
-        : "Google Form lead intake could not be loaded.";
-      const refreshError = `The review was saved, but the queue could not be refreshed. The visible rows may be stale; reload before reviewing another response. ${detail}`;
-      setError(refreshError);
-      throw new Error(refreshError);
     } finally {
       setLoading(false);
     }
@@ -432,6 +452,7 @@ function GoogleFormLeadIntakeCard({ isAdmin }: { isAdmin: boolean }) {
         <p className="eyebrow">Review-first lead intake</p>
         <h2 id="google-form-lead-intake-heading">Google Forms responses</h2>
         <p>Check the linked response Sheet on demand. Up to {intake?.rowLimit ?? 25} new rows are proposed as leads; nothing creates a lead until an administrator completes and submits a review.</p>
+        <p>While the test-data gate is closed, each response Name must begin with <strong>{FIRST_RUN_IMPORT_TEST_MARKER}</strong>.</p>
       </div>
       <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void checkResponses()} disabled={checking || loading || intake?.configured === false}>
         <RefreshCw size={16} aria-hidden="true" /> {checking ? "Checking…" : "Check for new form responses"}

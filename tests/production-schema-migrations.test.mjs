@@ -526,14 +526,15 @@ test("registers GI-01's bounded watermark and review queue as immutable migratio
   assert.equal(migration.statements, GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS);
   assert.equal(
     migration.checksum,
-    "sha256:5a7c16ae5c07d480dddd74e6a094d6561e4b86e74f7245b19b8c1a8bcb216540",
+    "sha256:1f318d858eea7d25c217cafbf7a86131ea627f7c66adf491055b0f9c77125542",
   );
   const sql = migration.statements.join("\n");
   assert.match(sql, /CREATE TABLE google_form_lead_intake_watermarks/u);
   assert.match(sql, /PRIMARY KEY \(\s*connection_key,\s*spreadsheet_id\s*\)/u);
   assert.match(sql, /last_processed_row >= 2/u);
+  assert.match(sql, /last_processed_submission_key ~ '\^\[a-f0-9\]\{64\}\$'/u);
   assert.match(sql, /CREATE TABLE google_form_lead_reviews/u);
-  assert.match(sql, /UNIQUE \(\s*connection_key,\s*spreadsheet_id,\s*source_row\s*\)/u);
+  assert.match(sql, /UNIQUE \(\s*connection_key,\s*spreadsheet_id,\s*submission_key\s*\)/u);
   assert.match(sql, /accepted_lead_id uuid REFERENCES leads \(id\)/u);
   assert.match(sql, /status = 'accepted'[\s\S]*accepted_lead_id IS NOT NULL/u);
   assert.match(sql, /CREATE INDEX google_form_lead_reviews_queue_idx/u);

@@ -2451,8 +2451,10 @@ discover mid-build that the machinery it was told to reuse does not exist.
 Use the AI-10 precedent instead: read on demand inside a request, bounded, with a durable
 watermark. An explicit admin **Check for new form responses** action reads the response
 Sheet (existing `spreadsheets` scope, no webhook) with a bounded row budget per call;
-processed rows are marked by row index + timestamp watermark, so the watermark — not a
-timer — is what makes repeat reads cheap and idempotent. Rows map to lead records
+processed submissions are keyed by Timestamp plus a content hash. The row ordinal is
+only a bounded circular scan cursor, so ordinary Sheet insertion or deletion cannot
+decide whether a response was processed. This durable identity — not a timer — makes
+repeat reads cheap and idempotent. Rows map to lead records
 review-first (new-lead queue, not silent creation). Duplicate handling reuses SET-25's
 matcher. Background polling stays deferred to WS-12's Gmail-History work, which is where
 the scheduler question is actually owned; when it lands, only the trigger changes and the

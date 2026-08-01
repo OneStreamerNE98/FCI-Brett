@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b1e65005-cd91-46fa-a9f7-7c1ce989679b",
+  "id": "a13ee0a7-8ce7-49b7-bfb4-69ed71c71a83",
   "prevId": "f4b9df83-b0fb-4cc7-99a8-7b0ecdf3093a",
   "tables": {
     "activity_events": {
@@ -963,6 +963,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "last_processed_submission_key": {
+          "name": "last_processed_submission_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "last_processed_at": {
           "name": "last_processed_at",
           "type": "integer",
@@ -1012,6 +1019,13 @@
         },
         "spreadsheet_id": {
           "name": "spreadsheet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "submission_key": {
+          "name": "submission_key",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -1097,12 +1111,12 @@
         }
       },
       "indexes": {
-        "google_form_lead_reviews_source_unique": {
-          "name": "google_form_lead_reviews_source_unique",
+        "google_form_lead_reviews_submission_unique": {
+          "name": "google_form_lead_reviews_submission_unique",
           "columns": [
             "connection_key",
             "spreadsheet_id",
-            "source_row"
+            "submission_key"
           ],
           "isUnique": true
         },

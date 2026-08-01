@@ -27,6 +27,7 @@ export type GoogleFormLeadProposal = Readonly<{
 }>;
 
 export type GoogleFormLeadReviewDraft = Readonly<{
+  submissionKey: string;
   sourceRow: number;
   submittedAt: string | null;
   state: GoogleFormLeadReviewState;
@@ -50,6 +51,7 @@ export type GoogleFormLeadIntakeWatermark = Readonly<{
   connectionKey: string;
   spreadsheetId: string;
   lastProcessedRow: number;
+  lastProcessedSubmissionKey: string;
   lastProcessedAt: number;
   updatedBy: string;
 }>;
@@ -63,6 +65,7 @@ export type SaveGoogleFormLeadBatchInput = Readonly<{
   spreadsheetId: string;
   reviews: readonly GoogleFormLeadReviewInsert[];
   lastProcessedRow: number;
+  lastProcessedSubmissionKey: string;
   processedAt: number;
   actor: string;
 }>;
@@ -79,6 +82,11 @@ export interface GoogleFormLeadIntakeRepository {
     connectionKey: string,
     spreadsheetId: string,
   ): Promise<GoogleFormLeadIntakeWatermark | null>;
+  findProcessedSubmissionKeys(
+    connectionKey: string,
+    spreadsheetId: string,
+    submissionKeys: readonly string[],
+  ): Promise<readonly string[]>;
   listNeedsReview(
     connectionKey: string,
     limit: number,

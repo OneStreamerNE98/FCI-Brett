@@ -302,6 +302,10 @@ The linked Sheet must contain exactly **Timestamp**, **Name**, **Address**, **Ro
 **Flooring Type**, and **Preferred Contact**, in that order and capitalization. Do
 not enable automatic email collection unless the intake contract is deliberately
 extended first; the extra column is rejected rather than guessed around.
+While the development real-data gate is closed, every test response **Name** must
+begin with **FCI TEST — DO NOT USE**. The reader identifies a submission by its
+Timestamp plus a content hash; Sheet row numbers are circular scan hints only, so
+ordinary row insertion or deletion cannot decide whether a response was processed.
 
 Google Chat notifications are a separate, optional one-way integration. GI-02 keeps
 the feature off by default and does not authorize provisioning a webhook or changing

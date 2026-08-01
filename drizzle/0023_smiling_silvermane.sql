@@ -2,6 +2,7 @@ CREATE TABLE `google_form_lead_intake_watermarks` (
 	`connection_key` text NOT NULL,
 	`spreadsheet_id` text NOT NULL,
 	`last_processed_row` integer NOT NULL,
+	`last_processed_submission_key` text NOT NULL,
 	`last_processed_at` integer NOT NULL,
 	`updated_by` text NOT NULL
 );
@@ -11,6 +12,7 @@ CREATE TABLE `google_form_lead_reviews` (
 	`id` text PRIMARY KEY NOT NULL,
 	`connection_key` text NOT NULL,
 	`spreadsheet_id` text NOT NULL,
+	`submission_key` text NOT NULL,
 	`source_row` integer NOT NULL,
 	`submitted_at` text,
 	`state` text NOT NULL,
@@ -24,5 +26,5 @@ CREATE TABLE `google_form_lead_reviews` (
 	`accepted_lead_id` text
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `google_form_lead_reviews_source_unique` ON `google_form_lead_reviews` (`connection_key`,`spreadsheet_id`,`source_row`);--> statement-breakpoint
+CREATE UNIQUE INDEX `google_form_lead_reviews_submission_unique` ON `google_form_lead_reviews` (`connection_key`,`spreadsheet_id`,`submission_key`);--> statement-breakpoint
 CREATE INDEX `google_form_lead_reviews_queue_idx` ON `google_form_lead_reviews` (`connection_key`,`status`,`source_row`);

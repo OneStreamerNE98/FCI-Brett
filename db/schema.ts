@@ -398,6 +398,7 @@ export const googleFormLeadIntakeWatermarks = sqliteTable("google_form_lead_inta
   connectionKey: text("connection_key").notNull(),
   spreadsheetId: text("spreadsheet_id").notNull(),
   lastProcessedRow: integer("last_processed_row").notNull(),
+  lastProcessedSubmissionKey: text("last_processed_submission_key").notNull(),
   lastProcessedAt: integer("last_processed_at", { mode: "timestamp_ms" }).notNull(),
   updatedBy: text("updated_by").notNull(),
 }, (table) => [
@@ -412,6 +413,7 @@ export const googleFormLeadReviews = sqliteTable("google_form_lead_reviews", {
   id: text("id").primaryKey(),
   connectionKey: text("connection_key").notNull(),
   spreadsheetId: text("spreadsheet_id").notNull(),
+  submissionKey: text("submission_key").notNull(),
   sourceRow: integer("source_row").notNull(),
   submittedAt: text("submitted_at"),
   state: text("state").notNull(),
@@ -424,10 +426,10 @@ export const googleFormLeadReviews = sqliteTable("google_form_lead_reviews", {
   reviewedAt: integer("reviewed_at", { mode: "timestamp_ms" }),
   acceptedLeadId: text("accepted_lead_id"),
 }, (table) => [
-  uniqueIndex("google_form_lead_reviews_source_unique").on(
+  uniqueIndex("google_form_lead_reviews_submission_unique").on(
     table.connectionKey,
     table.spreadsheetId,
-    table.sourceRow,
+    table.submissionKey,
   ),
   index("google_form_lead_reviews_queue_idx").on(
     table.connectionKey,

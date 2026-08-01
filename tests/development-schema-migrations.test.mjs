@@ -59,7 +59,7 @@ const requiredDevelopmentIndexes = [
   "mail_items_profile_status_idx",
   "clients_normalized_name_key_unique_idx",
   "google_form_lead_watermarks_scope_unique",
-  "google_form_lead_reviews_source_unique",
+  "google_form_lead_reviews_submission_unique",
   "google_form_lead_reviews_queue_idx",
 ];
 
@@ -743,7 +743,9 @@ test("adds GI-01's bounded watermark and review-first queue in generated migrati
   assert.match(migrationSql, /CREATE TABLE `google_form_lead_reviews`/u);
   assert.match(migrationSql, /`accepted_lead_id` text/u);
   assert.match(migrationSql, /CREATE UNIQUE INDEX `google_form_lead_watermarks_scope_unique`/u);
-  assert.match(migrationSql, /CREATE UNIQUE INDEX `google_form_lead_reviews_source_unique`/u);
+  assert.match(migrationSql, /`last_processed_submission_key` text NOT NULL/u);
+  assert.match(migrationSql, /`submission_key` text NOT NULL/u);
+  assert.match(migrationSql, /CREATE UNIQUE INDEX `google_form_lead_reviews_submission_unique`/u);
   assert.match(migrationSql, /CREATE INDEX `google_form_lead_reviews_queue_idx`/u);
   assert.doesNotMatch(
     migrationSql,

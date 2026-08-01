@@ -128,6 +128,9 @@ test("GI-01 simulation requires human completion and accepts a review through on
   await expect(panel.getByText("New lead review queue")).toHaveCount(0);
   await expect(panel.getByLabel("Estimated value")).toHaveValue("");
   await expect(panel.getByLabel("Estimated value")).toHaveAttribute("placeholder", "Required before create");
+  await expect(panel.getByLabel("Source")).toHaveValue("Google Form");
+  await expect(panel.getByLabel("Source")).toHaveAttribute("readonly", "");
+  await expect(panel.getByText("FCI TEST — DO NOT USE", { exact: true })).toBeVisible();
 
   await panel.getByRole("button", { name: "Check for new form responses" }).click();
   await expect(panel.getByText("No new form responses were found.", { exact: true })).toBeVisible();
@@ -154,6 +157,59 @@ test("GI-01 simulation requires human completion and accepts a review through on
   await expect(panel).toBeVisible();
   const accessibility = await new AxeBuilder({ page }).include("main").analyze();
   expect(accessibility.violations).toEqual([]);
+});
+
+test("GI-01 retries only the queue read after a created lead's refresh fails", async ({ page }) => {
+  let queue = [review()];
+  let getCalls = 0;
+  let leadPosts = 0;
+
+  await routeMirror(page);
+  await page.route("**/api/v1/integrations/google/forms/leads", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    getCalls += 1;
+    if (getCalls === 2) {
+      await fulfillJson(route, { error: "Temporary queue read failure." }, 503);
+      return;
+    }
+    await fulfillJson(route, intake(queue));
+  });
+  await page.route("**/api/v1/leads", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    leadPosts += 1;
+    queue = [];
+    await fulfillJson(route, {
+      lead: { id: LEAD_ID, leadNumber: "LEAD-260731-001" },
+      formLeadReview: { id: REVIEW_ID, status: "accepted" },
+    }, 201);
+  });
+
+  await page.goto("/settings?section=client-directory");
+  const panel = page.getByRole("region", { name: "Google Forms responses" });
+  const row = panel.locator("article").filter({ hasText: "Response Sheet row 2" });
+  await row.getByLabel("Estimated value").fill("125000");
+  await row.getByRole("button", { name: "Create lead" }).click();
+
+  await expect(row.getByText("Lead LEAD-260731-001 and its review were saved", {
+    exact: false,
+  })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Retry queue refresh" })).toBeVisible();
+  await expect(row.getByText("reload before reviewing another response", {
+    exact: false,
+  })).toHaveCount(0);
+  expect(leadPosts).toBe(1);
+  expect(getCalls).toBe(2);
+
+  await row.getByRole("button", { name: "Retry queue refresh" }).click();
+  await expect(panel.getByText("No form responses need review", { exact: true })).toBeVisible();
+  expect(getCalls).toBe(3);
+  expect(leadPosts).toBe(1);
 });
 
 test("GI-01 response loss after commit retires the review without a duplicate retry", async ({ page }) => {

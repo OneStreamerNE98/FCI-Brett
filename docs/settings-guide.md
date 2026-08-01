@@ -336,14 +336,20 @@ If the mirror is not configured, the card links directly to **Google Workspace �
 
 Below the import card, **Google Forms responses** is a separate review-first queue.
 An administrator presses **Check for new form responses** to read at most 25 rows
-from the linked response Sheet. The app records the last processed row and check time,
-so repeating the action with no new rows is a no-op. Possible duplicates use the same
+from the linked response Sheet. The app records a row scan cursor and check time,
+using the row only as a circular read optimisation; a Timestamp-plus-content hash identifies
+each submission even if rows are inserted or deleted. Repeating the action with no new
+rows is a no-op. While the test-data gate is closed, the response Name must begin with
+**FCI TEST — DO NOT USE**. Possible duplicates use the same
 matching rules as first-run import, malformed rows stay visible for correction, and
 the estimated value stays blank until a person enters it. Submitting a completed row
 uses the ordinary lead-creation route; only after that succeeds does the review leave
 the queue. If the queue update fails, the created lead is named and the row remains
-visible with a retry action so the administrator does not create it twice. Real-data
-rows do not advance the watermark while the WS-11/owner gate is closed.
+visible with a **Retry queue refresh** action that performs only the safe queue read,
+so the administrator does not create it twice. Real-data
+rows that otherwise validate do not advance the watermark while the WS-11/owner gate
+is closed. Invalid non-test rows are redacted, queued with blank required lead fields,
+and checkpointed so one malformed response cannot block later submissions.
 
 > [SCREENSHOT 6 — see Screenshot index]
 

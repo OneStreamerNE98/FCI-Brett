@@ -1,6 +1,8 @@
 import {
   GOOGLE_FORM_LEAD_REVIEW_STATES,
   GOOGLE_FORM_LEAD_REVIEW_STATUSES,
+  GoogleFormLeadReviewDraftValidationError,
+  isGoogleFormLeadSubmissionKey,
   parseGoogleFormLeadProposal,
   parseGoogleFormLeadReasons,
 } from "../../domain/google-form-lead-intake";
@@ -19,6 +21,7 @@ type WatermarkRow = Readonly<{
   connection_key: unknown;
   spreadsheet_id: unknown;
   last_processed_row: unknown;
+  last_processed_submission_key: unknown;
   last_processed_at: unknown;
   updated_by: unknown;
 }>;
@@ -28,6 +31,7 @@ type ReviewRow = Readonly<{
   connection_key: unknown;
   spreadsheet_id: unknown;
   source_row: unknown;
+  submission_key: unknown;
   submitted_at: unknown;
   state: unknown;
   status: unknown;
@@ -85,17 +89,21 @@ function watermarkFromRow(row: WatermarkRow): GoogleFormLeadIntakeWatermark {
   const connectionKey = boundedText(row.connection_key, 128);
   const spreadsheetId = boundedText(row.spreadsheet_id, 256);
   const lastProcessedRow = safeInteger(row.last_processed_row, 2);
+  const lastProcessedSubmissionKey = row.last_processed_submission_key;
   const lastProcessedAt = safeInteger(row.last_processed_at);
   const updatedBy = boundedText(row.updated_by, 320);
   if (
     !connectionKey || !CONNECTION_KEY_PATTERN.test(connectionKey)
     || !spreadsheetId || !PROVIDER_ID_PATTERN.test(spreadsheetId)
-    || lastProcessedRow === null || lastProcessedAt === null || !updatedBy
+    || lastProcessedRow === null
+    || !isGoogleFormLeadSubmissionKey(lastProcessedSubmissionKey)
+    || lastProcessedAt === null || !updatedBy
   ) throw new Error("D1 Google Form intake watermark is invalid");
   return Object.freeze({
     connectionKey,
     spreadsheetId,
     lastProcessedRow,
+    lastProcessedSubmissionKey,
     lastProcessedAt,
     updatedBy,
   });
@@ -106,6 +114,7 @@ function reviewFromRow(row: ReviewRow): GoogleFormLeadReviewRecord {
   const connectionKey = boundedText(row.connection_key, 128);
   const spreadsheetId = boundedText(row.spreadsheet_id, 256);
   const sourceRow = safeInteger(row.source_row, 2);
+  const submissionKey = row.submission_key;
   const submittedAt = row.submitted_at === null ? null : boundedText(row.submitted_at, 100);
   const state = boundedText(row.state, 32);
   const status = boundedText(row.status, 32);
@@ -121,7 +130,8 @@ function reviewFromRow(row: ReviewRow): GoogleFormLeadReviewRecord {
   if (
     !id || !connectionKey || !CONNECTION_KEY_PATTERN.test(connectionKey)
     || !spreadsheetId || !PROVIDER_ID_PATTERN.test(spreadsheetId)
-    || sourceRow === null || (row.submitted_at !== null && !submittedAt)
+    || sourceRow === null || !isGoogleFormLeadSubmissionKey(submissionKey)
+    || (row.submitted_at !== null && !submittedAt)
     || !state || !(GOOGLE_FORM_LEAD_REVIEW_STATES as readonly string[]).includes(state)
     || !status || !(GOOGLE_FORM_LEAD_REVIEW_STATUSES as readonly string[]).includes(status)
     || !proposal || !reasons || createdAt === null || updatedAt === null
@@ -135,6 +145,7 @@ function reviewFromRow(row: ReviewRow): GoogleFormLeadReviewRecord {
     id,
     connectionKey,
     spreadsheetId,
+    submissionKey,
     sourceRow,
     submittedAt,
     state: state as GoogleFormLeadReviewState,
@@ -153,23 +164,23 @@ function assertSaveBatch(input: SaveGoogleFormLeadBatchInput) {
   assertScope(input.connectionKey, input.spreadsheetId);
   assertActor(input.actor);
   if (
-    input.reviews.length < 1
-    || input.reviews.length > 25
+    input.reviews.length > 25
     || !Number.isSafeInteger(input.lastProcessedRow)
     || input.lastProcessedRow < 2
+    || !isGoogleFormLeadSubmissionKey(input.lastProcessedSubmissionKey)
     || !Number.isSafeInteger(input.processedAt)
     || input.processedAt < 0
   ) throw new TypeError("Google Form intake batch is invalid");
   for (const review of input.reviews) {
     if (
       !OPAQUE_ID_PATTERN.test(review.id)
+      || !isGoogleFormLeadSubmissionKey(review.submissionKey)
       || !Number.isSafeInteger(review.sourceRow)
       || review.sourceRow < 2
-      || review.sourceRow > input.lastProcessedRow
       || !(GOOGLE_FORM_LEAD_REVIEW_STATES as readonly string[]).includes(review.state)
       || !parseGoogleFormLeadProposal(review.proposal)
       || !parseGoogleFormLeadReasons(review.reasons)
-    ) throw new TypeError("Google Form lead review draft is invalid");
+    ) throw new GoogleFormLeadReviewDraftValidationError(review.sourceRow);
   }
 }
 
@@ -183,7 +194,7 @@ function assertDismiss(input: DismissGoogleFormLeadReviewInput) {
   }
 }
 
-const REVIEW_SELECT = `SELECT id, connection_key, spreadsheet_id, source_row,
+const REVIEW_SELECT = `SELECT id, connection_key, spreadsheet_id, submission_key, source_row,
        submitted_at, state, status, proposal_json, reasons_json,
        created_at, updated_at, reviewed_by, reviewed_at, accepted_lead_id
 FROM google_form_lead_reviews`;
@@ -195,6 +206,7 @@ export function createD1GoogleFormLeadIntakeRepository(
     assertScope(connectionKey, spreadsheetId);
     const row = await database.prepare(
       `SELECT connection_key, spreadsheet_id, last_processed_row,
+              last_processed_submission_key,
               last_processed_at, updated_by
        FROM google_form_lead_intake_watermarks
        WHERE connection_key = ? AND spreadsheet_id = ?`,
@@ -203,6 +215,29 @@ export function createD1GoogleFormLeadIntakeRepository(
   };
   return {
     getWatermark: readWatermark,
+
+    async findProcessedSubmissionKeys(connectionKey, spreadsheetId, submissionKeys) {
+      assertScope(connectionKey, spreadsheetId);
+      if (
+        submissionKeys.length > 25
+        || submissionKeys.some((key) => !isGoogleFormLeadSubmissionKey(key))
+      ) throw new TypeError("Google Form submission-key query is invalid");
+      if (submissionKeys.length === 0) return Object.freeze([]);
+      const placeholders = submissionKeys.map(() => "?").join(", ");
+      const result = await database.prepare(
+        `SELECT submission_key
+         FROM google_form_lead_reviews
+         WHERE connection_key = ? AND spreadsheet_id = ?
+           AND submission_key IN (${placeholders})`,
+      ).bind(connectionKey, spreadsheetId, ...submissionKeys).all<{ submission_key: unknown }>();
+      const keys = result.results.map(({ submission_key: key }) => {
+        if (!isGoogleFormLeadSubmissionKey(key)) {
+          throw new Error("D1 Google Form submission key is invalid");
+        }
+        return key;
+      });
+      return Object.freeze(keys);
+    },
 
     async listNeedsReview(connectionKey, limit) {
       if (
@@ -222,15 +257,16 @@ export function createD1GoogleFormLeadIntakeRepository(
       assertSaveBatch(input);
       const statements = input.reviews.map((review) => database.prepare(
         `INSERT INTO google_form_lead_reviews (
-           id, connection_key, spreadsheet_id, source_row, submitted_at,
+           id, connection_key, spreadsheet_id, submission_key, source_row, submitted_at,
            state, status, proposal_json, reasons_json, created_at, updated_at,
            reviewed_by, reviewed_at
-         ) VALUES (?, ?, ?, ?, ?, ?, 'needs-review', ?, ?, ?, ?, NULL, NULL)
-         ON CONFLICT(connection_key, spreadsheet_id, source_row) DO NOTHING`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'needs-review', ?, ?, ?, ?, NULL, NULL)
+         ON CONFLICT(connection_key, spreadsheet_id, submission_key) DO NOTHING`,
       ).bind(
         review.id,
         input.connectionKey,
         input.spreadsheetId,
+        review.submissionKey,
         review.sourceRow,
         review.submittedAt,
         review.state,
@@ -241,18 +277,20 @@ export function createD1GoogleFormLeadIntakeRepository(
       ));
       statements.push(database.prepare(
         `INSERT INTO google_form_lead_intake_watermarks (
-           connection_key, spreadsheet_id, last_processed_row,
+           connection_key, spreadsheet_id, last_processed_row, last_processed_submission_key,
            last_processed_at, updated_by
-         ) VALUES (?, ?, ?, ?, ?)
+         ) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(connection_key, spreadsheet_id) DO UPDATE SET
            last_processed_row = excluded.last_processed_row,
+           last_processed_submission_key = excluded.last_processed_submission_key,
            last_processed_at = excluded.last_processed_at,
            updated_by = excluded.updated_by
-         WHERE excluded.last_processed_row > google_form_lead_intake_watermarks.last_processed_row`,
+         WHERE excluded.last_processed_at >= google_form_lead_intake_watermarks.last_processed_at`,
       ).bind(
         input.connectionKey,
         input.spreadsheetId,
         input.lastProcessedRow,
+        input.lastProcessedSubmissionKey,
         input.processedAt,
         input.actor,
       ));

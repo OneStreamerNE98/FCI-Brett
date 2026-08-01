@@ -1,6 +1,8 @@
 import {
   GOOGLE_FORM_LEAD_REVIEW_STATES,
   GOOGLE_FORM_LEAD_REVIEW_STATUSES,
+  GoogleFormLeadReviewDraftValidationError,
+  isGoogleFormLeadSubmissionKey,
   parseGoogleFormLeadProposal,
   parseGoogleFormLeadReasons,
 } from "../../domain/google-form-lead-intake";
@@ -30,6 +32,7 @@ type WatermarkRow = Record<string, unknown> & {
   connection_key: unknown;
   spreadsheet_id: unknown;
   last_processed_row: unknown;
+  last_processed_submission_key: unknown;
   last_processed_at: unknown;
   updated_by: unknown;
 };
@@ -39,6 +42,7 @@ type ReviewRow = Record<string, unknown> & {
   connection_key: unknown;
   spreadsheet_id: unknown;
   source_row: unknown;
+  submission_key: unknown;
   submitted_at: unknown;
   state: unknown;
   status: unknown;
@@ -81,11 +85,16 @@ function assertActor(value: string) {
 function watermarkFromRow(row: WatermarkRow): GoogleFormLeadIntakeWatermark {
   const connectionKey = requiredText(row.connection_key, 128, "PostgreSQL Google Form connection key");
   const spreadsheetId = requiredText(row.spreadsheet_id, 256, "PostgreSQL Google Form Sheet ID");
+  const lastProcessedSubmissionKey = row.last_processed_submission_key;
   assertScope(connectionKey, spreadsheetId);
+  if (!isGoogleFormLeadSubmissionKey(lastProcessedSubmissionKey)) {
+    throw new Error("PostgreSQL Google Form watermark submission key is invalid");
+  }
   return Object.freeze({
     connectionKey,
     spreadsheetId,
     lastProcessedRow: integer(row.last_processed_row, 2, "PostgreSQL Google Form watermark row"),
+    lastProcessedSubmissionKey,
     lastProcessedAt: parsePostgresTimestamp(row.last_processed_at, "PostgreSQL Google Form watermark time"),
     updatedBy: requiredText(row.updated_by, 320, "PostgreSQL Google Form watermark actor"),
   });
@@ -110,8 +119,10 @@ function reviewFromRow(row: ReviewRow): GoogleFormLeadReviewRecord {
     ? null
     : parsePostgresTimestamp(row.reviewed_at, "PostgreSQL Google Form reviewed time");
   const acceptedLeadId = row.accepted_lead_id === null ? null : row.accepted_lead_id;
+  const submissionKey = row.submission_key;
   if (
-    !(GOOGLE_FORM_LEAD_REVIEW_STATES as readonly string[]).includes(state)
+    !isGoogleFormLeadSubmissionKey(submissionKey)
+    || !(GOOGLE_FORM_LEAD_REVIEW_STATES as readonly string[]).includes(state)
     || !(GOOGLE_FORM_LEAD_REVIEW_STATUSES as readonly string[]).includes(status)
     || !proposal || !reasons
     || (acceptedLeadId !== null && !isPostgresUuid(acceptedLeadId))
@@ -124,6 +135,7 @@ function reviewFromRow(row: ReviewRow): GoogleFormLeadReviewRecord {
     id: row.id,
     connectionKey,
     spreadsheetId,
+    submissionKey,
     sourceRow: integer(row.source_row, 2, "PostgreSQL Google Form source row"),
     submittedAt,
     state: state as GoogleFormLeadReviewState,
@@ -142,19 +154,20 @@ function assertSaveBatch(input: SaveGoogleFormLeadBatchInput) {
   assertScope(input.connectionKey, input.spreadsheetId);
   assertActor(input.actor);
   if (
-    input.reviews.length < 1 || input.reviews.length > 25
+    input.reviews.length > 25
     || !Number.isSafeInteger(input.lastProcessedRow) || input.lastProcessedRow < 2
+    || !isGoogleFormLeadSubmissionKey(input.lastProcessedSubmissionKey)
     || !Number.isSafeInteger(input.processedAt) || input.processedAt < 0
   ) throw new TypeError("PostgreSQL Google Form intake batch is invalid");
   for (const review of input.reviews) {
     if (
       !isPostgresUuid(review.id)
+      || !isGoogleFormLeadSubmissionKey(review.submissionKey)
       || !Number.isSafeInteger(review.sourceRow) || review.sourceRow < 2
-      || review.sourceRow > input.lastProcessedRow
       || !(GOOGLE_FORM_LEAD_REVIEW_STATES as readonly string[]).includes(review.state)
       || !parseGoogleFormLeadProposal(review.proposal)
       || !parseGoogleFormLeadReasons(review.reasons)
-    ) throw new TypeError("PostgreSQL Google Form lead review draft is invalid");
+    ) throw new GoogleFormLeadReviewDraftValidationError(review.sourceRow);
   }
 }
 
@@ -168,7 +181,7 @@ function assertDismiss(input: DismissGoogleFormLeadReviewInput) {
   }
 }
 
-const REVIEW_SELECT = `SELECT id::text AS id, connection_key, spreadsheet_id,
+const REVIEW_SELECT = `SELECT id::text AS id, connection_key, spreadsheet_id, submission_key,
        source_row, submitted_at, state, status, proposal_json, reasons_json,
        created_at, updated_at, reviewed_by, reviewed_at, accepted_lead_id
 FROM google_form_lead_reviews`;
@@ -188,6 +201,7 @@ export function createPostgresGoogleFormLeadIntakeRepository(
       return withPostgresTransaction(pool, { ...transactionOptions, readOnly: true }, async (client) => {
         const result = await client.query<WatermarkRow>(
           `SELECT connection_key, spreadsheet_id, last_processed_row,
+                  last_processed_submission_key,
                   last_processed_at, updated_by
            FROM google_form_lead_intake_watermarks
            WHERE connection_key = $1 AND spreadsheet_id = $2`,
@@ -198,6 +212,30 @@ export function createPostgresGoogleFormLeadIntakeRepository(
           throw new Error("PostgreSQL Google Form watermark lookup was ambiguous");
         }
         return watermarkFromRow(result.rows[0]);
+      });
+    },
+
+    async findProcessedSubmissionKeys(connectionKey, spreadsheetId, submissionKeys) {
+      assertScope(connectionKey, spreadsheetId);
+      if (
+        submissionKeys.length > 25
+        || submissionKeys.some((key) => !isGoogleFormLeadSubmissionKey(key))
+      ) throw new TypeError("PostgreSQL Google Form submission-key query is invalid");
+      if (submissionKeys.length === 0) return Object.freeze([]);
+      return withPostgresTransaction(pool, { ...transactionOptions, readOnly: true }, async (client) => {
+        const result = await client.query<{ submission_key: unknown }>(
+          `SELECT submission_key
+           FROM google_form_lead_reviews
+           WHERE connection_key = $1 AND spreadsheet_id = $2
+             AND submission_key = ANY($3::text[])`,
+          [connectionKey, spreadsheetId, [...submissionKeys]],
+        );
+        return Object.freeze(result.rows.map(({ submission_key: key }) => {
+          if (!isGoogleFormLeadSubmissionKey(key)) {
+            throw new Error("PostgreSQL Google Form submission key is invalid");
+          }
+          return key;
+        }));
       });
     },
 
@@ -225,16 +263,17 @@ export function createPostgresGoogleFormLeadIntakeRepository(
         for (const review of input.reviews) {
           const result = await client.query(
             `INSERT INTO google_form_lead_reviews (
-               id, connection_key, spreadsheet_id, source_row, submitted_at,
+               id, connection_key, spreadsheet_id, submission_key, source_row, submitted_at,
                state, status, proposal_json, reasons_json, created_at, updated_at,
                reviewed_by, reviewed_at
-             ) VALUES ($1, $2, $3, $4, $5, $6, 'needs-review', $7::jsonb,
-                       $8::jsonb, $9, $9, NULL, NULL)
-             ON CONFLICT (connection_key, spreadsheet_id, source_row) DO NOTHING`,
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'needs-review', $8::jsonb,
+                       $9::jsonb, $10, $10, NULL, NULL)
+             ON CONFLICT (connection_key, spreadsheet_id, submission_key) DO NOTHING`,
             [
               review.id,
               input.connectionKey,
               input.spreadsheetId,
+              review.submissionKey,
               review.sourceRow,
               review.submittedAt,
               review.state,
@@ -248,24 +287,27 @@ export function createPostgresGoogleFormLeadIntakeRepository(
         }
         await client.query(
           `INSERT INTO google_form_lead_intake_watermarks (
-             connection_key, spreadsheet_id, last_processed_row,
+             connection_key, spreadsheet_id, last_processed_row, last_processed_submission_key,
              last_processed_at, updated_by
-           ) VALUES ($1, $2, $3, $4, $5)
+           ) VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (connection_key, spreadsheet_id) DO UPDATE SET
              last_processed_row = EXCLUDED.last_processed_row,
+             last_processed_submission_key = EXCLUDED.last_processed_submission_key,
              last_processed_at = EXCLUDED.last_processed_at,
              updated_by = EXCLUDED.updated_by
-           WHERE EXCLUDED.last_processed_row > google_form_lead_intake_watermarks.last_processed_row`,
+           WHERE EXCLUDED.last_processed_at >= google_form_lead_intake_watermarks.last_processed_at`,
           [
             input.connectionKey,
             input.spreadsheetId,
             input.lastProcessedRow,
+            input.lastProcessedSubmissionKey,
             new Date(input.processedAt),
             input.actor,
           ],
         );
         const watermarkResult = await client.query<WatermarkRow>(
           `SELECT connection_key, spreadsheet_id, last_processed_row,
+                  last_processed_submission_key,
                   last_processed_at, updated_by
            FROM google_form_lead_intake_watermarks
            WHERE connection_key = $1 AND spreadsheet_id = $2`,

@@ -6,6 +6,7 @@ import { createD1FirstRunImportRepository } from "../../../../../../adapters/d1/
 import { createD1GoogleFormLeadIntakeRepository } from "../../../../../../adapters/d1/google-form-lead-intake-repository";
 import {
   assertGoogleFormLeadHeaders,
+  googleFormLeadSubmissionKey,
   GOOGLE_FORM_LEAD_MAX_ROWS,
   GOOGLE_FORM_LEAD_REVIEW_LIMIT,
   GoogleFormLeadIntakeValidationError,
@@ -30,6 +31,7 @@ import { GoogleSheetsClient } from "../../../../../../lib/google-sheets";
 import { noStoreJson, noStoreResponse } from "../../../../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import type { GoogleFormLeadReviewRecord } from "../../../../../../ports/google-form-lead-intake";
+import type { GoogleFormLeadIntakeWatermark } from "../../../../../../ports/google-form-lead-intake";
 
 const MAX_REVIEW_BODY_BYTES = 1_024;
 const REVIEW_ID_PATTERN = /^[A-Za-z0-9_-]{1,256}$/u;
@@ -81,34 +83,53 @@ function configurationError(invalid: boolean) {
 async function readRows(input: Readonly<{
   simulation: boolean;
   spreadsheetId: string;
-  firstSourceRow: number;
+  watermark: GoogleFormLeadIntakeWatermark | null;
   config: Parameters<typeof getGoogleAccessToken>[0];
 }>) {
-  if (input.simulation) {
-    return Object.freeze({
-      headers: googleFormLeadSimulationHeaders(),
-      rows: googleFormLeadSimulationRows(
-        input.firstSourceRow,
-        GOOGLE_FORM_LEAD_MAX_ROWS,
-      ),
-    });
-  }
-  const token = await getGoogleAccessToken(input.config, "sheets");
-  const sheets = new GoogleSheetsClient(token, input.spreadsheetId);
-  const lastSourceRow = input.firstSourceRow + GOOGLE_FORM_LEAD_MAX_ROWS - 1;
-  const [headers, rows] = await Promise.all([
-    sheets.values("A1:F1"),
-    sheets.values(`A${input.firstSourceRow}:F${lastSourceRow}`),
+  const firstSourceRow = (input.watermark?.lastProcessedRow ?? 1) + 1;
+  const sheets = input.simulation
+    ? null
+    : new GoogleSheetsClient(
+        await getGoogleAccessToken(input.config, "sheets"),
+        input.spreadsheetId,
+      );
+  const readRange = async (sourceRow: number, limit: number) => {
+    if (limit < 1) return Object.freeze([]);
+    const values = input.simulation
+      ? googleFormLeadSimulationRows(sourceRow, limit)
+      : Object.freeze((await sheets!.values(
+          `A${sourceRow}:F${sourceRow + limit - 1}`,
+        )).values ?? []);
+    return Object.freeze(values.slice(0, limit).map((cells, index) => Object.freeze({
+      sourceRow: sourceRow + index,
+      cells: Object.freeze([...cells]),
+    })));
+  };
+  const [headers, firstRows] = await Promise.all([
+    input.simulation
+      ? Promise.resolve(googleFormLeadSimulationHeaders())
+      : sheets!.values("A1:F1").then(({ values }) => Object.freeze(values ?? [])),
+    readRange(firstSourceRow, GOOGLE_FORM_LEAD_MAX_ROWS),
   ]);
+  const remaining = GOOGLE_FORM_LEAD_MAX_ROWS - firstRows.length;
+  const wrappedRows = firstSourceRow > 2 && remaining > 0
+    ? await readRange(2, remaining)
+    : Object.freeze([]);
   return Object.freeze({
-    headers: Object.freeze(headers.values ?? []),
-    rows: Object.freeze((rows.values ?? []).slice(0, GOOGLE_FORM_LEAD_MAX_ROWS)),
+    headers,
+    rows: Object.freeze([...firstRows, ...wrappedRows]),
   });
 }
 
 function errorResponse(error: unknown) {
   if (error instanceof GoogleFormLeadIntakeValidationError) {
-    return noStoreJson({ error: error.message, code: error.code }, error.status);
+    return noStoreJson({
+      error: error.message,
+      code: error.code,
+      ...("sourceRow" in error && Number.isSafeInteger(error.sourceRow)
+        ? { sourceRow: error.sourceRow }
+        : {}),
+    }, error.status);
   }
   return noStoreResponse(googleIntegrationErrorResponse(
     error,
@@ -174,11 +195,10 @@ export async function POST(request: NextRequest) {
       setup.config.connectionKey,
       intake.spreadsheetId,
     );
-    const firstSourceRow = (watermark?.lastProcessedRow ?? 1) + 1;
     const loaded = await readRows({
       simulation: setup.config.simulation,
       spreadsheetId: intake.spreadsheetId,
-      firstSourceRow,
+      watermark,
       config: setup.config,
     });
     assertGoogleFormLeadHeaders(loaded.headers);
@@ -197,12 +217,39 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const keyedRows = await Promise.all(loaded.rows.map(async (row) => Object.freeze({
+      ...row,
+      submissionKey: await googleFormLeadSubmissionKey(row.cells),
+    })));
+    const uniqueRows = [...new Map(
+      keyedRows.map((row) => [row.submissionKey, row] as const),
+    ).values()];
+    const processedKeys = new Set(await repository.findProcessedSubmissionKeys(
+      setup.config.connectionKey,
+      intake.spreadsheetId,
+      uniqueRows.map(({ submissionKey }) => submissionKey),
+    ));
+    const unseenRows = uniqueRows.filter(({ submissionKey }) => !processedKeys.has(submissionKey));
+    const checkpoint = keyedRows.at(-1)!;
+    const checkpointUnchanged = watermark?.lastProcessedRow === checkpoint.sourceRow
+      && watermark.lastProcessedSubmissionKey === checkpoint.submissionKey;
+    if (unseenRows.length === 0 && checkpointUnchanged) {
+      return noStoreJson({
+        processed: 0,
+        inserted: 0,
+        message: "No new form responses were found.",
+        watermark: {
+          lastProcessedRow: watermark.lastProcessedRow,
+          lastProcessedAt: watermark.lastProcessedAt,
+        },
+        queue: await publicQueue(repository, setup.config.connectionKey),
+      });
+    }
     const snapshot = await createD1FirstRunImportRepository(
       env.DB as unknown as D1Database,
     ).snapshot();
     const drafts = await mapGoogleFormLeadRows({
-      rows: loaded.rows,
-      firstSourceRow,
+      rows: unseenRows,
       clients: snapshot.clients,
     });
     const blockedRows = drafts
@@ -224,16 +271,17 @@ export async function POST(request: NextRequest) {
         ...draft,
         id: crypto.randomUUID(),
       })),
-      lastProcessedRow: firstSourceRow + loaded.rows.length - 1,
+      lastProcessedRow: checkpoint.sourceRow,
+      lastProcessedSubmissionKey: checkpoint.submissionKey,
       processedAt,
       actor: auth.user.email,
     });
     return noStoreJson({
-      processed: loaded.rows.length,
+      processed: drafts.length,
       inserted: saved.inserted,
       message: saved.inserted > 0
         ? `${saved.inserted} response${saved.inserted === 1 ? "" : "s"} added for review.`
-        : "These response rows were already queued; nothing was duplicated.",
+        : "No new form responses were found.",
       watermark: {
         lastProcessedRow: saved.watermark.lastProcessedRow,
         lastProcessedAt: saved.watermark.lastProcessedAt,

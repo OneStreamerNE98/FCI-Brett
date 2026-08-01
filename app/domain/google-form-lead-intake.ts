@@ -12,6 +12,11 @@ import type {
   GoogleFormLeadReviewState,
 } from "../ports/google-form-lead-intake.ts";
 
+export type GoogleFormLeadSourceRow = Readonly<{
+  sourceRow: number;
+  cells: readonly unknown[];
+}>;
+
 export const GOOGLE_FORM_LEAD_MAX_ROWS = 25;
 export const GOOGLE_FORM_LEAD_REVIEW_LIMIT = 50;
 export const GOOGLE_FORM_LEAD_HEADERS = Object.freeze([
@@ -35,7 +40,8 @@ export const GOOGLE_FORM_LEAD_REVIEW_STATUSES = Object.freeze([
   "dismissed",
 ] as const);
 
-const CELL_MAXIMUMS = Object.freeze([100, 180, 300, 160, 160, 254] as const);
+const CELL_MAXIMUMS = Object.freeze([100, 160, 300, 160, 160, 254] as const);
+const SUBMISSION_KEY_PATTERN = /^[a-f0-9]{64}$/u;
 
 export class GoogleFormLeadIntakeValidationError extends Error {
   readonly code: string;
@@ -47,6 +53,45 @@ export class GoogleFormLeadIntakeValidationError extends Error {
     this.code = code;
     this.status = status;
   }
+}
+
+export class GoogleFormLeadReviewDraftValidationError
+  extends GoogleFormLeadIntakeValidationError {
+  readonly sourceRow: number;
+
+  constructor(sourceRow: number) {
+    super(
+      "form_lead_review_draft_invalid",
+      `Google Form response row ${sourceRow} could not be saved because its review draft is invalid.`,
+    );
+    this.name = "GoogleFormLeadReviewDraftValidationError";
+    this.sourceRow = sourceRow;
+  }
+}
+
+export function isGoogleFormLeadSubmissionKey(value: unknown): value is string {
+  return typeof value === "string" && SUBMISSION_KEY_PATTERN.test(value);
+}
+
+function identityCell(value: unknown) {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") return `${typeof value}:${String(value)}`;
+  return value.normalize("NFKC").replace(/\r\n?/gu, "\n");
+}
+
+async function sha256(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Stable Forms identity: normalized Timestamp plus a hash of columns B:F. */
+export async function googleFormLeadSubmissionKey(row: readonly unknown[]) {
+  const cells = GOOGLE_FORM_LEAD_HEADERS.map((_, index) => identityCell(row[index]));
+  const contentHash = await sha256(JSON.stringify(cells.slice(1)));
+  return sha256(JSON.stringify(["google-form-lead:v1", cells[0], contentHash]));
 }
 
 function normalizedCell(value: unknown, maximum: number) {
@@ -179,6 +224,7 @@ function proposalFromCells(cells: readonly string[]): GoogleFormLeadProposal {
 }
 
 function invalidDraft(
+  submissionKey: string,
   sourceRow: number,
   submittedAt: string | null,
   proposal: GoogleFormLeadProposal,
@@ -186,6 +232,7 @@ function invalidDraft(
   state: GoogleFormLeadReviewState = "invalid",
 ): GoogleFormLeadReviewDraft {
   return Object.freeze({
+    submissionKey,
     sourceRow,
     submittedAt,
     state,
@@ -194,27 +241,31 @@ function invalidDraft(
   });
 }
 
-function blockedRealDataDraft(sourceRow: number) {
-  const redacted = Object.freeze({
-    company: "Blocked real-data response",
-    contactName: "Blocked real-data response",
+function redactedProposal(nextAction: string): GoogleFormLeadProposal {
+  return Object.freeze({
+    company: "",
+    contactName: "",
     contactEmail: null,
     contactPhone: null,
-    projectName: "Blocked real-data response",
+    projectName: "",
     source: "Google Form",
     stage: "New inquiry",
-    site: "Not stored while the real-data gate is closed",
+    site: "",
     estimatedValue: null,
-    nextAction: "Owner launch approval is required before this response can be reviewed.",
+    nextAction,
     nextActionAt: null,
     rooms: null,
     flooringType: null,
     preferredContact: null,
   });
+}
+
+function blockedRealDataDraft(submissionKey: string, sourceRow: number) {
   return invalidDraft(
+    submissionKey,
     sourceRow,
     null,
-    redacted,
+    redactedProposal("Owner launch approval is required before this response can be reviewed."),
     ["Real client responses stay blocked until WS-11 and owner launch approval."],
     "blocked-real-data",
   );
@@ -248,14 +299,12 @@ function hasTestMarker(value: string) {
 
 /** Pure mapping/watermark input shared by the on-demand trigger and future WS-12. */
 export async function mapGoogleFormLeadRows(input: Readonly<{
-  rows: readonly (readonly unknown[])[];
-  firstSourceRow: number;
+  rows: readonly GoogleFormLeadSourceRow[];
   clients: readonly FirstRunImportStoredClient[];
 }>) {
   if (
-    !Number.isSafeInteger(input.firstSourceRow)
-    || input.firstSourceRow < 2
-    || input.rows.length > GOOGLE_FORM_LEAD_MAX_ROWS
+    input.rows.length > GOOGLE_FORM_LEAD_MAX_ROWS
+    || input.rows.some(({ sourceRow }) => !Number.isSafeInteger(sourceRow) || sourceRow < 2)
   ) {
     throw new GoogleFormLeadIntakeValidationError(
       "form_lead_rows_invalid",
@@ -264,20 +313,14 @@ export async function mapGoogleFormLeadRows(input: Readonly<{
   }
 
   const drafts: GoogleFormLeadReviewDraft[] = [];
-  for (let index = 0; index < input.rows.length; index += 1) {
-    const sourceRow = input.firstSourceRow + index;
-    const sanitized = sanitizedRow(input.rows[index] ?? []);
+  for (const row of input.rows) {
+    const sourceRow = row.sourceRow;
+    const submissionKey = await googleFormLeadSubmissionKey(row.cells);
+    const sanitized = sanitizedRow(row.cells);
     const cells = sanitized.cells;
 
     const submittedAt = cells[0] || null;
     const proposal = proposalFromCells(cells);
-    if (
-      !FIRST_RUN_IMPORT_REAL_DATA_ALLOWED
-      && !hasTestMarker(proposal.company)
-    ) {
-      drafts.push(blockedRealDataDraft(sourceRow));
-      continue;
-    }
     const missing = [
       !submittedAt ? "Timestamp is required." : null,
       !proposal.company ? "Name is required." : null,
@@ -285,7 +328,23 @@ export async function mapGoogleFormLeadRows(input: Readonly<{
     ].filter((reason): reason is string => reason !== null);
     const invalidReasons = [...sanitized.reasons, ...missing];
     if (invalidReasons.length > 0) {
-      drafts.push(invalidDraft(sourceRow, submittedAt, proposal, invalidReasons));
+      const safeProposal = FIRST_RUN_IMPORT_REAL_DATA_ALLOWED || hasTestMarker(proposal.company)
+        ? proposal
+        : redactedProposal("Review and correct this response before creating a lead.");
+      drafts.push(invalidDraft(
+        submissionKey,
+        sourceRow,
+        submittedAt,
+        safeProposal,
+        invalidReasons,
+      ));
+      continue;
+    }
+    if (
+      !FIRST_RUN_IMPORT_REAL_DATA_ALLOWED
+      && !hasTestMarker(proposal.company)
+    ) {
+      drafts.push(blockedRealDataDraft(submissionKey, sourceRow));
       continue;
     }
 
@@ -296,6 +355,7 @@ export async function mapGoogleFormLeadRows(input: Readonly<{
       address: proposal.site,
     }, input.clients);
     drafts.push(Object.freeze({
+      submissionKey,
       sourceRow,
       submittedAt,
       state: duplicateIssues.length > 0 ? "duplicate" : "ready",
