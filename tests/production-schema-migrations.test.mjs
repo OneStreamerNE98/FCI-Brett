@@ -526,11 +526,21 @@ test("registers GI-01's bounded watermark and review queue as immutable migratio
   assert.equal(migration.statements, GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS);
   assert.equal(
     migration.checksum,
-    "sha256:1f318d858eea7d25c217cafbf7a86131ea627f7c66adf491055b0f9c77125542",
+    "sha256:887ceed9e0a760a0da7c791419c2458e9d1bf4fbb759e22130d045b507f40a29",
   );
   const sql = migration.statements.join("\n");
   assert.match(sql, /CREATE TABLE google_form_lead_intake_watermarks/u);
   assert.match(sql, /PRIMARY KEY \(\s*connection_key,\s*spreadsheet_id\s*\)/u);
+  assert.equal(
+    (sql.match(/spreadsheet_id ~ '\^\[A-Za-z0-9_-\]\+\$'[\s\S]*?char_length\(spreadsheet_id\) <= 256/gu) ?? []).length,
+    2,
+    "both Sheet identifiers use a PostgreSQL-safe character check plus the full 256-character limit",
+  );
+  assert.doesNotMatch(
+    sql,
+    /\{1,256\}/u,
+    "PostgreSQL ARE bounds stop at 255, so the 256-character API limit must use char_length",
+  );
   assert.match(sql, /last_processed_row >= 2/u);
   assert.match(sql, /last_processed_submission_key ~ '\^\[a-f0-9\]\{64\}\$'/u);
   assert.match(sql, /CREATE TABLE google_form_lead_reviews/u);

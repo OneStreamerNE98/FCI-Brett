@@ -22,7 +22,8 @@ CREATE TABLE google_form_lead_intake_watermarks (
     connection_key ~ '^[a-z][a-z0-9_-]{0,127}$'
   ),
   CONSTRAINT google_form_lead_intake_watermarks_spreadsheet_id_check CHECK (
-    spreadsheet_id ~ '^[A-Za-z0-9_-]{1,256}$'
+    spreadsheet_id ~ '^[A-Za-z0-9_-]+$'
+    AND pg_catalog.char_length(spreadsheet_id) <= 256
   ),
   CONSTRAINT google_form_lead_intake_watermarks_row_check CHECK (
     last_processed_row >= 2
@@ -63,7 +64,8 @@ CREATE TABLE google_form_lead_reviews (
     connection_key ~ '^[a-z][a-z0-9_-]{0,127}$'
   ),
   CONSTRAINT google_form_lead_reviews_spreadsheet_id_check CHECK (
-    spreadsheet_id ~ '^[A-Za-z0-9_-]{1,256}$'
+    spreadsheet_id ~ '^[A-Za-z0-9_-]+$'
+    AND pg_catalog.char_length(spreadsheet_id) <= 256
   ),
   CONSTRAINT google_form_lead_reviews_source_row_check CHECK (source_row >= 2),
   CONSTRAINT google_form_lead_reviews_submission_key_check CHECK (
