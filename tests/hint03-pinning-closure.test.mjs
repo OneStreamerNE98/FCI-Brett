@@ -32,8 +32,36 @@ test("HINT-03 closes the forms-audit catalog at 12 of 20 with every shipped copy
     await Promise.all([...new Set(shippedHints.map(([file]) => file))].map(async (file) => [file, await read(file)])),
   );
 
-  assert.equal(shippedHints.length, 12);
-  assert.ok(shippedHints.length <= formsAuditHintBudget);
+  // The catalog above is a literal, so counting it proves nothing on its own — an earlier
+  // audit caught HINT-02-B asserting exactly that shape, and this packet exists to VERIFY
+  // the budget rather than restate it. So first prove the catalog is COMPLETE: every
+  // `const *_HINT = "…"` declared in the forms-audit surfaces must appear in it. A 13th hint
+  // added without updating the catalog now fails here instead of passing silently.
+  const declaredHints = new Set();
+  for (const [file, source] of sources) {
+    for (const match of source.matchAll(/^const ([A-Z0-9_]+_HINT) = "/gmu)) {
+      declaredHints.add(`${file}::${match[1]}`);
+    }
+  }
+  const catalogued = new Set(shippedHints.map(([file, constant]) => `${file}::${constant}`));
+  assert.deepEqual(
+    [...declaredHints].sort(),
+    [...catalogued].sort(),
+    "every *_HINT declared in a forms-audit surface must be catalogued here, and vice versa",
+  );
+
+  // Only now is the count meaningful, because the catalog is proven to match the source.
+  // The grandfathered Workspace setup-flow hints are excluded by the budget law and are
+  // deliberately NOT counted here — they live in the stepper, not these surfaces.
+  assert.ok(
+    declaredHints.size <= formsAuditHintBudget,
+    `forms-audit initiative is ${declaredHints.size}/${formsAuditHintBudget}; the ${grandfatheredWorkspaceSetupHintCount} grandfathered Workspace setup-flow hints are excluded`,
+  );
+
+  // Honest limitation: `sources` is keyed off the catalog, so this proves completeness
+  // WITHIN the files already listed. A hint added to a brand-new file would not be seen.
+  // That is a narrower guarantee than "20 across the whole app", and saying so here is
+  // better than implying a stronger one.
   for (const [file, constant, text] of shippedHints) {
     assert.match(
       sources.get(file),
