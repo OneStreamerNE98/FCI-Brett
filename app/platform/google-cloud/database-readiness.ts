@@ -98,6 +98,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "mail_item_analysis",
       checksum: "sha256:46904428caf2572fd63079820a5ebf9b5b04e5390bcc7c69a69a8249431430bc",
     }),
+    Object.freeze({
+      version: 13,
+      name: "google_form_lead_intake",
+      checksum: "sha256:887ceed9e0a760a0da7c791419c2458e9d1bf4fbb759e22130d045b507f40a29",
+    }),
   ]);
 
 /**
@@ -157,6 +162,8 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("filing_rules", ["SELECT", "INSERT", "UPDATE", "DELETE"]),
     runtimeTableAccess("mail_items", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("tasks", ["SELECT", "INSERT", "UPDATE"]),
+    runtimeTableAccess("google_form_lead_intake_watermarks", ["SELECT", "INSERT"]),
+    runtimeTableAccess("google_form_lead_reviews", ["SELECT", "INSERT"]),
     runtimeTableAccess("activity_events", ["INSERT"]),
     runtimeTableAccess("idempotency_requests", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("outbox_events", ["SELECT", "INSERT", "UPDATE"]),
@@ -253,6 +260,20 @@ export const EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS: readonly ExpectedRuntimeColu
       "updated_by",
       "updated_at",
       "version",
+    ]),
+    runtimeColumnUpdateAccess("google_form_lead_intake_watermarks", [
+      "last_processed_row",
+      "last_processed_submission_key",
+      "last_processed_at",
+      "updated_by",
+    ]),
+    runtimeColumnUpdateAccess("google_form_lead_reviews", [
+      "source_row",
+      "status",
+      "reviewed_by",
+      "reviewed_at",
+      "updated_at",
+      "accepted_lead_id",
     ]),
     runtimeColumnUpdateAccess("users", [
       "status",

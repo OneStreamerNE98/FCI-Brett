@@ -27,6 +27,11 @@ export type LeadActivityIntent = {
 export type LeadCreationIntent = {
   lead: LeadRow;
   activity: LeadActivityIntent & { action: "Lead created" };
+  formLeadReview?: {
+    id: string;
+    connectionKey: string;
+    acceptedAt: number;
+  };
 };
 
 export type AcceptedLeadCreation = {
@@ -38,9 +43,16 @@ export type AcceptedLeadCreation = {
 export type LeadCreationRepositoryResult =
   | { outcome: "created"; value: LeadRow }
   | { outcome: "accepted"; value: AcceptedLeadCreation; replayed: boolean }
+  | {
+      outcome: "review-accepted";
+      value: AcceptedLeadCreation;
+      formLeadReview: { id: string; status: "accepted" };
+      replayed: boolean;
+    }
   | { outcome: "identifier-collision" }
   | { outcome: "idempotency-conflict" }
-  | { outcome: "in-progress" };
+  | { outcome: "in-progress" }
+  | { outcome: "review-not-found" };
 
 export type LeadUpdateIntent = {
   leadId: string;

@@ -63,6 +63,18 @@ const limitedRoutes = [
     firstWork: "await ensureWorkspaceSchema()",
   },
   {
+    path: "app/api/v1/integrations/google/forms/leads/route.ts",
+    method: "POST",
+    scope: "google-form-lead-intake",
+    firstWork: "await getEffectiveGoogleRuntimeSetup()",
+  },
+  {
+    path: "app/api/v1/integrations/google/forms/leads/route.ts",
+    method: "PATCH",
+    scope: "google-form-lead-intake",
+    firstWork: "await parseBoundedJsonObject(request",
+  },
+  {
     path: "app/api/v1/projects/[projectId]/drive/route.ts",
     method: "POST",
     scope: "project-drive-provisioning",

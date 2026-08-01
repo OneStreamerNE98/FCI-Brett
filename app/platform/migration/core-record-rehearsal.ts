@@ -72,6 +72,16 @@ export const CORE_REHEARSAL_SOURCE_INVENTORY = [
     reason: "Task rows require a reviewed rehearsal-format expansion before production migration.",
   },
   {
+    sourceCategory: "google_form_lead_intake_watermarks",
+    disposition: "blocking",
+    reason: "Forms intake watermarks require a separately reviewed production migration so processed Sheet rows cannot be replayed.",
+  },
+  {
+    sourceCategory: "google_form_lead_reviews",
+    disposition: "blocking",
+    reason: "Pending Forms lead reviews require a separately reviewed production migration so review-first proposals cannot be lost.",
+  },
+  {
     sourceCategory: "filing_rules",
     disposition: "blocking",
     reason: "Production filing-rule ownership and migration semantics are not implemented.",
@@ -157,6 +167,8 @@ export const DEFERRED_SOURCE_CATEGORIES = [
   "records",
   "webhook_receipts",
   "tasks",
+  "google_form_lead_intake_watermarks",
+  "google_form_lead_reviews",
   "filing_rules",
   "workspace_settings",
   "user_preferences",

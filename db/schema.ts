@@ -393,6 +393,51 @@ export const googleSheetSyncState = sqliteTable("google_sheet_sync_state", {
   uniqueIndex("google_sheet_sync_state_profile_entity_unique").on(table.connectionKey, table.entityType),
 ]);
 
+/** Per-response-Sheet progress for the bounded, administrator-triggered Forms reader. */
+export const googleFormLeadIntakeWatermarks = sqliteTable("google_form_lead_intake_watermarks", {
+  connectionKey: text("connection_key").notNull(),
+  spreadsheetId: text("spreadsheet_id").notNull(),
+  lastProcessedRow: integer("last_processed_row").notNull(),
+  lastProcessedSubmissionKey: text("last_processed_submission_key").notNull(),
+  lastProcessedAt: integer("last_processed_at", { mode: "timestamp_ms" }).notNull(),
+  updatedBy: text("updated_by").notNull(),
+}, (table) => [
+  uniqueIndex("google_form_lead_watermarks_scope_unique").on(
+    table.connectionKey,
+    table.spreadsheetId,
+  ),
+]);
+
+/** Review-first lead proposals derived from Google Form response rows. */
+export const googleFormLeadReviews = sqliteTable("google_form_lead_reviews", {
+  id: text("id").primaryKey(),
+  connectionKey: text("connection_key").notNull(),
+  spreadsheetId: text("spreadsheet_id").notNull(),
+  submissionKey: text("submission_key").notNull(),
+  sourceRow: integer("source_row").notNull(),
+  submittedAt: text("submitted_at"),
+  state: text("state").notNull(),
+  status: text("status").notNull().default("needs-review"),
+  proposalJson: text("proposal_json", { mode: "json" }).notNull(),
+  reasonsJson: text("reasons_json", { mode: "json" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: integer("reviewed_at", { mode: "timestamp_ms" }),
+  acceptedLeadId: text("accepted_lead_id"),
+}, (table) => [
+  uniqueIndex("google_form_lead_reviews_submission_unique").on(
+    table.connectionKey,
+    table.spreadsheetId,
+    table.submissionKey,
+  ),
+  index("google_form_lead_reviews_queue_idx").on(
+    table.connectionKey,
+    table.status,
+    table.sourceRow,
+  ),
+]);
+
 export const googleIntegrationEvents = sqliteTable("google_integration_events", {
   id: text("id").primaryKey(),
   connectionKey: text("connection_key").notNull(),

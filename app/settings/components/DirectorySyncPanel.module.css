@@ -1,0 +1,250 @@
+.intakePanel {
+  min-width: 0;
+  padding: 22px;
+}
+
+.statusLine {
+  margin: 0 0 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.success,
+.createdWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #d8e8dc;
+  border-radius: var(--radius-control);
+  background: #f4f9f5;
+  color: #397056;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.success svg,
+.createdWarning svg {
+  flex: 0 0 auto;
+}
+
+.createdWarning {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-color: #ead8c5;
+  background: #fff9f1;
+  color: #7b6250;
+}
+
+.empty {
+  min-height: 130px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-card);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.empty strong {
+  color: var(--ink);
+  font: 700 13px var(--font-display);
+}
+
+.empty span {
+  max-width: 420px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.reviewList {
+  display: grid;
+  gap: 14px;
+}
+
+.reviewCard {
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: #fff;
+}
+
+.reviewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.reviewHeader h3 {
+  margin: 6px 0 3px;
+  font: 700 14px var(--font-display);
+}
+
+.reviewHeader small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.state {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: var(--radius-pill);
+  background: #edf5ef;
+  color: #397056;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.reviewCard[data-review-state="duplicate"] .state,
+.reviewCard[data-review-state="invalid"] .state {
+  background: #fff0e0;
+  color: #8b4718;
+}
+
+.reviewWarning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #ead8c5;
+  border-radius: var(--radius-control);
+  background: #fff9f1;
+  color: #7b6250;
+  font-size: 12px;
+}
+
+.reviewWarning svg {
+  flex: 0 0 auto;
+}
+
+.reviewWarning strong {
+  color: var(--ink);
+}
+
+.reviewWarning ul {
+  margin: 5px 0 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}
+
+.responseContext {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 13px;
+}
+
+.responseContext div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: var(--radius-control);
+  background: #f8faf8;
+}
+
+.responseContext dt {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.responseContext dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reviewForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px 12px;
+}
+
+.reviewForm label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: #5c554f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.reviewForm input,
+.reviewForm textarea {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #ded7cf;
+  border-radius: var(--radius-control);
+  background: #fff;
+  padding: 9px 10px;
+  color: var(--ink);
+  font: 400 13px var(--font-ui);
+}
+
+.reviewForm textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.reviewForm input:focus-visible,
+.reviewForm textarea:focus-visible {
+  outline: 2px solid var(--accent-dark);
+  outline-offset: 2px;
+}
+
+.fullField,
+.ownerLine,
+.error,
+.reviewActions {
+  grid-column: 1 / -1;
+}
+
+.ownerLine {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.error {
+  color: #9a3f32;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.reviewActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+@media (max-width: 700px) {
+  .intakePanel {
+    padding: 16px;
+  }
+
+  .responseContext,
+  .reviewForm {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewActions,
+  .reviewActions button {
+    width: 100%;
+  }
+
+  .reviewActions {
+    display: grid;
+  }
+}

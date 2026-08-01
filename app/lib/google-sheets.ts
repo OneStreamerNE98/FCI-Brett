@@ -61,6 +61,33 @@ type SheetProperties = {
 };
 type SpreadsheetMetadata = { sheets?: Array<{ properties?: SheetProperties }> };
 type ValuesResponse = { values?: string[][] };
+type GridExtendedValue = Readonly<{
+  stringValue?: string;
+  numberValue?: number;
+  boolValue?: boolean;
+  errorValue?: Readonly<{ type?: string }>;
+}>;
+type GridCellData = Readonly<{
+  formattedValue?: string;
+  effectiveValue?: GridExtendedValue;
+}>;
+type GridRowData = Readonly<{
+  values?: readonly GridCellData[];
+}>;
+type GridDataResponse = Readonly<{
+  sheets?: readonly Readonly<{
+    data?: readonly Readonly<{
+      startRow?: number;
+      rowData?: readonly GridRowData[];
+    }>[];
+  }>[];
+}>;
+
+export type GoogleSheetGridRow = Readonly<{
+  sourceRow: number;
+  formattedValues: readonly string[];
+  effectiveValues: readonly (string | number | boolean)[];
+}>;
 
 export type ClientMirrorRow = {
   id: string;
@@ -177,6 +204,97 @@ function errorDetails(error: unknown) {
   return { code: "sheets_sync_failed", message: "Google Sheets could not complete the directory sync. Try again." };
 }
 
+function gridResponseInvalid(): never {
+  throw new GoogleIntegrationError(
+    "sheets_response_invalid",
+    "Google Sheets returned an invalid grid response. Try again.",
+    503,
+  );
+}
+
+function effectiveGridValue(value: GridExtendedValue | undefined) {
+  if (value === undefined) return "";
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return gridResponseInvalid();
+  }
+  const present = [
+    Object.hasOwn(value, "stringValue"),
+    Object.hasOwn(value, "numberValue"),
+    Object.hasOwn(value, "boolValue"),
+    Object.hasOwn(value, "errorValue"),
+  ].filter(Boolean).length;
+  if (present !== 1) return gridResponseInvalid();
+  if (Object.hasOwn(value, "stringValue") && typeof value.stringValue === "string") {
+    return value.stringValue;
+  }
+  if (
+    Object.hasOwn(value, "numberValue")
+    && typeof value.numberValue === "number"
+    && Number.isFinite(value.numberValue)
+  ) return value.numberValue;
+  if (Object.hasOwn(value, "boolValue") && typeof value.boolValue === "boolean") {
+    return value.boolValue;
+  }
+  // Formula/provider errors are not submission content. Reject them instead
+  // of flattening them into a string that could collide with genuine text.
+  if (Object.hasOwn(value, "errorValue")) return gridResponseInvalid();
+  return gridResponseInvalid();
+}
+
+function gridRows(response: GridDataResponse) {
+  if (!response || typeof response !== "object" || Array.isArray(response)) {
+    return gridResponseInvalid();
+  }
+  if (response.sheets === undefined) return Object.freeze([]);
+  if (!Array.isArray(response.sheets)) return gridResponseInvalid();
+  const rows: GoogleSheetGridRow[] = [];
+  for (const sheet of response.sheets) {
+    if (!sheet || typeof sheet !== "object" || Array.isArray(sheet)) {
+      return gridResponseInvalid();
+    }
+    if (sheet.data === undefined) continue;
+    if (!Array.isArray(sheet.data)) return gridResponseInvalid();
+    for (const data of sheet.data) {
+      if (!data || typeof data !== "object" || Array.isArray(data)) {
+        return gridResponseInvalid();
+      }
+      const startRow = data.startRow ?? 0;
+      if (!Number.isSafeInteger(startRow) || startRow < 0) return gridResponseInvalid();
+      if (data.rowData === undefined) continue;
+      if (!Array.isArray(data.rowData)) return gridResponseInvalid();
+      data.rowData.forEach((row: GridRowData, index: number) => {
+        if (!row || typeof row !== "object" || Array.isArray(row)) {
+          return gridResponseInvalid();
+        }
+        const values = row.values ?? [];
+        if (!Array.isArray(values)) return gridResponseInvalid();
+        const formattedValues: string[] = [];
+        const effectiveValues: Array<string | number | boolean> = [];
+        for (const value of values) {
+          if (!value || typeof value !== "object" || Array.isArray(value)) {
+            return gridResponseInvalid();
+          }
+          if (value.formattedValue !== undefined && typeof value.formattedValue !== "string") {
+            return gridResponseInvalid();
+          }
+          const formattedValue = value.formattedValue ?? "";
+          if (formattedValue !== "" && value.effectiveValue === undefined) {
+            return gridResponseInvalid();
+          }
+          formattedValues.push(formattedValue);
+          effectiveValues.push(effectiveGridValue(value.effectiveValue));
+        }
+        rows.push(Object.freeze({
+          sourceRow: startRow + index + 1,
+          formattedValues: Object.freeze(formattedValues),
+          effectiveValues: Object.freeze(effectiveValues),
+        }));
+      });
+    }
+  }
+  return Object.freeze(rows);
+}
+
 export class GoogleSheetsClient {
   constructor(
     private readonly accessToken: string,
@@ -227,6 +345,20 @@ export class GoogleSheetsClient {
       {},
       { idempotent: true },
     );
+  }
+
+  async gridValues(sheetRange: string) {
+    const query = new URLSearchParams({
+      ranges: sheetRange,
+      includeGridData: "true",
+      fields: "sheets(data(startRow,rowData(values(formattedValue,effectiveValue))))",
+    });
+    const response = await this.request<GridDataResponse>(
+      `?${query.toString()}`,
+      {},
+      { idempotent: true },
+    );
+    return gridRows(response);
   }
 
   append(sheetRange: string, values: string[][]) {

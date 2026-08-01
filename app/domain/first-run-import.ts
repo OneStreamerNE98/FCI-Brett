@@ -338,6 +338,119 @@ function storedClientIndexes(clients: readonly FirstRunImportStoredClient[]) {
   return { byCode, byName, byEmail, byPhone, byAddress, byAddressDigest };
 }
 
+function storedClientDuplicateIssuesByCriterion(
+  values: FirstRunImportClientValues,
+  stored: ReturnType<typeof storedClientIndexes>,
+) {
+  const email = values.client.primaryContact?.email ?? null;
+  const phone = phoneValue(values.client.primaryContact?.phone ?? null).key;
+  const keys = {
+    code: codeKey(values.sourceClientCode),
+    name: normalizeClientNameKey(values.client.name),
+    email: emailValue(email).value,
+    phone,
+    address: addressKey(values.address),
+  };
+  const storedIndexes = {
+    code: stored.byCode,
+    name: stored.byName,
+    email: stored.byEmail,
+    phone: stored.byPhone,
+  };
+  const labels = {
+    code: "client code",
+    name: "client name",
+    email: "contact email",
+    phone: "contact phone",
+  };
+  const issues: Record<"code" | "name" | "email" | "phone" | "address", FirstRunImportIssue[]> = {
+    code: [],
+    name: [],
+    email: [],
+    phone: [],
+    address: [],
+  };
+  for (const criterion of ["code", "name", "email", "phone"] as const) {
+    const key = keys[criterion];
+    if (!key) continue;
+    const storedMatches = storedIndexes[criterion].get(key) ?? [];
+    if (storedMatches.length > 0) {
+      issues[criterion].push(issue(
+        `duplicate_${criterion}`,
+        `This ${labels[criterion]} matches an existing client.`,
+        storedMatches.map(({ id }) => id),
+      ));
+    }
+  }
+  if (keys.address) {
+    const storedMatches = [
+      ...(stored.byAddress.get(keys.address) ?? []),
+      ...(values.addressDigest
+        ? stored.byAddressDigest.get(values.addressDigest) ?? []
+        : []),
+    ].filter((client, index, matches) => (
+      matches.findIndex(({ id }) => id === client.id) === index
+    ));
+    if (storedMatches.length > 0) {
+      issues.address.push(issue(
+        "duplicate_address",
+        "This address matches an existing client.",
+        storedMatches.map(({ id }) => id),
+      ));
+    }
+  }
+  return issues;
+}
+
+/**
+ * SET-25's canonical existing-client matcher. New review-first intake paths use
+ * this entry point instead of inventing another normalization or match policy.
+ */
+export async function matchFirstRunClientDuplicates(input: Readonly<{
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+}>, clients: readonly FirstRunImportStoredClient[]) {
+  const name = normalizedText(input.name, 180);
+  const email = emailValue(input.email ?? null);
+  const phone = phoneValue(input.phone ?? null);
+  const address = optionalText(input.address ?? null, 300);
+  if (!name || !email.valid || !phone.valid || (input.address && !address)) {
+    return Object.freeze([]) as readonly FirstRunImportIssue[];
+  }
+  const normalizedAddress = addressKey(address);
+  const addressDigest = normalizedAddress
+    ? await sha256(`client-address\u0000${normalizedAddress}`)
+    : null;
+  const normalized = normalizeClientCreation({
+    name,
+    primaryContact: email.value || phone.value
+      ? {
+          name,
+          email: email.value ?? undefined,
+          phone: phone.value ?? undefined,
+          role: "Primary contact",
+        }
+      : undefined,
+  });
+  if (!normalized.ok) return Object.freeze([]) as readonly FirstRunImportIssue[];
+  const issues = storedClientDuplicateIssuesByCriterion(Object.freeze({
+    sourceClientCode: null,
+    persistedClientCode: null,
+    client: normalized.value,
+    address,
+    addressDigest,
+  }), storedClientIndexes(clients));
+  return Object.freeze([
+    ...issues.code,
+    ...issues.name,
+    ...issues.email,
+    ...issues.phone,
+    ...issues.address,
+  ]);
+}
+
 async function normalizeClientRows(
   sourceRows: ReturnType<typeof spreadsheetRows>,
 ) {
@@ -433,6 +546,8 @@ function clientDuplicateIssues(
   stored: ReturnType<typeof storedClientIndexes>,
 ) {
   if (!row.values) return [];
+  const storedIssues = storedClientDuplicateIssuesByCriterion(row.values, stored);
+  const issues: FirstRunImportIssue[] = [];
   const email = row.values.client.primaryContact?.email ?? null;
   const phone = phoneValue(row.values.client.primaryContact?.phone ?? null).key;
   const keys = {
@@ -455,30 +570,16 @@ function clientDuplicateIssues(
     ).key),
     address: duplicateIndex(rows, (candidate) => addressKey(candidate.values?.address ?? null)),
   };
-  const storedIndexes = {
-    code: stored.byCode,
-    name: stored.byName,
-    email: stored.byEmail,
-    phone: stored.byPhone,
-  };
   const labels = {
     code: "client code",
     name: "client name",
     email: "contact email",
     phone: "contact phone",
   };
-  const issues: FirstRunImportIssue[] = [];
   for (const criterion of ["code", "name", "email", "phone"] as const) {
     const key = keys[criterion];
     if (!key) continue;
-    const storedMatches = storedIndexes[criterion].get(key) ?? [];
-    if (storedMatches.length > 0) {
-      issues.push(issue(
-        `duplicate_${criterion}`,
-        `This ${labels[criterion]} matches an existing client.`,
-        storedMatches.map(({ id }) => id),
-      ));
-    }
+    issues.push(...storedIssues[criterion]);
     if ((rowIndexes[criterion].get(key)?.length ?? 0) > 1) {
       issues.push(issue(
         `duplicate_import_${criterion}`,
@@ -487,21 +588,7 @@ function clientDuplicateIssues(
     }
   }
   if (keys.address) {
-    const storedMatches = [
-      ...(stored.byAddress.get(keys.address) ?? []),
-      ...(row.values.addressDigest
-        ? stored.byAddressDigest.get(row.values.addressDigest) ?? []
-        : []),
-    ].filter((client, index, matches) => (
-      matches.findIndex(({ id }) => id === client.id) === index
-    ));
-    if (storedMatches.length > 0) {
-      issues.push(issue(
-        "duplicate_address",
-        "This address matches an existing client.",
-        storedMatches.map(({ id }) => id),
-      ));
-    }
+    issues.push(...storedIssues.address);
     if ((rowIndexes.address.get(keys.address)?.length ?? 0) > 1) {
       issues.push(issue(
         "duplicate_import_address",

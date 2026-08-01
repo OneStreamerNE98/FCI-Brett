@@ -184,6 +184,69 @@ test("a successful idempotent Google read stays single-attempt with no backoff",
   assert.deepEqual(sleeps, []);
 });
 
+test("Sheets grid reads reject effective cell errors instead of coercing them into identity text", async () => {
+  const client = new GoogleSheetsClient(
+    "test-token",
+    "sheet-id",
+    async () => Response.json({
+      sheets: [{
+        data: [{
+          startRow: 1,
+          rowData: [{
+            values: [{
+              formattedValue: "#REF!",
+              effectiveValue: { errorValue: { type: "REF" } },
+            }],
+          }],
+        }],
+      }],
+    }),
+    { timeoutSignal: () => new AbortController().signal },
+  );
+
+  await assert.rejects(
+    client.gridValues("A2:F2"),
+    (error) => error?.code === "sheets_response_invalid" && error?.status === 503,
+  );
+});
+
+test("Sheets grid reads reject array-shaped row data instead of inventing blank submissions", async () => {
+  const client = new GoogleSheetsClient(
+    "test-token",
+    "sheet-id",
+    async () => Response.json({
+      sheets: [{ data: [{ startRow: 1, rowData: [[]] }] }],
+    }),
+    { timeoutSignal: () => new AbortController().signal },
+  );
+
+  await assert.rejects(
+    client.gridValues("A2:F2"),
+    (error) => error?.code === "sheets_response_invalid" && error?.status === 503,
+  );
+});
+
+test("Sheets grid reads reject visible cell text without an effective identity value", async () => {
+  const client = new GoogleSheetsClient(
+    "test-token",
+    "sheet-id",
+    async () => Response.json({
+      sheets: [{
+        data: [{
+          startRow: 1,
+          rowData: [{ values: [{ formattedValue: "Alice" }] }],
+        }],
+      }],
+    }),
+    { timeoutSignal: () => new AbortController().signal },
+  );
+
+  await assert.rejects(
+    client.gridValues("A2:F2"),
+    (error) => error?.code === "sheets_response_invalid" && error?.status === 503,
+  );
+});
+
 test("non-idempotent Sheets append is never retried after an ambiguous 503", async () => {
   const sleeps = [];
   let calls = 0;

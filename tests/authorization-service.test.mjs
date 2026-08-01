@@ -192,6 +192,79 @@ test("sensitive Administrator actions are audited before provider work runs", as
   });
 });
 
+test("lead-create preflight records an authorization denial before any allowed audit or work", async () => {
+  const fake = harness({
+    snapshot: sessionSnapshot({
+      roleGrants: [{
+        roleKey: AUTHORIZATION_ROLES.officeOperations,
+        capabilityKeys: [
+          AUTHORIZATION_CAPABILITIES.recordsRead,
+          AUTHORIZATION_CAPABILITIES.leadsCreate,
+        ],
+      }],
+    }),
+  });
+  let workCalls = 0;
+  let preflightCalls = 0;
+  const decision = await fake.service.performLeadCreate(
+    request(),
+    async () => {
+      fake.timeline.push("work");
+      workCalls += 1;
+      return "must not run";
+    },
+    async (context) => {
+      fake.timeline.push("preflight");
+      preflightCalls += 1;
+      assert.deepEqual(context.roles, [AUTHORIZATION_ROLES.officeOperations]);
+      return "administrator_required";
+    },
+  );
+
+  assert.deepEqual(decision, { allowed: false, reason: "administrator_required" });
+  assert.equal(preflightCalls, 1);
+  assert.equal(workCalls, 0);
+  assert.deepEqual(fake.timeline, ["session", "capability-current", "preflight", "audit"]);
+  assert.deepEqual(fake.audits.map(({ action, result, reasonCode }) => ({
+    action,
+    result,
+    reasonCode,
+  })), [{
+    action: "authorization.access_denied",
+    result: "denied",
+    reasonCode: "administrator_required",
+  }]);
+});
+
+test("lead-create preflight cannot parse or inspect work before capability denial", async () => {
+  const fake = harness({
+    snapshot: sessionSnapshot({
+      roleGrants: [{
+        roleKey: AUTHORIZATION_ROLES.projectManager,
+        capabilityKeys: [AUTHORIZATION_CAPABILITIES.recordsRead],
+      }],
+    }),
+  });
+  let preflightCalls = 0;
+  let workCalls = 0;
+  const decision = await fake.service.performLeadCreate(
+    request(),
+    async () => {
+      workCalls += 1;
+      return "must not run";
+    },
+    async () => {
+      preflightCalls += 1;
+      return null;
+    },
+  );
+
+  assert.deepEqual(decision, { allowed: false, reason: "missing_capability" });
+  assert.equal(preflightCalls, 0);
+  assert.equal(workCalls, 0);
+  assert.deepEqual(fake.timeline, ["session", "audit"]);
+});
+
 test("routine authorized reads use scoped queries without writing sensitive-action audit rows", async () => {
   const fake = harness({
     snapshot: sessionSnapshot({

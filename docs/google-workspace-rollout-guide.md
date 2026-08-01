@@ -285,10 +285,27 @@ GOOGLE_WORKSPACE_SHARED_DRIVE_ID=<Shared Drive ID>
 GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=false
 # Optional legacy/first-boot fallback; leave unset for app-managed spreadsheet setup
 GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID=<existing spreadsheet ID>
+# Linked response Sheet for the administrator-triggered Google Forms lead intake.
+GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID=<linked response spreadsheet ID>
 GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations-account@cherryhillfci.com>
 GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar ID>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar ID>
 ```
+
+The Google Forms lead-intake action uses the existing Sheets scope. It performs a
+bounded read only when an administrator presses **Check for new form responses**;
+there is no scheduler, webhook, Pub/Sub subscription, or additional OAuth scope.
+The owner records both the Form ID and linked response Sheet ID in
+[checklist 11](task-checklists/11-google-quick-wins.md), while only the response
+Sheet ID is needed by the runtime setting above.
+The linked Sheet must contain exactly **Timestamp**, **Name**, **Address**, **Rooms**,
+**Flooring Type**, and **Preferred Contact**, in that order and capitalization. Do
+not enable automatic email collection unless the intake contract is deliberately
+extended first; the extra column is rejected rather than guessed around.
+While the development real-data gate is closed, every test response **Name** must
+begin with **FCI TEST — DO NOT USE**. The reader identifies a submission by its
+Timestamp plus a content hash; Sheet row numbers are circular scan hints only, so
+ordinary row insertion or deletion cannot decide whether a response was processed.
 
 Google Chat notifications are a separate, optional one-way integration. GI-02 keeps
 the feature off by default and does not authorize provisioning a webhook or changing

@@ -27,6 +27,7 @@ import { SETTINGS_PERSISTENCE_STATEMENTS } from "../app/platform/postgres/settin
 import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts";
 import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "../app/platform/postgres/core-record-concurrency-schema.ts";
 import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "../app/platform/postgres/mail-item-analysis-schema.ts";
+import { GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS } from "../app/platform/postgres/google-form-lead-intake-schema.ts";
 
 const MIGRATION_VERSIONS = PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version);
 const CURRENT_MIGRATION_VERSION = MIGRATION_VERSIONS.at(-1);
@@ -402,7 +403,7 @@ test("registers the non-structural core-record concurrency law as contiguous mig
     "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
   );
   assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
   ]);
   assert.deepEqual(
     migration.statements.map((statement) => {
@@ -515,6 +516,42 @@ test("registers AI-10 mail-item analysis as immutable contiguous migration twelv
       statement.includes("mail_items_analysis_status_check")
     ),
     "legacy status backfills must precede the closed-vocabulary constraint",
+  );
+});
+
+test("registers GI-01's bounded watermark and review queue as immutable migration thirteen", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 13);
+  assert.ok(migration);
+  assert.equal(migration.name, "google_form_lead_intake");
+  assert.equal(migration.statements, GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS);
+  assert.equal(
+    migration.checksum,
+    "sha256:887ceed9e0a760a0da7c791419c2458e9d1bf4fbb759e22130d045b507f40a29",
+  );
+  const sql = migration.statements.join("\n");
+  assert.match(sql, /CREATE TABLE google_form_lead_intake_watermarks/u);
+  assert.match(sql, /PRIMARY KEY \(\s*connection_key,\s*spreadsheet_id\s*\)/u);
+  assert.equal(
+    (sql.match(/spreadsheet_id ~ '\^\[A-Za-z0-9_-\]\+\$'[\s\S]*?char_length\(spreadsheet_id\) <= 256/gu) ?? []).length,
+    2,
+    "both Sheet identifiers use a PostgreSQL-safe character check plus the full 256-character limit",
+  );
+  assert.doesNotMatch(
+    sql,
+    /\{1,256\}/u,
+    "PostgreSQL ARE bounds stop at 255, so the 256-character API limit must use char_length",
+  );
+  assert.match(sql, /last_processed_row >= 2/u);
+  assert.match(sql, /last_processed_submission_key ~ '\^\[a-f0-9\]\{64\}\$'/u);
+  assert.match(sql, /CREATE TABLE google_form_lead_reviews/u);
+  assert.match(sql, /UNIQUE \(\s*connection_key,\s*spreadsheet_id,\s*submission_key\s*\)/u);
+  assert.match(sql, /accepted_lead_id uuid REFERENCES leads \(id\)/u);
+  assert.match(sql, /status = 'accepted'[\s\S]*accepted_lead_id IS NOT NULL/u);
+  assert.match(sql, /CREATE INDEX google_form_lead_reviews_queue_idx/u);
+  assert.match(sql, /CREATE INDEX google_form_lead_reviews_accepted_lead_idx/u);
+  assert.doesNotMatch(
+    sql,
+    /\b(?:DROP|TRUNCATE|DELETE|UPDATE|INSERT|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/iu,
   );
 });
 
@@ -900,6 +937,8 @@ test("defines the bounded production persistence schema with named constraints a
       "filing_rules",
       "mail_items",
       "tasks",
+      "google_form_lead_intake_watermarks",
+      "google_form_lead_reviews",
     ],
   );
   assert.doesNotMatch(versionedSql, /\bIF NOT EXISTS\b/i);

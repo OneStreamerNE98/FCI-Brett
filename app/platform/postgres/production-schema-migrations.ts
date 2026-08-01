@@ -4,6 +4,7 @@ import { ADMIN_AUDIT_ACTIVITY_STATEMENTS } from "./admin-audit-activity-schema.t
 import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-schema.ts";
 import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "./core-record-concurrency-schema.ts";
 import { FLOORING_KPI_SCHEMA_STATEMENTS } from "./flooring-kpi-schema.ts";
+import { GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS } from "./google-form-lead-intake-schema.ts";
 import { LEAD_PROJECT_MEETING_STATEMENTS } from "./lead-project-meeting-schema.ts";
 import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "./mail-item-analysis-schema.ts";
 import { PROJECT_SEGMENT_SCHEMA_STATEMENTS } from "./project-segment-schema.ts";
@@ -466,6 +467,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "mail_item_analysis",
     checksum: "sha256:46904428caf2572fd63079820a5ebf9b5b04e5390bcc7c69a69a8249431430bc",
     statements: MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS,
+  },
+  {
+    version: 13,
+    name: "google_form_lead_intake",
+    checksum: "sha256:887ceed9e0a760a0da7c791419c2458e9d1bf4fbb759e22130d045b507f40a29",
+    statements: GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS,
   },
 ];
 

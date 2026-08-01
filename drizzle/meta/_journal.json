@@ -162,6 +162,13 @@
       "when": 1785382047023,
       "tag": "0022_mean_darkhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1785522049429,
+      "tag": "0023_smiling_silvermane",
+      "breakpoints": true
     }
   ]
 }

@@ -112,6 +112,10 @@ export type AuthorizedEmployeeDispatch = Readonly<{
   occurredAt: number;
 }>;
 
+type EmployeeAuthorizationPreflight = (
+  context: EmployeeAccessContext,
+) => OperationDenialReason | null | Promise<OperationDenialReason | null>;
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function requiredUuid(value: string, label: string) {
@@ -217,6 +221,7 @@ export function createAuthorizationService(
 
   async function authorizeSession(
     request: AuthorizationRequest,
+    preflight?: EmployeeAuthorizationPreflight,
   ): Promise<AuthorizationServiceDecision> {
     const stableRequest = stableAuthorizationRequest(request);
     const checkedAt = now();
@@ -315,6 +320,18 @@ export function createAuthorizationService(
       correlationId: stableRequest.correlationId,
       occurredAt: checkedAt,
     });
+
+    const preflightDenial = await preflight?.(session.context) ?? null;
+    if (preflightDenial !== null) {
+      await appendDecisionAudit(
+        session.context,
+        stableRequest,
+        false,
+        preflightDenial,
+        checkedAt,
+      );
+      return { allowed: false, reason: preflightDenial };
+    }
 
     // Routine scoped reads rely on normal request telemetry. Sensitive allows
     // are recorded before a provider or mutation callback can run, so an audit
@@ -417,11 +434,12 @@ export function createAuthorizationService(
     operation: string,
     request: AuthorizationTraceRequest & Readonly<{ projectId: string | null }>,
     work: (context: EmployeeAccessContext) => Promise<T>,
+    preflight?: EmployeeAuthorizationPreflight,
   ): Promise<EmployeeOperationResult<T>> {
     // `operation` is supplied only by the named wrappers below. It is written
     // after the caller-controlled fields so a forged runtime property cannot
     // relabel the protected action.
-    const decision = await authorizeSession({ ...request, operation });
+    const decision = await authorizeSession({ ...request, operation }, preflight);
     if (!decision.allowed) return decision;
     const value = await work(decision.context);
     return { ...decision, value };
@@ -514,11 +532,13 @@ export function createAuthorizationService(
     performLeadCreate<T>(
       request: AuthorizationTraceRequest,
       work: (context: EmployeeAccessContext) => Promise<T>,
+      preflight?: EmployeeAuthorizationPreflight,
     ) {
       return performEmployeeOperation(
         AUTHORIZATION_OPERATIONS.leadCreate,
         noProjectRequest(request),
         work,
+        preflight,
       );
     },
     performProjectMeetingsList<T>(
