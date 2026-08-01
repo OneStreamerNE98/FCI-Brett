@@ -73,6 +73,9 @@ test("the three independently persisted reminder fields expose audited keyboard 
     page,
     appointmentHint,
   );
+  await expect(
+    page.getByRole("button", { name: "About appointment reminder hours", exact: true }),
+  ).toHaveAccessibleDescription(appointmentHint);
   await expect(page.getByRole("spinbutton", { name: "Appointment reminder hours" })).toHaveValue("24");
 
   await page.locator(".settings-nav").getByRole("button", { name: "Workflow & notifications", exact: true }).click();
@@ -114,6 +117,9 @@ test.describe("RuleModal audited hints at 390px", () => {
       page,
       matchHint,
     );
+    await expect(
+      dialog.getByRole("button", { name: "About when this matches", exact: true }),
+    ).toHaveAccessibleDescription(matchHint);
     await expect(dialog).toBeVisible();
     const action = await expectAuditedHint(
       dialog.getByRole("button", { name: "About rule action", exact: true }),

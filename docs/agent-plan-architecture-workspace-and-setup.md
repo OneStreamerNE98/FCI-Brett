@@ -3547,13 +3547,14 @@ view cannot ship with;
 # Workstream H — In-app guidance (HINT)
 
 Owner-approved July 23, 2026 (forms-only decision). Design authority:
-`docs/infohint-audit-2026-07-24.md` — the curated table is normative: build ONLY
-recommended-tier rows (12 total: 9 now, 3 sequenced after AI-08); optional rows
-need a fresh owner opt-in; rejected rows stay rejected. Copy ships verbatim from
-the audit table with mutation-sensitive pins (the SET-29..34 pinning pattern).
-Budget law: ≤20 hints from THIS forms-audit initiative (the 21 pre-existing
-Google Workspace setup-flow hints are grandfathered outside the budget);
-label-fix beats hint.
+`docs/infohint-audit-2026-07-24.md` — the curated table is normative. HINT-01
+and HINT-02 are complete; HINT-03 is the final closure packet. Source contains
+only the 12 recommended rows (9 original + 3 sequenced after AI-08), all with
+verbatim mutation-pinned copy. Optional rows still need a fresh owner opt-in,
+rejected rows stay rejected, and label fixes stay out of hint work. The
+forms-audit initiative uses **12/20** hints. The 21 pre-existing Google
+Workspace setup-flow hints are grandfathered outside that budget; WS-10's later
+Operations health hint is also outside this forms-only initiative.
 
 ### HINT-01 · InfoHint generalization (small-medium; takes the globals.css lock briefly, in a free window after DES-04/05/07)
 **Status:** Complete — PR #168 + PR #171, July 24, 2026. Source-only and undeployed. #168 relocated the primitive to `app/components/` with byte-identical rendering (pure selector rename, property-identical declarations) and added left/right/auto anchoring — adoption wiring is HINT-02's scope by design. #171 (the automated-review follow-up) scoped the legacy mobile geometry to `.workspace-setup-stage` so shared and future modal contexts keep a local containing block, proven by a 390×844 modal-fixture e2e, and corrected the runtime census to 21 mounted usages. Guide impact: none.
@@ -3591,6 +3592,7 @@ packet.)
 sit outside the hashed containers); axe green.
 
 ### HINT-03 · Pinning + closure (small, last)
+**Status:** In progress — `codex/hint03-pinning-closure`
 **Do:** one representative e2e tooltip-semantics assertion per new surface
 family; verify the ≤20 initiative budget holds (audit-scope hints only; grandfathered setup-flow hints excluded); flip Workstream H statuses; reconcile the
 audit doc.

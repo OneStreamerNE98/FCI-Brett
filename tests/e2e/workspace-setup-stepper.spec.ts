@@ -974,6 +974,15 @@ test("InfoHint opens on keyboard focus and hover and Escape dismisses it", async
   // verification rows + four ongoing rows + two blueprint naming fields
   // are all mounted in this state.
   expect(describedIds).toHaveLength(24);
+  const formsAuditBlueprintHints = await stageThreeSubsection(page, "blueprint")
+    .locator(".info-hint-trigger")
+    .count();
+  const postAuditOperationsHealthHints = await upkeepRow(page, "operations-health")
+    .locator(".info-hint-trigger")
+    .count();
+  expect(formsAuditBlueprintHints).toBe(2);
+  expect(postAuditOperationsHealthHints).toBe(1);
+  expect(describedIds.length - formsAuditBlueprintHints - postAuditOperationsHealthHints).toBe(21);
   expect(describedIds.every(Boolean)).toBe(true);
   expect(new Set(describedIds).size).toBe(describedIds.length);
   const tooltipText = await page.locator(".info-hint-tooltip").allTextContents();
@@ -3408,6 +3417,10 @@ test("HINT-02-A blueprint naming hints keep audited copy, anchors, and keyboard 
     },
   ] as const;
   const descriptionIds: string[] = [];
+
+  await expect(
+    editor.getByRole("button", { name: expected[0].label, exact: true }),
+  ).toHaveAccessibleDescription(expected[0].text);
 
   for (const hint of expected) {
     const trigger = editor.getByRole("button", { name: hint.label, exact: true });

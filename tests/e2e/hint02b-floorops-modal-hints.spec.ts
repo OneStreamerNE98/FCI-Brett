@@ -124,6 +124,11 @@ test.describe("HINT-02-B FloorOps modal hints", () => {
     for (const modalExpectation of auditedModals) {
       const dialog = await openAuditedModal(page, modalExpectation);
       await expect(dialog.locator(".info-hint-trigger")).toHaveCount(modalExpectation.hints.length);
+      if (modalExpectation.dialogName === "Add a lead") {
+        await expect(
+          dialog.getByRole("button", { name: "Lead value help", exact: true }),
+        ).toHaveAccessibleDescription(leadEstimatedValueHint);
+      }
 
       const descriptionIds = [];
       for (const hint of modalExpectation.hints) {
