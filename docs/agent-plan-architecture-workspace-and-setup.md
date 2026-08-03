@@ -257,7 +257,7 @@ historical release evidence remains truthful, no migration wording implies v1–
 applied, and `npm test` passes.
 
 ### DOC-06 · Deployment procedure runbook (small, no deps)
-**Status:** In progress — `codex/doc06-deployment-runbook`
+**Status:** Complete — PR #271, July 31, 2026. Docs-only; no source, schema, or configuration change.
 
 **Why:** Issue #258 is the canonical deployment log and SET-39 exposes build identity in
 Settings, but no operator procedure connects the owner-triggered Sites deployment, the
@@ -1612,7 +1612,7 @@ absence only — never values.
 response body.
 
 ### SET-05 · Saved calendar IDs become runtime-authoritative with visible source (medium, after SET-01)
-**Status:** In progress — `codex/set05-calendar-authority`
+**Status:** Complete — PR #279, August 3, 2026. Source-only and undeployed. Review fleet (45 agents) confirmed five findings; three fixed on-branch. The load-bearing one: a verified calendar writes a `workspace_resources` row that outranks the saved value, so the panel's "In use (saved setting)" was false and a later Save was inert — the opposite of this packet's own goal. The payload now returns the resolved `externalId` and the panel names the calendar actually in force. Two residuals recorded in the packet body (no lease/audit event on adoption; save remounts the form).
 
 **Why:** The Calendar panel saves IDs that runtime ignores (env vars win) — accepted
 direction in three docs; **coordinate with BE-07** (which ports the storage later).
@@ -2633,7 +2633,7 @@ branch, malformed-row tolerance); review-first queue asserted (no auto-created l
 without confirmation); simulation e2e. **Effort:** small. **Cost:** $0.
 
 ### GI-01a · Forms intake follow-up: Cloud Run wiring and dismissal coverage (small, after GI-01)
-**Status:** In progress — `codex/gi01a-followup`
+**Status:** Complete — PR #280, August 3, 2026. Source-only and undeployed. Review clean. The Cloud Run composition no longer constructs an unreachable Forms intake repository; its adapter, schema, migration and grants are retained for a future production-provider packet. All three dismissal cases now execute against the route rather than being asserted by source inspection.
 
 **Why:** The merged GI-01 packet constructed and exposed a PostgreSQL intake repository
 from the Cloud Run composition even though the employee router had no Forms route and the
@@ -3654,20 +3654,23 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
-**Status:** In progress — `codex/ai11b-settings-section`
-**Claimed sub-scope:** (b) only — dedicated AI assistant Settings section.
+**SUB-SCOPES (a) AND (b) ARE COMPLETE — (a) PR #255, July 31, 2026; (b) PR #277, August 3,
+2026. Both source-only and undeployed. ONLY (c) AND (d) REMAIN CLAIMABLE.** This packet
+deliberately carries **no status line**: it is not complete while (c) and (d) are open, the
+grammar has no partial-completion form, and any status line here would make the dispatch law
+read (c) and (d) as unavailable when they are in fact open. Sub-scope completion is therefore
+recorded in this body, and a claimant must read this paragraph rather than the absent status
+line. Take **(c) or (d) only, in that order**. Do not rebuild (a) or (b).
+**If you claim (c) or (d), add `**Status:** In progress — \`your/branch\`` in your own PR as
+usual — and delete it again on merge, recording your sub-scope here.** That is the convention
+this packet runs on, and the reason is worth restating: a status line left behind on a
+sub-scoped packet silently blocks every sibling sub-scope. It happened to (b) in PR #277 and
+was caught in review.
 
-**SUB-SCOPE (a) IS COMPLETE — PR #255, July 31, 2026. Source-only and undeployed. (b) IS IN
-FLIGHT on the branch named in the status line above. ONLY (c) AND (d) REMAIN CLAIMABLE.**
-The status line on a sub-scoped packet tracks **the sub-scope in flight, not the packet**, so
-while it is present the dispatch law's "available if and only if it has no status line" reads
-(c) and (d) as unavailable when they are in fact open. Read this paragraph, not the status
-line, to decide what is claimable here.
-**On merge this status line must be REMOVED, not flipped to `Complete`.** The packet is not
-complete while (c) and (d) are open, and the grammar has no partial-completion form — which is
-precisely why (a)'s completion is recorded in this body instead of a status line. Record (b)
-the same way and delete the line. A claimant must then take **(c) or (d) only, in that order**.
-Do not rebuild (a) or (b).
+**(b), merged in PR #277 — do not redo:** the administrator AI controls moved (not
+duplicated) out of *Workflow & notifications* into a dedicated **AI assistant** Settings
+section, with the *My settings* office read-only mirror preserved, the navigation contracts
+re-pointed, and decision 6's expanded data-at-rest disclosure added to the card.
 
 **(a), merged in PR #255 — do not redo:** the three typed accepts (project-update → the
 existing filing path; schedule and warranty → `POST /api/v1/tasks` with `source:"email"`,
@@ -3803,7 +3806,7 @@ packet.)
 sit outside the hashed containers); axe green.
 
 ### HINT-03 · Pinning + closure (small, last)
-**Status:** In progress — `codex/hint03-pinning-closure`
+**Status:** Complete — PR #273, August 1, 2026. Source-only and undeployed.
 **Do:** one representative e2e tooltip-semantics assertion per new surface
 family; verify the ≤20 initiative budget holds (audit-scope hints only; grandfathered setup-flow hints excluded); flip Workstream H statuses; reconcile the
 audit doc.
