@@ -1082,6 +1082,30 @@ isolated).
 Sheets → Drive provisioning last → Gmail filing (filing requires a provisioned project
 folder; provisioning requires oauthReady + provisioningEnabled).
 
+**Staging rehearsal recorded August 3, 2026 — the sequence has been run end to end, on a
+different tenant.** The owner worked through WS-01…WS-08 against the `grass.wedding`
+Workspace rather than `cherryhillfci.com`, deliberately rehearsing the setup before
+committing the production domain. **The packets below stay open, and that is correct:** each
+one names `cherryhillfci.com`, and that tenant is still untouched. This paragraph is a
+rehearsal record, not a completion claim — read it before concluding from the absent status
+lines that nothing has ever been set up.
+Evidence, read live from `GET /api/v1/integrations/google/operations` on the deployed site
+that day: `runtimeMode=workspace`, `simulation=false`, and 29 recorded events between
+2026-08-02T23:49Z and 2026-08-03T09:46Z — `oauth.connected`, `setup.shared_drive_adopted`,
+`setup.drive_roots_ensured`, `setup.templates_ensured`, `setup.spreadsheets_ensured`,
+`setup.reconcile_run`, `gmail.labels_prepared`, `gmail.test_sent`,
+`calendar.workspace_events_listed` ×2, `calendar.workspace_hold_created`,
+`sheets.directory.synced` ×7, and `drive.project_folder_provisioned` ×2 (`mode=workspace`),
+with zero failed archives.
+**One step of the fixed verification order above has never been exercised: the last one,
+Gmail filing.** No archive row exists and `driveOperations` is empty, so the single thing
+this app does that Gmail cannot — a leased, idempotent, audited copy of an email into one
+project's Drive folder — has still only ever run in simulation. WS-08 is open on exactly
+that half.
+**Moving the rehearsal to production is not a configuration change.** See **WS-19**, which
+records what a tenant switch actually costs and why it currently fails silently rather than
+closed.
+
 ### WS-01 · OWNER — Verify tenant preconditions, create Workspace resources (medium)
 Checklist 01 has zero boxes checked. Verify cherryhillfci.com control and Shared Drive
 support; create/confirm `operations@cherryhillfci.com` (named custodian in checklist 00);
@@ -1405,6 +1429,64 @@ different keys both appear; the filing write path untouched (diff-scoped asserti
 `npm test` + `npm run test:e2e` + `npm run lint` named with outcomes.
 **Effort:** small-medium. **Sequencing:** dispatch **after AI-10 (a+b+c) merges** — both touch
 assistant-adjacent read modules; zero `FloorOpsApp.tsx`.
+
+### WS-19 · Tenant cutover — make a Workspace switch survivable (medium)
+**Why:** the owner is live on a staging tenant (`grass.wedding`) and intends to move to the
+production Cherry Hill Workspace. Today that move **corrupts state silently instead of
+failing closed**, because nothing in the database records which tenant a Google identifier
+came from. The fail-closed readiness gate at `app/lib/google-oauth.ts:408-432` protects the
+*configuration*; nothing protects the *data*.
+**The three findings, verified against source August 3, 2026:**
+1. **`connection_key` is a mode constant, not a tenant key.** `app/lib/google-oauth.ts:439`
+   yields exactly `"google-workspace"` or `"workspace-simulation"`. Both tenants therefore
+   share one key, and `google_connections.connection_key` is `UNIQUE` (`db/schema.ts:302`),
+   so **two Google connections cannot coexist even briefly** — reconnecting upserts over the
+   old row (`app/adapters/d1/google-oauth-persistence.ts:150`).
+2. **Around forty columns hold Google-side identifiers that become dangling pointers in
+   place.** Drive folder/file ids on `clients` (`db/schema.ts:39-40`), `projects`
+   (`:112-113`), `drive_folder_mappings` (`:359-361`), `gmail_file_archives` (`:247-254`) and
+   `gmail_file_archive_artifacts` (`:278-279`); spreadsheet ids on `workspace_settings`
+   (`:187`), `google_form_lead_intake_watermarks` (`:399`) and `google_form_lead_reviews`
+   (`:415`); Gmail message/thread ids on `mail_items` (`:206-207`) and `gmail_file_archives`
+   (`:244-245`); and `workspace_resources.external_id` (`:323`). Nothing compares the stored
+   `google_subject`/`google_email` (`db/schema.ts:303-304`) against the newly connected
+   identity, so no code path can notice the tenant changed underneath it.
+3. **The only bulk-clear primitive is locked to simulation and is incomplete anyway.**
+   `app/api/v1/integrations/google/simulation/reset/route.ts:15` returns 409 unless
+   `config.simulation`, and its batch (`:18-33`) never clears `clients.drive_folder_id`,
+   `projects.drive_folder_id`/`drive_url`, or `workspace_settings` — so even unlocked it
+   would leave three record surfaces pointing at the discarded tenant.
+**Do:** an Administrator-only **"start fresh on a new tenant"** reset that (a) runs in
+workspace mode behind a typed confirmation naming the tenant being discarded, (b) extends the
+existing batch to the three record surfaces it currently misses, and (c) refuses to run
+unless the connection is already disconnected, so the destructive step can never race a live
+token. State in the settings guide that a tenant move discards filed-email evidence — that
+evidence points at Drive files in a tenant the app will no longer be able to read, so keeping
+the rows would preserve the audit trail's appearance and not its substance.
+**Deliberately NOT in scope:** a data-preserving migration that re-points identifiers across
+tenants. It is far more work, and what it would preserve here is staging test data
+(`Project 2`, `Test Project`, `New Proj`), not business history. Running two tenants at once
+is a different and much larger packet: it requires making `connection_key` tenant-derived,
+which changes four UNIQUE indexes (`db/schema.ts:229,263,405-408,429-433`) and the AES-GCM
+AAD binding that ties every stored refresh token to its key — forcing a full reconnect.
+**Owner decision:** confirm a tenant move may discard all staging records. **Interim
+fallback if unanswered** (following EDIT-04's precedent rather than repeating EDIT-05/06's
+unbuildable-without-a-decision trap): build exactly as specified. A typed confirmation naming
+the tenant makes the discard the operator's explicit act rather than the packet's assumption,
+so this is buildable either way; only the guide wording changes if preservation is later
+wanted.
+**Files:** `app/api/v1/integrations/google/` (a new sibling route — **not** an edit to the
+simulation-reset route, whose simulation-only gate is a safety property worth keeping
+intact), `app/settings/components/GoogleWorkspacePanel.tsx`, `docs/settings-guide.md`, tests.
+Zero `FloorOpsApp.tsx`.
+**Accept:** a reset in workspace mode requires both an explicit typed confirmation and an
+already-disconnected connection, and is refused otherwise; it clears every table the
+simulation reset clears **plus** the three missed record surfaces, leaving no row holding an
+identifier from the discarded tenant (asserted per-table, not in aggregate); the
+simulation-mode path keeps its existing behaviour unchanged; connecting a different tenant
+afterwards provisions cleanly; the settings guide states the evidence-loss consequence;
+`npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
+**Effort:** medium. **Cost:** $0.
 
 ### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
 **Status:** Complete — PR #35, July 19, 2026. Source-only and not deployed.
