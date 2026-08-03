@@ -1488,6 +1488,71 @@ afterwards provisions cleanly; the settings guide states the evidence-loss conse
 `npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
 **Effort:** medium. **Cost:** $0.
 
+### WS-20 · Attach additional shared mailboxes to the workspace (medium-large)
+**Why:** owner request, August 3, 2026 — staff should be able to work shared inboxes
+(`ops@`, `info@`, `sales@`) rather than the single connection mailbox, and eventually see
+their own mail. **Those are two different features with very different costs, and this packet
+is deliberately only the cheap half.**
+**The split that makes this buildable:**
+- **Attaching a shared or role mailbox needs no new identity work.** It is an ordinary OAuth
+  connection created by signing in to that mailbox with credentials the owner already holds.
+  Consent is inherent in the mechanism; there is no impersonation and no domain-wide
+  delegation anywhere in the design.
+- **Per-user mailboxes are blocked on durable identity**, not on Gmail. App identity is a
+  hosting-supplied header (`app/lib/workspace-auth.ts:64`), and binding a Google refresh token
+  to a header-asserted identity would be a real security defect rather than merely inelegant.
+  That stays in the unfiled backlog behind the identity foundation.
+**What is already paid for — this is less work than it looks:**
+- `google_connections.created_by` is `NOT NULL` (`db/schema.ts:307`), so a login-to-many-
+  connections link already exists; the PostgreSQL side has the same via
+  `integration_connections.created_by_user_id`.
+- `connection_key` is a real column on every Google table, so N mailboxes need **no new
+  table**.
+- WS-18 already decoupled filed-email reads from the key, and `app/application/archive-scope.ts`
+  centralises a scope rather than a key — which is exactly what multi-connection reads need.
+- **`users/me` is not a blocker here; it is correct.** Each connection carries its own token,
+  so `app/lib/google-gmail.ts:9` resolves to precisely that connection's mailbox. The pin only
+  obstructs impersonation, which this design does not use.
+**What actually blocks it:**
+1. **`connection_key` is a hardcoded mode constant** (`app/lib/google-oauth.ts:439`) and
+   `google_connections.connection_key` is `UNIQUE` (`db/schema.ts:302`), so **only one real
+   mailbox can exist at a time**. It must become a per-request lookup. This is the bulk of the
+   work and it is the *same* blocker WS-19 hits — sequence them together.
+2. **Readiness is a global single-account boolean.** `app/lib/google-oauth.ts:420-427` marks
+   the config invalid unless `AUTHORIZED_ACCOUNTS` holds exactly one entry equal to
+   `INTAKE_MAILBOX`. Listing every shared mailbox there does not enable multi-mailbox — it
+   disables Gmail entirely. Readiness must become per-mailbox.
+3. **Keys must be synthetic slugs.** The PostgreSQL CHECK is
+   `connection_key ~ '^[a-z][a-z0-9_-]{0,127}$'`
+   (`app/platform/postgres/google-form-lead-intake-schema.ts:22`), which permits hyphens but
+   not `@` or `.`, so an email-shaped key is impossible. Store the address in `google_email`.
+4. **Filing must record which mailbox a message came from.** `gmail_file_archives` is unique on
+   `(connection_key, gmail_message_id)` (`db/schema.ts:263`) and **Gmail message ids are
+   per-mailbox**, so once keys vary this is what keeps the duplicate-filing guard honest
+   instead of silently degrading.
+5. The Inbox needs a mailbox picker, and all six Gmail routes are currently admin-only — so
+   "staff work a shared inbox" also requires deciding whether non-admin office users may reach
+   it. Record that decision; do not assume it.
+**Owner decision to surface, not to answer here:** the app's only Gmail scope is
+`gmail.modify`. Attaching a mailbox therefore confers **send and delete** on it, not read-only
+visibility. If shared inboxes are meant to be read-mostly, that needs a narrower scope, and a
+scope change forces disconnect/reconnect for every existing connection.
+**Deliberately NOT in scope:** domain-wide delegation (forbidden in six documents and two
+checklists, and described by Google as bypassing end-user consent); per-user OAuth tokens;
+and reading a staff member's personal mailbox without that person signing in — which this
+design cannot do at any effort. **That limitation is a feature:** it means the app can never
+become a silent surveillance tool through configuration drift.
+**Accept:** two real mailboxes are connected simultaneously and both list messages; the Inbox
+picker switches between them and the bucket counts follow; filing from either mailbox lands in
+the correct project folder and a second filing of the same message from the *other* mailbox is
+correctly treated as a distinct message; readiness reports per mailbox rather than one global
+boolean; disconnecting one mailbox leaves the other working; every stored key matches the
+PostgreSQL CHECK pattern; the settings guide states the `gmail.modify` consequence;
+`npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
+**Sequencing:** after **WS-19** — both rewrite what `connection_key` means, and doing them in
+either order separately would rewrite the same 191 references twice.
+**Effort:** medium-large. **Cost:** $0.
+
 ### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
 **Status:** Complete — PR #35, July 19, 2026. Source-only and not deployed.
 
