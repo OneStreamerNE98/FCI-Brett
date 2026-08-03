@@ -28,10 +28,13 @@ GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar-id>
 ```
 
 The two Calendar ID values above are first-boot fallbacks, not permanent authority.
-Once the IDs are saved in **Settings → Calendar & appointments**, the saved values win
-at runtime and the Settings panel identifies the active source. Verify each ID through
-the app before appointment testing; verification performs a bounded Calendar events
-read and adopts the verified calendar into the app-managed resource registry.
+Once the IDs are saved in **Settings → Calendar & appointments**, the saved values beat the
+environment values at runtime and the Settings panel identifies the active source. Verify
+each ID through the app before appointment testing; verification performs a bounded Calendar
+events read and adopts the verified calendar into the app-managed resource registry.
+Note the order: **a verified calendar outranks the saved value.** Once an ID has been
+verified, changing the field and pressing Save does not move appointments — verify the new ID
+as well. The panel names the calendar actually in force whenever it differs from the field.
 
 Keep the current ChatGPT development identity separately allowlisted through `FCI_OFFICE_EMAILS` and `FCI_ADMIN_EMAILS` until employee Google login is implemented.
 

@@ -342,19 +342,67 @@ test("both Calendar routes use the app-saved calendar and retain env-only fallba
   }
 });
 
-test("Workspace readiness reports saved, environment, and absent Calendar sources", async () => {
+// The first fixture below was named "saved" but seeds `appResources()` — adopted
+// `workspace_resources` rows, not a saved `workspace_settings` value. Those are different
+// states that the resolver deliberately collapses to the same `source: "app"`
+// (workspace-effective-config.ts:140-149) while the registry row OUTRANKS the saved value.
+// Renamed to say what it actually covers, so the absent genuine-saved case is visible rather
+// than hidden behind a reassuring name.
+test("Workspace readiness reports adopted, environment, and absent Calendar sources", async () => {
   for (const fixture of [
-    { name: "saved", resources: appResources(), ids: ENV_IDS, expected: { configured: true, source: "app" } },
-    { name: "environment", resources: [], ids: ENV_IDS, expected: { configured: true, source: "env" } },
-    { name: "absent", resources: [], ids: { ...ENV_IDS, appointments: undefined, fieldSchedule: undefined }, expected: { configured: false, source: "none" } },
+    {
+      name: "registry-adopted",
+      resources: appResources(),
+      ids: ENV_IDS,
+      expected: {
+        clientAppointments: { configured: true, source: "app", externalId: APP_IDS.appointments },
+        fieldSchedule: { configured: true, source: "app", externalId: APP_IDS.fieldSchedule },
+      },
+    },
+    {
+      name: "environment",
+      resources: [],
+      ids: ENV_IDS,
+      expected: {
+        clientAppointments: { configured: true, source: "env", externalId: ENV_IDS.appointments },
+        fieldSchedule: { configured: true, source: "env", externalId: ENV_IDS.fieldSchedule },
+      },
+    },
+    {
+      name: "absent",
+      resources: [],
+      ids: { ...ENV_IDS, appointments: undefined, fieldSchedule: undefined },
+      expected: {
+        clientAppointments: { configured: false, source: "none", externalId: null },
+        fieldSchedule: { configured: false, source: "none", externalId: null },
+      },
+    },
   ]) {
     configure(fixture);
     const response = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
     assert.equal(response.status, 200, fixture.name);
     const payload = await response.json();
-    assert.deepEqual(payload.workspace.calendars.clientAppointments, fixture.expected, `${fixture.name} appointments source`);
-    assert.deepEqual(payload.workspace.calendars.fieldSchedule, fixture.expected, `${fixture.name} field source`);
+    assert.deepEqual(payload.workspace.calendars.clientAppointments, fixture.expected.clientAppointments, `${fixture.name} appointments source`);
+    assert.deepEqual(payload.workspace.calendars.fieldSchedule, fixture.expected.fieldSchedule, `${fixture.name} field source`);
   }
+});
+
+// Regression guard for the review defect: an adopted calendar outranks the value the admin
+// can see and edit, and `source` alone cannot reveal that — it reads "app" either way, which
+// the panel rendered as "In use (saved setting)". The payload must therefore carry the id
+// runtime actually resolved, or the panel has no way to tell the operator that saving is
+// inert for that calendar.
+test("Workspace readiness exposes the resolved Calendar ID so an adopted override is visible", async () => {
+  configure({ resources: appResources(), ids: ENV_IDS });
+  const payload = await (await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"))).json();
+
+  const appointments = payload.workspace.calendars.clientAppointments;
+  assert.equal(appointments.source, "app");
+  assert.equal(appointments.externalId, APP_IDS.appointments);
+  // The whole point: the resolved id is NOT the environment value the panel would otherwise
+  // imply, so a divergence is detectable by comparing against what the field holds.
+  assert.notEqual(appointments.externalId, ENV_IDS.appointments);
+  assert.equal(payload.workspace.calendars.fieldSchedule.externalId, APP_IDS.fieldSchedule);
 });
 
 test("Calendar verify probes events.list and adopts the ID into the registry", async () => {

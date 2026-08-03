@@ -294,10 +294,16 @@ GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar ID>
 
 The two Calendar ID environment values are bootstrap fallbacks only. After an
 Administrator saves Calendar IDs in **Settings → Calendar & appointments**, the saved
-settings are runtime-authoritative. The panel states whether each calendar is using a
-saved setting, an environment fallback that saving will override, or is not configured.
+settings override the environment values at runtime. The panel states whether each calendar
+is using a saved setting, an environment fallback that saving will override, or is not
+configured.
 Use the Calendar verification action to make an `events.list` read with the existing
 `calendar.events` grant and adopt the verified ID into the app-managed resource registry.
+**A verified calendar outranks the saved setting, not the other way round.** Adoption writes
+a resource-registry row, and the resolver consults the registry before the saved value, so
+after verification the saved field alone no longer decides what runtime uses. When the two
+differ the panel names the calendar actually in force and tells you to verify the new ID to
+switch — saving by itself will not move appointments to it.
 No wider Calendar scope is required.
 
 The Google Forms lead-intake action uses the existing Sheets scope. It performs a
