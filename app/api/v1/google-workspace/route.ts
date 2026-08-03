@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const google = (await getEffectiveGoogleRuntimeSetup()).config;
+  const setup = await getEffectiveGoogleRuntimeSetup();
+  const google = setup.config;
   const workspace = google.drive;
   const [connection, chatNotifications] = await Promise.all([
     getGoogleConnectionStatus(google),
@@ -61,6 +62,24 @@ export async function GET(request: NextRequest) {
       provisioningEnabled: google.provisioningEnabled,
       gmailEnabled: google.gmailEnabled,
       calendarEnabled: google.calendarEnabled,
+      // `source` alone cannot say which value is in force: the resolver maps BOTH an adopted
+      // `workspace_resources` row and the saved `workspace_settings` value to "app"
+      // (workspace-effective-config.ts:140-149), and the registry row silently outranks the
+      // saved one. Return the resolved id too, so the panel can show what runtime actually
+      // uses instead of inferring it from a label that cannot distinguish the two. A calendar
+      // ID is not a credential and this route's audience already sees the saved value.
+      calendars: {
+        clientAppointments: {
+          configured: Boolean(setup.effectiveResources.clientAppointmentsCalendar.externalId),
+          source: setup.effectiveResources.clientAppointmentsCalendar.source,
+          externalId: setup.effectiveResources.clientAppointmentsCalendar.externalId ?? null,
+        },
+        fieldSchedule: {
+          configured: Boolean(setup.effectiveResources.fieldScheduleCalendar.externalId),
+          source: setup.effectiveResources.fieldScheduleCalendar.source,
+          externalId: setup.effectiveResources.fieldScheduleCalendar.externalId ?? null,
+        },
+      },
       sheetsEnabled: google.sheetsEnabled,
       clientDirectorySheetConfigured: google.simulation || Boolean(google.clientDirectorySheetId),
       clientDirectorySheetIdInvalid: google.clientDirectorySheetIdInvalid,

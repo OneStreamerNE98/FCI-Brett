@@ -1465,6 +1465,8 @@ absence only — never values.
 response body.
 
 ### SET-05 · Saved calendar IDs become runtime-authoritative with visible source (medium, after SET-01)
+**Status:** In progress — `codex/set05-calendar-authority`
+
 **Why:** The Calendar panel saves IDs that runtime ignores (env vars win) — accepted
 direction in three docs; **coordinate with BE-07** (which ports the storage later).
 **Do:** Consume SET-13's `app/lib/workspace-effective-config.ts` resolver (do not
@@ -1476,6 +1478,26 @@ authoritative). Add `POST /api/v1/integrations/google/calendar/verify` (events.l
 probe with the current `calendar.events` scope; adopt-by-ID into the SET-13 registry).
 After SET-13.
 **Accept:** route tests for all three states; panel strings correct; docs updated.
+**Review residuals (Opus fleet, August 3, 2026 — 45 agents, 15 findings triaged, 5 confirmed;
+three fixed on-branch, two deliberately deferred and recorded here rather than silently
+dropped):**
+- **Fixed:** the panel reported `In use (saved setting)` for an *adopted* calendar, which
+  outranks the saved value — so a later Save looked applied and was inert. The resolver maps
+  both states to `source: "app"`, so the payload now also returns the resolved `externalId`
+  and the panel names the calendar actually in force when it differs from the field. Verify no
+  longer lets the field snap back to a different id than runtime uses, and the simulation
+  toast no longer claims it saved anything when it persists nothing.
+- **Deferred — no lease and no audit event on adoption.** The registry write in
+  `calendar/verify` takes no setup lease and emits no `setup.calendar_verified` integration
+  event, so an adoption that silently redirects every appointment write leaves no audit row
+  beside the drive/gmail/sheets adoptions. The D1 upsert's `DO UPDATE` list also omits
+  `created_by`, so re-verifying does not re-attribute. Sized as its own packet: adding a lease
+  and an event touches the shared setup-engine invariants this packet does not otherwise open.
+- **Deferred — save/verify remounts the whole settings form.** `loadWorkspaceSettings(true)`
+  after a successful write swaps the panel for its loading notice and back, losing focus and
+  scroll on every save in both Calendar and Workflow modes; a failed post-save reload also
+  renders the `role="alert"` "could not be loaded" notice beside the success toast. Pre-existing
+  pattern, cosmetic, and shared with the Workflow mode — belongs with a panel-wide fix.
 
 ### SET-06 · Truthful labels for persisted-but-inert settings and review-first rules (small, after SET-01; AMENDED July 23, 2026 — absorbs holistic-review FIX-14 + FIX-16)
 **Status:** Complete — PR #163, July 24, 2026. Source-only and undeployed. Opus review clean: the H-3 reminder-hours split verified (new clientReminderHours key, widen-on-read proven, independent round-trips e2e-pinned), H-7 inert custom rules render "Saved — not yet applied" with built-ins byte-identical, Planned badges honest. P3 note (July 24): an unrelated local-font console-error filter rode along in the e2e — harmless, recorded.

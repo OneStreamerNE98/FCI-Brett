@@ -15,6 +15,14 @@ type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
 type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
 type LoadState = "loading" | "ready" | "error";
+type CalendarConfigurationState = Readonly<{
+  configured: boolean;
+  source: "app" | "env" | "none";
+  /** The id runtime actually resolves. `source` cannot distinguish an adopted registry row
+   *  from the saved setting — both are "app" — and the registry row wins, so this is the only
+   *  way the panel can tell the operator which value is really in force. */
+  externalId?: string | null;
+}>;
 type WorkspacePreferenceValues = {
   timezone: string;
   appointmentCalendarName: string;
@@ -87,8 +95,13 @@ function WorkflowSettingsStack({ children, notify, isAdmin }: { children: ReactN
 export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }: { mode: "calendar" | "workflow"; notify: Notify; onGoogleSetup: () => void; isAdmin: boolean }) {
   const [settings, setSettings] = useState<WorkspacePreferenceValues>(defaultWorkspacePreferences);
   const [saving, setSaving] = useState(false);
+  const [verifyingCalendar, setVerifyingCalendar] = useState<"client-appointments" | "field-schedule" | null>(null);
   const [calendarAccount, setCalendarAccount] = useState<string | null>(null);
   const [calendarConnected, setCalendarConnected] = useState(false);
+  const [calendarConfiguration, setCalendarConfiguration] = useState<Readonly<{
+    clientAppointments: CalendarConfigurationState;
+    fieldSchedule: CalendarConfigurationState;
+  }> | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
   const loadRequestRef = useRef(0);
@@ -100,13 +113,17 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
     try {
       const [settingsData, googleData] = await Promise.all([
         cachedGetJson<{ settings?: WorkspacePreferenceValues }>("/api/v1/settings/workspace", { force }),
-        cachedGetJson<{ workspace?: { connectionAccount?: unknown; calendarConnected?: boolean; calendarEnabled?: boolean; connectionStatus?: string } }>("/api/v1/google-workspace", { force }),
+        cachedGetJson<{ workspace?: { connectionAccount?: unknown; calendarConnected?: boolean; calendarEnabled?: boolean; connectionStatus?: string; calendars?: { clientAppointments?: CalendarConfigurationState; fieldSchedule?: CalendarConfigurationState } } }>("/api/v1/google-workspace", { force }),
       ]);
       if (requestId !== loadRequestRef.current) return;
       if (!settingsData.settings) throw new Error("The server returned no saved Workspace defaults.");
       setSettings({ ...defaultWorkspacePreferences, ...settingsData.settings });
       setCalendarAccount(typeof googleData.workspace?.connectionAccount === "string" ? googleData.workspace.connectionAccount : null);
       setCalendarConnected(googleData.workspace?.calendarConnected === true && googleData.workspace?.calendarEnabled === true && googleData.workspace?.connectionStatus === "connected");
+      setCalendarConfiguration({
+        clientAppointments: googleData.workspace?.calendars?.clientAppointments ?? { configured: false, source: "none", externalId: null },
+        fieldSchedule: googleData.workspace?.calendars?.fieldSchedule ?? { configured: false, source: "none", externalId: null },
+      });
       setLoadState("ready");
     } catch (error) {
       if (requestId !== loadRequestRef.current) return;
@@ -114,6 +131,20 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
       setLoadState("error");
     }
   }, []);
+
+  function calendarConfigurationLabel(value: CalendarConfigurationState | undefined, typed: string) {
+    if (!value?.configured || value.source === "none") return "Not configured";
+    if (value.source === "env") return "In use (environment value — saving here will override it)";
+    // A verified calendar is stored as a workspace_resources row, and that row outranks the
+    // saved setting — so saving a different id here does NOT change what runtime uses. Saying
+    // "In use (saved setting)" in that state is false, and it is the state a second edit
+    // always lands in. Name the divergence and the id, rather than implying the field wins.
+    const effective = value.externalId?.trim();
+    if (effective && typed.trim() && effective !== typed.trim()) {
+      return `In use: ${effective} — a verified calendar overrides the ID shown here. Verify this ID to switch.`;
+    }
+    return "In use (saved setting)";
+  }
 
   useEffect(() => {
     void Promise.resolve().then(() => loadWorkspaceSettings());
@@ -129,12 +160,57 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
       const data = await response.json().catch(() => ({})) as { settings?: WorkspacePreferenceValues; error?: string };
       if (!response.ok || !data.settings) throw new Error(data.error ?? "Settings could not be saved.");
       invalidateCachedGet("/api/v1/settings/workspace");
+      invalidateCachedGet("/api/v1/google-workspace");
       setSettings({ ...defaultWorkspacePreferences, ...data.settings });
+      await loadWorkspaceSettings(true);
       notify(mode === "calendar" ? "Calendar defaults saved" : "Workflow and notification defaults saved", "success");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Settings could not be saved.", "error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function verifyCalendar(calendarKey: "client-appointments" | "field-schedule", calendarId: string) {
+    if (!isAdmin || !calendarId.trim()) return;
+    setVerifyingCalendar(calendarKey);
+    try {
+      const response = await fetch("/api/v1/integrations/google/calendar/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ calendarKey, calendarId }),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        verified?: boolean; simulated?: boolean; calendar?: { name?: string; id?: string }; error?: string;
+      };
+      if (!response.ok || !data.verified) throw new Error(data.error ?? "The calendar could not be verified.");
+      invalidateCachedGet("/api/v1/google-workspace");
+      const name = data.calendar?.name ?? "Workspace calendar";
+      // In simulation the route returns early and persists nothing (calendar/verify/route.ts),
+      // so "saved for use" was false there — and the label underneath still read "Not
+      // configured", contradicting the toast on the same screen.
+      notify(
+        data.simulated
+          ? `${name} verified. Simulation does not save a calendar — nothing was adopted.`
+          : `${name} verified and now in use.`,
+        "success",
+      );
+      // Adoption made the typed id runtime-authoritative. Reloading settings would repaint the
+      // field with the *saved* value, leaving the screen showing one id while another drives
+      // every appointment write. Keep the field on what was actually adopted.
+      const adopted = data.simulated ? null : (data.calendar?.id ?? calendarId).trim();
+      await loadWorkspaceSettings(true);
+      // Applied AFTER the reload, not before: loadWorkspaceSettings repaints every field from
+      // workspace_settings, so setting this first would simply be overwritten.
+      if (adopted) {
+        setSettings((current) => (calendarKey === "client-appointments"
+          ? { ...current, appointmentCalendarId: adopted }
+          : { ...current, fieldCalendarId: adopted }));
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The calendar could not be verified.", "error");
+    } finally {
+      setVerifyingCalendar(null);
     }
   }
   if (loadState !== "ready") {
@@ -178,8 +254,8 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
           <label>Field schedule calendar name<input value={settings.fieldCalendarName} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarName: event.target.value }))} /></label>
         </div>
         {settings.calendarSetupMode === "use-existing" && <div className="form-row">
-          <label>Client appointments calendar ID<input value={settings.appointmentCalendarId} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /></label>
-          <label>Field schedule calendar ID<input value={settings.fieldCalendarId} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /></label>
+          <label>Client appointments calendar ID<input value={settings.appointmentCalendarId} onChange={(event) => setSettings((current) => ({ ...current, appointmentCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /><small>{calendarConfigurationLabel(calendarConfiguration?.clientAppointments, settings.appointmentCalendarId)}</small><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!settings.appointmentCalendarId.trim() || verifyingCalendar !== null} onClick={() => void verifyCalendar("client-appointments", settings.appointmentCalendarId)}>{verifyingCalendar === "client-appointments" ? "Verifying…" : "Verify calendar"}</AdministratorActionButton></label>
+          <label>Field schedule calendar ID<input value={settings.fieldCalendarId} onChange={(event) => setSettings((current) => ({ ...current, fieldCalendarId: event.target.value }))} placeholder="Calendar ID, not an event ID" /><small>{calendarConfigurationLabel(calendarConfiguration?.fieldSchedule, settings.fieldCalendarId)}</small><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!settings.fieldCalendarId.trim() || verifyingCalendar !== null} onClick={() => void verifyCalendar("field-schedule", settings.fieldCalendarId)}>{verifyingCalendar === "field-schedule" ? "Verifying…" : "Verify calendar"}</AdministratorActionButton></label>
         </div>}
         <div className="form-row">
           <PlannedSettingField id="appointment-reminder-hours" label="Appointment reminder hours" hint={APPOINTMENT_REMINDER_HINT} hintAnchor="auto">

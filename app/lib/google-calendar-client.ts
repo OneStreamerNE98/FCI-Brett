@@ -154,8 +154,10 @@ export class GoogleCalendarClient {
     path: string,
     init: RequestInit = {},
     policy: GoogleFetchPolicy = {},
+    readiness: "configured" | "service" = "configured",
   ) {
-    requireCalendarReadiness(this.config);
+    if (readiness === "configured") requireCalendarReadiness(this.config);
+    else assertGoogleService(this.config, "calendar");
     let response: Response;
     try {
       response = await fetchGoogleProvider(this.dependencies.fetch, `${CALENDAR_API}/${path}`, {
@@ -214,6 +216,7 @@ export class GoogleCalendarClient {
         `calendars/${encodeURIComponent(normalizedId)}/events?${query.toString()}`,
         {},
         { idempotent: true },
+        "service",
       );
     } catch (error) {
       if (error instanceof GoogleIntegrationError && error.code === "calendar_not_found") return null;

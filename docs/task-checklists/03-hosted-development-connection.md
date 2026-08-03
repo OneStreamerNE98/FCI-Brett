@@ -27,6 +27,15 @@ GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar-id>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar-id>
 ```
 
+The two Calendar ID values above are first-boot fallbacks, not permanent authority.
+Once the IDs are saved in **Settings → Calendar & appointments**, the saved values beat the
+environment values at runtime and the Settings panel identifies the active source. Verify
+each ID through the app before appointment testing; verification performs a bounded Calendar
+events read and adopts the verified calendar into the app-managed resource registry.
+Note the order: **a verified calendar outranks the saved value.** Once an ID has been
+verified, changing the field and pressing Save does not move appointments — verify the new ID
+as well. The panel names the calendar actually in force whenever it differs from the field.
+
 Keep the current ChatGPT development identity separately allowlisted through `FCI_OFFICE_EMAILS` and `FCI_ADMIN_EMAILS` until employee Google login is implemented.
 
 When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address. Gmail operates as the connected account (`users/me`); the application does not use domain-wide delegation to read another mailbox, and readiness fails closed when the two values differ. PR #32 merged that safeguard at `adc79b8`, and the exact commit is included in private Sites development version 40. The connection remains unconfigured, so the future per-service acceptance run must still capture live evidence.
@@ -50,7 +59,8 @@ Do not paste either value into GitHub, documentation, email, Drive, screenshots,
 - [ ] Verify the Shared Drive.
 - [ ] In Resources, ensure the Shared Drive root folders and then ensure the blueprint spreadsheets.
 - [ ] Prepare Gmail labels and list test messages.
-- [ ] List Calendar events and create a test hold.
+- [ ] Save and verify both company Calendar IDs; confirm each reports **In use (saved setting)**.
+- [ ] List Calendar events and create a test hold using the verified client-appointments calendar.
 - [ ] Confirm the directory row is app-managed (or explicitly labeled environment fallback), then run the Google Sheets mirror.
 - [ ] Only after Drive verification, enable Drive provisioning and deploy the setting change.
 - [ ] Create one test project folder and confirm it is inside the correct Shared Drive.
