@@ -464,7 +464,7 @@ the sign-off on the grouping-definition refinement.
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-06 · Tablet-band clipping and overlap fixes (small)
-**Status:** In progress — `codex/nfix06-tablet-band`
+**Status:** Complete — PR #267, July 31, 2026. Source-only and undeployed at merge; shipped in the August 3 deployment. CSS-only (`app/globals.css` +45), with a dedicated e2e spec (`tests/e2e/nfix06-tablet-band.spec.ts`) and unit coverage (`tests/nfix06-tablet-band.test.mjs`) guarding the three measured defects: the Projects Estimated-value clip, the Inbox search/Load-messages hit-test collision, and the Testing & launch action clipped at 834px.
 
 **Why:** Night 2 N2-1/N2-4/N2-5 — at 834px the Projects table clips 94.6%
 of the Estimated value cell and truncates the site address with no horizontal
