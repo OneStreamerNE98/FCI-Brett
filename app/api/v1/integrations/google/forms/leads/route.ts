@@ -252,7 +252,26 @@ export async function POST(request: NextRequest) {
         ? [Object.freeze({ submissionKey, sourceRow })]
         : [];
     });
-    const checkpoint = keyedRows.at(-1)!;
+    // The watermark must never move BACKWARDS. loaded.rows is [forward window, wrap window],
+    // and the wrap exists only to recover submissions that were repositioned in the sheet —
+    // it feeds observedPositions. Taking its tail as the cursor rewinds the scan to near the
+    // top of the sheet, and because a short forward window is the normal steady state (all
+    // rows already processed), the cursor then cycles: on a 100-row sheet 101 -> 26 -> 51 ->
+    // 76 -> 101 -> 26. A response landing at the end is invisible for up to ceil(N/25)
+    // presses while the button reports "No new form responses were found."
+    //
+    // Ingestion itself does not depend on the cursor — dedup is by submissionKey — so
+    // holding position when the forward window is empty is safe: the next scan reads from
+    // lastProcessedRow + 1 and finds the new row immediately.
+    const scanStartRow = (watermark?.lastProcessedRow ?? 1) + 1;
+    const forwardRows = keyedRows.filter(({ sourceRow }) => sourceRow >= scanStartRow);
+    const checkpoint = forwardRows.at(-1)
+      ?? (watermark
+        ? Object.freeze({
+            sourceRow: watermark.lastProcessedRow,
+            submissionKey: watermark.lastProcessedSubmissionKey,
+          })
+        : keyedRows.at(-1)!);
     const checkpointUnchanged = watermark?.lastProcessedRow === checkpoint.sourceRow
       && watermark.lastProcessedSubmissionKey === checkpoint.submissionKey;
     if (unseenRows.length === 0 && observedPositions.length === 0 && checkpointUnchanged) {

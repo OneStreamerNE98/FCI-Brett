@@ -159,7 +159,23 @@ function parseFormLeadIntakeState(value: unknown): FormLeadIntakeState | null {
 }
 
 function responseError(body: unknown, fallback: string) {
-  return isRecord(body) && typeof body.error === "string" ? body.error : fallback;
+  const message = isRecord(body) && typeof body.error === "string" ? body.error : fallback;
+  // The real-data gate returns the offending sheet rows, and until now the client discarded
+  // them — leaving the operator told that "responses are blocked" with no way to learn WHICH
+  // row blocked them, and no in-app escape short of opening the spreadsheet and guessing.
+  // Naming the rows is the difference between an actionable message and a dead end.
+  if (isRecord(body) && Array.isArray(body.blockedRows) && body.blockedRows.length > 0) {
+    const rows = body.blockedRows
+      .filter((row): row is number => Number.isSafeInteger(row))
+      .slice(0, 10);
+    if (rows.length > 0) {
+      const more = body.blockedRows.length > rows.length
+        ? ` (and ${body.blockedRows.length - rows.length} more)`
+        : "";
+      return `${message} Sheet ${rows.length === 1 ? "row" : "rows"} ${rows.join(", ")}${more}.`;
+    }
+  }
+  return message;
 }
 
 async function fetchFormLeadIntake(signal?: AbortSignal) {
