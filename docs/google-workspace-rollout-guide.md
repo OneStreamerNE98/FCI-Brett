@@ -292,6 +292,14 @@ GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<calendar ID>
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<calendar ID>
 ```
 
+The two Calendar ID environment values are bootstrap fallbacks only. After an
+Administrator saves Calendar IDs in **Settings → Calendar & appointments**, the saved
+settings are runtime-authoritative. The panel states whether each calendar is using a
+saved setting, an environment fallback that saving will override, or is not configured.
+Use the Calendar verification action to make an `events.list` read with the existing
+`calendar.events` grant and adopt the verified ID into the app-managed resource registry.
+No wider Calendar scope is required.
+
 The Google Forms lead-intake action uses the existing Sheets scope. It performs a
 bounded read only when an administrator presses **Check for new form responses**;
 there is no scheduler, webhook, Pub/Sub subscription, or additional OAuth scope.

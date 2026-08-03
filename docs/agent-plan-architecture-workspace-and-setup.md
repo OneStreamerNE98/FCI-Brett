@@ -1465,6 +1465,8 @@ absence only — never values.
 response body.
 
 ### SET-05 · Saved calendar IDs become runtime-authoritative with visible source (medium, after SET-01)
+**Status:** In progress — `codex/set05-calendar-authority`
+
 **Why:** The Calendar panel saves IDs that runtime ignores (env vars win) — accepted
 direction in three docs; **coordinate with BE-07** (which ports the storage later).
 **Do:** Consume SET-13's `app/lib/workspace-effective-config.ts` resolver (do not

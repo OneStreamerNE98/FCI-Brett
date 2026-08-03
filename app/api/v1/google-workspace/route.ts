@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const google = (await getEffectiveGoogleRuntimeSetup()).config;
+  const setup = await getEffectiveGoogleRuntimeSetup();
+  const google = setup.config;
   const workspace = google.drive;
   const [connection, chatNotifications] = await Promise.all([
     getGoogleConnectionStatus(google),
@@ -61,6 +62,16 @@ export async function GET(request: NextRequest) {
       provisioningEnabled: google.provisioningEnabled,
       gmailEnabled: google.gmailEnabled,
       calendarEnabled: google.calendarEnabled,
+      calendars: {
+        clientAppointments: {
+          configured: Boolean(setup.effectiveResources.clientAppointmentsCalendar.externalId),
+          source: setup.effectiveResources.clientAppointmentsCalendar.source,
+        },
+        fieldSchedule: {
+          configured: Boolean(setup.effectiveResources.fieldScheduleCalendar.externalId),
+          source: setup.effectiveResources.fieldScheduleCalendar.source,
+        },
+      },
       sheetsEnabled: google.sheetsEnabled,
       clientDirectorySheetConfigured: google.simulation || Boolean(google.clientDirectorySheetId),
       clientDirectorySheetIdInvalid: google.clientDirectorySheetIdInvalid,

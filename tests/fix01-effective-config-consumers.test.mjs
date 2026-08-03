@@ -52,11 +52,20 @@ const database = {
       async first() {
         query.kind = "first";
         if (/FROM workspace_blueprints WHERE connection_key = \?/u.test(sql)) return null;
+        if (/FROM workspace_resources WHERE connection_key = \? AND resource_type = \? AND resource_key = \?/u.test(sql)) {
+          return state.resources.find((row) => row.connection_key === query.values[0] && row.resource_type === query.values[1] && row.resource_key === query.values[2]) ?? null;
+        }
         if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) return state.connection;
         return null;
       },
       async run() {
         query.kind = "run";
+        if (/^INSERT INTO workspace_resources /u.test(sql)) {
+          const [id, connection_key, resource_type, resource_key, external_id, parent_external_id, external_url, origin, metadata_json, created_by, created_at, updated_at] = query.values;
+          const existing = state.resources.find((row) => row.connection_key === connection_key && row.resource_type === resource_type && row.resource_key === resource_key);
+          state.resources = state.resources.filter((row) => !(row.connection_key === connection_key && row.resource_type === resource_type && row.resource_key === resource_key));
+          state.resources.push({ id: existing?.id ?? id, connection_key, resource_type, resource_key, external_id, parent_external_id, external_url, origin, metadata_json, created_by: existing?.created_by ?? created_by, created_at: existing?.created_at ?? created_at, updated_at });
+        }
         return { meta: { changes: 1 } };
       },
     };
@@ -90,6 +99,7 @@ const [
   gmailHelpers,
   calendarEventsRoute,
   calendarHoldRoute,
+  calendarVerifyRoute,
   clientsRoute,
   projectsRoute,
   workspaceRoute,
@@ -98,6 +108,7 @@ const [
   vite.ssrLoadModule("/app/api/v1/integrations/google/gmail/_route-helpers.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/calendar/events/route.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/calendar/test-hold/route.ts"),
+  vite.ssrLoadModule("/app/api/v1/integrations/google/calendar/verify/route.ts"),
   vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
   vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
   vite.ssrLoadModule("/app/api/v1/google-workspace/route.ts"),
@@ -214,6 +225,9 @@ globalThis.fetch = async (input, init = {}) => {
     return Response.json({ access_token: "FCI_TEST_ACCESS_TOKEN" });
   }
   if (url.startsWith("https://www.googleapis.com/calendar/v3/calendars/")) {
+    if (url.includes("fields=summary")) {
+      return Response.json({ summary: "FCI TEST calendar", timeZone: "America/New_York", items: [] });
+    }
     if (init.method === "POST") {
       return Response.json({
         id: "FCI_TEST_EVENT",
@@ -326,6 +340,61 @@ test("both Calendar routes use the app-saved calendar and retain env-only fallba
     );
     assert.match(writtenIntegrationEvents()[1].detail, /^start=.+;end=.+;visibility=private;attendees=none;notifications=none$/u);
   }
+});
+
+test("Workspace readiness reports saved, environment, and absent Calendar sources", async () => {
+  for (const fixture of [
+    { name: "saved", resources: appResources(), ids: ENV_IDS, expected: { configured: true, source: "app" } },
+    { name: "environment", resources: [], ids: ENV_IDS, expected: { configured: true, source: "env" } },
+    { name: "absent", resources: [], ids: { ...ENV_IDS, appointments: undefined, fieldSchedule: undefined }, expected: { configured: false, source: "none" } },
+  ]) {
+    configure(fixture);
+    const response = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
+    assert.equal(response.status, 200, fixture.name);
+    const payload = await response.json();
+    assert.deepEqual(payload.workspace.calendars.clientAppointments, fixture.expected, `${fixture.name} appointments source`);
+    assert.deepEqual(payload.workspace.calendars.fieldSchedule, fixture.expected, `${fixture.name} field source`);
+  }
+});
+
+test("Calendar verify probes events.list and adopts the ID into the registry", async () => {
+  configure({ resources: [], ids: ENV_IDS });
+  const response = await calendarVerifyRoute.POST(officeRequest(
+    "/api/v1/integrations/google/calendar/verify",
+    "POST",
+    { calendarKey: "field-schedule", calendarId: " verified-field@example.test " },
+  ));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.verified, true);
+  assert.equal(payload.calendar.id, "verified-field@example.test");
+  assert.equal(payload.calendar.name, "FCI TEST calendar");
+  const providerUrl = calendarProviderUrls().at(-1);
+  assert.match(providerUrl, /calendars\/verified-field%40example.test\/events\?/u);
+  assert.match(providerUrl, /maxResults=1/u);
+  const adopted = state.resources.find((row) => row.resource_type === "calendar.calendar" && row.resource_key === "field-schedule");
+  assert.equal(adopted.external_id, "verified-field@example.test");
+  assert.equal(adopted.origin, "adopted");
+});
+
+test("Calendar verify rejects non-admin callers before database or Google work", async () => {
+  const officeEmail = "office@cherryhillfci.com";
+  configure({ overrides: { FCI_OFFICE_EMAILS: `${ADMIN_EMAIL},${officeEmail}` } });
+  const response = await calendarVerifyRoute.POST(new Request(
+    "https://fci.example.test/api/v1/integrations/google/calendar/verify",
+    {
+      method: "POST",
+      headers: {
+        origin: "https://fci.example.test",
+        "content-type": "application/json",
+        "oai-authenticated-user-email": officeEmail,
+      },
+      body: JSON.stringify({ calendarKey: "client-appointments", calendarId: "calendar@example.test" }),
+    },
+  ));
+  assert.equal(response.status, 403);
+  assert.equal(state.queries.length, 0);
+  assert.equal(state.providerCalls.length, 0);
 });
 
 async function assertCreationMirror(route, path, body, resources, ids, expectedSheetId) {
