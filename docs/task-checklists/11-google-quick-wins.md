@@ -47,7 +47,10 @@ The app does not poll this Sheet in the background. GI-01 reads at most 25 rows
 when an administrator presses the check button. It identifies a submission by its
 Timestamp plus a content hash; the saved row number is only a circular scan cursor,
 so inserting or deleting Sheet rows does not skip or duplicate a submission. A repeat
-check with no new rows does no work. WS-12 owns any future
+check with no new rows creates nothing and advances nothing, but it does still read a
+bounded window from the Sheet — it is cheap, not free. **Editing an already-submitted
+response changes the content hash, so the same submission is queued a second time; review
+both entries before accepting.** WS-12 owns any future
 background trigger; it must reuse this mapping and queue unchanged.
 
 ## Professional outbound identity (`ops@`)

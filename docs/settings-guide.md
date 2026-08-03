@@ -339,7 +339,10 @@ An administrator presses **Check for new form responses** to read at most 25 row
 from the linked response Sheet. The app records a row scan cursor and check time,
 using the row only as a circular read optimisation; a Timestamp-plus-content hash identifies
 each submission even if rows are inserted or deleted. Repeating the action with no new
-rows is a no-op. While the test-data gate is closed, the response Name must begin with
+rows creates nothing and moves nothing, though it does still read a bounded window from the
+Sheet. If someone edits a response after submitting it, the app sees a changed answer as a
+new submission and queues it again — check for a near-identical pair before accepting.
+While the test-data gate is closed, the response Name must begin with
 **FCI TEST — DO NOT USE**. Possible duplicates use the same
 matching rules as first-run import, malformed rows stay visible for correction, and
 the estimated value stays blank until a person enters it. Submitting a completed row
