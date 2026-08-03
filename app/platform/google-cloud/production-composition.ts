@@ -20,9 +20,6 @@ import {
   createPostgresIntegrationMetadataRepository,
 } from "../../adapters/postgres/integration-metadata-repository";
 import {
-  createPostgresGoogleFormLeadIntakeRepository,
-} from "../../adapters/postgres/google-form-lead-intake-repository";
-import {
   createPostgresLeadRepository,
 } from "../../adapters/postgres/lead-repository";
 import {
@@ -59,7 +56,6 @@ import type { FileMetadataRepository } from "../../ports/file-metadata";
 import type { FilingRuleRepository } from "../../ports/filing-rule-repository";
 import type { IdentityPersistenceRepository } from "../../ports/identity-persistence";
 import type { IntegrationMetadataRepository } from "../../ports/integration-metadata";
-import type { GoogleFormLeadIntakeRepository } from "../../ports/google-form-lead-intake";
 import type { LeadRepository } from "../../ports/lead-repository";
 import type { MailItemRepository } from "../../ports/mail-item-repository";
 import type { OutboxRepository } from "../../ports/outbox-repository";
@@ -88,7 +84,6 @@ export type ProductionRepositoryFactories = Readonly<{
   userPreferences: UserPreferencesRepository;
   filingRules: FilingRuleRepository;
   mailItems: MailItemRepository;
-  googleFormLeadIntake: GoogleFormLeadIntakeRepository;
   clients(request: PostgresCreationRequestMetadata): ClientRepository;
   projects(request?: PostgresCreationRequestMetadata): ProjectRepository;
   leads(request?: PostgresCreationRequestMetadata): LeadRepository;
@@ -148,10 +143,6 @@ export function composeProductionRepositories(
   );
   const filingRules = createPostgresFilingRuleRepository(postgres, sharedRepositoryOptions);
   const mailItems = createPostgresMailItemRepository(postgres, sharedRepositoryOptions);
-  const googleFormLeadIntake = createPostgresGoogleFormLeadIntakeRepository(
-    postgres,
-    sharedRepositoryOptions,
-  );
   const repositories: ProductionRepositoryFactories = Object.freeze({
     outbox,
     securityAudit,
@@ -165,7 +156,6 @@ export function composeProductionRepositories(
     userPreferences,
     filingRules,
     mailItems,
-    googleFormLeadIntake,
     clients(request) {
       return createPostgresClientRepository(postgres, {
         schema: config.postgres.schema,

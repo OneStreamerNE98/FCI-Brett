@@ -2463,6 +2463,32 @@ mapping, watermark and review queue are untouched.
 branch, malformed-row tolerance); review-first queue asserted (no auto-created lead
 without confirmation); simulation e2e. **Effort:** small. **Cost:** $0.
 
+### GI-01a · Forms intake follow-up: Cloud Run wiring and dismissal coverage (small, after GI-01)
+**Status:** In progress — `codex/gi01a-followup`
+
+**Why:** The merged GI-01 packet constructed and exposed a PostgreSQL intake repository
+from the Cloud Run composition even though the employee router had no Forms route and the
+Cloud Run runtime deliberately has no Google Workspace connector/provider adapter. That
+half-wiring made production intake look available when no request could create a review.
+The successful dismissal route also lacked executing coverage for its connection scope and
+one-time transition.
+
+**Do:** Keep Google Forms response checking explicitly scoped to the Sites development
+surface until the production Workspace provider and credential boundary is designed and
+approved. Remove the unreachable PostgreSQL intake repository from the Cloud Run
+composition; retain its adapter, schema, migration, grants, and gated PostgreSQL integration
+coverage so a future production-provider packet can compose it deliberately. This is not a
+license to add a Cloud Run Google token path, scheduler, webhook, hosted configuration, or
+live data. Execute the existing Sites dismissal route against D1 and cover a successful
+dismissal, a review owned by a different `connectionKey`, and a second dismissal of the
+already-retired row returning `409 form_lead_review_not_retired`.
+
+**Accept:** Cloud Run no longer exposes a constructed-but-unreachable Forms intake
+repository, and this Sites-only boundary is explicit. The three dismissal cases are covered
+by route execution rather than source inspection; `npm test`, `npm run test:e2e`, and
+`npm run lint` pass. No production provider, migration apply, hosted configuration, or live
+data change. **Effort:** small.
+
 ### GI-02 · Chat webhook notifier + notification-routing settings (medium, independent)
 **Status:** Complete — PR #79, July 21, 2026. Source-only and undeployed.
 

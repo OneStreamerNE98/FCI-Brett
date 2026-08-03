@@ -1395,6 +1395,80 @@ test("GI-01 lead POST atomically accepts one review and rejects a concurrent dup
   }
 });
 
+test("GI-01 dismissal is connection-scoped, retires once, and reports a repeated dismissal", async () => {
+  const database = new Gi01Database();
+  environment(database);
+  const dismissalAdmin = "dismissal-admin@cherryhillfci.com";
+  workerEnvironment.FCI_OFFICE_EMAILS = `${ADMIN_EMAIL},${OFFICE_EMAIL},${dismissalAdmin}`;
+  workerEnvironment.FCI_ADMIN_EMAILS = `${ADMIN_EMAIL},${dismissalAdmin}`;
+  const repository = adapter.createD1GoogleFormLeadIntakeRepository(database);
+  const activeReview = draft("review-dismiss-active", 2, "dismiss-active");
+  const otherConnectionReview = draft("review-dismiss-other", 3, "dismiss-other");
+  try {
+    await repository.saveBatch({
+      connectionKey: CONNECTION_KEY,
+      spreadsheetId: SHEET_ID,
+      reviews: [activeReview],
+      observedPositions: [],
+      lastProcessedRow: activeReview.sourceRow,
+      lastProcessedSubmissionKey: activeReview.submissionKey,
+      processedAt: 100,
+      actor: dismissalAdmin,
+    });
+    await repository.saveBatch({
+      connectionKey: "another-workspace",
+      spreadsheetId: SHEET_ID,
+      reviews: [otherConnectionReview],
+      observedPositions: [],
+      lastProcessedRow: otherConnectionReview.sourceRow,
+      lastProcessedSubmissionKey: otherConnectionReview.submissionKey,
+      processedAt: 101,
+      actor: dismissalAdmin,
+    });
+
+    const dismissed = await route.PATCH(request("PATCH", {
+      id: activeReview.id,
+      outcome: "dismissed",
+    }, dismissalAdmin));
+    assert.equal(dismissed.status, 200);
+    assert.deepEqual(await dismissed.json(), { outcome: "dismissed" });
+    assert.deepEqual({ ...database.row(
+      "SELECT status, reviewed_by, accepted_lead_id FROM google_form_lead_reviews WHERE id = ?",
+      activeReview.id,
+    ) }, {
+      status: "dismissed",
+      reviewed_by: dismissalAdmin,
+      accepted_lead_id: null,
+    });
+
+    const repeated = await route.PATCH(request("PATCH", {
+      id: activeReview.id,
+      outcome: "dismissed",
+    }, dismissalAdmin));
+    assert.equal(repeated.status, 409);
+    assert.deepEqual(await repeated.json(), {
+      error: "This response was already reviewed or is no longer available.",
+      code: "form_lead_review_not_retired",
+    });
+
+    const wrongConnection = await route.PATCH(request("PATCH", {
+      id: otherConnectionReview.id,
+      outcome: "dismissed",
+    }, dismissalAdmin));
+    assert.equal(wrongConnection.status, 409);
+    assert.deepEqual(await wrongConnection.json(), {
+      error: "This response was already reviewed or is no longer available.",
+      code: "form_lead_review_not_retired",
+    });
+    assert.equal(database.row(
+      "SELECT status FROM google_form_lead_reviews WHERE id = ?",
+      otherConnectionReview.id,
+    ).status, "needs-review");
+  } finally {
+    database.close();
+  }
+});
+
 test("GI-01 D1 lead acceptance rolls back both records when batched evidence fails", async () => {
   const database = new Gi01Database();
   const reviews = adapter.createD1GoogleFormLeadIntakeRepository(database);
@@ -1754,15 +1828,15 @@ test("GI-01 source laws pin manual triggering, adapter parity, safe acceptance o
   assert.match(postgresIntakeSource, /async dismissReview\(input\)/u);
   assert.match(postgresIntakeSource, /SET status = 'dismissed'/u);
   assert.doesNotMatch(postgresIntakeSource, /retireReview|SET status = 'accepted'/u);
+  assert.doesNotMatch(
+    productionComposition,
+    /createPostgresGoogleFormLeadIntakeRepository|googleFormLeadIntake/u,
+  );
   const leadPostSource = leadRouteSource.slice(leadRouteSource.indexOf("export async function POST"));
   assert.ok(
     leadPostSource.indexOf("requireOfficeUser(request, { admin: true })")
       < leadPostSource.indexOf("await ensureWorkspaceSchema()"),
     "the review admin gate must run before database work",
-  );
-  assert.match(
-    productionComposition,
-    /const googleFormLeadIntake = createPostgresGoogleFormLeadIntakeRepository\([\s\S]*?googleFormLeadIntake,/u,
   );
   assert.match(productionSchema, /accepted_lead_id uuid REFERENCES leads \(id\)/u);
   assert.match(checklist, /\*\*Timestamp\*\*, \*\*Name\*\*,\s*\*\*Address\*\*, \*\*Rooms\*\*, \*\*Flooring Type\*\*, \*\*Preferred Contact\*\*/u);
