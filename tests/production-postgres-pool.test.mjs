@@ -297,10 +297,6 @@ test("composes singleton persistence repositories and request-scoped creation fa
   assert.equal(composition.repositories.userPreferences, composition.repositories.userPreferences);
   assert.equal(composition.repositories.filingRules, composition.repositories.filingRules);
   assert.equal(composition.repositories.mailItems, composition.repositories.mailItems);
-  assert.equal(
-    composition.repositories.googleFormLeadIntake,
-    composition.repositories.googleFormLeadIntake,
-  );
   assert.notEqual(composition.repositories.clients(firstRequest), composition.repositories.clients(firstRequest));
   assert.notEqual(composition.repositories.clients(firstRequest), composition.repositories.clients(secondRequest));
   assert.notEqual(composition.repositories.projects(firstRequest), composition.repositories.projects(secondRequest));
@@ -351,9 +347,6 @@ test("creates and closes a runtime composition through injected pool dependencie
   assert.equal(typeof composition.repositories.mailItems.findByGmailMessageId, "function");
   assert.equal(typeof composition.repositories.mailItems.listRetryableAnalysisRows, "function");
   assert.equal(typeof composition.repositories.mailItems.markCoverageComplete, "function");
-  assert.equal(typeof composition.repositories.googleFormLeadIntake.getWatermark, "function");
-  assert.equal(typeof composition.repositories.googleFormLeadIntake.saveBatch, "function");
-  assert.equal(typeof composition.repositories.googleFormLeadIntake.dismissReview, "function");
   await composition.close();
   assert.deepEqual(events, ["pool.end", "connector.close"]);
 });

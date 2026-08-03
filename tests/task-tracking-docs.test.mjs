@@ -96,7 +96,7 @@ function assertPacketDocumentStructure(path, markdown) {
     packetHeadingCount += 1;
     assert.match(
       line,
-      /^#{2,3} [A-Z]+-\d{2}(?:-[A-Z]+)? · \S/,
+      /^#{2,3} [A-Z]+-\d{2}[a-z]?(?:-[A-Z]+)? · \S/,
       `${path}:${index + 1} has a malformed packet heading`,
     );
 
