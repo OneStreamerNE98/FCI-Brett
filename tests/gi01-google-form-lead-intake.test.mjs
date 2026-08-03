@@ -1771,3 +1771,88 @@ test("GI-01 source laws pin manual triggering, adapter parity, safe acceptance o
   assert.match(rollout, /Do\s+not enable automatic email collection/iu);
   assert.match(rollout, /Timestamp(?:-plus-| plus a )content hash/iu);
 });
+
+test("GI-01 never rewinds the watermark when the forward window is short", async () => {
+  // Regression for the P1 found by adversarial review of the merged packet. The checkpoint
+  // was `keyedRows.at(-1)` over [forward window, wrap window]. The wrap exists to recover
+  // repositioned rows, but taking its tail as the cursor rewinds the scan toward the top of
+  // the sheet — so on a 100-row sheet the cursor cycles 101 -> 26 -> 51 -> 76 -> 101, and a
+  // response landing at the end is invisible for up to ceil(N/25) presses while the button
+  // reports "No new form responses were found."
+  //
+  // The shipped tests could not catch it: their fixture has exactly 25 data rows, so the
+  // wrap tail equals the watermark and `checkpointUnchanged` short-circuits before the
+  // rewrite is observable. This fixture has 30, which is the smallest size that exposes it.
+  const database = new Gi01Database();
+  await workspaceEnvironment(database);
+  const providerRows = Array.from({ length: 30 }, (_, index) => [
+    `2026-08-03T09:${String(index).padStart(2, "0")}:00Z`,
+    `FCI TEST — DO NOT USE — Rewind ${index + 1}`,
+    `${index + 1} Rewind Way`,
+    "Office",
+    "LVT",
+    `rewind-${index + 1}@example.test`,
+  ]);
+  const grid = (rows, startRow) => ({
+    sheets: [{
+      data: [{
+        startRow,
+        rowData: rows.map((row) => ({
+          values: row.map((formattedValue, columnIndex) => ({
+            formattedValue,
+            effectiveValue: columnIndex === 0
+              ? { stringValue: formattedValue }
+              : { stringValue: formattedValue },
+          })),
+        })),
+      }],
+    }],
+  });
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.hostname === "oauth2.googleapis.com") {
+      return Response.json({ access_token: "workspace-access-token" });
+    }
+    if (url.hostname === "sheets.googleapis.com") {
+      const encodedRange = url.pathname.split("/values/")[1];
+      if (encodedRange && decodeURIComponent(encodedRange) === "A1:F1") {
+        return Response.json({ values: [[
+          "Timestamp", "Name", "Address", "Rooms", "Flooring Type", "Preferred Contact",
+        ]] });
+      }
+      const range = url.searchParams.get("ranges");
+      const match = /^A(\d+):F(\d+)$/u.exec(range ?? "");
+      if (!match) throw new Error(`Unexpected Sheets range ${range}`);
+      const from = Number(match[1]);
+      const to = Number(match[2]);
+      // Sheet rows are 2..31 for 30 responses; anything past that returns empty.
+      const slice = providerRows.slice(Math.max(0, from - 2), Math.max(0, to - 1));
+      return Response.json(grid(slice, from - 1));
+    }
+    throw new Error(`Unexpected provider request ${url.href}`);
+  };
+  try {
+    const first = await route.POST(request("POST"));
+    const firstBody = await first.json();
+    assert.equal(first.status, 200);
+    assert.equal(firstBody.watermark.lastProcessedRow, 26, "first press consumes rows 2-26");
+
+    // Second press: forward window A27:F51 yields only rows 27-31, so the wrap fires and
+    // reads back from row 2. Before the fix the checkpoint became the wrap tail (row 21).
+    const second = await route.POST(request("POST"));
+    const secondBody = await second.json();
+    assert.equal(second.status, 200);
+    assert.ok(
+      secondBody.watermark.lastProcessedRow >= 26,
+      `watermark must never move backwards; got ${secondBody.watermark.lastProcessedRow} after 26`,
+    );
+    assert.equal(
+      secondBody.watermark.lastProcessedRow,
+      31,
+      "the cursor should sit at the last forward row, not the wrap tail",
+    );
+    assert.equal(database.count("google_form_lead_reviews"), 30);
+  } finally {
+    database.close();
+  }
+});
