@@ -3029,10 +3029,12 @@ draft-first and every Gmail mutation stays review-first. Provider: OpenAI
 behind a provider port. Architecture: live agentic tool-calling with bounded
 budgets (spec §2); NO vector index, NO cron/scheduled handler, NO auto-send
 anywhere in Tier 1 (repo law). House rules: `app/FloorOpsApp.tsx` is touched
-by AI-02 ONLY (one queue slot); every AI feature is an optional accelerator
-with a mandatory records-only fallback; one new table (`tasks`) in the whole
-tier; no new nav items, pages, modals, or Settings sections; golden hashes
-never regenerate in this workstream; spec §5 (untrusted-data contract,
+by AI-02 only except for the owner-approved AI-11(b) Settings dispatcher
+branch; every AI feature is an optional accelerator with a mandatory
+records-only fallback; one new table (`tasks`) in the whole tier; no new nav
+items, pages, or modals, and no new Settings sections except AI-11(b)'s
+owner-approved dedicated **AI assistant** section; golden hashes never
+regenerate in this workstream; spec §5 (untrusted-data contract,
 injection fixtures, citation re-validation, no-write tool registry) binds
 every packet. Tier 2 (AI-T2-1…AI-T2-6: scheduled digest delivery, time-based
 reminders, opt-in auto-labeling, SMS with A2P/TCPA consent ledger, pgvector
@@ -3505,10 +3507,20 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
-**SUB-SCOPE (a) IS COMPLETE — PR #255, July 31, 2026. Source-only and undeployed. ONLY
-(b), (c) AND (d) REMAIN CLAIMABLE.** The packet carries no status line because those three
-are still open and the dispatch law reads "available if and only if it has no status line" —
-but a claimant must take **(b), (c) or (d) only, in that order**. Do not rebuild (a).
+**Status:** In progress — `codex/ai11b-settings-section`
+**Claimed sub-scope:** (b) only — dedicated AI assistant Settings section.
+
+**SUB-SCOPE (a) IS COMPLETE — PR #255, July 31, 2026. Source-only and undeployed. (b) IS IN
+FLIGHT on the branch named in the status line above. ONLY (c) AND (d) REMAIN CLAIMABLE.**
+The status line on a sub-scoped packet tracks **the sub-scope in flight, not the packet**, so
+while it is present the dispatch law's "available if and only if it has no status line" reads
+(c) and (d) as unavailable when they are in fact open. Read this paragraph, not the status
+line, to decide what is claimable here.
+**On merge this status line must be REMOVED, not flipped to `Complete`.** The packet is not
+complete while (c) and (d) are open, and the grammar has no partial-completion form — which is
+precisely why (a)'s completion is recorded in this body instead of a status line. Record (b)
+the same way and delete the line. A claimant must then take **(c) or (d) only, in that order**.
+Do not rebuild (a) or (b).
 
 **(a), merged in PR #255 — do not redo:** the three typed accepts (project-update → the
 existing filing path; schedule and warranty → `POST /api/v1/tasks` with `source:"email"`,

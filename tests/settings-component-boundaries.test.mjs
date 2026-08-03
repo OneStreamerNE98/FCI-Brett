@@ -38,7 +38,7 @@ test("keeps the Settings component modules explicit and outside FloorOpsApp", as
   }
 });
 
-test("keeps SettingsView as an eight-section, two-audience dispatcher without panel behavior", async () => {
+test("keeps SettingsView as a nine-section, two-audience dispatcher without panel behavior", async () => {
   const app = await read("app/FloorOpsApp.tsx");
   const navigation = await read("app/settings/components/SettingsAudienceNavigation.tsx");
   const settingsView = app.slice(app.indexOf("function SettingsView"), app.indexOf("function LeadModal"));
@@ -55,6 +55,7 @@ test("keeps SettingsView as an eight-section, two-audience dispatcher without pa
     ["Inbox & file rules", "InboxRulesPanel"],
     ["Client Directory", "DirectorySyncPanel"],
     ["Workflow & notifications", "WorkspaceDefaultsPanel"],
+    ["AI assistant", "AiAssistantSettingsCard"],
     ["Data & security", "DataSecurityPanel"],
     ["Testing & launch", "TestingLaunchPanel"],
   ];
@@ -69,6 +70,7 @@ test("keeps SettingsView as an eight-section, two-audience dispatcher without pa
 
   assert.match(settingsView, /visibleSection === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar"/);
   assert.match(settingsView, /visibleSection === "Workflow & notifications" && <WorkspaceDefaultsPanel mode="workflow"/);
+  assert.match(settingsView, /visibleSection === "AI assistant" && <AiAssistantSettingsCard notify=\{notify\} isAdmin=\{isAdmin\}/);
   assert.match(settingsView, /const visibleSection: SettingsSection = isAdmin \? section : "My settings"/);
   for (const section of SETTINGS_SECTIONS.slice(1)) {
     assert.match(settingsView, new RegExp(`isAdmin && visibleSection === "${section.replace(/[&]/g, "\\&")}"`));

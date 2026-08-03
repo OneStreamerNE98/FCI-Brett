@@ -31,6 +31,7 @@ export const SETTINGS_SECTIONS = [
   "Inbox & file rules",
   "Client Directory",
   "Workflow & notifications",
+  "AI assistant",
   "Data & security",
   "Testing & launch",
 ] as const;
@@ -66,6 +67,7 @@ const settingsSectionSlugs: Record<SettingsSection, string> = {
   "Inbox & file rules": "inbox-rules",
   "Client Directory": "client-directory",
   "Workflow & notifications": "workflow-notifications",
+  "AI assistant": "ai-assistant",
   "Data & security": "data-security",
   "Testing & launch": "testing-launch",
 };

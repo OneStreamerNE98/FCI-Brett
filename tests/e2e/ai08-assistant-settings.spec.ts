@@ -19,6 +19,7 @@ const configuredConfig = {
 };
 const missingKeyCopy = "Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.";
 const footerCopy = "The assistant reads saved records and drafts text. It never sends email, never files messages, and never creates records without your confirmation.";
+const dataAtRestCopy = "Inbox analysis stores the email subject, sender, received date, and analysis result in the app database. This can include customer names and subject lines. Turning Inbox analysis off stops future sweeps but does not erase saved results.";
 const introCopy = "Answers come only from saved records and Drive files. Every answer cites its sources. The assistant never sends anything.";
 const exampleQuestions = [
   "Which projects have open callbacks?",
@@ -89,7 +90,8 @@ test("Administrator sees five controls and saves only the closed AI feature payl
     await route.continue();
   });
 
-  await page.goto("/settings?section=workflow-notifications");
+  await page.goto("/settings?section=ai-assistant");
+  await expect(page.locator(".settings-nav").getByRole("button", { name: "AI assistant", exact: true })).toHaveAttribute("aria-current", "page");
   const card = assistantCard(page);
   await expect(card).toBeVisible();
   await expect(card.getByRole("checkbox")).toHaveCount(5);
@@ -105,6 +107,9 @@ test("Administrator sees five controls and saves only the closed AI feature payl
   await expect(card.getByText("In development", { exact: true })).toHaveCount(3);
   await expect(card.getByText("Planned", { exact: true })).toHaveCount(2);
   await expect(card.getByText(footerCopy, { exact: true })).toBeVisible();
+  await expect(card.getByText(dataAtRestCopy, { exact: true })).toBeVisible();
+  await expect(card.getByText("Configured", { exact: true })).toBeVisible();
+  await expect(card.getByText("gpt-5.4", { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(secretSentinel);
 
   await card.getByRole("checkbox", { name: "Inbox filing suggestions" }).uncheck();
@@ -124,6 +129,8 @@ test("Administrator sees five controls and saves only the closed AI feature payl
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(card).toBeVisible();
   await expectNoHorizontalOverflow(page);
+  await page.locator(".settings-nav").getByRole("button", { name: "Workflow & notifications", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "AI assistant" })).toHaveCount(0);
 });
 
 test("Office identity is redirected to My settings and receives read-only AI states", async ({ page }) => {
@@ -136,7 +143,7 @@ test("Office identity is redirected to My settings and receives read-only AI sta
     await fulfillJson(route, configuredConfig);
   });
 
-  await page.goto("/settings?section=workflow-notifications");
+  await page.goto("/settings?section=ai-assistant");
   await expect(page).toHaveURL(/\/settings$/u);
   await expect(page.getByRole("heading", { level: 2, name: "My settings" })).toBeVisible();
   const navigation = page.locator(".settings-nav");
@@ -155,6 +162,7 @@ test("Office identity is redirected to My settings and receives read-only AI sta
   await expect(card.getByText("In development", { exact: true })).toHaveCount(3);
   await expect(card.getByText("Planned", { exact: true })).toHaveCount(2);
   await expect(card.getByText(footerCopy, { exact: true })).toBeVisible();
+  await expect(card.getByText(dataAtRestCopy, { exact: true })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(secretSentinel);
   expect(patchRequests).toBe(0);
 
@@ -180,9 +188,10 @@ test("Missing-key state uses the canonical honest copy and disables every contro
     });
   });
 
-  await page.goto("/settings?section=workflow-notifications");
+  await page.goto("/settings?section=ai-assistant");
   const card = assistantCard(page);
   await expect(card.getByText(missingKeyCopy, { exact: true })).toBeVisible();
+  await expect(card.getByText(dataAtRestCopy, { exact: true })).toBeVisible();
   await expect(card.getByRole("checkbox")).toHaveCount(5);
   for (const checkbox of await card.getByRole("checkbox").all()) await expect(checkbox).toBeDisabled();
   await expect(card.getByRole("button", { name: "Save AI settings" })).toBeDisabled();

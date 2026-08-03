@@ -217,7 +217,7 @@ Open **Settings → My settings** to manage the preferences tied to your own sig
 
 Click **Save my settings** to keep your changes.
 
-If you are an office user rather than an administrator, **My settings** also shows a read-only **AI assistant** card. It displays the provider, whether the company API key is **Configured** or **Missing**, the model name, and whether each assistant feature is On or Off. It never displays the key itself. Administrators manage those company-wide switches in **Settings → Workflow & notifications**.
+If you are an office user rather than an administrator, **My settings** also shows a read-only **AI assistant** card. It displays the provider, whether the company API key is **Configured** or **Missing**, the model name, and whether each assistant feature is On or Off. It never displays the key itself. Administrators manage those company-wide switches in **Settings → AI assistant**.
 
 **Reordering and hiding sections (page layouts).** On the **Overview** and **Reports** pages you can arrange the layout for yourself. Click the gear (**Edit layout**) button in the page header, then:
 
@@ -279,7 +279,7 @@ A dash (—) in any number means there is nothing to measure yet (for example, n
 Settings is where the company is configured. Think of it in two halves:
 
 - **For you** — your own personal preferences, saved only to your sign-in. Nothing here affects anyone else.
-- **Workspace & company setup** — the company-wide configuration: the Google connection, calendars, the email filing rules, the client directory mirror, office defaults, security, and the launch checklist. Only administrators see and change these.
+- **Workspace & company setup** — the company-wide configuration: the Google connection, calendars, the email filing rules, the client directory mirror, office defaults, AI assistant controls, security, and the launch checklist. Only administrators see and change these.
 
 Almost everything on the company side is either **working today** or clearly labeled as **planned** (saved now, switched on later). The app never pretends a planned feature is live. When you see a small badge — *Working*, *In development*, *Setup required*, or *Planned* — take it at face value.
 
@@ -289,7 +289,7 @@ Almost everything on the company side is either **working today** or clearly lab
 
 ## Panel by panel
 
-There are eight sections in the left navigation. Here is what each one is for.
+There are nine sections in the left navigation. Here is what each one is for.
 
 ### 1. My settings *(everyone — this is the "For you" section)*
 
@@ -358,14 +358,19 @@ and checkpointed so one malformed response cannot block later submissions.
 
 ### 6. Workflow & notifications
 
-Simple office defaults — independent client- and crew-reminder hours, and an office notification email — plus two things worth knowing. All three defaults are marked **Planned**: they remain editable and persist separately, but the upcoming reminder worker does not send anything yet. An older saved appointment-reminder value remains the appointment default only; it is not copied into the newer client-reminder field.
+Simple office defaults — independent client- and crew-reminder hours, and an office notification email — plus Google Chat routing. All three defaults are marked **Planned**: they remain editable and persist separately, but the upcoming reminder worker does not send anything yet. An older saved appointment-reminder value remains the appointment default only; it is not copied into the newer client-reminder field.
 
 - **Google Chat notification routing.** You can review which five event types are allowed to notify which approved Google Chat space, and switch each on individually. It is off by default. Webhook addresses are secrets that live in the hosting environment and never appear in the app or the browser.
-- **The AI assistant card.** Administrators see the provider (**OpenAI**), the company API-key state (**Configured** or **Missing**), and the configured model name — never the key value. Five switches control **Organization-wide answers**, **Inbox filing suggestions**, **Inbox analysis**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured, and all five have server consumers. The current card shows **In development** on organization-wide answers, Inbox suggestions, and Inbox analysis, and the older **Planned** badge on Reply drafting and Task extraction; those last two badges lag their shipped, review-first consumers and are recorded for a presentation follow-up. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
 
 > [SCREENSHOT 7 — see Screenshot index]
 
-### 7. Data & security
+### 7. AI assistant
+
+The dedicated administrator section shows the provider (**OpenAI**), company API-key state (**Configured** or **Missing**), and configured model name — never the key value. Five switches control **Organization-wide answers**, **Inbox filing suggestions**, **Inbox analysis**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured, and all five have server consumers. The current card shows **In development** on organization-wide answers, Inbox suggestions, and Inbox analysis, and the older **Planned** badge on Reply drafting and Task extraction; those last two badges lag their shipped, review-first consumers and are recorded for a presentation follow-up. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
+
+The section also states what Inbox analysis saves: the email subject, sender, received date, and analysis result persist in the app database. That stored snapshot can include customer names and subject lines, and turning Inbox analysis off stops future sweeps without erasing results already saved.
+
+### 8. Data & security
 
 A plain-language summary of the safeguards already in place: review-first email filing, one administrator-approved Workspace connection (consumer Gmail accounts are rejected in live mode), isolated local simulation that never contacts Google, and the installable web app. It also includes phone-install guidance.
 
@@ -373,7 +378,7 @@ Administrators also see a read-only **Who has access** card. It shows the office
 
 > [SCREENSHOT 8 — see Screenshot index]
 
-### 8. Testing & launch
+### 9. Testing & launch
 
 **Updated July 25, 2026.** The **Test & launch checklist** separates two kinds of development evidence. **Verified from live status** rows read the existing Workspace connection, Calendar access, and Client Directory mirror endpoints; they show current status and never have a checkbox. **Administrator attestations** are the human acceptance steps. When an administrator checks one, the app saves the administrator's email and the time, and that attestation remains after reload. While those saved attestations are being checked—or if their read is unavailable—the rows show an honest checking/unavailable state rather than claiming they are not attested. The saved-checklist read model is safe and read-only for an office user, while the current company-setup navigation continues to keep this whole panel in the administrator audience. In the local development simulation those live rows read *Simulated* rather than *Verified*, and the summary reports a simulated environment, because there is no real Google connection to verify against.
 
@@ -521,7 +526,7 @@ Administrators can review the source readiness for that change under **Settings 
 
 **Do I need a ChatGPT account? No.** Nobody on your team ever links a personal ChatGPT or OpenAI account, and nobody logs into OpenAI. The assistant runs on **one company OpenAI API key** that the administrator (in practice, the developer) sets once in the hosting environment's settings — not in the app, not in the code, not in email. Every user simply shares that one company key behind the scenes.
 
-Because it is a secret, the app never shows the key itself. The **AI assistant** Settings card shows only whether it is **Configured** or **Missing**, together with **OpenAI** as the provider and the model name. Administrators find the editable card in **Settings → Workflow & notifications**; office users see the same information and feature states read-only in **My settings**. When the key is Missing, the feature controls are unavailable and the app says plainly to add the company key to the hosting environment — it never fakes a ready state.
+Because it is a secret, the app never shows the key itself. The **AI assistant** Settings card shows only whether it is **Configured** or **Missing**, together with **OpenAI** as the provider and the model name. Administrators find the editable card in **Settings → AI assistant**; office users see the same information and feature states read-only in **My settings**. When the key is Missing, the feature controls are unavailable and the app says plainly to add the company key to the hosting environment — it never fakes a ready state.
 
 The five company-wide feature switches are **Organization-wide answers**,
 **Inbox filing suggestions**, **Inbox analysis**, **Reply drafting**, and
@@ -663,9 +668,9 @@ Consolidated list of every screenshot placeholder, with whether an existing capt
 | 2 | Part 1 · Leads | Leads page with a lead open in its side drawer, highlighting **Advance stage** and the stage chips | Partial: `leads-1280.png` / `leads-390.png` show the page. **Needs fresh** for the drawer-open + Advance highlight. |
 | 3 | Part 1 · Projects | Project drawer Overview tab: value / square-feet / installation-date stats and the **Installation & follow-up** buttons | Partial: `projects-1280.png` shows the list. **Needs fresh** for the drawer-open Overview tab. |
 | 4 | Part 1 · Inbox | Gmail project inbox: a message with its suggested-project chip, **Review & copy** and **Draft reply** buttons, and the mailbox-bucket selector | **Needs fresh.** AI-10 d+e changed the bucket selector copy and made **Needs review** an app-side queue, so `inbox-1280.png` / `inbox-390.png` no longer match. |
-| 5 | Part 2 · Settings nav | Settings left navigation: the "For you" group with My settings, and the "Workspace & company setup" group listing the seven company sections | Partial: `settings-1280.png` shows Settings. **Needs fresh** if it does not show the admin nav with all sections. |
+| 5 | Part 2 · Settings nav | Settings left navigation: the "For you" group with My settings, and the "Workspace & company setup" group listing the eight company sections | Partial: `settings-1280.png` shows Settings. **Needs fresh** if it does not show the admin nav with all sections. |
 | 6 | Part 2 · Client Directory | Client Directory & Project Register panel: the two mirror cards with last-synced times and the **Sync now** button | **Needs fresh.** No baseline of this sub-panel. |
-| 7 | Part 2 · Workflow & notifications | Reminder-hour fields, the office notification email, the AI assistant status and feature switches, and the Google Chat notification-routing card | **Needs fresh.** No baseline of this sub-panel. |
+| 7 | Part 2 · Workflow & notifications + AI assistant | Reminder-hour fields, the office notification email, and Google Chat routing in Workflow; provider/key/model state, feature switches, and the data-at-rest disclosure in the dedicated AI assistant section | **Needs fresh.** No baseline of either sub-panel. |
 | 8 | Part 2 · Data & security | The four safeguards listed with their icons | **Needs fresh.** No baseline of this sub-panel. |
 | 9 | Part 2 · Google Workspace banner | Status banner reading "Simulation ready" with the SIMULATION tag and "Stage 1 of 4", above the four collapsible stage cards | **Needs fresh.** No baseline of the Google Workspace panel. |
 | 10 | Part 2 · Stage 2 Connect | Stage 2 expanded: the "Company account authorization" card with **Connect Google Workspace** and the admin **Connection health** expander | **Needs fresh.** |

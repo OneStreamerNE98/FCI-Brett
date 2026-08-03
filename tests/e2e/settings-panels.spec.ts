@@ -7,6 +7,7 @@ const settingsSections = [
   { path: "/settings?section=inbox-rules", navigation: "Inbox & file rules", heading: "Inbox & file rules" },
   { path: "/settings?section=client-directory", navigation: "Client Directory", heading: "Client Directory & Project Register" },
   { path: "/settings?section=workflow-notifications", navigation: "Workflow & notifications", heading: "Workflow & notifications" },
+  { path: "/settings?section=ai-assistant", navigation: "AI assistant", heading: "AI assistant" },
   { path: "/settings?section=data-security", navigation: "Data & security", heading: "Data & security" },
   { path: "/settings?section=testing-launch", navigation: "Testing & launch", heading: "Test & launch checklist" },
 ] as const;

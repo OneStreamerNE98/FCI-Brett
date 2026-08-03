@@ -59,7 +59,8 @@
 }
 
 .missingNote,
-.readOnlyNote {
+.readOnlyNote,
+.dataAtRestNote {
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -80,7 +81,8 @@
 }
 
 .missingNote svg,
-.readOnlyNote svg {
+.readOnlyNote svg,
+.dataAtRestNote svg {
   flex: 0 0 auto;
 }
 
@@ -94,6 +96,24 @@
 .readOnlyNote span {
   display: block;
   font-size: 12px;
+}
+
+.dataAtRestNote {
+  border: 1px solid var(--line);
+  background: #f7f5fa;
+  color: var(--accent-dark);
+}
+
+.dataAtRestNote strong,
+.dataAtRestNote span {
+  display: block;
+  font-size: 12px;
+}
+
+.dataAtRestNote span {
+  margin-top: 3px;
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 
 .readOnlyNote span {

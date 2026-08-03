@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Check, KeyRound, ShieldCheck, Sparkles } from "lucide-react";
+import { Bot, Check, Database, KeyRound, ShieldCheck, Sparkles } from "lucide-react";
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { SettingsDataNotice } from "./SettingsDataNotice";
@@ -166,6 +166,11 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
         <ShieldCheck size={17} aria-hidden="true" />
         <div><strong>Read-only AI settings</strong><span>Office users can review availability. Only Administrators can change organization-wide feature switches.</span></div>
       </div>}
+
+      <div className={styles.dataAtRestNote} role="note">
+        <Database size={17} aria-hidden="true" />
+        <div><strong>Data stored by Inbox analysis</strong><span>Inbox analysis stores the email subject, sender, received date, and analysis result in the app database. This can include customer names and subject lines. Turning Inbox analysis off stops future sweeps but does not erase saved results.</span></div>
+      </div>
 
       {isAdmin ? <form onSubmit={save}>
         <fieldset className={styles.featureFieldset} disabled={!editable || saving}>

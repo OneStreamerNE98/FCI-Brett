@@ -110,7 +110,7 @@ test("Administrator identity keeps protected Settings actions available", async 
   await expect(workspaceMenu.getByRole("button", { name: "Testing & launch" })).toBeVisible();
   await page.locator(".workspace-card").click();
   await expect(page.locator(".settings-nav").getByText("Workspace & company setup", { exact: true })).toBeVisible();
-  await expect(page.locator(".settings-nav").getByRole("button")).toHaveCount(8);
+  await expect(page.locator(".settings-nav").getByRole("button")).toHaveCount(9);
   await expect(page.getByRole("button", { name: "Save calendar plan" })).toBeEnabled();
   await expect(page.locator(".administrator-action-note")).toHaveCount(0);
 
