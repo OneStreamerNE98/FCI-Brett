@@ -9,9 +9,9 @@ const scannerPath = resolve(repositoryRoot, "tools/nightly/layout-scan.mjs");
 const scannerSource = readFileSync(scannerPath, "utf8");
 
 // Importing the module must NOT start a scan: the scanner guards its entrypoint so the
-// exported vacuity predicate is testable. If this import ever launches a browser, the
+// exported predicates are testable. If this import ever launches a browser, the
 // entrypoint guard has been removed and this whole file will hang or fail loudly.
-const { looksVacuous } = await import(pathToFileURL(scannerPath).href);
+const { looksVacuous, isConnectionFailure } = await import(pathToFileURL(scannerPath).href);
 
 test("NFIX-07 flags an auth-wall page as vacuous even when controls rendered", () => {
   // August 3: 102 page-views of an "Access not authorized" page reported a clean
@@ -62,17 +62,37 @@ test("NFIX-07 keeps a healthy, control-rich, overlay-free page non-vacuous", () 
   );
 });
 
-test("NFIX-07 keeps the same-scroll-context overlap gate in the probe", () => {
-  // Phantom-overlap fix: elements scrolled out of an overflow ancestor must never be
-  // compared against elements outside that scroller. Both the helper and its use in the
-  // overlap loop must survive.
+test("NFIX-07 keeps the scrolled-out-of-view membership gate in the probe", () => {
+  // Phantom-overlap fix: only elements scrolled out of their own scroll root's visible
+  // box leave overlap candidacy. A pair-identity comparison of scroll roots once
+  // suppressed EVERY cross-context pair — visible or not — making a real sidebar-vs-main
+  // collision structurally unreportable; it must never come back.
   assert.match(scannerSource, /const scrollRootOf = \(node\) =>/);
-  assert.match(
+  assert.match(scannerSource, /const withinScrollRoot = \(node, rect\) =>/);
+  assert.match(scannerSource, /targets\.filter\(\(\{ element, rect \}\) => withinScrollRoot\(element, rect\)\)/);
+  assert.doesNotMatch(
     scannerSource,
-    /if \(scrollRootOf\(targets\[i\]\.element\) !== scrollRootOf\(targets\[j\]\.element\)\) continue;/,
+    /scrollRootOf\(targets\[i\]\.element\) !== scrollRootOf\(targets\[j\]\.element\)/,
   );
   assert.match(scannerSource, /const reachableHorizontally = \(node\) =>/);
   assert.match(scannerSource, /&& !reachableHorizontally\(element\)/);
+});
+
+test("NFIX-07 classifies connection-class failures so a final-chunk death cannot exit 0", () => {
+  // Real failure strings seen from Playwright and Node when the seeded server died
+  // mid-scan, through the exported predicate — both directions.
+  assert.equal(isConnectionFailure("page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:4173/leads"), true);
+  assert.equal(isConnectionFailure("Error: connect ECONNREFUSED 127.0.0.1:4173"), true);
+  assert.equal(isConnectionFailure("page.evaluate: Target closed"), true);
+  assert.equal(isConnectionFailure("browserContext.newPage: Browser has been closed"), true);
+  assert.equal(isConnectionFailure("Error: socket hang up"), true);
+  assert.equal(isConnectionFailure("page.goto: Timeout 30000ms exceeded."), false);
+  assert.equal(isConnectionFailure("page.goto: net::ERR_NAME_NOT_RESOLVED at http://localhost:4173/"), false);
+  assert.equal(isConnectionFailure(""), false);
+  assert.equal(isConnectionFailure(null), false);
+  // Both abort paths stay wired: the per-page catch and the after-loop final probe.
+  assert.match(scannerSource, /if \(isConnectionFailure\(String\(error\)\)\) scanAborted = true;/);
+  assert.match(scannerSource, /results\.some\(\(r\) => r\.error\) && !\(await serverStillAlive\(\)\)/);
 });
 
 test("NFIX-07 keeps the closed-details ghost filter in the probe", () => {

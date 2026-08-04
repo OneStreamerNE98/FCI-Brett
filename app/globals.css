@@ -863,8 +863,12 @@ button { color:inherit; }
      panel padding by ~15px. Stack every settings heading in the band exactly as the 560px
      block does on phones, and lift the stacked controls to the 44px phone target height.
      The .administrator-action-control override matters: its base rule caps the wrapper at
-     max-width:220px, narrower than the 229px button it wraps. */
+     max-width:220px, narrower than the 229px button it wraps. The >svg rule is the 560px
+     block's companion: four headings park a decorative icon top-right (assistant Bot,
+     data-security Clock3/UserRoundCheck, chat-notification MessageSquare) that the grid
+     would otherwise strand on its own bottom row. */
   .settings-layout .settings-heading{display:grid;gap:12px}
+  .settings-layout .settings-heading>svg{display:none}
   .settings-layout .settings-heading>.primary-button,
   .settings-layout .settings-heading>.soft-button,
   .settings-layout .settings-heading>.administrator-action-control{width:100%;max-width:none}

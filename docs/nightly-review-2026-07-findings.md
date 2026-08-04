@@ -509,19 +509,31 @@ page-views, 17 routes, three widths, zero infrastructure failures. Two live CSS 
 did survive NFIX-06, both in the 821–900 settings band where the two-column settings
 layout leaves only ~230–330px of content width; fixing them surfaced a third live defect
 in the same band, visible while Workspace setup is incomplete.
-**Do:** commit the three probe fixes to tools/nightly/layout-scan.mjs (same-scroll-context
-gating for overlap detection; vacuity guard extended with an auth-wall text match and a
-minimum-control-count floor, the decision exported as a testable pure predicate;
-closed-details ghost-rect filtering); document the deployed-site iframe method as the
-primary scan method in the nightly runbook, with the local seeded server as fallback only,
-and add chunked scanning with health checks between chunks so a dying server truncates
-loudly, not silently; fix the three live CSS defects — Settings → Client Directory "Check
-for new form responses" clipped 49px at 834, Settings → Calendar "Google connection"
+**Do:** commit the four probe fixes to tools/nightly/layout-scan.mjs (scrolled-out-of-view
+membership gating for overlap detection — only an element scrolled outside its own scroll
+root's visible box leaves candidacy, so visible cross-context collisions stay reportable;
+vacuity guard extended with an auth-wall text match and a minimum-control-count floor, the
+decision exported as a testable pure predicate; closed-details ghost-rect filtering;
+reachable-overhang filtering, which drops element-overhang reports for elements inside a
+working horizontal scroller and — via its documentElement.scrollWidth fallback — on any
+page that already scrolls horizontally as a whole, narrowing the element-overflow
+adjudication surface NFIX-06's acceptance relied on); document the deployed-site iframe
+method as the primary scan method in the nightly runbook, with the local seeded server as
+fallback only, and add chunked scanning with health checks between chunks so a dying
+server truncates loudly, not silently; fix the three live CSS defects — Settings → Client
+Directory "Check for new form responses" (recorded as 49px clipped in the August 3
+deployed-site scan; measured 34px past the viewport frame in the pre-fix worktree at the
+same width; both pre-fix, now −53px inside), Settings → Calendar "Google connection"
 clipped 15px at 834, and the Stage 3 creation card's action rows overflowing the viewport
 by up to 146px at 834 while Workspace setup is incomplete. CSS-only; takes the globals.css
 lock and the relevant settings module CSS.
 **Accept:** a deployed-site scan at 390/834/1280 reports zero overlaps and zero clipped
-controls on the three named surfaces; a fixture auth-wall page is flagged vacuous, not
-clean; a healthy full run reports vacuousPageViews 0; the two golden-hash constants are
-untouched; `npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+controls on the two deployed-visible surfaces (the Client Directory intake heading and the
+Calendar heading); the Stage 3 creation-card fix renders only mid-setup with the
+disclosure open — a state the deployed site is never in — so it verifies via the local
+worktree scan in that state, with the measurements recorded in the PR; the auth-wall
+fixture strings are flagged vacuous by the exported looksVacuous predicate, unit-pinned in
+tests/nfix07-layout-scan-guards.test.mjs; a healthy full run reports vacuousPageViews 0;
+the two golden-hash constants are untouched; `npm test`, `npm run test:e2e`,
+`npm run lint` named with outcomes.
 **Effort:** small. **Cost:** $0.

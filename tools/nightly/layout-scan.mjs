@@ -90,6 +90,18 @@ export function looksVacuous({ bodyText, controlCount, overlayCount }) {
     || body.trim().length < 40;
 }
 
+/**
+ * True when a per-page failure message means the server or browser connection is gone,
+ * as opposed to a page-level problem (timeout, DNS, script error). The between-chunk
+ * health probe can never observe a death during the FINAL chunk — there is no next chunk
+ * — so the per-page catch consults this to raise the abort flag; without it, a run whose
+ * tail died inside the last chunk would exit 0 and read exactly like a clean scan.
+ */
+export function isConnectionFailure(message) {
+  return /net::ERR_CONNECTION_REFUSED|ECONNREFUSED|Target closed|browser has been closed|socket hang up/i
+    .test(String(message ?? ""));
+}
+
 /** Runs in the page. Returns raw probe hits; adjudication happens outside. */
 const PROBE = () => {
   const MIN = 24;
@@ -125,19 +137,34 @@ const PROBE = () => {
     return `${parts.join("")}${label ? ` :: ${label}` : ""}`;
   };
 
-  // Two elements can only genuinely overlap if they share a scrolling context. The sidebar
-  // nav is overflow:auto and taller than its box, so its scrolled-away links report
-  // viewport rects that collide with the profile button sitting outside the nav — four
-  // phantom hits on the first run, every one disproved by elementFromPoint. Comparing
-  // scroll roots kills exactly that artefact and suppresses nothing else. (An earlier
-  // attempt excluded any clipped element outright; that dropped interactiveCount to 1 per
-  // page, because everything below the fold is "outside" its scroller at rest.)
+  // Overlap phantom class: the sidebar nav is overflow:auto and taller than its box, so
+  // its scrolled-away links report viewport rects that collide with controls rendered
+  // elsewhere — four phantom hits on the first run, every one disproved by
+  // elementFromPoint. What is suppressed is exactly the elements scrolled out of their
+  // own scroll root's visible box; an element still visible inside its scroller remains
+  // an overlap candidate, so a REAL cross-context collision (a sidebar painting over
+  // main-content controls) stays reportable. (An earlier pair-identity comparison of
+  // scroll roots suppressed every cross-context pair, visible or not, which made that
+  // whole defect class structurally unreportable.) Honest caveat: the scroll root is
+  // found through the DOM parent chain, so a position:fixed element is tested against
+  // its DOM ancestor's scroller box even though it does not actually scroll with it.
   const scrollRootOf = (node) => {
     for (let anc = node.parentElement; anc && anc !== document.body; anc = anc.parentElement) {
       const cs = getComputedStyle(anc);
       if (/(auto|scroll|hidden)/.test(cs.overflowY + " " + cs.overflowX)) return anc;
     }
     return null;
+  };
+  // Membership test: excluded from overlap candidacy iff the rect fails to intersect its
+  // scroll root's client rect (viewport coordinates, 1px tolerance). No enclosing
+  // scroller means only the viewport clips the element, which the probe measures
+  // separately.
+  const withinScrollRoot = (node, rect) => {
+    const root = scrollRootOf(node);
+    if (!root) return true;
+    const box = root.getBoundingClientRect();
+    return rect.right > box.left + 1 && rect.left < box.right - 1
+      && rect.bottom > box.top + 1 && rect.top < box.bottom - 1;
   };
   // Overhang past the viewport edge is only a DEFECT when nothing can bring it into view.
   // Inside a horizontal scroller it is intentional — the leads board scrolls sideways by
@@ -185,20 +212,20 @@ const PROBE = () => {
     });
   });
 
+  const overlapCandidates = targets.filter(({ element, rect }) => withinScrollRoot(element, rect));
   const overlaps = [];
-  for (let i = 0; i < targets.length; i += 1) {
-    for (let j = i + 1; j < targets.length; j += 1) {
-      const a = targets[i].rect;
-      const b = targets[j].rect;
-      if (targets[i].element.contains(targets[j].element)) continue;
-      if (targets[j].element.contains(targets[i].element)) continue;
-      if (scrollRootOf(targets[i].element) !== scrollRootOf(targets[j].element)) continue;
+  for (let i = 0; i < overlapCandidates.length; i += 1) {
+    for (let j = i + 1; j < overlapCandidates.length; j += 1) {
+      const a = overlapCandidates[i].rect;
+      const b = overlapCandidates[j].rect;
+      if (overlapCandidates[i].element.contains(overlapCandidates[j].element)) continue;
+      if (overlapCandidates[j].element.contains(overlapCandidates[i].element)) continue;
       const overlapWidth = Math.min(a.right, b.right) - Math.max(a.left, b.left);
       const overlapHeight = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
       if (overlapWidth > 1 && overlapHeight > 1) {
         overlaps.push({
-          a: describe(targets[i].element),
-          b: describe(targets[j].element),
+          a: describe(overlapCandidates[i].element),
+          b: describe(overlapCandidates[j].element),
           area: Math.round(overlapWidth * overlapHeight),
         });
       }
@@ -246,9 +273,9 @@ const PROBE = () => {
 // The seeded dev server dies under sustained scanning — three times on August 3 alone —
 // and a scan whose tail silently never ran reads exactly like a clean scan. Between
 // chunks, prove the server is still answering; a dead server must truncate LOUDLY.
-async function serverStillAlive() {
+async function probeOnce(timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     await fetch(`${ORIGIN}/`, {
       signal: controller.signal,
@@ -260,6 +287,14 @@ async function serverStillAlive() {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// A single 5s probe cannot tell a slow server from a dead one — the per-page budget is
+// 30s, so one transient stall would falsely abort a whole run. A first failure earns one
+// retry at a 20s budget; only two consecutive failures declare the server dead.
+async function serverStillAlive() {
+  if (await probeOnce(5_000)) return true;
+  return probeOnce(20_000);
 }
 
 async function main() {
@@ -329,11 +364,21 @@ async function main() {
         };
       } catch (error) {
         vacuous += 1;
+        // A connection-class failure means the server or browser is gone, not that this
+        // one page broke. The between-chunk probe cannot see a death inside the final
+        // chunk, so the abort flag must also be raised from here.
+        if (isConnectionFailure(String(error))) scanAborted = true;
         record = { ...record, error: String(error).slice(0, 200), vacuous: true };
       }
       results.push(record);
       process.stdout.write(`${route.id}@${width} `);
     }
+  }
+
+  // Belt for the final chunk: no between-chunk probe ever runs after the last chunk, so
+  // if any page-view errored, prove the server outlived the run before trusting it.
+  if (!scanAborted && results.some((r) => r.error) && !(await serverStillAlive())) {
+    scanAborted = true;
   }
 
   await browser.close();
