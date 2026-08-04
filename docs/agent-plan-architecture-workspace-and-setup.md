@@ -2565,6 +2565,7 @@ untouched** (this must not touch Overview or Reports markup); `npm test`,
 **Effort:** small. **Cost:** $0.
 
 ### SET-40 · Effective-config extensions: every UI-manageable value through one resolver (medium, after SET-05)
+**Status:** In progress — `codex/set40-config-extensions`
 
 **Why:** the August 3 configuration audit and its adversarial review settled how "define it
 in the front end" is built: extend the shipped SET-13 resolver, do NOT blanket-migrate raw
