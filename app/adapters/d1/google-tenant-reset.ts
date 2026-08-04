@@ -44,7 +44,7 @@ export async function resetD1GoogleWorkspaceTenant(
           client_directory_sheet_id = NULL,
           intake_mailbox = NULL,
           settings_json = CASE
-            WHEN json_valid(settings_json) THEN json_remove(settings_json, '$.appointmentCalendarId', '$.fieldCalendarId')
+            WHEN json_valid(settings_json) THEN json_remove(settings_json, '$.appointmentCalendarId', '$.fieldCalendarId', '$.intakeMailbox')
             ELSE settings_json
           END,
           updated_by = ?,

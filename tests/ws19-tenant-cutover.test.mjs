@@ -249,7 +249,7 @@ function seedTenantData(database, status = "revoked") {
       settings_json, updated_by, updated_at
     ) VALUES (
       'workspace', 'old-shared-drive', 'old-directory-sheet', '${OLD_TENANT}',
-      '{"appointmentCalendarId":"old-appointments","fieldCalendarId":"old-field","nonTenantPreference":"preserve-me"}',
+      '{"appointmentCalendarId":"old-appointments","fieldCalendarId":"old-field","intakeMailbox":"old-tenant@example.test","nonTenantPreference":"preserve-me"}',
       'previous-admin@example.test', 10
     );
     INSERT INTO tasks (id, source, source_ref) VALUES
@@ -377,7 +377,7 @@ test("excluded audit and OAuth rows do not arm the guard", async () => {
   }
 });
 
-test("the normalizer's persisted empty-string calendar defaults do not arm the guard", async () => {
+test("the normalizer's persisted empty-string tenant defaults do not arm the guard", async () => {
   // Every workspace-preferences save persists the full normalized settings object, and
   // the normalizer emits appointmentCalendarId/fieldCalendarId as "" when unset. SQLite's
   // json_extract returns TEXT '' (not NULL) for those, so without NULLIF the probe would
@@ -391,7 +391,7 @@ test("the normalizer's persisted empty-string calendar defaults do not arm the g
         settings_json, updated_by, updated_at
       ) VALUES (
         'workspace', NULL, NULL, NULL,
-        '{"appointmentCalendarId":"","fieldCalendarId":"","nonTenantPreference":"preserve-me"}',
+        '{"appointmentCalendarId":"","fieldCalendarId":"","intakeMailbox":"","nonTenantPreference":"preserve-me"}',
         'previous-admin@example.test', 10
       );
     `);
@@ -400,6 +400,11 @@ test("the normalizer's persisted empty-string calendar defaults do not arm the g
 
     database.database.exec(
       "UPDATE workspace_settings SET settings_json = json_set(settings_json, '$.appointmentCalendarId', 'real-appointments') WHERE id = 'workspace'",
+    );
+    assert.equal(await adapter.hasTenantScopedData(CONNECTION_KEY), true);
+
+    database.database.exec(
+      "UPDATE workspace_settings SET settings_json = json_set(settings_json, '$.appointmentCalendarId', '', '$.intakeMailbox', 'operations@example.test') WHERE id = 'workspace'",
     );
     assert.equal(await adapter.hasTenantScopedData(CONNECTION_KEY), true);
   } finally {

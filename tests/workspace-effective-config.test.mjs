@@ -100,6 +100,18 @@ globalThis.__FCI_TEST_CLOUDFLARE_ENV__ = {
             assert.deepEqual(statement.values, ["google-workspace"]);
             return null;
           }
+          if (/FROM google_connections WHERE connection_key = \?/.test(sql)) {
+            assert.deepEqual(statement.values, ["google-workspace"]);
+            return {
+              id: "workspace-connection",
+              google_subject: "workspace-subject",
+              google_email: "operations@cherryhillfci.com",
+              refresh_token_ciphertext: "encrypted-test-token",
+              key_version: "1",
+              scopes_json: "[]",
+              status: "connected",
+            };
+          }
           assert.match(sql, /FROM workspace_settings WHERE id = \?/);
           assert.deepEqual(statement.values, ["workspace"]);
           return {
@@ -256,6 +268,41 @@ test("saved Workspace values win over environment seeds with an honest source la
   assert.ok(Object.isFrozen(
     effective.resolveSavedWorkspaceValue("saved-calendar-id", "environment-calendar-id"),
   ));
+});
+
+test("saved intake mailbox resolves over env and mismatches only the connected account", () => {
+  const base = oauth.getGoogleRuntimeConfig(completeEnvironment({
+    GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS:
+      "operations@cherryhillfci.com,dispatch@cherryhillfci.com",
+  }));
+  const resources = effective.resolveEffectiveWorkspaceResources(base, []);
+  const disconnected = effective.applyEffectiveWorkspaceConfig(base, resources, {
+    intakeMailbox: "dispatch@cherryhillfci.com",
+  });
+  assert.equal(disconnected.intakeMailbox, "dispatch@cherryhillfci.com");
+  assert.equal(disconnected.effectiveSources.intakeMailbox, "app");
+  assert.equal(disconnected.oauthReady, true);
+  assert.equal(disconnected.connectReady, true);
+
+  const mismatched = effective.applyEffectiveWorkspaceConfig(base, resources, {
+    intakeMailbox: "dispatch@cherryhillfci.com",
+  }, "operations@cherryhillfci.com");
+  assert.equal(mismatched.oauthReady, false);
+  assert.equal(mismatched.connectReady, true, "mailbox mismatch must not lock the OAuth self-heal route");
+  assert.deepEqual(mismatched.missingDetails.filter((detail) => (
+    detail.envVar === "GOOGLE_WORKSPACE_INTAKE_MAILBOX"
+  )), [{
+    label: "Google Workspace intake mailbox dispatch@cherryhillfci.com matching connected account operations@cherryhillfci.com",
+    envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
+    secret: false,
+  }]);
+
+  const cleared = effective.applyEffectiveWorkspaceConfig(base, resources, {
+    intakeMailbox: "",
+  }, "operations@cherryhillfci.com");
+  assert.equal(cleared.intakeMailbox, "operations@cherryhillfci.com");
+  assert.equal(cleared.effectiveSources.intakeMailbox, "env");
+  assert.equal(cleared.oauthReady, true);
 });
 
 test("persisted Workspace settings override calendar and sheet environment seeds", () => {

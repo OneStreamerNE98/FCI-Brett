@@ -34,6 +34,7 @@ type WorkspacePreferenceValues = {
   clientReminderHours: number;
   crewReminderHours: number;
   inboxReviewMode: "review-first";
+  intakeMailbox: string;
   officeNotificationEmail: string;
 };
 const defaultWorkspacePreferences: WorkspacePreferenceValues = {
@@ -48,6 +49,7 @@ const defaultWorkspacePreferences: WorkspacePreferenceValues = {
   clientReminderHours: 24,
   crewReminderHours: 24,
   inboxReviewMode: "review-first",
+  intakeMailbox: "",
   officeNotificationEmail: "",
 };
 

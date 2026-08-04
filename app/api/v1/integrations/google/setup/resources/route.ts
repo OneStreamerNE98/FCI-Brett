@@ -1,15 +1,9 @@
-import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
 
 import { getEffectiveGoogleRuntimeSetup } from "../../../../../../lib/google-oauth-sites";
 import { flattenWorkspaceRootFolders, type WorkspaceBlueprint } from "../../../../../../lib/workspace-blueprint";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
-
-type ConnectionIdentityRow = Readonly<{
-  google_email: string;
-  status: string;
-}>;
 
 function resourcePresentation(blueprint: WorkspaceBlueprint) {
   const calendarName = (key: string, fallback: string) => blueprint.calendars.find((calendar) => calendar.key === key)?.name ?? fallback;
@@ -134,14 +128,7 @@ export async function GET(request: NextRequest) {
   await ensureWorkspaceSchema();
 
   const setup = await getEffectiveGoogleRuntimeSetup();
-  const { config, resources: savedRows, blueprint } = setup;
-  const connection = await (
-    config.simulation
-      ? Promise.resolve<ConnectionIdentityRow | null>(null)
-      : env.DB.prepare(
-        "SELECT google_email, status FROM google_connections WHERE connection_key = ?",
-      ).bind(config.connectionKey).first<ConnectionIdentityRow>()
-  );
+  const { config, connectionIdentity: connection, resources: savedRows, blueprint } = setup;
   const savedByIdentity = new Map(savedRows.map((row) => [`${row.resourceType}:${row.resourceKey}`, row]));
   const resources = resourcePresentation(blueprint).map((presentation) => {
     const saved = savedByIdentity.get(`${presentation.resourceType}:${presentation.key}`);

@@ -636,6 +636,32 @@ test("labels planned reminders and inert custom rules without disturbing active 
   assert.doesNotMatch(rules, /rule-footnote|Custom rules are saved as review-first policies/u);
 });
 
+test("selects the Gmail intake mailbox from the hosted allowlist without exposing an allowlist editor", async () => {
+  const [panel, settingsRoute, settingsDomain, effectiveConfig, gmail, authorizeRoute, guide] = await Promise.all([
+    read("app/settings/components/GoogleWorkspacePanel.tsx"),
+    read("app/api/v1/settings/workspace/route.ts"),
+    read("app/domain/workspace-settings.ts"),
+    read("app/lib/workspace-effective-config.ts"),
+    read("app/lib/google-gmail.ts"),
+    read("app/api/v1/integrations/google/authorize/route.ts"),
+    read("docs/settings-guide.md"),
+  ]);
+
+  assert.match(panel, /<select id="workspace-intake-mailbox"/u);
+  assert.match(panel, /intakeMailboxOptions\.map/u);
+  assert.match(panel, /JSON\.stringify\(\{ intakeMailbox \}\)/u);
+  assert.doesNotMatch(panel, /AUTHORIZED_ACCOUNTS[^<]*(?:input|textarea)/u);
+  assert.match(settingsRoute, /intakeMailboxOptions: config\.expectedGoogleEmails/u);
+  assert.match(settingsRoute, /expectedGoogleEmails\.includes\(mailbox\)/u);
+  assert.match(settingsRoute, /allowedDomains\.includes\(domain\)/u);
+  assert.match(settingsDomain, /intakeMailbox: cleanEmail\(input\.intakeMailbox\)/u);
+  assert.match(effectiveConfig, /matching connected account/u);
+  assert.match(effectiveConfig, /detail\.envVar !== INTAKE_MAILBOX_ENV_VAR/u);
+  assert.match(authorizeRoute, /if \(!config\.connectReady\)/u);
+  assert.match(gmail, /const candidate = value === undefined/u);
+  assert.match(guide, /Saving a different authorized address takes effect without a redeploy/u);
+});
+
 test("keeps the app authoritative while mirroring clients and projects to Google Sheets", async () => {
   const [oauth, sheets, clientsApi, projectsApi, statusApi, syncApi, schema, guide] = await Promise.all([
     read("app/lib/google-oauth.ts"), read("app/lib/google-sheets.ts"), read("app/api/v1/clients/route.ts"),

@@ -12,6 +12,7 @@ export type WorkspacePreferences = Readonly<{
   clientReminderHours: number;
   crewReminderHours: number;
   inboxReviewMode: "review-first";
+  intakeMailbox: string;
   officeNotificationEmail: string;
 }>;
 
@@ -27,6 +28,7 @@ export const DEFAULT_WORKSPACE_PREFERENCES: WorkspacePreferences = Object.freeze
   clientReminderHours: 24,
   crewReminderHours: 24,
   inboxReviewMode: "review-first",
+  intakeMailbox: "",
   officeNotificationEmail: "",
 });
 
@@ -96,6 +98,7 @@ export function normalizeWorkspacePreferences(value: unknown): WorkspacePreferen
       DEFAULT_WORKSPACE_PREFERENCES.crewReminderHours,
     ),
     inboxReviewMode: "review-first",
+    intakeMailbox: cleanEmail(input.intakeMailbox),
     officeNotificationEmail: cleanEmail(input.officeNotificationEmail),
   });
 }

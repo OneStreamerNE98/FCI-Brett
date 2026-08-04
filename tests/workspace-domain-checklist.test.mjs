@@ -144,8 +144,8 @@ test("compound account mismatch and reauthorization evidence fail closed", () =>
   const mismatch = statuses(evidence({
     connectReady: true,
     missingDetails: [{
-      label: "Google Workspace intake mailbox matching the single approved connection account",
-      envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS",
+      label: "Google Workspace intake mailbox dispatch@example.test matching connected account operations@example.test",
+      envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
       secret: false,
     }],
   }));
@@ -243,7 +243,7 @@ test("known negative connection evidence remains visible when readiness is unava
 test("SET-13 copy-exact helpers retain safe placeholders and filter app-managed resource fallbacks", () => {
   const details = [
     detail("GOOGLE_WORKSPACE_CLIENT_SECRET", true),
-    detail("GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS"),
+    detail("GOOGLE_WORKSPACE_INTAKE_MAILBOX"),
     detail("GOOGLE_WORKSPACE_SHARED_DRIVE_ID"),
     detail("GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID"),
   ];
@@ -259,7 +259,6 @@ test("SET-13 copy-exact helpers retain safe placeholders and filter app-managed 
   assert.equal(missingWorkspaceDotenvTemplate(details, resources, false), [
     "GOOGLE_WORKSPACE_CLIENT_SECRET=<secret>",
     "GOOGLE_WORKSPACE_INTAKE_MAILBOX=<operations-account@company.example>",
-    "GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS=<operations-account@company.example>",
     "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=<client-appointments-calendar ID>",
     "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=<field-schedule-calendar ID>",
   ].join("\n"));

@@ -38,7 +38,11 @@ as well. The panel names the calendar actually in force whenever it differs from
 
 Keep the current ChatGPT development identity separately allowlisted through `FCI_OFFICE_EMAILS` and `FCI_ADMIN_EMAILS` until employee Google login is implemented.
 
-When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address. Gmail operates as the connected account (`users/me`); the application does not use domain-wide delegation to read another mailbox, and readiness fails closed when the two values differ. PR #32 merged that safeguard at `adc79b8`, and the exact commit is included in private Sites development version 40. The connection remains unconfigured, so the future per-service acceptance run must still capture live evidence.
+When Gmail is enabled, keep every permitted connection identity in the environment-owned
+`GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` list, then select one of those addresses in Settings
+as the intake mailbox. Connect OAuth as that exact address. Gmail operates as the connected
+account (`users/me`); the application does not use domain-wide delegation to read another
+mailbox, and readiness fails closed when the selected and connected addresses differ.
 
 ## Secret hosted values
 

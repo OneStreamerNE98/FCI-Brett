@@ -347,8 +347,8 @@ test("Workspace prerequisites use a semantic metadata-only Stage 1 sequence", as
   assert.match(readinessRoute, /missingDetails/);
   assert.match(readinessRoute, /FCI_ADMIN_EMAILS/);
   assert.match(oauth, /export type GoogleMissingConfiguration/);
-  assert.match(oauth, /label: "Google Workspace intake mailbox matching the single approved connection account"/);
-  assert.match(oauth, /envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS"/);
+  assert.match(oauth, /label: "Google Workspace intake mailbox included in the authorized accounts and allowed domains"/);
+  assert.match(oauth, /envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX"/);
 });
 
 test("Workspace readiness surfaces only Google Chat missing-secret names without changing OAuth readiness", async () => {

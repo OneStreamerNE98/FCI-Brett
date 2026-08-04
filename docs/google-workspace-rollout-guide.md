@@ -183,7 +183,12 @@ Define separate staging and production project boundaries for their own OAuth cl
 
 Parts 6 through 8 change Google Cloud or Google Admin configuration. Complete them only after the Part 5 inventory has been reviewed and the owner has approved the exact changes.
 
-**One-account invariant for Parts 6–10:** use one exact company account as both the OAuth data-connection account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX`. The Gmail client calls Google as `users/me`, and domain-wide delegation is intentionally forbidden, so the app cannot read a different intake mailbox. Readiness fails closed when Gmail is enabled and these values do not identify the same single approved account. PR #32 merged that safeguard at `adc79b8`, and the exact commit is included in private Sites development version 40. The live Google connection and per-service acceptance evidence remain pending.
+**Connected-mailbox invariant for Parts 6–10:** the environment may authorize multiple
+company accounts, but Settings must select one of those accounts as the Gmail intake
+mailbox. Connect OAuth as that selected account. The Gmail client calls Google as
+`users/me`, and domain-wide delegation is intentionally forbidden, so the app cannot read
+a different intake mailbox. Readiness fails closed when Gmail is enabled and the selected
+mailbox does not equal the connected account.
 
 ## Part 6: configure the Google Auth platform
 
@@ -355,7 +360,13 @@ read-only. The browser never receives a webhook URL. See the
 **App-saved**, **Environment**, or **None**, and an app-saved true or false wins. Webhook
 URLs remain hosted secrets and are never app-managed.
 
-For the current development environment, `FCI_OFFICE_EMAILS` is the ChatGPT sign-in email. It is deliberately separate from `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, which is the company Google account allowed to connect data. `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account, and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address.
+For the current development environment, `FCI_OFFICE_EMAILS` is the ChatGPT sign-in email.
+It is deliberately separate from `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, which is the
+environment-owned list of company Google accounts allowed to connect data. Settings selects
+one address from that list as the effective intake mailbox; the selected address must also
+belong to `GOOGLE_WORKSPACE_ALLOWED_DOMAINS` and equal the connected OAuth account.
+`GOOGLE_WORKSPACE_INTAKE_MAILBOX` remains the first-boot fallback until Settings saves an
+app-managed selection.
 
 Keep folder provisioning `false` until Drive verification passes. The environment value
 is a bootstrap fallback; after verification, use the Stage 1 app toggle. Its
@@ -364,7 +375,7 @@ source files or `.openai/hosting.json` does not configure hosted fallbacks; a sa
 version must be deployed separately before a hosted environment-setting change takes
 effect.
 
-Settings → Google Workspace reports missing prerequisites in a semantic table with the business label, exact environment key, and either **Hosted environment value** or **Hosted secret — never in the app or Git**. The table reports presence or absence only; it never returns a configured value or secret. It also reports the cross-field requirement **Google Workspace intake mailbox matching the single approved connection account**, not merely the two individual variables.
+Settings → Google Workspace reports missing prerequisites in a semantic table with the business label, exact environment key, and either **Hosted environment value** or **Hosted secret — never in the app or Git**. The table reports presence or absence only; it never returns a configured value or secret. It also reports the cross-field requirement **Selected Google Workspace intake mailbox matching the connected account**, naming both addresses when they differ.
 
 ## Production connection is a new connection
 
@@ -415,7 +426,11 @@ configuration, consent, data migration, or deployment now.
 3. Go to **Settings → Google Workspace** and run **Check readiness**.
 4. Resolve every row in **Hosted Workspace configuration** before selecting Connect. Configure each named value in the hosting environment, not in the application.
 5. Complete the five ordered setup steps shown in the application:
-    1. **Connect Google Workspace** — select Connect, sign in with the exact single account listed in `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, confirm it is also `GOOGLE_WORKSPACE_INTAKE_MAILBOX`, and approve the required scopes. After the callback, the page removes the callback parameter and refreshes readiness automatically.
+    1. **Connect Google Workspace** — select the intended Gmail intake mailbox in Stage 1,
+       select Connect, sign in with that exact account (which must be listed in
+       `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`), and approve the required scopes. After the
+       callback, the page removes the callback parameter and refreshes readiness
+       automatically.
     2. **Verify the Shared Drive** — in Resources, adopt the manually created Shared Drive,
        review its sharing-restriction result, ensure the blueprint root folders, and run
        the direct Drive verification before continuing.

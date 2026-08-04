@@ -93,6 +93,10 @@ type TenantResetPreview = {
 type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 type WorkspaceReadinessState = "idle" | "loading" | "ready" | "error";
 type WorkspaceSetupResourcesState = "idle" | "loading" | "ready" | "error";
+type WorkspaceSettingsPayload = {
+  settings?: { intakeMailbox?: string };
+  intakeMailboxOptions?: string[];
+};
 type StageFourVerificationState = "idle" | "loading" | "ready" | "error";
 type WorkspaceStageNumber = 1 | 2 | 3 | 4;
 type WorkspaceStageTone = "done" | "current" | "waiting" | "ready" | "neutral";
@@ -470,9 +474,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [gmailWorking, setGmailWorking] = useState(false);
   const [calendarWorking, setCalendarWorking] = useState(false);
   const [sheetsWorking, setSheetsWorking] = useState(false);
-  const [runtimeConfigurationWorking, setRuntimeConfigurationWorking] = useState<"drive" | "client-directory" | "lead-form" | null>(null);
+  const [runtimeConfigurationWorking, setRuntimeConfigurationWorking] = useState<"drive" | "client-directory" | "lead-form" | "intake-mailbox" | null>(null);
   const [clientDirectorySheetId, setClientDirectorySheetId] = useState("");
   const [leadFormResponseSheetId, setLeadFormResponseSheetId] = useState("");
+  const [intakeMailbox, setIntakeMailbox] = useState("");
+  const [intakeMailboxOptions, setIntakeMailboxOptions] = useState<string[]>([]);
   const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
   const [gmailTestEmailPassed, setGmailTestEmailPassed] = useState(false);
   const [calendarChecked, setCalendarChecked] = useState(false);
@@ -679,9 +685,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     setWorkspaceResourcesState("loading");
     setWorkspaceResourcesError(null);
     try {
-      const data = await cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force });
+      const [data, settingsData] = await Promise.all([
+        cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force }),
+        cachedGetJson<WorkspaceSettingsPayload>("/api/v1/settings/workspace", { force }),
+      ]);
       if (loadId !== workspaceResourcesLoadIdRef.current) return;
       setWorkspaceResources(data);
+      setIntakeMailbox(settingsData.settings?.intakeMailbox ?? "");
+      setIntakeMailboxOptions(settingsData.intakeMailboxOptions ?? []);
       setWorkspaceResourcesState("ready");
     } catch {
       if (loadId !== workspaceResourcesLoadIdRef.current) return;
@@ -703,6 +714,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     if (change.blueprintChanged) setBlueprintEditorRevision((current) => current + 1);
     invalidateCachedGet("/api/v1/google-workspace");
     invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+    invalidateCachedGet("/api/v1/settings/workspace");
     invalidateCachedGet("/api/v1/integrations/google/sheets/status");
     await Promise.all([checkSetup(true), loadWorkspaceResources(true)]);
   }, [checkSetup, loadWorkspaceResources]);
@@ -988,6 +1000,35 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       notify(`Drive provisioning ${enabled ? "enabled" : "disabled"} in app settings.`, "success");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Drive provisioning could not be saved.", "error");
+    } finally {
+      setRuntimeConfigurationWorking(null);
+    }
+  }
+
+  async function saveIntakeMailbox() {
+    if (!isAdmin || simulation) return;
+    setRuntimeConfigurationWorking("intake-mailbox");
+    try {
+      const response = await fetch("/api/v1/settings/workspace", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intakeMailbox }),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        settings?: { intakeMailbox?: string };
+        error?: string;
+      };
+      if (!response.ok || !data.settings) {
+        throw new Error(data.error ?? "The Gmail intake mailbox could not be saved.");
+      }
+      setIntakeMailbox(data.settings.intakeMailbox ?? "");
+      invalidateCachedGet("/api/v1/settings/workspace");
+      invalidateCachedGet("/api/v1/google-workspace");
+      invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+      await refreshWorkspaceSetup(true);
+      notify("The Gmail intake mailbox selection was saved.", "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Gmail intake mailbox could not be saved.", "error");
     } finally {
       setRuntimeConfigurationWorking(null);
     }
@@ -1392,6 +1433,17 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
               <article>
                 <div><strong>Project-folder provisioning</strong><span>Source: {simulation ? "Simulation fixture (always enabled)" : effectiveConfigurationSourceLabel(workspace?.provisioningSource)}</span></div>
                 <AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={simulation || runtimeConfigurationWorking !== null} onClick={() => void saveDriveProvisioning(workspace?.provisioningEnabled !== true)}>{simulation ? "Always enabled in simulation" : runtimeConfigurationWorking === "drive" ? "Saving…" : workspace?.provisioningEnabled ? "Disable provisioning" : "Enable provisioning"}</AdministratorActionButton>
+              </article>
+              <article>
+                <div><label htmlFor="workspace-intake-mailbox"><strong>Gmail intake mailbox</strong></label><span>Choose one account from the hosted authorized-account allowlist. The app reads Gmail as the connected account.</span></div>
+                <div className="workspace-copy-value">
+                  <select id="workspace-intake-mailbox" value={intakeMailbox} onChange={(event) => setIntakeMailbox(event.target.value)} disabled={!isAdmin || simulation || runtimeConfigurationWorking !== null}>
+                    <option value="">Use hosted intake mailbox</option>
+                    {intakeMailbox && !intakeMailboxOptions.includes(intakeMailbox) && <option value={intakeMailbox} disabled>{intakeMailbox} (no longer authorized)</option>}
+                    {intakeMailboxOptions.map((mailbox) => <option value={mailbox} key={mailbox}>{mailbox}</option>)}
+                  </select>
+                  <AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={simulation || runtimeConfigurationWorking !== null} onClick={() => void saveIntakeMailbox()}>{simulation ? "Hosted selection unavailable in simulation" : runtimeConfigurationWorking === "intake-mailbox" ? "Saving…" : "Save mailbox"}</AdministratorActionButton>
+                </div>
               </article>
               <article>
                 <div><strong>Client Directory spreadsheet ID</strong><span>Source: {effectiveConfigurationSourceLabel(workspace?.sheets?.clientDirectory?.source)}</span></div>
