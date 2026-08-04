@@ -4111,6 +4111,7 @@ view cannot ship with;
 **Effort:** large. **Cost:** provider spend within the existing budget.
 
 ### AI-12 · A failed inbox analysis is invisible, and a provider outage reads as "You're caught up" (medium)
+**Status:** In progress — `codex/ai12-failed-analysis`
 **Why:** observed live on the deployed site August 3, 2026, by the owner, with a real test
 email. While the OpenAI provider was returning errors, every analysed message stored
 `status: "failed"` — and three independent behaviours then combined to hide it completely:
