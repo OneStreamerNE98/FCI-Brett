@@ -12,6 +12,18 @@ The application role and the person’s direct Google Workspace access must be a
 
 ## Owner decisions
 
+- [x] **Repo laws are owner-liftable on explicit request (recorded August 3, 2026).** Every
+      repo law — the no-scheduler law, golden-hash regeneration authority, review-first,
+      the one-account Gmail boundary, and any other mechanically-enforced rule — may be
+      lifted when the owner explicitly requests it, now or in the future. Three conditions
+      bind every lift: (1) it is exercised only on an explicit owner request naming the
+      law or the capability it blocks — never inferred from a feature request that a
+      law-compliant design could satisfy; (2) it is recorded at the moment it is exercised
+      (date, law, scope of the lift) in the law's own home document, with its guard tests
+      re-pointed consciously in the same PR; (3) the orchestrator states, before
+      exercising it, what the lift newly makes possible and what it costs, so the request
+      is confirmed against consequences rather than wording. A lift is never silent and
+      never partial-by-drift.
 - [x] Initial Administrators: `admincrm@cherryhillfci.com` and `brett@cherryhillfci.com`.
 - [x] Owner confirmed `admincrm@cherryhillfci.com` is individual and not shared.
 - [ ] Before live login, verify AdminCRM's managed Workspace status and immutable issuer/`sub`; verify Brett is an individual managed account and bind his immutable identity.
