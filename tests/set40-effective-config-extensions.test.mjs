@@ -189,6 +189,40 @@ test("spreadsheet adoption fields remain Administrator-only while their sources 
   assert.match(checklist, /\{isAdmin && environmentNotes\}/u);
 });
 
+test("Forms review queue consumes every effective Sheet source and points remediation to Stage 1 adoption", async () => {
+  const panel = await readFile(
+    new URL("../app/settings/components/DirectorySyncPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const parser = panel.slice(
+    panel.indexOf("function parseFormLeadIntakeState"),
+    panel.indexOf("function responseError"),
+  );
+  assert.match(
+    parser,
+    /\["simulation", "app-saved", "environment", "none"\]\.includes\(String\(value\.configurationSource\)\)/u,
+  );
+  assert.match(
+    parser,
+    /configurationSource: value\.configurationSource as FormLeadIntakeState\["configurationSource"\]/u,
+  );
+  const sourceLabeler = panel.slice(
+    panel.indexOf("function formLeadConfigurationSourceLabel"),
+    panel.indexOf("function responseError"),
+  );
+  assert.match(sourceLabeler, /source === "simulation"\) return "Simulation fixture"/u);
+  assert.match(sourceLabeler, /source === "app-saved"\) return "App-saved"/u);
+  assert.match(sourceLabeler, /source === "environment"\) return "Environment \(bootstrap fallback\)"/u);
+  assert.match(sourceLabeler, /return "None"/u);
+  assert.match(
+    panel,
+    /Effective source: <strong>\{formLeadConfigurationSourceLabel\(intake\.configurationSource\)\}<\/strong>/u,
+  );
+  assert.match(panel, /Google Workspace → Stage 1[\s\S]+<strong>Verify and adopt<\/strong>/u);
+  assert.match(panel, /configurationName\}<\/code> is only a hosted bootstrap fallback/u);
+  assert.doesNotMatch(panel, /Set <code>\{intake\.configurationName\}<\/code> in the hosted environment/u);
+});
+
 test("simulation presents Drive provisioning as forced and cannot claim a saved toggle", async () => {
   const [panel, guide] = await Promise.all([
     readFile(

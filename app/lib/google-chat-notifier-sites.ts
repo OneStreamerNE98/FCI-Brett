@@ -48,7 +48,11 @@ export async function saveSitesGoogleChatRouting(
   actor: string,
 ) {
   const environment = sitesEnvironment();
-  const saved = await saveGoogleChatRouting(environment.DB, routing, actor, Date.now());
+  await saveGoogleChatRouting(environment.DB, routing, actor, Date.now());
+  // A routing-only legacy PATCH deliberately omits notificationsEnabled so the
+  // atomic merge preserves its saved value. Re-read that authoritative row for
+  // the response instead of temporarily falling back to the environment gate.
+  const saved = await readGoogleChatRouting(environment.DB);
   const googleConfig = getGoogleRuntimeConfig(environment);
   return buildGoogleChatPublicConfig({
     environment,
@@ -99,7 +103,8 @@ async function runGoogleChatNotification(
 
 /**
  * Hands notification work to the Worker lifetime and returns synchronously.
- * The exact gate is checked before D1, secret resolution, network, or audit work.
+ * Deferred work reads the D1 routing row before checking the effective gate;
+ * disabled delivery still avoids secret resolution, network, and audit work.
  */
 export function queueGoogleChatNotification(
   event: GoogleChatNotificationEvent,

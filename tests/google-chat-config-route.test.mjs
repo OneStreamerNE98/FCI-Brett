@@ -282,6 +282,41 @@ test("app-saved Chat enable toggle wins over the environment bootstrap value", a
   );
 });
 
+test("routing-only PATCH returns the preserved app-saved Chat feature source", async () => {
+  const database = fakeDatabase({
+    "google-chat-routing": {
+      settings_json: JSON.stringify({
+        routes: exactUpdate().events.map(({ type, enabled, spaceKey }) => ({
+          eventType: type,
+          enabled,
+          spaceKey,
+        })),
+        notificationsEnabled: false,
+      }),
+      updated_by: ADMIN_EMAIL,
+      updated_at: Date.UTC(2026, 7, 3),
+    },
+  });
+  setEnvironment(database, { GOOGLE_CHAT_NOTIFICATIONS_ENABLED: "true" });
+
+  const response = await route.PATCH(routeRequest(
+    "/api/v1/integrations/google/chat/config",
+    ADMIN_EMAIL,
+    "PATCH",
+    exactUpdate({ "lead.created": { enabled: true } }),
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.featureEnabled, false);
+  assert.equal(body.featureSource, "app");
+  assert.equal(body.mode, "disabled");
+  assert.equal(
+    JSON.parse(database.rows.get("google-chat-routing").settings_json).notificationsEnabled,
+    false,
+  );
+});
+
 test("simulation PATCH and safe public helper expose no secret and never post", async () => {
   const database = fakeDatabase();
   const privateWebhook = webhookValue();
