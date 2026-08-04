@@ -1474,6 +1474,39 @@ packet extends never touches that table, and a row-level clear would destroy non
 configuration. (f) the typed confirmation must name the tenant read from the STORED
 connection's `google_email`, not from env — env may already point at the new tenant at
 cutover.
+**Amendments (adversarial coherence review, August 3, 2026):** (g) the (d) row-existence
+probe is a NAMED WHITELIST, not "any keyed table has rows": tenant-scoped rows means rows
+in exactly `google_form_lead_reviews`, `google_form_lead_intake_watermarks`, `mail_items`,
+`gmail_file_archives` (plus artifacts via join), `drive_folder_mappings`,
+`google_drive_operations`, `google_sheet_sync_state`, `workspace_resources`,
+`workspace_blueprints`, or a non-null `clients.drive_folder_id`/`drive_url`,
+`projects.drive_folder_id`/`drive_url`, or `workspace_settings` tenant field — explicitly
+EXCLUDING `google_oauth_attempts` (connection-keyed, `db/schema.ts:289`, and the connect
+flow inserts the attempt row for this very connect at initiation,
+`app/adapters/d1/google-oauth-persistence.ts:68`, before the callback runs the guard, so
+counting it refuses every connect forever), `google_integration_events` (disconnect writes
+`oauth.disconnected` under the key, `app/lib/google-oauth.ts:780-798`, and any audit event
+the reset itself writes would re-arm the guard), and `google_connections` itself; a
+missing stored connection passes the guard. (h) tombstone disposition: the reset deletes
+the `google_connections` row after reading `google_email` for (f)'s confirmation, and (d)
+treats no-stored-row as pass — this reconciles Accept's "no row holding an identifier from
+the discarded tenant" clause, which the surviving tombstone (it retains
+`google_subject`/`google_email`, `db/schema.ts:303-304`) would otherwise violate. (i)
+field-level, not row-level, for clients/projects: `clients` and `projects` rows survive
+the reset with `drive_folder_id` AND `drive_url` nulled on BOTH tables — naming
+`clients.drive_url` (`db/schema.ts:40`), which finding 3 omits. (j) extend (e): also clear
+`appointmentCalendarId` and `fieldCalendarId` inside `workspace_settings.settings_json`
+(`app/domain/workspace-settings.ts:8-9,81-82`, saved via
+`app/api/v1/settings/workspace/route.ts:56-61`), and null `tasks.source_ref` on
+gmail-derived tasks (`app/application/task-operations.ts:157`; `db/schema.ts:157`) — a
+discarded tenant's message ids serve nothing. (k) audit: Accept gains one
+`activity_events` row (action `google_workspace.tenant_reset`, actor = the administrator,
+detail naming the discarded tenant's stored `google_email`); `activity_events` is not
+connection-keyed and must not be cleared by this reset. (l) Files: add
+`app/lib/google-oauth.ts` (the (d) guard edits `saveConnection`, `:860-871`) and
+`app/adapters/d1/google-oauth-persistence.ts`; the sibling route carries the inverse
+simulation gate (`config.simulation` → 409), which "runs in workspace mode" implies but
+must be stated.
 **Deliberately NOT in scope:** a data-preserving migration that re-points identifiers across
 tenants. It is far more work, and what it would preserve here is staging test data
 (`Project 2`, `Test Project`, `New Proj`), not business history. Running two tenants at once
@@ -2498,6 +2531,76 @@ rather than a fake one; no new nav item, page, or Settings section; **golden has
 untouched** (this must not touch Overview or Reports markup); `npm test`,
 `npm run test:e2e`, `npm run lint` all named with outcomes.
 **Effort:** small. **Cost:** $0.
+
+### SET-40 · Effective-config extensions: every UI-manageable value through one resolver (medium, after SET-05)
+
+**Why:** the August 3 configuration audit and its adversarial review settled how "define it
+in the front end" is built: extend the shipped SET-13 resolver, do NOT blanket-migrate raw
+`getGoogleRuntimeConfig()` call sites (18 exist; all consume only connectionKey/simulation
+or token fields; adding two D1 reads to every hot list route is pure regression), and note
+three UI-bound values live entirely outside that config today (`OPENAI_MODEL` at
+app/lib/assistant-config-sites.ts:31, the Chat enable flag at
+app/lib/google-chat-notifier-sites.ts:74,109, the lead-form Sheet id at
+app/lib/google-form-lead-intake-config.ts:3-4).
+**Do:** (1) add GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID as the fifth entry in
+EFFECTIVE_WORKSPACE_RESOURCE_SPECS (app/lib/workspace-effective-config.ts:32-53) with a
+verify/adopt route cloned from calendar/verify — wiring the resolved id in as the app
+tier, not through the process.env fallback parameter; (2) repair the dead
+clientDirectorySheetId saved tier — the column is read by both adapters and written by
+neither (the D1 upsert hard-codes it NULL) — plus an adopt-by-ID field; (3) show the
+calendar ID inputs regardless of calendarSetupMode (WorkspaceDefaultsPanel.tsx gates them
+behind "use-existing", so owners on the default mode never see fields that already work);
+(4) OPENAI_MODEL becomes UI-editable with SAVE-TIME provider validation — on save the
+server calls the provider's model-lookup with the configured key and rejects unknown ids;
+env OPENAI_MODEL is retained as the emergency override; a runtime model-not-found surfaces
+the model name instead of a generic failure. A closed in-code allowlist is REJECTED (it
+converts the next model retirement from an env edit into a code deploy); (5)
+GOOGLE_CHAT_NOTIFICATIONS_ENABLED and GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED become
+admin toggles resolved app-first with env fallback; (6) a cheap synchronous
+`getConnectionScope()` accessor for the connectionKey/simulation consumers (no DB reads),
+plus a guard test forbidding any new raw read of a resolver-covered field.
+**Accept:** every moved value shows its source (app-saved / environment / none) in
+Settings; saved values win with env as bootstrap fallback; saving an unknown model id is
+rejected with the provider's reason; hot list routes gain zero DB reads (getConnectionScope
+asserted synchronous); the guard test goes red on a raw read of a resolver-covered field;
+settings guide and rollout guide updated; `npm test`, `npm run test:e2e`, `npm run lint`
+named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### SET-41 · Intake mailbox selected in Settings; the allowlist stays in env (medium, after SET-40)
+
+**Why:** owner request August 3, 2026 — define mailbox addresses in the front end. The
+configuration audit's verdict, upheld under adversarial review: env keeps
+GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS and ALLOWED_DOMAINS (a compromised admin session must
+not be able to widen the identity set it is validated against); the UI selects among them.
+Gmail reads `users/me` (app/lib/google-gmail.ts:9, sole use :661), so the mailbox the app
+reads IS the connected account — the one-account equality is an invariant to keep, not a
+limitation to relax.
+**Do:** store `intakeMailbox` in the workspace settings JSON document
+(`normalizeWorkspacePreferences`, following the officeNotificationEmail precedent — the
+dead `intake_mailbox` column stays untouched); feed it into the resolver via
+SavedWorkspaceRuntimeValues; SAVE-TIME validation in the settings route = membership in
+AUTHORIZED_ACCOUNTS and domain in ALLOWED_DOMAINS; RESOLVE-TIME readiness entry = equality
+with the connected account's google_email, firing only when a connection exists and
+differs (membership alone would let the panel claim intake=ops@ while users/me reads
+info@); re-key the composite pairing entry (google-oauth.ts:419-428, whose envVar is a
+display string the effective-config filter can never clear) to the real env-var key with
+the composite text moved to the label; the two mailbox entries block `oauthReady` but
+NEVER `connectReady` — authorize gates on connectReady, and blocking it locks the
+administrator out of the only self-heal path; fix the validateWorkspaceRecipient
+early-return (google-gmail.ts:518) so the default recipient runs through the same :527
+domain/allowlist validation; the panel offers a selector over the env allowlist entries.
+Do not preserve the singleton readiness form.
+**Accept:** with two allowlisted addresses in env, switching the intake mailbox in Settings
+takes effect with no redeploy; selecting a mailbox that is not the connected account shows
+a mismatch readiness entry naming both addresses, with oauthReady false and connectReady
+true (the authorize route stays reachable — asserted); saving an address outside the
+allowlist or domain is rejected at save time with the reason; the send-test default
+recipient cannot bypass domain validation; guards and pins re-run green; `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium. **Coordinates:** WS-20's per-mailbox readiness later generalizes the
+equality entry per connection — build this packet's re-check as a helper WS-20 can call
+per mailbox.
 
 ---
 
