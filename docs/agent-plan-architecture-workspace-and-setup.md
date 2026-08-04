@@ -4608,8 +4608,8 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-14 → DES-10 (variants a/b
-only) → DES-12.**
+**EDIT-09 (in progress on `codex/edit09-contact-editor-race`) → GI-05 (if approved) →
+WS-20 (if approved) → DES-14 → DES-10 (variants a/b only) → DES-12.**
 
 - **AI-12** — takes NO `FloorOpsApp.tsx` slot (adversarial review, August 3, 2026): the
   mount (`app/FloorOpsApp.tsx:1784`) passes no analysis or queue state — `bucket` is a
@@ -4617,8 +4617,10 @@ only) → DES-12.**
   fetches its own data and sources `isAdmin` itself. AI-12 instead takes the inbox-file
   cluster (`app/api/v1/inbox-analysis/route.ts` + `app/inbox/components/InboxView.tsx`);
   claimants serialize on those files, not on this slot.
-- **GI-04** — **In review — PR #291; the branch still holds the slot.** Unavoidable. The lead, client and project modals and their record mappers are
-  inline in that file.
+- **EDIT-09** — **holds the slot on `codex/edit09-contact-editor-race`.** Unavoidable:
+  `ClientDrawer` and its `ContactEditModal` mount are inline in `app/FloorOpsApp.tsx`.
+- **GI-04** — merged in PR #291 and released the slot. Its lead, client and project modals
+  and record mappers are inline in that file.
 - **GI-05** — the project drawer and its Planned-capabilities list
   (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
 - **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
