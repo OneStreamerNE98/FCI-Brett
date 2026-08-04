@@ -855,6 +855,26 @@ button { color:inherit; }
 @media (min-width:821px) and (max-width:900px){
   .test-launch .settings-heading{display:grid;gap:12px}
   .test-launch .settings-heading>.primary-button{width:100%}
+  /* NFIX-07: through this band the settings content column is only ~230-330px wide (the
+     two-column .settings-layout keeps its 220px section nav until 820, inside a viewport
+     that also still pays for the expanded sidebar), so a heading action cannot sit beside
+     its copy: measured at 834, the Client Directory "Check for new form responses" button
+     overhung the viewport by 34px and the Calendar "Google connection" button cleared its
+     panel padding by ~15px. Stack every settings heading in the band exactly as the 560px
+     block does on phones, and lift the stacked controls to the 44px phone target height.
+     The .administrator-action-control override matters: its base rule caps the wrapper at
+     max-width:220px, narrower than the 229px button it wraps. The >svg rule is the 560px
+     block's companion: four headings park a decorative icon top-right (assistant Bot,
+     data-security Clock3/UserRoundCheck, chat-notification MessageSquare) that the grid
+     would otherwise strand on its own bottom row. */
+  .settings-layout .settings-heading{display:grid;gap:12px}
+  .settings-layout .settings-heading>svg{display:none}
+  .settings-layout .settings-heading>.primary-button,
+  .settings-layout .settings-heading>.soft-button,
+  .settings-layout .settings-heading>.administrator-action-control{width:100%;max-width:none}
+  .settings-layout .settings-heading>.primary-button,
+  .settings-layout .settings-heading>.soft-button,
+  .settings-layout .settings-heading>.administrator-action-control>button{width:100%;min-height:var(--target-min)}
 }
 
 @media (max-width:700px){

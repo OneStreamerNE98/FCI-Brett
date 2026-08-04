@@ -24,6 +24,22 @@ enhancement-sized proposals always wait for explicit owner approval ·
 clear-cut fixes ship as normal Codex packets through the standing
 review-and-merge loop.
 
+## Scan method
+
+**Primary: authenticated same-origin iframe probes against the DEPLOYED site.**
+On August 3, 2026 this method delivered a trustworthy run first time — 51
+page-views across 17 routes at three widths with zero infrastructure failures —
+on the same day the local seeded server had died three times under sustained
+scanning. Scanning the deployed site also measures what users actually receive,
+with production build output and real auth in the loop.
+
+**Fallback: the local seeded server via `tools/nightly/layout-scan.mjs`** (run
+`npm run e2e:server` first). The scanner now processes routes in health-checked
+chunks: between chunks it pings the server, and if the server has died it marks
+every remaining page-view vacuous (`server-died`), sets `scanAborted` in the
+summary, and exits non-zero — so a truncated run can never read as a clean one.
+Treat any `vacuousPageViews > 0` run as untrustworthy until re-run.
+
 ## The nights
 
 | Night | Theme | Status | Run date | Findings | Summary |
