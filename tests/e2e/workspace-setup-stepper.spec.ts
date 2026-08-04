@@ -499,7 +499,8 @@ test("the status banner waits for every source and resolves a mixed-mode all-con
   await expect(loadingChecklist.getByText("Client Directory spreadsheet ID", { exact: true })).toBeVisible();
   await expect(loadingChecklist.getByText("Lead-form response spreadsheet ID", { exact: true })).toBeVisible();
   await expect(loadingChecklist.getByText("Source: Simulation fixture (always enabled)", { exact: true })).toBeVisible();
-  await expect(loadingChecklist.getByText("Source: None", { exact: true })).toHaveCount(2);
+  await expect(loadingChecklist.getByText("Gmail intake mailbox", { exact: true })).toBeVisible();
+  await expect(loadingChecklist.getByText("Source: None", { exact: true })).toHaveCount(3);
   await expect(loadingChecklist.getByText("current mirror source:", { exact: false })).toHaveCount(0);
 
   releaseConnection?.();
@@ -551,7 +552,8 @@ test("mixed-mode Stage 1 rendering follows readiness simulation instead of the b
   await expect(checklist.getByText("Client Directory spreadsheet ID", { exact: true })).toBeVisible();
   await expect(checklist.getByText("Lead-form response spreadsheet ID", { exact: true })).toBeVisible();
   await expect(checklist.getByText("Source: Simulation fixture (always enabled)", { exact: true })).toBeVisible();
-  await expect(checklist.getByText("Source: None", { exact: true })).toHaveCount(2);
+  await expect(checklist.getByText("Gmail intake mailbox", { exact: true })).toBeVisible();
+  await expect(checklist.getByText("Source: None", { exact: true })).toHaveCount(3);
   await expect(checklist.getByText("current mirror source:", { exact: false })).toHaveCount(0);
 });
 
