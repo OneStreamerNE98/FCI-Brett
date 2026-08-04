@@ -1070,6 +1070,7 @@ outcomes.
 **Effort:** small. **Cost:** $0.
 
 ### EDIT-09 · The contact editor re-renders mid-edit and lands a value in the wrong field (small-medium)
+**Status:** In progress — `codex/edit09-contact-editor-race`
 **Why:** CI on PR #280 (August 3, 2026) recorded a retry-only pass of
 `tests/e2e/edit06-client-contact-editing.spec.ts`. The stored row showed
 `primary_contact_name: "Updated Contact555-0196"` and
