@@ -1470,7 +1470,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ ...resourcePayload, connectReady: currentReadiness.credentialsPresent }),
+      body: JSON.stringify(resourcePayload),
     });
   });
 
@@ -1529,9 +1529,10 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
 
   await page.goto("/settings?section=google-workspace");
   await expect(page.getByRole("table", { name: "Hosted Workspace configuration" })).toBeVisible();
+  await setStageExpanded(page, 1, true);
   await expect(page.getByText(missingInvariant, { exact: true })).toBeVisible();
   await setStageExpanded(page, 2, true);
-  await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("WAITING ON STAGE 1");
+  await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS");
   await expect(setupStage(page, 2).getByRole("heading", { level: 3, name: "Company account authorization", exact: true })).toBeVisible();
   await expect(setupStage(page, 2).getByRole("button", { name: "Connect Google Workspace" })).toBeEnabled();
   await setStageExpanded(page, 3, true);
