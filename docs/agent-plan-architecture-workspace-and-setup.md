@@ -3569,6 +3569,20 @@ companies." The gap was measured, not assumed, across `app/globals.css` plus eve
 - **Radii and shadows are already tokenized and are the two dimensions that feel right** —
   868 `var()` usages prove the token mechanism works in this codebase; it was simply never
   extended to color, type, or spacing.
+**Aesthetic direction (owner request, recorded August 4, 2026): Apple iOS / macOS.**
+The owner's standing redesign intent — first recorded as the grid-views brief's "iOS
+requirement" (docs/enhancement-briefs/enhancement-grid-views-and-filtering.md §4) and
+restated August 4 as "takes the theme of Apple iOS and MacOS" — is this packet's north
+star for every value it sets. Concretely: token values, the type scale, and spacing steps
+are chosen to read Apple-native — a restrained neutral surface palette with one accent,
+an SF-adjacent type ramp (matching the system font stack already in use), 4pt-grid
+spacing steps, and the platform split the DES-15 hybrid already embodies (macOS
+table/toolbar idiom at desktop widths, iOS inset-grouped-list idiom in the card band).
+This is a DIRECTION for the values this packet picks, not a scope change: no new
+components, no framework, and the golden-hash pages change only via the A1 screenshot
+sign-off path. Where a value choice is ambiguous, Apple's Human Interface Guidelines are
+the tiebreaker.
+
 **Framework adoption (Tailwind/shadcn/Radix) was considered and REJECTED**, recorded here
 so it is not re-proposed casually: it rewrites the markup of every page including the two
 golden-hash-pinned ones, re-litigates the owner-approved design authority, and abandons the
@@ -3661,7 +3675,10 @@ amendment in `docs/dashboard-design-spec.md` in this same PR**: the board/list t
 sort headers are authorized as a deliberate exception to the "no second way to do an
 existing action" rule, owner-approved August 3, 2026.
 **Constraints:** component-anchored — this packet targets the post-DES-14 extracted
-views and takes NO FloorOpsApp slot; shared primitives rendered inside the
+views and takes NO FloorOpsApp slot; the width split is the Apple-faithful reading of the
+owner's iOS/macOS theme direction (recorded under DES-13) — the ≥821px grid follows the
+macOS table idiom, the card band follows the iOS inset-list idiom (search field + compact
+sort menu, 44px targets), per the grid-views brief §4; shared primitives rendered inside the
 Overview/Reports pinned sections (Status, Avatar, project-card, OperationsActionableList)
 must keep byte-identical default markup — prefer additive props defaulting to current
 output; if regeneration ever becomes necessary, the A1 screenshot-sign-off path applies.
