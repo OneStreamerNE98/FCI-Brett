@@ -2633,6 +2633,64 @@ recipient cannot bypass domain validation; guards and pins re-run green; `npm te
 equality entry per connection — build this packet's re-check as a helper WS-20 can call
 per mailbox.
 
+### SET-42 · Stale-while-revalidate everywhere: one data-freshness doctrine, zero refresh buttons (medium, after SET-40; InboxView portions after AI-12)
+
+**Why:** owner request, August 3, 2026 — stop pressing refresh/sync buttons, "one
+consistent way of doing things for everything," across all pages. A pattern census counted
+the inconsistency against origin/main:
+- The house cache (`app/lib/client-get-cache.ts`) is a 15-second TTL cache with
+  single-flight dedupe and explicit invalidation — **not** stale-while-revalidate: an
+  expired entry blocks on the network, and there is **zero** revalidate-on-focus,
+  -visibility, or -navigation anywhere in `app/`.
+- The fetch layer is split: **14 `cachedGetJson` call sites in 7 files versus 23 raw GET
+  call sites (~29 URLs)** — with the same URL fetched cached in one file and raw in
+  another (`/assistant/config` cached in 2 files, raw in 2; `sheets/status` cached in 1,
+  raw in 2). The core directory (leads/clients/projects/dashboard via
+  `FloorOpsApp.tsx:684`), all of `assistant/`, and all of `management/` fetch raw.
+- **8 always-visible buttons exist only to re-read current data**, plus 12 error-retry
+  re-read sites; **7 distinct loading/error/empty mechanisms** coexist, one of them
+  copy-pasted four times with two renamed clones.
+
+**Do:**
+1. Upgrade `client-get-cache` to stale-while-revalidate: serve the cached value
+   immediately (even when expired) and revalidate in the background; revalidate on window
+   focus/`visibilitychange` and on route navigation; keep single-flight, `force`, and
+   explicit invalidation. **Request- and visibility-triggered only — no timers.** This
+   stays inside the no-scheduler law by construction.
+2. Migrate the 23 raw GET sites onto the primitive (~15–16 files; the 7 already-cached
+   files gain the new behavior for free). One shared load-state hook replaces the
+   copy-pasted `loadRequestRef` machine — **this absorbs FIX-12 inventory item (2)**
+   (four copies plus the two renamed clones), recorded there.
+3. Delete the five pure-refresh buttons (`InboxView` Check connection;
+   `GoogleWorkspacePanel` Refresh mirror status and Check readiness — migrating its two
+   raw stage-4 GETs; `DirectorySyncPanel` Refresh status;
+   `WorkspaceOperationsHealthCard` Refresh operations) and the review-queue reading of
+   InboxView's two Refresh controls.
+4. **Deliberate exclusions:** Gmail message reads stay behind the explicit action — the
+   Inbox's own copy promises Gmail is read only on direct user action
+   (`InboxView.tsx:1290`), so **"Load messages" survives** and mailbox reads never
+   auto-revalidate. Action buttons stay: **Sync now**, **Check for new form responses**,
+   **Prepare FCI labels** (a POST despite its label). The 12 error-retry affordances stay
+   — they are failure recovery, not staleness controls — but converge on the shared
+   notice component.
+
+**Constraints:** no `setInterval`/scheduled additions anywhere (source assertion — the
+no-scheduler law is not lifted by this packet); the golden-hash pages must render
+byte-identically in their default captures (the deleted buttons live outside the pinned
+sections — verify before assuming); mutation-pinned strings re-pointed consciously and
+named in the PR. **Sequencing:** after SET-40 (shared fetch-layer files); the InboxView
+migration lands only after AI-12 merges (same file, currently in flight).
+
+**Accept:** zero always-visible pure-refresh buttons remain; switching to any page after
+its data changed server-side shows the new data without a click (e2e proves it: mutate
+server state, refocus, assert the update); Gmail message reads still require the explicit
+action (asserted); `/assistant/config` and `sheets/status` are each fetched through
+exactly one path; a deps-free source census forbids new raw component GETs; single-flight
+holds under concurrent navigation (no duplicate in-flight requests, asserted); no new
+timers (source assertion); `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
+**Effort:** medium. **Cost:** $0.
+
 ---
 
 # Workstream D — Flooring KPIs & reporting (KPI)

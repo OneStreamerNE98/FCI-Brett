@@ -476,8 +476,10 @@ response/errorResponse consolidation shipped in NFIX-03, PR #197):** the verifie
 inventory is: (1) one `withOfficeRoute` wrapper (origin → auth → schema → bounded
 body → no-store by construction) adopted incrementally across the routes — the
 preamble is now hand-rolled in 60 route files; the FIX-06 census tests become
-structural. (2) one shared settings-card loader hook — the stale-guard +
-loading/error machine is copy-pasted in 4 components. (3) FIX-03 residual —
+structural. (2) ~~one shared settings-card loader hook~~ — **absorbed into SET-42
+(August 3, 2026)**: the SWR migration builds exactly this hook while converting the
+copy-pasted stale-guard + loading/error machine (4 components plus the two renamed
+clones the August 3 census found); do not build it twice. (3) FIX-03 residual —
 drive-provisioning still hand-rolls raw `INSERT INTO google_integration_events`
 (`projects/[projectId]/drive/route.ts:35`, `drive/files/route.ts:282,304`) with no
 drive constructor in `app/lib/google-integration-events.ts`. (4) FIX-10 residual —
