@@ -1148,6 +1148,123 @@ test("simulation project provisioning returns 409 for an active lease and succee
   assert.equal(database.state.leases.get(operationKey).leaseExpiresAt, null);
 });
 
+test("project provisioning rejects widened duplicate siblings before simulation or live side effects", async (t) => {
+  const duplicateBlueprint = () => {
+    const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+    blueprint.drive.projectFolders.unshift(
+      { key: "first-project-sibling", name: "00_Duplicate", management: "owner", children: [] },
+      { key: "second-project-sibling", name: "00_Duplicate", management: "owner", children: [] },
+    );
+    return blueprint;
+  };
+  const project = {
+    id: "project-duplicate-blueprint",
+    project_number: "FCI2026-905",
+    name: "FCI TEST — DO NOT USE",
+    client_id: "client-duplicate-blueprint",
+    client_code: "FCI TEST",
+    client_name: "DO NOT USE",
+  };
+
+  for (const mode of ["simulation", "live"]) {
+    await t.test(mode, async () => {
+      const database = fakeDatabase({
+        blueprint: duplicateBlueprint(),
+        blueprintConnectionKey: mode === "live" ? "google-workspace" : "workspace-simulation",
+      });
+      if (mode === "live") {
+        await workspaceEnvironment(database, { GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED: "true" });
+        database.state.resources.push(savedResource({
+          id: "shared",
+          resourceType: "drive.shared-drive",
+          resourceKey: "primary",
+          externalId: "app-shared-drive-123",
+          name: "FCI Operations",
+        }));
+      } else {
+        simulationEnvironment(database);
+      }
+      database.state.project = project;
+      let providerCalls = 0;
+      globalThis.fetch = async () => {
+        providerCalls += 1;
+        throw new Error("Duplicate-name project preflight must not call Google.");
+      };
+
+      const response = await projectDriveRoute.POST(
+        routeRequest(`/api/v1/projects/${project.id}/drive`),
+        { params: Promise.resolve({ projectId: project.id }) },
+      );
+      const body = await response.json();
+
+      assert.equal(response.status, 409);
+      assert.equal(body.code, "drive_folder_identity_conflict");
+      assert.equal(providerCalls, 0, "preflight must run before token exchange or createFolder");
+      assert.equal(database.state.leases.size, 0);
+      assert.deepEqual(database.state.mappings, []);
+      assert.deepEqual(database.state.activities, []);
+      assert.deepEqual(database.state.events, []);
+    });
+  }
+});
+
+test("a live existing mapping cannot bypass duplicate-name preflight", async () => {
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.drive.projectFolders.unshift(
+    { key: "first-project-sibling", name: "00_Duplicate", management: "owner", children: [] },
+    { key: "second-project-sibling", name: "00_Duplicate", management: "owner", children: [] },
+  );
+  const database = fakeDatabase({ blueprint, blueprintConnectionKey: "google-workspace" });
+  await workspaceEnvironment(database, { GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED: "true" });
+  database.state.resources.push(savedResource({
+    id: "shared",
+    resourceType: "drive.shared-drive",
+    resourceKey: "primary",
+    externalId: "app-shared-drive-123",
+    name: "FCI Operations",
+  }));
+  database.state.project = {
+    id: "project-existing-duplicate-blueprint",
+    project_number: "FCI2026-906",
+    name: "FCI TEST — DO NOT USE",
+    client_id: "client-existing-duplicate-blueprint",
+    client_code: "FCI TEST",
+    client_name: "DO NOT USE",
+  };
+  database.state.mapping = {
+    drive_file_id: "existing-project-folder-123",
+    drive_url: "https://drive.google.test/existing-project-folder-123",
+  };
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("Existing-mapping duplicate-name preflight must not request a token or Drive file.");
+  };
+
+  const response = await projectDriveRoute.POST(
+    routeRequest(`/api/v1/projects/${database.state.project.id}/drive`),
+    { params: Promise.resolve({ projectId: database.state.project.id }) },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.code, "drive_folder_identity_conflict");
+  assert.equal(providerCalls, 0, "preflight must run before token exchange or drive.assertContained");
+  assert.equal(database.state.leases.size, 0);
+  assert.deepEqual(database.state.mappings, []);
+  assert.deepEqual(database.state.mapping, {
+    drive_file_id: "existing-project-folder-123",
+    drive_url: "https://drive.google.test/existing-project-folder-123",
+  });
+  assert.deepEqual(database.state.activities, []);
+  assert.deepEqual(database.state.events, []);
+  assert.equal(
+    database.state.queries.some((query) => /^(?:INSERT|UPDATE|DELETE)\b/u.test(query.sql.trimStart())),
+    false,
+    "the rejected fast path must not issue a persistence mutation",
+  );
+});
+
 test("reconcile-only folder rename fences stale reviews and restores simulation metadata if its audit fails", async () => {
   const database = fakeDatabase();
   simulationEnvironment(database);
@@ -2092,32 +2209,126 @@ test("project Drive provisioning reads an app-adopted Shared Drive ID when the e
   assert.ok(calls.some((call) => call.url.pathname === `/drive/v3/files/${mappedFolderId}`));
 });
 
-test("ensure-roots maps a conflicting same-name blueprint identity to 409 without stealing it", async () => {
-  const rootId = "app-shared-drive-123";
-  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
-  blueprint.drive.roots.unshift(
-    { key: "first-sibling", name: "03_Duplicate Name", management: "owner", children: [] },
-    { key: "second-sibling", name: "03_Duplicate Name", management: "owner", children: [] },
-  );
-  const database = fakeDatabase({ blueprint, blueprintConnectionKey: "google-workspace" });
-  await workspaceEnvironment(database);
-  database.state.resources.push(savedResource({
-    id: "shared",
-    resourceType: "drive.shared-drive",
-    resourceKey: "primary",
-    externalId: rootId,
-    name: "FCI Operations",
-  }));
-  const provider = installEnsureProvider(rootId);
+test("ensure-roots rejects legacy duplicate sibling names before simulation or live mutation", async (t) => {
+  const duplicateBlueprint = () => {
+    const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+    blueprint.drive.roots.unshift(
+      { key: "first-sibling", name: "03_Duplicate Name", management: "owner", children: [] },
+      { key: "second-sibling", name: "03_Duplicate Name", management: "owner", children: [] },
+    );
+    return blueprint;
+  };
 
-  const response = await ensureRoute.POST(routeRequest("/api/v1/integrations/google/drive/folders/ensure-roots"));
-  const body = await response.json();
+  await t.test("simulation", async () => {
+    const database = fakeDatabase({ blueprint: duplicateBlueprint() });
+    simulationEnvironment(database);
+    database.state.resources.push(savedResource({
+      id: "shared",
+      connectionKey: "workspace-simulation",
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: "workspace-simulation-shared-drive",
+      name: "FCI Operations",
+    }));
+    let providerCalls = 0;
+    globalThis.fetch = async () => {
+      providerCalls += 1;
+      throw new Error("Duplicate-name simulation preflight must not call Google.");
+    };
 
-  assert.equal(response.status, 409);
-  assert.equal(body.code, "drive_folder_identity_conflict");
-  assert.deepEqual(provider.folders.map((folder) => folder.appProperties.fciRootKey), ["first-sibling"]);
-  assert.equal(provider.calls.some((call) => call.method === "PATCH" || call.method === "DELETE"), false);
-  assert.equal(database.state.resources.some((row) => row.resource_key === "second-sibling"), false);
+    const response = await ensureRoute.POST(routeRequest("/api/v1/integrations/google/drive/folders/ensure-roots"));
+    const body = await response.json();
+
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "drive_folder_identity_conflict");
+    assert.equal(providerCalls, 0);
+    assert.equal(database.state.resources.some((row) => row.resource_type === "drive.folder"), false);
+    assert.equal(database.state.leases.size, 0, "preflight must run before the setup lease is written");
+  });
+
+  await t.test("live", async () => {
+    const rootId = "app-shared-drive-123";
+    const database = fakeDatabase({ blueprint: duplicateBlueprint(), blueprintConnectionKey: "google-workspace" });
+    await workspaceEnvironment(database);
+    database.state.resources.push(savedResource({
+      id: "shared",
+      resourceType: "drive.shared-drive",
+      resourceKey: "primary",
+      externalId: rootId,
+      name: "FCI Operations",
+    }));
+    const provider = installEnsureProvider(rootId);
+
+    const response = await ensureRoute.POST(routeRequest("/api/v1/integrations/google/drive/folders/ensure-roots"));
+    const body = await response.json();
+
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "drive_folder_identity_conflict");
+    assert.deepEqual(provider.folders, []);
+    assert.equal(provider.calls.length, 0, "preflight must run before token exchange or createFolder");
+    assert.equal(database.state.resources.some((row) => row.resource_type === "drive.folder"), false);
+    assert.equal(database.state.leases.size, 0, "preflight must run before the setup lease is written");
+  });
+});
+
+test("template ensure rejects legacy duplicate sibling names before simulation or live mutation", async (t) => {
+  // templates/ensure creates a root-tree folder by blueprint name (reuseByName), so it owes
+  // the same fail-closed preflight as ensure-roots: no lease, no token, no provider mutation.
+  const duplicateBlueprint = () => {
+    const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+    blueprint.drive.roots.unshift(
+      { key: "first-sibling", name: "03_Duplicate Name", management: "owner", children: [] },
+      { key: "second-sibling", name: "03_Duplicate Name", management: "owner", children: [] },
+    );
+    return blueprint;
+  };
+
+  await t.test("simulation", async () => {
+    const database = fakeDatabase({ blueprint: duplicateBlueprint() });
+    simulationEnvironment(database);
+    database.state.resources.push(
+      savedResource({ id: "shared", connectionKey: "workspace-simulation", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: "workspace-simulation-shared-drive", name: "FCI Operations" }),
+      savedResource({ id: "company-admin", connectionKey: "workspace-simulation", resourceType: "drive.folder", resourceKey: "company-admin", externalId: "workspace-simulation-folder-company-admin", parentExternalId: "workspace-simulation-shared-drive", name: "00_Company Admin" }),
+    );
+    let providerCalls = 0;
+    globalThis.fetch = async () => {
+      providerCalls += 1;
+      throw new Error("Duplicate-name template preflight must not call Google.");
+    };
+
+    const response = await templateEnsureRoute.POST(routeRequest("/api/v1/integrations/google/drive/templates/ensure"));
+    const body = await response.json();
+
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "drive_folder_identity_conflict");
+    assert.equal(providerCalls, 0);
+    assert.equal(database.state.resources.some((row) => row.resource_key === "templates"), false);
+    assert.equal(database.state.leases.size, 0, "preflight must run before the setup lease is written");
+  });
+
+  await t.test("live", async () => {
+    const rootId = "app-shared-drive-123";
+    const database = fakeDatabase({ blueprint: duplicateBlueprint(), blueprintConnectionKey: "google-workspace" });
+    await workspaceEnvironment(database);
+    database.state.resources.push(
+      savedResource({ id: "shared", resourceType: "drive.shared-drive", resourceKey: "primary", externalId: rootId, name: "FCI Operations" }),
+      savedResource({ id: "company-admin", resourceType: "drive.folder", resourceKey: "company-admin", externalId: "live-folder-company-admin", parentExternalId: rootId, name: "00_Company Admin" }),
+    );
+    let providerCalls = 0;
+    globalThis.fetch = async () => {
+      providerCalls += 1;
+      throw new Error("Duplicate-name template preflight must not exchange a token or create a folder.");
+    };
+
+    const response = await templateEnsureRoute.POST(routeRequest("/api/v1/integrations/google/drive/templates/ensure"));
+    const body = await response.json();
+
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "drive_folder_identity_conflict");
+    assert.equal(providerCalls, 0, "preflight must run before token exchange or ensureBlueprintFolder");
+    assert.equal(database.state.resources.some((row) => row.resource_key === "templates"), false);
+    assert.equal(database.state.leases.size, 0, "preflight must run before the setup lease is written");
+  });
 });
 
 test("SET-18 reviewed missing-resource ensures mutate only the exact approved blueprint key", async (t) => {

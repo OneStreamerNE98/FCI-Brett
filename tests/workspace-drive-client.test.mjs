@@ -12,7 +12,7 @@ const vite = await createServer({
   appType: "custom",
   server: { middlewareMode: true, hmr: { port: 24736 } },
 });
-const [{ GoogleDriveClient }, { seedWorkspaceBlueprint }, { buildProjectFolderPlan }] = await Promise.all([
+const [{ GoogleDriveClient }, { sanitizeWorkspaceBlueprint, seedWorkspaceBlueprint }, { buildProjectFolderPlan }] = await Promise.all([
   vite.ssrLoadModule("/app/lib/google-drive.ts"),
   vite.ssrLoadModule("/app/lib/workspace-blueprint.ts"),
   vite.ssrLoadModule("/app/lib/google-workspace.ts"),
@@ -680,6 +680,35 @@ function provisionProject(client, blueprint) {
   });
 }
 
+test("legacy duplicate sibling names fail project provisioning before the first Drive request", async () => {
+  const draft = structuredClone(seedWorkspaceBlueprint());
+  draft.drive.projectFolders.unshift(
+    { key: "first-duplicate", name: "00_Duplicate", management: "owner", children: [] },
+    { key: "second-duplicate", name: "00_Duplicate", management: "owner", children: [] },
+  );
+  const widenedRead = sanitizeWorkspaceBlueprint(draft, { enforceUniqueSiblingNames: false });
+  const provider = provisionedProjectFixture({
+    id: "existing-correspondence",
+    name: "05_Correspondence",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: ["the-project"],
+    trashed: false,
+    appProperties: { fciFolderKey: "correspondence", fciProjectId: "project-1", fciFolderKind: "project-child" },
+  });
+  const client = new GoogleDriveClient("test-token", config(), provider.fetcher);
+
+  await assert.rejects(
+    provisionProject(client, widenedRead),
+    (error) => (
+      error.code === "drive_folder_identity_conflict"
+      && error.status === 409
+      && /duplicates the sibling folder name/u.test(error.message)
+    ),
+  );
+  assert.equal(provider.calls.length, 0, "validation must run before verifyRootFolder or createFolder");
+  assert.equal(provider.files.size, 7, "no Drive fixture row may be created or changed");
+});
+
 // Reproduced review defect: an owner deleted an owner-managed project folder and re-added a
 // folder with the same name under a new key. The Drive folder kept the removed key's stamp, so
 // name adoption hit the identity comparison and every provisioning run 409'd — permanently,
@@ -811,13 +840,32 @@ test("project provisioning is wired to effective setup and has no static root or
   assert.match(driveSource, /blueprint\.drive\.roots/u);
   assert.match(driveSource, /blueprint\.drive\.clientFolders/u);
   assert.match(driveSource, /blueprint\.drive\.projectFolders/u);
-  assert.match(provisionSource, /buildProjectDriveBlueprintPlan\(input\.blueprint\)/u);
-  assert.match(provisionSource, /resolveWorkspaceBlueprintFolderNames\(input\.blueprint/u);
+  // The plan is built from the preflighted blueprint, which is itself derived from
+  // input.blueprint — provisioning still reads no static seed, and now fails closed first.
+  assert.match(provisionSource, /const provisionableBlueprint = assertProvisionableWorkspaceBlueprint\(input\.blueprint\)/u);
+  assert.match(provisionSource, /buildProjectDriveBlueprintPlan\(provisionableBlueprint\)/u);
+  assert.match(provisionSource, /resolveWorkspaceBlueprintFolderNames\(provisionableBlueprint/u);
   assert.match(provisionSource, /ensureTree\(clientFolder\.id, input\.blueprint\.drive\.clientFolders/u);
   assert.match(provisionSource, /ensureTree\(projectFolder\.id, input\.blueprint\.drive\.projectFolders/u);
   assert.match(routeSource, /getEffectiveGoogleRuntimeSetup/u);
   assert.match(routeSource, /const \{ config, blueprint, resources \} = setup/u);
   assert.match(routeSource, /blueprint,\s*\n\s*\}\);/u);
+});
+
+test("the shared blueprint plan helper stays free of the provisioning preflight", async () => {
+  // buildProjectDriveBlueprintPlan also serves resolveSimulatedManagedProjectFolderPath,
+  // the simulation half of Gmail filing, which resolves provisioned folders and creates
+  // nothing. A preflight here 409s a read-only filing preview that live serves fine, so
+  // the assertion belongs to creator call sites only.
+  const driveSource = await readFile(new URL("../app/lib/google-drive.ts", import.meta.url), "utf8");
+  const planStart = driveSource.indexOf("export function buildProjectDriveBlueprintPlan");
+  const resolverStart = driveSource.indexOf("export function resolveSimulatedManagedProjectFolderPath");
+  assert.ok(planStart > 0 && resolverStart > planStart);
+  const planSource = driveSource.slice(planStart, resolverStart);
+  assert.doesNotMatch(planSource, /assertProvisionableWorkspaceBlueprint/u);
+
+  const resolverSource = driveSource.slice(resolverStart, driveSource.indexOf("\n}", resolverStart));
+  assert.doesNotMatch(resolverSource, /assertProvisionableWorkspaceBlueprint/u);
 });
 
 test("blueprint spreadsheet ensure searches the Shared Drive identity, creates with appProperties, and is idempotent after a move", async () => {

@@ -10,6 +10,7 @@ import {
   type WorkspaceBlueprint,
   type WorkspaceBlueprintFolder,
 } from "./workspace-blueprint";
+import { assertProvisionableWorkspaceBlueprint } from "./workspace-blueprint-provisioning";
 import {
   WORKSPACE_TEMPLATE_TOKEN_LEGEND,
   type WorkspaceTemplateTokenValues,
@@ -156,6 +157,18 @@ export function workspaceBlueprintFolderKeys(blueprint: WorkspaceBlueprint): Rea
   return keys;
 }
 
+/**
+ * Shapes the blueprint into the roots and leaf paths a project workspace uses.
+ *
+ * This helper deliberately does NOT apply write-strength validation. It is shared
+ * with `resolveSimulatedManagedProjectFolderPath`, the simulation half of Gmail
+ * filing, which resolves already-provisioned folders and creates nothing; asserting
+ * here made a legacy duplicate anywhere in the blueprint fail simulation filing with
+ * a 409 while live served the same read, inverting the parity the simulation exists
+ * to preserve. Callers that are about to create folders own the preflight and must
+ * call `assertProvisionableWorkspaceBlueprint` before any provider or persistence
+ * mutation.
+ */
 export function buildProjectDriveBlueprintPlan(blueprint: WorkspaceBlueprint) {
   const accountsRoot = blueprint.drive.roots.find((folder) => folder.key === "client-accounts");
   const projectsRoot = blueprint.drive.roots.find((folder) => folder.key === "projects");
@@ -1594,9 +1607,12 @@ export class GoogleDriveClient {
     project: { id: string; number: string; name: string; year: string };
     blueprint: WorkspaceBlueprint;
   }) {
-    const blueprintPlan = buildProjectDriveBlueprintPlan(input.blueprint);
-    const blueprintFolderKeys = workspaceBlueprintFolderKeys(input.blueprint);
-    const folderNames = resolveWorkspaceBlueprintFolderNames(input.blueprint, {
+    // Fail closed before the first provider call: this is a genuine creator, so a
+    // duplicate sibling name must 409 here rather than be adopted by name downstream.
+    const provisionableBlueprint = assertProvisionableWorkspaceBlueprint(input.blueprint);
+    const blueprintPlan = buildProjectDriveBlueprintPlan(provisionableBlueprint);
+    const blueprintFolderKeys = workspaceBlueprintFolderKeys(provisionableBlueprint);
+    const folderNames = resolveWorkspaceBlueprintFolderNames(provisionableBlueprint, {
       clientCode: input.client.code,
       clientName: input.client.name,
       projectNumber: input.project.number,

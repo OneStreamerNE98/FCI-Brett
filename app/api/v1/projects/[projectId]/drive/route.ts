@@ -6,6 +6,7 @@ import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, getGoogleAccess
 import { enforceDevelopmentRequestRateLimit } from "../../../../../lib/development-request-rate-limit";
 import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets-sites";
 import { resolveWorkspaceBlueprintFolderNames } from "../../../../../lib/workspace-blueprint";
+import { assertProvisionableWorkspaceBlueprint } from "../../../../../lib/workspace-blueprint-provisioning";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 import { noStoreJson as noStore, noStoreResponse } from "../../../../../lib/no-store-json";
@@ -69,6 +70,15 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   if (!project) return noStore({ error: "Project not found." }, { status: 404 });
   const projectYear = project.project_number.slice(3, 7) || new Date().getUTCFullYear().toString();
 
+  // This route is a creator, so it owns the preflight the shared plan helper no longer
+  // applies. It stays ahead of the mapping lookup so an existing mapping cannot skip it
+  // and no provider or persistence work runs against a duplicate-name blueprint.
+  let blueprintPlan: ReturnType<typeof buildProjectDriveBlueprintPlan>;
+  try {
+    blueprintPlan = buildProjectDriveBlueprintPlan(assertProvisionableWorkspaceBlueprint(blueprint));
+  } catch (error) {
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
+  }
   const existing = await env.DB.prepare("SELECT drive_file_id, drive_url FROM drive_folder_mappings WHERE connection_key = ? AND entity_type = 'project' AND entity_id = ? AND folder_key = 'project-root'")
     .bind(config.connectionKey, project.id)
     .first<MappingRow>();
@@ -104,7 +114,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
 
   try {
     if (config.simulation) {
-      const blueprintPlan = buildProjectDriveBlueprintPlan(blueprint);
       const folderNames = resolveWorkspaceBlueprintFolderNames(blueprint, {
         clientCode: project.client_code,
         clientName: project.client_name,

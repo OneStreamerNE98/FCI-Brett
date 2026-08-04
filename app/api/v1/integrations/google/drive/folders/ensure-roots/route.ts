@@ -20,7 +20,8 @@ import {
   writeGoogleIntegrationEvent,
 } from "../../../../../../../lib/google-oauth-sites";
 import { GoogleIntegrationError } from "../../../../../../../lib/google-oauth";
-import { flattenWorkspaceRootFolders } from "../../../../../../../lib/workspace-blueprint";
+import { flattenWorkspaceRootFolders, type WorkspaceBlueprint } from "../../../../../../../lib/workspace-blueprint";
+import { assertProvisionableWorkspaceBlueprint } from "../../../../../../../lib/workspace-blueprint-provisioning";
 import {
   parseWorkspaceReconcileMissingReview,
   type WorkspaceReconcileMissingReview,
@@ -69,7 +70,13 @@ export async function POST(request: NextRequest) {
   if (!sharedDrive) {
     return response({ error: "Adopt the Shared Drive into the app-managed registry before creating its blueprint folders.", code: "shared_drive_not_adopted" }, 409);
   }
-  const allRoots = flattenWorkspaceRootFolders(blueprint);
+  let provisionableBlueprint: WorkspaceBlueprint;
+  try {
+    provisionableBlueprint = assertProvisionableWorkspaceBlueprint(blueprint);
+  } catch (error) {
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The Shared Drive root folders could not be ensured. Try again."));
+  }
+  const allRoots = flattenWorkspaceRootFolders(provisionableBlueprint);
   const roots = reconcileReview
     ? allRoots.filter((root) => root.key === reconcileReview.resourceKey)
     : allRoots;
