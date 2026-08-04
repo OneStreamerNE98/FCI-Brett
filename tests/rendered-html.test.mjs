@@ -860,13 +860,18 @@ test("files Gmail only after an explicit single-project review", async () => {
 });
 
 test("keeps feature states on honest surfaces while production navigation has no build badges or Schedule entry", async () => {
-  const [app, badge] = await Promise.all([
+  // The vocabulary and placeholder bans below cover the whole app surface: narrowing
+  // them to FloorOpsApp would stop them reaching InboxView, AssistantView, TodayPanel,
+  // GmailReplyModal and every settings panel. Only the nav-scoped assertions read the
+  // shell source, because only they need that one file's <nav> section.
+  const [app, shell, badge] = await Promise.all([
+    readAppSurface(),
     read("app/FloorOpsApp.tsx"),
     read("app/components/FeatureStateBadge.tsx"),
   ]);
-  const mainNavigation = sourceSection(app, '<nav className="main-nav"', "</nav>", "main navigation");
+  const mainNavigation = sourceSection(shell, '<nav className="main-nav"', "</nav>", "main navigation");
 
-  assert.doesNotMatch(app, /\{ label: "Schedule", icon: CalendarDays/);
+  assert.doesNotMatch(shell, /\{ label: "Schedule", icon: CalendarDays/);
   assert.doesNotMatch(mainNavigation, /FeatureStateBadge|In development|Planned|Working/);
   assert.match(app, /state="Working"/);
   assert.match(app, /state="In development"/);

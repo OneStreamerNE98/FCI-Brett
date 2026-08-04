@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
+  PAGE_LAYOUT_DEFAULT_FULL_WIDTH,
   PAGE_LAYOUT_RESIZABLE_SECTIONS,
   PAGE_LAYOUT_SECTION_CATALOG,
   defaultPageLayout,
@@ -18,9 +20,17 @@ const overviewKeys = ["metrics", "todays-meetings", "lead-pipeline", "active-pro
 const legacyOverviewKeys = ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"];
 const reportKeys = ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"];
 
+function sourceSection(source, start, end, label) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  assert.notEqual(startIndex, -1, `${label} start marker must remain present`);
+  assert.notEqual(endIndex, -1, `${label} end marker must remain present`);
+  return source.slice(startIndex, endIndex);
+}
+
 function validLayouts() {
   return {
-    overview: { order: [...overviewKeys], hidden: [], fullWidth: [] },
+    overview: { order: [...overviewKeys], hidden: [], fullWidth: ["lead-pipeline"] },
     reports: { order: [...reportKeys], hidden: [], fullWidth: [] },
   };
 }
@@ -37,6 +47,15 @@ test("pins one closed panel-level catalog and excludes financial child cards", (
     overview: ["lead-pipeline", "active-projects", "gmail-project-inbox"],
     reports: ["pipeline-by-stage", "projects-by-status"],
   });
+  assert.deepEqual(PAGE_LAYOUT_DEFAULT_FULL_WIDTH, { overview: ["lead-pipeline"], reports: [] });
+  // A curated default span must stay catalogued and resizable, or the strict write
+  // validator would reject the very layout that Reset to default produces.
+  for (const [page, keys] of Object.entries(PAGE_LAYOUT_DEFAULT_FULL_WIDTH)) {
+    for (const key of keys) {
+      assert.ok(PAGE_LAYOUT_SECTION_CATALOG[page].some((entry) => entry.key === key), `${key} must remain catalogued`);
+      assert.ok(PAGE_LAYOUT_RESIZABLE_SECTIONS[page].includes(key), `${key} must remain resizable`);
+    }
+  }
   assert.equal(isPageLayoutCatalogEntryVisible({ key: "admin-panel", label: "Admin panel", access: "administrator" }, false), false);
   assert.equal(isPageLayoutCatalogEntryVisible({ key: "admin-panel", label: "Admin panel", access: "administrator" }, true), true);
 });
@@ -103,7 +122,7 @@ test("an office save preserves an actor-invisible administrator span choice", ()
   try {
     const stored = validLayouts();
     stored.overview.hidden.push(administratorKey);
-    stored.overview.fullWidth.push(administratorKey);
+    stored.overview.fullWidth = [administratorKey];
     const submitted = normalizePageLayoutsForWrite(defaultPageLayouts(false), false);
     assert.ok(submitted);
 
@@ -128,7 +147,7 @@ test("stored parsing falls back safely without resetting a valid sibling page", 
   assert.deepEqual(parsed.overview, {
     order: ["active-projects", "metrics", "todays-meetings", "lead-pipeline", "gmail-project-inbox"],
     hidden: ["lead-pipeline"],
-    fullWidth: [],
+    fullWidth: ["lead-pipeline"],
   });
   assert.deepEqual(parsed.reports, { order: reportKeys, hidden: ["future-reports"], fullWidth: [] });
   assert.equal(isDefaultPageLayout(parseStoredPageLayouts(JSON.stringify({
@@ -188,12 +207,53 @@ test("span-only customization leaves the default branch while legacy layouts rem
     overview: { order: overviewKeys, hidden: [] },
     reports: { order: reportKeys, hidden: [] },
   }, false);
-  assert.deepEqual(legacy.overview.fullWidth, []);
+  // A layout saved before spans existed carries no fullWidth, so it must inherit the
+  // curated default and stay on the default branch rather than silently reflowing.
+  assert.deepEqual(legacy.overview.fullWidth, ["lead-pipeline"]);
   assert.equal(isDefaultPageLayout(legacy.overview, "overview", false), true);
 
-  const customized = structuredClone(legacy.overview);
-  customized.fullWidth = ["lead-pipeline"];
-  assert.equal(isDefaultPageLayout(customized, "overview", false), false);
+  // Both directions of a span-only change are customizations: dropping the curated
+  // full-bleed is as much a departure from the default as adding another one.
+  const narrowed = structuredClone(legacy.overview);
+  narrowed.fullWidth = [];
+  assert.equal(isDefaultPageLayout(narrowed, "overview", false), false);
+
+  const widened = structuredClone(legacy.overview);
+  widened.fullWidth = ["lead-pipeline", "active-projects"];
+  assert.equal(isDefaultPageLayout(widened, "overview", false), false);
+});
+
+// DES-16 review D1: opening the layout editor on an untouched default layout used to
+// reflow the page — lead pipeline collapsed from full-bleed to half and Gmail blew up to
+// full — because the default render's full-bleed came from a span class hard-coded on the
+// shared section node, which is inert in the arranged branch, while the model still said
+// "half". The spans now live in the model, so both renders and the editor read one answer.
+test("the default Overview layout resolves the same spans in the default and the arranged render", async () => {
+  const app = await readFile(new URL("../app/FloorOpsApp.tsx", import.meta.url), "utf8");
+  const overview = sourceSection(app, "function Overview(", "function LeadsView(", "Overview render");
+  const defaults = defaultPageLayout("overview", false);
+
+  assert.deepEqual(resolveArrangedSpans("overview", defaults.order, defaults.fullWidth), [
+    { key: "metrics", size: "full" },
+    { key: "todays-meetings", size: "full" },
+    { key: "lead-pipeline", size: "full" },
+    { key: "active-projects", size: "half" },
+    { key: "gmail-project-inbox", size: "half" },
+  ]);
+
+  // Both branches read the one resolved array: the default render puts the class on the
+  // panel (it is the `.dashboard-grid` child), the arranged render on its wrapper.
+  assert.match(overview, /const arrangedSpans = resolveArrangedSpans\("overview", visibleKeys, activeLayout\.fullWidth\)/);
+  assert.match(overview, /const spanClassName = .*arrangedSpans\.find\(\(span\) => span\.key === key\)\?\.size === "full" \? " page-layout-span-all" : ""/);
+  assert.match(overview, /<section className="dashboard-grid">\{leadPipelinePanel\(spanClassName\("lead-pipeline"\)\)\}<\/section>/);
+  assert.match(overview, /arrangedSpans\.map\(\(\{ key, size \}\) => <div className=\{size === "full" \? "page-layout-span-all" : "page-layout-item"\}/);
+  // The two half sections stay paired on one row, matching the resolved halves above.
+  assert.match(overview, /<section className="dashboard-grid lower-grid">\{sectionNodes\["active-projects"\]\}\{sectionNodes\["gmail-project-inbox"\]\}<\/section>/);
+
+  // The shared node must never carry a literal span again: it is silently inert in the
+  // arranged branch, which is precisely how the two renders drifted apart.
+  assert.match(overview, /"lead-pipeline": leadPipelinePanel\(""\)/);
+  assert.doesNotMatch(overview, /pipeline-panel page-layout-span-all/);
 });
 
 test("resolves every arranged row as one full card or two half cards without changing DOM order", () => {

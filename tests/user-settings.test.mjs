@@ -224,10 +224,12 @@ test("widens stale stored layouts and preserves them through unrelated partial u
 
   const before = await route.GET(routeRequest(OFFICE_EMAIL));
   const beforeBody = await before.json();
+  // The stale row predates spans entirely, so it keeps the curated default full-bleed
+  // instead of silently narrowing Lead pipeline on the next read.
   assert.deepEqual(beforeBody.preferences.pageLayouts.overview, {
     order: ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
     hidden: ["gmail-project-inbox"],
-    fullWidth: [],
+    fullWidth: ["lead-pipeline"],
   });
   assert.deepEqual(beforeBody.preferences.pageLayouts.reports, defaultPageLayouts(false).reports);
 

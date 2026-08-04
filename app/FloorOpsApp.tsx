@@ -1901,6 +1901,26 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
   const todayMeetingsOverflow = todayMeetingsHaveDroppedRows
     ? 0
     : Math.max(0, todayMeetingsTotal - todayMeetingItems.length);
+  // In the default render this panel is itself a `.dashboard-grid` child, so it carries
+  // the span class; in the arranged render the wrapper carries it and the panel stays
+  // plain. Both branches take the size from the same resolved spans, never a literal.
+  const leadPipelinePanel = (spanClass: string) => <div className={`panel pipeline-panel${spanClass}`}>
+        <PanelHeader title="Lead pipeline" subtitle={`${activeLeads.length} active records`} action="View all" onAction={() => onView("Leads")} />
+        {activeLeads.length > 0 ? <OperationsActionableList ariaLabel="Lead pipeline records" columns={PIPELINE_ACTIONABLE_COLUMNS} headerClassName="pipeline-head">
+          {activeLeads.slice(0, 4).map((lead) => <OperationsActionableListItem
+            key={lead.id}
+            className="pipeline-row pipeline-row-button"
+            accessibleName={`Open lead details for ${lead.company}: ${lead.project}`}
+            accessibleDescription={`Stage ${lead.stage}. Estimated value ${lead.value}. Next action ${lead.next}.`}
+            onActivate={(trigger) => onLead(lead, trigger)}
+          >
+            <span className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><span className="client-cell-copy"><strong>{lead.company}</strong><span>{lead.project}</span></span></span>
+            <span><Status text={lead.stage} /></span>
+            <strong className="value-cell">{lead.value}</strong>
+            <span className="next-cell"><Clock3 size={14} aria-hidden="true" />{lead.next}</span>
+          </OperationsActionableListItem>)}
+        </OperationsActionableList> : state === "ready" ? <OperationsEmptyState variant="table">No active leads yet. Add the first opportunity to begin the live pipeline.</OperationsEmptyState> : null}
+      </div>;
   const sectionNodes = {
     metrics: <section className="metrics-grid">
       <Metric label="Active pipeline" value={recordsReady ? money(metrics?.estimatedPipelineValue ?? 0) : "—"} note={recordsReady ? `${metrics?.activeLeads ?? activeLeads.length} open opportunities` : pendingMetricNote} icon={Zap} color="orange" href={recordsReady ? operationsHref("Leads") : undefined} />
@@ -1931,23 +1951,7 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
         {todayMeetingsHaveDroppedRows && <li><div className="bar-chart-row"><span className="bar-chart-label">Additional meeting count unavailable</span><span>One or more project records did not load.</span><strong>Unavailable</strong><span className="bar-chart-spacer" aria-hidden="true" /></div></li>}
       </ul> : <OperationsEmptyState variant="table">{state === "ready" && todayMeetingsHaveDroppedRows ? "Saved meetings cannot be displayed until their project records load." : state === "ready" ? "No today or upcoming project meetings are saved." : state === "error" ? "Today's meetings are unavailable until live records load." : "Loading today's meetings…"}</OperationsEmptyState>}
     </section>,
-    "lead-pipeline": <div className="panel pipeline-panel page-layout-span-all">
-        <PanelHeader title="Lead pipeline" subtitle={`${activeLeads.length} active records`} action="View all" onAction={() => onView("Leads")} />
-        {activeLeads.length > 0 ? <OperationsActionableList ariaLabel="Lead pipeline records" columns={PIPELINE_ACTIONABLE_COLUMNS} headerClassName="pipeline-head">
-          {activeLeads.slice(0, 4).map((lead) => <OperationsActionableListItem
-            key={lead.id}
-            className="pipeline-row pipeline-row-button"
-            accessibleName={`Open lead details for ${lead.company}: ${lead.project}`}
-            accessibleDescription={`Stage ${lead.stage}. Estimated value ${lead.value}. Next action ${lead.next}.`}
-            onActivate={(trigger) => onLead(lead, trigger)}
-          >
-            <span className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><span className="client-cell-copy"><strong>{lead.company}</strong><span>{lead.project}</span></span></span>
-            <span><Status text={lead.stage} /></span>
-            <strong className="value-cell">{lead.value}</strong>
-            <span className="next-cell"><Clock3 size={14} aria-hidden="true" />{lead.next}</span>
-          </OperationsActionableListItem>)}
-        </OperationsActionableList> : state === "ready" ? <OperationsEmptyState variant="table">No active leads yet. Add the first opportunity to begin the live pipeline.</OperationsEmptyState> : null}
-      </div>,
+    "lead-pipeline": leadPipelinePanel(""),
     "active-projects": <div className="panel projects-panel"><PanelHeader title="Active projects" subtitle={`${activeProjects.length} active`} action="View projects" onAction={() => onView("Projects")} /><div className="project-cards">{activeProjects.slice(0, 6).map((project) => <button className="project-card" key={project.number} onClick={() => onProject(project)}><div className="project-card-top"><Status text={project.status} /><ChevronRight size={17} aria-hidden="true" /></div><span className="project-number">{project.number}</span><h3>{project.name}</h3><p>{project.client}</p><div className="project-meta"><span><MapPin size={13} />{project.site}</span><span>{project.value}</span></div></button>)}{activeProjects.length === 0 && state === "ready" ? <OperationsEmptyState variant="table">No active projects. Completed, cancelled, and archived work remains available on the Projects page.</OperationsEmptyState> : null}</div></div>,
     "gmail-project-inbox": <div className="panel inbox-panel"><PanelHeader title="Gmail project inbox" subtitle="Google Workspace Gmail" subtitleKind="source" action="Open inbox" onAction={() => onView("Inbox")} /><OperationsEmptyState variant="dashboard"><Mail size={20} /><div><strong>Review every message before filing</strong><p>Select the exact project and approve the copy before anything is saved to Drive.</p></div></OperationsEmptyState><button className="inbox-cta" onClick={() => onView("Inbox")}><Mail size={15} /> Open Gmail project inbox</button></div>,
   } as const;
@@ -1955,10 +1959,11 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
   return <PageLayoutEditor page="overview" layout={layout} isAdmin={isAdmin} enabled={layoutReady} loadError={layoutError} onRetry={onRetryLayout} onSave={onSaveLayout}>{({ layout: activeLayout, editing, editButton, editor, endDropZone, section }) => {
     const visibleKeys = activeLayout.order.filter((key) => !activeLayout.hidden.includes(key) && key in sectionNodes) as Array<keyof typeof sectionNodes>;
     const arrangedSpans = resolveArrangedSpans("overview", visibleKeys, activeLayout.fullWidth);
+    const spanClassName = (key: keyof typeof sectionNodes) => arrangedSpans.find((span) => span.key === key)?.size === "full" ? " page-layout-span-all" : "";
     const defaultSections = <>
       {sectionNodes.metrics}
       {sectionNodes["todays-meetings"]}
-      <section className="dashboard-grid">{sectionNodes["lead-pipeline"]}</section>
+      <section className="dashboard-grid">{leadPipelinePanel(spanClassName("lead-pipeline"))}</section>
       <section className="dashboard-grid lower-grid">{sectionNodes["active-projects"]}{sectionNodes["gmail-project-inbox"]}</section>
     </>;
     const arrangedSections = <><div className="page-layout-grid page-layout-grid-overview">{arrangedSpans.map(({ key, size }) => <div className={size === "full" ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} data-page-layout-size={size} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;

@@ -201,7 +201,7 @@ test("keyboard-only Overview reorder and hide persist, while Reset restores byte
       ...originalPreferences,
       pageLayouts: {
         ...originalPreferences.pageLayouts,
-        overview: { ...originalPreferences.pageLayouts.overview, order: ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"], hidden: [] },
+        overview: { ...originalPreferences.pageLayouts.overview, order: ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"], hidden: [], fullWidth: ["lead-pipeline"] },
       },
     });
     await page.reload();
@@ -274,6 +274,8 @@ test("curated width toggles are accessible, persist their paired spans, and Rese
   const originalPreferences = await readStoredPreferences(page);
   const overviewOrder = ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"];
   const reportsOrder = ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"];
+  // The curated default: Lead pipeline full-bleed above a paired Active projects and
+  // Gmail row. The default render and the arranged render must both resolve exactly this.
   const expectedLeadFullSpans = [
     ["metrics", "full"],
     ["todays-meetings", "full"],
@@ -281,12 +283,22 @@ test("curated width toggles are accessible, persist their paired spans, and Rese
     ["active-projects", "half"],
     ["gmail-project-inbox", "half"],
   ];
+  // Narrowing Lead pipeline is the span-only customization: it pairs with Active projects
+  // and pushes Gmail to a full row of its own.
+  const expectedLeadHalfSpans = [
+    ["metrics", "full"],
+    ["todays-meetings", "full"],
+    ["lead-pipeline", "half"],
+    ["active-projects", "half"],
+    ["gmail-project-inbox", "full"],
+  ];
+  const defaultPressedKeys = new Set(["lead-pipeline"]);
 
   try {
     await restoreStoredPreferences(page, {
       ...originalPreferences,
       pageLayouts: {
-        overview: { order: overviewOrder, hidden: [], fullWidth: [] },
+        overview: { order: overviewOrder, hidden: [], fullWidth: ["lead-pipeline"] },
         reports: { order: reportsOrder, hidden: [], fullWidth: [] },
       },
     });
@@ -333,7 +345,9 @@ test("curated width toggles are accessible, persist their paired spans, and Rese
           const toggle = page.locator(`[data-layout-width-toggle="${key}"]`);
           await expect(toggle).toBeVisible();
           await expect(toggle).toHaveAccessibleName(widthToggleAccessibleNames[key]);
-          await expect(toggle).toHaveAttribute("aria-pressed", "false");
+          // The editor must report the span the untouched page just showed. Lead pipeline
+          // is full-bleed on the default Overview layout, so its toggle reads pressed.
+          await expect(toggle).toHaveAttribute("aria-pressed", defaultPressedKeys.has(key) ? "true" : "false");
           const bounds = await toggle.boundingBox();
           expect(bounds).not.toBeNull();
           expect(bounds?.width).toBeGreaterThanOrEqual(44);
@@ -353,34 +367,38 @@ test("curated width toggles are accessible, persist their paired spans, and Rese
     await leadFullWidth.focus();
     await expect(leadFullWidth).toBeFocused();
     await expect(leadFullWidth).toHaveAccessibleName("Full width for Lead pipeline");
-    await page.keyboard.press("Space");
-    await expect(leadFullWidth).toBeFocused();
-    await expect(leadFullWidth).toHaveAccessibleName("Full width for Lead pipeline");
-    await expect(leadFullWidth).toHaveAttribute("aria-pressed", "true");
-
+    // Opening the editor on the untouched default must not reflow the page, so the first
+    // Space narrows the already full-bleed Lead pipeline instead of widening it.
     const arrangedSpans = () => page.locator("[data-page-layout-section]").evaluateAll((sections) => sections.map((section) => [
       section.getAttribute("data-page-layout-section"),
       section.getAttribute("data-page-layout-size"),
     ]));
     await expect.poll(arrangedSpans).toEqual(expectedLeadFullSpans);
 
+    await page.keyboard.press("Space");
+    await expect(leadFullWidth).toBeFocused();
+    await expect(leadFullWidth).toHaveAccessibleName("Full width for Lead pipeline");
+    await expect(leadFullWidth).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(arrangedSpans).toEqual(expectedLeadHalfSpans);
+
     const editor = page.getByRole("region", { name: "Overview layout editor" });
     await editor.getByRole("button", { name: "Done" }).click();
     await expect(editor).toHaveCount(0);
-    expect((await readStoredPreferences(page)).pageLayouts.overview.fullWidth).toEqual(["lead-pipeline"]);
+    expect((await readStoredPreferences(page)).pageLayouts.overview.fullWidth).toEqual([]);
 
     await page.reload();
     await waitForLiveRecords(page);
-    await expect.poll(arrangedSpans).toEqual(expectedLeadFullSpans);
+    await expect.poll(arrangedSpans).toEqual(expectedLeadHalfSpans);
     await page.getByRole("button", { name: "Edit Overview layout" }).click();
-    await expect(page.locator('[data-layout-width-toggle="lead-pipeline"]')).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator('[data-layout-width-toggle="lead-pipeline"]')).toHaveAttribute("aria-pressed", "false");
 
     const resetEditor = page.getByRole("region", { name: "Overview layout editor" });
     await resetEditor.getByRole("button", { name: "Reset to default" }).click();
-    await expect(page.locator('[data-layout-width-toggle="lead-pipeline"]')).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator('[data-layout-width-toggle="lead-pipeline"]')).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(arrangedSpans).toEqual(expectedLeadFullSpans);
     await resetEditor.getByRole("button", { name: "Done" }).click();
     await expect(page.locator(".page-layout-grid-overview")).toHaveCount(0);
-    expect((await readStoredPreferences(page)).pageLayouts.overview.fullWidth).toEqual([]);
+    expect((await readStoredPreferences(page)).pageLayouts.overview.fullWidth).toEqual(["lead-pipeline"]);
 
     await page.reload();
     await waitForLiveRecords(page);
@@ -475,7 +493,7 @@ test("ready Overview and Reports metrics follow the linked-versus-static card gr
     await restoreStoredPreferences(page, {
       ...originalPreferences,
       pageLayouts: {
-        overview: { ...originalPreferences.pageLayouts.overview, order: ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"], hidden: [] },
+        overview: { ...originalPreferences.pageLayouts.overview, order: ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"], hidden: [], fullWidth: ["lead-pipeline"] },
         reports: { ...originalPreferences.pageLayouts.reports, order: ["summary-metrics", "business-kpis", "pipeline-by-stage", "projects-by-status", "clients-by-industry", "future-reports"], hidden: [] },
       },
     });
