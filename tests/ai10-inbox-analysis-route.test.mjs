@@ -138,6 +138,21 @@ class InboxAnalysisDatabase {
       );
       CREATE UNIQUE INDEX mail_items_profile_message_unique
         ON mail_items (connection_key, gmail_message_id);
+      CREATE TABLE assistant_label_definitions (
+        slug TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        retired INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO assistant_label_definitions
+        (slug, description, retired, created_at, updated_at)
+      VALUES
+        ('lead', 'A new sales opportunity or request for an estimate.', 0, 0, 0),
+        ('project-update', 'Information or a requested change concerning existing project work.', 0, 0, 0),
+        ('schedule', 'A request or change involving an appointment, installation, or project timing.', 0, 0, 0),
+        ('warranty', 'A callback, repair, service, or warranty concern.', 0, 0, 0);
+
       CREATE TABLE google_drive_operations (
         id TEXT PRIMARY KEY,
         connection_key TEXT NOT NULL,
@@ -498,10 +513,15 @@ test("AI-10 sweep writes one durable row per message, prefilters noise, and anal
       "SELECT id, created_at FROM mail_items WHERE connection_key = ? AND gmail_message_id = ?",
     ).get(CONNECTION_KEY, hostile.id);
     database.database.prepare(
-      "UPDATE mail_items SET label_definition_version = 'old-catalog' WHERE id = ?",
-    ).run(stable.id);
+      "UPDATE assistant_label_definitions SET description = ?, updated_at = ? WHERE slug = 'lead'",
+    ).run("An edited sales opportunity definition.", 10);
+    const editedDefinitions = database.database.prepare(
+      "SELECT slug, description FROM assistant_label_definitions WHERE retired = 0 ORDER BY created_at ASC, slug ASC",
+    ).all();
+    const editedVersion = application.inboxAnalysisLabelDefinitionVersion(editedDefinitions);
+    assert.notEqual(editedVersion, application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION);
     await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
-    assert.equal(provider.requests.length, 2, "a catalog-version change must re-analyze");
+    assert.equal(provider.requests.length, 2, "an edited stored catalog must re-analyze");
     const refreshed = database.database.prepare(
       "SELECT id, created_at, label_definition_version FROM mail_items WHERE connection_key = ? AND gmail_message_id = ?",
     ).get(CONNECTION_KEY, hostile.id);
@@ -509,8 +529,9 @@ test("AI-10 sweep writes one durable row per message, prefilters noise, and anal
     assert.equal(refreshed.created_at, stable.created_at);
     assert.equal(
       refreshed.label_definition_version,
-      application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      editedVersion,
     );
+    assert.match(provider.requests.at(-1).messages[1].content, /An edited sales opportunity definition\./u);
   } finally {
     database.close();
   }

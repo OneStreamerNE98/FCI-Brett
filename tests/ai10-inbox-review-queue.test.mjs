@@ -133,6 +133,21 @@ class ReviewQueueDatabase {
       );
       CREATE UNIQUE INDEX mail_items_profile_message_unique
         ON mail_items (connection_key, gmail_message_id);
+      CREATE TABLE assistant_label_definitions (
+        slug TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        retired INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO assistant_label_definitions
+        (slug, description, retired, created_at, updated_at)
+      VALUES
+        ('lead', 'A new sales opportunity or request for an estimate.', 0, 0, 0),
+        ('project-update', 'Information or a requested change concerning existing project work.', 0, 0, 0),
+        ('schedule', 'A request or change involving an appointment, installation, or project timing.', 0, 0, 0),
+        ('warranty', 'A callback, repair, service, or warranty concern.', 0, 0, 0);
+
       CREATE TABLE google_drive_operations (
         id TEXT PRIMARY KEY,
         connection_key TEXT NOT NULL,
@@ -1076,11 +1091,20 @@ test("AI-12 queue GET omits zero failures and reports only current-catalog exhau
   const database = new ReviewQueueDatabase();
   const originalDatabase = workerEnvironment.DB;
   workerEnvironment.DB = database;
+  database.database.prepare(
+    "UPDATE assistant_label_definitions SET description = ?, updated_at = 10 WHERE slug = 'schedule'",
+  ).run("A stored schedule definition used by the failure queries.");
+  const currentVersion = application.inboxAnalysisLabelDefinitionVersion(
+    database.database.prepare(
+      "SELECT slug, description FROM assistant_label_definitions WHERE retired = 0 ORDER BY created_at ASC, slug ASC",
+    ).all(),
+  );
   insertExhaustedAnalysisFailure(database, {
     id: "failed-mid-retry",
     messageId: "gmail-mid-retry",
     errorCode: "analysis_failed",
     failureAttempts: 2,
+    attemptedLabelDefinitionVersion: currentVersion,
   });
   insertExhaustedAnalysisFailure(database, {
     id: "failed-old-catalog",
@@ -1092,6 +1116,7 @@ test("AI-12 queue GET omits zero failures and reports only current-catalog exhau
     id: "failed-daily-cap",
     messageId: "gmail-daily-cap",
     errorCode: "analysis_daily_limit_reached",
+    attemptedLabelDefinitionVersion: currentVersion,
   });
   try {
     const zero = await route.GET(routeRequest());
@@ -1121,6 +1146,14 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
   const originalPrepare = database.prepare.bind(database);
   const resetStatements = [];
   workerEnvironment.DB = database;
+  database.database.prepare(
+    "UPDATE assistant_label_definitions SET description = ?, updated_at = 10 WHERE slug = 'warranty'",
+  ).run("A stored warranty definition used by the retry action.");
+  const currentVersion = application.inboxAnalysisLabelDefinitionVersion(
+    database.database.prepare(
+      "SELECT slug, description FROM assistant_label_definitions WHERE retired = 0 ORDER BY created_at ASC, slug ASC",
+    ).all(),
+  );
   const allowed = [
     "analysis_failed",
     "analysis_deadline_exceeded",
@@ -1138,6 +1171,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
       id: `failed-${index}`,
       messageId: `gmail-failed-${index}`,
       errorCode,
+      attemptedLabelDefinitionVersion: currentVersion,
     });
   }
   database.prepare = (sql) => {
@@ -1193,7 +1227,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
       assert.equal(row.failure_attempts, 1);
       assert.notEqual(
         row.attempted_label_definition_version,
-        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        currentVersion,
       );
     }
     for (const errorCode of excluded) {
@@ -1201,7 +1235,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
       assert.equal(row.failure_attempts, 3);
       assert.equal(
         row.attempted_label_definition_version,
-        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        currentVersion,
       );
     }
 
@@ -1211,7 +1245,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
     assert.doesNotMatch(
       (await repository.listRetryableAnalysisRows(
         CONNECTION_KEY,
-        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        currentVersion,
       )).map((row) => row.errorCode).join(","),
       /gmail_read_failed/u,
       "a Gmail 404-class failure is not resurrected by the action",
