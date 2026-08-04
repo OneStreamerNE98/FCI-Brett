@@ -29,6 +29,7 @@ import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "../app/platform/postgres/cor
 import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "../app/platform/postgres/mail-item-analysis-schema.ts";
 import { GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS } from "../app/platform/postgres/google-form-lead-intake-schema.ts";
 import { ADDRESS_VALIDATION_SCHEMA_STATEMENTS } from "../app/platform/postgres/address-validation-schema.ts";
+import { ASSISTANT_LABEL_SCHEMA_STATEMENTS } from "../app/platform/postgres/assistant-label-schema.ts";
 
 const MIGRATION_VERSIONS = PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version);
 const CURRENT_MIGRATION_VERSION = MIGRATION_VERSIONS.at(-1);
@@ -404,7 +405,7 @@ test("registers the non-structural core-record concurrency law as contiguous mig
     "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
   );
   assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
   ]);
   assert.deepEqual(
     migration.statements.map((statement) => {
@@ -577,6 +578,28 @@ test("registers GI-04 address evidence as additive immutable migration fourteen"
   assert.doesNotMatch(
     sql,
     /\b(?:DROP|TRUNCATE|DELETE|UPDATE|INSERT|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/iu,
+  );
+});
+
+test("registers AI-11(c)'s label catalog as immutable migration fifteen", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 15);
+  assert.ok(migration);
+  assert.equal(migration.name, "assistant_label_catalog");
+  assert.equal(migration.statements, ASSISTANT_LABEL_SCHEMA_STATEMENTS);
+  assert.equal(
+    migration.checksum,
+    "sha256:ff56691723e3d4c9121ff156a54f5a229844cbbb82512a16ae9cd02cb4ea14cb",
+  );
+  const sql = migration.statements.join("\n");
+  assert.match(sql, /CREATE TABLE assistant_label_definitions/u);
+  assert.match(sql, /slug ~ '\^\[A-Za-z0-9_-\]\{1,60\}\$'/u);
+  assert.match(sql, /pg_catalog\.char_length\(description\) <= 300/u);
+  assert.match(sql, /updated_at >= created_at/u);
+  assert.equal((sql.match(/\('(?:lead|project-update|schedule|warranty)'/gu) ?? []).length, 4);
+  const structuralSql = sql.replace(/'(?:''|[^'])*'/gu, "''");
+  assert.doesNotMatch(
+    structuralSql,
+    /\b(?:DROP|TRUNCATE|DELETE|UPDATE|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/iu,
   );
 });
 
@@ -965,6 +988,7 @@ test("defines the bounded production persistence schema with named constraints a
       "google_form_lead_intake_watermarks",
       "google_form_lead_reviews",
       "address_validation_reviews",
+      "assistant_label_definitions",
     ],
   );
   assert.doesNotMatch(versionedSql, /\bIF NOT EXISTS\b/i);

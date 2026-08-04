@@ -176,7 +176,7 @@ test("bounded core rehearsal preserves canonical positive record versions beyond
 
 test("bounded core rehearsal inventory exactly classifies every D1 table plus R2 without a runtime D1 import", async () => {
   const schemaTables = discoverD1TableNames(d1Schema);
-  assert.equal(schemaTables.length, 27);
+  assert.equal(schemaTables.length, 28);
   assert.deepEqual(
     CORE_REHEARSAL_SOURCE_INVENTORY.map((entry) => entry.sourceCategory).sort(),
     [...schemaTables, "r2_objects"].sort(),
@@ -199,6 +199,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
       google_form_lead_intake_watermarks: "blocking",
       google_form_lead_reviews: "blocking",
       filing_rules: "blocking",
+      assistant_label_definitions: "blocking",
       workspace_settings: "blocking",
       user_preferences: "blocking",
       mail_items: "blocking",
@@ -225,7 +226,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
   assert.doesNotMatch(rehearsalSource, /\$\{table\}:(?:content|identifiers):v[123]/);
 
   const inventory = createCoreRecordRehearsalPlan(fixture, options).sourceInventory;
-  assert.equal(inventory.length, 28);
+  assert.equal(inventory.length, 29);
   assert.deepEqual(
     Object.fromEntries(inventory.map((entry) => [entry.sourceCategory, entry.sourceCount])),
     {
@@ -242,6 +243,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
       google_form_lead_intake_watermarks: 0,
       google_form_lead_reviews: 0,
       filing_rules: 0,
+      assistant_label_definitions: 0,
       workspace_settings: 0,
       user_preferences: 0,
       mail_items: 0,
@@ -736,7 +738,7 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
     providerCalls: 0,
   });
   assert.ok(Object.values(report.tables).every((table) => table.matched));
-  assert.equal(report.sourceInventory.length, 28);
+  assert.equal(report.sourceInventory.length, 29);
   assert.deepEqual(
     report.sourceInventory.map(({ sourceCategory, disposition, sourceCount }) => ({
       sourceCategory,

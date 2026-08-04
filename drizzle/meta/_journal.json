@@ -176,6 +176,13 @@
       "when": 1785809213383,
       "tag": "0024_lowly_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1785851615405,
+      "tag": "0025_blushing_ultimo",
+      "breakpoints": true
     }
   ]
 }

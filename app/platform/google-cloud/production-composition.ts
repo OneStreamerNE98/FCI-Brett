@@ -7,6 +7,7 @@ import {
 import {
   createPostgresAdminAccessPersistenceRepository,
 } from "../../adapters/postgres/admin-access-persistence-repository";
+import { createPostgresAssistantLabelRepository } from "../../adapters/postgres/assistant-label-repository";
 import {
   createPostgresClientRepository,
 } from "../../adapters/postgres/client-repository";
@@ -51,6 +52,7 @@ import type { PostgresCreationRequestMetadata } from "../../adapters/postgres/cr
 import type { AuthorizationRepository } from "../../ports/authorization";
 import type { AdminAuditReader } from "../../ports/admin-audit-reader";
 import type { AdminAccessPersistenceRepository } from "../../ports/admin-access-persistence";
+import type { AssistantLabelRepository } from "../../ports/assistant-label-repository";
 import type { ClientRepository } from "../../ports/client-repository";
 import type { FileMetadataRepository } from "../../ports/file-metadata";
 import type { FilingRuleRepository } from "../../ports/filing-rule-repository";
@@ -84,6 +86,7 @@ export type ProductionRepositoryFactories = Readonly<{
   userPreferences: UserPreferencesRepository;
   filingRules: FilingRuleRepository;
   mailItems: MailItemRepository;
+  assistantLabels: AssistantLabelRepository;
   clients(request: PostgresCreationRequestMetadata): ClientRepository;
   projects(request?: PostgresCreationRequestMetadata): ProjectRepository;
   leads(request?: PostgresCreationRequestMetadata): LeadRepository;
@@ -143,6 +146,7 @@ export function composeProductionRepositories(
   );
   const filingRules = createPostgresFilingRuleRepository(postgres, sharedRepositoryOptions);
   const mailItems = createPostgresMailItemRepository(postgres, sharedRepositoryOptions);
+  const assistantLabels = createPostgresAssistantLabelRepository(postgres, sharedRepositoryOptions);
   const repositories: ProductionRepositoryFactories = Object.freeze({
     outbox,
     securityAudit,
@@ -156,6 +160,7 @@ export function composeProductionRepositories(
     userPreferences,
     filingRules,
     mailItems,
+    assistantLabels,
     clients(request) {
       return createPostgresClientRepository(postgres, {
         schema: config.postgres.schema,

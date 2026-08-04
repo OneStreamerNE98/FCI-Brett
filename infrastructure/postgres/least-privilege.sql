@@ -109,9 +109,9 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA fci_app FROM fci_rehearsal_importer;
 -- instead of table-wide access to identity/security fields. Invitation
 -- revocation, session revocation, role reassignment, and project-membership
 -- lifecycle changes are likewise limited to their reviewed columns. No
--- Runtime DELETE is limited to filing_rules and expired/consumed address review
--- receipts. Those receipts are short-lived validation evidence, and bounded
--- opportunistic cleanup avoids retaining duplicate job-site addresses. No other
+-- Runtime DELETE is limited to filing_rules, never-used assistant labels, and
+-- expired/consumed address review receipts. Used assistant labels are retired
+-- by UPDATE; review receipts are short-lived validation evidence. No other
 -- runtime table receives DELETE, and no runtime table receives TRUNCATE,
 -- REFERENCES, TRIGGER, or grant options.
 GRANT USAGE ON SCHEMA fci_app TO fci_runtime;
@@ -127,6 +127,7 @@ GRANT SELECT, INSERT ON TABLE fci_app.project_meetings TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.workspace_settings TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.user_preferences TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fci_app.filing_rules TO fci_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fci_app.assistant_label_definitions TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.mail_items TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.tasks TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.google_form_lead_intake_watermarks TO fci_runtime;

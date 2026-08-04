@@ -20,6 +20,7 @@ const productionMigrationModules = new Set([
   join(appRoot, "platform", "postgres", "mail-item-analysis-schema.ts"),
   join(appRoot, "platform", "postgres", "google-form-lead-intake-schema.ts"),
   join(appRoot, "platform", "postgres", "address-validation-schema.ts"),
+  join(appRoot, "platform", "postgres", "assistant-label-schema.ts"),
 ]);
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
@@ -35,6 +36,7 @@ const mailItemAnalysisMigrationPrefix = "0021_";
 const clientNormalizedNameMigrationPrefix = "0022_";
 const googleFormLeadIntakeMigrationPrefix = "0023_";
 const addressValidationMigrationPrefix = "0024_";
+const assistantLabelMigrationPrefix = "0025_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -799,12 +801,43 @@ test("adds GI-04 address evidence and nullable record metadata in additive migra
   assert.equal(snapshot.prevId, previousSnapshot.id);
   assert.ok(!Object.hasOwn(previousSnapshot.tables, "address_validation_reviews"));
   assert.ok(Object.hasOwn(snapshot.tables, "address_validation_reviews"));
-  const journalEntry = journal.entries.at(-1);
+  const journalEntry = journal.entries.find(({ idx }) => idx === 24);
   assert.deepEqual(journalEntry, {
     idx: 24,
     version: "6",
     when: journalEntry.when,
     tag: "0024_lowly_selene",
+    breakpoints: true,
+  });
+});
+
+test("adds AI-11(c)'s seeded label catalog in additive migration 0025", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(assistantLabelMigrationPrefix));
+  assert.equal(migration, "0025_blushing_ultimo.sql");
+  assert.equal(files.filter((file) => file.startsWith(assistantLabelMigrationPrefix)).length, 1);
+  const [migrationSql, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0024_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0025_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.match(migrationSql, /CREATE TABLE `assistant_label_definitions`/u);
+  assert.match(migrationSql, /CREATE INDEX `assistant_label_definitions_created_at_idx`/u);
+  assert.equal((migrationSql.match(/\('(?:lead|project-update|schedule|warranty)'/gu) ?? []).length, 4);
+  assert.doesNotMatch(
+    sqlWithoutLiteralsOrComments(migrationSql),
+    /\b(?:DROP|UPDATE|DELETE|TRUNCATE|RENAME)\b/iu,
+  );
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.ok(!Object.hasOwn(previousSnapshot.tables, "assistant_label_definitions"));
+  assert.ok(Object.hasOwn(snapshot.tables, "assistant_label_definitions"));
+  const journalEntry = journal.entries.at(-1);
+  assert.deepEqual(journalEntry, {
+    idx: 25,
+    version: "6",
+    when: journalEntry.when,
+    tag: "0025_blushing_ultimo",
     breakpoints: true,
   });
 });

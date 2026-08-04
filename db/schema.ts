@@ -216,6 +216,18 @@ export const filingRules = sqliteTable("filing_rules", {
   index("filing_rules_priority_idx").on(table.priority),
 ]);
 
+/** Administrator-owned AI intent labels. Slugs are opaque, immutable identifiers;
+ * descriptions remain editable and used rows retire instead of disappearing. */
+export const assistantLabelDefinitions = sqliteTable("assistant_label_definitions", {
+  slug: text("slug").primaryKey(),
+  description: text("description").notNull(),
+  retired: integer("retired", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [
+  index("assistant_label_definitions_created_at_idx").on(table.createdAt, table.slug),
+]);
+
 export const workspaceSettings = sqliteTable("workspace_settings", {
   id: text("id").primaryKey(),
   sharedDriveId: text("shared_drive_id"),
