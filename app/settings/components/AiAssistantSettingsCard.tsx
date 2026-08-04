@@ -22,6 +22,8 @@ type AssistantConfig = {
   provider: "openai";
   keyState: "Configured" | "Missing";
   model: string;
+  modelSource: "app" | "env" | "none";
+  savedModel: string | null;
   features: AiFeatures;
 };
 type NotificationKind = "success" | "info" | "warning" | "error";
@@ -43,6 +45,12 @@ function parseAssistantConfig(value: unknown): AssistantConfig {
   if (typeof value.model !== "string" || !value.model.trim() || value.model.length > 200) {
     throw new Error("The server returned an invalid AI model name.");
   }
+  const modelSource = value.modelSource === "app" || value.modelSource === "env"
+    ? value.modelSource
+    : "none";
+  const savedModel = typeof value.savedModel === "string" && value.savedModel.trim()
+    ? value.savedModel.trim().slice(0, 200)
+    : null;
   if (!isRecord(value.features)) {
     throw new Error("The server returned no AI feature settings.");
   }
@@ -57,6 +65,8 @@ function parseAssistantConfig(value: unknown): AssistantConfig {
     provider: "openai",
     keyState: value.keyState,
     model: value.model.trim(),
+    modelSource,
+    savedModel,
     features,
   };
 }
@@ -64,6 +74,8 @@ function parseAssistantConfig(value: unknown): AssistantConfig {
 export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; isAdmin: boolean }) {
   const [config, setConfig] = useState<AssistantConfig | null>(null);
   const [features, setFeatures] = useState<AiFeatures | null>(null);
+  const [model, setModel] = useState("");
+  const [modelDirty, setModelDirty] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -80,11 +92,17 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       if (requestId !== loadRequestRef.current) return;
       setConfig(nextConfig);
       setFeatures({ ...nextConfig.features });
+      setModel(nextConfig.modelSource === "env"
+        ? nextConfig.savedModel ?? ""
+        : nextConfig.savedModel ?? nextConfig.model);
+      setModelDirty(false);
       setLoadState("ready");
     } catch (error) {
       if (requestId !== loadRequestRef.current) return;
       setConfig(null);
       setFeatures(null);
+      setModel("");
+      setModelDirty(false);
       setLoadError(
         error instanceof Error
           ? error.message
@@ -109,7 +127,10 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       const response = await fetch(ASSISTANT_CONFIG_URL, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ features }),
+        body: JSON.stringify({
+          features,
+          ...(modelDirty ? { model } : {}),
+        }),
       });
       const body = await response.json().catch(() => ({})) as unknown;
       if (!response.ok) {
@@ -122,6 +143,10 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       invalidateCachedGet(ASSISTANT_CONFIG_URL);
       setConfig(savedConfig);
       setFeatures({ ...savedConfig.features });
+      setModel(savedConfig.modelSource === "env"
+        ? savedConfig.savedModel ?? ""
+        : savedConfig.savedModel ?? savedConfig.model);
+      setModelDirty(false);
       notify("AI assistant settings saved", "success");
     } catch (error) {
       notify(
@@ -155,6 +180,7 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
         <div><dt>Provider</dt><dd>OpenAI</dd></div>
         <div><dt>API key</dt><dd><span className={config.keyState === "Configured" ? styles.configured : styles.missing}><KeyRound size={14} aria-hidden="true" /> {config.keyState}</span></dd></div>
         <div><dt>Model</dt><dd><code>{config.model}</code></dd></div>
+        <div><dt>Model source</dt><dd>{config.modelSource === "app" ? "App-saved" : config.modelSource === "env" ? "Environment" : "None (default)"}</dd></div>
       </dl>
 
       {config.keyState === "Missing" && <div className={styles.missingNote} role="note">
@@ -173,6 +199,20 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       </div>
 
       {isAdmin ? <form onSubmit={save}>
+        <label htmlFor="assistant-model">{config.modelSource === "env" ? "App-saved fallback model" : "OpenAI model"}
+          <input
+            id="assistant-model"
+            value={model}
+            onChange={(event) => { setModel(event.target.value); setModelDirty(true); }}
+            disabled={!editable || saving || config.modelSource === "env"}
+            maxLength={200}
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <small>{config.modelSource === "env"
+            ? `Hosted OPENAI_MODEL is the active emergency override. ${config.savedModel ? "The saved fallback is preserved and cannot be overwritten from this screen until the override is removed." : "No app-saved fallback is set; remove the override before choosing one here."}`
+            : "Validated with OpenAI only when changed. A hosted OPENAI_MODEL, when present, becomes the emergency override."}</small>
+        </label>
         <fieldset className={styles.featureFieldset} disabled={!editable || saving}>
           <legend><Sparkles size={16} aria-hidden="true" /> AI features</legend>
           <div className={styles.featureList}>

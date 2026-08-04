@@ -45,6 +45,9 @@ export async function saveGoogleChatRouting(
       enabled: route.enabled,
       spaceKey: route.spaceKey,
     })),
+    ...(typeof routing.notificationsEnabled === "boolean"
+      ? { notificationsEnabled: routing.notificationsEnabled }
+      : {}),
   };
   const repository = createD1WorkspaceSettingsRepository(
     database as unknown as D1Database,

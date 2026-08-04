@@ -25,10 +25,7 @@ import {
   normalizeStoredMailItem,
   type MailItem,
 } from "../../../domain/mail-item";
-import {
-  assistantRuntimeConfiguration,
-  readSitesAssistantConfiguration,
-} from "../../../lib/assistant-config-sites";
+import { readSitesAssistantConfiguration } from "../../../lib/assistant-config-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import {
@@ -38,7 +35,7 @@ import {
   type GmailMessageSummary,
 } from "../../../lib/google-gmail";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getConnectionScope } from "../../../lib/google-oauth-sites";
 import { noStoreJson, noStoreResponse } from "../../../lib/no-store-json";
 import {
   simulationInboxAnalysisFixture,
@@ -617,6 +614,7 @@ export async function runInboxAnalysisSweep(input: {
   database: D1Database;
   environment: Readonly<Record<string, string | undefined>>;
   featureEnabled: boolean;
+  model?: string;
   pageToken?: string;
   signal: AbortSignal;
   actor: string;
@@ -654,10 +652,12 @@ export async function runInboxAnalysisSweep(input: {
 
   try {
   const projects = await readProjectCandidates(input.database);
-  const runtime = assistantRuntimeConfiguration(input.environment);
   const apiKey = runtimeValue(input.environment, "OPENAI_API_KEY");
   const provider = !config.simulation && apiKey
-    ? input.provider ?? new OpenAIResponsesProvider({ apiKey, model: runtime.model })
+    ? input.provider ?? new OpenAIResponsesProvider({
+        apiKey,
+        model: input.model,
+      })
     : null;
   if (!config.simulation && !provider) {
     throw new Error("The configured AI provider key is unavailable.");
@@ -1244,6 +1244,7 @@ export async function POST(request: NextRequest) {
       database,
       environment,
       featureEnabled: configuration.features.inboxAnalysis,
+      model: configuration.model,
       actor: auth.user.email,
       ...(sweepRequest.pageToken
         ? { pageToken: sweepRequest.pageToken }
@@ -1397,7 +1398,7 @@ export async function GET(request: NextRequest) {
     await ensureWorkspaceSchema();
     const database = env.DB as unknown as D1Database;
     const repository = createD1MailItemRepository(database);
-    const connectionKey = getGoogleRuntimeConfig().connectionKey;
+    const connectionKey = getConnectionScope().connectionKey;
     const [page, failed] = await Promise.all([
       repository.listByStatusPage(
         connectionKey,
@@ -1451,7 +1452,7 @@ export async function PATCH(request: NextRequest) {
     await ensureWorkspaceSchema();
     const database = env.DB as unknown as D1Database;
     const repository = createD1MailItemRepository(database);
-    const connectionKey = getGoogleRuntimeConfig().connectionKey;
+    const connectionKey = getConnectionScope().connectionKey;
     if (retry) {
       const retriedCount = await repository.resetExhaustedAnalysisFailures(
         connectionKey,

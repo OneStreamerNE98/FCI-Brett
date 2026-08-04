@@ -50,6 +50,11 @@ export const EFFECTIVE_WORKSPACE_RESOURCE_SPECS = Object.freeze({
     resourceKey: "field-schedule",
     envVar: "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID",
   }),
+  leadFormResponseSheet: Object.freeze({
+    resourceType: "sheets.spreadsheet" as const,
+    resourceKey: "lead-form-responses",
+    envVar: "GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID",
+  }),
 });
 
 export type EffectiveWorkspaceResourceKey = keyof typeof EFFECTIVE_WORKSPACE_RESOURCE_SPECS;
@@ -78,10 +83,21 @@ export type SavedWorkspaceRuntimeValues = Readonly<{
   clientDirectorySheetId?: string | null;
   clientAppointmentsCalendarId?: string | null;
   fieldScheduleCalendarId?: string | null;
+  driveProvisioningEnabled?: boolean | null;
 }>;
 
 export type EffectiveGoogleRuntimeConfig = GoogleRuntimeConfig & Readonly<{
   connectReady: boolean;
+  effectiveSources: Readonly<{
+    driveProvisioningEnabled: EffectiveConfigurationSource;
+  }>;
+}>;
+
+export type EffectiveConfigurationSource = "app" | "env" | "none";
+
+export type EffectiveConfigurationValue<T> = Readonly<{
+  value: T;
+  source: EffectiveConfigurationSource;
 }>;
 
 const RESOURCE_ENV_VARS = new Set(
@@ -91,6 +107,35 @@ const RESOURCE_ENV_VARS = new Set(
 function normalizedId(value: string | undefined) {
   const normalized = value?.trim();
   return normalized || undefined;
+}
+
+/** Shared app-saved > environment > none resolver for UI-manageable text. */
+export function resolveEffectiveTextConfiguration(
+  savedValue: unknown,
+  environmentValue: string | undefined,
+): EffectiveConfigurationValue<string | undefined> {
+  const saved = typeof savedValue === "string" ? normalizedId(savedValue) : undefined;
+  if (saved) return Object.freeze({ value: saved, source: "app" });
+  const environment = normalizedId(environmentValue);
+  if (environment) return Object.freeze({ value: environment, source: "env" });
+  return Object.freeze({ value: undefined, source: "none" });
+}
+
+/** Boolean sibling of the shared resolver; only literal hosted values count. */
+export function resolveEffectiveBooleanConfiguration(
+  savedValue: unknown,
+  environmentValue: string | undefined,
+): EffectiveConfigurationValue<boolean> {
+  if (typeof savedValue === "boolean") {
+    return Object.freeze({ value: savedValue, source: "app" });
+  }
+  if (environmentValue === "true" || environmentValue === "false") {
+    return Object.freeze({
+      value: environmentValue === "true",
+      source: "env",
+    });
+  }
+  return Object.freeze({ value: false, source: "none" });
 }
 
 /**
@@ -150,7 +195,7 @@ function resolveResource(
   });
 }
 
-/** Pure app-saved > environment > none resolution for the four runtime resource IDs. */
+/** Pure app-saved > environment > none resolution for the five runtime resource IDs. */
 export function resolveEffectiveWorkspaceResources(
   config: GoogleRuntimeConfig,
   savedRows: readonly WorkspaceResource[],
@@ -185,6 +230,13 @@ export function resolveEffectiveWorkspaceResources(
       savedValues.fieldScheduleCalendarId,
       config.simulation,
     ),
+    leadFormResponseSheet: resolveResource(
+      EFFECTIVE_WORKSPACE_RESOURCE_SPECS.leadFormResponseSheet,
+      config.leadFormResponseSheetId,
+      savedRows,
+      undefined,
+      config.simulation,
+    ),
   });
 }
 
@@ -195,6 +247,7 @@ export function resolveEffectiveWorkspaceResources(
 export function applyEffectiveWorkspaceConfig(
   config: GoogleRuntimeConfig,
   resources: EffectiveWorkspaceResources,
+  savedValues: SavedWorkspaceRuntimeValues = {},
 ): EffectiveGoogleRuntimeConfig {
   const appSatisfiedEnvVars = new Set(
     Object.entries(resources)
@@ -208,6 +261,10 @@ export function applyEffectiveWorkspaceConfig(
   const nonResourceMissing = config.missingDetails.filter(
     (detail) => !RESOURCE_ENV_VARS.has(detail.envVar),
   );
+  const driveProvisioning = resolveEffectiveBooleanConfiguration(
+    savedValues.driveProvisioningEnabled,
+    config.driveProvisioningEnvironmentValue,
+  );
 
   return Object.freeze({
     ...config,
@@ -220,9 +277,18 @@ export function applyEffectiveWorkspaceConfig(
       resources.clientDirectorySheet.source === "app" ? false : config.clientDirectorySheetIdInvalid,
     clientAppointmentsCalendarId: resources.clientAppointmentsCalendar.externalId,
     fieldScheduleCalendarId: resources.fieldScheduleCalendar.externalId,
+    leadFormResponseSheetId: resources.leadFormResponseSheet.externalId,
+    leadFormResponseSheetIdInvalid:
+      resources.leadFormResponseSheet.source === "app"
+        ? false
+        : config.leadFormResponseSheetIdInvalid,
     missingDetails,
     missing,
     oauthReady: config.simulation || missingDetails.length === 0,
     connectReady: config.simulation || nonResourceMissing.length === 0,
+    provisioningEnabled: config.simulation || driveProvisioning.value,
+    effectiveSources: Object.freeze({
+      driveProvisioningEnabled: config.simulation ? "none" : driveProvisioning.source,
+    }),
   });
 }

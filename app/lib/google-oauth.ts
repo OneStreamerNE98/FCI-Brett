@@ -162,6 +162,8 @@ export type GoogleRuntimeConfig = {
   intakeMailbox?: string;
   clientAppointmentsCalendarId?: string;
   fieldScheduleCalendarId?: string;
+  leadFormResponseSheetId?: string;
+  leadFormResponseSheetIdInvalid: boolean;
   enabledServices: GoogleService[];
   serviceScopes: Record<GoogleService, string>;
   scopes: string[];
@@ -169,6 +171,7 @@ export type GoogleRuntimeConfig = {
   missingDetails: GoogleMissingConfiguration[];
   oauthReady: boolean;
   provisioningEnabled: boolean;
+  driveProvisioningEnvironmentValue?: string;
   gmailEnabled: boolean;
   calendarEnabled: boolean;
   sheetsEnabled: boolean;
@@ -402,6 +405,16 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = {}) {
   const intakeMailbox = workspaceValue(input, "INTAKE_MAILBOX")?.trim().toLowerCase();
   const clientAppointmentsCalendarId = workspaceValue(input, "CLIENT_APPOINTMENTS_CALENDAR_ID")?.trim();
   const fieldScheduleCalendarId = workspaceValue(input, "FIELD_SCHEDULE_CALENDAR_ID")?.trim();
+  const leadFormResponseSheet = optionalGoogleResourceId(
+    workspaceValue(input, "LEAD_FORM_RESPONSE_SHEET_ID"),
+  );
+  // Preserve the pre-SET-40 Drive gate semantics: this legacy hosted flag was
+  // always whitespace- and case-insensitive. Chat intentionally keeps the
+  // shared resolver's literal-only behavior.
+  const driveProvisioningEnvironmentValue = workspaceValue(
+    input,
+    "DRIVE_PROVISIONING_ENABLED",
+  )?.trim().toLowerCase();
   const services = workspaceServices(input, simulation);
   const gmailEnabled = services.enabled.includes("gmail");
   const calendarEnabled = services.enabled.includes("calendar");
@@ -452,6 +465,10 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = {}) {
     intakeMailbox: simulation ? "workspace-simulation@fci.example" : intakeMailbox,
     clientAppointmentsCalendarId: simulation ? "simulation-client-appointments" : clientAppointmentsCalendarId,
     fieldScheduleCalendarId: simulation ? "simulation-field-schedule" : fieldScheduleCalendarId,
+    leadFormResponseSheetId: simulation
+      ? "workspace-simulation-lead-form-sheet"
+      : leadFormResponseSheet.value,
+    leadFormResponseSheetIdInvalid: simulation ? false : leadFormResponseSheet.invalid,
     enabledServices: services.enabled,
     serviceScopes: SERVICE_SCOPES,
     scopes: ["openid", "email", ...services.enabled.map((service) => SERVICE_SCOPES[service])],
@@ -459,6 +476,7 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = {}) {
     missingDetails,
     oauthReady: simulation || missing.length === 0,
     provisioningEnabled: simulation || workspaceBoolean(input, "DRIVE_PROVISIONING_ENABLED"),
+    driveProvisioningEnvironmentValue,
     gmailEnabled,
     calendarEnabled,
     sheetsEnabled,

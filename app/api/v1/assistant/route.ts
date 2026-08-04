@@ -15,16 +15,13 @@ import {
 } from "../../../application/assistant/org-wide-fallback";
 import { projectEvidence } from "../../../application/assistant/project-evidence";
 import { createAssistantToolRegistry } from "../../../application/assistant/tools";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getConnectionScope } from "../../../lib/google-oauth-sites";
 import {
   normalizeSearchQuery,
   searchRecords,
 } from "../../../application/search-records";
 import { normalizeUserDisplayTimezone } from "../../../domain/user-preferences";
-import {
-  assistantRuntimeConfiguration,
-  readSitesAssistantConfiguration,
-} from "../../../lib/assistant-config-sites";
+import { readSitesAssistantConfiguration } from "../../../lib/assistant-config-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { noStoreJson as noStore, noStoreResponse } from "../../../lib/no-store-json";
@@ -37,15 +34,12 @@ function runtimeValue(name: string) {
     ?? process.env[name];
 }
 
-function provider() {
-  const runtime = assistantRuntimeConfiguration(
-    env as unknown as Record<string, string | undefined>,
-  );
+function provider(model: string) {
   const apiKey = runtimeValue("OPENAI_API_KEY");
-  return runtime.keyConfigured && apiKey
+  return apiKey
     ? new OpenAIResponsesProvider({
         apiKey,
-        model: runtime.model,
+        model,
       })
     : null;
 }
@@ -98,10 +92,18 @@ export async function POST(request: NextRequest) {
   }
 
   await ensureWorkspaceSchema();
-  const google = getGoogleRuntimeConfig();
-  const assistantProvider = provider();
+  const google = getConnectionScope();
 
   if (hasProjectId) {
+    // Preserve the records-only project path when no provider is configured.
+    // A saved model cannot be used without a key, so there is no reason to
+    // add a workspace-settings read to this deterministic fallback.
+    const assistantProvider = runtimeValue("OPENAI_API_KEY")?.trim()
+      ? provider((await readSitesAssistantConfiguration(
+          env.DB,
+          env as unknown as Record<string, string | undefined>,
+        )).model)
+      : null;
     const context = await projectEvidence(
       env.DB,
       projectId,
@@ -147,6 +149,7 @@ export async function POST(request: NextRequest) {
     env.DB,
     env as unknown as Record<string, string | undefined>,
   );
+  const assistantProvider = provider(assistantConfiguration.model);
   if (!assistantConfiguration.features.orgQa) {
     const fallbackEvidence = await boundedFallbackSearch({
       search: () => fallbackSearchEvidence(question),

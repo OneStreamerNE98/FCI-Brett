@@ -8,7 +8,7 @@ import { creationAuthorizationFor, CREATION_CAPABILITIES } from "../../../applic
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { clientCreationHttpResult } from "../../../lib/creation-http-result";
-import { getEffectiveGoogleRuntimeSetup, getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getConnectionScope, getEffectiveGoogleRuntimeSetup } from "../../../lib/google-oauth-sites";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { noStoreJson as noStore } from "../../../lib/no-store-json";
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
+  const config = getConnectionScope();
   // Folder links are connection-scoped so simulation and the live Shared Drive
   // can never expose each other's mappings.
   const result = await env.DB.prepare("SELECT c.id, c.client_code, c.name, c.status, c.industry, c.created_by, c.created_at, c.updated_at, CAST(c.version AS TEXT) AS version, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url, COUNT(p.id) AS project_count, (SELECT id FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_id, (SELECT name FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_name, (SELECT email FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_email, (SELECT phone FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_phone, (SELECT role FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_role, (SELECT CAST(version AS TEXT) FROM contacts WHERE client_id = c.id ORDER BY is_primary DESC, created_at ASC LIMIT 1) AS primary_contact_version FROM clients c LEFT JOIN projects p ON p.client_id = c.id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'client' AND m.entity_id = c.id AND m.folder_key = 'client-root' GROUP BY c.id ORDER BY c.name ASC").bind(config.connectionKey).all();

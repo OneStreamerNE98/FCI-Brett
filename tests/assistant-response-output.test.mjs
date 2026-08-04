@@ -217,10 +217,23 @@ test("non-success and malformed provider responses fail with sanitized errors", 
   await assert.rejects(
     failed.complete(minimalRequest(new AbortController().signal)),
     (error) => {
-      assert.equal(error.message, "OpenAI Responses failed with status 503.");
+      assert.equal(error.message, "OpenAI Responses failed for model \"gpt-5.4\" with status 503.");
       assert.doesNotMatch(error.message, /sensitive upstream details/);
       return true;
     },
+  );
+
+  const missingModel = new OpenAIResponsesProvider({
+    apiKey: "fixture-key",
+    model: "retired-model-name",
+    fetchImpl: async (url) => {
+      assertResponsesUrl(url);
+      return Response.json({ error: { message: "model is unavailable" } }, { status: 404 });
+    },
+  });
+  await assert.rejects(
+    missingModel.complete(minimalRequest(new AbortController().signal)),
+    /OpenAI model "retired-model-name" was not found or is unavailable: model is unavailable/u,
   );
 
   const malformed = new OpenAIResponsesProvider({

@@ -9,6 +9,7 @@ type ChatConfig = {
   canEdit: boolean;
   mode: "disabled" | "simulation" | "webhook";
   featureEnabled: boolean;
+  featureSource: "app" | "env" | "none";
   events: ChatEventConfig[];
   spaces: Array<{ key: string; label: string; secretEnvVar: string; configured: boolean }>;
   missingDetails: Array<{ label: string; envVar: string; secret: boolean }>;
@@ -21,6 +22,7 @@ const chatConfigFixture: ChatConfig = {
   canEdit: true,
   mode: "simulation",
   featureEnabled: true,
+  featureSource: "app",
   events: [
     { type: "lead.created", label: "New lead", description: "A new lead is ready for office review.", enabled: false, spaceKey: "sales" },
     { type: "gmail.filing_review_needed", label: "Filing review needed", description: "A Gmail thread needs a project filing decision.", enabled: true, spaceKey: "office-ops" },
@@ -63,7 +65,15 @@ async function expectNoHorizontalOverflow(page: Page) {
 
 test("Administrator can save closed Google Chat event routing without receiving secret values", async ({ page }) => {
   const browserIssues = monitorBrowserIssues(page);
-  let patchBody: { events: Array<{ type: ChatEventType; enabled: boolean; spaceKey: string }> } | undefined;
+  type ChatPatchBody = {
+    featureEnabled?: boolean;
+    events: Array<{ type: ChatEventType; enabled: boolean; spaceKey: string }>;
+  };
+  const patchBodies: ChatPatchBody[] = [];
+  // The stored gate mirrors the server merge contract: it changes only when a
+  // PATCH body actually carries featureEnabled and is preserved when omitted.
+  let storedFeatureEnabled = chatConfigFixture.featureEnabled;
+  let storedEvents = chatConfigFixture.events;
 
   await page.route("**/api/v1/integrations/google/chat/config", async (route) => {
     if (route.request().method() === "GET") {
@@ -71,12 +81,22 @@ test("Administrator can save closed Google Chat event routing without receiving 
       return;
     }
     if (route.request().method() === "PATCH") {
-      patchBody = route.request().postDataJSON() as typeof patchBody;
-      const savedEvents = chatConfigFixture.events.map((event) => {
-        const update = patchBody?.events.find((candidate) => candidate.type === event.type);
+      const patchBody = route.request().postDataJSON() as ChatPatchBody;
+      patchBodies.push(patchBody);
+      if ("featureEnabled" in patchBody) storedFeatureEnabled = patchBody.featureEnabled === true;
+      storedEvents = storedEvents.map((event) => {
+        const update = patchBody.events.find((candidate) => candidate.type === event.type);
         return update ? { ...event, enabled: update.enabled, spaceKey: update.spaceKey } : event;
       });
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...chatConfigFixture, events: savedEvents }) });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...chatConfigFixture,
+          featureEnabled: storedFeatureEnabled,
+          events: storedEvents,
+        }),
+      });
       return;
     }
     await route.continue();
@@ -87,6 +107,11 @@ test("Administrator can save closed Google Chat event routing without receiving 
   const card = page.locator(".chat-notification-settings");
   await expect(card.getByRole("heading", { level: 2, name: "Google Chat notifications" })).toBeVisible();
   await expect(card.getByRole("status")).toContainText("Simulation log only");
+  await expect(
+    card.locator("p.form-help").filter({ hasText: "Enable source:" }),
+  ).toHaveText(/Enable source:\s*App-saved/u);
+  const featureToggle = card.getByRole("checkbox", { name: /Enable Google Chat notifications/u });
+  await expect(featureToggle).toBeChecked();
   await expect(card).toContainText("GOOGLE_CHAT_SALES_WEBHOOK_URL");
   await expect(card).toContainText("GOOGLE_CHAT_OFFICE_OPS_WEBHOOK_URL");
   await expect(card).toContainText("GOOGLE_CHAT_FIELD_WEBHOOK_URL");
@@ -94,10 +119,12 @@ test("Administrator can save closed Google Chat event routing without receiving 
   await expect(page.locator("body")).not.toContainText(forbiddenWebhookSentinel);
   await expect(page.locator("body")).not.toContainText(forbiddenTokenSentinel);
 
+  await featureToggle.uncheck();
   await card.getByRole("checkbox", { name: /New lead/ }).check();
   await card.getByLabel("Chat space for New lead").selectOption("office-ops");
   await card.getByRole("button", { name: "Save Chat routing" }).click();
-  await expect.poll(() => patchBody).toEqual({
+  await expect.poll(() => patchBodies[0]).toEqual({
+    featureEnabled: false,
     events: [
       { type: "lead.created", enabled: true, spaceKey: "office-ops" },
       { type: "gmail.filing_review_needed", enabled: true, spaceKey: "office-ops" },
@@ -106,7 +133,26 @@ test("Administrator can save closed Google Chat event routing without receiving 
       { type: "task.assigned", enabled: false, spaceKey: "office-ops" },
     ],
   });
+  await expect(featureToggle).not.toBeChecked();
   await expectNoHorizontalOverflow(page);
+
+  // A routing-only save must leave the stored gate untouched: the PATCH body
+  // omits featureEnabled entirely, and the untouched toggle keeps the
+  // server-preserved value instead of adopting the effective one.
+  await card.getByRole("checkbox", { name: /Schedule change/ }).check();
+  await card.getByRole("button", { name: "Save Chat routing" }).click();
+  await expect.poll(() => patchBodies.length).toBe(2);
+  expect(patchBodies[1]).toEqual({
+    events: [
+      { type: "lead.created", enabled: true, spaceKey: "office-ops" },
+      { type: "gmail.filing_review_needed", enabled: true, spaceKey: "office-ops" },
+      { type: "calendar.schedule_changed", enabled: true, spaceKey: "field" },
+      { type: "project.warranty_follow_up_due", enabled: true, spaceKey: "service" },
+      { type: "task.assigned", enabled: false, spaceKey: "office-ops" },
+    ],
+  });
+  expect("featureEnabled" in patchBodies[1]).toBe(false);
+  await expect(featureToggle).not.toBeChecked();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(card).toBeVisible();

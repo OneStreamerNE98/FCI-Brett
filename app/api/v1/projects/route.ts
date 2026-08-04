@@ -11,7 +11,7 @@ import { resolveProjectSegment } from "../../../domain/project-segment";
 import { ensureWorkspaceSchema } from "../_workspace-data";
 import { officeIdentityForEmail, requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { projectCreationHttpResult } from "../../../lib/creation-http-result";
-import { getEffectiveGoogleRuntimeSetup, getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getConnectionScope, getEffectiveGoogleRuntimeSetup } from "../../../lib/google-oauth-sites";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
+  const config = getConnectionScope();
   const clientId = request.nextUrl.searchParams.get("clientId");
   // Resolve links only from the active provider. Simulation and the company
   // Shared Drive keep independent mappings for the same project.

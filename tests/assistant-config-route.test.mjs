@@ -129,6 +129,8 @@ test("GET is office-readable, no-store, secret-safe, and defaults every feature 
     provider: "openai",
     keyState: "Configured",
     model: "gpt-test-config-model",
+    modelSource: "env",
+    savedModel: null,
     features: {
       orgQa: true,
       triage: true,
@@ -138,7 +140,7 @@ test("GET is office-readable, no-store, secret-safe, and defaults every feature 
     },
   });
   assert.doesNotMatch(JSON.stringify(body), new RegExp(secret, "u"));
-  assert.deepEqual(Object.keys(body).sort(), ["features", "keyState", "model", "provider"]);
+  assert.deepEqual(Object.keys(body).sort(), ["features", "keyState", "model", "modelSource", "provider", "savedModel"]);
   assert.deepEqual(Object.keys(body.features).sort(), [
     "inboxAnalysis",
     "orgQa",
@@ -196,6 +198,8 @@ test("GET widens stored features one key at a time and never exposes unknown sto
     provider: "openai",
     keyState: "Configured",
     model: "gpt-test-config-model",
+    modelSource: "env",
+    savedModel: null,
     features: {
       orgQa: false,
       triage: true,
@@ -231,6 +235,8 @@ test("PATCH round-trips a known subset while preserving sibling settings and unk
     provider: "openai",
     keyState: "Configured",
     model: "gpt-test-config-model",
+    modelSource: "env",
+    savedModel: null,
     features: {
       orgQa: false,
       triage: false,
@@ -243,7 +249,7 @@ test("PATCH round-trips a known subset while preserving sibling settings and unk
     JSON.stringify(body),
     /sk-test-config-secret-never-return/u,
   );
-  assert.deepEqual(Object.keys(body).sort(), ["features", "keyState", "model", "provider"]);
+  assert.deepEqual(Object.keys(body).sort(), ["features", "keyState", "model", "modelSource", "provider", "savedModel"]);
 
   const stored = database.readSettings();
   assert.equal(stored.timezone, "America/Chicago");
@@ -268,6 +274,106 @@ test("PATCH round-trips a known subset while preserving sibling settings and unk
     routeRequest("/api/v1/assistant/config", OFFICE_EMAIL),
   );
   assert.deepEqual((await reloaded.json()).features, body.features);
+});
+
+test("feature-only save under the hosted model override preserves the saved fallback without lookup", async () => {
+  const database = fakeDatabase({
+    aiModel: "gpt-saved-fallback",
+    aiFeatures: { orgQa: true },
+    unrelated: { preserved: true },
+  });
+  setEnvironment(database, { OPENAI_MODEL: "gpt-emergency-override" });
+  const originalFetch = globalThis.fetch;
+  let lookupCalls = 0;
+  globalThis.fetch = async () => {
+    lookupCalls += 1;
+    throw new Error("feature-only save must not call the provider");
+  };
+  try {
+    const response = await route.PATCH(routeRequest(
+      "/api/v1/assistant/config",
+      ADMIN_EMAIL,
+      "PATCH",
+      { features: { triage: false } },
+    ));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.model, "gpt-emergency-override");
+    assert.equal(body.modelSource, "env");
+    assert.equal(body.savedModel, "gpt-saved-fallback");
+    assert.equal(database.readSettings().aiModel, "gpt-saved-fallback");
+    assert.deepEqual(database.readSettings().unrelated, { preserved: true });
+    assert.equal(lookupCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("model save performs provider lookup without an allowlist and stores only the chosen fallback", async () => {
+  const database = fakeDatabase({
+    aiModel: "gpt-old-fallback",
+    unrelated: "preserved",
+  });
+  setEnvironment(database, { OPENAI_MODEL: undefined });
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input: String(input), init });
+    return new Response(JSON.stringify({ id: "future-model-2030" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const response = await route.PATCH(routeRequest(
+      "/api/v1/assistant/config",
+      ADMIN_EMAIL,
+      "PATCH",
+      { model: "future-model-2030" },
+    ));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.model, "future-model-2030");
+    assert.equal(body.modelSource, "app");
+    assert.equal(body.savedModel, "future-model-2030");
+    assert.equal(database.readSettings().aiModel, "future-model-2030");
+    assert.equal(database.readSettings().unrelated, "preserved");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].input, "https://api.openai.com/v1/models/future-model-2030");
+    assert.equal(calls[0].init.headers.Authorization, "Bearer sk-test-config-secret-never-return");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("unknown model save returns the bounded provider reason without leaking the configured key", async () => {
+  const database = fakeDatabase({ aiModel: "gpt-still-saved" });
+  setEnvironment(database, { OPENAI_MODEL: undefined });
+  const originalFetch = globalThis.fetch;
+  const secret = "sk-test-config-secret-never-return";
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: { message: `unknown model; accidental echo ${secret}; ${"x".repeat(1_000)}` },
+  }), {
+    status: 404,
+    headers: { "content-type": "application/json" },
+  });
+  try {
+    const response = await route.PATCH(routeRequest(
+      "/api/v1/assistant/config",
+      ADMIN_EMAIL,
+      "PATCH",
+      { model: "future-model-does-not-exist" },
+    ));
+    const body = await response.json();
+    assert.equal(response.status, 400);
+    assert.match(body.error, /OpenAI rejected model "future-model-does-not-exist": unknown model/u);
+    assert.doesNotMatch(body.error, new RegExp(secret, "u"));
+    assert.ok(body.error.length <= 570);
+    assert.equal(database.readSettings().aiModel, "gpt-still-saved");
+    assert.equal(database.queries.filter((query) => query.operation === "run").length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("PATCH while the key is missing preserves enabled defaults for a later configured runtime", async () => {

@@ -39,6 +39,12 @@ export type GmailFilingPreview = {
 };
 
 type MissingDetail = { label: string; envVar: string; secret: boolean };
+type EffectiveConfigurationSource = "app" | "env" | "none";
+type EffectiveResourceConfiguration = {
+  configured?: boolean;
+  source?: EffectiveConfigurationSource;
+  externalId?: string | null;
+};
 type WorkspaceReadiness = {
   mode?: "shared-drive";
   runtimeMode?: "simulation" | "workspace";
@@ -54,10 +60,15 @@ type WorkspaceReadiness = {
   sheetsConnected?: boolean;
   requiresReauthorization?: boolean;
   provisioningEnabled?: boolean;
+  provisioningSource?: EffectiveConfigurationSource;
   gmailEnabled?: boolean;
   calendarEnabled?: boolean;
   sheetsEnabled?: boolean;
   clientDirectorySheetConfigured?: boolean;
+  sheets?: {
+    clientDirectory?: EffectiveResourceConfiguration;
+    leadFormResponses?: EffectiveResourceConfiguration;
+  };
   enabledServices?: string[];
   broadScopeAcknowledged?: boolean;
 };
@@ -428,6 +439,12 @@ function maskWorkspaceAccountForDisplay(value: string | null | undefined) {
   return `${local.slice(0, Math.min(2, local.length))}•••@${domain}`;
 }
 
+function effectiveConfigurationSourceLabel(source: EffectiveConfigurationSource | undefined) {
+  if (source === "app") return "App-saved";
+  if (source === "env") return "Environment";
+  return "None";
+}
+
 export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: Notify; projects: Project[]; isAdmin: boolean }) {
   const [checking, setChecking] = useState(false);
   const [working, setWorking] = useState(false);
@@ -453,6 +470,9 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [gmailWorking, setGmailWorking] = useState(false);
   const [calendarWorking, setCalendarWorking] = useState(false);
   const [sheetsWorking, setSheetsWorking] = useState(false);
+  const [runtimeConfigurationWorking, setRuntimeConfigurationWorking] = useState<"drive" | "client-directory" | "lead-form" | null>(null);
+  const [clientDirectorySheetId, setClientDirectorySheetId] = useState("");
+  const [leadFormResponseSheetId, setLeadFormResponseSheetId] = useState("");
   const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
   const [gmailTestEmailPassed, setGmailTestEmailPassed] = useState(false);
   const [calendarChecked, setCalendarChecked] = useState(false);
@@ -550,6 +570,8 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       const calendarVerificationEligible = isAdmin && stageFourServiceEligible(nextWorkspace, "calendar");
       setMissingDetails(data.missingDetails ?? []);
       setWorkspace(nextWorkspace);
+      setClientDirectorySheetId(nextWorkspace?.sheets?.clientDirectory?.externalId ?? "");
+      setLeadFormResponseSheetId(nextWorkspace?.sheets?.leadFormResponses?.externalId ?? "");
       setWorkspaceReadinessState("ready");
       if (sheetsResult.ok) {
         const mirror = sheetsResult.data.mirror ?? null;
@@ -950,6 +972,66 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
   }
 
+  async function saveDriveProvisioning(enabled: boolean) {
+    if (!isAdmin || simulation) return;
+    setRuntimeConfigurationWorking("drive");
+    try {
+      const response = await fetch("/api/v1/integrations/google/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driveProvisioningEnabled: enabled }),
+      });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Drive provisioning could not be saved.");
+      invalidateCachedGet("/api/v1/google-workspace");
+      await checkSetup(true);
+      notify(`Drive provisioning ${enabled ? "enabled" : "disabled"} in app settings.`, "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Drive provisioning could not be saved.", "error");
+    } finally {
+      setRuntimeConfigurationWorking(null);
+    }
+  }
+
+  async function verifyConfigurationSheet(
+    kind: "client-directory" | "lead-form",
+    spreadsheetId: string,
+  ) {
+    if (!isAdmin || !spreadsheetId.trim()) return;
+    setRuntimeConfigurationWorking(kind);
+    try {
+      const response = await fetch(
+        `/api/v1/integrations/google/sheets/${kind}/verify`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spreadsheetId }),
+        },
+      );
+      const data = await response.json().catch(() => ({})) as {
+        verified?: boolean;
+        simulated?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !data.verified) {
+        throw new Error(data.error ?? "The spreadsheet could not be verified.");
+      }
+      invalidateCachedGet("/api/v1/google-workspace");
+      invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+      await checkSetup(true);
+      notify(
+        data.simulated
+          ? "Spreadsheet verified. Simulation does not save an adoption."
+          : `${kind === "client-directory" ? "Client Directory" : "Lead-form responses"} spreadsheet verified and adopted.`,
+        "success",
+      );
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The spreadsheet could not be verified.", "error");
+    } finally {
+      setRuntimeConfigurationWorking(null);
+    }
+  }
+
   async function resetSimulation() {
     setWorking(true);
     try {
@@ -1304,8 +1386,22 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           requiresReauthorization={connectionHealth?.connection.requiresReauthorization === true}
           sharedDriveDomainUsersOnly={sharedDriveDomainUsersOnly}
           environmentNotes={<>
-            {!simulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback. Project-folder provisioning still uses the hosted <code>GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED</code> gate.</p>}
-            <p className="workspace-env-note"><strong>Sheets authority:</strong> ensure blueprint spreadsheets in Resources to save their IDs in the app. <code>GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID</code> remains a first-boot fallback.</p>
+            {!simulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback.</p>}
+            <section className="workspace-runtime-configuration" aria-labelledby="workspace-runtime-configuration-heading">
+              <div><h4 id="workspace-runtime-configuration-heading">App-managed Workspace configuration</h4><p>App-saved values win. Hosted values remain bootstrap fallbacks.</p></div>
+              <article>
+                <div><strong>Project-folder provisioning</strong><span>Source: {simulation ? "Simulation fixture (always enabled)" : effectiveConfigurationSourceLabel(workspace?.provisioningSource)}</span></div>
+                <AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={simulation || runtimeConfigurationWorking !== null} onClick={() => void saveDriveProvisioning(workspace?.provisioningEnabled !== true)}>{simulation ? "Always enabled in simulation" : runtimeConfigurationWorking === "drive" ? "Saving…" : workspace?.provisioningEnabled ? "Disable provisioning" : "Enable provisioning"}</AdministratorActionButton>
+              </article>
+              <article>
+                <div><strong>Client Directory spreadsheet ID</strong><span>Source: {effectiveConfigurationSourceLabel(workspace?.sheets?.clientDirectory?.source)}</span></div>
+                <div className="workspace-copy-value"><input aria-label="Client Directory spreadsheet ID" value={clientDirectorySheetId} onChange={(event) => setClientDirectorySheetId(event.target.value)} placeholder="Spreadsheet ID" disabled={!isAdmin || runtimeConfigurationWorking !== null} /><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!clientDirectorySheetId.trim() || runtimeConfigurationWorking !== null} onClick={() => void verifyConfigurationSheet("client-directory", clientDirectorySheetId)}>{runtimeConfigurationWorking === "client-directory" ? "Verifying…" : "Verify and adopt"}</AdministratorActionButton></div>
+              </article>
+              <article>
+                <div><strong>Lead-form response spreadsheet ID</strong><span>Source: {effectiveConfigurationSourceLabel(workspace?.sheets?.leadFormResponses?.source)}</span></div>
+                <div className="workspace-copy-value"><input aria-label="Lead-form response spreadsheet ID" value={leadFormResponseSheetId} onChange={(event) => setLeadFormResponseSheetId(event.target.value)} placeholder="Spreadsheet ID" disabled={!isAdmin || runtimeConfigurationWorking !== null} /><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!leadFormResponseSheetId.trim() || runtimeConfigurationWorking !== null} onClick={() => void verifyConfigurationSheet("lead-form", leadFormResponseSheetId)}>{runtimeConfigurationWorking === "lead-form" ? "Verifying…" : "Verify and adopt"}</AdministratorActionButton></div>
+              </article>
+            </section>
           </>}
           notify={notify}
         />

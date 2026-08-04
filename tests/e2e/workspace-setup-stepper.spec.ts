@@ -418,7 +418,12 @@ test("the status banner waits for every source and resolves a mixed-mode all-con
   await expect(loadingChecklist.getByText("DONE", { exact: true })).toHaveCount(6);
   await expect(loadingChecklist.getByText("MISSING", { exact: true })).toHaveCount(0);
   await expect(loadingChecklist.getByText("Drive authority:", { exact: true })).toHaveCount(0);
-  await expect(loadingChecklist.getByText("Sheets authority:", { exact: true })).toBeVisible();
+  await expect(loadingChecklist.getByRole("heading", { level: 4, name: "App-managed Workspace configuration" })).toBeVisible();
+  await expect(loadingChecklist.getByText("Project-folder provisioning", { exact: true })).toBeVisible();
+  await expect(loadingChecklist.getByText("Client Directory spreadsheet ID", { exact: true })).toBeVisible();
+  await expect(loadingChecklist.getByText("Lead-form response spreadsheet ID", { exact: true })).toBeVisible();
+  await expect(loadingChecklist.getByText("Source: Simulation fixture (always enabled)", { exact: true })).toBeVisible();
+  await expect(loadingChecklist.getByText("Source: None", { exact: true })).toHaveCount(2);
   await expect(loadingChecklist.getByText("current mirror source:", { exact: false })).toHaveCount(0);
 
   releaseConnection?.();
@@ -465,7 +470,12 @@ test("mixed-mode Stage 1 rendering follows readiness simulation instead of the b
   await expect(checklist.getByText("DONE", { exact: true })).toHaveCount(6);
   await expect(checklist.getByText("MISSING", { exact: true })).toHaveCount(0);
   await expect(checklist.getByText("Drive authority:", { exact: true })).toHaveCount(0);
-  await expect(checklist.getByText("Sheets authority:", { exact: true })).toBeVisible();
+  await expect(checklist.getByRole("heading", { level: 4, name: "App-managed Workspace configuration" })).toBeVisible();
+  await expect(checklist.getByText("Project-folder provisioning", { exact: true })).toBeVisible();
+  await expect(checklist.getByText("Client Directory spreadsheet ID", { exact: true })).toBeVisible();
+  await expect(checklist.getByText("Lead-form response spreadsheet ID", { exact: true })).toBeVisible();
+  await expect(checklist.getByText("Source: Simulation fixture (always enabled)", { exact: true })).toBeVisible();
+  await expect(checklist.getByText("Source: None", { exact: true })).toHaveCount(2);
   await expect(checklist.getByText("current mirror source:", { exact: false })).toHaveCount(0);
 });
 
@@ -2744,9 +2754,21 @@ test("administrator connection health expander preserves account, permissions, w
   await setStageExpanded(page, 1, true);
   const stageOne = setupStage(page, 1);
   const tenantChecklist = stageOne.locator(".workspace-prerequisites");
-  await expect(stageOne.locator(".workspace-env-note")).toHaveCount(2);
+  await expect(stageOne.locator(".workspace-env-note")).toHaveCount(1);
   await expect(stageOne.getByText("Drive authority:", { exact: true })).toBeVisible();
-  await expect(stageOne.getByText("Sheets authority:", { exact: true })).toBeVisible();
+  await expect(stageOne.getByText("Sheets authority:", { exact: true })).toHaveCount(0);
+  const runtimeConfiguration = stageOne.locator(
+    'section[aria-labelledby="workspace-runtime-configuration-heading"]',
+  );
+  await expect(runtimeConfiguration).toHaveCount(1);
+  await expect(runtimeConfiguration.getByRole("heading", { level: 4, name: "App-managed Workspace configuration" })).toBeVisible();
+  await expect(runtimeConfiguration.getByText("Source: None", { exact: true })).toHaveCount(3);
+  await expect(runtimeConfiguration.getByRole("button", { name: "Enable provisioning" })).toBeVisible();
+  await expect(runtimeConfiguration.getByLabel("Client Directory spreadsheet ID")).toBeEnabled();
+  await expect(runtimeConfiguration.getByLabel("Lead-form response spreadsheet ID")).toBeEnabled();
+  await expect(runtimeConfiguration.getByRole("button", { name: "Verify and adopt" })).toHaveCount(2);
+  await expect(runtimeConfiguration.getByRole("button", { name: "Verify and adopt" }).first()).toBeDisabled();
+  await expect(runtimeConfiguration.getByRole("button", { name: "Verify and adopt" }).last()).toBeDisabled();
   for (const stageNumber of [2, 3, 4] as const) {
     await expect(setupStage(page, stageNumber).locator(".workspace-copy-helpers")).toHaveCount(0);
     await expect(setupStage(page, stageNumber).locator(".workspace-env-note")).toHaveCount(0);

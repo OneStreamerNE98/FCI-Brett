@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
       sheetsConnected: connection.services.sheets,
       requiresReauthorization: connection.requiresReauthorization,
       provisioningEnabled: google.provisioningEnabled,
+      provisioningSource: google.effectiveSources.driveProvisioningEnabled,
       gmailEnabled: google.gmailEnabled,
       calendarEnabled: google.calendarEnabled,
       // `source` alone cannot say which value is in force: the resolver maps BOTH an adopted
@@ -83,6 +84,18 @@ export async function GET(request: NextRequest) {
       sheetsEnabled: google.sheetsEnabled,
       clientDirectorySheetConfigured: google.simulation || Boolean(google.clientDirectorySheetId),
       clientDirectorySheetIdInvalid: google.clientDirectorySheetIdInvalid,
+      sheets: {
+        clientDirectory: {
+          configured: Boolean(setup.effectiveResources.clientDirectorySheet.externalId),
+          source: setup.effectiveResources.clientDirectorySheet.source,
+          externalId: setup.effectiveResources.clientDirectorySheet.externalId ?? null,
+        },
+        leadFormResponses: {
+          configured: Boolean(setup.effectiveResources.leadFormResponseSheet.externalId),
+          source: setup.effectiveResources.leadFormResponseSheet.source,
+          externalId: setup.effectiveResources.leadFormResponseSheet.externalId ?? null,
+        },
+      },
       enabledServices: google.enabledServices,
       broadScopeAcknowledged: google.broadScopeAcknowledged,
     },

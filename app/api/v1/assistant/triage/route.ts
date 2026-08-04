@@ -7,10 +7,7 @@ import {
   readTriageProjectCandidates,
   suggestInboxTriage,
 } from "../../../../application/assistant/triage";
-import {
-  assistantRuntimeConfiguration,
-  readSitesAssistantConfiguration,
-} from "../../../../lib/assistant-config-sites";
+import { readSitesAssistantConfiguration } from "../../../../lib/assistant-config-sites";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../../lib/development-request-rate-limit";
 import { validateGmailMessageId } from "../../../../lib/google-gmail";
@@ -116,7 +113,6 @@ export async function POST(request: NextRequest) {
     const messages = summaries.flatMap((result) =>
       result.status === "fulfilled" ? [result.value] : [],
     );
-    const runtime = assistantRuntimeConfiguration(environment);
     const apiKey = runtimeValue("OPENAI_API_KEY");
     if (!apiKey) {
       return noStoreJson(
@@ -132,7 +128,7 @@ export async function POST(request: NextRequest) {
       projects,
       provider: new OpenAIResponsesProvider({
         apiKey,
-        model: runtime.model,
+        model: configuration.model,
       }),
       signal: request.signal,
     });

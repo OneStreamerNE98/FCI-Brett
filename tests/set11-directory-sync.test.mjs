@@ -51,13 +51,13 @@ test("SET-11 unconfigured guidance names only the fallback key and deep-links to
     read("docs/settings-guide.md"),
   ]);
 
-  assert.match(panel, /const CLIENT_DIRECTORY_SHEET_KEY = "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID"/);
+  assert.match(panel, /const CLIENT_DIRECTORY_SHEET_KEY = EFFECTIVE_WORKSPACE_RESOURCE_SPECS\.clientDirectorySheet\.envVar/);
   assert.match(panel, /href="\/settings\?section=google-workspace#workspace-stage-3"/);
   assert.match(panel, /Set up the Client Directory spreadsheet in Workspace Stage 3/);
   assert.doesNotMatch(panel, /process\.env|env\[[^\]]+\]/);
 
   assert.match(guide, /\*\*Refresh status\*\* checks the latest recorded mirror state without running a sync/);
   assert.match(guide, /formats the recorded `lastSyncedAt` as a readable local date and time while showing `lastError` exactly as the mirror status returned it/);
-  assert.match(guide, /`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` remains the fallback configuration name/);
+  assert.match(guide, /`GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` remains a bootstrap fallback/);
   assert.match(guide, /Google Workspace → Stage 3/);
 });

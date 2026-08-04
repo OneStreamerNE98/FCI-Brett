@@ -120,6 +120,25 @@ export function createPostgresWorkspaceSettingsRepository(
       assertPersistenceText(input.updatedBy, "Workspace settings updater", 320);
       const updatedAt = persistenceDate(input.updatedAt, "Workspace settings updated_at");
       const merge = prepareWorkspaceSettingsMerge(input.settings);
+      const writesClientDirectorySheetId = Object.hasOwn(
+        input,
+        "clientDirectorySheetId",
+      );
+      if (
+        writesClientDirectorySheetId
+        && input.clientDirectorySheetId !== null
+        && typeof input.clientDirectorySheetId !== "string"
+      ) {
+        throw new TypeError("Workspace Client Directory Sheet ID must be text or null");
+      }
+      const documentParameter = writesClientDirectorySheetId ? 3 : 2;
+      const actorParameter = writesClientDirectorySheetId ? 4 : 3;
+      const timestampParameter = writesClientDirectorySheetId ? 5 : 4;
+      const keysParameter = writesClientDirectorySheetId ? 6 : 5;
+      const clientDirectoryInsert = writesClientDirectorySheetId ? "$2" : "NULL";
+      const clientDirectoryUpdate = writesClientDirectorySheetId
+        ? "client_directory_sheet_id = EXCLUDED.client_directory_sheet_id,"
+        : "";
       await withPostgresTransaction(pool, transactionOptions, async (client) => {
         // The conflict update only applies when the RESULTING merged document
         // fits the byte bound, enforced atomically inside the bounded
@@ -132,18 +151,22 @@ export function createPostgresWorkspaceSettingsRepository(
           `INSERT INTO workspace_settings (
              id, shared_drive_id, client_directory_sheet_id, intake_mailbox,
              settings_json, updated_by, updated_at
-           ) VALUES ($1, NULL, NULL, NULL, $2::jsonb, $3, $4)
+           ) VALUES ($1, NULL, ${clientDirectoryInsert}, NULL, $${documentParameter}::jsonb, $${actorParameter}, $${timestampParameter})
            ON CONFLICT (id) DO UPDATE SET
+             ${clientDirectoryUpdate}
              settings_json = (
-               workspace_settings.settings_json - $5::text[]
+               workspace_settings.settings_json - $${keysParameter}::text[]
              ) || EXCLUDED.settings_json,
              updated_by = EXCLUDED.updated_by,
              updated_at = EXCLUDED.updated_at
            WHERE octet_length((
-             (workspace_settings.settings_json - $5::text[]) || EXCLUDED.settings_json
+             (workspace_settings.settings_json - $${keysParameter}::text[]) || EXCLUDED.settings_json
            )::text) <= ${MAX_WORKSPACE_SETTINGS_DOCUMENT_BYTES}`,
           [
             input.id,
+            ...(writesClientDirectorySheetId
+              ? [input.clientDirectorySheetId ?? null]
+              : []),
             merge.serialized,
             input.updatedBy,
             updatedAt,

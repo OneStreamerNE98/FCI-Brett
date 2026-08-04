@@ -9,7 +9,7 @@ import { MAX_TASK_BODY_BYTES } from "../../../domain/task";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../lib/development-request-rate-limit";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getConnectionScope } from "../../../lib/google-oauth-sites";
 import { noStoreJson as json } from "../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../_workspace-data";
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
         ? {
             inboxReview: {
               ...taskRequest.inboxReview,
-              connectionKey: getGoogleRuntimeConfig().connectionKey,
+              connectionKey: getConnectionScope().connectionKey,
             },
           }
         : {}),

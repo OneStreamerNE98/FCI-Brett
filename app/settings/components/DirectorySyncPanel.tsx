@@ -15,12 +15,13 @@ import { AdministratorActionButton } from "../../components/AdministratorActionB
 import { FIRST_RUN_IMPORT_TEST_MARKER } from "../../domain/first-run-import";
 import { FirstRunImportCard } from "../../import/components/FirstRunImportCard";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
+import { EFFECTIVE_WORKSPACE_RESOURCE_SPECS } from "../../lib/workspace-effective-config";
 import styles from "./DirectorySyncPanel.module.css";
 
 const SHEET_STATUS_PATH = "/api/v1/integrations/google/sheets/status";
 const FORM_LEAD_PATH = "/api/v1/integrations/google/forms/leads";
 const LEADS_PATH = "/api/v1/leads";
-const CLIENT_DIRECTORY_SHEET_KEY = "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID";
+const CLIENT_DIRECTORY_SHEET_KEY = EFFECTIVE_WORKSPACE_RESOURCE_SPECS.clientDirectorySheet.envVar;
 const FORM_LEAD_SOURCE = "Google Form";
 
 type FormLeadProposal = Readonly<{
@@ -56,6 +57,7 @@ type FormLeadIntakeState = Readonly<{
   configured: boolean;
   invalidConfiguration: boolean;
   configurationName: string;
+  configurationSource: "simulation" | "app" | "env" | "none";
   simulation: boolean;
   actorEmail: string;
   rowLimit: number;
@@ -133,6 +135,7 @@ function parseFormLeadIntakeState(value: unknown): FormLeadIntakeState | null {
     || typeof value.configured !== "boolean"
     || typeof value.invalidConfiguration !== "boolean"
     || typeof value.configurationName !== "string"
+    || !["simulation", "app", "env", "none"].includes(String(value.configurationSource))
     || typeof value.simulation !== "boolean"
     || typeof value.actorEmail !== "string"
     || !Number.isSafeInteger(value.rowLimit)
@@ -150,12 +153,20 @@ function parseFormLeadIntakeState(value: unknown): FormLeadIntakeState | null {
     configured: value.configured,
     invalidConfiguration: value.invalidConfiguration,
     configurationName: value.configurationName,
+    configurationSource: value.configurationSource as FormLeadIntakeState["configurationSource"],
     simulation: value.simulation,
     actorEmail: value.actorEmail,
     rowLimit: Number(value.rowLimit),
     watermark: watermark as FormLeadIntakeState["watermark"],
     queue: value.queue,
   };
+}
+
+function formLeadConfigurationSourceLabel(source: FormLeadIntakeState["configurationSource"]) {
+  if (source === "simulation") return "Simulation fixture";
+  if (source === "app") return "App-saved";
+  if (source === "env") return "Environment (bootstrap fallback)";
+  return "None";
 }
 
 function responseError(body: unknown, fallback: string) {
@@ -475,9 +486,10 @@ function GoogleFormLeadIntakeCard({ isAdmin }: { isAdmin: boolean }) {
       </AdministratorActionButton>
     </div>
     {loading && <p className={styles.statusLine} role="status">Loading the review queue…</p>}
+    {intake && <p className={styles.statusLine}>Effective source: <strong>{formLeadConfigurationSourceLabel(intake.configurationSource)}</strong>.</p>}
     {intake && !intake.configured && <div className="workspace-missing">
       <CircleAlert size={16} aria-hidden="true" />
-      <span>{intake.invalidConfiguration ? "The response Sheet configuration is invalid." : "The response Sheet is not configured."} Set <code>{intake.configurationName}</code> in the hosted environment.</span>
+      <span>{intake.invalidConfiguration ? "The response Sheet configuration is invalid." : "The response Sheet is not configured."} An Administrator can open Google Workspace → Stage 1, enter the response Sheet ID, and choose <strong>Verify and adopt</strong>. <code>{intake.configurationName}</code> is only a hosted bootstrap fallback.</span>
     </div>}
     {intake?.watermark && <p className={styles.statusLine}>Last checked through row <strong>{intake.watermark.lastProcessedRow}</strong> at {new Date(intake.watermark.lastProcessedAt).toLocaleString()}.</p>}
     {message && <div className={styles.success} role="status"><CheckCircle2 size={16} aria-hidden="true" /><span>{message}</span></div>}

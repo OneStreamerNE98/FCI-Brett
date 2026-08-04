@@ -64,6 +64,41 @@ export function parseAssistantFeaturesUpdate(
   ) as Partial<Record<AssistantFeatureKey, boolean>>);
 }
 
+export type AssistantConfigurationUpdate = Readonly<{
+  features?: Readonly<Partial<Record<AssistantFeatureKey, boolean>>>;
+  model?: string;
+}>;
+
+/** Closed settings update with an open provider model id (no code allowlist). */
+export function parseAssistantConfigurationUpdate(
+  value: unknown,
+): AssistantConfigurationUpdate | null {
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (
+    keys.length === 0
+    || keys.some((key) => key !== "features" && key !== "model")
+  ) return null;
+  const parsedFeatures = Object.hasOwn(value, "features")
+    ? parseAssistantFeaturesUpdate({ features: value.features })
+    : undefined;
+  if (Object.hasOwn(value, "features") && !parsedFeatures) return null;
+  let model: string | undefined;
+  if (Object.hasOwn(value, "model")) {
+    if (typeof value.model !== "string") return null;
+    model = value.model.trim();
+    if (
+      !model
+      || model.length > 200
+      || /[\u0000-\u001f\u007f]/u.test(model)
+    ) return null;
+  }
+  return Object.freeze({
+    ...(parsedFeatures ? { features: parsedFeatures } : {}),
+    ...(model ? { model } : {}),
+  });
+}
+
 export function mergeAssistantFeaturesIntoSettings(
   settings: Readonly<Record<string, unknown>>,
   update: Readonly<Partial<Record<AssistantFeatureKey, boolean>>>,

@@ -43,6 +43,7 @@ type ChatNotificationConfig = {
   canEdit: boolean;
   mode: ChatMode;
   featureEnabled: boolean;
+  featureSource: "app" | "env" | "none";
   events: ChatEventConfig[];
   spaces: ChatSpaceConfig[];
   missingDetails: MissingChatDetail[];
@@ -102,6 +103,9 @@ function parseChatConfig(value: unknown): ChatNotificationConfig {
     canEdit: value.canEdit === true,
     mode,
     featureEnabled: value.featureEnabled === true,
+    featureSource: value.featureSource === "app" || value.featureSource === "env"
+      ? value.featureSource
+      : "none",
     events,
     spaces,
     missingDetails,
@@ -125,6 +129,8 @@ function modeSummary(config: ChatNotificationConfig) {
 export function ChatNotificationSettingsCard({ notify, isAdmin }: { notify: Notify; isAdmin: boolean }) {
   const [config, setConfig] = useState<ChatNotificationConfig | null>(null);
   const [events, setEvents] = useState<ChatEventConfig[]>([]);
+  const [featureEnabled, setFeatureEnabled] = useState(false);
+  const [featureDirty, setFeatureDirty] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -139,11 +145,15 @@ export function ChatNotificationSettingsCard({ notify, isAdmin }: { notify: Noti
       if (requestId !== loadRequestRef.current) return;
       setConfig(nextConfig);
       setEvents(nextConfig.events.map((event) => ({ ...event })));
+      setFeatureEnabled(nextConfig.featureEnabled);
+      setFeatureDirty(false);
       setLoadState("ready");
     } catch (error) {
       if (requestId !== loadRequestRef.current) return;
       setConfig(null);
       setEvents([]);
+      setFeatureEnabled(false);
+      setFeatureDirty(false);
       setLoadError(error instanceof Error ? error.message : "Google Chat notification routing could not be loaded.");
       setLoadState("error");
     }
@@ -162,7 +172,12 @@ export function ChatNotificationSettingsCard({ notify, isAdmin }: { notify: Noti
       const response = await fetch(CHAT_CONFIG_URL, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events: events.map(({ type, enabled, spaceKey }) => ({ type, enabled, spaceKey })) }),
+        // A routing-only save must not adopt the effective enable value into the
+        // app tier: send the gate only when this Administrator actually toggled it.
+        body: JSON.stringify({
+          ...(featureDirty ? { featureEnabled } : {}),
+          events: events.map(({ type, enabled, spaceKey }) => ({ type, enabled, spaceKey })),
+        }),
       });
       const responseBody = await response.json().catch(() => ({})) as unknown;
       if (!response.ok) {
@@ -173,6 +188,8 @@ export function ChatNotificationSettingsCard({ notify, isAdmin }: { notify: Noti
       invalidateCachedGet(CHAT_CONFIG_URL);
       setConfig(savedConfig);
       setEvents(savedConfig.events.map((savedEvent) => ({ ...savedEvent })));
+      setFeatureEnabled(savedConfig.featureEnabled);
+      setFeatureDirty(false);
       notify("Google Chat notification routing saved", "success");
     } catch (error) {
       notify(error instanceof Error ? error.message : "Google Chat notification routing could not be saved.", "error");
@@ -207,6 +224,7 @@ export function ChatNotificationSettingsCard({ notify, isAdmin }: { notify: Noti
         <MessageSquare size={18} aria-hidden="true" />
         <div><strong>{summary.label}</strong><span>{summary.detail}</span></div>
       </div>
+      <p className="form-help"><strong>Enable source:</strong> {config.featureSource === "app" ? "App-saved" : config.featureSource === "env" ? "Environment" : "None"}</p>
 
       {!editable && <div className="settings-static-row chat-read-only-note" role="note">
         <ShieldCheck size={17} aria-hidden="true" />
@@ -231,6 +249,16 @@ export function ChatNotificationSettingsCard({ notify, isAdmin }: { notify: Noti
       </div>
 
       <form onSubmit={save}>
+        <label className="settings-checkbox" htmlFor="chat-notifications-enabled">
+          <input
+            id="chat-notifications-enabled"
+            type="checkbox"
+            checked={featureEnabled}
+            onChange={(event) => { setFeatureEnabled(event.target.checked); setFeatureDirty(true); }}
+            disabled={!editable || saving}
+          />
+          <span><strong>Enable Google Chat notifications</strong><small>Saved in the app; the environment value remains a bootstrap fallback.</small></span>
+        </label>
         <fieldset className="chat-routing-fieldset" disabled={!editable || saving}>
           <legend>Event routing</legend>
           <p>Each event has one fixed, safe deep link back to FCI Operations. Routing stores only the space alias below.</p>

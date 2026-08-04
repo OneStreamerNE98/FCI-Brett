@@ -19,22 +19,42 @@ async function nestedTypeScriptFiles(directory) {
 }
 
 function assertOpenAIAdapterBoundary(source) {
-  const fetchCallSites = source.match(/(?:\bfetch|#fetch)\s*\(/g) ?? [];
-  const exactHosts = source.match(/https:\/\/api\.openai\.com\/v1\/responses/g) ?? [];
+  // Census every fetch-shaped call site, including injected aliases such as
+  // fetchImpl(...) — a bare \bfetch pattern is blind to them.
+  const fetchCallSites = source.match(/\b\w*[Ff]etch\w*\s*\(/g) ?? [];
+  const responsesHosts = source.match(/https:\/\/api\.openai\.com\/v1\/responses/g) ?? [];
+  const modelLookupHosts = source.match(/https:\/\/api\.openai\.com\/v1\/models\//g) ?? [];
 
   assert.equal(
     fetchCallSites.length,
-    1,
-    "the OpenAI adapter must keep exactly one reviewed fetch call site",
+    2,
+    "the OpenAI adapter must keep exactly two reviewed fetch call sites, both reviewed here",
   );
   assert.equal(
-    exactHosts.length,
+    responsesHosts.length,
     1,
-    "the only allowed OpenAI adapter endpoint is the exact Responses API host",
+    "the only allowed OpenAI adapter endpoints are the exact Responses API host (POST) and the exact model-lookup host (GET)",
+  );
+  assert.equal(
+    modelLookupHosts.length,
+    1,
+    "the only allowed OpenAI adapter endpoints are the exact Responses API host (POST) and the exact model-lookup host (GET)",
   );
   assert.match(
     source,
-    /this\.\#fetch\("https:\/\/api\.openai\.com\/v1\/responses",\s*\{/,
+    /this\.\#fetch\("https:\/\/api\.openai\.com\/v1\/responses",\s*\{\s*method: "POST"/,
+  );
+  assert.match(
+    source,
+    /fetchImpl\(\s*`https:\/\/api\.openai\.com\/v1\/models\/\$\{encodeURIComponent\(model\)\}`,\s*\{\s*method: "GET"/,
+  );
+  const withoutReviewedHosts = source
+    .replaceAll("https://api.openai.com/v1/responses", "")
+    .replaceAll("https://api.openai.com/v1/models/", "");
+  assert.doesNotMatch(
+    withoutReviewedHosts,
+    /https:\/\//,
+    "no other https:// host string may exist in the OpenAI adapter",
   );
 }
 
@@ -362,7 +382,7 @@ test("every assistant route is no-store and the AI boundary has no outbound mess
   assert.doesNotMatch(replyDraftApplication, /from\s+["'][^"']*google-gmail/i);
 });
 
-test("the OpenAI adapter has one exact Responses API outbound call site", async () => {
+test("the OpenAI adapter has exactly two reviewed outbound call sites (Responses POST, model-lookup GET)", async () => {
   const adapterFiles = await nestedTypeScriptFiles(
     new URL("app/adapters/openai/", root),
   );
@@ -381,7 +401,19 @@ test("the OpenAI adapter has one exact Responses API outbound call site", async 
     () => assertOpenAIAdapterBoundary(
       `${source}\nfetch("https://api.openai.com/v1/responses");`,
     ),
-    /exactly one reviewed fetch call site/,
+    /exactly two reviewed fetch call sites/,
+  );
+  assert.throws(
+    () => assertOpenAIAdapterBoundary(
+      `${source}\nfetchImpl("https://api.openai.com/v1/models/gpt-x");`,
+    ),
+    /exactly two reviewed fetch call sites/,
+  );
+  assert.throws(
+    () => assertOpenAIAdapterBoundary(
+      `${source}\nconst rogue = "https://rogue.example.test/v1/exfiltrate";`,
+    ),
+    /no other https:\/\/ host string/,
   );
 });
 

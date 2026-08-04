@@ -1,3 +1,4 @@
+import { EFFECTIVE_WORKSPACE_RESOURCE_SPECS } from "../../../lib/workspace-effective-config.ts";
 import type { WorkspaceSetupResource } from "../WorkspaceDriveResourceActions";
 
 export type WorkspaceChecklistMissingDetail = {
@@ -79,11 +80,13 @@ export type WorkspaceDomainChecklistResult = Readonly<{
 export const WORKSPACE_OAUTH_REDIRECT_URI = "https://groundwork-flooring-ops.jaggerisagoodboy.chatgpt.site/api/v1/integrations/google/callback";
 export const WORKSPACE_TOKEN_KEY_COMMAND = "openssl rand -base64 32";
 
+// The resolver owner (workspace-effective-config.ts) is the single source of
+// covered environment names; this display map must reference, never respell them.
 export const WORKSPACE_RESOURCE_ENV_BY_KEY: Readonly<Record<string, string>> = {
-  primary: "GOOGLE_WORKSPACE_SHARED_DRIVE_ID",
-  "client-directory": "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID",
-  "client-appointments": "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID",
-  "field-schedule": "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID",
+  primary: EFFECTIVE_WORKSPACE_RESOURCE_SPECS.sharedDrive.envVar,
+  "client-directory": EFFECTIVE_WORKSPACE_RESOURCE_SPECS.clientDirectorySheet.envVar,
+  "client-appointments": EFFECTIVE_WORKSPACE_RESOURCE_SPECS.clientAppointmentsCalendar.envVar,
+  "field-schedule": EFFECTIVE_WORKSPACE_RESOURCE_SPECS.fieldScheduleCalendar.envVar,
 };
 
 export const WORKSPACE_DOTENV_PLACEHOLDERS: Readonly<Record<string, string>> = {

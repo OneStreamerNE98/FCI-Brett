@@ -64,10 +64,12 @@ async function publicQueue(
 
 function intakeConfiguration(
   simulation: boolean,
+  appSavedSpreadsheetId?: string,
 ) {
   return googleFormLeadIntakeConfig(
     env as unknown as RuntimeEnvironment,
     simulation,
+    appSavedSpreadsheetId,
   );
 }
 
@@ -151,7 +153,11 @@ export async function GET(request: NextRequest) {
 
   try {
     const setup = await getEffectiveGoogleRuntimeSetup();
-    const intake = intakeConfiguration(setup.config.simulation);
+    const resolvedSheet = setup.effectiveResources.leadFormResponseSheet;
+    const intake = intakeConfiguration(
+      setup.config.simulation,
+      resolvedSheet.source === "app" ? resolvedSheet.externalId : undefined,
+    );
     const repository = createD1GoogleFormLeadIntakeRepository(
       env.DB as unknown as D1Database,
     );
@@ -165,6 +171,7 @@ export async function GET(request: NextRequest) {
       configured: intake.configured,
       invalidConfiguration: intake.invalid,
       configurationName: GOOGLE_FORM_LEAD_RESPONSE_SHEET_ENV,
+      configurationSource: intake.source,
       simulation: setup.config.simulation,
       actorEmail: auth.user.email,
       rowLimit: GOOGLE_FORM_LEAD_MAX_ROWS,
@@ -194,7 +201,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const setup = await getEffectiveGoogleRuntimeSetup();
-    const intake = intakeConfiguration(setup.config.simulation);
+    const resolvedSheet = setup.effectiveResources.leadFormResponseSheet;
+    const intake = intakeConfiguration(
+      setup.config.simulation,
+      resolvedSheet.source === "app" ? resolvedSheet.externalId : undefined,
+    );
     if (!intake.spreadsheetId) return configurationError(intake.invalid);
     const repository = createD1GoogleFormLeadIntakeRepository(
       env.DB as unknown as D1Database,

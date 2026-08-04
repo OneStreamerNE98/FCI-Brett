@@ -7,13 +7,14 @@ export type GoogleFormLeadIntakeConfig = Readonly<{
   configured: boolean;
   invalid: boolean;
   spreadsheetId: string | null;
-  source: "simulation" | "environment" | "none";
+  source: "simulation" | "app" | "env" | "none";
 }>;
 
 /** Presence-only public state plus a server-only Sheet identifier. */
 export function googleFormLeadIntakeConfig(
   environment: Readonly<Record<string, string | undefined>>,
   simulation: boolean,
+  appSavedSpreadsheetId?: string | null,
 ): GoogleFormLeadIntakeConfig {
   if (simulation) {
     return Object.freeze({
@@ -23,11 +24,13 @@ export function googleFormLeadIntakeConfig(
       source: "simulation",
     });
   }
-  const candidate = (
-    environment[GOOGLE_FORM_LEAD_RESPONSE_SHEET_ENV]
-    ?? process.env[GOOGLE_FORM_LEAD_RESPONSE_SHEET_ENV]
-    ?? ""
-  ).trim();
+  const appCandidate = appSavedSpreadsheetId?.trim() ?? "";
+  const environmentCandidate = (
+      environment[GOOGLE_FORM_LEAD_RESPONSE_SHEET_ENV]
+      ?? process.env[GOOGLE_FORM_LEAD_RESPONSE_SHEET_ENV]
+      ?? ""
+    ).trim();
+  const candidate = appCandidate || environmentCandidate;
   if (!candidate) {
     return Object.freeze({
       configured: false,
@@ -41,6 +44,6 @@ export function googleFormLeadIntakeConfig(
     configured: valid,
     invalid: !valid,
     spreadsheetId: valid ? candidate : null,
-    source: valid ? "environment" : "none",
+    source: valid ? (appCandidate ? "app" : "env") : "none",
   });
 }

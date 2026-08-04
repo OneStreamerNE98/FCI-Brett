@@ -48,6 +48,7 @@ function intake(queue: readonly ReturnType<typeof review>[]) {
     configured: true,
     invalidConfiguration: false,
     configurationName: "GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID",
+    configurationSource: "simulation",
     simulation: true,
     actorEmail: ADMIN_EMAIL,
     rowLimit: 25,
@@ -125,6 +126,7 @@ test("GI-01 simulation requires human completion and accepts a review through on
   await page.goto("/settings?section=client-directory");
   const panel = page.getByRole("region", { name: "Google Forms responses" });
   await expect(panel).toBeVisible();
+  await expect(panel.getByText("Effective source: Simulation fixture", { exact: false })).toBeVisible();
   await expect(panel.getByText("New lead review queue")).toHaveCount(0);
   await expect(panel.getByLabel("Estimated value")).toHaveValue("");
   await expect(panel.getByLabel("Estimated value")).toHaveAttribute("placeholder", "Required before create");

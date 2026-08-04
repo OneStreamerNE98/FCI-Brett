@@ -11,7 +11,7 @@ import { MAX_LEAD_BODY_BYTES } from "../../../domain/lead";
 import { parseLeadCreationRequest } from "../../../domain/lead-creation-request";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
 import { queueGoogleChatNotification } from "../../../lib/google-chat-notifier-sites";
-import { getGoogleRuntimeConfig } from "../../../lib/google-oauth-sites";
+import { getConnectionScope } from "../../../lib/google-oauth-sites";
 import {
   authorizedLeadOwnerEmail,
   authorizedLeadPayload,
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
         ? {
             formLeadReview: {
               id: leadRequest.formLeadReview.id,
-              connectionKey: getGoogleRuntimeConfig().connectionKey,
+              connectionKey: getConnectionScope().connectionKey,
             },
           }
         : {}),
