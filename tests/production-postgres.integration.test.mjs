@@ -97,6 +97,7 @@ test(
         [
           "activity_events",
           "address_validation_reviews",
+          "assistant_label_definitions",
           "audit_activity_projection",
           "audit_events",
           "capabilities",

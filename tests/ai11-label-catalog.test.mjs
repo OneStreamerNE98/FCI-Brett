@@ -164,6 +164,71 @@ function postgresAnalysisMailItem(id, gmailMessageId, slug, createdAt) {
   };
 }
 
+function createPostgresQueryBarrierPool(pool, pattern) {
+  let barrierReached;
+  const reached = new Promise((resolve) => {
+    barrierReached = resolve;
+  });
+  let releaseBarrier;
+  const released = new Promise((resolve) => {
+    releaseBarrier = resolve;
+  });
+  let armed = true;
+
+  return {
+    pool: {
+      async connect() {
+        const client = await pool.connect();
+        return {
+          async query(...args) {
+            const result = await client.query(...args);
+            const statement = typeof args[0] === "string"
+              ? args[0]
+              : args[0]?.text ?? "";
+            if (armed && pattern.test(statement)) {
+              armed = false;
+              barrierReached();
+              await released;
+            }
+            return result;
+          },
+          release(error) {
+            client.release(error);
+          },
+        };
+      },
+    },
+    reached,
+    release() {
+      releaseBarrier();
+    },
+  };
+}
+
+async function waitForPostgresQueryBarrier(reached, operation, label) {
+  let timeout;
+  try {
+    await Promise.race([
+      reached,
+      operation.then(
+        () => {
+          throw new Error(`${label} completed before reaching its query barrier`);
+        },
+        (error) => {
+          throw error;
+        },
+      ),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`Timed out waiting for PostgreSQL query barrier: ${label}`));
+        }, 5_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function waitForBlockedPostgresQuery(pool, applicationName, fragment) {
   for (let attempt = 0; attempt < 500; attempt += 1) {
     const result = await pool.query(
@@ -426,13 +491,13 @@ test("AI label editor uses the server's Unicode code-point cap without narrowing
 });
 
 const postgresTestUrl = process.env.TEST_POSTGRES_URL?.trim();
-test("PostgreSQL label adapter executes the same used-retire and unused-delete lifecycle", {
+test("PostgreSQL label adapter executes lifecycle and both guarded-write orderings", {
   skip: postgresTestUrl ? false : "TEST_POSTGRES_URL is not configured",
 }, async () => {
   const applicationName = `ai11c_${crypto.randomUUID().replaceAll("-", "")}`;
   const pool = new Pool({
     connectionString: postgresTestUrl,
-    max: 8,
+    max: 6,
     application_name: applicationName,
   });
   const schema = `fci_ai11c_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -468,17 +533,6 @@ test("PostgreSQL label adapter executes the same used-retire and unused-delete l
       updated_at timestamptz NOT NULL DEFAULT pg_catalog.to_timestamp(0),
       UNIQUE (connection_key, gmail_message_id)
     )`);
-    await pool.query(`CREATE TABLE ${quoted}.adapter_race_gate (id integer PRIMARY KEY)`);
-    await pool.query(`INSERT INTO ${quoted}.adapter_race_gate (id) VALUES (1)`);
-    await pool.query(`CREATE FUNCTION ${quoted}.wait_for_adapter_race_gate()
-      RETURNS trigger
-      LANGUAGE plpgsql
-      AS $$
-      BEGIN
-        PERFORM 1 FROM ${quoted}.adapter_race_gate WHERE id = 1 FOR UPDATE;
-        RETURN NEW;
-      END
-      $$`);
     for (const statement of postgresSchema.ASSISTANT_LABEL_SCHEMA_STATEMENTS) {
       await pool.query(statement);
     }
@@ -506,56 +560,63 @@ test("PostgreSQL label adapter executes the same used-retire and unused-delete l
       30,
     );
     assert.equal(await repository.insert(writerFirst), true);
-    await pool.query(`CREATE TRIGGER mail_item_adapter_gate
-      BEFORE INSERT ON ${quoted}.mail_items
-      FOR EACH ROW EXECUTE FUNCTION ${quoted}.wait_for_adapter_race_gate()`);
-    const writerGate = await pool.connect();
-    let writerGateOpen = false;
+    const writerFirstBarrier = createPostgresQueryBarrierPool(
+      pool,
+      /SELECT slug[\s\S]*FOR SHARE/u,
+    );
+    const blockedMailRepository = postgresMailItemAdapter.createPostgresMailItemRepository(
+      writerFirstBarrier.pool,
+      {
+        schema,
+        lockTimeoutMs: 10_000,
+        statementTimeoutMs: 20_000,
+      },
+    );
+    const writer = blockedMailRepository.saveAnalysisIfLabelsActive(
+      postgresAnalysisMailItem(
+        "mail-pg-writer-first",
+        "gmail-pg-writer-first",
+        writerFirst.slug,
+        30,
+      ),
+      [writerFirst.slug],
+      "upsert",
+    );
+    let removal;
+    let writerFirstContentionError;
     try {
-      await writerGate.query("BEGIN");
-      writerGateOpen = true;
-      await writerGate.query(
-        `SELECT id FROM ${quoted}.adapter_race_gate WHERE id = 1 FOR UPDATE`,
+      await waitForPostgresQueryBarrier(
+        writerFirstBarrier.reached,
+        writer,
+        "writer-first label lock",
       );
-      const writer = mailRepository.saveAnalysisIfLabelsActive(
-        postgresAnalysisMailItem(
-          "mail-pg-writer-first",
-          "gmail-pg-writer-first",
-          writerFirst.slug,
-          30,
-        ),
-        [writerFirst.slug],
-        "upsert",
+      removal = repository.removeOrRetire(writerFirst.slug, 31);
+      await waitForBlockedPostgresQuery(
+        pool,
+        applicationName,
+        "SELECT retired",
       );
-      await waitForBlockedPostgresQuery(pool, applicationName, "INSERT INTO mail_items");
-      let removalSettled = false;
-      const removal = repository.removeOrRetire(writerFirst.slug, 31).finally(() => {
-        removalSettled = true;
-      });
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      assert.equal(
-        removalSettled,
-        false,
-        "removal must wait for the actual adapter's guarded analysis write",
-      );
-      await writerGate.query("COMMIT");
-      writerGateOpen = false;
-      assert.deepEqual(await writer, { outcome: "saved" });
-      assert.equal(await removal, "retired");
-      const persisted = await pool.query(
-        `SELECT retired FROM ${quoted}.assistant_label_definitions WHERE slug = $1`,
-        [writerFirst.slug],
-      );
-      assert.deepEqual(persisted.rows, [{ retired: true }]);
-      assert.equal(Number((await pool.query(
-        `SELECT COUNT(*) AS count FROM ${quoted}.mail_items WHERE id = $1`,
-        ["mail-pg-writer-first"],
-      )).rows[0].count), 1);
+    } catch (error) {
+      writerFirstContentionError = error;
     } finally {
-      if (writerGateOpen) await writerGate.query("ROLLBACK");
-      writerGate.release();
+      writerFirstBarrier.release();
     }
-    await pool.query(`DROP TRIGGER mail_item_adapter_gate ON ${quoted}.mail_items`);
+    const [writerOutcome, removalOutcome] = await Promise.all([
+      writer,
+      removal ?? Promise.resolve(undefined),
+    ]);
+    if (writerFirstContentionError) throw writerFirstContentionError;
+    assert.deepEqual(writerOutcome, { outcome: "saved" });
+    assert.equal(removalOutcome, "retired");
+    const persisted = await pool.query(
+      `SELECT retired FROM ${quoted}.assistant_label_definitions WHERE slug = $1`,
+      [writerFirst.slug],
+    );
+    assert.deepEqual(persisted.rows, [{ retired: true }]);
+    assert.equal(Number((await pool.query(
+      `SELECT COUNT(*) AS count FROM ${quoted}.mail_items WHERE id = $1`,
+      ["mail-pg-writer-first"],
+    )).rows[0].count), 1);
 
     const removerFirst = storedLabel(
       `label_${"c".repeat(32)}`,
@@ -563,24 +624,27 @@ test("PostgreSQL label adapter executes the same used-retire and unused-delete l
       40,
     );
     assert.equal(await repository.insert(removerFirst), true);
-    await pool.query(`CREATE TRIGGER assistant_label_adapter_gate
-      BEFORE DELETE ON ${quoted}.assistant_label_definitions
-      FOR EACH ROW EXECUTE FUNCTION ${quoted}.wait_for_adapter_race_gate()`);
-    const removalGate = await pool.connect();
-    let removalGateOpen = false;
+    const removerFirstBarrier = createPostgresQueryBarrierPool(
+      pool,
+      /SELECT retired[\s\S]*FOR UPDATE/u,
+    );
+    const blockedLabelRepository = postgresAdapter.createPostgresAssistantLabelRepository(
+      removerFirstBarrier.pool,
+      { schema },
+    );
+    const removerFirstRemoval = blockedLabelRepository.removeOrRetire(
+      removerFirst.slug,
+      41,
+    );
+    let staleWriter;
+    let removerFirstContentionError;
     try {
-      await removalGate.query("BEGIN");
-      removalGateOpen = true;
-      await removalGate.query(
-        `SELECT id FROM ${quoted}.adapter_race_gate WHERE id = 1 FOR UPDATE`,
+      await waitForPostgresQueryBarrier(
+        removerFirstBarrier.reached,
+        removerFirstRemoval,
+        "remover-first label lock",
       );
-      const removal = repository.removeOrRetire(removerFirst.slug, 41);
-      await waitForBlockedPostgresQuery(
-        pool,
-        applicationName,
-        "DELETE FROM assistant_label_definitions",
-      );
-      const writer = mailRepository.saveAnalysisIfLabelsActive(
+      staleWriter = mailRepository.saveAnalysisIfLabelsActive(
         postgresAnalysisMailItem(
           "mail-pg-remover-first",
           "gmail-pg-remover-first",
@@ -590,26 +654,26 @@ test("PostgreSQL label adapter executes the same used-retire and unused-delete l
         [removerFirst.slug],
         "upsert",
       );
-      await waitForBlockedPostgresQuery(
-        pool,
-        applicationName,
-        "SELECT slug",
-      );
-      await removalGate.query("COMMIT");
-      removalGateOpen = false;
-      assert.equal(await removal, "deleted");
-      assert.deepEqual(await writer, { outcome: "label-catalog-changed" });
-      assert.equal(Number((await pool.query(
-        `SELECT COUNT(*) AS count FROM ${quoted}.mail_items WHERE id = $1`,
-        ["mail-pg-remover-first"],
-      )).rows[0].count), 0);
-      assert.equal((await repository.list()).some(({ slug }) =>
-        slug === removerFirst.slug
-      ), false);
+      await waitForBlockedPostgresQuery(pool, applicationName, "SELECT slug");
+    } catch (error) {
+      removerFirstContentionError = error;
     } finally {
-      if (removalGateOpen) await removalGate.query("ROLLBACK");
-      removalGate.release();
+      removerFirstBarrier.release();
     }
+    const [removerFirstOutcome, staleWriterOutcome] = await Promise.all([
+      removerFirstRemoval,
+      staleWriter ?? Promise.resolve(undefined),
+    ]);
+    if (removerFirstContentionError) throw removerFirstContentionError;
+    assert.equal(removerFirstOutcome, "deleted");
+    assert.deepEqual(staleWriterOutcome, { outcome: "label-catalog-changed" });
+    assert.equal(Number((await pool.query(
+      `SELECT COUNT(*) AS count FROM ${quoted}.mail_items WHERE id = $1`,
+      ["mail-pg-remover-first"],
+    )).rows[0].count), 0);
+    assert.equal((await repository.list()).some(({ slug }) =>
+      slug === removerFirst.slug
+    ), false);
   } finally {
     await pool.query(`DROP SCHEMA IF EXISTS ${quoted} CASCADE`);
     await pool.end();
