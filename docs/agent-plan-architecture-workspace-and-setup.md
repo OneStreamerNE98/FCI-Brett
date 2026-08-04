@@ -1463,6 +1463,17 @@ unless the connection is already disconnected, so the destructive step can never
 token. State in the settings guide that a tenant move discards filed-email evidence — that
 evidence points at Drive files in a tenant the app will no longer be able to read, so keeping
 the rows would preserve the audit trail's appearance and not its substance.
+**Amendments (architecture review, August 3, 2026):** (d) connect-time tenant guard —
+`saveConnection` currently upserts a new `googleSubject` straight over the old row with no
+comparison (`app/lib/google-oauth.ts:860-871`; subject at `db/schema.ts:303`); on connect, if
+the incoming profile subject differs from the stored connection's `googleSubject` AND
+tenant-scoped rows exist under the connection key, refuse with instructions to run the reset
+first. (e) the reset must also field-level-clear the tenant values inside `workspace_settings`
+(`shared_drive_id`, `client_directory_sheet_id`, `intake_mailbox`) — the sim-reset batch this
+packet extends never touches that table, and a row-level clear would destroy non-tenant
+configuration. (f) the typed confirmation must name the tenant read from the STORED
+connection's `google_email`, not from env — env may already point at the new tenant at
+cutover.
 **Deliberately NOT in scope:** a data-preserving migration that re-points identifiers across
 tenants. It is far more work, and what it would preserve here is staging test data
 (`Project 2`, `Test Project`, `New Proj`), not business history. Running two tenants at once
@@ -1537,6 +1548,24 @@ is deliberately only the cheap half.**
 `gmail.modify`. Attaching a mailbox therefore confers **send and delete** on it, not read-only
 visibility. If shared inboxes are meant to be read-mostly, that needs a narrower scope, and a
 scope change forces disconnect/reconnect for every existing connection.
+**Spec amendment (owner + architecture review, August 3, 2026):** (i) two key scopes, named
+explicitly: gmail-side tables (`mail_items`, `gmail_file_archives` + artifacts, and
+`google_form_lead_*` if mailbox-scoped) become per-mailbox keys; workspace-level tables —
+`workspace_resources`, `workspace_blueprints`, `drive_folder_mappings`,
+`google_sheet_sync_state` — stay under ONE stable workspace-scope key, otherwise filing from
+a second mailbox finds no folder mappings and re-provisions duplicate Drive folders, making
+this packet's own accept criterion unsatisfiable. (ii) drop the `mail_items` connection_key
+column default `'google-workspace'` (`db/schema.ts:205`) in the same migration — a
+silent-misattribution hazard once keys vary. (iii) accept-criteria additions: FCI labels
+prepared per attached mailbox (labels are per-mailbox; the prep route currently runs against
+"the" connection); per-mailbox readiness is EQUALITY — the selected mailbox equals that
+connection's `google_email` — not membership in `AUTHORIZED_ACCOUNTS` (membership is
+save-time validation only; Gmail reads `users/me`, so only equality keeps the panel honest).
+(iv) split: sub-scope (a) is attach + mailbox picker + per-mailbox readiness; the per-person
+access grants move to the new WS-21. (v) recorded as settled (owner + architecture review,
+August 3, 2026): the permanent per-person key is the verified lowercase email —
+`user_preferences.userEmail` is already PK precedent; do not build a roles/capability engine
+for this.
 **Deliberately NOT in scope:** domain-wide delegation (forbidden in six documents and two
 checklists, and described by Google as bypassing end-user consent); per-user OAuth tokens;
 and reading a staff member's personal mailbox without that person signing in — which this
@@ -1552,6 +1581,32 @@ PostgreSQL CHECK pattern; the settings guide states the `gmail.modify` consequen
 **Sequencing:** after **WS-19** — both rewrite what `connection_key` means, and doing them in
 either order separately would rewrite the same 191 references twice.
 **Effort:** medium-large. **Cost:** $0.
+
+### WS-21 · Per-person shared-inbox access grants (small-medium, after WS-20)
+**Why:** owner decisions August 3, 2026 — staff work the shared inboxes; access level
+is view + file; assignment happens in the Settings UI. The existing capability system
+must not be used (always-true by construction: every route hard-codes the capability
+array it then checks, `app/application/creation-authorization.ts:32-34`).
+**Do:** one seam — `resolveMailboxAccess(email)` returning the set of mailboxes the
+signed-in user may work, computed as (env-bounded universe ∩ stored grants), with
+Administrators always receiving the full set. ALL Gmail-surface routes consult only
+this seam. Opened to granted office users: GET gmail/messages, GET+POST
+messages/[id]/file, GET inbox-analysis, PATCH inbox-analysis. Staying
+Administrator-only: send-test and any reply/send path, labels/prepare, POST
+inbox-analysis (provider spend). Storage: one top-level key per principal in
+`workspace_settings` (sanitized-email key to satisfy the merge-key charset), which
+makes concurrent edits to different people atomic and shrinks the recorded
+last-write-wins residual to same-person-same-instant; the save route must return
+read-back stored state, not an echo of input. On any storage read failure the
+resolver fails CLOSED to admin-only — never open. Every grant and revoke writes an
+`activity_events` row with actor and timestamp.
+**Accept:** a non-granted office user receives 403 on all four opened routes; a
+granted user passes exactly those and still 403s on the admin-only set (asserted
+per-route); Administrators unaffected; grant/revoke audited; a simulated storage
+failure yields admin-only, not open access; the settings guide describes this as an
+access list on the hosting-supplied identity, not an identity system; `npm test` +
+`npm run test:e2e` + `npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
 
 ### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
 **Status:** Complete — PR #35, July 19, 2026. Source-only and not deployed.
@@ -1680,7 +1735,9 @@ from sheets/status; Workflow=In development; Data & security=Planned; Testing &
 launch=In development) — never compute a badge from state that has no endpoint.
 Standardize the four different deep-link labels to one: "Open Google Workspace setup".
 Make nav label match panel heading. **URL slugs must not change** (callback redirects
-target `/settings?section=google-workspace`).
+target `/settings?section=google-workspace`). Absorbs SET-12 (August 3, 2026): the
+Data & security section's badge copy is corrected here — "Sign out everywhere" renders
+Setup required with one factual sentence; backup/retention stay Planned.
 **Accept:** badges render per mapping; computed ones react to mocked payloads; single
 deep-link string; slugs unchanged.
 
@@ -1699,7 +1756,7 @@ acceptance stays in checklist 05, not in-app.
 reset does NOT clear it (lives in workspace_settings, not connection-scoped tables —
 assert in test).
 
-### SET-09 · Integration audit viewer (medium, after SET-01+02)
+### SET-09 · Integration audit viewer (small, after SET-01+02)
 **NARROWED July 30, 2026 — WS-10 shipped the events reader, so most of this packet is
 already built.** The original text said `google_integration_events` "has no reader anywhere
 (verified: no audit route exists)" and planned to build one. That premise is now false:
@@ -1752,6 +1809,7 @@ spreadsheets action instead of naming the env var (env stays documented as fallb
 data; unconfigured state names `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID`.
 
 ### SET-12 · Data & security: Planned placeholders for backup/restore, retention/export, session revocation, live-data cleanup (small, after SET-01)
+**Status:** Superseded — absorbed into SET-07. Its session-revocation card would print a false claim on a security screen: "Sign out everywhere" is built (app/management/access/AdminAccessPage.tsx:390 wired at :572; route at app/platform/google-cloud/employee-request-router.ts:345) — the honest state is Setup required, not Planned. SET-07 absorbs the corrected Data & security copy; the remaining static placeholder cards do not justify a packet.
 **Why:** The section has zero controls while the backend plans commit to all four; the
 honest interim is named Planned placeholders, not silence.
 **Do:** Four cards with "Planned" badges and one factual sentence each; NO status
@@ -1995,8 +2053,14 @@ create/adopt branches mocked; simulation e2e.
 **Effort:** medium.
 
 ### SET-21 · Project/client provisioning consumes the blueprint (medium, after SET-15) — LAST in the dashboard-setup feature
-**Why:** Per-project/client provisioning must consume the blueprint's folder sets and
-naming patterns, or "add a project subfolder" still needs a code change.
+**Why (corrected August 3, 2026 — the earlier "add a project subfolder still needs a
+code change" justification was false: `buildProjectDriveBlueprintPlan` at
+`app/lib/google-drive.ts:1508` already derives project subfolders from the blueprint):**
+four Settings controls are editable and silently ignored by provisioning — the client
+folder set (string literals at `google-drive.ts:1527-1528`) and both naming patterns
+(`clientFolderPattern`/`projectFolderPattern`: zero consumers outside their definition
+and the Settings editor — `workspace-blueprint.ts:50-51,138-139,514-515`) — so the
+preview endpoint can disagree with what provisioning actually creates on a live tenant.
 **Do:** `buildProjectFolderPlan` + `provisionProjectFolders` consumers read
 `blueprint.drive.clientFolders`/`projectFolders` and `naming.*` patterns (token
 substitution; the sanitizer guarantees the system `05_Correspondence` subtree
@@ -2055,8 +2119,12 @@ images, and Office files natively with no new scopes and no file bytes proxied (
 viewer's own Google session provides access via Shared Drive membership). Open-in-Google
 and Download fallbacks; a clear guidance state when the preview is blocked (no Google
 session or no access); CSP `frame-src` allowance for `https://drive.google.com` only;
-simulation mode renders a placeholder preview card. Wire from the project files list
-and the template rows (SET-17, merged PR #92).
+simulation mode renders a placeholder preview card. Wire from the template rows
+(SET-17, merged PR #92) — corrected August 3, 2026: there is no persisted project
+files list to wire from (`ProjectFilesPanel.tsx:243-259` shows only this-session
+creations). Coordination: build WITH SET-26 as one packet — SET-26's search results
+are the listing SET-23 needs — and mount the viewer inside `ProjectFilesPanel.tsx`,
+NOT at the FloorOpsApp mount, so neither half takes the queue slot.
 **Accept:** rendered tests for viewer open/fallback/guidance states driven by mocked
 payloads; CSP change pinned by a test; no new scopes (grep); simulation e2e clicks a
 simulated file and sees the placeholder; office non-admin can view (viewing is routine
@@ -2110,6 +2178,10 @@ routine work) with bounded query length and result count; results open in the SE
 viewer. Simulation searches the simulated registry/fixtures. Build the search as a
 reusable server-side service: AI-03 registers it as the assistant's `drive_search`
 tool once it exists (cross-reference recorded in both packets — build once).
+Coordination (August 3, 2026): build WITH SET-23 as one packet — these search results
+are the listing SET-23's viewer opens from, and the viewer mounts inside
+`ProjectFilesPanel.tsx`, not at the FloorOpsApp mount, so neither half takes the
+queue slot.
 **Accept:** route tests (scoping to the project folder asserted in the request shape,
 bounded inputs, non-project files never returned in mocks); e2e simulated search →
 viewer open; no new scopes. **Effort:** small-medium. **Cost:** $0.
@@ -2715,9 +2787,13 @@ simulation e2e on the lead, client, and project forms. **Effort:** medium. **Cos
 **Why:** Crew photo/measurement drops into project folders become visible in the app
 without folder re-listing — "what changed on this project" at a glance.
 **Do:** Serialized `changes.getStartPageToken`/`changes.list` cursor polling per
-Shared Drive (existing `auth/drive` scope; the page token never expires, so scheduled
-polling works with zero standing infrastructure — the same serialized pattern as the
-repo's chosen Gmail history polling; explicitly no `changes.watch`, no Pub/Sub).
+Shared Drive (existing `auth/drive` scope; the page token never expires; explicitly
+no `changes.watch`, no Pub/Sub). Corrected August 3, 2026: no Gmail history polling
+exists in this repo to pattern-match — `docs/google-workspace-watch-and-queue-design.md:15-18`
+records polling as not authorized, and no `scheduled()` handler or cron trigger
+exists. The scheduling model is an unmade OWNER decision that must be made before
+dispatch, not during: an admin-pressed bounded reader keeps this packet medium; real
+scheduling is large infrastructure.
 Changes are attributed to projects via the provisioned folder mappings and stored as
 bounded recent-activity rows; an activity panel on the project page renders them.
 Cursor state persisted alongside the existing sync-state pattern.
@@ -2748,7 +2824,10 @@ Gmail shows FCI context (client, project stage, install dates, folder link) with
 one-click file-to-project — including employees' own mailboxes the connector cannot
 see — and FCI links pasted in Docs/Sheets unfurl as live smart chips.
 **Do:** One Workspace Add-on with HTTP-endpoint (alternate-runtime) card endpoints on
-the existing Cloud Run service: Gmail contextual trigger using the deliberately narrow
+the Cloud Run service — corrected August 3, 2026: no such service exists yet (this
+ledger's own source-only production foundation entry records nothing provisioned), so
+do not schedule this packet until the production platform is deployed; revisit after
+cutover. Gmail contextual trigger using the deliberately narrow
 per-open-message scopes (`gmail.addons.execute`,
 `gmail.addons.current.message.readonly`, `userinfo.email`) mapped to the existing OIDC
 employee identity; file-to-project posts the message ID to the backend which runs the
@@ -3062,11 +3141,14 @@ layouts unaffected).
 ### DES-09 · Guardrail wrap-up + ledger closure (small; tests/docs only, last)
 **Why:** close the design-critique ledger's Phase-3/4 open items this series
 executes, and leave one truth.
-**Do:** commit the approved 1280/390 reference screenshots of the durable
-routes on the post-series frame; extend the axe matrix to the editor editing
-state and the notifications popover; update `docs/design-critique-fix-plan.md`
-(Phase 3/4 closed with PR references) and the findings ledger (FIX-08
-disposition); reconcile all DES statuses.
+**Do (narrowed August 3, 2026 — two sub-items struck as already delivered: the
+editor-editing-state axe extension exists twice, `tests/e2e/page-layouts.spec.ts:176`
+and `:701`, and the findings-ledger FIX-08 disposition is already recorded,
+`docs/full-review-2026-07-21-findings.md:301-302`):** commit the approved 1280/390
+reference screenshots of the durable routes on the post-series frame; add one
+notifications-popover axe assertion; update `docs/design-critique-fix-plan.md`
+(Phase 3/4 closed with PR references); reconcile all DES statuses. Residue is the
+reference screenshots plus the one notifications-popover axe assertion only.
 **Accept:** ledgers agree with reality; screenshots committed; guard suite
 green (empty font-size-zero allowlist + undersized-control guard).
 **Effort:** small. **Cost:** $0.

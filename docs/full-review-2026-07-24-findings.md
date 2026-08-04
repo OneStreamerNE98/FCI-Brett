@@ -356,6 +356,7 @@ tests reload/remount persistence of Stage-4. New.
 **Effort:** small-medium. **Cost:** $0.
 
 ### FIX-14 · Reminder-hours field wiring (P2 H-3; small)
+**Status:** Resolved in PR #163. Delivered by SET-06 — this file's own July 23 disposition records the fold; the status line was missing, so the dispatch law read a delivered packet as available. Verified delivered on origin/main: clientReminderHours is its own key (app/domain/workspace-settings.ts:12,27,90-93) with independently bound fields (WorkspaceDefaultsPanel.tsx:260,286) and independent round-trips pinned (tests/e2e/set06-truthful-settings.spec.ts:68-97).
 **Disposition (owner-approved July 23): FOLDED INTO SET-06** — the wiring split and the
 Planned-badge honesty land together in the amended SET-06 packet in the main ledger;
 this draft records the scope and acceptance it carried there.
@@ -399,6 +400,7 @@ New.
 **Effort:** small. **Cost:** $0.
 
 ### FIX-16 · Truthful custom filing rules (P3 H-7; small)
+**Status:** Resolved in PR #163. Delivered by SET-06 — the exact chip this packet specifies ships at InboxRulesPanel.tsx:35 ("Saved — not yet applied") with the review-first pill at :33 and truthful copy at :20-21; pinned by tests/e2e/settings-rules.spec.ts:69,82. Status line added August 3, 2026.
 **Disposition (owner-approved July 23): FOLDED INTO SET-06** — truthful presentation of
 inert custom rules joins SET-06's truthful-labels charter; this draft records the scope
 and acceptance it carried there.
@@ -581,12 +583,16 @@ packets cover other cards; DES-06/08d own the Overview layout editor). New.
 reflow of a guide sentence turns CI red with an error naming an unrelated feature:
 `tests/set11-directory-sync.test.mjs:59-62` and
 `tests/set24-employee-login-readiness.test.mjs:235-237` match settings-guide sentences with
-literal spaces (one pin requires a hard wrap between two specific words; another requires a
-single ~430-char unwrapped line), and `tests/ai-outbound-guard.test.mjs` pins two
+literal spaces (no pin embeds a newline — every guide pin requires its sentence to remain
+UNWRAPPED, e.g. a single ~430-char line; the set11 reader normalizes CRLF at
+`tests/set11-directory-sync.test.mjs:6`, so the fragility is reflow / inserted line breaks,
+not wrap position), and `tests/ai-outbound-guard.test.mjs` pins two
 ai-assistant-spec headings verbatim **including their dates**, so re-dating the residual
 register breaks the build. Global guardrail 0 makes settings-guide edits mandatory per
 settings packet — the mandatory edit is the one most likely to fail CI. Wrap-sensitivity is a
-regex artifact, not a contract.
+regex artifact, not a contract. The same pin class has spread to
+`tests/doc06-deployment-runbook.test.mjs` (a transient-status pin re-pointed August 3, 2026);
+the executing agent should include that file in the same pass.
 **Do:** rewrite the prose pins as wrap-insensitive fact assertions — `\s+` for inter-word
 whitespace in the set11/set24 sentence pins; the two spec heading pins match the title
 date-insensitively (the guard's own §11 slice logic is untouched). Keep byte-exact pins only
