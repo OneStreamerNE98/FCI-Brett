@@ -1298,12 +1298,14 @@ test("PostgreSQL label adapter executes lifecycle and both guarded-write orderin
     assert.equal(await repository.insert(unused), "inserted");
     assert.equal(await repository.updateDescription(unused.slug, "PostgreSQL edited label.", 11), true);
     assert.equal(await repository.removeOrRetire(unused.slug, 12), "deleted");
+    const used = storedLabel("label_pg_used", "PostgreSQL used label.", 13);
+    assert.equal(await repository.insert(used), "inserted");
     await pool.query(
       `INSERT INTO ${quoted}.mail_items (id, analysis_payload) VALUES ($1, $2::jsonb)`,
-      ["used", JSON.stringify({ intents: ["lead"] })],
+      ["used", JSON.stringify({ intents: [used.slug] })],
     );
-    assert.equal(await repository.removeOrRetire("lead", 20), "retired");
-    assert.equal((await repository.list()).find(({ slug }) => slug === "lead").retired, true);
+    assert.equal(await repository.removeOrRetire(used.slug, 20), "retired");
+    assert.equal((await repository.list()).find(({ slug }) => slug === used.slug).retired, true);
 
     const writerFirst = storedLabel(
       `label_${"b".repeat(32)}`,
