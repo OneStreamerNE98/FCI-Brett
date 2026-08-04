@@ -399,7 +399,7 @@ test("GI-01 config exposes presence only and simulation needs no hosted Sheet va
     configured: true,
     invalid: false,
     spreadsheetId: "appSavedResponseSheet_12345",
-    source: "app-saved",
+    source: "app",
   });
   assert.deepEqual(config.googleFormLeadIntakeConfig({
     GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID: "not a provider id",
@@ -1322,7 +1322,7 @@ test("GI-01 workspace route acquires a Sheets token, performs the bounded produc
       configured: true,
       invalidConfiguration: false,
       configurationName: "GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID",
-      configurationSource: "environment",
+      configurationSource: "env",
       simulation: false,
       actorEmail: ADMIN_EMAIL,
       rowLimit: 25,

@@ -146,7 +146,7 @@ export type GoogleChatCardsV2Payload = Readonly<{
 
 export type GoogleChatPublicConfig = Readonly<{
   featureEnabled: boolean;
-  featureSource: "app" | "environment" | "none";
+  featureSource: "app" | "env" | "none";
   mode: "disabled" | "simulation" | "webhook";
   events: readonly Readonly<{
     type: GoogleChatEventType;

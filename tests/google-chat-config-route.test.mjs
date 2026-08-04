@@ -238,7 +238,7 @@ test("PATCH is same-origin Administrator-only, persists a distinct row, and retu
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(body.canEdit, true);
   assert.equal(body.featureEnabled, true);
-  assert.equal(body.featureSource, "environment");
+  assert.equal(body.featureSource, "env");
   assert.equal(body.mode, "webhook");
   assert.equal(body.events.find((event) => event.type === "lead.created").enabled, true);
   assert.equal(body.events.find((event) => event.type === "project.warranty_follow_up_due").spaceKey, "service");

@@ -22,7 +22,7 @@ type AssistantConfig = {
   provider: "openai";
   keyState: "Configured" | "Missing";
   model: string;
-  modelSource: "app" | "environment" | "none";
+  modelSource: "app" | "env" | "none";
   savedModel: string | null;
   features: AiFeatures;
 };
@@ -45,7 +45,7 @@ function parseAssistantConfig(value: unknown): AssistantConfig {
   if (typeof value.model !== "string" || !value.model.trim() || value.model.length > 200) {
     throw new Error("The server returned an invalid AI model name.");
   }
-  const modelSource = value.modelSource === "app" || value.modelSource === "environment"
+  const modelSource = value.modelSource === "app" || value.modelSource === "env"
     ? value.modelSource
     : "none";
   const savedModel = typeof value.savedModel === "string" && value.savedModel.trim()
@@ -92,7 +92,7 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       if (requestId !== loadRequestRef.current) return;
       setConfig(nextConfig);
       setFeatures({ ...nextConfig.features });
-      setModel(nextConfig.modelSource === "environment"
+      setModel(nextConfig.modelSource === "env"
         ? nextConfig.savedModel ?? ""
         : nextConfig.savedModel ?? nextConfig.model);
       setModelDirty(false);
@@ -143,7 +143,7 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       invalidateCachedGet(ASSISTANT_CONFIG_URL);
       setConfig(savedConfig);
       setFeatures({ ...savedConfig.features });
-      setModel(savedConfig.modelSource === "environment"
+      setModel(savedConfig.modelSource === "env"
         ? savedConfig.savedModel ?? ""
         : savedConfig.savedModel ?? savedConfig.model);
       setModelDirty(false);
@@ -180,7 +180,7 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
         <div><dt>Provider</dt><dd>OpenAI</dd></div>
         <div><dt>API key</dt><dd><span className={config.keyState === "Configured" ? styles.configured : styles.missing}><KeyRound size={14} aria-hidden="true" /> {config.keyState}</span></dd></div>
         <div><dt>Model</dt><dd><code>{config.model}</code></dd></div>
-        <div><dt>Model source</dt><dd>{config.modelSource === "app" ? "App-saved" : config.modelSource === "environment" ? "Environment" : "None (default)"}</dd></div>
+        <div><dt>Model source</dt><dd>{config.modelSource === "app" ? "App-saved" : config.modelSource === "env" ? "Environment" : "None (default)"}</dd></div>
       </dl>
 
       {config.keyState === "Missing" && <div className={styles.missingNote} role="note">
@@ -199,17 +199,17 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
       </div>
 
       {isAdmin ? <form onSubmit={save}>
-        <label htmlFor="assistant-model">{config.modelSource === "environment" ? "App-saved fallback model" : "OpenAI model"}
+        <label htmlFor="assistant-model">{config.modelSource === "env" ? "App-saved fallback model" : "OpenAI model"}
           <input
             id="assistant-model"
             value={model}
             onChange={(event) => { setModel(event.target.value); setModelDirty(true); }}
-            disabled={!editable || saving || config.modelSource === "environment"}
+            disabled={!editable || saving || config.modelSource === "env"}
             maxLength={200}
             spellCheck={false}
             autoComplete="off"
           />
-          <small>{config.modelSource === "environment"
+          <small>{config.modelSource === "env"
             ? `Hosted OPENAI_MODEL is the active emergency override. ${config.savedModel ? "The saved fallback is preserved and cannot be overwritten from this screen until the override is removed." : "No app-saved fallback is set; remove the override before choosing one here."}`
             : "Validated with OpenAI only when changed. A hosted OPENAI_MODEL, when present, becomes the emergency override."}</small>
         </label>

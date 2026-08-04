@@ -608,6 +608,14 @@ button { color:inherit; }
 .workspace-copy-value .soft-button,.workspace-copy-helpers article>.soft-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:0 0 auto;min-height:var(--control-compact)}
 .workspace-copy-helpers pre{max-width:100%;margin:0;padding:10px;overflow:auto;border-radius:var(--radius-control);background:#f7f5f2;white-space:pre-wrap}
 .workspace-copy-empty{display:flex;align-items:center;gap:6px;margin:0;color:#35674d;font-size:12px;font-weight:800}
+.workspace-runtime-configuration{display:grid;gap:9px;padding-top:12px;border-top:1px solid #e4ded7}
+.workspace-runtime-configuration>div:first-child h4{margin:0;font:700 12px var(--font-display)}
+.workspace-runtime-configuration>div:first-child p{margin:4px 0 0;color:var(--text-muted);font-size:12px;line-height:1.5}
+.workspace-runtime-configuration article{display:grid;gap:9px;padding:11px;border:1px solid var(--line);border-radius:var(--radius-control);background:#fff}
+.workspace-runtime-configuration article>div:first-child{display:grid;gap:3px}
+.workspace-runtime-configuration article strong{font-size:12px}
+.workspace-runtime-configuration article span{color:var(--text-muted);font-size:12px;line-height:1.45}
+.workspace-runtime-configuration article>.soft-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:0 0 auto;min-height:var(--control-compact)}
 .workspace-connection-health{margin:0 0 12px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-card);background:#fbfdfb}
 .workspace-connection-health>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
 .workspace-connection-health>header .eyebrow{margin:0 0 3px}
@@ -683,6 +691,7 @@ button { color:inherit; }
   .workspace-prerequisites{padding:13px}
   .workspace-copy-value{align-items:stretch;flex-direction:column}
   .workspace-copy-value .soft-button,.workspace-copy-helpers article>.soft-button{width:100%}
+  .workspace-runtime-configuration article>.soft-button{width:100%}
   .workspace-connection-health>header{flex-direction:column;gap:7px}
   .workspace-connection-health-error{align-items:flex-start;flex-direction:column}
   .workspace-sheet-summary{grid-template-columns:1fr}
@@ -938,6 +947,7 @@ button { color:inherit; }
   .workspace-blueprint-row-actions .soft-button,.workspace-blueprint-add,
   .workspace-blueprint-remove,.workspace-blueprint-lock,
   .workspace-copy-value .soft-button,.workspace-copy-helpers article>.soft-button,
+  .workspace-runtime-configuration article>.soft-button,
   .workspace-connection-health-error .soft-button{
     min-height:var(--target-min)
   }

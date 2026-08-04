@@ -7,7 +7,7 @@ export type GoogleFormLeadIntakeConfig = Readonly<{
   configured: boolean;
   invalid: boolean;
   spreadsheetId: string | null;
-  source: "simulation" | "app-saved" | "environment" | "none";
+  source: "simulation" | "app" | "env" | "none";
 }>;
 
 /** Presence-only public state plus a server-only Sheet identifier. */
@@ -44,6 +44,6 @@ export function googleFormLeadIntakeConfig(
     configured: valid,
     invalid: !valid,
     spreadsheetId: valid ? candidate : null,
-    source: valid ? (appCandidate ? "app-saved" : "environment") : "none",
+    source: valid ? (appCandidate ? "app" : "env") : "none",
   });
 }

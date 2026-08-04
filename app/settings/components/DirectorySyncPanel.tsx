@@ -15,12 +15,13 @@ import { AdministratorActionButton } from "../../components/AdministratorActionB
 import { FIRST_RUN_IMPORT_TEST_MARKER } from "../../domain/first-run-import";
 import { FirstRunImportCard } from "../../import/components/FirstRunImportCard";
 import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "../../lib/sheet-mirror-status";
+import { EFFECTIVE_WORKSPACE_RESOURCE_SPECS } from "../../lib/workspace-effective-config";
 import styles from "./DirectorySyncPanel.module.css";
 
 const SHEET_STATUS_PATH = "/api/v1/integrations/google/sheets/status";
 const FORM_LEAD_PATH = "/api/v1/integrations/google/forms/leads";
 const LEADS_PATH = "/api/v1/leads";
-const CLIENT_DIRECTORY_SHEET_KEY = "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID";
+const CLIENT_DIRECTORY_SHEET_KEY = EFFECTIVE_WORKSPACE_RESOURCE_SPECS.clientDirectorySheet.envVar;
 const FORM_LEAD_SOURCE = "Google Form";
 
 type FormLeadProposal = Readonly<{
@@ -56,7 +57,7 @@ type FormLeadIntakeState = Readonly<{
   configured: boolean;
   invalidConfiguration: boolean;
   configurationName: string;
-  configurationSource: "simulation" | "app-saved" | "environment" | "none";
+  configurationSource: "simulation" | "app" | "env" | "none";
   simulation: boolean;
   actorEmail: string;
   rowLimit: number;
@@ -134,7 +135,7 @@ function parseFormLeadIntakeState(value: unknown): FormLeadIntakeState | null {
     || typeof value.configured !== "boolean"
     || typeof value.invalidConfiguration !== "boolean"
     || typeof value.configurationName !== "string"
-    || !["simulation", "app-saved", "environment", "none"].includes(String(value.configurationSource))
+    || !["simulation", "app", "env", "none"].includes(String(value.configurationSource))
     || typeof value.simulation !== "boolean"
     || typeof value.actorEmail !== "string"
     || !Number.isSafeInteger(value.rowLimit)
@@ -163,8 +164,8 @@ function parseFormLeadIntakeState(value: unknown): FormLeadIntakeState | null {
 
 function formLeadConfigurationSourceLabel(source: FormLeadIntakeState["configurationSource"]) {
   if (source === "simulation") return "Simulation fixture";
-  if (source === "app-saved") return "App-saved";
-  if (source === "environment") return "Environment (bootstrap fallback)";
+  if (source === "app") return "App-saved";
+  if (source === "env") return "Environment (bootstrap fallback)";
   return "None";
 }
 

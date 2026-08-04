@@ -93,7 +93,7 @@ export type EffectiveGoogleRuntimeConfig = GoogleRuntimeConfig & Readonly<{
   }>;
 }>;
 
-export type EffectiveConfigurationSource = "app" | "environment" | "none";
+export type EffectiveConfigurationSource = "app" | "env" | "none";
 
 export type EffectiveConfigurationValue<T> = Readonly<{
   value: T;
@@ -117,7 +117,7 @@ export function resolveEffectiveTextConfiguration(
   const saved = typeof savedValue === "string" ? normalizedId(savedValue) : undefined;
   if (saved) return Object.freeze({ value: saved, source: "app" });
   const environment = normalizedId(environmentValue);
-  if (environment) return Object.freeze({ value: environment, source: "environment" });
+  if (environment) return Object.freeze({ value: environment, source: "env" });
   return Object.freeze({ value: undefined, source: "none" });
 }
 
@@ -132,7 +132,7 @@ export function resolveEffectiveBooleanConfiguration(
   if (environmentValue === "true" || environmentValue === "false") {
     return Object.freeze({
       value: environmentValue === "true",
-      source: "environment",
+      source: "env",
     });
   }
   return Object.freeze({ value: false, source: "none" });

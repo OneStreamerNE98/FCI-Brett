@@ -120,6 +120,7 @@ const RAISED_BELOW_44_FAMILIES = new Map([
   [`${G}.workspace-connection-health-error .soft-button`, WORKSPACE],
   [`${G}.workspace-copy-helpers article>.soft-button`, WORKSPACE],
   [`${G}.workspace-copy-value .soft-button`, WORKSPACE],
+  [`${G}.workspace-runtime-configuration article>.soft-button`, WORKSPACE],
   [`${R}.actionButtons :global(.primary-button)`, WORKSPACE],
   [`${R}.actionButtons :global(.soft-button)`, WORKSPACE],
   [`${R}.driveCandidates select`, FORM],

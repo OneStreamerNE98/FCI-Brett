@@ -51,7 +51,7 @@ test("SET-11 unconfigured guidance names only the fallback key and deep-links to
     read("docs/settings-guide.md"),
   ]);
 
-  assert.match(panel, /const CLIENT_DIRECTORY_SHEET_KEY = "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID"/);
+  assert.match(panel, /const CLIENT_DIRECTORY_SHEET_KEY = EFFECTIVE_WORKSPACE_RESOURCE_SPECS\.clientDirectorySheet\.envVar/);
   assert.match(panel, /href="\/settings\?section=google-workspace#workspace-stage-3"/);
   assert.match(panel, /Set up the Client Directory spreadsheet in Workspace Stage 3/);
   assert.doesNotMatch(panel, /process\.env|env\[[^\]]+\]/);

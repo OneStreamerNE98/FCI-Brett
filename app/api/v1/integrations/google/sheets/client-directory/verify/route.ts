@@ -69,15 +69,12 @@ export async function POST(request: NextRequest) {
       resource.resourceType === "sheets.spreadsheet"
       && resource.resourceKey === "client-directory"
     ));
-    await createD1WorkspaceSettingsRepository(
-      env.DB as unknown as D1Database,
-    ).mergeSettings({
-      id: WORKSPACE_SETTINGS_ID,
-      clientDirectorySheetId: externalId,
-      settings: {},
-      updatedBy: auth.user.email,
-      updatedAt: now,
-    });
+    // Write the registry row FIRST: it is the tier the runtime resolver ranks
+    // highest. If the second (outranked, bootstrap-mirror) write fails, the
+    // ranking tier already holds the verified ID, so runtime state and this
+    // route's verification agree and a retry only has to heal the mirror.
+    // The two adapters each run and guard their own statement internally, so a
+    // single atomic database.batch is not reachable without new plumbing.
     await upsertWorkspaceResource(env.DB, {
       id: existing?.id ?? crypto.randomUUID(),
       connectionKey: config.connectionKey,
@@ -89,6 +86,15 @@ export async function POST(request: NextRequest) {
       metadata: { role: "client-directory" },
       createdBy: existing?.createdBy ?? auth.user.email,
       createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    });
+    await createD1WorkspaceSettingsRepository(
+      env.DB as unknown as D1Database,
+    ).mergeSettings({
+      id: WORKSPACE_SETTINGS_ID,
+      clientDirectorySheetId: externalId,
+      settings: {},
+      updatedBy: auth.user.email,
       updatedAt: now,
     });
     return json({

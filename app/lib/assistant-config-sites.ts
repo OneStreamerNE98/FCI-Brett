@@ -16,7 +16,7 @@ export type AssistantPublicConfiguration = Readonly<{
   provider: "openai";
   keyState: "Configured" | "Missing";
   model: string;
-  modelSource: "app" | "environment" | "none";
+  modelSource: "app" | "env" | "none";
   savedModel: string | null;
   features: AssistantFeatures;
 }>;
@@ -38,7 +38,7 @@ export function assistantRuntimeConfiguration(
   // an emergency override. Without it, the app-saved value is authoritative.
   const emergencyModel = runtimeValue(environment, "OPENAI_MODEL")?.trim();
   const configuredModel = emergencyModel
-    ? Object.freeze({ value: emergencyModel, source: "environment" as const })
+    ? Object.freeze({ value: emergencyModel, source: "env" as const })
     : resolveEffectiveTextConfiguration(savedModel, undefined);
   const sanitized = configuredModel.value
     ?.replace(/[\u0000-\u001f\u007f]/g, "")

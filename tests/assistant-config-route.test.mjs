@@ -129,7 +129,7 @@ test("GET is office-readable, no-store, secret-safe, and defaults every feature 
     provider: "openai",
     keyState: "Configured",
     model: "gpt-test-config-model",
-    modelSource: "environment",
+    modelSource: "env",
     savedModel: null,
     features: {
       orgQa: true,
@@ -198,7 +198,7 @@ test("GET widens stored features one key at a time and never exposes unknown sto
     provider: "openai",
     keyState: "Configured",
     model: "gpt-test-config-model",
-    modelSource: "environment",
+    modelSource: "env",
     savedModel: null,
     features: {
       orgQa: false,
@@ -235,7 +235,7 @@ test("PATCH round-trips a known subset while preserving sibling settings and unk
     provider: "openai",
     keyState: "Configured",
     model: "gpt-test-config-model",
-    modelSource: "environment",
+    modelSource: "env",
     savedModel: null,
     features: {
       orgQa: false,
@@ -299,7 +299,7 @@ test("feature-only save under the hosted model override preserves the saved fall
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.model, "gpt-emergency-override");
-    assert.equal(body.modelSource, "environment");
+    assert.equal(body.modelSource, "env");
     assert.equal(body.savedModel, "gpt-saved-fallback");
     assert.equal(database.readSettings().aiModel, "gpt-saved-fallback");
     assert.deepEqual(database.readSettings().unrelated, { preserved: true });
