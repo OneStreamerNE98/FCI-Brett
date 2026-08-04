@@ -3740,6 +3740,7 @@ fills it or says who to ask; internal build status, policy vocabulary, and syste
 do not appear in the interface.
 
 ### DES-16 · Flow honesty: the phone-call lead path, the Schedule phantoms, and a role-gated nav (small-medium) — ADOPTION FLAGSHIP
+**Status:** In progress — `codex/des16-flow-honesty`
 
 **Why:** the August 4 usability review walked the owner's first-named flow — capture a
 lead from a phone call — and found the create-lead modal cannot record a phone number:
@@ -4877,8 +4878,9 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-16 → DES-14 → DES-17
-(shell scope, post-decomposition) → DES-10 (variants a/b only) → DES-12.**
+**DES-16 (in progress on `codex/des16-flow-honesty`) → GI-05 (if approved) →
+WS-20 (if approved) → DES-14 → DES-17 (shell scope, post-decomposition) → DES-10
+(variants a/b only) → DES-12.**
 (DES-16 and DES-17 added August 4, 2026 with the usability wave: DES-16 is small,
 adoption-flagship, and precedes the large DES-14 extraction deliberately; DES-17's slot
 need is the app-shell toast/boundary machinery that remains in `FloorOpsApp.tsx` after
@@ -4897,6 +4899,9 @@ DES-14, so it follows the extraction.)
   other way around.
 - **GI-04** — merged in PR #291 and released the slot. Its lead, client and project modals
   and record mappers are inline in that file.
+- **DES-16** — **holds the slot on `codex/des16-flow-honesty`.** Its lead-capture modal,
+  Overview Schedule entry points, and application navigation are inline in
+  `app/FloorOpsApp.tsx`.
 - **GI-05** — the project drawer and its Planned-capabilities list
   (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
 - **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
