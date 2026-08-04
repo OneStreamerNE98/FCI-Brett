@@ -515,14 +515,15 @@ export function assertWorkspaceGmailConnection(config: GoogleRuntimeConfig) {
 
 export function validateWorkspaceRecipient(value: unknown, config: GoogleRuntimeConfig) {
   if (config.simulation) return "workspace-simulation@fci.example";
-  if (value === undefined && config.intakeMailbox) return config.intakeMailbox;
-  if (value === undefined && config.expectedGoogleEmails.length === 1) {
-    return config.expectedGoogleEmails[0];
-  }
-  if (typeof value !== "string") {
+  const candidate = value === undefined
+    ? config.intakeMailbox ?? (config.expectedGoogleEmails.length === 1
+      ? config.expectedGoogleEmails[0]
+      : undefined)
+    : value;
+  if (typeof candidate !== "string") {
     throw new GoogleIntegrationError("invalid_workspace_recipient", "Choose an approved Google Workspace email address.", 400);
   }
-  const recipient = value.trim().toLowerCase();
+  const recipient = candidate.trim().toLowerCase();
   const domain = recipient.split("@")[1] ?? "";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || (!config.expectedGoogleEmails.includes(recipient) && !config.allowedDomains.includes(domain))) {
     throw new GoogleIntegrationError("invalid_workspace_recipient", "Test messages can only be sent inside the approved Google Workspace domain.", 403);

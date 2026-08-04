@@ -129,6 +129,7 @@ export function createD1GoogleOauthPersistence(database: D1GoogleOauthDatabase):
                  OR intake_mailbox IS NOT NULL
                  OR CASE WHEN json_valid(settings_json) THEN NULLIF(json_extract(settings_json, '$.appointmentCalendarId'), '') END IS NOT NULL
                  OR CASE WHEN json_valid(settings_json) THEN NULLIF(json_extract(settings_json, '$.fieldCalendarId'), '') END IS NOT NULL
+                 OR CASE WHEN json_valid(settings_json) THEN NULLIF(json_extract(settings_json, '$.intakeMailbox'), '') END IS NOT NULL
            )
         LIMIT 1`)
         .bind(

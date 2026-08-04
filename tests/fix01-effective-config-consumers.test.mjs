@@ -30,6 +30,7 @@ const state = {
   queries: [],
   resourceFailure: false,
   resources: [],
+  settings: null,
   tokenFailure: false,
 };
 
@@ -57,6 +58,7 @@ const database = {
           return state.resources.find((row) => row.connection_key === query.values[0] && row.resource_type === query.values[1] && row.resource_key === query.values[2]) ?? null;
         }
         if (/FROM google_connections WHERE connection_key = \?/u.test(sql)) return state.connection;
+        if (/FROM workspace_settings WHERE id = \?/u.test(sql)) return state.settings;
         return null;
       },
       async run() {
@@ -163,6 +165,7 @@ function configure({
   ids = ENV_IDS,
   connected = true,
   resourceFailure = false,
+  savedSettings = null,
   tokenFailure = false,
   overrides = {},
 } = {}) {
@@ -214,6 +217,15 @@ function configure({
   state.queries = [];
   state.resourceFailure = resourceFailure;
   state.resources = resources;
+  state.settings = savedSettings ? {
+    id: "workspace",
+    shared_drive_id: null,
+    client_directory_sheet_id: null,
+    intake_mailbox: null,
+    settings_json: JSON.stringify(savedSettings),
+    updated_by: ADMIN_EMAIL,
+    updated_at: 1_790_000_001_000,
+  } : null;
   state.tokenFailure = tokenFailure;
 }
 
@@ -457,6 +469,54 @@ test("Workspace readiness and folder-plan preview both consume the persisted blu
 // patterns, and the full folder/template/spreadsheet/calendar layout — while every other route
 // that returns that document is admin-gated. No client consumer reads the field, so non-admins
 // simply do not get it.
+// Review defect: `effectiveSources.intakeMailbox` was computed but no route returned it, so
+// the Gmail intake row was the one App-managed row that could not name its source. It travels
+// on the same channel and in the same shape as its sibling provisioningSource.
+test("Workspace readiness names the intake mailbox source beside its sibling provisioning source", async () => {
+  configure();
+  const hosted = await (await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"))).json();
+  assert.equal(hosted.workspace.intakeMailboxSource, "env",
+    "with no saved value the hosted fallback is in force");
+  assert.ok(["app", "env", "none"].includes(hosted.workspace.provisioningSource),
+    "sibling source stays on the same SET-13 enum");
+
+  configure({ savedSettings: { intakeMailbox: CONNECTION_EMAIL } });
+  const saved = await (await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"))).json();
+  assert.equal(saved.workspace.intakeMailboxSource, "app",
+    "a saved mailbox reports App-saved, so the row can say which value wins");
+});
+
+// Review defect: the readiness label named BOTH addresses in full, and `missing`/
+// `missingDetails` are returned to every office user — while the same response masks the same
+// address one field away in `connection.account`.
+test("A mailbox/account mismatch label reaches non-admins without the unmasked connected address", async () => {
+  const officeEmail = "office@cherryhillfci.com";
+  const savedMailbox = "dispatch@cherryhillfci.com";
+  configure({
+    savedSettings: { intakeMailbox: savedMailbox },
+    overrides: {
+      FCI_OFFICE_EMAILS: `${ADMIN_EMAIL},${officeEmail}`,
+      GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: `${CONNECTION_EMAIL},${savedMailbox}`,
+    },
+  });
+
+  const response = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace", "GET", undefined, officeEmail));
+  assert.equal(response.status, 200);
+  const body = await response.text();
+  const payload = JSON.parse(body);
+
+  const mismatch = payload.missingDetails.at(-1);
+  assert.equal(mismatch.label,
+    `Google Workspace intake mailbox ${savedMailbox} matching connected account op•••@cherryhillfci.com`);
+  assert.ok(payload.missing.includes(mismatch.label), "the flattened list carries the same masked label");
+  assert.equal(body.includes(CONNECTION_EMAIL), false,
+    "the unmasked connected address must not appear anywhere in a non-admin readiness payload");
+  // The mask is the one already used a field away, so the two agree.
+  assert.equal(payload.workspace.connectionAccount, "op•••@cherryhillfci.com");
+  // The saved mailbox stays readable: the office UI already shows the selector and its options.
+  assert.ok(body.includes(savedMailbox));
+});
+
 test("Workspace readiness withholds the persisted tenant blueprint from non-admin office users", async () => {
   const officeEmail = "office@cherryhillfci.com";
   const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());

@@ -83,7 +83,7 @@ type WorkspaceResourcesPayload = {
   };
 };
 
-const missingInvariant = "Google Workspace intake mailbox matching the single approved connection account";
+const missingInvariant = "Google Workspace intake mailbox dispatch@cherryhillfci.com matching connected account op•••@cherryhillfci.com";
 
 function readiness(overrides: Record<string, unknown> = {}): ReadinessPayload {
   return {
@@ -376,6 +376,82 @@ async function expectNeutralStageChips(page: Page, label: "CHECKING" | "UNAVAILA
   }
 }
 
+test("administrator selects an allowlisted intake mailbox without changing the hosted allowlist", async ({ page }) => {
+  const primary = "operations@cherryhillfci.com";
+  const secondary = "dispatch@cherryhillfci.com";
+  let selectedMailbox = primary;
+  let currentReadiness = readiness();
+  let currentResources = workspaceResources();
+  const patchBodies: unknown[] = [];
+
+  await page.unroute("**/api/v1/integrations/google/setup/resources");
+  await page.route("**/api/v1/integrations/google/setup/resources", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentResources) });
+  });
+  await mockConnectionHealth(page, connectedHealth());
+  await page.route("**/api/v1/google-workspace", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentReadiness) });
+  });
+  await page.route("**/api/v1/integrations/google/sheets/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ mirror: unsyncedMirror() }) });
+  });
+  await page.route("**/api/v1/settings/workspace", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          settings: { intakeMailbox: selectedMailbox },
+          intakeMailboxOptions: [primary, secondary],
+          updatedAt: 1,
+        }),
+      });
+      return;
+    }
+    const body = route.request().postDataJSON() as { intakeMailbox: string };
+    patchBodies.push(body);
+    selectedMailbox = body.intakeMailbox;
+    currentReadiness = {
+      ...readiness(),
+      missing: [missingInvariant],
+      missingDetails: [{
+        label: missingInvariant,
+        envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
+        secret: false,
+      }],
+    };
+    currentResources = workspaceResources({
+      connectReady: true,
+      identity: {
+        ...workspaceResources().identity,
+        intakeMailboxMatches: false,
+      },
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        settings: { intakeMailbox: selectedMailbox },
+        intakeMailboxOptions: [primary, secondary],
+        updatedAt: 2,
+      }),
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace");
+  await setStageExpanded(page, 1, true);
+  const selector = page.getByLabel("Gmail intake mailbox");
+  await expect(selector).toHaveValue(primary);
+  await expect(selector.locator("option")).toHaveCount(3);
+  await selector.selectOption(secondary);
+  await page.getByRole("button", { name: "Save mailbox" }).click();
+
+  expect(patchBodies).toEqual([{ intakeMailbox: secondary }]);
+  await expect(selector).toHaveValue(secondary);
+  await expect(page.getByText(missingInvariant, { exact: true })).toBeVisible();
+  await expect(tenantChecklistRow(page, "Operations account").getByText("MISSING", { exact: true })).toBeVisible();
+});
+
 test("the status banner waits for every source and resolves a mixed-mode all-connected response conservatively", async ({ page }) => {
   let releaseConnection: (() => void) | undefined;
   let markConnectionRequested: (() => void) | undefined;
@@ -423,7 +499,8 @@ test("the status banner waits for every source and resolves a mixed-mode all-con
   await expect(loadingChecklist.getByText("Client Directory spreadsheet ID", { exact: true })).toBeVisible();
   await expect(loadingChecklist.getByText("Lead-form response spreadsheet ID", { exact: true })).toBeVisible();
   await expect(loadingChecklist.getByText("Source: Simulation fixture (always enabled)", { exact: true })).toBeVisible();
-  await expect(loadingChecklist.getByText("Source: None", { exact: true })).toHaveCount(2);
+  await expect(loadingChecklist.getByText("Gmail intake mailbox", { exact: true })).toBeVisible();
+  await expect(loadingChecklist.getByText("Source: None", { exact: true })).toHaveCount(3);
   await expect(loadingChecklist.getByText("current mirror source:", { exact: false })).toHaveCount(0);
 
   releaseConnection?.();
@@ -475,7 +552,8 @@ test("mixed-mode Stage 1 rendering follows readiness simulation instead of the b
   await expect(checklist.getByText("Client Directory spreadsheet ID", { exact: true })).toBeVisible();
   await expect(checklist.getByText("Lead-form response spreadsheet ID", { exact: true })).toBeVisible();
   await expect(checklist.getByText("Source: Simulation fixture (always enabled)", { exact: true })).toBeVisible();
-  await expect(checklist.getByText("Source: None", { exact: true })).toHaveCount(2);
+  await expect(checklist.getByText("Gmail intake mailbox", { exact: true })).toBeVisible();
+  await expect(checklist.getByText("Source: None", { exact: true })).toHaveCount(3);
   await expect(checklist.getByText("current mirror source:", { exact: false })).toHaveCount(0);
 });
 
@@ -489,7 +567,7 @@ test("stages derive one open step from endpoint state and keep completed stages 
     calendarConnected: false,
     sheetsConnected: false,
   });
-  currentReadiness.credentialsPresent = false;
+  currentReadiness.credentialsPresent = true;
   currentReadiness.missingDetails = [
     { label: "Allowed Workspace domains", envVar: "GOOGLE_WORKSPACE_ALLOWED_DOMAINS", secret: false },
   ];
@@ -664,6 +742,12 @@ test("stage anchors open completed targets and survive hash navigation history",
 });
 
 test("Client Directory and Testing launch bounce links land on their exact setup stages", async ({ page }) => {
+  const expectStageAtSetupAnchor = async (number: WorkspaceStageNumber) => {
+    await expect.poll(async () => {
+      const top = await setupStage(page, number).evaluate((element) => element.getBoundingClientRect().top);
+      return top >= 85 && top <= 88;
+    }, { message: `Stage ${number} should settle at the setup anchor` }).toBe(true);
+  };
   const unavailableMirror = {
     ...unsyncedMirror(),
     configured: false,
@@ -685,9 +769,8 @@ test("Client Directory and Testing launch bounce links land on their exact setup
   await directoryLink.click();
   await expect(page).toHaveURL(/\/settings\?section=google-workspace#workspace-stage-3$/);
   await expect(stageToggle(page, 3)).toHaveAttribute("aria-expanded", "true");
-  const directoryTargetTop = await setupStage(page, 3).evaluate((element) => element.getBoundingClientRect().top);
-  expect(directoryTargetTop).toBeGreaterThanOrEqual(85);
-  expect(directoryTargetTop).toBeLessThanOrEqual(88);
+  await waitForStageShellToSettle(page);
+  await expectStageAtSetupAnchor(3);
 
   await page.goto("/settings?section=testing-launch");
   const testingLink = page.getByRole("link", { name: "Open Google Workspace setup", exact: true });
@@ -695,9 +778,8 @@ test("Client Directory and Testing launch bounce links land on their exact setup
   await testingLink.click();
   await expect(page).toHaveURL(/\/settings\?section=google-workspace#workspace-stage-4$/);
   await expect(stageToggle(page, 4)).toHaveAttribute("aria-expanded", "true");
-  const testingTargetTop = await setupStage(page, 4).evaluate((element) => element.getBoundingClientRect().top);
-  expect(testingTargetTop).toBeGreaterThanOrEqual(85);
-  expect(testingTargetTop).toBeLessThanOrEqual(88);
+  await waitForStageShellToSettle(page);
+  await expectStageAtSetupAnchor(4);
 });
 
 test("Stage 4 keeps normative copy, polished mirror labels, and operational upkeep routes", async ({ page }) => {
@@ -1367,11 +1449,11 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   currentReadiness.missing = [missingInvariant];
   currentReadiness.missingDetails = [{
     label: missingInvariant,
-    envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS",
+    envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
     secret: false,
   }];
   let mirror = unsyncedMirror();
-  let resourcePayload = workspaceResources({ connectReady: false });
+  let resourcePayload = workspaceResources({ connectReady: true });
   let driveVerifyRequest: { method: string; body: string | null } | null = null;
   let driveAdoptRequest: { method: string; body: unknown } | null = null;
   let gmailPrepareRequest: { method: string; body: string | null } | null = null;
@@ -1394,7 +1476,7 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ ...resourcePayload, connectReady: currentReadiness.credentialsPresent }),
+      body: JSON.stringify(resourcePayload),
     });
   });
 
@@ -1452,11 +1534,13 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   });
 
   await page.goto("/settings?section=google-workspace");
+  await setStageExpanded(page, 1, true);
   await expect(page.getByRole("table", { name: "Hosted Workspace configuration" })).toBeVisible();
   await expect(page.getByText(missingInvariant, { exact: true })).toBeVisible();
   await setStageExpanded(page, 2, true);
-  await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("WAITING ON STAGE 1");
+  await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS");
   await expect(setupStage(page, 2).getByRole("heading", { level: 3, name: "Company account authorization", exact: true })).toBeVisible();
+  await expect(setupStage(page, 2).getByRole("button", { name: "Connect Google Workspace" })).toBeEnabled();
   await setStageExpanded(page, 3, true);
   await expect(creationRow(page, "shared-drive")).toHaveAttribute("data-workspace-creation-state", "FOUND — ADOPT");
   await expect(creationRow(page, "shared-drive")).toContainText("Unlocks after Connect.");
@@ -2576,6 +2660,67 @@ test("first-load registry failure with no prior data hides Shared Drive adoption
   await expect(sharedDrive.getByText("Adoption controls become available when the resource registry returns the Shared Drive row.", { exact: true })).toBeVisible();
 });
 
+// Review defect: the resources GET and the settings GET were awaited in one Promise.all inside
+// a single try/catch, so an unrelated settings failure rejected the pair and blanked the whole
+// Stage 3 surface behind a resources error message. They are independent surfaces: the resource
+// inventory owns the stage, the settings read owns only the mailbox selector.
+test("a settings-read failure degrades only the intake mailbox selector, not the Stage 3 surface", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  await page.route("**/api/v1/settings/workspace", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "FCI TEST settings unavailable" }),
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-3");
+  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "creation", true);
+
+  // Stage 3 renders from its own endpoint, which succeeded.
+  const sharedDrive = creationRow(page, "shared-drive");
+  await expect(sharedDrive.getByRole("heading", { level: 4, name: "Shared Drive", exact: true })).toBeVisible();
+  await expect(sharedDrive.getByText("Adoption controls become available when the resource registry returns the Shared Drive row.", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Workspace resource status could not be loaded. Retry before using this setup summary.", { exact: true })).toHaveCount(0);
+
+  // Only the mailbox selector degrades, with its own error, its own retry, and saving blocked
+  // so the unloaded empty selection cannot overwrite the stored mailbox.
+  await setStageExpanded(page, 1, true);
+  const runtimeConfiguration = setupStage(page, 1).locator(
+    'section[aria-labelledby="workspace-runtime-configuration-heading"]',
+  );
+  await expect(runtimeConfiguration.getByRole("alert")).toContainText("The saved intake mailbox could not be loaded.");
+  await expect(runtimeConfiguration.getByRole("button", { name: "Retry mailbox", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Gmail intake mailbox")).toBeDisabled();
+  await expect(runtimeConfiguration.getByRole("button", { name: "Save mailbox", exact: true })).toBeDisabled();
+});
+
+test("a stalled settings read cannot keep the Stage 3 resource surface loading", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  let releaseSettingsRead: (() => void) | null = null;
+  await page.route("**/api/v1/settings/workspace", async (route) => {
+    await new Promise<void>((resolve) => {
+      releaseSettingsRead = resolve;
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ settings: { intakeMailbox: "" }, intakeMailboxOptions: [] }),
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-3");
+  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "creation", true);
+
+  const sharedDrive = creationRow(page, "shared-drive");
+  await expect(sharedDrive.getByRole("heading", { level: 4, name: "Shared Drive", exact: true })).toBeVisible();
+  await expect(page.getByText("Workspace resource status could not be loaded. Retry before using this setup summary.", { exact: true })).toHaveCount(0);
+  expect(releaseSettingsRead).not.toBeNull();
+  releaseSettingsRead?.();
+});
+
 test("stale Shared Drive registry data keeps adopt locked while direct verification remains available", async ({ page }) => {
   let verifyRequest: { method: string; body: string | null } | null = null;
   let resourcesShouldFail = false;
@@ -2762,7 +2907,7 @@ test("administrator connection health expander preserves account, permissions, w
   );
   await expect(runtimeConfiguration).toHaveCount(1);
   await expect(runtimeConfiguration.getByRole("heading", { level: 4, name: "App-managed Workspace configuration" })).toBeVisible();
-  await expect(runtimeConfiguration.getByText("Source: None", { exact: true })).toHaveCount(3);
+  await expect(runtimeConfiguration.getByText("Source: None", { exact: true })).toHaveCount(4);
   await expect(runtimeConfiguration.getByRole("button", { name: "Enable provisioning" })).toBeVisible();
   await expect(runtimeConfiguration.getByLabel("Client Directory spreadsheet ID")).toBeEnabled();
   await expect(runtimeConfiguration.getByLabel("Lead-form response spreadsheet ID")).toBeEnabled();

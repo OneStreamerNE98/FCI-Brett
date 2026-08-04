@@ -38,8 +38,21 @@ export function getConnectionScope(input?: oauth.EnvironmentValues) {
   });
 }
 
+type GoogleConnectionIdentityRow = Readonly<{
+  google_email: string;
+  status: string;
+}>;
+
+function findConnectionIdentity(config: oauth.GoogleRuntimeConfig) {
+  if (config.simulation) return Promise.resolve<GoogleConnectionIdentityRow | null>(null);
+  return env.DB.prepare(
+    "SELECT google_email, status FROM google_connections WHERE connection_key = ?",
+  ).bind(config.connectionKey).first<GoogleConnectionIdentityRow>();
+}
+
 export type EffectiveGoogleRuntimeSetup = Readonly<{
   config: EffectiveGoogleRuntimeConfig;
+  connectionIdentity: GoogleConnectionIdentityRow | null;
   resources: Awaited<ReturnType<typeof listWorkspaceResources>>;
   effectiveResources: EffectiveWorkspaceResources;
   blueprint: WorkspaceBlueprint;
@@ -54,6 +67,7 @@ function savedWorkspaceRuntimeValues(
     clientDirectorySheetId: record?.clientDirectorySheetId,
     clientAppointmentsCalendarId: preferences.appointmentCalendarId,
     fieldScheduleCalendarId: preferences.fieldCalendarId,
+    intakeMailbox: preferences.intakeMailbox,
     driveProvisioningEnabled:
       typeof record?.settings.driveProvisioningEnabled === "boolean"
         ? record.settings.driveProvisioningEnabled
@@ -66,10 +80,11 @@ export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleR
   const workspaceSettings = createD1WorkspaceSettingsRepository(
     env.DB as unknown as D1Database,
   );
-  const [savedRows, persistedBlueprint, persistedSettings] = await Promise.all([
+  const [savedRows, persistedBlueprint, persistedSettings, connection] = await Promise.all([
     listWorkspaceResources(env.DB, config.connectionKey),
     getWorkspaceBlueprint(env.DB, config.connectionKey),
     workspaceSettings.findById(WORKSPACE_SETTINGS_ID),
+    findConnectionIdentity(config),
   ]);
   const blueprint = persistedBlueprint?.blueprint ?? seedWorkspaceBlueprint();
   const effectiveResources = resolveEffectiveWorkspaceResources(
@@ -81,6 +96,7 @@ export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleR
     config,
     effectiveResources,
     savedWorkspaceRuntimeValues(persistedSettings),
+    connection && connection.status !== "revoked" ? connection.google_email : null,
   );
   const namedConfig = Object.freeze({
     ...effective,
@@ -93,6 +109,7 @@ export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleR
   });
   return Object.freeze({
     config: namedConfig,
+    connectionIdentity: connection,
     resources: Object.freeze([...savedRows]),
     effectiveResources,
     blueprint,
@@ -105,9 +122,10 @@ export async function getEffectiveGoogleRuntimeConfig(): Promise<EffectiveGoogle
   const workspaceSettings = createD1WorkspaceSettingsRepository(
     env.DB as unknown as D1Database,
   );
-  const [savedRows, persistedSettings] = await Promise.all([
+  const [savedRows, persistedSettings, connection] = await Promise.all([
     listWorkspaceResources(env.DB, config.connectionKey),
     workspaceSettings.findById(WORKSPACE_SETTINGS_ID),
+    findConnectionIdentity(config),
   ]);
   const savedValues = savedWorkspaceRuntimeValues(persistedSettings);
   return applyEffectiveWorkspaceConfig(
@@ -118,6 +136,7 @@ export async function getEffectiveGoogleRuntimeConfig(): Promise<EffectiveGoogle
       savedValues,
     ),
     savedValues,
+    connection && connection.status !== "revoked" ? connection.google_email : null,
   );
 }
 

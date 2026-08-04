@@ -61,6 +61,7 @@ type WorkspaceReadiness = {
   requiresReauthorization?: boolean;
   provisioningEnabled?: boolean;
   provisioningSource?: EffectiveConfigurationSource;
+  intakeMailboxSource?: EffectiveConfigurationSource;
   gmailEnabled?: boolean;
   calendarEnabled?: boolean;
   sheetsEnabled?: boolean;
@@ -93,6 +94,10 @@ type TenantResetPreview = {
 type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 type WorkspaceReadinessState = "idle" | "loading" | "ready" | "error";
 type WorkspaceSetupResourcesState = "idle" | "loading" | "ready" | "error";
+type WorkspaceSettingsPayload = {
+  settings?: { intakeMailbox?: string };
+  intakeMailboxOptions?: string[];
+};
 type StageFourVerificationState = "idle" | "loading" | "ready" | "error";
 type WorkspaceStageNumber = 1 | 2 | 3 | 4;
 type WorkspaceStageTone = "done" | "current" | "waiting" | "ready" | "neutral";
@@ -470,9 +475,12 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [gmailWorking, setGmailWorking] = useState(false);
   const [calendarWorking, setCalendarWorking] = useState(false);
   const [sheetsWorking, setSheetsWorking] = useState(false);
-  const [runtimeConfigurationWorking, setRuntimeConfigurationWorking] = useState<"drive" | "client-directory" | "lead-form" | null>(null);
+  const [runtimeConfigurationWorking, setRuntimeConfigurationWorking] = useState<"drive" | "client-directory" | "lead-form" | "intake-mailbox" | null>(null);
   const [clientDirectorySheetId, setClientDirectorySheetId] = useState("");
   const [leadFormResponseSheetId, setLeadFormResponseSheetId] = useState("");
+  const [intakeMailbox, setIntakeMailbox] = useState("");
+  const [intakeMailboxOptions, setIntakeMailboxOptions] = useState<string[]>([]);
+  const [intakeMailboxError, setIntakeMailboxError] = useState<string | null>(null);
   const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
   const [gmailTestEmailPassed, setGmailTestEmailPassed] = useState(false);
   const [calendarChecked, setCalendarChecked] = useState(false);
@@ -501,7 +509,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     settled: false,
   });
   const readinessChecked = useRef(false);
-  const stageThreeSubsectionsInitialized = useRef(false);
+  const [stageThreeSubsectionsInitialized, setStageThreeSubsectionsInitialized] = useState(false);
   const workspaceResourcesLoadIdRef = useRef(0);
 
   const updateStageThreeCreationStatus = useCallback((next: StageThreeSubsectionStatus) => {
@@ -521,7 +529,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   }, []);
 
   const toggleStageThreeSubsection = useCallback((subsectionKey: StageThreeSubsectionKey) => {
-    stageThreeSubsectionsInitialized.current = true;
+    setStageThreeSubsectionsInitialized(true);
     setStageThreeSubsectionOpen((current) => ({
       ...current,
       [subsectionKey]: !current[subsectionKey],
@@ -531,23 +539,27 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   useEffect(() => {
     if (
       !isAdmin
-      || stageThreeSubsectionsInitialized.current
+      || stageThreeSubsectionsInitialized
       || !stageThreeCreationStatus.settled
       || !stageThreeBlueprintStatus.settled
     ) return;
 
-    stageThreeSubsectionsInitialized.current = true;
     const firstIncomplete = !stageThreeCreationStatus.complete
       ? "creation"
       : !stageThreeBlueprintStatus.complete
         ? "blueprint"
         : null;
-    setStageThreeSubsectionOpen({
-      creation: firstIncomplete === "creation",
-      blueprint: firstIncomplete === "blueprint",
+    const initializationFrame = window.requestAnimationFrame(() => {
+      setStageThreeSubsectionsInitialized(true);
+      setStageThreeSubsectionOpen({
+        creation: firstIncomplete === "creation",
+        blueprint: firstIncomplete === "blueprint",
+      });
     });
+    return () => window.cancelAnimationFrame(initializationFrame);
   }, [
     isAdmin,
+    stageThreeSubsectionsInitialized,
     stageThreeBlueprintStatus.complete,
     stageThreeBlueprintStatus.settled,
     stageThreeCreationStatus.complete,
@@ -667,6 +679,21 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
   }, [isAdmin]);
 
+  /** Fills the mailbox selector. Owns its own error state: this read must never be able to
+   *  settle the Stage 3 surface, which belongs to the resources endpoint alone. */
+  const loadIntakeMailboxSettings = useCallback(async (force = false, isCurrent: () => boolean = () => true) => {
+    try {
+      const settingsData = await cachedGetJson<WorkspaceSettingsPayload>("/api/v1/settings/workspace", { force });
+      if (!isCurrent()) return;
+      setIntakeMailbox(settingsData.settings?.intakeMailbox ?? "");
+      setIntakeMailboxOptions(settingsData.intakeMailboxOptions ?? []);
+      setIntakeMailboxError(null);
+    } catch {
+      if (!isCurrent()) return;
+      setIntakeMailboxError("The saved intake mailbox could not be loaded. The rest of this stage is unaffected.");
+    }
+  }, []);
+
   const loadWorkspaceResources = useCallback(async (force = false) => {
     if (!isAdmin) return;
     // Gate on the latest invocation: with a ?google=... OAuth callback the admin
@@ -678,17 +705,24 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     const loadId = ++workspaceResourcesLoadIdRef.current;
     setWorkspaceResourcesState("loading");
     setWorkspaceResourcesError(null);
+    const isCurrent = () => loadId === workspaceResourcesLoadIdRef.current;
+    // Two independent surfaces, settled independently. The resource inventory drives the whole
+    // Stage 3 panel — Shared Drive adoption, the blueprint editor, the creation flows — while
+    // the settings read only fills the mailbox selector. Awaiting both in one try/catch let an
+    // unrelated settings 500 blank the entire stage behind a resources error message.
+    void loadIntakeMailboxSettings(force, isCurrent);
     try {
-      const data = await cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force });
-      if (loadId !== workspaceResourcesLoadIdRef.current) return;
-      setWorkspaceResources(data);
+      const resources = await cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force });
+      if (!isCurrent()) return;
+      setWorkspaceResources(resources);
       setWorkspaceResourcesState("ready");
+      return;
     } catch {
-      if (loadId !== workspaceResourcesLoadIdRef.current) return;
+      if (!isCurrent()) return;
       setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
       setWorkspaceResourcesState("error");
     }
-  }, [isAdmin]);
+  }, [isAdmin, loadIntakeMailboxSettings]);
 
   const refreshWorkspaceSetup = useCallback(async (force = false) => {
     await Promise.all([
@@ -703,6 +737,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     if (change.blueprintChanged) setBlueprintEditorRevision((current) => current + 1);
     invalidateCachedGet("/api/v1/google-workspace");
     invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+    invalidateCachedGet("/api/v1/settings/workspace");
     invalidateCachedGet("/api/v1/integrations/google/sheets/status");
     await Promise.all([checkSetup(true), loadWorkspaceResources(true)]);
   }, [checkSetup, loadWorkspaceResources]);
@@ -993,6 +1028,35 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
   }
 
+  async function saveIntakeMailbox() {
+    if (!isAdmin || simulation) return;
+    setRuntimeConfigurationWorking("intake-mailbox");
+    try {
+      const response = await fetch("/api/v1/settings/workspace", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intakeMailbox }),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        settings?: { intakeMailbox?: string };
+        error?: string;
+      };
+      if (!response.ok || !data.settings) {
+        throw new Error(data.error ?? "The Gmail intake mailbox could not be saved.");
+      }
+      setIntakeMailbox(data.settings.intakeMailbox ?? "");
+      invalidateCachedGet("/api/v1/settings/workspace");
+      invalidateCachedGet("/api/v1/google-workspace");
+      invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+      await refreshWorkspaceSetup(true);
+      notify("The Gmail intake mailbox selection was saved.", "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The Gmail intake mailbox could not be saved.", "error");
+    } finally {
+      setRuntimeConfigurationWorking(null);
+    }
+  }
+
   async function verifyConfigurationSheet(
     kind: "client-directory" | "lead-form",
     spreadsheetId: string,
@@ -1143,6 +1207,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     || workspaceResourcesState === "idle"
     || workspaceResourcesState === "loading"
     || sheetsWorking;
+  const stageThreeLayoutSettled = !statusSourcesLoading && (
+    !isAdmin
+    || (
+      stageThreeCreationStatus.settled
+      && stageThreeBlueprintStatus.settled
+      && stageThreeSubsectionsInitialized
+    )
+  );
   const allStatusSourcesAvailable = Boolean(workspace && connectionHealth && workspaceResources);
   const statusSourcesUnavailable = workspaceReadinessState === "error"
     || connectionHealthState === "error"
@@ -1394,6 +1466,21 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                 <AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={simulation || runtimeConfigurationWorking !== null} onClick={() => void saveDriveProvisioning(workspace?.provisioningEnabled !== true)}>{simulation ? "Always enabled in simulation" : runtimeConfigurationWorking === "drive" ? "Saving…" : workspace?.provisioningEnabled ? "Disable provisioning" : "Enable provisioning"}</AdministratorActionButton>
               </article>
               <article>
+                <div><label htmlFor="workspace-intake-mailbox"><strong>Gmail intake mailbox</strong></label><span>Source: {effectiveConfigurationSourceLabel(workspace?.intakeMailboxSource)}</span><span>Choose one account from the hosted authorized-account allowlist. The app reads Gmail as the connected account.</span></div>
+                {intakeMailboxError && <div className="workspace-connection-health-error" role="alert"><span>{intakeMailboxError}</span><button className="soft-button" type="button" onClick={() => void loadIntakeMailboxSettings(true)}>Retry mailbox</button></div>}
+                <div className="workspace-copy-value">
+                  <select id="workspace-intake-mailbox" value={intakeMailbox} onChange={(event) => setIntakeMailbox(event.target.value)} disabled={!isAdmin || simulation || runtimeConfigurationWorking !== null || intakeMailboxError !== null}>
+                    <option value="">Use hosted intake mailbox</option>
+                    {intakeMailbox && !intakeMailboxOptions.includes(intakeMailbox) && <option value={intakeMailbox} disabled>{intakeMailbox} (no longer authorized)</option>}
+                    {intakeMailboxOptions.map((mailbox) => <option value={mailbox} key={mailbox}>{mailbox}</option>)}
+                  </select>
+                  {/* Saving is blocked while the read failed: the selector never loaded, so its
+                      value is the empty "use hosted mailbox" option, and saving that would
+                      clear a stored selection the operator cannot even see. */}
+                  <AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={simulation || runtimeConfigurationWorking !== null || intakeMailboxError !== null} onClick={() => void saveIntakeMailbox()}>{simulation ? "Hosted selection unavailable in simulation" : runtimeConfigurationWorking === "intake-mailbox" ? "Saving…" : "Save mailbox"}</AdministratorActionButton>
+                </div>
+              </article>
+              <article>
                 <div><strong>Client Directory spreadsheet ID</strong><span>Source: {effectiveConfigurationSourceLabel(workspace?.sheets?.clientDirectory?.source)}</span></div>
                 <div className="workspace-copy-value"><input aria-label="Client Directory spreadsheet ID" value={clientDirectorySheetId} onChange={(event) => setClientDirectorySheetId(event.target.value)} placeholder="Spreadsheet ID" disabled={!isAdmin || runtimeConfigurationWorking !== null} /><AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={!clientDirectorySheetId.trim() || runtimeConfigurationWorking !== null} onClick={() => void verifyConfigurationSheet("client-directory", clientDirectorySheetId)}>{runtimeConfigurationWorking === "client-directory" ? "Verifying…" : "Verify and adopt"}</AdministratorActionButton></div>
               </article>
@@ -1480,7 +1567,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         tone={neutralStageStatus ? "neutral" : stageThreeComplete ? "done" : stageTwoComplete ? "current" : "waiting"}
         complete={stageThreeComplete}
         firstIncomplete={currentStageNumber === 3}
-        layoutSettled={!statusSourcesLoading}
+        layoutSettled={stageThreeLayoutSettled}
         statusHint="This stage is complete when every required Drive, folder, spreadsheet, and template resource is created or adopted."
       >
         {isAdmin ? <div className={panelStyles.stageThreeFrame}>

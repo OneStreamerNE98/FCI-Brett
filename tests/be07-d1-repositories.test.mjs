@@ -787,13 +787,12 @@ test("mail-item adapter persists a bounded failed row with nullable analysis and
 });
 
 test("Workspace Settings GET/PATCH keep their public contract while delegating persistence", async () => {
-  const database = new FakeDatabase({
-    first: () => ({
-      id: "workspace",
-      shared_drive_id: "saved-drive",
-      client_directory_sheet_id: "saved-sheet",
-      intake_mailbox: "ops@example.test",
-      settings_json: JSON.stringify({
+  let workspaceRow = {
+    id: "workspace",
+    shared_drive_id: "saved-drive",
+    client_directory_sheet_id: "saved-sheet",
+    intake_mailbox: "ops@example.test",
+    settings_json: JSON.stringify({
         timezone: "America/Chicago",
         appointmentCalendarId: "client-calendar",
         fieldCalendarId: "field-calendar",
@@ -802,10 +801,25 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
           orgQa: false,
           futureFeature: "preserved",
         },
-      }),
-      updated_by: ADMIN_EMAIL,
-      updated_at: 40,
     }),
+    updated_by: ADMIN_EMAIL,
+    updated_at: 40,
+  };
+  const database = new FakeDatabase({
+    first: () => workspaceRow,
+    run: (statement) => {
+      const patch = JSON.parse(statement.values[1]);
+      workspaceRow = {
+        ...workspaceRow,
+        settings_json: JSON.stringify({
+          ...JSON.parse(workspaceRow.settings_json),
+          ...patch,
+        }),
+        updated_by: statement.values.at(-2),
+        updated_at: statement.values.at(-1),
+      };
+      return 1;
+    },
   });
   setEnvironment(database);
 
@@ -821,6 +835,9 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
       appointmentCalendarId: "client-calendar",
       fieldCalendarId: "field-calendar",
     },
+    // No `intakeMailboxOptions`: this GET is an office user, and the hosted
+    // GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS allowlist is administrator-only. The saved
+    // `settings.intakeMailbox` above stays readable, so the deep-equal still pins it.
     updatedAt: 40,
   });
 
@@ -837,7 +854,7 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
   assert.equal(patchBody.settings.timezone, "America/Denver");
   assert.equal(patchBody.settings.appointmentReminderHours, 6);
   assert.equal(patchBody.settings.clientReminderHours, 48);
-  const write = database.statements.at(-1);
+  const write = database.runs.at(-1);
   assert.match(write.sql, /^INSERT INTO workspace_settings/u);
   assert.doesNotMatch(write.sql, /client_directory_sheet_id = excluded/u);
   const storedSettings = JSON.parse(write.values[1]);

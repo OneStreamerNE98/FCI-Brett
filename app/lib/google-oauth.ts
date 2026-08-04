@@ -1,3 +1,4 @@
+import { maskGoogleAccountAddress } from "./google-account-mask.ts";
 import { GoogleIntegrationError } from "./google-integration-error";
 import {
   fetchGoogleProvider,
@@ -403,6 +404,7 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = {}) {
   const allowedDomains = list(workspaceValue(input, "ALLOWED_DOMAINS")).map((domain) => domain.replace(/^@/, ""));
   const clientDirectorySheet = optionalGoogleResourceId(workspaceValue(input, "CLIENT_DIRECTORY_SHEET_ID"));
   const intakeMailbox = workspaceValue(input, "INTAKE_MAILBOX")?.trim().toLowerCase();
+  const intakeMailboxDomain = intakeMailbox?.split("@")[1] ?? "";
   const clientAppointmentsCalendarId = workspaceValue(input, "CLIENT_APPOINTMENTS_CALENDAR_ID")?.trim();
   const fieldScheduleCalendarId = workspaceValue(input, "FIELD_SCHEDULE_CALENDAR_ID")?.trim();
   const leadFormResponseSheet = optionalGoogleResourceId(
@@ -433,11 +435,13 @@ export function getGoogleRuntimeConfig(input: EnvironmentValues = {}) {
     ...(gmailEnabled && !intakeMailbox ? [{ label: "Google Workspace intake mailbox", envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX", secret: false }] : []),
     ...(gmailEnabled
       && intakeMailbox
-      && expectedGoogleEmails.length > 0
-      && (expectedGoogleEmails.length !== 1 || expectedGoogleEmails[0] !== intakeMailbox)
+      && (
+        !expectedGoogleEmails.includes(intakeMailbox)
+        || !allowedDomains.includes(intakeMailboxDomain)
+      )
       ? [{
-          label: "Google Workspace intake mailbox matching the single approved connection account",
-          envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS",
+          label: "Google Workspace intake mailbox included in the authorized accounts and allowed domains",
+          envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
           secret: false,
         }]
       : []),
@@ -766,7 +770,7 @@ export async function getGoogleConnectionStatus(
   return {
     connected: status === "connected",
     status,
-    account: email && !severed ? `${email.slice(0, 2)}•••@${email.split("@")[1] ?? ""}` : null,
+    account: !severed ? maskGoogleAccountAddress(email) : null,
     services,
     grantedServices: severed ? null : grantedServices,
     requiresReauthorization: severed ? false : requiresReauthorization,

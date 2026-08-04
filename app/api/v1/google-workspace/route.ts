@@ -62,6 +62,11 @@ export async function GET(request: NextRequest) {
       requiresReauthorization: connection.requiresReauthorization,
       provisioningEnabled: google.provisioningEnabled,
       provisioningSource: google.effectiveSources.driveProvisioningEnabled,
+      // Same channel and shape as provisioningSource above: the Gmail intake row is an
+      // App-managed configuration row like its siblings, so it names its effective source
+      // (SET-13 `app|env|none`) instead of leaving the operator to guess whether the saved
+      // value or the hosted fallback is in force.
+      intakeMailboxSource: google.effectiveSources.intakeMailbox,
       gmailEnabled: google.gmailEnabled,
       calendarEnabled: google.calendarEnabled,
       // `source` alone cannot say which value is in force: the resolver maps BOTH an adopted

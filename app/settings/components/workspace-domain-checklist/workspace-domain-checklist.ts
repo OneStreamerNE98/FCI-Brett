@@ -110,7 +110,7 @@ export const WORKSPACE_DOTENV_PLACEHOLDERS: Readonly<Record<string, string>> = {
 
 const DOMAIN_ENV = "GOOGLE_WORKSPACE_ALLOWED_DOMAINS";
 const ACCOUNT_ENVS = ["GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", "GOOGLE_WORKSPACE_INTAKE_MAILBOX"] as const;
-const ACCOUNT_MATCH_ENV = "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS";
+const ACCOUNT_MATCH_LABEL = /intake mailbox .*matching connected account/iu;
 const OAUTH_ENVS = ["GOOGLE_WORKSPACE_CLIENT_ID", "GOOGLE_WORKSPACE_OAUTH_REDIRECT_URI"] as const;
 const SECRET_ENVS = ["GOOGLE_WORKSPACE_CLIENT_SECRET", "GOOGLE_WORKSPACE_TOKEN_ENCRYPTION_KEY"] as const;
 const ENVIRONMENT_KEY_PATTERN = /[A-Z][A-Z0-9_]+/g;
@@ -156,7 +156,10 @@ function operationsAccountStatus(evidence: WorkspaceDomainChecklistEvidence, mis
   if (evidence.resourcesKnown && evidence.intakeMailboxMatches === false) return "Account mismatch";
   if (evidence.connectionKnown && evidence.connectionStatus === "connected" && evidence.resourcesKnown && evidence.intakeMailboxMatches === true) return "Account matched";
   if (!evidence.readinessKnown) return "Unavailable";
-  if (evidence.missingDetails.some((detail) => detail.envVar === ACCOUNT_MATCH_ENV)) return "Account mismatch";
+  if (evidence.missingDetails.some((detail) => (
+    detail.envVar === "GOOGLE_WORKSPACE_INTAKE_MAILBOX"
+    && ACCOUNT_MATCH_LABEL.test(detail.label)
+  ))) return "Account mismatch";
   const pairStatus = statusForConfiguredPair(ACCOUNT_ENVS.filter((environmentKey) => missing.has(environmentKey)).length);
   if (pairStatus) return pairStatus;
   if (!evidence.resourcesKnown) return "Unavailable";

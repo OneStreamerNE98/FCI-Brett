@@ -25,9 +25,10 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
 });
 
-const [oauthModule, calendarModule] = await Promise.all([
+const [oauthModule, calendarModule, gmailModule] = await Promise.all([
   vite.ssrLoadModule("/app/lib/google-oauth-sites.ts"),
   vite.ssrLoadModule("/app/lib/google-calendar-client.ts"),
+  vite.ssrLoadModule("/app/lib/google-gmail.ts"),
 ]);
 
 after(async () => {
@@ -130,7 +131,7 @@ test("standard Google integration error responses preserve typed and fallback bo
   assert.equal(await fallback.text(), '{"error":"Safe fallback"}');
 });
 
-test("Gmail readiness requires the intake mailbox to be the single approved connection account", () => {
+test("Gmail readiness accepts an allowlisted mailbox in an allowed domain without a singleton rule", () => {
   const encryptionKey = Buffer.alloc(32, 9).toString("base64url");
   const matching = oauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey, {
     GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail",
@@ -143,23 +144,17 @@ test("Gmail readiness requires the intake mailbox to be the single approved conn
     GOOGLE_WORKSPACE_INTAKE_MAILBOX: "intake@cherryhillfci.com",
   }));
   assert.equal(mismatched.oauthReady, false);
-  assert.ok(mismatched.missing.includes("Google Workspace intake mailbox matching the single approved connection account"));
+  assert.ok(mismatched.missing.includes("Google Workspace intake mailbox included in the authorized accounts and allowed domains"));
 
   const multipleApprovedAccounts = oauthModule.getGoogleRuntimeConfig(workspaceConfigInput(encryptionKey, {
     GOOGLE_WORKSPACE_ENABLED_SERVICES: "drive,gmail",
     GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS: "operations@cherryhillfci.com,admincrm@cherryhillfci.com",
     GOOGLE_WORKSPACE_INTAKE_MAILBOX: "operations@cherryhillfci.com",
   }));
-  assert.equal(multipleApprovedAccounts.oauthReady, false);
-  assert.ok(multipleApprovedAccounts.missing.includes("Google Workspace intake mailbox matching the single approved connection account"));
-  assert.deepEqual(
-    multipleApprovedAccounts.missingDetails.find((detail) => detail.label === "Google Workspace intake mailbox matching the single approved connection account"),
-    {
-      label: "Google Workspace intake mailbox matching the single approved connection account",
-      envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS",
-      secret: false,
-    },
-  );
+  assert.equal(multipleApprovedAccounts.oauthReady, true);
+  assert.equal(multipleApprovedAccounts.missingDetails.some((detail) => (
+    detail.envVar === "GOOGLE_WORKSPACE_INTAKE_MAILBOX"
+  )), false);
 });
 
 test("Workspace readiness describes missing hosted values without returning their values", () => {
@@ -194,14 +189,39 @@ test("Workspace readiness describes missing hosted values without returning thei
     envVar: "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID",
     secret: false,
   });
-  assert.deepEqual(byLabel.get("Google Workspace intake mailbox matching the single approved connection account"), {
-    label: "Google Workspace intake mailbox matching the single approved connection account",
-    envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX ↔ GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS",
+  assert.deepEqual(byLabel.get("Google Workspace intake mailbox included in the authorized accounts and allowed domains"), {
+    label: "Google Workspace intake mailbox included in the authorized accounts and allowed domains",
+    envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
     secret: false,
   });
   assert.deepEqual(missing.missing, missing.missingDetails.map((detail) => detail.label));
   assert.equal(JSON.stringify(missing.missingDetails).includes(configuredSecret), false);
   assert.ok(missing.missingDetails.every((detail) => Object.keys(detail).sort().join(",") === "envVar,label,secret"));
+});
+
+test("the send-test default recipient follows the existing authorized-account or approved-domain law", () => {
+  assert.equal(gmailModule.validateWorkspaceRecipient(undefined, {
+    simulation: false,
+    intakeMailbox: "dispatch@cherryhillfci.com",
+    expectedGoogleEmails: ["dispatch@cherryhillfci.com"],
+    allowedDomains: ["cherryhillfci.com"],
+  }), "dispatch@cherryhillfci.com");
+
+  assert.throws(
+    () => gmailModule.validateWorkspaceRecipient(undefined, {
+      simulation: false,
+      intakeMailbox: "outside@unapproved.example",
+      expectedGoogleEmails: ["dispatch@cherryhillfci.com"],
+      allowedDomains: ["cherryhillfci.com"],
+    }),
+    (error) => error.code === "invalid_workspace_recipient" && error.status === 403,
+  );
+  assert.equal(gmailModule.validateWorkspaceRecipient("unlisted@cherryhillfci.com", {
+    simulation: false,
+    intakeMailbox: "dispatch@cherryhillfci.com",
+    expectedGoogleEmails: ["dispatch@cherryhillfci.com"],
+    allowedDomains: ["cherryhillfci.com"],
+  }), "unlisted@cherryhillfci.com");
 });
 
 test("the Sites simulation status does not require production encryption configuration", async () => {

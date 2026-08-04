@@ -441,7 +441,7 @@ test("deployment and source-only history is coupled by semantic paragraphs, not 
   );
 });
 
-test("Workspace setup documents and examples enforce the one-account Gmail boundary", () => {
+test("Workspace setup documents enforce an environment-owned allowlist and selected-account Gmail boundary", () => {
   const envExample = read(".env.example");
   const rollout = read("docs/google-workspace-rollout-guide.md");
   const hostedChecklist = read("docs/task-checklists/03-hosted-development-connection.md");
@@ -451,13 +451,13 @@ test("Workspace setup documents and examples enforce the one-account Gmail bound
   assert.doesNotMatch(rollout, /jason\.grass@gmail\.com/i);
   assertIncludesTokens(
     rollout,
-    ["GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", "GOOGLE_WORKSPACE_INTAKE_MAILBOX", "exactly one account", "readiness fails closed"],
-    "Workspace rollout one-account boundary",
+    ["GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", "GOOGLE_WORKSPACE_INTAKE_MAILBOX", "multiple", "selected", "connected account", "readiness fails closed"],
+    "Workspace rollout selected-account boundary",
   );
   assertIncludesTokens(
     hostedChecklist,
-    ["GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", "GOOGLE_WORKSPACE_INTAKE_MAILBOX", "readiness fails closed"],
-    "Hosted checklist one-account boundary",
+    ["GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS", "select one", "connected", "readiness fails closed"],
+    "Hosted checklist selected-account boundary",
   );
   assert.ok(markdownLinkTargets(readme).some((target) => target.includes("docs/google-workspace-organization.md")));
   assert.match(readme, /ChatGPT Sites project's runtime environment settings/);

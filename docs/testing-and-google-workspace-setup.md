@@ -77,7 +77,10 @@ GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID=
 GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID=
 ```
 
-When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address. Readiness fails closed when the values differ because Gmail operates as the connected account.
+When Gmail is enabled, `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` may contain multiple approved
+company accounts. Select one of those addresses in Settings as the intake mailbox, and
+connect OAuth as that exact address. Readiness fails closed when the selected and connected
+accounts differ because Gmail operates as `users/me`.
 
 Connect Workspace, adopt and verify the Shared Drive, ensure its root folders and
 blueprint spreadsheets from Resources, then enable Drive provisioning. The application

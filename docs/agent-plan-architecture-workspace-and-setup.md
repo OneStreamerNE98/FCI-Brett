@@ -1070,7 +1070,7 @@ outcomes.
 **Effort:** small. **Cost:** $0.
 
 ### EDIT-09 · The contact editor re-renders mid-edit and lands a value in the wrong field (small-medium)
-**Status:** In progress — `codex/edit09-contact-editor-race`
+**Status:** Complete — PR #297, August 4, 2026. Source-only and undeployed. The shared `AccessibleOverlay` now preserves focus already inside the panel before its delayed initial-focus callback runs; deterministic regression coverage pins that behavior. The fix changed zero `app/FloorOpsApp.tsx` lines and took no queue slot.
 
 **CORRECTED August 4, 2026 (orchestrator, from the build trace + review) — the remount
 premise below is disproven; the packet text is preserved as written.** The trace showed the
@@ -2627,6 +2627,7 @@ named with outcomes.
 **Effort:** medium. **Cost:** $0.
 
 ### SET-41 · Intake mailbox selected in Settings; the allowlist stays in env (medium, after SET-40)
+**Status:** In progress — `codex/set41-intake-mailbox`
 
 **Why:** owner request August 3, 2026 — define mailbox addresses in the front end. The
 configuration audit's verdict, upheld under adversarial review: env keeps
@@ -4755,8 +4756,7 @@ in the tail, making six. Recommended claim order, most valuable first:
 (DES-16 and DES-17 added August 4, 2026 with the usability wave: DES-16 is small,
 adoption-flagship, and precedes the large DES-14 extraction deliberately; DES-17's slot
 need is the app-shell toast/boundary machinery that remains in `FloorOpsApp.tsx` after
-DES-14, so it follows the extraction. If EDIT-09's dialog host proves to live in
-`FloorOpsApp.tsx`, EDIT-09 claims ahead of DES-16 per its packet.)
+DES-14, so it follows the extraction.)
 
 - **AI-12** — takes NO `FloorOpsApp.tsx` slot (adversarial review, August 3, 2026): the
   mount (`app/FloorOpsApp.tsx:1784`) passes no analysis or queue state — `bucket` is a

@@ -1,3 +1,4 @@
+import { maskGoogleAccountAddress } from "./google-account-mask.ts";
 import type { GoogleRuntimeConfig } from "./google-oauth";
 
 export const WORKSPACE_RESOURCE_TYPES = [
@@ -83,6 +84,7 @@ export type SavedWorkspaceRuntimeValues = Readonly<{
   clientDirectorySheetId?: string | null;
   clientAppointmentsCalendarId?: string | null;
   fieldScheduleCalendarId?: string | null;
+  intakeMailbox?: string | null;
   driveProvisioningEnabled?: boolean | null;
 }>;
 
@@ -90,6 +92,7 @@ export type EffectiveGoogleRuntimeConfig = GoogleRuntimeConfig & Readonly<{
   connectReady: boolean;
   effectiveSources: Readonly<{
     driveProvisioningEnabled: EffectiveConfigurationSource;
+    intakeMailbox: EffectiveConfigurationSource;
   }>;
 }>;
 
@@ -103,6 +106,7 @@ export type EffectiveConfigurationValue<T> = Readonly<{
 const RESOURCE_ENV_VARS = new Set(
   Object.values(EFFECTIVE_WORKSPACE_RESOURCE_SPECS).map((spec) => spec.envVar),
 );
+const INTAKE_MAILBOX_ENV_VAR = "GOOGLE_WORKSPACE_INTAKE_MAILBOX";
 
 function normalizedId(value: string | undefined) {
   const normalized = value?.trim();
@@ -248,18 +252,62 @@ export function applyEffectiveWorkspaceConfig(
   config: GoogleRuntimeConfig,
   resources: EffectiveWorkspaceResources,
   savedValues: SavedWorkspaceRuntimeValues = {},
+  connectedGoogleEmail?: string | null,
 ): EffectiveGoogleRuntimeConfig {
   const appSatisfiedEnvVars = new Set(
     Object.entries(resources)
       .filter(([, resource]) => resource.source === "app")
       .map(([key]) => EFFECTIVE_WORKSPACE_RESOURCE_SPECS[key as EffectiveWorkspaceResourceKey].envVar),
   );
-  const missingDetails = Object.freeze(
-    config.missingDetails.filter((detail) => !appSatisfiedEnvVars.has(detail.envVar)),
+  const intakeMailbox = resolveEffectiveTextConfiguration(
+    savedValues.intakeMailbox,
+    config.intakeMailbox,
   );
+  const normalizedConnectedGoogleEmail = normalizedId(
+    connectedGoogleEmail?.trim().toLowerCase(),
+  );
+  const intakeMailboxDomain = intakeMailbox.value?.split("@")[1] ?? "";
+  const mailboxDetail = config.simulation || !config.gmailEnabled
+    ? null
+    : !intakeMailbox.value
+      ? {
+          label: "Google Workspace intake mailbox",
+          envVar: INTAKE_MAILBOX_ENV_VAR,
+          secret: false,
+        }
+      : !config.expectedGoogleEmails.includes(intakeMailbox.value)
+        || !config.allowedDomains.includes(intakeMailboxDomain)
+        ? {
+            label: "Google Workspace intake mailbox included in the authorized accounts and allowed domains",
+            envVar: INTAKE_MAILBOX_ENV_VAR,
+            secret: false,
+          }
+        : normalizedConnectedGoogleEmail
+          && normalizedConnectedGoogleEmail !== intakeMailbox.value
+          ? {
+              // `missing`/`missingDetails` reach every office user through
+              // GET /api/v1/google-workspace, which masks the same address one field away in
+              // `connection.account`. So the connected address is masked here too. The saved
+              // intake mailbox stays readable: the office UI already shows that selector and
+              // its option list, so masking it here would hide nothing.
+              label: `Google Workspace intake mailbox ${intakeMailbox.value} matching connected account ${maskGoogleAccountAddress(normalizedConnectedGoogleEmail) ?? "the connected account"}`,
+              envVar: INTAKE_MAILBOX_ENV_VAR,
+              secret: false,
+            }
+          : null;
+  const missingDetails = Object.freeze([
+    ...config.missingDetails.filter((detail) => (
+      detail.envVar !== INTAKE_MAILBOX_ENV_VAR
+      && !appSatisfiedEnvVars.has(detail.envVar)
+    )),
+    ...(mailboxDetail ? [Object.freeze(mailboxDetail)] : []),
+  ]);
   const missing = Object.freeze(missingDetails.map((detail) => detail.label));
   const nonResourceMissing = config.missingDetails.filter(
-    (detail) => !RESOURCE_ENV_VARS.has(detail.envVar),
+    (detail) => (
+      !RESOURCE_ENV_VARS.has(detail.envVar)
+      && detail.envVar !== INTAKE_MAILBOX_ENV_VAR
+    ),
   );
   const driveProvisioning = resolveEffectiveBooleanConfiguration(
     savedValues.driveProvisioningEnabled,
@@ -282,6 +330,7 @@ export function applyEffectiveWorkspaceConfig(
       resources.leadFormResponseSheet.source === "app"
         ? false
         : config.leadFormResponseSheetIdInvalid,
+    intakeMailbox: config.simulation ? config.intakeMailbox : intakeMailbox.value,
     missingDetails,
     missing,
     oauthReady: config.simulation || missingDetails.length === 0,
@@ -289,6 +338,7 @@ export function applyEffectiveWorkspaceConfig(
     provisioningEnabled: config.simulation || driveProvisioning.value,
     effectiveSources: Object.freeze({
       driveProvisioningEnabled: config.simulation ? "none" : driveProvisioning.source,
+      intakeMailbox: config.simulation ? "none" : intakeMailbox.source,
     }),
   });
 }
