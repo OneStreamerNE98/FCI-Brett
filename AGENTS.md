@@ -103,7 +103,7 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   conflict, the home wins. Copies drift; this session proved it twice.
 - **The status-line grammar is mechanically enforced** by `tests/task-tracking-docs.test.mjs`
   across five packet ledgers — the marker is bold `**Status:**`, it sits on the line directly
-  below the heading, and only six forms are legal. An invalid line fails CI with a message
+  below the heading, and only seven forms are legal. An invalid line fails CI with a message
   that does not name the legal forms, so copy the table in the plan's "Task tracking and doc
   reconciliation" section rather than guessing.
 - **If your work unexpectedly needs a file another agent's open PR touches**, stop and
@@ -156,7 +156,7 @@ Packet Acceptance lines frequently require e2e evidence ("simulation e2e", "prov
 
 If a command cannot run, record the exact blocker rather than treating unverified work as complete. Known environment blocker: `npm test` requires Node ≥ 22.13.0 (`vinext` uses `node:fs/promises.glob`); on Node 20 it fails during the build, which is a toolchain problem, not a code failure.
 
-**Golden hashes.** The definition lives in the plan ledger's Global guardrail 7b — read that, not a summary. Short form: two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup; `npm run test:e2e` evaluates them against the live DOM, **and three Node suites additionally pin the digest constants byte-for-byte** (`ai04-today-view`, `fix15-toast-and-folds`, `nfix04-phone-polish`), so editing a digest also fails `npm test`. A mismatch is a signal, not a chore; regeneration is a sanctioned event restricted to packets that explicitly say so, and it must update the three pinning suites in the same commit. Never paste a new digest in to make a suite pass.
+**Golden hashes.** The definition lives in the plan ledger's Global guardrail 7b — read that, not a summary. Short form: two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup; `npm run test:e2e` evaluates them against the live DOM, **and three Node suites additionally pin the digest constants byte-for-byte** (`ai04-today-view`, `fix15-toast-and-folds`, `nfix04-phone-polish`), so editing a digest also fails `npm test`. A mismatch is a signal, not a chore. Regeneration is a sanctioned event available to ANY packet whose PR includes owner-approved before/after screenshots of both pinned pages at 1280 (with the change rationale) and updates the three additional pinning suites in the same commit. The named-packet restriction was lifted August 3, 2026 by owner decision under the standing law-lift rule (checklist 06); scope of the lift: the authority model only — the hashes, the pinned selectors, and the three-suite requirement are unchanged. Never paste a new digest in to make a suite pass.
 
 ## Security and data rules
 

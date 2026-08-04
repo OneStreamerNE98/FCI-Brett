@@ -141,10 +141,14 @@ below, which also covers the state of GitHub itself (issues/PRs).
    `tests/ai04-today-view.test.mjs:529-530`, `tests/fix15-toast-and-folds.test.mjs:141-145`,
    `tests/nfix04-phone-polish.test.mjs:278-287` — so editing a digest also fails `npm test`.
    "Golden hashes untouched" in an Accept line means all of the above pass with the digests
-   unchanged. A mismatch is a signal, not a chore: regeneration is a sanctioned,
-   diff-reviewed event restricted to packets that explicitly say so (historically DES-05
-   and DES-07), and it updates the three pinning suites in the same commit. Never paste a
-   new digest in to make a suite pass.
+   unchanged. A mismatch is a signal, not a chore. Regeneration is a sanctioned,
+   diff-reviewed event available to ANY packet whose PR includes owner-approved
+   before/after screenshots of both pinned pages at 1280 (with the change rationale) and
+   updates the three additional pinning suites in the same commit. The named-packet
+   restriction (historically DES-05 and DES-07) was lifted August 3, 2026 by owner
+   decision under the standing law-lift rule (checklist 06); scope of the lift: the
+   authority model only — the hashes, the pinned selectors, and the three-suite
+   requirement are unchanged. Never paste a new digest in to make a suite pass.
 8. Visual/design remediation through PR #30 is included in private Sites development
    version 40 and is tracked in `docs/design-critique-fix-plan.md`. The source-only
    `codex/actionable-lists` Phase 3 slice is complete in PR #33 and is not deployed.
@@ -3013,12 +3017,13 @@ not become a separate task source of truth.
    - The status line must sit on the line **directly below the packet heading**, with no
      blank line between them.
 
-   The six legal forms are exactly:
+   The seven legal forms are exactly:
 
    | Form | Example |
    |---|---|
    | Complete | `**Status:** Complete — PR #216, July 26, 2026.` |
    | Complete, multi-PR | `**Status:** Complete — PR #185 + PR #195, July 25, 2026.` |
+   | Complete — owner, `<Month D, YYYY>` | `**Status:** Complete — owner, August 3, 2026.` — for owner-performed console/manual work; agents never write it on an owner's behalf without the owner stating the work is done. |
    | In review | `**Status:** In review — PR #217` |
    | In progress | ``**Status:** In progress — `codex/set22-create-drive-files` `` |
    | Blocked | `**Status:** Blocked — awaiting owner prioritization` |
@@ -3108,8 +3113,12 @@ Owner-approved July 22, 2026. Design authority: `docs/dashboard-design-spec.md`
 guardrails and the interactive-vs-static affordance grammar live in the spec —
 every packet's PR includes 1280 px and 390 px screenshots. House rules: at most
 ONE in-flight packet touching `app/globals.css`; `app/FloorOpsApp.tsx` strictly
-serial; golden-hash regeneration only in DES-05 (both hashes) and DES-07
-(Reports only), isolated and diff-reviewed; e2e aria-labels and `data-layout-*`
+serial; golden-hash regeneration only under Global guardrail 7b's screenshot
+sign-off authority — available to ANY packet whose PR includes owner-approved
+before/after screenshots of both pinned pages at 1280 (with the change
+rationale) and updates the three additional pinning suites in the same commit
+(named-packet restriction, historically DES-05 and DES-07, lifted August 3,
+2026; checklist 06) — isolated and diff-reviewed; e2e aria-labels and `data-layout-*`
 attributes byte-identical; pinned-source tests updated mutation-sensitively in
 the same PR, never deleted.
 
@@ -3434,7 +3443,7 @@ the 16/24 above-grid scale.
 golden-hash-pinned (`tests/e2e/page-layouts.spec.ts:8-9`); CSS-value changes are
 hash-safe, markup or class changes inside pinned sections are not, and this packet has
 **no regeneration authority**. Design-spec CSS strings are pinned mutation-sensitively
-(`docs/dashboard-design-spec.md:104-107`). **Takes the `app/FloorOpsApp.tsx` queue slot
+(`docs/dashboard-design-spec.md:111-114`). **Takes the `app/FloorOpsApp.tsx` queue slot
 AND the `globals.css` lock**; it must add itself to the FloorOpsApp claim-list tail in the
 same PR (the tail is introduced by the open PR #283 — if unmerged when this dispatches,
 append `→ DES-12` during that merge instead).
