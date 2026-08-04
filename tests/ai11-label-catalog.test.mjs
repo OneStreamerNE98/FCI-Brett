@@ -1298,7 +1298,11 @@ test("PostgreSQL label adapter executes lifecycle and both guarded-write orderin
     assert.equal(await repository.insert(unused), "inserted");
     assert.equal(await repository.updateDescription(unused.slug, "PostgreSQL edited label.", 11), true);
     assert.equal(await repository.removeOrRetire(unused.slug, 12), "deleted");
-    const used = storedLabel("label_pg_used", "PostgreSQL used label.", 13);
+    // Retirement is exercised on a CUSTOM used label. The migration-seeded
+    // slugs are protected now, and that protection is pinned immediately below;
+    // this half of the lifecycle keeps its original meaning — a label already
+    // present in saved analysis is retired rather than deleted.
+    const used = storedLabel("label_pg_used", "PostgreSQL used label.", 15);
     assert.equal(await repository.insert(used), "inserted");
     await pool.query(
       `INSERT INTO ${quoted}.mail_items (id, analysis_payload) VALUES ($1, $2::jsonb)`,
@@ -1306,6 +1310,39 @@ test("PostgreSQL label adapter executes lifecycle and both guarded-write orderin
     );
     assert.equal(await repository.removeOrRetire(used.slug, 20), "retired");
     assert.equal((await repository.list()).find(({ slug }) => slug === used.slug).retired, true);
+    assert.equal(
+      await repository.updateDescription(used.slug, "PostgreSQL retired meaning.", 21),
+      true,
+      "retired descriptions stay editable so historical queue rows stay readable",
+    );
+
+    // K5 in this engine: a system slug is refused outright, including the used
+    // case that previously produced an irreversible one-way retirement. The
+    // guard precedes the transaction, so the refusal takes no row lock at all.
+    await pool.query(
+      `INSERT INTO ${quoted}.mail_items (id, analysis_payload) VALUES ($1, $2::jsonb)`,
+      ["used-lead", JSON.stringify({ intents: ["lead"] })],
+    );
+    for (const systemSlug of domain.SYSTEM_ASSISTANT_LABEL_SLUGS) {
+      assert.equal(
+        await repository.removeOrRetire(systemSlug, 22),
+        "protected",
+        `${systemSlug} must not be removable or retirable`,
+      );
+    }
+    assert.deepEqual(
+      (await pool.query(
+        `SELECT slug FROM ${quoted}.assistant_label_definitions
+          WHERE retired = false ORDER BY slug`,
+      )).rows.map(({ slug }) => slug),
+      ["lead", "project-update", "schedule", "warranty"],
+      "every built-in must remain present and active after the refusals",
+    );
+    assert.equal(
+      await repository.updateDescription("lead", "PostgreSQL edited built-in meaning.", 23),
+      true,
+      "spec decision 4: built-in descriptions stay updatable",
+    );
 
     const writerFirst = storedLabel(
       `label_${"b".repeat(32)}`,
@@ -1427,6 +1464,48 @@ test("PostgreSQL label adapter executes lifecycle and both guarded-write orderin
     assert.equal((await repository.list()).some(({ slug }) =>
       slug === removerFirst.slug
     ), false);
+
+    // K2 in this engine: the cap counts ACTIVE labels. Two tombstones survive
+    // the lifecycle above (label_pg_used and writerFirst), and under the old
+    // TOTAL-row gate they would have counted against the limit permanently.
+    // Fill to the cap, prove it refuses, then retire one and prove the freed
+    // slot is reusable while the tombstones remain.
+    const activeCount = async () =>
+      (await repository.list()).filter(({ retired }) => !retired).length;
+    const rows = await repository.list();
+    assert.equal(rows.length, 6, "four built-ins plus two retired tombstones");
+    assert.equal(rows.filter(({ retired }) => retired).length, 2);
+    assert.equal(await activeCount(), 4);
+
+    for (let index = 0; index < domain.MAX_ASSISTANT_LABELS - 4; index += 1) {
+      assert.equal(
+        await repository.insert(storedLabel(
+          `label_pg_cap_${String(index).padStart(2, "0")}`,
+          `PostgreSQL cap entry ${index}.`,
+          100 + index,
+        )),
+        "inserted",
+      );
+    }
+    assert.equal(await activeCount(), domain.MAX_ASSISTANT_LABELS);
+    assert.equal(
+      await repository.insert(storedLabel("label_pg_over_cap", "PostgreSQL over cap.", 200)),
+      "active-cap-reached",
+      "the active cap refuses, and does so distinguishably from an exhausted store",
+    );
+
+    await pool.query(
+      `INSERT INTO ${quoted}.mail_items (id, analysis_payload) VALUES ($1, $2::jsonb)`,
+      ["used-cap", JSON.stringify({ intents: ["label_pg_cap_00"] })],
+    );
+    assert.equal(await repository.removeOrRetire("label_pg_cap_00", 300), "retired");
+    assert.equal(await activeCount(), domain.MAX_ASSISTANT_LABELS - 1);
+    assert.equal(
+      await repository.insert(storedLabel("label_pg_replacement", "PostgreSQL replacement.", 301)),
+      "inserted",
+      "a retired tombstone must not consume the active cap",
+    );
+    assert.equal((await repository.list()).length, 23);
   } finally {
     await pool.query(`DROP SCHEMA IF EXISTS ${quoted} CASCADE`);
     await pool.end();
