@@ -3244,6 +3244,79 @@ resize, or third width size.
 **Effort:** A small-medium + B small (2 packets; down from the pre-design
 3–5 estimate). **Cost:** $0.
 
+### DES-12 · Layout editor: snap-in-place drag, touch support, and uniform card rhythm (medium)
+
+**Why:** owner request, August 3, 2026 — the movable cards are "not very UI friendly,"
+resizing feels limited, and the cards read as uneven, "margins all over the place."
+Verified against source and measured on the live site, the complaint decomposes into five
+findings:
+1. **Resizing is a binary toggle.** `PageLayoutSpanSize = "half" | "full"`
+   (`app/lib/page-layouts.ts:35`), only for sections whitelisted in
+   `PAGE_LAYOUT_RESIZABLE_SECTIONS`; no drag-resize exists anywhere.
+2. **A half card silently un-applies.** The packing rule (`page-layouts.ts:247-253`)
+   promotes `half` back to `full` unless the next section is also half, with zero feedback
+   — a control that silently ignores input, the truthfulness defect class this repo hunts.
+3. **Drop position is a blind threshold.** Placement lands above/below on a 65%-of-height
+   cursor test (`PageLayoutEditor.tsx:194`) with no insertion indicator, no preview, no
+   settle animation — the "not snapping into place" feel, precisely.
+4. **The drag likely does not work on iPhone/iPad at all.** It is built on HTML5
+   `draggable`/`DragEvent` (`PageLayoutEditor.tsx:200-204`), which iOS Safari largely does
+   not fire, leaving only the Move up/down buttons on touch. *Recorded as inference; the
+   packet's first task is confirming on a real device.*
+5. **The rhythm complaint is real but not where expected.** Measured live August 3, 2026:
+   Overview's `.page-layout-grid` is already uniform (16px gaps throughout, zero child
+   margins, half-pairs pixel-equal at 1440) — but **Reports has no `.page-layout-grid` at
+   all**, and card internal padding varies four ways on one page (`16px` ×11, `17px 18px`
+   ×2, `0 0 20px` ×1). Inner-edge misalignment reads as uneven margins even when
+   structural gaps are equal. The above-grid stack also mixes 16/24/−8px margins.
+
+**Do:**
+(a) **Pointer-based drag** replacing HTML5 DnD — one code path serving mouse and touch;
+the Move up/down buttons stay as the keyboard path; every target ≥44px.
+(b) **Snap-in-place:** a visible insertion placeholder while dragging, an animated settle
+on drop, and the editor previews the **resolved** layout live — a half card that will
+render full (finding 2) must look full in the editor before saving, with a one-line
+explanation of why.
+(c) **Dynamic width via divider-drag with snap stops.** Owner decision August 3, 2026
+(supersedes the same-day "two sizes only" answer): the owner wants to genuinely change
+card widths, within the 1-or-2-cards-per-row model, and asked for "whatever makes the
+most sense so cards can be resized." The reconciliation with his simultaneous symmetry
+requirement is: **resize the divider, not the card.** Dragging a paired card's inner edge
+moves the shared divider — the partner complements automatically so the pair always sums
+to one full row — and release snaps to fractional stops (`third | half | two-thirds`,
+extending `PageLayoutSpanSize`; legacy stored `"half"` widens-on-read to `1/2`). A card
+alone in its row always renders full — this generalizes the existing promotion rule and is
+what guarantees every row stays full-bleed with identical gaps. **Free-pixel widths were
+considered and rejected**: unequal leftover space per row is precisely the "margins all
+over the place" the owner asked to eliminate. Below the existing 820px collapse,
+fractions stack full-width exactly as halves do today.
+(d) **Uniform rhythm:** one spacing token consumed by every page-level grid; bring Reports
+onto the same layout grid as Overview (or, if that migration proves out of reach, a shared
+token with the reason stated in the PR); normalize card internal padding to the design-spec
+scale (the measured `17px 18px` and `0 0 20px` outliers); normalize or deliberately record
+the 16/24 above-grid scale.
+
+**Constraints:** all new chrome is edit-mode-only — Overview and Reports default markup is
+golden-hash-pinned (`tests/e2e/page-layouts.spec.ts:8-9`); CSS-value changes are
+hash-safe, markup or class changes inside pinned sections are not, and this packet has
+**no regeneration authority**. Design-spec CSS strings are pinned mutation-sensitively
+(`docs/dashboard-design-spec.md:104-107`). **Takes the `app/FloorOpsApp.tsx` queue slot
+AND the `globals.css` lock**; it must add itself to the FloorOpsApp claim-list tail in the
+same PR (the tail is introduced by the open PR #283 — if unmerged when this dispatches,
+append `→ DES-12` during that merge instead).
+
+**Accept:** drag-reorder and divider-resize verified by touch on a real iPhone and iPad,
+with device and OS version named in the PR; insertion placeholder and settle
+e2e-verified; dragging one card of a pair resizes both, the pair sums to a full row at
+every stop, and release lands exactly on a stop (asserted by measured widths, not class
+names); a fractional card left alone in its row renders full and the editor says why
+before save; legacy stored `"half"` layouts render byte-identically; a
+measured-uniformity spec asserts equal inter-card gaps and token-conformant padding at
+390/834/1280 on Overview **and** Reports, in default and edit modes; both golden hashes
+byte-identical after the change; `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
+**Effort:** medium. **Cost:** $0.
+
 # Workstream G — AI assistant & automation (AI)
 
 Owner-approved July 23, 2026. Design authority: `docs/ai-assistant-spec.md`

@@ -338,8 +338,9 @@ fails them.
 **Sequencing recap:** R1 = FIX-01 → FIX-02 → FIX-03 → FIX-04 → FIX-05 → FIX-06 →
 FIX-10 (FIX-01/02 share `google-drive.ts` call-graph — run in order; FIX-03..06 and
 FIX-10 are parallel-safe with each other but serialize with anything touching the
-same files). R2 = SET-29…SET-34. R3 = FIX-07 → FIX-08. R4 = FIX-09 + FIX-11 + FIX-12 + the
-feature queue. Engine feature packets (SET-17/18/21, SET-25, GI-04) remain
+same files). R2 = SET-29…SET-34. R3 = FIX-07 → FIX-08. R4's remainder (re-gated August 3,
+2026): FIX-09 and FIX-12 stay open, both rescoped; FIX-11 is gated on the allUsers
+invoker-grant review rather than a wave. Engine feature packets (SET-17/18/21, SET-25, GI-04) remain
 parallel-safe throughout, subject to the same-file rule.
 
 ---
@@ -438,7 +439,7 @@ distinct named constants instead — confirm intent from the two call sites firs
 location; both call sites import the constant; behavior unchanged.
 **Effort:** small. **Cost:** $0.
 
-### FIX-11 · Anonymous login-flow throttle (P2 F-14 + P3 F-15; small-medium; Wave R4, production-only)
+### FIX-11 · Anonymous login-flow throttle (P2 F-14; small; blocked on the allUsers invoker-grant review, production-only)
 **Why:** the identity-keyed limiter cannot cover the anonymous OIDC endpoints, which
 trigger outbound Google token calls — an amplification / cost vector.
 **Do:** add an anonymous throttle in front of the router for
