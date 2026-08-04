@@ -2696,6 +2696,31 @@ test("a settings-read failure degrades only the intake mailbox selector, not the
   await expect(runtimeConfiguration.getByRole("button", { name: "Save mailbox", exact: true })).toBeDisabled();
 });
 
+test("a stalled settings read cannot keep the Stage 3 resource surface loading", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  let releaseSettingsRead: (() => void) | null = null;
+  await page.route("**/api/v1/settings/workspace", async (route) => {
+    await new Promise<void>((resolve) => {
+      releaseSettingsRead = resolve;
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ settings: { intakeMailbox: "" }, intakeMailboxOptions: [] }),
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-3");
+  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "creation", true);
+
+  const sharedDrive = creationRow(page, "shared-drive");
+  await expect(sharedDrive.getByRole("heading", { level: 4, name: "Shared Drive", exact: true })).toBeVisible();
+  await expect(page.getByText("Workspace resource status could not be loaded. Retry before using this setup summary.", { exact: true })).toHaveCount(0);
+  expect(releaseSettingsRead).not.toBeNull();
+  releaseSettingsRead?.();
+});
+
 test("stale Shared Drive registry data keeps adopt locked while direct verification remains available", async ({ page }) => {
   let verifyRequest: { method: string; body: string | null } | null = null;
   let resourcesShouldFail = false;
@@ -2882,7 +2907,7 @@ test("administrator connection health expander preserves account, permissions, w
   );
   await expect(runtimeConfiguration).toHaveCount(1);
   await expect(runtimeConfiguration.getByRole("heading", { level: 4, name: "App-managed Workspace configuration" })).toBeVisible();
-  await expect(runtimeConfiguration.getByText("Source: None", { exact: true })).toHaveCount(3);
+  await expect(runtimeConfiguration.getByText("Source: None", { exact: true })).toHaveCount(4);
   await expect(runtimeConfiguration.getByRole("button", { name: "Enable provisioning" })).toBeVisible();
   await expect(runtimeConfiguration.getByLabel("Client Directory spreadsheet ID")).toBeEnabled();
   await expect(runtimeConfiguration.getByLabel("Lead-form response spreadsheet ID")).toBeEnabled();

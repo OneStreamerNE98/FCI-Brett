@@ -402,19 +402,19 @@ test("the Gmail intake row names its effective source like every other App-manag
     "the source travels on the same GET as its sibling provisioningSource");
 });
 
-test("a settings failure degrades only the mailbox selector, never the Stage 3 surface", async () => {
+test("a failed or stalled settings read cannot delay the Stage 3 resource surface", async () => {
   const panel = await read("app/settings/components/GoogleWorkspacePanel.tsx");
   const loaderStart = panel.indexOf("const loadWorkspaceResources = useCallback");
   assert.notEqual(loaderStart, -1);
   const loader = panel.slice(loaderStart, panel.indexOf("}, [isAdmin, loadIntakeMailboxSettings]);", loaderStart));
 
-  // The defect was awaiting both reads in ONE try/catch, so a settings 500 rejected the whole
-  // Promise.all and blanked the stage behind a resources error.
-  assert.match(loader, /Promise\.allSettled/u);
-  assert.doesNotMatch(loader, /Promise\.all\(/u, "the two reads must not settle together again");
-  assert.doesNotMatch(loader, /catch\s*[({]/u, "the stage no longer swallows the settings read's failure");
-  // The stage is settled from the resources result alone.
-  assert.match(loader, /if \(resources\.status === "fulfilled"\)[\s\S]*setWorkspaceResourcesState\("ready"\)/u);
+  // The defect first shared one try/catch and then used Promise.allSettled. Both forms await
+  // the settings read, so a request that never settles still leaves the resource surface loading.
+  assert.match(loader, /void loadIntakeMailboxSettings\(force, isCurrent\)/u);
+  assert.doesNotMatch(loader, /Promise\.all/u, "the two reads must not share a settlement boundary");
+  // The stage is settled from the resources result alone, with its own error path.
+  assert.match(loader, /const resources = await cachedGetJson<WorkspaceSetupResourcesPayload>[\s\S]*setWorkspaceResources\(resources\)[\s\S]*setWorkspaceResourcesState\("ready"\)/u);
+  assert.match(loader, /catch[\s\S]*setWorkspaceResourcesState\("error"\)/u);
   assert.doesNotMatch(loader, /setIntakeMailbox(?:Options)?\(/u,
     "the mailbox setters belong to the selector's own loader");
 

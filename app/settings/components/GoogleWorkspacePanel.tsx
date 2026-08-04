@@ -710,18 +710,18 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     // Stage 3 panel — Shared Drive adoption, the blueprint editor, the creation flows — while
     // the settings read only fills the mailbox selector. Awaiting both in one try/catch let an
     // unrelated settings 500 blank the entire stage behind a resources error message.
-    const [resources] = await Promise.allSettled([
-      cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force }),
-      loadIntakeMailboxSettings(force, isCurrent),
-    ]);
-    if (!isCurrent()) return;
-    if (resources.status === "fulfilled") {
-      setWorkspaceResources(resources.value);
+    void loadIntakeMailboxSettings(force, isCurrent);
+    try {
+      const resources = await cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force });
+      if (!isCurrent()) return;
+      setWorkspaceResources(resources);
       setWorkspaceResourcesState("ready");
       return;
+    } catch {
+      if (!isCurrent()) return;
+      setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
+      setWorkspaceResourcesState("error");
     }
-    setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
-    setWorkspaceResourcesState("error");
   }, [isAdmin, loadIntakeMailboxSettings]);
 
   const refreshWorkspaceSetup = useCallback(async (force = false) => {
