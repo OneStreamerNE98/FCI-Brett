@@ -487,8 +487,15 @@ cover the admin id as well as the rehearsal id. (5) accrued residuals recorded i
 later Status lines: SET-34 scroll-hijack + dead props (`TestingLaunchPanel.tsx:103-104`,
 `DirectorySyncPanel.tsx:539`), FIX-07 retry affordance, PR #140
 SQL-comment/partial-index items, PR #158 env-presence helper + hardcoded
-`secureSessionReady`, and the new gmail `_route-helpers.ts` duplication
-(`gmailErrorResponse`/`readBoundedJson` duplicating shared helpers). Consider
+`secureSessionReady`, the new gmail `_route-helpers.ts` duplication
+(`gmailErrorResponse`/`readBoundedJson` duplicating shared helpers), the
+`broadScopeAcknowledged` vestige (hard-coded `true`, app/lib/google-oauth.ts:407,
+returned :463 — delete or restore to a real gate; model nothing on it), the
+notification-grammar split (notify() has 127 uses in 11 files while assistant/,
+management/ and six settings panels use inline role=alert only;
+GoogleWorkspacePanel:902-903 emits both channels for one failure), and the
+mobile-nav bespoke dialog (FloorOpsApp.tsx:1687-1696) that bypasses
+AccessibleOverlay. Consider
 splitting the mechanical 60-route wrapper adoption from the small-residual sweep —
 different risk profiles.
 **Accept:** wrapper-adopted routes return byte-identical responses (golden tests on

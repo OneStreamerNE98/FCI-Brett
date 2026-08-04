@@ -1616,6 +1616,8 @@ is deliberately only the cheap half.**
 `gmail.modify`. Attaching a mailbox therefore confers **send and delete** on it, not read-only
 visibility. If shared inboxes are meant to be read-mostly, that needs a narrower scope, and a
 scope change forces disconnect/reconnect for every existing connection.
+Owner decision, August 3, 2026: Pattern B — two to three role mailboxes (real accounts,
+attached by sign-in); Pattern A (single mailbox + per-label views) declined.
 **Spec amendment (owner + architecture review, August 3, 2026):** (i) two key scopes, named
 explicitly: gmail-side tables (`mail_items`, `gmail_file_archives` + artifacts, and
 `google_form_lead_*` if mailbox-scoped) become per-mailbox keys; workspace-level tables —
