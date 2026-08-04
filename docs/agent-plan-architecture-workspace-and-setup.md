@@ -2627,6 +2627,7 @@ named with outcomes.
 **Effort:** medium. **Cost:** $0.
 
 ### SET-41 · Intake mailbox selected in Settings; the allowlist stays in env (medium, after SET-40)
+**Status:** In progress — `codex/set41-intake-mailbox`
 
 **Why:** owner request August 3, 2026 — define mailbox addresses in the front end. The
 configuration audit's verdict, upheld under adversarial review: env keeps
