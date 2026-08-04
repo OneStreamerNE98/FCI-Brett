@@ -417,7 +417,10 @@ written down as such rather than absorbed silently.
    Storage target: extend the existing **`mail_items`** table (`db/schema.ts:192-206`) rather
    than create a new one. It already carries both adapters, production composition wiring, a
    `SELECT, INSERT, UPDATE` least-privilege grant, and blocking migration-rehearsal coverage,
-   and has no callers today. This keeps the AI tier at **zero** new tables.
+   and had no callers before AI-10. **AI-11(c) is the owner-approved exception:** it adds
+   the AI tier's first table, `assistant_label_definitions`, solely for the administrator-
+   managed intent catalog described in decision 4. Analysis results themselves still add no
+   table and remain on `mail_items`.
    Guard consequence: **none.** The no-write guards stay unmodified. Classification lives in
    `app/application/assistant/inbox-analysis.ts` and performs only `SELECT`; the write lives in
    `app/api/v1/inbox-analysis/route.ts`, outside `app/api/v1/assistant/**`, exactly as AI-07
@@ -434,7 +437,13 @@ written down as such rather than absorbed silently.
    always be updated.** Unused labels may be deleted; used labels are retired, not removed, so
    every historical classification stays interpretable. Retired slugs are never reused. This
    matches the repo's existing append-only stance (migrations, `activity_events`, SET-18's
-   never-delete reconcile rule) and the pinned PostgreSQL `DELETE` grant list.
+   never-delete reconcile rule) and the pinned PostgreSQL `DELETE` grant list. **Storage form
+   (owner-approved August 4, 2026):** `assistant_label_definitions` stores one row per label:
+   an opaque server-generated immutable slug, description, retired flag, and created/updated
+   timestamps. Writes are administrator-only; the server enforces the 20-label, 60-character
+   slug, and 300-character description caps plus the recorded prompt-injection normalization
+   and rejection rules. The active stored rows derive the current label-definition version;
+   retired rows remain available to interpret historical analyses.
 
 5. **AI configuration gets its own Settings section.** This deviates from the Workstream G
    constraint of no new Settings sections in Tier 1, and re-points **three** recorded surfaces,
