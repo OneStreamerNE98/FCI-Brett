@@ -3445,8 +3445,7 @@ hash-safe, markup or class changes inside pinned sections are not, and this pack
 **no regeneration authority**. Design-spec CSS strings are pinned mutation-sensitively
 (`docs/dashboard-design-spec.md:111-114`). **Takes the `app/FloorOpsApp.tsx` queue slot
 AND the `globals.css` lock**; it must add itself to the FloorOpsApp claim-list tail in the
-same PR (the tail is introduced by the open PR #283 — if unmerged when this dispatches,
-append `→ DES-12` during that merge instead).
+same PR (claimed in the tail August 3, 2026).
 
 **Accept:** drag-reorder and divider-resize verified by touch on a real iPhone and iPad,
 with device and OS version named in the PR; insertion placeholder and settle
@@ -3522,6 +3521,64 @@ introduces one raw hex (negative test); every re-pointed pin enumerated in the P
 **Effort:** medium. **Cost:** $0. **Sequencing:** after NFIX-07 (same `globals.css` lock),
 **before** DES-12, grid views, and the button de-bulking — all three consume these scales
 instead of inventing their own.
+
+### DES-14 · FloorOpsApp decomposition: extract the four record views (large, after GI-04)
+
+**Why:** `app/FloorOpsApp.tsx` (~200KB) is the reason the single-file queue-slot law
+exists, and that law serialized four separate owner requests in one day (grid views,
+layout editor, presentation mode, rearrangeable nav). The extraction pattern is proven in
+this repo twice: AI-02 extracted the Assistant and Inbox surfaces; SET-01 extracted the
+eight Settings panels. **Owner decision August 3, 2026 (standing law-lift rule): dissolve
+the lock's cause rather than lift the law.**
+**Do:** extract LeadsView, ClientsView, ProjectsView, ScheduleView and the modals they
+own (LeadModal, the client/project create+edit modals, the meeting modal) into
+per-surface directories (`app/leads/components/`, `app/clients/components/`,
+`app/projects/components/` merging with the existing directory,
+`app/schedule/components/`), passing state and handlers via props exactly as the shipped
+extractions did. Move-only discipline: no logic changes, no markup changes, no renamed
+props beyond what the move forces. Add per-directory boundary tests mirroring
+`tests/assistant-inbox-component-boundaries.test.mjs`, and re-point
+`tests/settings-component-boundaries.test.mjs`-style pins consciously if any listing they
+assert changes. **Amend the AGENTS.md queue-slot law text in the same PR:** the slot
+scopes what remains in `FloorOpsApp.tsx` (Overview, Reports, the app shell/nav);
+extracted surfaces exit the queue permanently.
+**Constraints:** rendering must be byte-identical — the existing e2e suite including both
+golden hashes passes unmodified (extraction may not alter markup); large diff, so commits
+split per view; zero behavior change is the accept bar, not a hope.
+**Accept:** the four views and their modals live outside `FloorOpsApp.tsx`; the file
+shrinks by the moved line count; every existing e2e passes unmodified except the added
+boundary tests and the amended queue-law text; both golden constants byte-identical;
+`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** large. **Cost:** $0. **Takes the FloorOpsApp slot** (claimed in the tail by
+this filing — see the FloorOpsApp claim-list tail).
+
+### DES-15 · Record-page list views with sorting and search (medium-large, after DES-14)
+
+**Why:** owner request August 3, 2026, decision D2 approved the design-spec amendment the
+same day. Active leads render board-only; **no sorting exists anywhere in the app**; the
+adversarial design review's verdict: finish the hybrid the codebase already is —
+`OperationsActionableList` renders a multi-column grid on desktop and collapses to
+stacked cards below 820px, so Clients and Projects already switch idiom by width.
+**Do:** (1) a board/list toggle on Leads whose list body reuses the `LeadStatusPanel` row
+template inside the `OperationsActionableList` grid; (2) sortable column headers
+(`aria-sort`, ≥44px targets, header buttons OUTSIDE the whole-row activation control per
+the design grammar) on the Leads/Clients/Projects row grids at ≥821px, degrading to a
+compact sort menu in the card band; (3) the Clients-style search input added to Leads and
+Projects; (4) per-user persistence of view choice and sort alongside the existing
+page-layout preferences — one personalisation system, not two. (5) **Record the approved
+amendment in `docs/dashboard-design-spec.md` in this same PR**: the board/list toggle and
+sort headers are authorized as a deliberate exception to the "no second way to do an
+existing action" rule, owner-approved August 3, 2026.
+**Constraints:** component-anchored — this packet targets the post-DES-14 extracted
+views and takes NO FloorOpsApp slot; shared primitives rendered inside the
+Overview/Reports pinned sections (Status, Avatar, project-card, OperationsActionableList)
+must keep byte-identical default markup — prefer additive props defaulting to current
+output; if regeneration ever becomes necessary, the A1 screenshot-sign-off path applies.
+**Accept:** toggle and sort persist per user; every visible column sorts both directions
+with `aria-sort` announced; search filters live on both pages; the board remains the
+Leads default; e2e at 390/834/1280; both golden hashes byte-identical; the spec amendment
+is present; `npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium-large. **Cost:** $0.
 
 # Workstream G — AI assistant & automation (AI)
 
@@ -4416,9 +4473,11 @@ names as the canonical example of the single-file rule, had gone stale in the on
 that matters: packets kept being filed with `FloorOpsApp.tsx` in scope without adding
 themselves. Any two of the five below could have been dispatched in parallel and collided.
 Adversarial review (August 3, 2026) then established that AI-12 takes no slot at all — see
-its bullet — leaving four claimants. Recommended claim order, most valuable first:
+its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
+in the tail, making six. Recommended claim order, most valuable first:
 
-**GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-10 (variants a/b only).**
+**GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-14 → DES-10 (variants a/b
+only) → DES-12.**
 
 - **AI-12** — takes NO `FloorOpsApp.tsx` slot (adversarial review, August 3, 2026): the
   mount (`app/FloorOpsApp.tsx:1784`) passes no analysis or queue state — `bucket` is a
@@ -4432,8 +4491,14 @@ its bullet — leaving four claimants. Recommended claim order, most valuable fi
   (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
 - **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
   on two owner decisions recorded in its packet.
+- **DES-14** — the extraction itself is the slot's last large holder: it moves the four
+  record views and their modals out of `app/FloorOpsApp.tsx`, and it amends the queue-slot
+  law in the same PR so extracted surfaces exit the queue permanently.
 - **DES-10** — only variants (a) and (b), which edit `app/FloorOpsApp.tsx:1701`. Variant (c)
   is CSS-only and takes no slot.
+- **DES-12** — editor chrome + resolved-preview rendering at the layout mount; also holds
+  the `globals.css` lock.
+- **DES-15** — deliberately takes NO slot: it targets the post-DES-14 extracted views.
 
 **Four more packets could take the slot and must NOT** — each is required to state its
 no-FloorOpsApp path in its own PR rather than consuming the serialised resource by default:
