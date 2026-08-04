@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { after, beforeEach, test } from "node:test";
+import { NextRequest } from "next/server.js";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
@@ -44,6 +45,7 @@ const [
   addressField,
   googleFormIntake,
   firstRunImport,
+  leadPatchRoute,
 ] = await Promise.all([
   vite.ssrLoadModule("/app/domain/address-validation.ts"),
   vite.ssrLoadModule("/app/features/address-validation/address-validation.ts"),
@@ -56,6 +58,7 @@ const [
   vite.ssrLoadModule("/app/features/address-validation/AddressValidationField.tsx"),
   vite.ssrLoadModule("/app/domain/google-form-lead-intake.ts"),
   vite.ssrLoadModule("/app/domain/first-run-import.ts"),
+  vite.ssrLoadModule("/app/api/v1/leads/[leadId]/route.ts"),
 ]);
 
 after(async () => {
@@ -209,6 +212,44 @@ test("Places autocomplete requires the owner gate and both key configurations", 
   );
   assert.match(mapsSitesSource, /serverAddressValidationAvailable:\s*\n?\s*Boolean\(runtimeValue\(GOOGLE_MAPS_SERVER_API_KEY_ENV\)\?\.trim\(\)\)/u);
   assert.doesNotMatch(mapsSitesSource, /serverApiKey\s*:/u);
+});
+
+test("seeded mounts never autofire autocomplete and the field meets the shared control tiers", async () => {
+  const component = await readFile(
+    new URL("../app/features/address-validation/AddressValidationField.tsx", import.meta.url),
+    "utf8",
+  );
+  // Mount, seeding, and rehydration must never fire a Places request: the
+  // suggestion effect requires a user edit that moved the value off the seed.
+  assert.match(component, /const \[userEditedAddress, setUserEditedAddress\] = useState\(false\);/u);
+  assert.match(component, /const seededValueRef = useRef\(value\);/u);
+  assert.match(component, /\|\| !userEditedAddress\s+\|\| value === seededValueRef\.current/u);
+  assert.match(component, /setUserEditedAddress\(true\);\s+resetReview\(event\.target\.value\);/u);
+  // The autocomplete save-block applies only to an address the user actually
+  // edited this session; an untouched seeded address never blocks submit.
+  assert.match(component, /tokenizedAutocompleteStarted && userEditedAddress/u);
+  // The listbox dismisses on focus-out of the field group and on any pointer
+  // press outside the container, so it cannot hijack covered controls.
+  assert.match(component, /event\.currentTarget\.contains\(event\.relatedTarget\)/u);
+  assert.match(component, /document\.addEventListener\("pointerdown", handlePointerDown\)/u);
+  // The Reviewing state reuses the app's shared spinner idiom.
+  assert.match(component, /LoaderCircle className=\{styles\.spinner\}/u);
+
+  const componentStyles = await readFile(
+    new URL("../app/features/address-validation/AddressValidationField.module.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(componentStyles, /animation: spin 0\.8s linear infinite;/u);
+  // Desktop control tier plus the 560px touch tier NFIX-04 standardized.
+  assert.match(componentStyles, /min-height: var\(--control-standard, 40px\);/u);
+  assert.match(componentStyles, /@media \(max-width: 560px\)/u);
+  assert.doesNotMatch(componentStyles, /max-width: 640px/u);
+  assert.equal(componentStyles.match(/min-height: var\(--target-min, 44px\);/gu)?.length, 2);
+  // The global `.modal label` field-wrapper margin never leaks into the
+  // module label, and the modal keeps the standard inter-field separation.
+  assert.match(componentStyles, /\.field \.label \{\s+margin-bottom: 0;\s+\}/u);
+  const app = await readFile(new URL("../app/FloorOpsApp.tsx", import.meta.url), "utf8");
+  assert.equal(app.match(/className="modal-address-field"/gu)?.length, 5);
 });
 
 class SqliteD1Statement {
@@ -751,6 +792,279 @@ test("failed record mutations release only their exact provisional review claim"
       rawReview: { id, choice: "standardized" },
       now: NOW + 3,
     })).ok, false);
+  } finally {
+    database.close();
+  }
+});
+
+test("insert-time cleanups never delete a provisionally claimed receipt", async () => {
+  const database = new AddressReviewDatabase();
+  try {
+    // Expiry-sweep leg: a claimed receipt whose TTL lapsed mid-flight
+    // survives the sweep a later insert triggers, while an unclaimed
+    // expired receipt is still swept.
+    const claimedId = randomUUID();
+    const unclaimedExpiredId = randomUUID();
+    await reviews.insertAddressValidationReview(database, {
+      id: claimedId,
+      actorId: ACTOR,
+      entityKind: "project",
+      targetId: "project-1",
+      result: reviewResult(),
+      now: NOW,
+    });
+    await reviews.insertAddressValidationReview(database, {
+      id: unclaimedExpiredId,
+      actorId: ACTOR,
+      entityKind: "client",
+      targetId: "client-1",
+      result: reviewResult(),
+      now: NOW,
+    });
+    const claimed = await reviews.consumeAddressValidationReview(database, {
+      actorId: ACTOR,
+      entityKind: "project",
+      targetId: "project-1",
+      inputAddress: TEST_ADDRESS,
+      review: { id: claimedId, choice: "standardized" },
+      now: NOW + 1,
+    });
+    assert.equal(claimed.ok, true);
+    const afterExpiry = NOW + domain.ADDRESS_REVIEW_TTL_MS + 1;
+    await reviews.insertAddressValidationReview(database, {
+      id: randomUUID(),
+      actorId: "second-office@cherryhillfci.com",
+      entityKind: "lead",
+      targetId: "new",
+      result: reviewResult(),
+      now: afterExpiry,
+    });
+    assert.equal(database.row(unclaimedExpiredId), undefined);
+    assert.equal(database.row(claimedId).consumed_at, NOW + 1);
+    await reviews.releaseAddressValidationReview(database, claimed.claim);
+    assert.equal(database.row(claimedId).consumed_at, null);
+
+    // Cap-trim leg: the per-actor cap orders by recency, so a claimed
+    // receipt that became the actor's oldest row must still survive while
+    // the oldest unclaimed rows are trimmed.
+    const capActor = "cap-office@cherryhillfci.com";
+    const base = afterExpiry;
+    const capClaimedId = randomUUID();
+    await reviews.insertAddressValidationReview(database, {
+      id: capClaimedId,
+      actorId: capActor,
+      entityKind: "project",
+      targetId: "project-cap",
+      result: reviewResult(),
+      now: base,
+    });
+    const capClaim = await reviews.consumeAddressValidationReview(database, {
+      actorId: capActor,
+      entityKind: "project",
+      targetId: "project-cap",
+      inputAddress: TEST_ADDRESS,
+      review: { id: capClaimedId, choice: "standardized" },
+      now: base + 1,
+    });
+    assert.equal(capClaim.ok, true);
+    const oldestUnclaimedId = randomUUID();
+    await reviews.insertAddressValidationReview(database, {
+      id: oldestUnclaimedId,
+      actorId: capActor,
+      entityKind: "client",
+      targetId: "client-cap",
+      result: reviewResult(),
+      now: base + 2,
+    });
+    for (let index = 0; index < 25; index += 1) {
+      await reviews.insertAddressValidationReview(database, {
+        id: randomUUID(),
+        actorId: capActor,
+        entityKind: "lead",
+        targetId: `lead-cap-${index}`,
+        result: reviewResult(),
+        now: base + 3 + index,
+      });
+    }
+    assert.equal(database.row(oldestUnclaimedId), undefined);
+    assert.equal(database.row(capClaimedId).consumed_at, base + 1);
+    await reviews.releaseAddressValidationReview(database, capClaim.claim);
+    assert.equal(database.row(capClaimedId).consumed_at, null);
+  } finally {
+    database.close();
+  }
+});
+
+test("releasing a claim whose receipt vanished is a tolerant no-op", async () => {
+  const database = new AddressReviewDatabase();
+  try {
+    const id = randomUUID();
+    await reviews.insertAddressValidationReview(database, {
+      id,
+      actorId: ACTOR,
+      entityKind: "client",
+      targetId: "client-1",
+      result: reviewResult(),
+      now: NOW,
+    });
+    const resolved = await mutation.resolveAddressMutation(database, {
+      actorId: ACTOR,
+      entityKind: "client",
+      targetId: "client-1",
+      rawAddress: TEST_ADDRESS,
+      rawReview: { id, choice: "standardized" },
+      now: NOW + 1,
+    });
+    assert.equal(resolved.ok, true);
+    database.database.prepare("DELETE FROM address_validation_reviews WHERE id = ?").run(id);
+    // The receipt is already gone; the failure response must still reach the
+    // user, so both release layers resolve instead of throwing.
+    await mutation.releaseFailedAddressMutation(database, resolved);
+    await reviews.releaseAddressValidationReview(database, resolved.reviewClaim);
+    assert.equal(database.row(id), undefined);
+  } finally {
+    database.close();
+  }
+});
+
+class LeadEditDatabase extends AddressReviewDatabase {
+  constructor() {
+    super();
+    this.database.exec(`
+      CREATE TABLE leads (
+        id TEXT PRIMARY KEY,
+        lead_number TEXT NOT NULL,
+        company TEXT NOT NULL,
+        contact_name TEXT NOT NULL,
+        contact_email TEXT,
+        contact_phone TEXT,
+        project_name TEXT NOT NULL,
+        source TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        site TEXT NOT NULL,
+        latitude REAL,
+        longitude REAL,
+        address_validation_verdict TEXT,
+        estimated_value INTEGER NOT NULL,
+        next_action TEXT NOT NULL,
+        next_action_at INTEGER,
+        owner_email TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE TABLE activity_events (
+        id TEXT PRIMARY KEY,
+        record_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `);
+    this.beforeLeadUpdate = null;
+  }
+
+  prepare(sql) {
+    const statement = super.prepare(sql);
+    if (/^UPDATE leads SET /u.test(sql)) {
+      const originalRun = statement.run.bind(statement);
+      statement.run = async () => {
+        const sabotage = this.beforeLeadUpdate;
+        this.beforeLeadUpdate = null;
+        if (sabotage) sabotage();
+        return originalRun();
+      };
+    }
+    return statement;
+  }
+
+  seedLead() {
+    this.database.prepare(`
+      INSERT INTO leads (
+        id, lead_number, company, contact_name, contact_email, contact_phone,
+        project_name, source, stage, site, estimated_value, next_action,
+        next_action_at, owner_email, status, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "lead-gi04-conflict",
+      "L-2026-GI040001",
+      "FCI TEST — DO NOT USE",
+      "Test Contact",
+      null,
+      null,
+      "Test Flooring",
+      "Referral",
+      "Qualified",
+      "Old site",
+      125_000,
+      "Schedule site walk",
+      null,
+      ACTOR,
+      "active",
+      ACTOR,
+      NOW,
+      NOW,
+    );
+  }
+}
+
+test("a receipt that vanishes mid-flight still yields the graceful 409 conflict payload", async () => {
+  const database = new LeadEditDatabase();
+  try {
+    database.seedLead();
+    Object.assign(workerEnvironment, {
+      NODE_ENV: "test",
+      FCI_OFFICE_EMAILS: ACTOR,
+      DB: database,
+    });
+    const id = randomUUID();
+    await reviews.insertAddressValidationReview(database, {
+      id,
+      actorId: ACTOR,
+      entityKind: "lead",
+      targetId: "lead-gi04-conflict",
+      result: reviewResult(),
+      now: Date.now(),
+    });
+    database.beforeLeadUpdate = () => {
+      // A concurrent editor wins the version race, and the provisional
+      // receipt vanishes before the losing request can release its claim.
+      database.database.exec(
+        "UPDATE leads SET version = version + 1 WHERE id = 'lead-gi04-conflict'",
+      );
+      database.database.exec("DELETE FROM address_validation_reviews");
+    };
+    const response = await leadPatchRoute.PATCH(
+      new NextRequest(`${APP_ORIGIN}/api/v1/leads/lead-gi04-conflict`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          origin: APP_ORIGIN,
+          "oai-authenticated-user-email": ACTOR,
+        },
+        body: JSON.stringify({
+          version: "1",
+          site: TEST_ADDRESS,
+          addressReview: { id, choice: "standardized" },
+        }),
+      }),
+      { params: Promise.resolve({ leadId: "lead-gi04-conflict" }) },
+    );
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      error: "Lead changed since it was loaded.",
+      currentVersion: "2",
+      currentValues: { site: "Old site" },
+    });
+    assert.equal(
+      database.database
+        .prepare("SELECT site FROM leads WHERE id = 'lead-gi04-conflict'")
+        .get().site,
+      "Old site",
+    );
   } finally {
     database.close();
   }

@@ -87,15 +87,20 @@ export async function insertAddressValidationReview(
   const expiresAt = input.now + ADDRESS_REVIEW_TTL_MS;
   const cleanupBefore = input.now - CONSUMED_RETENTION_MS;
   const statements = [
+    // Neither cleanup may ever delete a provisionally claimed receipt
+    // (consumed_at set, mutation still in flight): deleting one turns the
+    // claimant's failure-path release into a lost receipt. Expired unclaimed
+    // rows and old consumed rows keep their own legs.
     database.prepare(
       `DELETE FROM address_validation_reviews
-       WHERE expires_at <= ? OR (consumed_at IS NOT NULL AND consumed_at <= ?)`,
+       WHERE (expires_at <= ? AND consumed_at IS NULL)
+          OR (consumed_at IS NOT NULL AND consumed_at <= ?)`,
     ).bind(input.now, cleanupBefore),
     database.prepare(
       `DELETE FROM address_validation_reviews
        WHERE actor_id = ? AND id IN (
          SELECT id FROM address_validation_reviews
-         WHERE actor_id = ?
+         WHERE actor_id = ? AND consumed_at IS NULL
          ORDER BY created_at DESC, id DESC
          LIMIT -1 OFFSET ?
        )`,
@@ -236,7 +241,11 @@ export async function releaseAddressValidationReview(
   database: D1Database,
   claim: AddressReviewConsumptionClaim,
 ): Promise<void> {
-  const released = await database.prepare(
+  // Zero updated rows means the receipt already vanished (retention sweep or
+  // external delete). That is a tolerated no-op: release runs on failure
+  // paths, and the graceful 409/400 response must still reach the user
+  // instead of becoming a 500. Consume-time strictness is unchanged.
+  await database.prepare(
     `UPDATE address_validation_reviews SET consumed_at = NULL
      WHERE id = ? AND actor_id = ? AND entity_kind = ? AND target_id = ?
        AND input_address = ? AND consumed_at = ?`,
@@ -248,7 +257,4 @@ export async function releaseAddressValidationReview(
     claim.inputAddress,
     claim.consumedAt,
   ).run();
-  if (released.meta.changes !== 1) {
-    throw new Error("Address validation review claim was not released exactly once.");
-  }
 }

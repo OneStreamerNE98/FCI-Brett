@@ -81,7 +81,10 @@ async function reviewAndChooseStandardized(
   typedAddress: string,
 ) {
   const field = addressField(dialog, entityKind);
-  const input = field.getByRole("combobox", { name: inputLabel, exact: true });
+  // Optional fields carry the standard "Optional" pill inside their label, so
+  // the accessible name is matched as a prefix within the single-combobox
+  // field container rather than exactly.
+  const input = field.getByRole("combobox", { name: inputLabel });
   if (await input.inputValue() !== typedAddress) await input.fill(typedAddress);
   const [response] = await Promise.all([
     dialog.page().waitForResponse((response) => (
@@ -226,12 +229,12 @@ test("rendered live autocomplete requires complete configuration and terminates 
     browserApiKey: string | null;
     addressValidationEnabled: boolean;
     serverAddressValidationAvailable: boolean;
-  }) {
-    await page.evaluate(async (mapsRuntime) => {
+  }, initialValue?: string) {
+    await page.evaluate(async ({ mapsRuntime, seededValue }) => {
       const harnessPath = "/tests/e2e/fixtures/gi04-address-harness.tsx";
       const harness = await import(harnessPath);
-      harness.mountAddressValidationHarness(mapsRuntime);
-    }, runtime);
+      harness.mountAddressValidationHarness(mapsRuntime, seededValue);
+    }, { mapsRuntime: runtime, seededValue: initialValue });
     await expect(page.getByRole("combobox", { name: "Harness site" })).toBeVisible();
   }
 
@@ -325,6 +328,28 @@ test("rendered live autocomplete requires complete configuration and terminates 
   await page.waitForTimeout(350);
   expect(placesTokens).toHaveLength(3);
   expect(validationTokens[1]).toBe(inFlightToken);
+
+  // A mount-seeded address (every edit modal, plus inbox prefill) must never
+  // start a billable autocomplete session and must never block Save while the
+  // user leaves the address untouched.
+  await mountHarness(readyRuntime, "500 Seeded Avenue, Portland, ME 04101");
+  const seededInput = page.getByRole("combobox", { name: "Harness site" });
+  await expect(seededInput).toHaveValue("500 Seeded Avenue, Portland, ME 04101");
+  await page.waitForTimeout(350);
+  expect(placesTokens).toHaveLength(3);
+  await expect(page.getByRole("option")).toHaveCount(0);
+  await expect(seededInput).toHaveAttribute("aria-invalid", "false");
+  expect(await seededInput.evaluate((element: HTMLInputElement) => element.validationMessage))
+    .toBe("");
+  await page.getByRole("button", { name: "Harness save" }).click();
+  await expect(page.locator("#gi04-address-harness")).toHaveAttribute("data-submits", "1");
+  await page.waitForTimeout(350);
+  expect(placesTokens).toHaveLength(3);
+
+  // Editing the seeded value by hand still starts the full session-token flow.
+  await seededInput.fill("123 Test Street seeded then edited");
+  await expect.poll(() => placesTokens.length).toBe(4);
+  expect(placesTokens[3]).not.toBe(placesTokens[2]);
 
   await page.evaluate(async () => {
     const harnessPath = "/tests/e2e/fixtures/gi04-address-harness.tsx";
@@ -426,13 +451,26 @@ test("simulation reviews addresses on lead, client, and project create forms", a
   await clientDialog.getByLabel("Primary contact").fill("GI-04 Create Contact");
   await clientDialog.getByLabel("Work email").fill("gi04-create@example.test");
   const clientField = addressField(clientDialog, "client");
-  const clientInput = clientField.getByRole("combobox", { name: "Primary site address", exact: true });
+  const clientInput = clientField.getByRole("combobox", { name: "Primary site address" });
   await clientInput.fill("123 Tes");
   const suggestion = clientField.getByRole("option", { name: standardizedAddress });
   await expect(suggestion).toBeVisible();
   await clientInput.press("Escape");
   await expect(suggestion).toBeHidden();
   await expect(clientInput).toBeFocused();
+  // A pointer press outside the field dismisses the listbox without accepting
+  // anything, so it can never hijack a click aimed at a control it covers.
+  await clientInput.fill("123 Test");
+  await expect(suggestion).toBeVisible();
+  await clientDialog.getByRole("heading", { name: "Add a client" }).click();
+  await expect(suggestion).toBeHidden();
+  await expect(clientInput).toHaveValue("123 Test");
+  // Moving focus out of the field group also dismisses the listbox.
+  await clientInput.fill("123 Tes");
+  await expect(suggestion).toBeVisible();
+  await clientInput.press("Shift+Tab");
+  await expect(suggestion).toBeHidden();
+  await expect(clientInput).toHaveValue("123 Tes");
   await clientInput.fill("123 Test");
   await expect(suggestion).toBeVisible();
   await clientInput.press("ArrowDown");
@@ -493,6 +531,13 @@ test("simulation reviews addresses on lead, client, and project edit forms", asy
   await page.setViewportSize({ width: 1280, height: 900 });
   const suffix = String(Date.now());
   const fixture = await createEditFixtures(page.request, suffix);
+  let validationPosts = 0;
+  page.on("request", (request) => {
+    if (
+      new URL(request.url()).pathname === "/api/v1/address-validation"
+      && request.method() === "POST"
+    ) validationPosts += 1;
+  });
 
   await gotoLiveView(page, "/leads", "/api/v1/leads");
   await page.getByRole("button", { name: `View details for ${fixture.lead.company}` }).click();
@@ -553,6 +598,20 @@ test("simulation reviews addresses on lead, client, and project edit forms", asy
   const clientDrawer = page.getByRole("dialog", { name: `${fixture.client.name} client account` });
   await clientDrawer.getByRole("button", { name: "Edit client" }).click();
   const clientEditor = page.getByRole("dialog", { name: new RegExp(`Edit ${fixture.client.clientCode} client`) });
+  // An edit that never touches the seeded address saves without any address
+  // review requirement and without any address-validation traffic.
+  const validationPostsBeforeUntouchedSave = validationPosts;
+  await clientEditor.getByLabel("Industry").selectOption("Retail");
+  await clientEditor.getByRole("button", { name: "Save changes" }).click();
+  await expect(clientEditor).toBeHidden();
+  expect(validationPosts).toBe(validationPostsBeforeUntouchedSave);
+  expect((await apiRows(page.request, "/api/v1/clients", "clients"))
+    .find((row) => row.id === fixture.client.id)).toEqual(expect.objectContaining({
+    industry: "Retail",
+    site_address: "Original client address",
+  }));
+  await clientDrawer.getByRole("button", { name: "Edit client" }).click();
+  await expect(clientEditor).toBeVisible();
   await reviewAndChooseStandardized(
     clientEditor,
     "client",

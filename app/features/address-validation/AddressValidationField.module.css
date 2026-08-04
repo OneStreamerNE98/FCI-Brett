@@ -1,6 +1,6 @@
 .field {
   display: grid;
-  gap: 0.48rem;
+  gap: 6px;
 }
 
 .labelRow {
@@ -15,6 +15,12 @@
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.025em;
+}
+
+/* Neutralize the global `.modal label { margin-bottom: 14px }` field-wrapper
+   spacing so the label-to-input gap stays at the 6px modal standard. */
+.field .label {
+  margin-bottom: 0;
 }
 
 .limit {
@@ -89,31 +95,33 @@
 .reviewButton,
 .choiceButton {
   align-items: center;
-  border: 1px solid rgba(45, 74, 60, 0.24);
-  border-radius: 999px;
+  border: 1px solid var(--line, #ded7cf);
+  border-radius: var(--radius-pill, 999px);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
   font-size: 0.74rem;
   font-weight: 700;
   gap: 0.35rem;
+  min-height: var(--control-standard, 40px);
   padding: 0.42rem 0.7rem;
 }
 
-.reviewButton {
-  background: #f5f8f6;
-  color: #315742;
-}
-
+.reviewButton,
 .choiceButton {
-  background: #fff;
-  color: #315742;
+  background: var(--surface, #fff);
+  color: var(--accent, #5b5048);
 }
 
 .choiceButtonPrimary {
-  background: #315742;
-  border-color: #315742;
+  background: var(--accent, #5b5048);
+  border-color: var(--accent, #5b5048);
   color: #fff;
+}
+
+.choiceButtonPrimary:hover {
+  background: var(--accent-dark, #3d3632);
+  border-color: var(--accent-dark, #3d3632);
 }
 
 .reviewButton:disabled,
@@ -159,7 +167,17 @@
   font-weight: 700;
 }
 
-@media (max-width: 640px) {
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 560px) {
   .actions {
     align-items: stretch;
   }
@@ -167,7 +185,13 @@
   .reviewButton,
   .choiceButton {
     justify-content: center;
-    min-height: 2.55rem;
+    min-height: var(--target-min, 44px);
     width: 100%;
+  }
+
+  .suggestion {
+    align-items: center;
+    display: flex;
+    min-height: var(--target-min, 44px);
   }
 }

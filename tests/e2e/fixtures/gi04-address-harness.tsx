@@ -23,6 +23,7 @@ export function unmountAddressValidationHarness() {
 
 export function mountAddressValidationHarness(
   mapsRuntime: JobSiteMapsRuntimeConfig,
+  initialValue = "",
 ) {
   unmountAddressValidationHarness();
   const host = document.createElement("div");
@@ -40,7 +41,9 @@ export function mountAddressValidationHarness(
   const root = createRoot(host);
 
   function Harness() {
-    const [value, setValue] = useState("");
+    // A non-empty initial value simulates the edit modals, which seed the
+    // field from the saved record on mount.
+    const [value, setValue] = useState(initialValue);
     function submit(event: FormEvent<HTMLFormElement>) {
       event.preventDefault();
       host.dataset.submits = String(Number(host.dataset.submits ?? "0") + 1);

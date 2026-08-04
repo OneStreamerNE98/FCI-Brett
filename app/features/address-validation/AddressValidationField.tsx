@@ -1,7 +1,13 @@
 "use client";
 
 import { Check, LoaderCircle, MapPin, Search } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+} from "react";
 
 import type {
   AddressEntityKind,
@@ -80,8 +86,13 @@ export function AddressValidationField({
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [validating, setValidating] = useState(false);
   const [tokenizedAutocompleteStarted, setTokenizedAutocompleteStarted] = useState(false);
+  const [userEditedAddress, setUserEditedAddress] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // The value present at mount is a seed (edit modals, inbox prefill), not a
+  // user edit. It must never start a billable autocomplete session.
+  const seededValueRef = useRef(value);
   const sessionRef = useRef<AddressAutocompleteSession | null>(null);
   sessionRef.current ??= createAddressAutocompleteSession();
   const suggestionRequestRef = useRef(0);
@@ -97,11 +108,14 @@ export function AddressValidationField({
     input.setCustomValidity(
       review && choice === null
         ? "Choose the standardized suggestion or explicitly keep the typed address."
-        : tokenizedAutocompleteStarted
+        : tokenizedAutocompleteStarted && userEditedAddress
+          // Only an address the user actually edited this session, with
+          // autocomplete used on that edit, may block Save. An untouched
+          // seeded address never blocks an unrelated edit from saving.
           ? "Review this address before saving because autocomplete was used."
           : "",
     );
-  }, [choice, review, tokenizedAutocompleteStarted]);
+  }, [choice, review, tokenizedAutocompleteStarted, userEditedAddress]);
 
   useEffect(() => () => {
     // Cancel/navigation must never cause a hidden validation write. Dropping
@@ -117,6 +131,10 @@ export function AddressValidationField({
     if (
       disabled
       || validating
+      // Mount, seeding, and rehydration never fire a request: suggestions may
+      // start only after the user edited the field and moved it off the seed.
+      || !userEditedAddress
+      || value === seededValueRef.current
       || query.length < 3
       || review
       || acceptedSuggestionRef.current === value
@@ -189,6 +207,7 @@ export function AddressValidationField({
     liveAutocompleteApiKey,
     disabled,
     review,
+    userEditedAddress,
     validating,
     value,
   ]);
@@ -274,6 +293,24 @@ export function AddressValidationField({
     inputRef.current?.focus();
   }
 
+  function dismissSuggestions() {
+    setSuggestions([]);
+    setActiveSuggestion(-1);
+  }
+
+  function handleFieldBlur(event: FocusEvent<HTMLDivElement>) {
+    // Moving focus anywhere inside the field group (input, listbox options,
+    // Review button) keeps the listbox; leaving the group dismisses it so it
+    // can never keep floating over unrelated controls.
+    if (
+      event.relatedTarget instanceof Node
+      && event.currentTarget.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+    dismissSuggestions();
+  }
+
   function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (visibleSuggestions.length === 0) return;
     if (event.key === "ArrowDown") {
@@ -294,8 +331,7 @@ export function AddressValidationField({
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      setSuggestions([]);
-      setActiveSuggestion(-1);
+      dismissSuggestions();
     }
   }
 
@@ -309,10 +345,31 @@ export function AddressValidationField({
   const suggestionsAvailable = !disabled && !review && value.trim().length >= 3;
   const visibleSuggestions = suggestionsAvailable ? suggestions : [];
 
-  return <div className={styles.field} data-address-validation-field={entityKind}>
+  useEffect(() => {
+    if (visibleSuggestions.length === 0) return;
+    function handlePointerDown(event: PointerEvent) {
+      const container = containerRef.current;
+      if (!container) return;
+      if (event.target instanceof Node && container.contains(event.target)) return;
+      // A pointer press outside the field container dismisses the listbox
+      // without accepting anything, so it cannot hijack a click aimed at a
+      // control it happens to cover.
+      setSuggestions([]);
+      setActiveSuggestion(-1);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [visibleSuggestions.length]);
+
+  return <div
+    ref={containerRef}
+    className={styles.field}
+    data-address-validation-field={entityKind}
+    onBlur={handleFieldBlur}
+  >
     <div className={styles.labelRow}>
       <label className={styles.label} htmlFor={id}>
-        {label}{required ? <span aria-hidden="true"> *</span> : null}
+        {label}{required ? null : <span className="optional-label">Optional</span>}
       </label>
       <span className={styles.limit}>{value.length}/280</span>
     </div>
@@ -332,12 +389,16 @@ export function AddressValidationField({
         aria-autocomplete="list"
         aria-haspopup="listbox"
         aria-expanded={visibleSuggestions.length > 0}
-        aria-invalid={tokenizedAutocompleteStarted || review !== null && choice === null}
+        aria-invalid={tokenizedAutocompleteStarted && userEditedAddress
+          || review !== null && choice === null}
         aria-controls={`${id}-address-suggestions`}
         aria-activedescendant={activeSuggestion >= 0 && visibleSuggestions.length > activeSuggestion
           ? `${id}-address-suggestion-${activeSuggestion}`
           : undefined}
-        onChange={(event) => resetReview(event.target.value)}
+        onChange={(event) => {
+          setUserEditedAddress(true);
+          resetReview(event.target.value);
+        }}
         onKeyDown={handleInputKeyDown}
       />
       {visibleSuggestions.length > 0 && <div className={styles.suggestions}>
@@ -372,7 +433,7 @@ export function AddressValidationField({
         onClick={() => void requestReview()}
       >
         {validating
-          ? <LoaderCircle size={14} aria-hidden="true" />
+          ? <LoaderCircle className={styles.spinner} size={14} aria-hidden="true" />
           : <Search size={14} aria-hidden="true" />}
         {validating ? "Reviewing…" : review ? "Review again" : "Review address"}
       </button>
