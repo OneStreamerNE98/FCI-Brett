@@ -129,6 +129,6 @@ test("modal hint layout and panel-scoped Escape guard remain wired", async () =>
   assert.match(styles, /@media \(min-width:561px\)\{\.modal-hint-form-row>label\{padding-top:16px\}\}/u);
   assert.match(
     overlay,
-    /if \(event\.key === "Escape"\) \{\s*if \(panel\.querySelector\("\.info-hint\.open"\)\) return;\s*event\.preventDefault\(\);/u,
+    /if \(event\.key === "Escape"\) \{\s*if \(panel\.querySelector\("\.info-hint\.open"\)\) return;\s*const eventTarget = event\.target instanceof HTMLElement \? event\.target : null;[\s\S]{0,240}if \(eventTarget\?\.matches\('\[role="combobox"\]\[aria-expanded="true"\]'\)\) return;\s*event\.preventDefault\(\);/u,
   );
 });

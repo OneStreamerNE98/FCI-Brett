@@ -121,6 +121,6 @@ test("an open panel-scoped hint consumes Escape before the overlay closes", asyn
   const overlay = await read("app/components/AccessibleOverlay.tsx");
   assert.match(
     overlay,
-    /if \(event\.key === "Escape"\) \{\s*if \(panel\.querySelector\("\.info-hint\.open"\)\) return;\s*event\.preventDefault\(\);/u,
+    /if \(event\.key === "Escape"\) \{\s*if \(panel\.querySelector\("\.info-hint\.open"\)\) return;\s*const eventTarget = event\.target instanceof HTMLElement \? event\.target : null;[\s\S]{0,240}if \(eventTarget\?\.matches\('\[role="combobox"\]\[aria-expanded="true"\]'\)\) return;\s*event\.preventDefault\(\);/u,
   );
 });
