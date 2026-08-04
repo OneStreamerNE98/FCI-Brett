@@ -1,3 +1,4 @@
+import { GoogleIntegrationError } from "./google-integration-error";
 import {
   resolveWorkspaceBlueprintFolderNames,
   seedWorkspaceBlueprint,
@@ -191,7 +192,17 @@ export function buildProjectFolderPlan(input: {
   const year = input.year ?? new Date().getUTCFullYear().toString();
   const accountsRoot = input.blueprint.drive.roots.find((folder) => folder.key === "client-accounts");
   const projectsRoot = input.blueprint.drive.roots.find((folder) => folder.key === "projects");
-  if (!accountsRoot || !projectsRoot) throw new Error("The workspace blueprint must define client and project roots.");
+  // Same condition, same typed answer as buildProjectDriveBlueprintPlan in google-drive.ts:
+  // the blueprint editor lets an owner remove either root in one click and the sanitizer
+  // accepts it, so the preview has to report a 409 the caller can act on, not a bare throw
+  // the route turns into an unhandled 500.
+  if (!accountsRoot || !projectsRoot) {
+    throw new GoogleIntegrationError(
+      "workspace_blueprint_root_missing",
+      "The workspace blueprint must define both the client-accounts and projects roots before project folders can be provisioned.",
+      409,
+    );
+  }
   const names = resolveWorkspaceBlueprintFolderNames(input.blueprint, { ...input, year });
   const leafPaths = (folders: WorkspaceBlueprint["drive"]["projectFolders"]) => (
     Object.freeze(workspaceBlueprintLeafFolderPaths(folders).map((path) => path.join(" / ")))

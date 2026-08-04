@@ -660,6 +660,96 @@ test("provisioning reuses stable entity identities and adopts legacy child stamp
   assert.equal(provider.calls.some((call) => call.method === "DELETE"), false);
 });
 
+function provisionedProjectFixture(staleFolder) {
+  return inMemoryDriveProvider([
+    { id: "shared-drive-root", name: "FCI Operations", mimeType: "application/vnd.google-apps.folder", parents: [], trashed: false, appProperties: {} },
+    { id: "client-accounts-root", name: "01_Client Accounts", mimeType: "application/vnd.google-apps.folder", parents: ["shared-drive-root"], trashed: false, appProperties: { fciRootKey: "client-accounts" } },
+    { id: "projects-root", name: "02_Projects", mimeType: "application/vnd.google-apps.folder", parents: ["shared-drive-root"], trashed: false, appProperties: { fciRootKey: "projects" } },
+    { id: "the-client", name: "FCI TEST — DO NOT USE", mimeType: "application/vnd.google-apps.folder", parents: ["client-accounts-root"], trashed: false, appProperties: { fciClientId: "client-1", fciFolderKind: "client" } },
+    { id: "year-2026", name: "2026", mimeType: "application/vnd.google-apps.folder", parents: ["projects-root"], trashed: false, appProperties: { fciWorkspaceFolder: "projects-2026" } },
+    { id: "the-project", name: "FCI2026-001 — FCI TEST — DO NOT USE", mimeType: "application/vnd.google-apps.folder", parents: ["year-2026"], trashed: false, appProperties: { fciProjectId: "project-1", fciFolderKind: "project" } },
+    staleFolder,
+  ]);
+}
+
+function provisionProject(client, blueprint) {
+  return client.provisionProjectFolders({
+    client: { id: "client-1", code: "FCI TEST", name: "DO NOT USE" },
+    project: { id: "project-1", number: "FCI2026-001", name: "FCI TEST — DO NOT USE", year: "2026" },
+    blueprint,
+  });
+}
+
+// Reproduced review defect: an owner deleted an owner-managed project folder and re-added a
+// folder with the same name under a new key. The Drive folder kept the removed key's stamp, so
+// name adoption hit the identity comparison and every provisioning run 409'd — permanently,
+// with no in-app recovery, because the app never deletes anything in Drive. The recovery is a
+// property UPDATE on that same folder.
+test("a stale blueprint-key stamp is re-adopted by name and updated in place", async () => {
+  const blueprint = structuredClone(seedWorkspaceBlueprint());
+  const index = blueprint.drive.projectFolders.findIndex((folder) => folder.key === "lead-proposal");
+  blueprint.drive.projectFolders.splice(index, 1, { key: "lead-package", name: "01_Lead & Proposal", management: "owner", children: [] });
+  const provider = provisionedProjectFixture({
+    id: "stale-lead",
+    name: "01_Lead & Proposal",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: ["the-project"],
+    trashed: false,
+    appProperties: { fciFolderKey: "lead-proposal", fciProjectId: "project-1", fciFolderKind: "project-child" },
+  });
+  const client = new GoogleDriveClient("test-token", config(), provider.fetcher);
+
+  await provisionProject(client, blueprint);
+
+  assert.deepEqual(provider.files.get("stale-lead").appProperties, {
+    fciFolderKey: "lead-package",
+    fciProjectId: "project-1",
+    fciFolderKind: "project-child",
+  });
+  // Adoption is an appProperties PATCH: the folder keeps its id and its name, and no second
+  // folder is created for the new key.
+  assert.equal(provider.files.get("stale-lead").name, "01_Lead & Proposal");
+  assert.equal(provider.children("the-project").filter((folder) => folder.name === "01_Lead & Proposal").length, 1);
+  const patches = provider.calls.filter((call) => call.method === "PATCH" && call.url.pathname.endsWith("/stale-lead"));
+  assert.equal(patches.length, 1);
+  assert.deepEqual(Object.keys(patches[0].body), ["appProperties"]);
+  assert.equal(Object.values(patches[0].body.appProperties).some((value) => value === null), false);
+
+  // Still idempotent on the next run, and nothing is ever removed or trashed.
+  await provisionProject(client, blueprint);
+  assert.equal(provider.files.get("stale-lead").appProperties.fciFolderKey, "lead-package");
+  assert.equal(provider.calls.some((call) => call.method === "DELETE"), false);
+  assert.equal(provider.calls.some((call) => call.body && "trashed" in call.body), false);
+});
+
+// The escape hatch is narrow on purpose: it only applies when the stamped key is gone from the
+// saved blueprint. A key that is still defined owns its folder, so a different key claiming that
+// folder's name must stay a 409 rather than silently stealing it.
+test("a name-matched folder whose stamped key is still in the blueprint stays a 409", async () => {
+  const blueprint = structuredClone(seedWorkspaceBlueprint());
+  // The owner renamed photos-qa and gave its former name to a brand-new folder key.
+  blueprint.drive.projectFolders.find((folder) => folder.key === "photos-qa").name = "04_Photos";
+  blueprint.drive.projectFolders.push({ key: "site-photos", name: "04_Photos & QA", management: "owner", children: [] });
+  const provider = provisionedProjectFixture({
+    id: "photos-folder",
+    name: "04_Photos & QA",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: ["the-project"],
+    trashed: false,
+    appProperties: { fciFolderKey: "photos-qa", fciProjectId: "project-1", fciFolderKind: "project-child" },
+  });
+  const client = new GoogleDriveClient("test-token", config(), provider.fetcher);
+
+  await assert.rejects(
+    provisionProject(client, blueprint),
+    (error) => error.code === "drive_folder_identity_conflict" && error.status === 409,
+  );
+  // photos-qa keeps both its folder and its stamp; a blueprint rename never renames Drive.
+  assert.equal(provider.files.get("photos-folder").appProperties.fciFolderKey, "photos-qa");
+  assert.equal(provider.files.get("photos-folder").name, "04_Photos & QA");
+  assert.equal(provider.calls.some((call) => call.method === "DELETE"), false);
+});
+
 test("project provisioning creates missing blueprint roots with only canonical fciRootKey identities", async () => {
   const blueprint = structuredClone(seedWorkspaceBlueprint());
   const provider = inMemoryDriveProvider([{

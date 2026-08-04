@@ -217,13 +217,13 @@ function configure({
   state.tokenFailure = tokenFailure;
 }
 
-function officeRequest(path, method = "GET", body) {
+function officeRequest(path, method = "GET", body, email = ADMIN_EMAIL) {
   const url = new URL(path, "https://fci.example.test");
   return new Request(url, {
     method,
     headers: {
       ...(method === "GET" ? {} : { origin: url.origin, "content-type": "application/json" }),
-      "oai-authenticated-user-email": ADMIN_EMAIL,
+      "oai-authenticated-user-email": email,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -449,6 +449,76 @@ test("Workspace readiness and folder-plan preview both consume the persisted blu
   assert.ok(previewPayload.plan.clientFolders.includes("Site Surveys"));
   assert.match(previewPayload.plan.projectFolder, /\/\d{4}\/\d{4} · PR-009 · FCI TEST Project$/u);
   assert.ok(previewPayload.plan.projectFolders.includes("07_Field Notes"));
+});
+
+// Review defect: this route is `requireOfficeUser` with no admin option, and it is fetched by a
+// non-admin-reachable page (InboxView). Returning the persisted, admin-edited blueprint here
+// handed every office user the whole tenant configuration document — business name, naming
+// patterns, and the full folder/template/spreadsheet/calendar layout — while every other route
+// that returns that document is admin-gated. No client consumer reads the field, so non-admins
+// simply do not get it.
+test("Workspace readiness withholds the persisted tenant blueprint from non-admin office users", async () => {
+  const officeEmail = "office@cherryhillfci.com";
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.business.displayName = "FCI TEST Tenant Business";
+  blueprint.naming.clientFolderPattern = "{name} [{code}]";
+  blueprint.drive.sharedDriveName = "FCI TEST Tenant Drive";
+  blueprint.drive.projectFolders.push({ key: "field-notes", name: "07_FCI TEST Field Notes", management: "owner", children: [] });
+  blueprint.templates.push({ key: "tenant-letter", name: "FCI TEST Tenant Letter", kind: "doc", targetFolderKey: "templates", management: "owner" });
+  configure({ blueprint, overrides: { FCI_OFFICE_EMAILS: `${ADMIN_EMAIL},${officeEmail}` } });
+
+  const nonAdmin = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace", "GET", undefined, officeEmail));
+  assert.equal(nonAdmin.status, 200);
+  const nonAdminBody = await nonAdmin.text();
+  assert.equal(JSON.parse(nonAdminBody).blueprint, undefined);
+  for (const persisted of [
+    "FCI TEST Tenant Business",
+    "{name} [{code}]",
+    "07_FCI TEST Field Notes",
+    "FCI TEST Tenant Letter",
+  ]) {
+    assert.equal(nonAdminBody.includes(persisted), false, `non-admin payload disclosed ${persisted}`);
+  }
+  // Boundary: `workspace.storageName` is the Shared Drive's display name. It has resolved from
+  // the persisted blueprint since before this change, it is unchanged here, and it is one of
+  // the fields consumers actually read — so it stays, and only the configuration document goes.
+  assert.equal(JSON.parse(nonAdminBody).workspace.storageName, "FCI TEST Tenant Drive");
+  // The rest of the readiness payload still has to work for a non-admin caller.
+  assert.equal(JSON.parse(nonAdminBody).workspace.connectionStatus, "connected");
+
+  const adminPayload = await (await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"))).json();
+  assert.equal(adminPayload.blueprint.business.displayName, "FCI TEST Tenant Business");
+  assert.equal(adminPayload.blueprint.naming.clientFolderPattern, "{name} [{code}]");
+  assert.ok(adminPayload.blueprint.drive.projectFolders.some((folder) => folder.key === "field-notes"));
+  assert.ok(adminPayload.blueprint.templates.some((template) => template.key === "tenant-letter"));
+});
+
+// Review defect: the blueprint editor lets an owner remove the client-accounts or projects root
+// in one click and the sanitizer accepts it, so the preview reached a state where it threw a
+// bare Error and the route returned an unhandled 500. The sibling provisioning helper answers
+// the identical condition with a typed 409, and the preview must agree.
+test("Folder-plan preview answers a missing blueprint root with a typed 409, not an unhandled 500", async () => {
+  for (const removedRoot of ["client-accounts", "projects"]) {
+    const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+    blueprint.drive.roots = blueprint.drive.roots.filter((folder) => folder.key !== removedRoot);
+    blueprint.spreadsheets = blueprint.spreadsheets.filter((sheet) => sheet.targetFolderKey !== removedRoot);
+    configure({ blueprint });
+
+    const response = await workspaceRoute.POST(officeRequest(
+      "/api/v1/google-workspace",
+      "POST",
+      {
+        clientCode: "CL-042",
+        clientName: "FCI TEST Client",
+        projectNumber: "PR-009",
+        projectName: "FCI TEST Project",
+      },
+    ));
+    assert.equal(response.status, 409, `${removedRoot} removed`);
+    const payload = await response.json();
+    assert.equal(payload.code, "workspace_blueprint_root_missing", `${removedRoot} removed`);
+    assert.match(payload.error, /client-accounts and projects roots/u);
+  }
 });
 
 test("Calendar verify probes events.list and adopts the ID into the registry", async () => {

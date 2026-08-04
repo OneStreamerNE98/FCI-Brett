@@ -141,6 +141,21 @@ export type DriveSetupItem = Readonly<{
   appProperties: Readonly<Record<string, string>>;
 }>;
 
+/** Every folder key the saved blueprint still defines, across all three collections. */
+export function workspaceBlueprintFolderKeys(blueprint: WorkspaceBlueprint): ReadonlySet<string> {
+  const keys = new Set<string>();
+  const walk = (folders: readonly WorkspaceBlueprintFolder[]) => {
+    for (const folder of folders) {
+      keys.add(folder.key);
+      walk(folder.children);
+    }
+  };
+  walk(blueprint.drive.roots);
+  walk(blueprint.drive.clientFolders);
+  walk(blueprint.drive.projectFolders);
+  return keys;
+}
+
 export function buildProjectDriveBlueprintPlan(blueprint: WorkspaceBlueprint) {
   const accountsRoot = blueprint.drive.roots.find((folder) => folder.key === "client-accounts");
   const projectsRoot = blueprint.drive.roots.find((folder) => folder.key === "projects");
@@ -1032,6 +1047,7 @@ export class GoogleDriveClient {
     entityProperty: "fciClientId" | "fciProjectId";
     entityId: string;
     folderKind: "client-profile" | "client-project-links" | "client-child" | "project-child";
+    blueprintFolderKeys: ReadonlySet<string>;
   }) {
     const identity = {
       key: PROVISIONED_BLUEPRINT_FOLDER_IDENTITY,
@@ -1042,12 +1058,23 @@ export class GoogleDriveClient {
       [input.entityProperty]: input.entityId,
       fciFolderKind: input.folderKind,
     });
-    const canonical = async (folder: DriveFile) => {
+    const canonical = async (folder: DriveFile, adoptableByName = false) => {
       const currentKey = folder.appProperties?.[PROVISIONED_BLUEPRINT_FOLDER_IDENTITY];
       const currentEntity = folder.appProperties?.[input.entityProperty];
       const currentKind = folder.appProperties?.fciFolderKind;
+      // A folder matched by NAME whose stamped key no longer appears anywhere in the saved
+      // blueprint is a leftover from an earlier blueprint version: the owner removed that key
+      // and re-added a folder of the same name under a new one. Without this the stale stamp is
+      // unreachable — it wins the identity comparison forever, so every later provisioning run
+      // 409s with no in-app way out. Re-stamping is a property UPDATE on the same folder; the
+      // folder is never moved, renamed, or deleted. A key that IS still in the blueprint stays a
+      // genuine conflict, because that other blueprint entry still owns this folder.
+      const staleStamp = adoptableByName
+        && typeof currentKey === "string"
+        && currentKey.length > 0
+        && !input.blueprintFolderKeys.has(currentKey);
       if (
-        (currentKey && currentKey !== input.folder.key)
+        (currentKey && currentKey !== input.folder.key && !staleStamp)
         || (currentEntity && currentEntity !== input.entityId)
         || (currentKind && currentKind !== input.folderKind)
       ) {
@@ -1073,7 +1100,7 @@ export class GoogleDriveClient {
     if (named.length > 1) {
       throw new GoogleIntegrationError("ambiguous_drive_folder", `More than one Google Drive folder is named ${input.folder.name}.`, 409);
     }
-    if (named.length === 1) return canonical(named[0]);
+    if (named.length === 1) return canonical(named[0], true);
 
     const created = await this.createFolder(input.parentId, input.folder.name, properties);
     if (Object.entries(properties).some(([key, value]) => created.appProperties?.[key] !== value)) {
@@ -1568,6 +1595,7 @@ export class GoogleDriveClient {
     blueprint: WorkspaceBlueprint;
   }) {
     const blueprintPlan = buildProjectDriveBlueprintPlan(input.blueprint);
+    const blueprintFolderKeys = workspaceBlueprintFolderKeys(input.blueprint);
     const folderNames = resolveWorkspaceBlueprintFolderNames(input.blueprint, {
       clientCode: input.client.code,
       clientName: input.client.name,
@@ -1614,6 +1642,7 @@ export class GoogleDriveClient {
           entityProperty,
           entityId,
           folderKind,
+          blueprintFolderKeys,
         });
         await ensureTree(child.id, folder.children, entityProperty, entityId);
       }
