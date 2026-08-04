@@ -106,6 +106,9 @@ function persistence(overrides = {}) {
     async findConnection() {
       return null;
     },
+    async hasTenantScopedData() {
+      return false;
+    },
     async revokeConnection() {
       return false;
     },

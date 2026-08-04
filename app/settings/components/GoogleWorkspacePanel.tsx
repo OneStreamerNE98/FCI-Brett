@@ -74,6 +74,11 @@ type ConnectionHealthPayload = {
     requiresReauthorization: boolean;
   };
 };
+type TenantResetPreview = {
+  available: boolean;
+  connectionStatus: string;
+  discardedTenant: string | null;
+};
 type ConnectionHealthState = "idle" | "loading" | "ready" | "error";
 type WorkspaceReadinessState = "idle" | "loading" | "ready" | "error";
 type WorkspaceSetupResourcesState = "idle" | "loading" | "ready" | "error";
@@ -434,6 +439,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [connectionHealth, setConnectionHealth] = useState<ConnectionHealthPayload | null>(null);
   const [connectionHealthState, setConnectionHealthState] = useState<ConnectionHealthState>("idle");
   const [connectionHealthError, setConnectionHealthError] = useState<string | null>(null);
+  const [tenantResetPreview, setTenantResetPreview] = useState<TenantResetPreview | null>(null);
+  const [tenantResetPreviewError, setTenantResetPreviewError] = useState<string | null>(null);
+  const [tenantResetOpen, setTenantResetOpen] = useState(false);
+  const [tenantResetConfirmation, setTenantResetConfirmation] = useState("");
+  const [tenantResetWorking, setTenantResetWorking] = useState(false);
   const [workspaceResources, setWorkspaceResources] = useState<WorkspaceSetupResourcesPayload | null>(null);
   const [workspaceResourcesState, setWorkspaceResourcesState] = useState<WorkspaceSetupResourcesState>("idle");
   const [workspaceResourcesError, setWorkspaceResourcesError] = useState<string | null>(null);
@@ -612,6 +622,23 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
       const data = await cachedGetJson<ConnectionHealthPayload>("/api/v1/integrations/google/connection", { force });
       setConnectionHealth(data);
       setConnectionHealthState("ready");
+      if (!data.simulation && data.connection.status === "revoked") {
+        try {
+          const response = await fetch("/api/v1/integrations/google/tenant/reset", { cache: "no-store" });
+          const preview = await response.json() as TenantResetPreview & { error?: string };
+          if (!response.ok) throw new Error(preview.error ?? "Tenant reset details could not be loaded.");
+          setTenantResetPreview(preview);
+          setTenantResetPreviewError(null);
+        } catch {
+          setTenantResetPreview(null);
+          setTenantResetPreviewError("Tenant reset details could not be loaded. Check readiness before changing tenants.");
+        }
+      } else {
+        setTenantResetPreview(null);
+        setTenantResetPreviewError(null);
+        setTenantResetOpen(false);
+        setTenantResetConfirmation("");
+      }
     } catch {
       setConnectionHealthError("Connection details could not be loaded. Retry before changing the saved connection.");
       setConnectionHealthState("error");
@@ -948,6 +975,39 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
   }
 
+  async function resetWorkspaceTenant() {
+    if (!tenantResetPreview?.discardedTenant) return;
+    setTenantResetWorking(true);
+    try {
+      const data = await readApi<{ reset: boolean; discardedTenant: string }>("/api/v1/integrations/google/tenant/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation: tenantResetConfirmation }),
+      });
+      setDriveVerified(false);
+      setGmailLabelsReady(false);
+      setGmailTestEmailPassed(false);
+      setCalendarChecked(false);
+      setSheetsVerificationPassed(false);
+      setGmailMessages([]);
+      setCalendarEvents([]);
+      setTenantResetOpen(false);
+      setTenantResetConfirmation("");
+      setTenantResetPreview(null);
+      setBlueprintEditorRevision((current) => current + 1);
+      notify(`Tenant data for ${data.discardedTenant} was cleared. Connect the new company tenant to provision cleanly.`, "success");
+      invalidateCachedGet("/api/v1/google-workspace");
+      invalidateCachedGet("/api/v1/integrations/google/connection");
+      invalidateCachedGet("/api/v1/integrations/google/setup/resources");
+      invalidateCachedGet("/api/v1/integrations/google/sheets/status");
+      await refreshWorkspaceSetup(true);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "The saved Workspace tenant could not be reset.", "error");
+    } finally {
+      setTenantResetWorking(false);
+    }
+  }
+
   const simulation = workspace?.simulation === true;
   const resourceRows = workspaceResources?.resources ?? [];
   const workspaceResourcesKnown = workspaceResources !== null && workspaceResourcesState !== "error";
@@ -1198,9 +1258,11 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           ? "An approved FCI administrator must complete the Google connection."
           : oauthResult === "setup-needed"
             ? "Google setup is incomplete. Review the missing configuration below."
-            : oauthResult === "connection-failed"
-              ? "Google could not be connected. Confirm the approved account, folder, and requested services, then try again."
-              : null;
+            : oauthResult === "tenant-reset-required"
+              ? "A different Google tenant was detected. Disconnect the saved account, then choose Start fresh on a new tenant before connecting again."
+              : oauthResult === "connection-failed"
+                ? "Google could not be connected. Confirm the approved account, folder, and requested services, then try again."
+                : null;
 
   return <section className="panel workspace-settings">
     <div className="settings-heading">
@@ -1275,8 +1337,10 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
               : <>
                 {!connected && <AdministratorActionButton className="primary-button" isAdmin={isAdmin} onClick={() => void connectGoogleDrive()} disabled={!configured || working}>{working ? "Preparing…" : reconnectRequired ? "Reconnect Google Workspace" : "Connect Google Workspace"}</AdministratorActionButton>}
                 {hasStoredConnection && <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => void disconnectGoogleDrive()} disabled={working}>{working ? "Disconnecting…" : "Disconnect Workspace"}</AdministratorActionButton>}
+                {tenantResetPreview?.available && tenantResetPreview.discardedTenant && <AdministratorActionButton className="soft-button" isAdmin={isAdmin} onClick={() => { setTenantResetConfirmation(""); setTenantResetOpen(true); }} disabled={working || tenantResetWorking}>Start fresh on a new tenant</AdministratorActionButton>}
               </>}
           </div>
+          {tenantResetPreviewError && <p className="workspace-missing" role="alert">{tenantResetPreviewError}</p>}
         </section>
         {isAdmin && <details className={`workspace-connection-health ${panelStyles.connectionHealthExpander}`}>
           <summary className={panelStyles.connectionHealthToggle}>
@@ -1529,8 +1593,38 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         </div>
       </SetupStage>
     </div>
+    {tenantResetOpen && tenantResetPreview?.discardedTenant && <TenantResetModal
+      discardedTenant={tenantResetPreview.discardedTenant}
+      confirmation={tenantResetConfirmation}
+      working={tenantResetWorking}
+      onConfirmation={setTenantResetConfirmation}
+      onConfirm={() => void resetWorkspaceTenant()}
+      onClose={() => { setTenantResetOpen(false); setTenantResetConfirmation(""); }}
+    />}
     {filingMessage && <GmailFilingModal message={filingMessage} projects={projects} projectId={filingProjectId} preview={filingPreview} loading={filingLoading} submitting={filingSubmitting} onProject={(projectId) => { setFilingProjectId(projectId); setFilingPreview(null); }} onPreview={previewGmailFiling} onConfirm={confirmGmailFiling} onClose={closeFilingReview} />}
   </section>;
+}
+
+function TenantResetModal({ discardedTenant, confirmation, working, onConfirmation, onConfirm, onClose }: {
+  discardedTenant: string;
+  confirmation: string;
+  working: boolean;
+  onConfirmation: (value: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const confirmed = confirmation.trim() === discardedTenant;
+  return <AccessibleOverlay ariaLabel="Start fresh on a new Google Workspace tenant" contentClassName="modal" onClose={onClose} busy={working}>
+    <header><div><p className="eyebrow">Destructive administrator action</p><h2>Start fresh on a new tenant</h2></div><button type="button" onClick={onClose} aria-label="Close" disabled={working}><X size={20} /></button></header>
+    <form onSubmit={(event) => { event.preventDefault(); if (confirmed) onConfirm(); }}>
+      <p className="workspace-missing"><CircleAlert size={15} /> This permanently discards Workspace data associated with <strong>{discardedTenant}</strong>. It cannot be restored by reconnecting.</p>
+      <p className="form-help">Filed-email evidence and saved Gmail, Drive, Calendar, Sheets, resource, and blueprint identifiers will be removed because the new tenant cannot read them. Client and project business rows remain, but their Drive folder IDs and URLs are cleared. Gmail-derived tasks remain with their old message references removed.</p>
+      <label>Type <strong>{discardedTenant}</strong> to confirm
+        <input data-overlay-initial-focus value={confirmation} onChange={(event) => onConfirmation(event.target.value)} autoComplete="off" spellCheck={false} disabled={working} />
+      </label>
+      <footer><button type="button" className="soft-button" onClick={onClose} disabled={working}>Cancel</button><button type="submit" className="primary-button" disabled={!confirmed || working}>{working ? "Discarding tenant data…" : "Discard tenant data"}</button></footer>
+    </form>
+  </AccessibleOverlay>;
 }
 
 export function GmailFilingModal({ message, projects, projectId, preview, loading, submitting, onProject, onPreview, onConfirm, onClose }: {

@@ -47,6 +47,7 @@ export type StoredGoogleOauthAttempt = Readonly<{
 
 export type StoredGoogleConnection = Readonly<{
   id: string;
+  googleSubject: string;
   googleEmail: string;
   refreshTokenCiphertext: string;
   keyVersion: string;
@@ -70,6 +71,7 @@ export interface GoogleOauthPersistence {
   findOauthAttemptByStateHash(stateHash: string): Promise<StoredGoogleOauthAttempt | null>;
   consumeOauthAttempt(id: string, consumedAt: number): Promise<boolean>;
   findConnection(connectionKey: string): Promise<StoredGoogleConnection | null>;
+  hasTenantScopedData(connectionKey: string): Promise<boolean>;
   revokeConnection(input: Readonly<{
     connectionKey: string;
     revokedAt: number;
@@ -842,6 +844,17 @@ export async function saveGoogleConnection(
 ) {
   const now = dependencies.now();
   const existing = await dependencies.persistence.findConnection(config.connectionKey);
+  if (
+    existing
+    && existing.googleSubject !== profile.subject
+    && await dependencies.persistence.hasTenantScopedData(config.connectionKey)
+  ) {
+    throw new GoogleIntegrationError(
+      "google_tenant_reset_required",
+      `The saved Google Workspace account (${existing.googleEmail}) belongs to a different tenant. Disconnect it, then use Start fresh on a new tenant before connecting this account.`,
+      409,
+    );
+  }
   const encrypted = tokens.refreshToken
     ? await encryptGoogleSecretWithStore(
       tokens.refreshToken,

@@ -47,6 +47,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const code = error instanceof Error && "code" in error ? String((error as { code: string }).code) : "connection_failed";
     await writeGoogleIntegrationEvent(config, "oauth.connection_failed", auth.user.email, "connection", config.connectionKey, code);
-    return appRedirect(request, "connection-failed");
+    return appRedirect(request, code === "google_tenant_reset_required" ? "tenant-reset-required" : "connection-failed");
   }
 }
