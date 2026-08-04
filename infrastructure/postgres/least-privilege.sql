@@ -109,10 +109,11 @@ REVOKE ALL ON ALL FUNCTIONS IN SCHEMA fci_app FROM fci_rehearsal_importer;
 -- instead of table-wide access to identity/security fields. Invitation
 -- revocation, session revocation, role reassignment, and project-membership
 -- lifecycle changes are likewise limited to their reviewed columns. No
--- Runtime DELETE is limited to filing_rules because removing a user-authored
--- rule is an explicit repository operation. No other runtime table receives
--- DELETE, and no runtime table receives TRUNCATE, REFERENCES, TRIGGER, or
--- grant options.
+-- Runtime DELETE is limited to filing_rules and expired/consumed address review
+-- receipts. Those receipts are short-lived validation evidence, and bounded
+-- opportunistic cleanup avoids retaining duplicate job-site addresses. No other
+-- runtime table receives DELETE, and no runtime table receives TRUNCATE,
+-- REFERENCES, TRIGGER, or grant options.
 GRANT USAGE ON SCHEMA fci_app TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.clients TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.contacts TO fci_runtime;
@@ -120,7 +121,7 @@ GRANT SELECT, INSERT ON TABLE fci_app.projects TO fci_runtime;
 -- Project mutation stays column-scoped: EDIT-03 opens the nine reviewed
 -- descriptive fields while retaining the existing manager, KPI, audit, and
 -- optimistic-concurrency columns. The runtime never receives table-wide UPDATE.
-GRANT UPDATE (client_id, name, status, site, project_manager, estimated_value, flooring_category, square_feet, contract_value, segment, installation_started_at, installation_completed_at, had_callback, callback_note, updated_by, updated_at, version) ON TABLE fci_app.projects TO fci_runtime;
+GRANT UPDATE (client_id, name, status, site, latitude, longitude, address_validation_verdict, project_manager, estimated_value, flooring_category, square_feet, contract_value, segment, installation_started_at, installation_completed_at, had_callback, callback_note, updated_by, updated_at, version) ON TABLE fci_app.projects TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.leads TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.project_meetings TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.workspace_settings TO fci_runtime;
@@ -132,6 +133,8 @@ GRANT SELECT, INSERT ON TABLE fci_app.google_form_lead_intake_watermarks TO fci_
 GRANT UPDATE (last_processed_row, last_processed_submission_key, last_processed_at, updated_by) ON TABLE fci_app.google_form_lead_intake_watermarks TO fci_runtime;
 GRANT SELECT, INSERT ON TABLE fci_app.google_form_lead_reviews TO fci_runtime;
 GRANT UPDATE (source_row, status, reviewed_by, reviewed_at, updated_at, accepted_lead_id) ON TABLE fci_app.google_form_lead_reviews TO fci_runtime;
+GRANT SELECT, INSERT, DELETE ON TABLE fci_app.address_validation_reviews TO fci_runtime;
+GRANT UPDATE (consumed_at) ON TABLE fci_app.address_validation_reviews TO fci_runtime;
 GRANT INSERT ON TABLE fci_app.activity_events TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.idempotency_requests TO fci_runtime;
 GRANT SELECT, INSERT, UPDATE ON TABLE fci_app.outbox_events TO fci_runtime;

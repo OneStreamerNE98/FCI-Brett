@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const records = sqliteTable("records", {
   id: text("id").primaryKey(),
@@ -36,6 +36,10 @@ export const clients = sqliteTable("clients", {
   normalizedNameKey: text("normalized_name_key"),
   status: text("status").notNull().default("active"),
   industry: text("industry"),
+  siteAddress: text("site_address"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  addressValidationVerdict: text("address_validation_verdict"),
   driveFolderId: text("drive_folder_id"),
   driveUrl: text("drive_url"),
   createdBy: text("created_by").notNull(),
@@ -77,6 +81,9 @@ export const leads = sqliteTable("leads", {
   source: text("source").notNull(),
   stage: text("stage").notNull(),
   site: text("site").notNull(),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  addressValidationVerdict: text("address_validation_verdict"),
   estimatedValue: integer("estimated_value").notNull(),
   nextAction: text("next_action").notNull(),
   nextActionAt: integer("next_action_at", { mode: "timestamp_ms" }),
@@ -99,6 +106,9 @@ export const projects = sqliteTable("projects", {
   name: text("name").notNull(),
   status: text("status").notNull().default("planning"),
   site: text("site"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  addressValidationVerdict: text("address_validation_verdict"),
   projectManager: text("project_manager"),
   estimatedValue: integer("estimated_value"),
   flooringCategory: text("flooring_category"),
@@ -118,6 +128,31 @@ export const projects = sqliteTable("projects", {
 }, (table) => [
   uniqueIndex("projects_number_unique_idx").on(table.projectNumber),
   index("projects_client_idx").on(table.clientId, table.updatedAt),
+]);
+
+/**
+ * Short-lived, actor-bound evidence returned by address validation. Mutation
+ * routes consume these rows once so clients cannot manufacture coordinates or
+ * a validated verdict in their record payload.
+ */
+export const addressValidationReviews = sqliteTable("address_validation_reviews", {
+  id: text("id").primaryKey(),
+  actorId: text("actor_id").notNull(),
+  entityKind: text("entity_kind").notNull(),
+  targetId: text("target_id").notNull(),
+  inputAddress: text("input_address").notNull(),
+  standardizedAddress: text("standardized_address"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  verdict: text("verdict").notNull(),
+  failureCode: text("failure_code"),
+  simulated: integer("simulated", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  consumedAt: integer("consumed_at", { mode: "timestamp_ms" }),
+}, (table) => [
+  index("address_validation_reviews_expiry_idx").on(table.expiresAt),
+  index("address_validation_reviews_actor_idx").on(table.actorId, table.createdAt),
 ]);
 
 /** Project-specific meeting notes, including manual or Otter-derived evidence. */

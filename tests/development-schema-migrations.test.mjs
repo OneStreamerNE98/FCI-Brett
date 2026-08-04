@@ -19,6 +19,7 @@ const productionMigrationModules = new Set([
   join(appRoot, "platform", "postgres", "core-record-concurrency-schema.ts"),
   join(appRoot, "platform", "postgres", "mail-item-analysis-schema.ts"),
   join(appRoot, "platform", "postgres", "google-form-lead-intake-schema.ts"),
+  join(appRoot, "platform", "postgres", "address-validation-schema.ts"),
 ]);
 const drizzleRoot = join(root, "drizzle");
 const packagedDrizzleRoot = join(root, "dist", ".openai", "drizzle");
@@ -33,6 +34,7 @@ const coreRecordConcurrencyMigrationPrefix = "0020_";
 const mailItemAnalysisMigrationPrefix = "0021_";
 const clientNormalizedNameMigrationPrefix = "0022_";
 const googleFormLeadIntakeMigrationPrefix = "0023_";
+const addressValidationMigrationPrefix = "0024_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -759,12 +761,50 @@ test("adds GI-01's bounded watermark and review-first queue in generated migrati
     Object.keys(snapshot.tables).filter((table) => !Object.hasOwn(previousSnapshot.tables, table)).sort(),
     ["google_form_lead_intake_watermarks", "google_form_lead_reviews"],
   );
-  const journalEntry = journal.entries.at(-1);
+  const journalEntry = journal.entries.find(({ idx }) => idx === 23);
+  assert.ok(journalEntry);
   assert.deepEqual(journalEntry, {
     idx: 23,
     version: "6",
     when: journalEntry.when,
     tag: "0023_smiling_silvermane",
+    breakpoints: true,
+  });
+});
+
+test("adds GI-04 address evidence and nullable record metadata in additive migration 0024", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(addressValidationMigrationPrefix));
+  assert.equal(migration, "0024_lowly_selene.sql");
+  assert.equal(
+    files.filter((file) => file.startsWith(addressValidationMigrationPrefix)).length,
+    1,
+  );
+  const [migrationSql, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0023_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0024_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.match(migrationSql, /CREATE TABLE `address_validation_reviews`/u);
+  assert.match(migrationSql, /`consumed_at` integer/u);
+  assert.match(migrationSql, /CREATE INDEX `address_validation_reviews_expiry_idx`/u);
+  assert.match(migrationSql, /ALTER TABLE `clients` ADD `site_address` text/u);
+  for (const table of ["clients", "leads", "projects"]) {
+    for (const column of ["latitude", "longitude", "address_validation_verdict"]) {
+      assert.match(migrationSql, new RegExp("ALTER TABLE `" + table + "` ADD `" + column + "`"));
+    }
+  }
+  assert.doesNotMatch(migrationSql, /\b(?:DROP|UPDATE|DELETE|TRUNCATE|RENAME|INSERT)\b/iu);
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.ok(!Object.hasOwn(previousSnapshot.tables, "address_validation_reviews"));
+  assert.ok(Object.hasOwn(snapshot.tables, "address_validation_reviews"));
+  const journalEntry = journal.entries.at(-1);
+  assert.deepEqual(journalEntry, {
+    idx: 24,
+    version: "6",
+    when: journalEntry.when,
+    tag: "0024_lowly_selene",
     breakpoints: true,
   });
 });

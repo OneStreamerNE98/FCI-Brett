@@ -91,7 +91,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     EXPECTED_RUNTIME_TABLE_ACCESS
       .filter(({ privileges }) => privileges.includes("DELETE"))
       .map(({ table }) => table),
-    ["filing_rules"],
+    ["filing_rules", "address_validation_reviews"],
   );
   assert.deepEqual(
     EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "audit_events")?.privileges,
@@ -116,6 +116,9 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
       "name",
       "status",
       "site",
+      "latitude",
+      "longitude",
+      "address_validation_verdict",
       "project_manager",
       "estimated_value",
       "flooring_category",
@@ -133,7 +136,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
   );
   assert.match(
     sql,
-    /GRANT UPDATE \(client_id, name, status, site, project_manager, estimated_value, flooring_category, square_feet, contract_value, segment, installation_started_at, installation_completed_at, had_callback, callback_note, updated_by, updated_at, version\) ON TABLE fci_app\.projects TO fci_runtime;/,
+    /GRANT UPDATE \(client_id, name, status, site, latitude, longitude, address_validation_verdict, project_manager, estimated_value, flooring_category, square_feet, contract_value, segment, installation_started_at, installation_completed_at, had_callback, callback_note, updated_by, updated_at, version\) ON TABLE fci_app\.projects TO fci_runtime;/,
   );
   assert.doesNotMatch(
     sql,
@@ -175,6 +178,22 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
   assert.match(
     sql,
     /GRANT UPDATE \(source_row, status, reviewed_by, reviewed_at, updated_at, accepted_lead_id\) ON TABLE fci_app\.google_form_lead_reviews TO fci_runtime;/,
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_TABLE_ACCESS.find(
+      ({ table }) => table === "address_validation_reviews",
+    )?.privileges,
+    ["SELECT", "INSERT", "DELETE"],
+  );
+  assert.deepEqual(
+    EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS.find(
+      ({ table }) => table === "address_validation_reviews",
+    )?.columns,
+    ["consumed_at"],
+  );
+  assert.match(
+    sql,
+    /GRANT UPDATE \(consumed_at\) ON TABLE fci_app\.address_validation_reviews TO fci_runtime;/,
   );
   assert.doesNotMatch(
     sql,
@@ -313,6 +332,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     sqlWithoutComments.match(/^GRANT .*DELETE.* TO fci_runtime;$/gm) ?? [],
     [
       "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fci_app.filing_rules TO fci_runtime;",
+      "GRANT SELECT, INSERT, DELETE ON TABLE fci_app.address_validation_reviews TO fci_runtime;",
     ],
   );
   for (const [table, privileges] of [
@@ -323,6 +343,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     ["tasks", ["SELECT", "INSERT", "UPDATE"]],
     ["google_form_lead_intake_watermarks", ["SELECT", "INSERT"]],
     ["google_form_lead_reviews", ["SELECT", "INSERT"]],
+    ["address_validation_reviews", ["SELECT", "INSERT", "DELETE"]],
   ]) {
     assert.deepEqual(
       EXPECTED_RUNTIME_TABLE_ACCESS.find((entry) => entry.table === table)?.privileges,

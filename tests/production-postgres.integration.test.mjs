@@ -96,6 +96,7 @@ test(
         tableNames.rows.map(({ table_name }) => table_name),
         [
           "activity_events",
+          "address_validation_reviews",
           "audit_activity_projection",
           "audit_events",
           "capabilities",
