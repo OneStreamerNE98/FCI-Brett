@@ -2137,7 +2137,12 @@ substitution; the sanitizer guarantees the system `05_Correspondence` subtree
 survives); child-folder identities move to blueprint keys (existing stamps remain
 valid — additive properties, no re-stamping); reduce `DRIVE_BLUEPRINT` to the seed
 literal inside `workspace-blueprint.ts`; keep `resolveManagedProjectFolderPath`
-compatible.
+compatible. **Files this packet owns for the wave (added August 4, 2026):**
+`app/api/v1/google-workspace/route.ts` (the GET's static `blueprint: DRIVE_BLUEPRINT`
+and the `buildProjectFolderPlan` preview call) and `app/lib/google-workspace.ts`
+(`buildProjectFolderPlan` itself) — making the preview honor saved Settings forces a
+signature change through both, so parallel-wave packets (SET-41 in particular) must not
+touch them.
 **Accept:** provisioning against the seed blueprint is behavior-identical (pin: same
 folder names/paths as today for a fixture project); a blueprint-added project subfolder
 appears on the next provisioning; filing to `05_Correspondence / Email Archive` still
@@ -2626,14 +2631,37 @@ the composite text moved to the label; the two mailbox entries block `oauthReady
 NEVER `connectReady` — authorize gates on connectReady, and blocking it locks the
 administrator out of the only self-heal path; fix the validateWorkspaceRecipient
 early-return (google-gmail.ts:518) so the default recipient runs through the same :527
-domain/allowlist validation; the panel offers a selector over the env allowlist entries.
+domain/allowlist validation; the panel offers a selector over the env allowlist entries —
+**surface the allowlist options through the settings/workspace GET this packet already
+edits; do NOT touch `app/api/v1/google-workspace/route.ts` or `app/lib/google-workspace.ts`,
+which SET-21 owns this wave** (no existing GET exposes the allowlist values to the client,
+so the exposure point is this packet's to choose, and it must not land on SET-21's files).
 Do not preserve the singleton readiness form.
+**Coordinates with shipped WS-19 (PR #288) — mandatory, or this packet ships a cutover
+hole:** extend the tenant-data probe's `workspace_settings` clause in
+`app/adapters/d1/google-oauth-persistence.ts` (`hasTenantScopedData`) with
+`OR CASE WHEN json_valid(settings_json) THEN NULLIF(json_extract(settings_json,
+'$.intakeMailbox'), '') END IS NOT NULL` — the NULLIF empty-string form is mandatory
+because `normalizeWorkspacePreferences` persists every key on every save, so a
+saved-then-cleared mailbox is stored as `""` and must not arm the guard — and add
+`'$.intakeMailbox'` to the tenant reset's `json_remove` list in
+`app/adapters/d1/google-tenant-reset.ts`. Without both, a saved intake mailbox never arms
+WS-19's different-subject connect guard, and "Start fresh on a new tenant" leaks the
+discarded tenant's mailbox into the new tenant. Probe and reset are D1-only; the two named
+files are the full edit surface.
+**Guide coordination (guardrail 0):** this packet takes the **Google Workspace
+administration** section of `docs/settings-guide.md`; AI-11(c) takes the **AI assistant**
+section; `tests/rendered-html.test.mjs` stays additive, serialize merges per the standing
+rule.
 **Accept:** with two allowlisted addresses in env, switching the intake mailbox in Settings
 takes effect with no redeploy; selecting a mailbox that is not the connected account shows
 a mismatch readiness entry naming both addresses, with oauthReady false and connectReady
 true (the authorize route stays reachable — asserted); saving an address outside the
 allowlist or domain is rejected at save time with the reason; the send-test default
-recipient cannot bypass domain validation; guards and pins re-run green; `npm test`,
+recipient cannot bypass domain validation; **a saved intake mailbox arms the WS-19
+connect-time tenant guard and is cleared by the tenant reset, while a cleared
+(empty-string) mailbox arms neither — both asserted in `tests/ws19-tenant-cutover.test.mjs`
+or a sibling test**; guards and pins re-run green; `npm test`,
 `npm run test:e2e`, `npm run lint` named with outcomes.
 **Effort:** medium. **Coordinates:** WS-20's per-mailbox readiness later generalizes the
 equality entry per connection — build this packet's re-check as a helper WS-20 can call
@@ -4118,11 +4146,48 @@ proposed task via `POST /api/v1/tasks` (`source:"email"`); warranty → the same
 the callback framing. (b) The dedicated **AI assistant Settings section**, executing spec §12
 decision 5's three recorded re-points (`tests/ai08-ui-contract.test.mjs:113-126`, spec §9's
 canonical placement line, the Workstream G house rule) and decision 6's settings-card
-data-at-rest statement. (c) The **label catalog editor**: storage per the plan's Pattern A
-(row per label), opaque-slug enums, the never-delete-once-used lifecycle, description
-versioning consumed by AI-10's re-analysis path, and the full injection-mitigation set the
-plan records (fence-forgery rejection, NFKC + bidi stripping, admin-only write path, count and
-length caps, a hostile-description test proving the no-send/no-file guarantees hold).
+data-at-rest statement. (c) The **label catalog editor**, implementing spec §12 decision 4's
+lifecycle (used labels are retired, never removed; retired slugs are never reissued;
+descriptions are always updatable). **This sub-scope is self-contained as written — the
+"plan" an earlier draft cited was never committed to the repo, so the following IS the
+complete specification (re-specified and owner-confirmed August 4, 2026).**
+*Storage:* one new table, one row per label — opaque server-generated machine slug (matching
+the existing `IDENTIFIER_PATTERN` in `app/application/assistant/inbox-analysis.ts`, never
+edited and never reused), description, retired flag, created/updated timestamps. **This is
+the AI tier's first new table — a deliberate, owner-approved (August 4, 2026) deviation from
+the "zero new tables" property recorded under spec §12 decision 2.** The build PR must amend
+spec §12 in the same change to record row-per-label as decision 4's storage form, and must
+extend `infrastructure/postgres/least-privilege.sql` **and** its pin suite
+`tests/postgres-least-privilege-source.test.mjs` (the DELETE-privileged list is pinned to
+exactly `["filing_rules"]` and the SQL to exactly one `GRANT … DELETE` line) with the new
+table's `SELECT, INSERT, UPDATE, DELETE` grants — DELETE is exercised only for never-used
+labels, per decision 4.
+*Versioning:* derive the current catalog version by passing the stored rows through the
+existing `inboxAnalysisLabelDefinitionVersion(definitions)`
+(`app/application/assistant/inbox-analysis.ts`), replacing the build-time
+`INBOX_ANALYSIS_LABEL_DEFINITION_VERSION` constant, so AI-10's re-analysis consumers —
+`needsReanalysis`/`needsRetry` in `app/api/v1/inbox-analysis/route.ts`,
+`listRetryableAnalysisRows` in `app/ports/mail-item-repository.ts`, and both mail-item
+adapters' version-keyed queries (including AI-12's exhausted-failure queries) — react to
+catalog edits.
+*Injection mitigations — this list is complete:* admin-only write path (spec §5.4 gating
+parity); on save, NFKC normalization plus stripping of control characters and bidi controls
+(U+202A–U+202E, U+2066–U+2069); rejection of any description containing a line matching one
+of the analysis prompt's section headers (`CANDIDATE PROJECTS:`, `UNTRUSTED EMAIL SUMMARY:`,
+`INTENT LABEL DEFINITIONS:`, `PARTY CATALOG:`, `UNTRUSTED ORIGINAL EMAIL BODY:`) or a
+code/JSON fence; caps (owner-set August 4, 2026): at most **20 labels**, **60-character
+slugs**, **300-character descriptions**; and a hostile-description injection fixture per
+spec §5.1 proving the no-send/no-file guarantees hold.
+*Mount:* inside `app/settings/components/AiAssistantSettingsCard.tsx` (mounted at
+`app/FloorOpsApp.tsx:2119`) — **zero `app/FloorOpsApp.tsx` changes and no queue slot**;
+state this no-FloorOpsApp path in the PR, per the FloorOpsApp queue appendix.
+*Coordination:* (c)'s versioning work edits `app/application/assistant/inbox-analysis.ts`
+and `app/api/v1/inbox-analysis/route.ts`, so **(c) takes the inbox-file cluster
+serialization** (the AI-12 appendix rule): build on post-#287/#288 main, and no packet
+touching `app/api/v1/inbox-analysis/route.ts` may run in parallel with it. (c) also edits
+`docs/settings-guide.md` (guardrail 0) — it takes the **AI assistant** section; SET-41 takes
+the **Google Workspace administration** section; `tests/rendered-html.test.mjs` stays
+additive, serialize merges per the standing rule.
 (d) **The AI activity view** (owner requirement, July 26 — previously unowned): inside the new
 AI section, a bounded read-only view over the stored analyses answering "what did the AI
 suggest, what was accepted or dismissed, and by whom" — proposals with their rationale,
@@ -4141,12 +4206,14 @@ merged AI-10 source on main, that is true for every clause **except attribution*
   proposals, rationale, outcomes, label version, and per-label counts are all answerable.
 - `MAIL_ITEM_STATUSES` already contains `accepted` and `dismissed`, so outcome state exists.
 - **There is no actor anywhere on the review path.** `mail_items` has no actor column;
-  `dismissNeedsReview(id, connectionKey, updatedAt)` (`app/ports/mail-item-repository.ts:38`)
-  takes none; and the only `activity_events` write in
-  `app/api/v1/inbox-analysis/route.ts:207` is the
+  `dismissNeedsReview` (`app/ports/mail-item-repository.ts` — now four-argument,
+  `(id, connectionKey, updatedAt, outcome?)`, after PR #255 added the `outcome` parameter;
+  **still no actor parameter**, which is the point); and the only `activity_events` write in
+  `app/api/v1/inbox-analysis/route.ts` is the
   `assistant.inbox_analysis_provider_call` rate-limit counter, **not** a review-outcome
   audit. `approvalActor` belongs to `gmail_file_archives`, a different table on a different
-  path.
+  path. (Citations re-verified by symbol August 4, 2026, post-#287/#288 — line numbers in
+  this amendment's earlier form were stale; the substantive claims are unchanged.)
 
 **Resolution (owner requirement preserved rather than silently dropped):** (d) additionally
 adds **additive `reviewed_by` and `reviewed_at` columns on `mail_items`** and threads the
@@ -4513,7 +4580,10 @@ fetches its own state rather than taking a one-line prop threaded from
 **No exposure at all, and safe to run in parallel with whoever holds the slot:** WS-19,
 SET-21, SET-09, SET-27, DES-09, GI-07, and DES-10 variant (c). The Overview and Reports
 golden hashes (`tests/e2e/page-layouts.spec.ts:8-9`) are not at risk from any packet on this
-list.
+list. (Clarified August 4, 2026: this list assesses `FloorOpsApp.tsx` exposure only —
+SET-21 is FloorOpsApp-free but owns `app/api/v1/google-workspace/route.ts` and
+`app/lib/google-workspace.ts` for its wave; same-file serialization still applies per
+packet-named file ownership.)
 
 > **Reordered July 27, 2026 (owner decision + devils-advocate review).** Three deliberate
 > changes from the previous order: (1) **EDIT-05 (projects) now precedes EDIT-04 (leads)** —
