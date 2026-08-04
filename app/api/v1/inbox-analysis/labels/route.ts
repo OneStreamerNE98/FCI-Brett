@@ -5,6 +5,8 @@ import type { D1Database } from "../../../../adapters/d1/d1-database";
 import {
   AssistantLabelValidationError,
   createAssistantLabelSlug,
+  isSystemAssistantLabelSlug,
+  MAX_ASSISTANT_LABEL_ROWS,
   MAX_ASSISTANT_LABELS,
   normalizeAssistantLabelDescription,
   normalizeAssistantLabelSlug,
@@ -44,7 +46,14 @@ export async function GET(request: NextRequest) {
   const labels = await createD1AssistantLabelRepository(
     env.DB as unknown as D1Database,
   ).list();
-  return noStoreJson({ labels, maximumLabels: MAX_ASSISTANT_LABELS });
+  // maximumLabels bounds ACTIVE labels; maximumRows bounds total stored rows
+  // including unremovable retired tombstones. The client needs both to size the
+  // counter and validate the payload without coupling them to one number.
+  return noStoreJson({
+    labels,
+    maximumLabels: MAX_ASSISTANT_LABELS,
+    maximumRows: MAX_ASSISTANT_LABEL_ROWS,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -72,9 +81,17 @@ export async function POST(request: NextRequest) {
     const saved = await createD1AssistantLabelRepository(
       env.DB as unknown as D1Database,
     ).insert(label);
-    return saved
-      ? noStoreJson({ label }, 201)
-      : noStoreJson({ error: `AI labels are limited to ${MAX_ASSISTANT_LABELS}.` }, 409);
+    if (saved === "inserted") return noStoreJson({ label }, 201);
+    if (saved === "storage-exhausted") {
+      return noStoreJson({
+        error: `AI label storage is limited to ${MAX_ASSISTANT_LABEL_ROWS} stored rows.`,
+        code: "label_storage_exhausted",
+      }, 409);
+    }
+    return noStoreJson({
+      error: `AI labels are limited to ${MAX_ASSISTANT_LABELS} active labels.`,
+      code: "label_active_cap_reached",
+    }, 409);
   } catch (error) {
     return validationResponse(error) ?? noStoreJson({ error: "AI label could not be added." }, 500);
   }
@@ -121,13 +138,28 @@ export async function DELETE(request: NextRequest) {
   }
   try {
     const slug = normalizeAssistantLabelSlug(parsed.body.slug);
+    // Refused at the route before any storage work. The adapters repeat this
+    // check, so a caller reaching either one directly is refused too.
+    if (isSystemAssistantLabelSlug(slug)) {
+      return noStoreJson({
+        error: "Built-in AI labels cannot be removed or retired.",
+        code: "system_label_protected",
+      }, 409);
+    }
     await ensureWorkspaceSchema();
     const outcome = await createD1AssistantLabelRepository(
       env.DB as unknown as D1Database,
     ).removeOrRetire(slug, Date.now());
-    return outcome === "not-found"
-      ? noStoreJson({ error: "AI label not found." }, 404)
-      : noStoreJson({ slug, outcome });
+    if (outcome === "not-found") {
+      return noStoreJson({ error: "AI label not found." }, 404);
+    }
+    if (outcome === "protected") {
+      return noStoreJson({
+        error: "Built-in AI labels cannot be removed or retired.",
+        code: "system_label_protected",
+      }, 409);
+    }
+    return noStoreJson({ slug, outcome });
   } catch (error) {
     return validationResponse(error) ?? noStoreJson({ error: "AI label could not be retired." }, 500);
   }

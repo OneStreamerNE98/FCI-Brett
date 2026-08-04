@@ -26,6 +26,7 @@ import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
 import {
   DEFAULT_ASSISTANT_LABEL_DEFINITIONS,
+  MAX_ASSISTANT_LABEL_ROWS,
   MAX_ASSISTANT_LABELS,
   normalizeAssistantLabelDescription,
   normalizeAssistantLabelSlug,
@@ -184,7 +185,12 @@ function inboxReviewLabels(value: unknown): ReadonlyMap<string, InboxReviewLabel
   // built-in labels remain readable, while any custom intent still fails
   // closed unless its server-validated display metadata accompanies the row.
   if (value === undefined) return DEFAULT_INBOX_REVIEW_LABELS;
-  if (!Array.isArray(value) || value.length > MAX_ASSISTANT_LABELS) {
+  // The catalog ships retired tombstones so historical rows stay readable, and
+  // those are exempt from the active cap. Bounding the whole array by
+  // MAX_ASSISTANT_LABELS therefore fails the queue closed the moment a catalog
+  // carries tombstones: total rows are bounded by MAX_ASSISTANT_LABEL_ROWS and
+  // the active subset by MAX_ASSISTANT_LABELS, checked once the rows parse.
+  if (!Array.isArray(value) || value.length > MAX_ASSISTANT_LABEL_ROWS) {
     return null;
   }
   const labels = new Map<string, InboxReviewLabel>();
@@ -218,6 +224,9 @@ function inboxReviewLabels(value: unknown): ReadonlyMap<string, InboxReviewLabel
       retired: label.retired,
     }));
   }
+  let active = 0;
+  for (const label of labels.values()) if (!label.retired) active += 1;
+  if (active > MAX_ASSISTANT_LABELS) return null;
   return labels;
 }
 

@@ -305,7 +305,8 @@
 }
 
 .active,
-.retired {
+.retired,
+.builtIn {
   flex: 0 0 auto;
   padding: 3px 7px;
   border-radius: 999px;
@@ -321,6 +322,14 @@
 .retired {
   background: #f0eeee;
   color: var(--text-muted);
+}
+
+/* The four migration-seeded labels carry the typed accepts and cannot be
+   removed or retired, so the card states that rather than offering a control
+   the server refuses. */
+.builtIn {
+  background: #eaeef7;
+  color: #3c4f7a;
 }
 
 .labelActions {

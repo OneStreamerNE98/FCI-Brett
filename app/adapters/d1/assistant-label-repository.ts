@@ -1,4 +1,6 @@
 import {
+  isSystemAssistantLabelSlug,
+  MAX_ASSISTANT_LABEL_ROWS,
   MAX_ASSISTANT_LABELS,
   normalizeAssistantLabelDescription,
   normalizeAssistantLabelSlug,
@@ -7,6 +9,7 @@ import {
   type AssistantLabelDefinition,
 } from "../../domain/assistant-label-definition";
 import type {
+  AssistantLabelInsertOutcome,
   AssistantLabelRemovalOutcome,
   AssistantLabelRepository,
 } from "../../ports/assistant-label-repository";
@@ -29,14 +32,18 @@ export function createD1AssistantLabelRepository(
       return result.results.map((row) => normalizeStoredAssistantLabelDefinition(row));
     },
 
-    async insert(label: AssistantLabelDefinition) {
+    async insert(label: AssistantLabelDefinition): Promise<AssistantLabelInsertOutcome> {
       const normalized = normalizeStoredAssistantLabelDefinition(label);
+      // Both bounds live in the INSERT ... SELECT ... WHERE predicate so D1's
+      // per-statement serialization decides them; a separate COUNT would let a
+      // concurrent insert slip past between the read and the write.
       const result = await database.prepare(
         `INSERT INTO assistant_label_definitions (
            slug, description, retired, created_at, updated_at
          )
          SELECT ?, ?, ?, ?, ?
-          WHERE (SELECT COUNT(*) FROM assistant_label_definitions) < ?
+          WHERE (SELECT COUNT(*) FROM assistant_label_definitions WHERE retired = 0) < ?
+            AND (SELECT COUNT(*) FROM assistant_label_definitions) < ?
          ON CONFLICT(slug) DO NOTHING`,
       ).bind(
         normalized.slug,
@@ -45,8 +52,21 @@ export function createD1AssistantLabelRepository(
         normalized.createdAt,
         normalized.updatedAt,
         MAX_ASSISTANT_LABELS,
+        MAX_ASSISTANT_LABEL_ROWS,
       ).run();
-      return changes(result) === 1;
+      if (changes(result) === 1) return "inserted";
+      // The write lost: report which bound rejected it so the caller can tell a
+      // recoverable cap from an exhausted store.
+      const counts = await database.prepare(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN retired = 0 THEN 1 ELSE 0 END) AS active
+           FROM assistant_label_definitions`,
+      ).first<{ total: unknown; active: unknown }>();
+      const total = Number(counts?.total ?? 0);
+      const active = Number(counts?.active ?? 0);
+      if (total >= MAX_ASSISTANT_LABEL_ROWS) return "storage-exhausted";
+      if (active >= MAX_ASSISTANT_LABELS) return "active-cap-reached";
+      return "not-inserted";
     },
 
     async updateDescription(slug, description, updatedAt) {
@@ -62,6 +82,10 @@ export function createD1AssistantLabelRepository(
     async removeOrRetire(slug, updatedAt): Promise<AssistantLabelRemovalOutcome> {
       const normalizedSlug = normalizeAssistantLabelSlug(slug);
       const normalizedUpdatedAt = normalizeAssistantLabelTimestamp(updatedAt, "AI label updated_at");
+      // Enforced here as well as at the route: the adapter is the last gate
+      // before the statement runs, and a system slug lost this way is
+      // unrecoverable (delete is permanent, retirement has no un-retire path).
+      if (isSystemAssistantLabelSlug(normalizedSlug)) return "protected";
       const safeAnalysisPayload = `CASE
         WHEN json_valid(mail_items.analysis_payload)
           THEN mail_items.analysis_payload

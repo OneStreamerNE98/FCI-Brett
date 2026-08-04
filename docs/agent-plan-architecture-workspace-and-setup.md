@@ -4383,6 +4383,7 @@ of the analysis prompt's section headers (`CANDIDATE PROJECTS:`, `UNTRUSTED EMAI
 code/JSON fence; caps (owner-set August 4, 2026): at most **20 labels**, **60-character
 slugs**, **300-character descriptions**; and a hostile-description injection fixture per
 spec §5.1 proving the no-send/no-file guarantees hold.
+Cap clarification (August 4, 2026, orchestrator): the 20-label cap counts ACTIVE labels; retired tombstones are excluded from the cap, the prompt catalog, and the queue bound; total stored rows are separately bounded at 100.
 *Mount:* inside `app/settings/components/AiAssistantSettingsCard.tsx` (mounted at
 `app/FloorOpsApp.tsx:2119`) — **zero `app/FloorOpsApp.tsx` changes and no queue slot**;
 state this no-FloorOpsApp path in the PR, per the FloorOpsApp queue appendix.

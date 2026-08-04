@@ -1,4 +1,6 @@
 import {
+  isSystemAssistantLabelSlug,
+  MAX_ASSISTANT_LABEL_ROWS,
   MAX_ASSISTANT_LABELS,
   normalizeAssistantLabelDescription,
   normalizeAssistantLabelSlug,
@@ -7,6 +9,7 @@ import {
   type AssistantLabelDefinition,
 } from "../../domain/assistant-label-definition";
 import type {
+  AssistantLabelInsertOutcome,
   AssistantLabelRemovalOutcome,
   AssistantLabelRepository,
 } from "../../ports/assistant-label-repository";
@@ -59,7 +62,7 @@ export function createPostgresAssistantLabelRepository(
       );
     },
 
-    async insert(label: AssistantLabelDefinition) {
+    async insert(label: AssistantLabelDefinition): Promise<AssistantLabelInsertOutcome> {
       const normalized = normalizeStoredAssistantLabelDefinition(label);
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         await client.query(
@@ -70,7 +73,12 @@ export function createPostgresAssistantLabelRepository(
              slug, description, retired, created_at, updated_at
            )
            SELECT $1, $2, $3, $4, $5
-            WHERE (SELECT pg_catalog.count(*) FROM assistant_label_definitions) < $6
+            WHERE (
+                    SELECT pg_catalog.count(*)
+                      FROM assistant_label_definitions
+                     WHERE retired = false
+                  ) < $6
+              AND (SELECT pg_catalog.count(*) FROM assistant_label_definitions) < $7
            ON CONFLICT (slug) DO NOTHING`,
           [
             normalized.slug,
@@ -79,9 +87,22 @@ export function createPostgresAssistantLabelRepository(
             persistenceDate(normalized.createdAt, "AI label created_at"),
             persistenceDate(normalized.updatedAt, "AI label updated_at"),
             MAX_ASSISTANT_LABELS,
+            MAX_ASSISTANT_LABEL_ROWS,
           ],
         );
-        return result.rowCount === 1;
+        if (result.rowCount === 1) return "inserted";
+        // Still inside the transaction holding SHARE ROW EXCLUSIVE, so these
+        // counts are the same ones the predicate just evaluated.
+        const counts = await client.query<{ total: string; active: string }>(
+          `SELECT pg_catalog.count(*) AS total,
+                  pg_catalog.count(*) FILTER (WHERE retired = false) AS active
+             FROM assistant_label_definitions`,
+        );
+        const total = Number(counts.rows[0]?.total ?? 0);
+        const active = Number(counts.rows[0]?.active ?? 0);
+        if (total >= MAX_ASSISTANT_LABEL_ROWS) return "storage-exhausted";
+        if (active >= MAX_ASSISTANT_LABELS) return "active-cap-reached";
+        return "not-inserted";
       });
     },
 
@@ -107,6 +128,14 @@ export function createPostgresAssistantLabelRepository(
     async removeOrRetire(slug, updatedAt): Promise<AssistantLabelRemovalOutcome> {
       const normalizedSlug = normalizeAssistantLabelSlug(slug);
       const normalizedUpdatedAt = normalizeAssistantLabelTimestamp(updatedAt, "AI label updated_at");
+      // Enforced here as well as at the route: the adapter is the last gate
+      // before the statement runs, and a system slug lost this way is
+      // unrecoverable (delete is permanent, retirement has no un-retire path).
+      // Checked before the transaction opens so a protected slug never even
+      // takes the row lock.
+      if (isSystemAssistantLabelSlug(normalizedSlug)) {
+        return Promise.resolve<AssistantLabelRemovalOutcome>("protected");
+      }
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
         // Serialize the catalog decision with guarded analysis writers. A
         // writer holds FOR SHARE on every label until its mail_items write
