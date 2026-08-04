@@ -164,6 +164,55 @@ test("client create and both editors round-trip every reachable field at desktop
   await expectAccessible(page, ".contact-edit-modal");
 });
 
+test("contact editor keeps the active input mounted and focused while initial focus settles", async ({ page }) => {
+  const suffix = String(Date.now());
+  const created = await createClient(page.request, `focus race ${suffix}`);
+  const clientName = `FCI TEST — DO NOT USE — EDIT-06 focus race ${suffix}`;
+
+  await page.goto("/clients");
+  await page.getByRole("button", { name: new RegExp(clientName) }).click();
+  const drawer = page.getByRole("dialog", { name: `${clientName} client account` });
+
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      __edit09RestoreRequestAnimationFrame?: () => void;
+    };
+    const requestAnimationFrameBeforeTest = window.requestAnimationFrame.bind(window);
+    testWindow.__edit09RestoreRequestAnimationFrame = () => {
+      window.requestAnimationFrame = requestAnimationFrameBeforeTest;
+      delete testWindow.__edit09RestoreRequestAnimationFrame;
+    };
+    window.requestAnimationFrame = (callback) => requestAnimationFrameBeforeTest((timestamp) => {
+      window.setTimeout(() => callback(timestamp), 200);
+    });
+  });
+
+  await drawer.getByRole("button", { name: "Edit primary contact" }).click();
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      __edit09RestoreRequestAnimationFrame?: () => void;
+    };
+    testWindow.__edit09RestoreRequestAnimationFrame?.();
+  });
+
+  const editor = page.getByRole("dialog", { name: `Edit primary contact for ${created.clientCode}` });
+  const contactName = editor.getByLabel("Primary contact");
+  const contactPhone = editor.getByLabel(/Contact phone/);
+  await contactPhone.focus();
+  const focusedPhoneNode = await contactPhone.elementHandle();
+  expect(focusedPhoneNode).not.toBeNull();
+  await focusedPhoneNode?.evaluate((node) => { node.setAttribute("data-edit09-node", "stable"); });
+
+  await page.waitForTimeout(300);
+
+  await expect(contactPhone).toBeFocused();
+  expect(await focusedPhoneNode?.evaluate((node) => node.isConnected)).toBe(true);
+  await expect(contactPhone).toHaveAttribute("data-edit09-node", "stable");
+  await contactPhone.fill("555-0196");
+  await expect(contactName).toHaveValue("Original Contact");
+  await expect(contactPhone).toHaveValue("555-0196");
+});
+
 test("stale client and contact drafts show scoped saved values and require explicit re-apply", async ({ page }) => {
   const suffix = String(Date.now());
   const created = await createClient(page.request, `conflict ${suffix}`);
