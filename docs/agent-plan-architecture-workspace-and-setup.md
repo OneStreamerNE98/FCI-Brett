@@ -3581,7 +3581,18 @@ table/toolbar idiom at desktop widths, iOS inset-grouped-list idiom in the card 
 This is a DIRECTION for the values this packet picks, not a scope change: no new
 components, no framework, and the golden-hash pages change only via the A1 screenshot
 sign-off path. Where a value choice is ambiguous, Apple's Human Interface Guidelines are
-the tiebreaker. Moderation clause (owner, August 4, 2026): Apple-aligned values, never a
+the tiebreaker. **Path decision (owner, August 4, 2026, after a four-lens evidence
+evaluation): Path A+ — values-first as this packet is scoped, no framework.** Framework
+adoption was re-evaluated under the Apple + performance framing and re-rejected with
+counted evidence: no measurable runtime gain for ~20 users (one view mounts at a time,
+search state is view-scoped, content-visibility row virtualization is shipped and
+CI-pinned), while a markup rewrite breaks 556 rendered-html assertions, both golden
+hashes, and ~85 source-pinned suites; most React kits read Material rather than
+Cupertino. One evaluation discovery this packet must adjudicate deliberately:
+**tailwindcss 4.2.1 is installed and `@import "tailwindcss"` ships its Preflight from
+app/globals.css:1 with ZERO utilities in use** — the app renders on top of that reset,
+so it is load-bearing; either adopt-and-record it as the reset layer or replace it with
+an equivalent minimal reset in the same change, never a casual deletion. Moderation clause (owner, August 4, 2026): Apple-aligned values, never a
 wholesale re-skin — "you don't need to go overboard". **The goal behind the direction
 (owner, August 4, 2026): USABILITY — "a simple and easy to navigate webapp so users are
 more inclined to use it. That is why apple is so good."** Every DES packet weighs its
@@ -3688,11 +3699,105 @@ sort menu, 44px targets), per the grid-views brief §4; shared primitives render
 Overview/Reports pinned sections (Status, Avatar, project-card, OperationsActionableList)
 must keep byte-identical default markup — prefer additive props defaulting to current
 output; if regeneration ever becomes necessary, the A1 screenshot-sign-off path applies.
-**Accept:** toggle and sort persist per user; every visible column sorts both directions
+**Accept (amended August 4, 2026 — performance evaluation):** the Clients and Projects
+lists gain a render cap with progressive reveal (the two `.map` sites are uncapped today
+and React reconciliation over unbounded rows is the app's one measured runtime cost —
+content-visibility skips paint, not diffing); toggle and sort persist per user; every
+visible column sorts both directions
 with `aria-sort` announced; search filters live on both pages; the board remains the
 Leads default; e2e at 390/834/1280; both golden hashes byte-identical; the spec amendment
 is present; `npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
 **Effort:** medium-large. **Cost:** $0.
+
+### The usability acceptance lens (standing, owner goal recorded August 4, 2026)
+
+The owner's stated goal for the whole design workstream: "a simple and easy to navigate
+webapp so users are more inclined to use it." Every DES packet from DES-16 on states its
+Why against this lens: **a new office employee, on their second day, with no training,
+completes the packet's target task on the first attempt without backtracking.** For every
+surface a packet touches: each nav entry and button leads to something that works today,
+or it is not shipped; the primary task is reachable in three clicks or fewer from the
+landing screen; every required field carries a sensible default or genuinely cannot be
+guessed at the moment it is asked; every failure names what went wrong in the employee's
+words and offers the next step as a control; every empty state shows the button that
+fills it or says who to ask; internal build status, policy vocabulary, and system nouns
+do not appear in the interface.
+
+### DES-16 · Flow honesty: the phone-call lead path, the Schedule phantoms, and a role-gated nav (small-medium) — ADOPTION FLAGSHIP
+
+**Why:** the August 4 usability review walked the owner's first-named flow — capture a
+lead from a phone call — and found the create-lead modal cannot record a phone number:
+`app/FloorOpsApp.tsx` gates Contact phone/email behind `(editMode || inboxPrefill)`, and
+the Leads-page path passes neither, so the row never renders and `contactPhone` posts
+null. The same review found four entry points to the unbuilt Schedule feature (nav item,
+Overview card, Overview title action, topbar popover — all routing to a four-line
+placeholder whose only button dead-ends non-admins into a silent redirect), build-status
+badges on seven of nine nav rows, Settings in the non-admin nav for a one-panel surface
+already reachable from the profile popover, and the AI Assistant filed under
+"Management" despite being the most worker-facing daily tool.
+**Do:** (1) render Contact phone and Contact email on ALL lead-create paths; keep both
+optional at capture; (2) split the nine-field single validation message into per-field
+errors; (3) remove all four Schedule entry points until scheduling exists (the nav
+array, the Overview card and title action, the popover entry) — the packet that builds
+scheduling re-adds them; (4) retire FeatureStateBadge from the production nav (build
+status is not user-facing information; the states live on in docs and the dev dashboard
+if wanted); (5) role-gate the nav using the SettingsAudienceNavigation pattern: hide
+Settings for non-admins, move AI Assistant into the Workspace group.
+**Accept:** a lead created from the Leads page stores a phone number; a non-admin's nav
+contains no dead ends and no build badges; every remaining nav entry reaches a working
+surface; per-field validation messages named in tests; golden hashes — Overview loses
+the Schedule card, so this packet REGENERATES the Overview hash via the A1
+screenshot-sign-off path (owner before/after screenshots in the PR, three pinning suites
+updated in the same commit); `npm test`, `npm run test:e2e`, `npm run lint` named.
+**Effort:** small-medium. **Cost:** $0. **Takes the FloorOpsApp slot** (claim-tail head
+position — see the tail).
+
+### DES-17 · The failure surface: error boundary, toast queue with next steps, empty-state actions (medium)
+
+**Why:** the August 4 usability review measured the trust surface: zero React error
+boundaries (a render throw blanks the whole app); 53 of 54 error toasts offer no next
+step and ~50 prefer raw `error.message` ("Failed to fetch") over their own authored
+fallback; the single toast slot overwrites rapid notifications (a suppression hack at
+the notify callback papers over one case); `OperationsEmptyState` has no action slot,
+which is the mechanical cause of 9 of 12 sampled empty-state dead ends.
+**Do:** (1) an app-shell error boundary plus route-level error surface that says what
+broke in plain words and offers Reload; (2) a short toast queue replacing the single
+slot (delete the suppression hack); (3) `action` affordances on every error toast with
+an obvious retry, and authored-fallback-first message selection (raw error text goes to
+the console, not the user); (4) an action slot on `OperationsEmptyState` and wire the
+known dead ends to their obvious next controls. Builds on SET-42's shared load-state
+hook where sequencing allows; coordinates with the notification-grammar consolidation
+recorded in FIX-12's inventory.
+**Accept:** a deliberately thrown render error shows the recovery surface, not a blank
+page (spec asserts it); two rapid toasts both display; every error toast in the census
+either carries an action or is individually justified; the empty-state census shows
+zero action-less dead ends among states whose next step exists; `npm test`,
+`npm run test:e2e`, `npm run lint` named.
+**Effort:** medium. **Cost:** $0.
+
+### DES-18 · Findability and the filing prefill (small-medium, after AI-11(c) merges — inbox cluster)
+
+**Why:** the August 4 usability review: the inbox filing picker computes a project
+suggestion, renders it as a badge, then deliberately clears the selection so every
+filing is picked manually from an unsearchable native select; project documents are
+invisible to global search (three tables only) and the drawer's Files tab lists only
+session-created files. **Owner decision August 4, 2026: prefill the suggestion, keep
+the explicit approve** — the review-first guarantee is the approve click, not the
+manual re-selection.
+**Do:** (1) prefill the filing picker from the computed suggestion when one exists,
+visibly marked as a suggestion, approve step unchanged; (2) make the picker a
+searchable input rather than a bare native select over every project; (3) extend global
+search to project documents — coordinate scope with SET-26 (project-document search)
+at dispatch so the two packets divide the surface rather than colliding, SET-26 owning
+the in-project search UI and this packet owning the global-search entry. Projects-page
+search arrives via DES-15 and is NOT this packet.
+**Accept:** filing an email with a suggestion present requires choosing nothing
+manually while still requiring the approve click (asserted); the picker filters as you
+type; a document title found via global search opens its project; the review-first
+pins (route guards, no auto-file) all still green; `npm test`, `npm run test:e2e`,
+`npm run lint` named.
+**Effort:** small-medium. **Cost:** $0. **Takes the inbox-file cluster** (InboxView),
+so it dispatches after AI-11(c) merges.
 
 # Workstream G — AI assistant & automation (AI)
 
@@ -4630,8 +4735,13 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-14 → DES-10 (variants a/b
-only) → DES-12.**
+**GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-16 → DES-14 → DES-17
+(shell scope, post-decomposition) → DES-10 (variants a/b only) → DES-12.**
+(DES-16 and DES-17 added August 4, 2026 with the usability wave: DES-16 is small,
+adoption-flagship, and precedes the large DES-14 extraction deliberately; DES-17's slot
+need is the app-shell toast/boundary machinery that remains in `FloorOpsApp.tsx` after
+DES-14, so it follows the extraction. If EDIT-09's dialog host proves to live in
+`FloorOpsApp.tsx`, EDIT-09 claims ahead of DES-16 per its packet.)
 
 - **AI-12** — takes NO `FloorOpsApp.tsx` slot (adversarial review, August 3, 2026): the
   mount (`app/FloorOpsApp.tsx:1784`) passes no analysis or queue state — `bucket` is a
