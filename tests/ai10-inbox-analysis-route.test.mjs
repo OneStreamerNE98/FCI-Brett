@@ -41,10 +41,11 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24793 } },
 });
 
-const [route, application, mailItemModule] = await Promise.all([
+const [route, application, mailItemModule, assistantLabelModule] = await Promise.all([
   vite.ssrLoadModule("/app/api/v1/inbox-analysis/route.ts"),
   vite.ssrLoadModule("/app/application/assistant/inbox-analysis.ts"),
   vite.ssrLoadModule("/app/adapters/d1/mail-item-repository.ts"),
+  vite.ssrLoadModule("/app/adapters/d1/assistant-label-repository.ts"),
 ]);
 
 after(async () => {
@@ -138,6 +139,21 @@ class InboxAnalysisDatabase {
       );
       CREATE UNIQUE INDEX mail_items_profile_message_unique
         ON mail_items (connection_key, gmail_message_id);
+      CREATE TABLE assistant_label_definitions (
+        slug TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        retired INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO assistant_label_definitions
+        (slug, description, retired, created_at, updated_at)
+      VALUES
+        ('lead', 'A new sales opportunity or request for an estimate.', 0, 0, 0),
+        ('project-update', 'Information or a requested change concerning existing project work.', 0, 0, 0),
+        ('schedule', 'A request or change involving an appointment, installation, or project timing.', 0, 0, 0),
+        ('warranty', 'A callback, repair, service, or warranty concern.', 0, 0, 0);
+
       CREATE TABLE google_drive_operations (
         id TEXT PRIMARY KEY,
         connection_key TEXT NOT NULL,
@@ -498,10 +514,15 @@ test("AI-10 sweep writes one durable row per message, prefilters noise, and anal
       "SELECT id, created_at FROM mail_items WHERE connection_key = ? AND gmail_message_id = ?",
     ).get(CONNECTION_KEY, hostile.id);
     database.database.prepare(
-      "UPDATE mail_items SET label_definition_version = 'old-catalog' WHERE id = ?",
-    ).run(stable.id);
+      "UPDATE assistant_label_definitions SET description = ?, updated_at = ? WHERE slug = 'lead'",
+    ).run("An edited sales opportunity definition.", 10);
+    const editedDefinitions = database.database.prepare(
+      "SELECT slug, description FROM assistant_label_definitions WHERE retired = 0 ORDER BY created_at ASC, slug ASC",
+    ).all();
+    const editedVersion = application.inboxAnalysisLabelDefinitionVersion(editedDefinitions);
+    assert.notEqual(editedVersion, application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION);
     await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
-    assert.equal(provider.requests.length, 2, "a catalog-version change must re-analyze");
+    assert.equal(provider.requests.length, 2, "an edited stored catalog must re-analyze");
     const refreshed = database.database.prepare(
       "SELECT id, created_at, label_definition_version FROM mail_items WHERE connection_key = ? AND gmail_message_id = ?",
     ).get(CONNECTION_KEY, hostile.id);
@@ -509,7 +530,30 @@ test("AI-10 sweep writes one durable row per message, prefilters noise, and anal
     assert.equal(refreshed.created_at, stable.created_at);
     assert.equal(
       refreshed.label_definition_version,
-      application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      editedVersion,
+    );
+    assert.match(provider.requests.at(-1).messages[1].content, /An edited sales opportunity definition\./u);
+
+    const retiredSlug = `label_${"c".repeat(32)}`;
+    database.database.prepare(
+      `INSERT INTO assistant_label_definitions
+         (slug, description, retired, created_at, updated_at)
+       VALUES (?, 'Historical meaning one.', 1, 20, 20)`,
+    ).run(retiredSlug);
+    await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
+    assert.equal(
+      provider.requests.length,
+      2,
+      "retired rows interpret historical analyses and do not change the active catalog version",
+    );
+    database.database.prepare(
+      "UPDATE assistant_label_definitions SET description = ?, updated_at = ? WHERE slug = ?",
+    ).run("Historical meaning two.", 21, retiredSlug);
+    await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
+    assert.equal(
+      provider.requests.length,
+      2,
+      "editing a retired description must not re-run active classifications",
     );
   } finally {
     database.close();
@@ -1297,6 +1341,93 @@ test("AI-10 late analysis cannot clobber a concurrently accepted terminal row", 
     assert.equal(row.id, "terminal-row");
     assert.equal(row.match_reason, "Accepted by a reviewer while analysis was in flight.");
     assert.deepEqual(JSON.parse(row.analysis_payload), { accepted: true });
+  } finally {
+    database.close();
+  }
+});
+
+test("AI-11(c) rejects a classifier result when its snapshotted label is deleted in flight", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const customSlug = `label_${"a".repeat(32)}`;
+    database.database.prepare(
+      `INSERT INTO assistant_label_definitions
+         (slug, description, retired, created_at, updated_at)
+       VALUES (?, 'A temporary custom classification.', 0, 10, 10)`,
+    ).run(customSlug);
+    const message = summary("message-label-catalog-race", {
+      subject: "Custom category race",
+    });
+    const gmail = gmailClient([message]);
+    const firstFailure = fixtureProvider(({ messageId }) => ({
+      ...providerOutput(messageId),
+      unexpectedInstruction: "not admitted by the strict output schema",
+    }));
+    await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, firstFailure),
+    );
+    assert.equal(database.rows()[0].failure_attempts, 1);
+
+    let releaseProvider;
+    const providerReleased = new Promise((resolve) => {
+      releaseProvider = resolve;
+    });
+    const provider = fixtureProvider(async ({ messageId }) => {
+      await providerReleased;
+      return providerOutput(messageId, { intents: [customSlug] });
+    });
+    const sweep = route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, provider),
+    );
+    while (provider.requests.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const labels = assistantLabelModule.createD1AssistantLabelRepository(database);
+    assert.equal(await labels.removeOrRetire(customSlug, 20), "deleted");
+    releaseProvider();
+    await sweep;
+
+    const stale = database.rows()[0];
+    assert.equal(stale.status, "failed");
+    assert.equal(stale.error_code, "analysis_label_catalog_changed");
+    assert.equal(
+      stale.failure_attempts,
+      1,
+      "an administrator catalog edit must not consume a provider-failure attempt",
+    );
+    assert.equal(stale.analysis_payload, null);
+    assert.equal(
+      database.database.prepare(
+        "SELECT COUNT(*) AS count FROM assistant_label_definitions WHERE slug = ?",
+      ).get(customSlug).count,
+      0,
+    );
+
+    const currentVersion = application.inboxAnalysisLabelDefinitionVersion(
+      database.database.prepare(
+        "SELECT slug, description FROM assistant_label_definitions WHERE retired = 0 ORDER BY created_at ASC, slug ASC",
+      ).all(),
+    );
+    database.database.prepare(
+      `UPDATE mail_items
+          SET failure_attempts = 3,
+              attempted_label_definition_version = ?
+        WHERE connection_key = ? AND gmail_message_id = ?`,
+    ).run(currentVersion, CONNECTION_KEY, message.id);
+    const recoveredProvider = fixtureProvider();
+    await route.runInboxAnalysisSweep(
+      sweepInput(database, gmail, recoveredProvider),
+    );
+    assert.equal(
+      recoveredProvider.requests.length,
+      1,
+      "catalog-change rows remain retryable even when their stored counter is three",
+    );
+    const recovered = database.rows()[0];
+    assert.equal(recovered.status, "needs-review");
+    assert.equal(recovered.failure_attempts, 0);
+    assert.equal(recovered.error_code, null);
   } finally {
     database.close();
   }

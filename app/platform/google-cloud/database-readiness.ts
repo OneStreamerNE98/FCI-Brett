@@ -108,6 +108,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "address_validation",
       checksum: "sha256:6cd292fa975603e1077caffca7e98b03cf386ea87445bbd6b99a666fd78b38ee",
     }),
+    Object.freeze({
+      version: 15,
+      name: "assistant_label_catalog",
+      checksum: "sha256:ff56691723e3d4c9121ff156a54f5a229844cbbb82512a16ae9cd02cb4ea14cb",
+    }),
   ]);
 
 /**
@@ -165,6 +170,7 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("workspace_settings", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("user_preferences", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("filing_rules", ["SELECT", "INSERT", "UPDATE", "DELETE"]),
+    runtimeTableAccess("assistant_label_definitions", ["SELECT", "INSERT", "UPDATE", "DELETE"]),
     runtimeTableAccess("mail_items", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("tasks", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("google_form_lead_intake_watermarks", ["SELECT", "INSERT"]),

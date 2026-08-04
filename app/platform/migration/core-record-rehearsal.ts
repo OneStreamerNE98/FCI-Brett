@@ -97,6 +97,11 @@ export const CORE_REHEARSAL_SOURCE_INVENTORY = [
     reason: "Production filing-rule ownership and migration semantics are not implemented.",
   },
   {
+    sourceCategory: "assistant_label_definitions",
+    disposition: "blocking",
+    reason: "AI label catalog migration requires an explicit production policy for administrator-owned prompt definitions.",
+  },
+  {
     sourceCategory: "workspace_settings",
     disposition: "blocking",
     reason: "Development Workspace settings cannot be admitted to production automatically.",
@@ -181,6 +186,7 @@ export const DEFERRED_SOURCE_CATEGORIES = [
   "google_form_lead_intake_watermarks",
   "google_form_lead_reviews",
   "filing_rules",
+  "assistant_label_definitions",
   "workspace_settings",
   "user_preferences",
   "mail_items",

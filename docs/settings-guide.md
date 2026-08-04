@@ -389,6 +389,8 @@ The dedicated administrator section shows the provider (**OpenAI**), company API
 
 The section also states what Inbox analysis saves: the email subject, sender, received date, and analysis result persist in the app database. That stored snapshot can include customer names and subject lines, and turning Inbox analysis off stops future sweeps without erasing results already saved.
 
+Administrators can also manage the **Inbox analysis labels** in this section. Add a plain-language description and the app creates an opaque identifier; identifiers cannot be typed, edited, or reused. Descriptions remain editable. Removing an unused label deletes it, while removing a label already present in saved analysis retires it so older queue rows remain understandable. The catalog is capped at 20 labels, with 300 characters per description. Label text is treated as untrusted data and cannot contain the analysis prompt's section headings or code/JSON fences.
+
 ### 8. Data & security
 
 A plain-language summary of the safeguards already in place: review-first email filing, one administrator-approved Workspace connection (consumer Gmail accounts are rejected in live mode), isolated local simulation that never contacts Google, and the installable web app. It also includes phone-install guidance.

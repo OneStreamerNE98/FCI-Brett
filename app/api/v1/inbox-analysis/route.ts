@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
 import type { D1Database } from "../../../adapters/d1/d1-database";
+import { createD1AssistantLabelRepository } from "../../../adapters/d1/assistant-label-repository";
 import { createD1MailItemRepository } from "../../../adapters/d1/mail-item-repository";
 import {
   acquireWorkspaceSetupLease,
@@ -12,12 +13,12 @@ import { OpenAIResponsesProvider } from "../../../adapters/openai/responses-prov
 import {
   analyzeInboxMessage,
   eligibleInboxAnalysisProjects,
-  INBOX_ANALYSIS_INTENTS,
-  INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+  inboxAnalysisLabelDefinitionVersion,
   parseAssistantInboxAnalysis,
   type InboxAnalysis,
   type InboxAnalysisMessage,
   type InboxAnalysisProjectCandidate,
+  type InboxAnalysisLabelDefinition,
 } from "../../../application/assistant/inbox-analysis";
 import {
   isMailItemRelationshipId,
@@ -57,7 +58,6 @@ export const INBOX_ANALYSIS_SWEEP_DEADLINE_MS = 55_000;
 
 const CAUGHT_UP_MESSAGE = "You're caught up";
 const OLDER_PENDING_MESSAGE = "Older messages not yet analyzed";
-const INBOX_ANALYSIS_INTENT_SET = new Set<string>(INBOX_ANALYSIS_INTENTS);
 const INBOX_ANALYSIS_CONFIDENCE_SET = new Set([
   "high",
   "medium",
@@ -124,6 +124,42 @@ type NeedsReviewNotification = Readonly<{
   subject: string;
   count: number;
 }>;
+
+type AssistantLabelCatalog = Readonly<{
+  definitions: readonly InboxAnalysisLabelDefinition[];
+  labels: readonly Readonly<{
+    slug: string;
+    description: string;
+    retired: boolean;
+  }>[];
+  knownSlugs: ReadonlySet<string>;
+  version: string;
+}>;
+
+class InboxAnalysisLabelCatalogChangedError extends Error {
+  constructor() {
+    super("Inbox analysis label catalog changed during classification.");
+    this.name = "InboxAnalysisLabelCatalogChangedError";
+  }
+}
+
+async function readAssistantLabelCatalog(
+  database: D1Database,
+): Promise<AssistantLabelCatalog> {
+  const rows = await createD1AssistantLabelRepository(database).list();
+  const definitions = Object.freeze(rows
+    .filter(({ retired }) => !retired)
+    .map(({ slug, description }) => Object.freeze({ slug, description })));
+  const labels = Object.freeze(rows.map(({ slug, description, retired }) =>
+    Object.freeze({ slug, description, retired })
+  ));
+  return Object.freeze({
+    definitions,
+    labels,
+    knownSlugs: new Set(labels.map(({ slug }) => slug)),
+    version: inboxAnalysisLabelDefinitionVersion(definitions),
+  });
+}
 
 /** Newest subject first, then the remainder as a count, inside the notifier's
  * 180-character summary budget. One card per sweep, never one per message. */
@@ -364,15 +400,22 @@ async function saveMailItem(
   repository: ReturnType<typeof createD1MailItemRepository>,
   item: MailItem,
   mode: "upsert" | "insert-if-absent" = "upsert",
+  activeIntentSlugs?: readonly string[],
 ) {
-  const result = mode === "insert-if-absent"
-    ? await repository.insertIfAbsent(item)
-    : await repository.upsert(item);
+  const persist = (candidate: MailItem) => activeIntentSlugs
+    ? repository.saveAnalysisIfLabelsActive(candidate, activeIntentSlugs, mode)
+    : mode === "insert-if-absent"
+      ? repository.insertIfAbsent(candidate)
+      : repository.upsert(candidate);
+  const result = await persist(item);
   if (result.outcome === "saved") return true;
   if (
     result.outcome === "existing-preserved"
     || result.outcome === "terminal-preserved"
   ) return false;
+  if (result.outcome === "label-catalog-changed") {
+    throw new InboxAnalysisLabelCatalogChangedError();
+  }
   // A project/client can be removed between the candidate SELECT and the
   // guarded repository write. Preserve the analysis row and its watermark,
   // but never retain a relationship the database could not verify.
@@ -384,14 +427,15 @@ async function saveMailItem(
       ? null
       : item.approvedProjectId,
   });
-  const fallback = mode === "insert-if-absent"
-    ? await repository.insertIfAbsent(withoutStaleReferences)
-    : await repository.upsert(withoutStaleReferences);
+  const fallback = await persist(withoutStaleReferences);
   if (fallback.outcome === "saved") return true;
   if (
     fallback.outcome !== "existing-preserved"
     && fallback.outcome !== "terminal-preserved"
   ) {
+    if (fallback.outcome === "label-catalog-changed") {
+      throw new InboxAnalysisLabelCatalogChangedError();
+    }
     throw new Error("Inbox analysis could not persist a relationship-safe row.");
   }
   return false;
@@ -406,6 +450,7 @@ async function saveSkipped(input: {
   reason: "already-filed" | "list-unsubscribe";
   contentHash: string | null;
   now: number;
+  labelDefinitionVersion: string;
 }) {
   await saveMailItem(input.repository, normalizeStoredMailItem({
     ...rowBase(input),
@@ -419,7 +464,7 @@ async function saveSkipped(input: {
     party: null,
     confidence: null,
     contentHash: input.contentHash,
-    labelDefinitionVersion: INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+    labelDefinitionVersion: input.labelDefinitionVersion,
     attemptedLabelDefinitionVersion: null,
     failureAttempts: 0,
     errorCode: null,
@@ -435,10 +480,11 @@ async function saveFailure(input: {
   errorCode: string;
   now: number;
   countsAgainstAttemptBudget?: boolean;
+  labelDefinitionVersion: string;
 }) {
   const existingAttempts =
     input.existing?.attemptedLabelDefinitionVersion
-        === INBOX_ANALYSIS_LABEL_DEFINITION_VERSION
+        === input.labelDefinitionVersion
       ? input.existing.failureAttempts
       : 0;
   const attempts = input.countsAgainstAttemptBudget === false
@@ -468,9 +514,9 @@ async function saveFailure(input: {
     contentHash: input.existing?.contentHash ?? null,
     labelDefinitionVersion: preservesReview
       ? input.existing?.labelDefinitionVersion ?? null
-      : INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      : input.labelDefinitionVersion,
     attemptedLabelDefinitionVersion:
-      INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      input.labelDefinitionVersion,
     failureAttempts: attempts,
     errorCode: input.errorCode,
   }));
@@ -483,6 +529,7 @@ async function saveDiscoveryFailure(input: {
   messageId: string;
   summary: GmailMessageSummary | null;
   now: number;
+  labelDefinitionVersion: string;
 }) {
   const item = normalizeStoredMailItem({
     ...rowBase({
@@ -497,9 +544,9 @@ async function saveDiscoveryFailure(input: {
     party: null,
     confidence: null,
     contentHash: null,
-    labelDefinitionVersion: INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+    labelDefinitionVersion: input.labelDefinitionVersion,
     attemptedLabelDefinitionVersion:
-      INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      input.labelDefinitionVersion,
     failureAttempts: 1,
     errorCode: "analysis_state_read_failed",
   });
@@ -522,6 +569,7 @@ async function saveAnalysis(input: {
   existing: MailItem | null;
   contentHash: string;
   now: number;
+  labelDefinitionVersion: string;
 }) {
   const relationshipProjectId = isMailItemRelationshipId(input.analysis.projectId)
     ? input.analysis.projectId
@@ -545,7 +593,7 @@ async function saveAnalysis(input: {
     party: input.analysis.party,
     confidence: input.analysis.confidence,
     contentHash: input.contentHash,
-    labelDefinitionVersion: INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+    labelDefinitionVersion: input.labelDefinitionVersion,
     attemptedLabelDefinitionVersion: null,
     failureAttempts: 0,
     errorCode: null,
@@ -554,6 +602,7 @@ async function saveAnalysis(input: {
     input.repository,
     item,
     input.existing ? "upsert" : "insert-if-absent",
+    input.analysis.intents,
   );
   return Object.freeze({
     item,
@@ -567,22 +616,23 @@ async function saveAnalysis(input: {
   });
 }
 
-function needsReanalysis(item: MailItem) {
+function needsReanalysis(item: MailItem, labelDefinitionVersion: string) {
   return item.status === "needs-review"
-    && item.labelDefinitionVersion !== INBOX_ANALYSIS_LABEL_DEFINITION_VERSION
+    && item.labelDefinitionVersion !== labelDefinitionVersion
     && (
       item.attemptedLabelDefinitionVersion
-        !== INBOX_ANALYSIS_LABEL_DEFINITION_VERSION
+        !== labelDefinitionVersion
       || item.failureAttempts < MAX_MAIL_ITEM_FAILURE_ATTEMPTS
     );
 }
 
-function needsRetry(item: MailItem) {
+function needsRetry(item: MailItem, labelDefinitionVersion: string) {
   return item.status === "failed"
     && (
       item.errorCode === "analysis_daily_limit_reached"
+      || item.errorCode === "analysis_label_catalog_changed"
       || item.attemptedLabelDefinitionVersion
-        !== INBOX_ANALYSIS_LABEL_DEFINITION_VERSION
+        !== labelDefinitionVersion
       || item.failureAttempts < MAX_MAIL_ITEM_FAILURE_ATTEMPTS
     );
 }
@@ -590,21 +640,23 @@ function needsRetry(item: MailItem) {
 function simulationAnalysis(
   message: InboxAnalysisMessage,
   projects: readonly InboxAnalysisProjectCandidate[],
+  definitions: readonly InboxAnalysisLabelDefinition[],
 ) {
   const fixture = simulationInboxAnalysisFixture(message.id);
   return fixture
-    ? parseAssistantInboxAnalysis(fixture, message, projects)
+    ? parseAssistantInboxAnalysis(fixture, message, projects, definitions)
     : null;
 }
 
 async function hasOutstandingBacklog(
   repository: ReturnType<typeof createD1MailItemRepository>,
   connectionKey: string,
+  labelDefinitionVersion: string,
 ) {
   return (
     await repository.listRetryableAnalysisRows(
       connectionKey,
-      INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      labelDefinitionVersion,
       1,
     )
   ).length > 0;
@@ -651,6 +703,7 @@ export async function runInboxAnalysisSweep(input: {
   }
 
   try {
+  const labelCatalog = await readAssistantLabelCatalog(input.database);
   const projects = await readProjectCandidates(input.database);
   const apiKey = runtimeValue(input.environment, "OPENAI_API_KEY");
   const provider = !config.simulation && apiKey
@@ -696,7 +749,7 @@ export async function runInboxAnalysisSweep(input: {
 
   const backlog = await repository.listRetryableAnalysisRows(
     config.connectionKey,
-    INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+    labelCatalog.version,
     MAX_INBOX_ANALYSIS_MESSAGES,
   );
   const scheduled = new Set(backlog.map((item) => item.gmailMessageId));
@@ -768,7 +821,10 @@ export async function runInboxAnalysisSweep(input: {
       }
       if (existing) {
         if (
-          (needsReanalysis(existing) || needsRetry(existing))
+          (
+            needsReanalysis(existing, labelCatalog.version)
+            || needsRetry(existing, labelCatalog.version)
+          )
           && !scheduled.has(messageId)
         ) {
           scheduled.add(messageId);
@@ -825,6 +881,7 @@ export async function runInboxAnalysisSweep(input: {
         reason: "already-filed",
         contentHash: item.existing?.contentHash ?? null,
         now: checkedAt,
+        labelDefinitionVersion: labelCatalog.version,
       });
       return true;
     }
@@ -835,6 +892,7 @@ export async function runInboxAnalysisSweep(input: {
         messageId: item.messageId,
         summary: item.summary,
         now: checkedAt,
+        labelDefinitionVersion: labelCatalog.version,
       });
       return false;
     }
@@ -851,6 +909,7 @@ export async function runInboxAnalysisSweep(input: {
         existing: item.existing,
         errorCode: "gmail_read_failed",
         now: checkedAt,
+        labelDefinitionVersion: labelCatalog.version,
         // Deliberately counted. An exempt read failure is pinned at one attempt
         // forever, and a message deleted from Gmail 404s on every future read —
         // so the row would sit in the retry backlog permanently, block
@@ -870,6 +929,7 @@ export async function runInboxAnalysisSweep(input: {
         reason: "list-unsubscribe",
         contentHash,
         now: checkedAt,
+        labelDefinitionVersion: labelCatalog.version,
       });
       return true;
     }
@@ -884,7 +944,7 @@ export async function runInboxAnalysisSweep(input: {
     let analysis: InboxAnalysis | null = null;
     try {
       if (config.simulation) {
-        analysis = simulationAnalysis(message, projects);
+        analysis = simulationAnalysis(message, projects, labelCatalog.definitions);
       } else {
         const reserved = await reserveInboxAnalysisProviderCall(
           input.database,
@@ -905,6 +965,7 @@ export async function runInboxAnalysisSweep(input: {
             errorCode: "analysis_daily_limit_reached",
             now: checkedAt,
             countsAgainstAttemptBudget: false,
+            labelDefinitionVersion: labelCatalog.version,
           });
           return false;
         }
@@ -913,6 +974,7 @@ export async function runInboxAnalysisSweep(input: {
           projects,
           provider: provider!,
           signal: effectiveSignal,
+          labelDefinitions: labelCatalog.definitions,
         });
       }
     } catch {
@@ -929,6 +991,7 @@ export async function runInboxAnalysisSweep(input: {
           ? "analysis_deadline_exceeded"
           : "analysis_failed",
         now: checkedAt,
+        labelDefinitionVersion: labelCatalog.version,
       });
       return false;
     }
@@ -940,6 +1003,7 @@ export async function runInboxAnalysisSweep(input: {
       existing: item.existing,
       contentHash,
       now: checkedAt,
+      labelDefinitionVersion: labelCatalog.version,
     });
     // The pre-filter's isAlreadyFiled ran before the Gmail read and the provider
     // call, so a person can file this message while the analysis is in flight.
@@ -978,6 +1042,7 @@ export async function runInboxAnalysisSweep(input: {
           reason: "already-filed",
           contentHash,
           now: checkedAt,
+          labelDefinitionVersion: labelCatalog.version,
         });
       } catch {
         // A needs-review row is never re-swept, so leaving it here would strand
@@ -998,6 +1063,7 @@ export async function runInboxAnalysisSweep(input: {
             existing: null,
             errorCode: "analysis_retire_failed",
             now: checkedAt,
+            labelDefinitionVersion: labelCatalog.version,
           });
         } catch {
           // Both the retirement and its fallback failed, so this message has no
@@ -1040,6 +1106,7 @@ export async function runInboxAnalysisSweep(input: {
             // Neither abort kind reached Gmail or the provider for this item,
             // so it must not consume the three durable analysis attempts.
             countsAgainstAttemptBudget: false,
+            labelDefinitionVersion: labelCatalog.version,
           });
           continue;
         }
@@ -1047,7 +1114,7 @@ export async function runInboxAnalysisSweep(input: {
           if (await processWork(work[workIndex])) {
             durableProgressMessageIds.add(work[workIndex].messageId);
           }
-        } catch {
+        } catch (error) {
           // Keep one durable row for a swept message even if a pre-filter,
           // content hash, normalization, or first persistence attempt fails.
           // If storage itself is unavailable this retry still fails closed and
@@ -1058,8 +1125,15 @@ export async function runInboxAnalysisSweep(input: {
             messageId: work[workIndex].messageId,
             summary: work[workIndex].summary,
             existing: work[workIndex].existing,
-            errorCode: "analysis_item_failed",
+            errorCode: error instanceof InboxAnalysisLabelCatalogChangedError
+              ? "analysis_label_catalog_changed"
+              : "analysis_item_failed",
             now: now(),
+            labelDefinitionVersion: labelCatalog.version,
+            countsAgainstAttemptBudget:
+              error instanceof InboxAnalysisLabelCatalogChangedError
+                ? false
+                : undefined,
           });
         }
       }
@@ -1111,6 +1185,7 @@ export async function runInboxAnalysisSweep(input: {
             reason: "already-filed",
             contentHash: current?.contentHash ?? null,
             now: now(),
+            labelDefinitionVersion: labelCatalog.version,
           });
         } catch {
           // The next sweep reconciles it; the card stays suppressed regardless.
@@ -1148,6 +1223,7 @@ export async function runInboxAnalysisSweep(input: {
   const outstanding = await hasOutstandingBacklog(
     repository,
     config.connectionKey,
+    labelCatalog.version,
   );
   if (coverageComplete && !outstanding) {
     const result = Object.freeze({
@@ -1268,14 +1344,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function reviewQueueLeadProposal(item: MailItem) {
+function reviewQueueLeadProposal(
+  item: MailItem,
+  knownLabelSlugs: ReadonlySet<string>,
+) {
   const payload = item.analysisPayload;
   if (
     !payload
     || !Array.isArray(payload.intents)
     || !payload.intents.includes("lead")
     || payload.intents.some((intent) =>
-      typeof intent !== "string" || !INBOX_ANALYSIS_INTENT_SET.has(intent)
+      typeof intent !== "string" || !knownLabelSlugs.has(intent)
     )
     || new Set(payload.intents).size !== payload.intents.length
   ) {
@@ -1346,14 +1425,17 @@ function reviewQueueLeadProposal(item: MailItem) {
   });
 }
 
-function reviewQueueAnalysis(item: MailItem) {
+function reviewQueueAnalysis(
+  item: MailItem,
+  knownLabelSlugs: ReadonlySet<string>,
+) {
   const payload = item.analysisPayload;
   if (
     !payload
     || !Array.isArray(payload.intents)
     || payload.intents.length === 0
     || payload.intents.some((intent) =>
-      typeof intent !== "string" || !INBOX_ANALYSIS_INTENT_SET.has(intent)
+      typeof intent !== "string" || !knownLabelSlugs.has(intent)
     )
     || new Set(payload.intents).size !== payload.intents.length
     || typeof item.confidence !== "string"
@@ -1379,14 +1461,17 @@ function reviewQueueAnalysis(item: MailItem) {
   });
 }
 
-function reviewQueueRow(item: MailItem) {
+function reviewQueueRow(
+  item: MailItem,
+  knownLabelSlugs: ReadonlySet<string>,
+) {
   return Object.freeze({
     id: item.id,
     subject: item.subject,
     sender: item.sender,
     receivedAt: item.receivedAt,
-    analysis: reviewQueueAnalysis(item),
-    leadProposal: reviewQueueLeadProposal(item),
+    analysis: reviewQueueAnalysis(item, knownLabelSlugs),
+    leadProposal: reviewQueueLeadProposal(item, knownLabelSlugs),
   });
 }
 
@@ -1399,6 +1484,7 @@ export async function GET(request: NextRequest) {
     const database = env.DB as unknown as D1Database;
     const repository = createD1MailItemRepository(database);
     const connectionKey = getConnectionScope().connectionKey;
+    const labelCatalog = await readAssistantLabelCatalog(database);
     const [page, failed] = await Promise.all([
       repository.listByStatusPage(
         connectionKey,
@@ -1407,11 +1493,12 @@ export async function GET(request: NextRequest) {
       ),
       repository.getExhaustedAnalysisFailureSummary(
         connectionKey,
-        INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        labelCatalog.version,
       ),
     ]);
     return noStoreJson({
-      rows: page.items.map(reviewQueueRow),
+      labels: labelCatalog.labels,
+      rows: page.items.map((item) => reviewQueueRow(item, labelCatalog.knownSlugs)),
       totalCount: page.totalCount,
       ...(failed.count > 0
         ? { failedCount: failed.count, failedReason: failed.reason }
@@ -1454,9 +1541,10 @@ export async function PATCH(request: NextRequest) {
     const repository = createD1MailItemRepository(database);
     const connectionKey = getConnectionScope().connectionKey;
     if (retry) {
+      const labelCatalog = await readAssistantLabelCatalog(database);
       const retriedCount = await repository.resetExhaustedAnalysisFailures(
         connectionKey,
-        INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        labelCatalog.version,
         Date.now(),
       );
       return noStoreJson({ retriedCount });

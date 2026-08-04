@@ -51,6 +51,24 @@ const limitedRoutes = [
     firstWork: "await parseBoundedJsonObject(request",
   },
   {
+    path: "app/api/v1/inbox-analysis/labels/route.ts",
+    method: "POST",
+    scope: "inbox-analysis",
+    firstWork: "await mutationBody(request",
+  },
+  {
+    path: "app/api/v1/inbox-analysis/labels/route.ts",
+    method: "PATCH",
+    scope: "inbox-analysis",
+    firstWork: "await mutationBody(request",
+  },
+  {
+    path: "app/api/v1/inbox-analysis/labels/route.ts",
+    method: "DELETE",
+    scope: "inbox-analysis",
+    firstWork: "await mutationBody(request",
+  },
+  {
     path: "app/api/v1/uploads/route.ts",
     method: "POST",
     scope: "uploads",

@@ -599,7 +599,7 @@ test("mail-item adapter filters retryable analysis rows before LIMIT so a curren
     all(statement) {
       assert.match(
         statement.sql,
-        /^SELECT \* FROM mail_items WHERE connection_key = \? AND \(error_code = 'analysis_daily_limit_reached' OR failure_attempts < \? OR attempted_label_definition_version IS NOT \?\) AND \(status = 'failed' OR \(status = 'needs-review' AND label_definition_version IS NOT \?\)\) ORDER BY updated_at ASC, id ASC LIMIT \?$/u,
+        /^SELECT \* FROM mail_items WHERE connection_key = \? AND \(error_code IN \('analysis_daily_limit_reached', 'analysis_label_catalog_changed'\) OR failure_attempts < \? OR attempted_label_definition_version IS NOT \?\) AND \(status = 'failed' OR \(status = 'needs-review' AND label_definition_version IS NOT \?\)\) ORDER BY updated_at ASC, id ASC LIMIT \?$/u,
       );
       assert.ok(
         statement.sql.indexOf("failure_attempts") < statement.sql.indexOf("LIMIT"),

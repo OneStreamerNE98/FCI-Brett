@@ -5,6 +5,10 @@ import {
   type MailItemConfidence,
   type MailItemParty,
 } from "../../domain/mail-item";
+import {
+  ASSISTANT_LABEL_IDENTIFIER_PATTERN,
+  DEFAULT_ASSISTANT_LABEL_DEFINITIONS,
+} from "../../domain/assistant-label-definition";
 
 export const INBOX_ANALYSIS_INTENTS = Object.freeze([
   "lead",
@@ -13,7 +17,7 @@ export const INBOX_ANALYSIS_INTENTS = Object.freeze([
   "warranty",
 ] as const);
 
-export type InboxAnalysisIntent = typeof INBOX_ANALYSIS_INTENTS[number];
+export type InboxAnalysisIntent = string;
 
 export const INBOX_ANALYSIS_PARTIES = MAIL_ITEM_PARTIES;
 
@@ -24,24 +28,12 @@ export const INBOX_ANALYSIS_PROJECT_REFERENCE_LIMIT = 10;
 export const INBOX_ANALYSIS_BODY_LIMIT = 10_000;
 export const INBOX_ANALYSIS_RATIONALE_LIMIT = 200;
 
-export const INBOX_ANALYSIS_LABEL_DEFINITIONS = Object.freeze([
-  Object.freeze({
-    slug: "lead" as const,
-    description: "A new sales opportunity or request for an estimate.",
-  }),
-  Object.freeze({
-    slug: "project-update" as const,
-    description: "Information or a requested change concerning existing project work.",
-  }),
-  Object.freeze({
-    slug: "schedule" as const,
-    description: "A request or change involving an appointment, installation, or project timing.",
-  }),
-  Object.freeze({
-    slug: "warranty" as const,
-    description: "A callback, repair, service, or warranty concern.",
-  }),
-] as const);
+export type InboxAnalysisLabelDefinition = Readonly<{
+  slug: string;
+  description: string;
+}>;
+
+export const INBOX_ANALYSIS_LABEL_DEFINITIONS = DEFAULT_ASSISTANT_LABEL_DEFINITIONS;
 
 function fnv1a32(value: string) {
   let hash = 0x811c9dc5;
@@ -192,6 +184,7 @@ function nullableStringSchema(maxLength: number) {
 export function inboxAnalysisSchema(
   messageId: string,
   candidateProjectIds: readonly string[],
+  definitions: readonly InboxAnalysisLabelDefinition[] = INBOX_ANALYSIS_LABEL_DEFINITIONS,
 ) {
   const projectIds = [...new Set(
     candidateProjectIds.filter((candidateId) => IDENTIFIER_PATTERN.test(candidateId)),
@@ -201,6 +194,9 @@ export function inboxAnalysisSchema(
         type: "string",
         enum: projectIds,
       }
+    : { type: "string" };
+  const intentItems = definitions.length > 0
+    ? { type: "string", enum: definitions.map(({ slug }) => slug) }
     : { type: "string" };
   return {
     type: "object",
@@ -213,11 +209,8 @@ export function inboxAnalysisSchema(
       },
       intents: {
         type: "array",
-        items: {
-          type: "string",
-          enum: [...INBOX_ANALYSIS_INTENTS],
-        },
-        maxItems: INBOX_ANALYSIS_INTENTS.length,
+        items: intentItems,
+        maxItems: definitions.length,
       },
       leadFields: {
         type: "object",
@@ -398,6 +391,7 @@ export function parseAssistantInboxAnalysis(
   value: unknown,
   message: InboxAnalysisMessage,
   projects: readonly InboxAnalysisProjectCandidate[],
+  definitions: readonly InboxAnalysisLabelDefinition[] = INBOX_ANALYSIS_LABEL_DEFINITIONS,
 ): InboxAnalysis | null {
   if (!isRecord(value) || !hasExactKeys(value, OUTPUT_KEYS)) return null;
   if (
@@ -420,7 +414,12 @@ export function parseAssistantInboxAnalysis(
   const eligibleProjectIds = new Set(eligibleProjects.map((project) => project.id));
   const requestedIntents = new Set(value.intents);
   const intents = Object.freeze(
-    INBOX_ANALYSIS_INTENTS.filter((intent) => requestedIntents.has(intent)),
+    definitions
+      .map(({ slug }) => slug)
+      .filter((intent) =>
+        ASSISTANT_LABEL_IDENTIFIER_PATTERN.test(intent)
+        && requestedIntents.has(intent)
+      ),
   );
   const referencedProjectIds = Object.freeze(
     [...new Set(value.referencedProjectIds)]
@@ -453,8 +452,10 @@ export async function analyzeInboxMessage(input: {
   projects: readonly InboxAnalysisProjectCandidate[];
   provider: AssistantProvider;
   signal: AbortSignal;
+  labelDefinitions?: readonly InboxAnalysisLabelDefinition[];
 }): Promise<InboxAnalysis | null> {
   const projects = eligibleInboxAnalysisProjects(input.projects);
+  const definitions = input.labelDefinitions ?? INBOX_ANALYSIS_LABEL_DEFINITIONS;
   const completion = await input.provider.complete({
     messages: [
       { role: "system", content: ASSISTANT_INBOX_ANALYSIS_SYSTEM_PROMPT },
@@ -476,7 +477,7 @@ export async function analyzeInboxMessage(input: {
             snippet: promptText(input.message.snippet, 2_000),
           }),
           "INTENT LABEL DEFINITIONS:",
-          JSON.stringify(INBOX_ANALYSIS_LABEL_DEFINITIONS),
+          JSON.stringify(definitions),
           "PARTY CATALOG:",
           JSON.stringify(INBOX_ANALYSIS_PARTIES),
           "UNTRUSTED ORIGINAL EMAIL BODY:",
@@ -490,6 +491,7 @@ export async function analyzeInboxMessage(input: {
       schema: inboxAnalysisSchema(
         input.message.id,
         projects.map((project) => project.id),
+        definitions,
       ),
     },
     signal: input.signal,
@@ -499,5 +501,6 @@ export async function analyzeInboxMessage(input: {
     completion.value,
     input.message,
     projects,
+    definitions,
   );
 }

@@ -1,13 +1,19 @@
 "use client";
 
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Check, Database, KeyRound, ShieldCheck, Sparkles } from "lucide-react";
+import { Bot, Check, Database, KeyRound, Plus, ShieldCheck, Sparkles } from "lucide-react";
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
+import {
+  assistantLabelCodePointLength,
+  isSystemAssistantLabelSlug,
+  MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH,
+} from "../../domain/assistant-label-definition";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 import styles from "./AiAssistantSettingsCard.module.css";
 
 const ASSISTANT_CONFIG_URL = "/api/v1/assistant/config";
+const ASSISTANT_LABELS_URL = "/api/v1/inbox-analysis/labels";
 const AI_FEATURES = [
   { key: "orgQa", label: "Organization-wide answers", state: "In development" },
   { key: "triage", label: "Inbox filing suggestions", state: "In development" },
@@ -30,6 +36,26 @@ type NotificationKind = "success" | "info" | "warning" | "error";
 type NotificationAction = { label: string; run: () => void };
 type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
 type LoadState = "loading" | "ready" | "error";
+type AssistantLabel = {
+  slug: string;
+  description: string;
+  retired: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+type AssistantLabelCatalog = {
+  labels: AssistantLabel[];
+  /** Bounds ACTIVE labels only. */
+  maximumLabels: number;
+  /** Bounds total stored rows, retired tombstones included. */
+  maximumRows: number;
+};
+
+function limitAssistantLabelDescription(value: string) {
+  return [...value]
+    .slice(0, MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH)
+    .join("");
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -71,6 +97,54 @@ function parseAssistantConfig(value: unknown): AssistantConfig {
   };
 }
 
+function parseAssistantLabelCatalog(value: unknown): AssistantLabelCatalog {
+  if (
+    !isRecord(value)
+    || !Array.isArray(value.labels)
+    || !Number.isSafeInteger(value.maximumLabels)
+    || Number(value.maximumLabels) < 1
+    || !Number.isSafeInteger(value.maximumRows)
+    || Number(value.maximumRows) < Number(value.maximumLabels)
+    // Total rows carry retired tombstones, which the active cap excludes, so
+    // the array is bounded by maximumRows here and the active subset below.
+    || value.labels.length > Number(value.maximumRows)
+  ) {
+    throw new Error("The server returned an invalid AI label catalog.");
+  }
+  const labels = value.labels.map((candidate) => {
+    if (
+      !isRecord(candidate)
+      || typeof candidate.slug !== "string"
+      || !/^[A-Za-z0-9_-]{1,60}$/.test(candidate.slug)
+      || typeof candidate.description !== "string"
+      || !candidate.description.trim()
+      || assistantLabelCodePointLength(candidate.description)
+        > MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH
+      || typeof candidate.retired !== "boolean"
+      || !Number.isSafeInteger(candidate.createdAt)
+      || !Number.isSafeInteger(candidate.updatedAt)
+    ) {
+      throw new Error("The server returned an invalid AI label catalog.");
+    }
+    return candidate as AssistantLabel;
+  });
+  if (new Set(labels.map(({ slug }) => slug)).size !== labels.length) {
+    throw new Error("The server returned duplicate AI labels.");
+  }
+  if (labels.filter(({ retired }) => !retired).length > Number(value.maximumLabels)) {
+    throw new Error("The server returned an invalid AI label catalog.");
+  }
+  return {
+    labels,
+    maximumLabels: Number(value.maximumLabels),
+    maximumRows: Number(value.maximumRows),
+  };
+}
+
+function activeLabelCount(catalog: AssistantLabelCatalog) {
+  return catalog.labels.filter(({ retired }) => !retired).length;
+}
+
 export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; isAdmin: boolean }) {
   const [config, setConfig] = useState<AssistantConfig | null>(null);
   const [features, setFeatures] = useState<AiFeatures | null>(null);
@@ -79,7 +153,14 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [labelCatalog, setLabelCatalog] = useState<AssistantLabelCatalog | null>(null);
+  const [labelEdits, setLabelEdits] = useState<Record<string, string>>({});
+  const [newLabelDescription, setNewLabelDescription] = useState("");
+  const [labelLoadState, setLabelLoadState] = useState<LoadState>("loading");
+  const [labelLoadError, setLabelLoadError] = useState("");
+  const [labelSaving, setLabelSaving] = useState<string | null>(null);
   const loadRequestRef = useRef(0);
+  const labelLoadRequestRef = useRef(0);
 
   const loadConfig = useCallback(async (force = false) => {
     const requestId = ++loadRequestRef.current;
@@ -112,12 +193,76 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
     }
   }, []);
 
+  const loadLabels = useCallback(async (force = false) => {
+    if (!isAdmin) return;
+    const requestId = ++labelLoadRequestRef.current;
+    setLabelLoadState("loading");
+    setLabelLoadError("");
+    try {
+      const nextCatalog = parseAssistantLabelCatalog(
+        await cachedGetJson<unknown>(ASSISTANT_LABELS_URL, { force }),
+      );
+      if (requestId !== labelLoadRequestRef.current) return;
+      setLabelCatalog(nextCatalog);
+      setLabelEdits(Object.fromEntries(
+        nextCatalog.labels.map(({ slug, description }) => [slug, description]),
+      ));
+      setLabelLoadState("ready");
+    } catch (error) {
+      if (requestId !== labelLoadRequestRef.current) return;
+      setLabelCatalog(null);
+      setLabelEdits({});
+      setLabelLoadError(
+        error instanceof Error ? error.message : "AI labels could not be loaded.",
+      );
+      setLabelLoadState("error");
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     void Promise.resolve().then(() => loadConfig());
     return () => {
       loadRequestRef.current += 1;
     };
   }, [loadConfig]);
+
+  useEffect(() => {
+    if (isAdmin) void Promise.resolve().then(() => loadLabels());
+    return () => {
+      labelLoadRequestRef.current += 1;
+    };
+  }, [isAdmin, loadLabels]);
+
+  async function mutateLabel(
+    method: "POST" | "PATCH" | "DELETE",
+    body: Record<string, string>,
+    pendingKey: string,
+    successMessage: (response: Record<string, unknown>) => string,
+  ) {
+    setLabelSaving(pendingKey);
+    try {
+      const response = await fetch(ASSISTANT_LABELS_URL, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({})) as unknown;
+      if (!response.ok) {
+        throw new Error(
+          isRecord(payload) && typeof payload.error === "string"
+            ? payload.error
+            : "AI label could not be saved.",
+        );
+      }
+      invalidateCachedGet(ASSISTANT_LABELS_URL);
+      await loadLabels(true);
+      notify(successMessage(isRecord(payload) ? payload : {}), "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "AI label could not be saved.", "error");
+    } finally {
+      setLabelSaving(null);
+    }
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -198,7 +343,7 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
         <div><strong>Data stored by Inbox analysis</strong><span>Inbox analysis stores the email subject, sender, received date, and analysis result in the app database. This can include customer names and subject lines. Turning Inbox analysis off stops future sweeps but does not erase saved results.</span></div>
       </div>
 
-      {isAdmin ? <form onSubmit={save}>
+      {isAdmin ? <><form onSubmit={save}>
         <label htmlFor="assistant-model">{config.modelSource === "env" ? "App-saved fallback model" : "OpenAI model"}
           <input
             id="assistant-model"
@@ -235,7 +380,114 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
             {saving ? "Saving…" : <><Check size={15} aria-hidden="true" /> Save AI settings</>}
           </button>
         </footer>
-      </form> : <>
+      </form>
+
+      <section className={styles.labelCatalog} aria-labelledby="assistant-label-catalog-title">
+        <div className={styles.labelHeading}>
+          <div>
+            <h3 id="assistant-label-catalog-title">Inbox analysis labels</h3>
+            <p>Descriptions guide classification. Identifiers are generated by the app and never reused.</p>
+          </div>
+          {labelCatalog && <span>{activeLabelCount(labelCatalog)}/{labelCatalog.maximumLabels}</span>}
+        </div>
+        {labelLoadState !== "ready" || !labelCatalog ? <SettingsDataNotice
+          state={labelLoadState}
+          error={labelLoadError || "AI labels could not be loaded."}
+          onRetry={() => void loadLabels(true)}
+        /> : <>
+          <div className={styles.newLabel}>
+            <label htmlFor="assistant-new-label-description">New label description
+              <textarea
+                id="assistant-new-label-description"
+                value={newLabelDescription}
+                onChange={(event) => setNewLabelDescription(
+                  limitAssistantLabelDescription(event.target.value),
+                )}
+                maxLength={MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH * 2}
+                rows={2}
+                disabled={labelSaving !== null || activeLabelCount(labelCatalog) >= labelCatalog.maximumLabels}
+              />
+            </label>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!newLabelDescription.trim() || labelSaving !== null || activeLabelCount(labelCatalog) >= labelCatalog.maximumLabels}
+              onClick={() => void mutateLabel(
+                "POST",
+                { description: newLabelDescription },
+                "new",
+                () => {
+                  setNewLabelDescription("");
+                  return "AI label added";
+                },
+              )}
+            >
+              <Plus size={15} aria-hidden="true" /> {labelSaving === "new" ? "Adding…" : "Add label"}
+            </button>
+          </div>
+          <div className={styles.labelList}>
+            {labelCatalog.labels.map((label) => <article key={label.slug} className={styles.labelRow}>
+              <div className={styles.labelIdentity}>
+                <code>{label.slug}</code>
+                <span className={label.retired ? styles.retired : styles.active}>
+                  {label.retired ? "Retired" : "Active"}
+                </span>
+                {isSystemAssistantLabelSlug(label.slug)
+                  && <span className={styles.builtIn}>Built-in</span>}
+              </div>
+              <label htmlFor={`assistant-label-${label.slug}`}>Description
+                <textarea
+                  id={`assistant-label-${label.slug}`}
+                  value={labelEdits[label.slug] ?? label.description}
+                  onChange={(event) => setLabelEdits((current) => ({
+                    ...current,
+                    [label.slug]: limitAssistantLabelDescription(event.target.value),
+                  }))}
+                  maxLength={MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH * 2}
+                  rows={2}
+                  disabled={labelSaving !== null}
+                />
+              </label>
+              <div className={styles.labelActions}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={
+                    labelSaving !== null
+                    || !(labelEdits[label.slug] ?? "").trim()
+                    || labelEdits[label.slug] === label.description
+                  }
+                  onClick={() => void mutateLabel(
+                    "PATCH",
+                    { slug: label.slug, description: labelEdits[label.slug] ?? label.description },
+                    `save:${label.slug}`,
+                    () => "AI label description saved",
+                  )}
+                >
+                  {labelSaving === `save:${label.slug}` ? "Saving…" : "Save description"}
+                </button>
+                {!label.retired && !isSystemAssistantLabelSlug(label.slug) && <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={labelSaving !== null}
+                  onClick={() => void mutateLabel(
+                    "DELETE",
+                    { slug: label.slug },
+                    `remove:${label.slug}`,
+                    (response) => response.outcome === "retired"
+                      ? "Used AI label retired"
+                      : "Unused AI label removed",
+                  )}
+                >
+                  {labelSaving === `remove:${label.slug}` ? "Removing…" : "Remove label"}
+                </button>}
+              </div>
+            </article>)}
+          </div>
+          <p className={styles.labelPolicy}>Built-in labels are permanent, though their descriptions stay editable. A custom label already present in saved analysis is retired rather than deleted, and retired descriptions remain editable so historical queue rows stay understandable. The {labelCatalog.maximumLabels}-label limit counts active labels only.</p>
+        </>}
+      </section>
+      </> : <>
         <div className={styles.readOnlyFeatures} aria-label="AI feature states">
           {AI_FEATURES.map(({ key, label, state }) => <div key={key}>
             <span className={styles.featureName}>{label}</span>

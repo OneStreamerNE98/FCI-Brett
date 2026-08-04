@@ -91,7 +91,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     EXPECTED_RUNTIME_TABLE_ACCESS
       .filter(({ privileges }) => privileges.includes("DELETE"))
       .map(({ table }) => table),
-    ["filing_rules", "address_validation_reviews"],
+    ["filing_rules", "assistant_label_definitions", "address_validation_reviews"],
   );
   assert.deepEqual(
     EXPECTED_RUNTIME_TABLE_ACCESS.find(({ table }) => table === "audit_events")?.privileges,
@@ -332,6 +332,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     sqlWithoutComments.match(/^GRANT .*DELETE.* TO fci_runtime;$/gm) ?? [],
     [
       "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fci_app.filing_rules TO fci_runtime;",
+      "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE fci_app.assistant_label_definitions TO fci_runtime;",
       "GRANT SELECT, INSERT, DELETE ON TABLE fci_app.address_validation_reviews TO fci_runtime;",
     ],
   );
@@ -339,6 +340,7 @@ test("runtime grants are exact and explicitly exclude destructive or schema priv
     ["workspace_settings", ["SELECT", "INSERT", "UPDATE"]],
     ["user_preferences", ["SELECT", "INSERT", "UPDATE"]],
     ["filing_rules", ["SELECT", "INSERT", "UPDATE", "DELETE"]],
+    ["assistant_label_definitions", ["SELECT", "INSERT", "UPDATE", "DELETE"]],
     ["mail_items", ["SELECT", "INSERT", "UPDATE"]],
     ["tasks", ["SELECT", "INSERT", "UPDATE"]],
     ["google_form_lead_intake_watermarks", ["SELECT", "INSERT"]],

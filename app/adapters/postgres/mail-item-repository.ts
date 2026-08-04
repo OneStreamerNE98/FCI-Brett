@@ -1,4 +1,8 @@
 import {
+  MAX_ASSISTANT_LABELS,
+  normalizeAssistantLabelSlug,
+} from "../../domain/assistant-label-definition";
+import {
   MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
   normalizeMailItemConnectionKey,
   normalizeMailItemGmailMessageId,
@@ -208,6 +212,17 @@ function invalidReference(item: MailItem): MailItemUpsertResult | null {
   return null;
 }
 
+function normalizedIntentSlugs(intentSlugs: readonly string[]) {
+  if (!Array.isArray(intentSlugs) || intentSlugs.length > MAX_ASSISTANT_LABELS) {
+    throw new TypeError("Mail item analysis intent catalog is invalid");
+  }
+  const normalized = intentSlugs.map(normalizeAssistantLabelSlug);
+  if (new Set(normalized).size !== normalized.length) {
+    throw new TypeError("Mail item analysis intents must be unique");
+  }
+  return normalized;
+}
+
 function referenceConstraintOutcome(error: unknown): MailItemUpsertResult | null {
   for (const reference of MAIL_ITEM_REFERENCE_OUTCOMES) {
     if (isNamedPostgresConstraint(error, "23503", [reference.constraint])) {
@@ -337,7 +352,7 @@ LIMIT $3`,
             `${MAIL_ITEM_SELECT}
 WHERE connection_key = $1
   AND (
-    error_code = 'analysis_daily_limit_reached'
+    error_code IN ('analysis_daily_limit_reached', 'analysis_label_catalog_changed')
     OR failure_attempts < $2
     OR attempted_label_definition_version IS DISTINCT FROM $3
   )
@@ -385,7 +400,7 @@ WHERE connection_key = $1
   AND status = 'failed'
   AND failure_attempts >= $2
   AND attempted_label_definition_version = $3
-  AND error_code != 'analysis_daily_limit_reached'`,
+  AND error_code NOT IN ('analysis_daily_limit_reached', 'analysis_label_catalog_changed')`,
             [
               normalizedConnectionKey,
               MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
@@ -638,6 +653,122 @@ WHERE id = $3
         return Object.freeze({
           outcome: rowCount === 0 ? "terminal-preserved" : "saved",
         });
+      } catch (error) {
+        const missing = referenceConstraintOutcome(error);
+        if (missing) return missing;
+        throw error;
+      }
+    },
+
+    async saveAnalysisIfLabelsActive(item, intentSlugs, mode) {
+      const invalidReferenceResult = invalidReference(item);
+      if (invalidReferenceResult) return invalidReferenceResult;
+      if (mode !== "upsert" && mode !== "insert-if-absent") {
+        throw new TypeError("Mail item analysis write mode is invalid");
+      }
+      const slugs = normalizedIntentSlugs(intentSlugs);
+      const values = validateMailItem(item);
+      const normalized = values.normalized;
+      try {
+        return await withPostgresTransaction(
+          pool,
+          transactionOptions,
+          async (client): Promise<MailItemUpsertResult> => {
+            if (slugs.length > 0) {
+              // FOR SHARE blocks both retirement and deletion until the
+              // mail_items write commits. The inverse ordering is handled by
+              // the count mismatch, so every interleaving either saves then
+              // retires or rejects the stale classifier snapshot.
+              const activeLabels = await client.query<{ slug: string }>(
+                `SELECT slug
+                   FROM assistant_label_definitions
+                  WHERE retired = false AND slug = ANY($1::text[])
+                  FOR SHARE`,
+                [slugs],
+              );
+              if (activeLabels.rowCount !== slugs.length) {
+                return Object.freeze({ outcome: "label-catalog-changed" });
+              }
+            }
+
+            const conflictClause = mode === "insert-if-absent"
+              ? "DO NOTHING"
+              : `DO UPDATE SET
+                   gmail_thread_id = EXCLUDED.gmail_thread_id,
+                   client_id = EXCLUDED.client_id,
+                   suggested_project_id = EXCLUDED.suggested_project_id,
+                   approved_project_id = EXCLUDED.approved_project_id,
+                   status = EXCLUDED.status,
+                   match_reason = EXCLUDED.match_reason,
+                   email_drive_file_id = EXCLUDED.email_drive_file_id,
+                   analysis_payload = EXCLUDED.analysis_payload,
+                   party = EXCLUDED.party,
+                   confidence = EXCLUDED.confidence,
+                   content_hash = EXCLUDED.content_hash,
+                   label_definition_version = EXCLUDED.label_definition_version,
+                   attempted_label_definition_version = EXCLUDED.attempted_label_definition_version,
+                   subject = EXCLUDED.subject,
+                   sender = EXCLUDED.sender,
+                   received_at = EXCLUDED.received_at,
+                   failure_attempts = EXCLUDED.failure_attempts,
+                   error_code = EXCLUDED.error_code,
+                   coverage_complete = mail_items.coverage_complete OR EXCLUDED.coverage_complete,
+                   updated_at = EXCLUDED.updated_at
+                 WHERE mail_items.status IN ('needs-review', 'failed')`;
+            const result = await client.query(
+              `INSERT INTO mail_items (
+                 id, connection_key, gmail_message_id, gmail_thread_id, client_id,
+                 suggested_project_id, approved_project_id, status, match_reason,
+                 email_drive_file_id, analysis_payload, party, confidence, content_hash,
+                 label_definition_version, attempted_label_definition_version,
+                 subject, sender, received_at,
+                 failure_attempts, error_code, coverage_complete, created_at, updated_at
+               ) VALUES (
+                 $1, $2, $3, $4, $5,
+                 (SELECT id FROM projects WHERE id = $6::uuid),
+                 $7, $8, $9, $10, $11, $12, $13,
+                 $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+               )
+               ON CONFLICT (connection_key, gmail_message_id) ${conflictClause}`,
+              [
+                normalized.id,
+                normalized.connectionKey,
+                normalized.gmailMessageId,
+                normalized.gmailThreadId,
+                normalized.clientId,
+                normalized.suggestedProjectId,
+                normalized.approvedProjectId,
+                normalized.status,
+                normalized.matchReason,
+                normalized.emailDriveFileId,
+                serializeMailItemAnalysisPayload(normalized.analysisPayload),
+                normalized.party,
+                normalized.confidence,
+                normalized.contentHash,
+                normalized.labelDefinitionVersion,
+                normalized.attemptedLabelDefinitionVersion,
+                normalized.subject,
+                normalized.sender,
+                values.receivedAt,
+                normalized.failureAttempts,
+                normalized.errorCode,
+                normalized.coverageComplete,
+                values.createdAt,
+                values.updatedAt,
+              ],
+            );
+            if (result.rowCount !== 0 && result.rowCount !== 1) {
+              throw new Error("PostgreSQL guarded mail item analysis was not written exactly once");
+            }
+            return Object.freeze({
+              outcome: result.rowCount === 1
+                ? "saved"
+                : mode === "insert-if-absent"
+                  ? "existing-preserved"
+                  : "terminal-preserved",
+            });
+          },
+        );
       } catch (error) {
         const missing = referenceConstraintOutcome(error);
         if (missing) return missing;

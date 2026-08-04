@@ -133,6 +133,21 @@ class ReviewQueueDatabase {
       );
       CREATE UNIQUE INDEX mail_items_profile_message_unique
         ON mail_items (connection_key, gmail_message_id);
+      CREATE TABLE assistant_label_definitions (
+        slug TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        retired INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO assistant_label_definitions
+        (slug, description, retired, created_at, updated_at)
+      VALUES
+        ('lead', 'A new sales opportunity or request for an estimate.', 0, 0, 0),
+        ('project-update', 'Information or a requested change concerning existing project work.', 0, 0, 0),
+        ('schedule', 'A request or change involving an appointment, installation, or project timing.', 0, 0, 0),
+        ('warranty', 'A callback, repair, service, or warranty concern.', 0, 0, 0);
+
       CREATE TABLE google_drive_operations (
         id TEXT PRIMARY KEY,
         connection_key TEXT NOT NULL,
@@ -322,6 +337,16 @@ function providerOutput(messageId) {
   };
 }
 
+function defaultLabelPresentation(descriptionOverrides = {}) {
+  return application.INBOX_ANALYSIS_LABEL_DEFINITIONS
+    .map(({ slug, description }) => ({
+      slug,
+      description: descriptionOverrides[slug] ?? description,
+      retired: false,
+    }))
+    .toSorted((left, right) => left.slug.localeCompare(right.slug));
+}
+
 function sweepInput(database, client, provider, overrides = {}) {
   return {
     database,
@@ -370,6 +395,7 @@ test("review queue GET is admin, no-store, snapshot-counted, and network free", 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("Cache-Control"), "no-store");
     assert.deepEqual(await response.json(), {
+      labels: defaultLabelPresentation(),
       rows: [{
         id: "mail-live",
         subject: "FCI TEST stored review subject",
@@ -511,6 +537,58 @@ test("review queue GET exposes a closed server-derived analysis projection", asy
     });
     assert.equal(byId.get("mail-duplicate-intent").analysis, null);
     assert.equal(byId.get("mail-unknown-intent").analysis, null);
+  } finally {
+    workerEnvironment.DB = originalDatabase;
+    database.close();
+  }
+});
+
+test("review queue GET carries active and retired custom label meanings with historical rows", async () => {
+  const database = new ReviewQueueDatabase();
+  const originalDatabase = workerEnvironment.DB;
+  workerEnvironment.DB = database;
+  const activeSlug = `label_${"d".repeat(32)}`;
+  const retiredSlug = `label_${"e".repeat(32)}`;
+  database.database.prepare(
+    `INSERT INTO assistant_label_definitions
+       (slug, description, retired, created_at, updated_at)
+     VALUES (?, ?, 0, 10, 10), (?, ?, 1, 11, 12)`,
+  ).run(
+    activeSlug,
+    "Vendor billing request.",
+    retiredSlug,
+    "Historical callback category.",
+  );
+  database.insertReview({
+    id: "mail-custom-active-intent",
+    messageId: "gmail-custom-active-intent",
+    analysisPayload: { intents: [activeSlug] },
+  });
+  database.insertReview({
+    id: "mail-custom-retired-intent",
+    messageId: "gmail-custom-retired-intent",
+    analysisPayload: { intents: [retiredSlug] },
+  });
+  try {
+    const response = await route.GET(routeRequest());
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(
+      body.labels.filter(({ slug }) => slug === activeSlug || slug === retiredSlug),
+      [
+        { slug: activeSlug, description: "Vendor billing request.", retired: false },
+        { slug: retiredSlug, description: "Historical callback category.", retired: true },
+      ],
+    );
+    const byId = new Map(body.rows.map((row) => [row.id, row]));
+    assert.deepEqual(
+      byId.get("mail-custom-active-intent").analysis.intents,
+      [activeSlug],
+    );
+    assert.deepEqual(
+      byId.get("mail-custom-retired-intent").analysis.intents,
+      [retiredSlug],
+    );
   } finally {
     workerEnvironment.DB = originalDatabase;
     database.close();
@@ -1076,11 +1154,20 @@ test("AI-12 queue GET omits zero failures and reports only current-catalog exhau
   const database = new ReviewQueueDatabase();
   const originalDatabase = workerEnvironment.DB;
   workerEnvironment.DB = database;
+  database.database.prepare(
+    "UPDATE assistant_label_definitions SET description = ?, updated_at = 10 WHERE slug = 'schedule'",
+  ).run("A stored schedule definition used by the failure queries.");
+  const currentVersion = application.inboxAnalysisLabelDefinitionVersion(
+    database.database.prepare(
+      "SELECT slug, description FROM assistant_label_definitions WHERE retired = 0 ORDER BY created_at ASC, slug ASC",
+    ).all(),
+  );
   insertExhaustedAnalysisFailure(database, {
     id: "failed-mid-retry",
     messageId: "gmail-mid-retry",
     errorCode: "analysis_failed",
     failureAttempts: 2,
+    attemptedLabelDefinitionVersion: currentVersion,
   });
   insertExhaustedAnalysisFailure(database, {
     id: "failed-old-catalog",
@@ -1092,11 +1179,24 @@ test("AI-12 queue GET omits zero failures and reports only current-catalog exhau
     id: "failed-daily-cap",
     messageId: "gmail-daily-cap",
     errorCode: "analysis_daily_limit_reached",
+    attemptedLabelDefinitionVersion: currentVersion,
+  });
+  insertExhaustedAnalysisFailure(database, {
+    id: "failed-catalog-change",
+    messageId: "gmail-catalog-change",
+    errorCode: "analysis_label_catalog_changed",
+    attemptedLabelDefinitionVersion: currentVersion,
   });
   try {
     const zero = await route.GET(routeRequest());
     assert.equal(zero.status, 200);
-    assert.deepEqual(await zero.json(), { rows: [], totalCount: 0 });
+    assert.deepEqual(await zero.json(), {
+      labels: defaultLabelPresentation({
+        schedule: "A stored schedule definition used by the failure queries.",
+      }),
+      rows: [],
+      totalCount: 0,
+    });
 
     database.database.prepare(
       "UPDATE mail_items SET failure_attempts = 3 WHERE id = 'failed-mid-retry'",
@@ -1104,6 +1204,9 @@ test("AI-12 queue GET omits zero failures and reports only current-catalog exhau
     const exhausted = await route.GET(routeRequest());
     assert.equal(exhausted.status, 200);
     assert.deepEqual(await exhausted.json(), {
+      labels: defaultLabelPresentation({
+        schedule: "A stored schedule definition used by the failure queries.",
+      }),
       rows: [],
       totalCount: 0,
       failedCount: 1,
@@ -1121,6 +1224,14 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
   const originalPrepare = database.prepare.bind(database);
   const resetStatements = [];
   workerEnvironment.DB = database;
+  database.database.prepare(
+    "UPDATE assistant_label_definitions SET description = ?, updated_at = 10 WHERE slug = 'warranty'",
+  ).run("A stored warranty definition used by the retry action.");
+  const currentVersion = application.inboxAnalysisLabelDefinitionVersion(
+    database.database.prepare(
+      "SELECT slug, description FROM assistant_label_definitions WHERE retired = 0 ORDER BY created_at ASC, slug ASC",
+    ).all(),
+  );
   const allowed = [
     "analysis_failed",
     "analysis_deadline_exceeded",
@@ -1130,6 +1241,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
   const excluded = [
     "gmail_read_failed",
     "analysis_daily_limit_reached",
+    "analysis_label_catalog_changed",
     "analysis_request_aborted",
     "analysis_retire_failed",
   ];
@@ -1138,6 +1250,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
       id: `failed-${index}`,
       messageId: `gmail-failed-${index}`,
       errorCode,
+      attemptedLabelDefinitionVersion: currentVersion,
     });
   }
   database.prepare = (sql) => {
@@ -1193,7 +1306,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
       assert.equal(row.failure_attempts, 1);
       assert.notEqual(
         row.attempted_label_definition_version,
-        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        currentVersion,
       );
     }
     for (const errorCode of excluded) {
@@ -1201,7 +1314,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
       assert.equal(row.failure_attempts, 3);
       assert.equal(
         row.attempted_label_definition_version,
-        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        currentVersion,
       );
     }
 
@@ -1211,7 +1324,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
     assert.doesNotMatch(
       (await repository.listRetryableAnalysisRows(
         CONNECTION_KEY,
-        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        currentVersion,
       )).map((row) => row.errorCode).join(","),
       /gmail_read_failed/u,
       "a Gmail 404-class failure is not resurrected by the action",

@@ -161,7 +161,11 @@ test("uses native disclosure semantics and keeps help isolated to the Assistant 
   assert.match(app, /<AssistantView projects=\{projectItems\} \/>/u);
   assert.doesNotMatch(app, /<AssistantHelpPanel \/>/u);
 
-  assert.match(card, /\{isAdmin \? <form onSubmit=\{save\}>/u);
+  assert.match(
+    card,
+    /\{isAdmin \? <><form onSubmit=\{save\}>[\s\S]*?aria-labelledby="assistant-label-catalog-title"[\s\S]*?<\/section>[\s\S]*?<\/> : <>/u,
+    "AI-11(c) extends the existing administrator branch with the catalog while preserving the office read-only branch",
+  );
   assert.match(card, /className=\{styles\.readOnlyFeatures\} aria-label="AI feature states"/u);
   assert.match(card, /<strong>\{features\[key\] \? "On" : "Off"\}<\/strong>/u);
   assert.match(card, /if \(!config \|\| !features \|\| !isAdmin/u);

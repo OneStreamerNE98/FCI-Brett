@@ -4307,6 +4307,7 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
+**Status:** In progress — `codex/ai11c-label-catalog`
 **SUB-SCOPES (a) AND (b) ARE COMPLETE — (a) PR #255, July 31, 2026; (b) PR #277, August 3,
 2026. Both source-only and undeployed. ONLY (c) AND (d) REMAIN CLAIMABLE.** This packet
 deliberately carries **no status line**: it is not complete while (c) and (d) are open, the
@@ -4383,6 +4384,7 @@ of the analysis prompt's section headers (`CANDIDATE PROJECTS:`, `UNTRUSTED EMAI
 code/JSON fence; caps (owner-set August 4, 2026): at most **20 labels**, **60-character
 slugs**, **300-character descriptions**; and a hostile-description injection fixture per
 spec §5.1 proving the no-send/no-file guarantees hold.
+Cap clarification (August 4, 2026, orchestrator): the 20-label cap counts ACTIVE labels; retired tombstones are excluded from the cap, the prompt catalog, and the queue bound; total stored rows are separately bounded at 100.
 *Mount:* inside `app/settings/components/AiAssistantSettingsCard.tsx` (mounted at
 `app/FloorOpsApp.tsx:2119`) — **zero `app/FloorOpsApp.tsx` changes and no queue slot**;
 state this no-FloorOpsApp path in the PR, per the FloorOpsApp queue appendix.

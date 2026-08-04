@@ -1,0 +1,166 @@
+import { env } from "cloudflare:workers";
+import { NextRequest } from "next/server";
+import { createD1AssistantLabelRepository } from "../../../../adapters/d1/assistant-label-repository";
+import type { D1Database } from "../../../../adapters/d1/d1-database";
+import {
+  AssistantLabelValidationError,
+  createAssistantLabelSlug,
+  isSystemAssistantLabelSlug,
+  MAX_ASSISTANT_LABEL_ROWS,
+  MAX_ASSISTANT_LABELS,
+  normalizeAssistantLabelDescription,
+  normalizeAssistantLabelSlug,
+  normalizeStoredAssistantLabelDefinition,
+} from "../../../../domain/assistant-label-definition";
+import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
+import { enforceDevelopmentRequestRateLimit } from "../../../../lib/development-request-rate-limit";
+import { noStoreJson, noStoreResponse } from "../../../../lib/no-store-json";
+import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
+import { ensureWorkspaceSchema } from "../../_workspace-data";
+
+export const MAX_ASSISTANT_LABEL_BODY_BYTES = 2_000;
+
+function exactKeys(body: Record<string, unknown>, keys: readonly string[]) {
+  const bodyKeys = Object.keys(body);
+  return bodyKeys.length === keys.length && keys.every((key) => Object.hasOwn(body, key));
+}
+
+async function mutationBody(request: NextRequest) {
+  return parseBoundedJsonObject(request, {
+    maximumBytes: MAX_ASSISTANT_LABEL_BODY_BYTES,
+    invalidMessage: "AI label update must be a valid JSON object.",
+    tooLargeMessage: "AI label update is too large.",
+  });
+}
+
+function validationResponse(error: unknown) {
+  return error instanceof AssistantLabelValidationError
+    ? noStoreJson({ error: error.message }, 400)
+    : null;
+}
+
+export async function GET(request: NextRequest) {
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  await ensureWorkspaceSchema();
+  const labels = await createD1AssistantLabelRepository(
+    env.DB as unknown as D1Database,
+  ).list();
+  // maximumLabels bounds ACTIVE labels; maximumRows bounds total stored rows
+  // including unremovable retired tombstones. The client needs both to size the
+  // counter and validate the payload without coupling them to one number.
+  return noStoreJson({
+    labels,
+    maximumLabels: MAX_ASSISTANT_LABELS,
+    maximumRows: MAX_ASSISTANT_LABEL_ROWS,
+  });
+}
+
+export async function POST(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return noStoreResponse(originError);
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const rateLimit = enforceDevelopmentRequestRateLimit("inbox-analysis", auth.user.email);
+  if (rateLimit) return noStoreResponse(rateLimit);
+  const parsed = await mutationBody(request);
+  if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
+  if (!exactKeys(parsed.body, ["description"])) {
+    return noStoreJson({ error: "Provide one AI label description." }, 400);
+  }
+  try {
+    const now = Date.now();
+    const label = normalizeStoredAssistantLabelDefinition({
+      slug: createAssistantLabelSlug(),
+      description: normalizeAssistantLabelDescription(parsed.body.description),
+      retired: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ensureWorkspaceSchema();
+    const saved = await createD1AssistantLabelRepository(
+      env.DB as unknown as D1Database,
+    ).insert(label);
+    if (saved === "inserted") return noStoreJson({ label }, 201);
+    if (saved === "storage-exhausted") {
+      return noStoreJson({
+        error: `AI label storage is limited to ${MAX_ASSISTANT_LABEL_ROWS} stored rows.`,
+        code: "label_storage_exhausted",
+      }, 409);
+    }
+    return noStoreJson({
+      error: `AI labels are limited to ${MAX_ASSISTANT_LABELS} active labels.`,
+      code: "label_active_cap_reached",
+    }, 409);
+  } catch (error) {
+    return validationResponse(error) ?? noStoreJson({ error: "AI label could not be added." }, 500);
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return noStoreResponse(originError);
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const rateLimit = enforceDevelopmentRequestRateLimit("inbox-analysis", auth.user.email);
+  if (rateLimit) return noStoreResponse(rateLimit);
+  const parsed = await mutationBody(request);
+  if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
+  if (!exactKeys(parsed.body, ["slug", "description"])) {
+    return noStoreJson({ error: "Provide the AI label slug and description." }, 400);
+  }
+  try {
+    const slug = normalizeAssistantLabelSlug(parsed.body.slug);
+    const description = normalizeAssistantLabelDescription(parsed.body.description);
+    await ensureWorkspaceSchema();
+    const updated = await createD1AssistantLabelRepository(
+      env.DB as unknown as D1Database,
+    ).updateDescription(slug, description, Date.now());
+    return updated
+      ? noStoreJson({ slug, description })
+      : noStoreJson({ error: "AI label not found." }, 404);
+  } catch (error) {
+    return validationResponse(error) ?? noStoreJson({ error: "AI label could not be updated." }, 500);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const originError = requireSameOrigin(request);
+  if (originError) return noStoreResponse(originError);
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const rateLimit = enforceDevelopmentRequestRateLimit("inbox-analysis", auth.user.email);
+  if (rateLimit) return noStoreResponse(rateLimit);
+  const parsed = await mutationBody(request);
+  if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
+  if (!exactKeys(parsed.body, ["slug"])) {
+    return noStoreJson({ error: "Provide the AI label slug." }, 400);
+  }
+  try {
+    const slug = normalizeAssistantLabelSlug(parsed.body.slug);
+    // Refused at the route before any storage work. The adapters repeat this
+    // check, so a caller reaching either one directly is refused too.
+    if (isSystemAssistantLabelSlug(slug)) {
+      return noStoreJson({
+        error: "Built-in AI labels cannot be removed or retired.",
+        code: "system_label_protected",
+      }, 409);
+    }
+    await ensureWorkspaceSchema();
+    const outcome = await createD1AssistantLabelRepository(
+      env.DB as unknown as D1Database,
+    ).removeOrRetire(slug, Date.now());
+    if (outcome === "not-found") {
+      return noStoreJson({ error: "AI label not found." }, 404);
+    }
+    if (outcome === "protected") {
+      return noStoreJson({
+        error: "Built-in AI labels cannot be removed or retired.",
+        code: "system_label_protected",
+      }, 409);
+    }
+    return noStoreJson({ slug, outcome });
+  } catch (error) {
+    return validationResponse(error) ?? noStoreJson({ error: "AI label could not be retired." }, 500);
+  }
+}

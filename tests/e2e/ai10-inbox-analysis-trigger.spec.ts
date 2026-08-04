@@ -370,6 +370,80 @@ test("Needs review renders the stored queue, continues bounded coverage, and dis
   expect(gmailQueueReads).toEqual([]);
 });
 
+test("Needs review renders stored meanings for active and retired custom labels", async ({ page }) => {
+  await mockInbox(page, true);
+  const activeSlug = `label_${"d".repeat(32)}`;
+  const retiredSlug = `label_${"e".repeat(32)}`;
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    if (route.request().method() === "POST") {
+      await fulfillJson(route, {
+        terminationReason: "caught-up",
+        message: "You're caught up",
+      });
+      return;
+    }
+    await fulfillJson(route, {
+      labels: [
+        {
+          slug: activeSlug,
+          description: "Vendor billing request.",
+          retired: false,
+        },
+        {
+          slug: retiredSlug,
+          description: "Historical callback category.",
+          retired: true,
+        },
+      ],
+      rows: [{
+        id: "mail-item-custom-labels",
+        subject: "FCI TEST custom label history",
+        sender: "Vendor <vendor@example.test>",
+        receivedAt: Date.parse("2026-07-28T13:00:00.000Z"),
+        analysis: {
+          gmailMessageId: "gmail-custom-labels",
+          intents: [activeSlug, retiredSlug],
+          projectId: null,
+          confidence: "medium",
+          rationale: "Stored meanings must survive catalog retirement.",
+        },
+        leadProposal: null,
+      }],
+      totalCount: 1,
+    });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText(
+    "Suggested actions: Vendor billing request. · Historical callback category. (retired)",
+    { exact: true },
+  )).toBeVisible();
+  await expect(page.getByText("Suggested actions: Lead", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(activeSlug, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(retiredSlug, { exact: true })).toHaveCount(0);
+});
+
+test("Needs review accepts an empty administrator label catalog when no rows remain", async ({ page }) => {
+  await mockInbox(page, true);
+  await page.route("**/api/v1/inbox-analysis", async (route) => {
+    if (route.request().method() === "POST") {
+      await fulfillJson(route, {
+        terminationReason: "caught-up",
+        message: "You're caught up",
+      });
+      return;
+    }
+    await fulfillJson(route, { labels: [], rows: [], totalCount: 0 });
+  });
+
+  await page.goto("/inbox?bucket=needs-review");
+  await expect(page.getByText("No messages need review", { exact: true })).toBeVisible();
+  await expect(page.getByText(
+    "The stored review queue is unavailable.",
+    { exact: true },
+  )).toHaveCount(0);
+});
+
 test("a lead-intent review row opens one prefilled lead review and retires only after create succeeds", async ({ page }) => {
   await mockInbox(page, true);
   const leadPosts: Record<string, unknown>[] = [];
