@@ -2138,7 +2138,7 @@ create/adopt branches mocked; simulation e2e.
 **Effort:** medium.
 
 ### SET-21 · Project/client provisioning consumes the blueprint (medium, after SET-15) — LAST in the dashboard-setup feature
-**Status:** In progress — `codex/set21-blueprint-provisioning-followup`
+**Status:** Complete — PR #296 + PR #301, August 4, 2026. Source-only and undeployed. #296 shipped blueprint-driven provisioning (review: 7 findings, 4 classes fixed on-branch — sibling-name uniqueness at write time, blueprint disclosure gated to admins, typed preview 409, guide truth); #301 closed the recorded legacy-duplicate residual (review: 5 findings, 3 classes fixed — preflight scoped to creator paths only after it leaked into simulation filing, the templates/ensure creator gated, the calendar-repair prose corrected).
 **Why (corrected August 3, 2026 — the earlier "add a project subfolder still needs a
 code change" justification was false: `buildProjectDriveBlueprintPlan` at
 `app/lib/google-drive.ts:1508` already derives project subfolders from the blueprint):**
@@ -2627,7 +2627,7 @@ named with outcomes.
 **Effort:** medium. **Cost:** $0.
 
 ### SET-41 · Intake mailbox selected in Settings; the allowlist stays in env (medium, after SET-40)
-**Status:** In progress — `codex/set41-intake-mailbox`
+**Status:** Complete — PR #299, August 4, 2026. Source-only and undeployed. Review record: 3-lens fleet (Fable lockout/cutover lens), 9 findings, 5 classes + 1 in-fix exposure fixed on-branch — the defaults-panel mailbox echo, honest destructive-reset repair docs, masked mismatch labels, the live source row, decoupled Stage-3 loading, and the authorized-account allowlist gated to admins on the settings GET. The WS-19 $.intakeMailbox probe/reset coordination shipped exactly as amended.
 
 **Why:** owner request August 3, 2026 — define mailbox addresses in the front end. The
 configuration audit's verdict, upheld under adversarial review: env keeps
@@ -4307,9 +4307,9 @@ Also: archived/terminal-status records are excluded from AI candidate queries an
 surfaces as a suggestion — shared with EDIT-05/06.
 
 ### AI-11 · Typed accepts, AI settings section, and the label catalog editor (large; after AI-10)
-**Status:** In progress — `codex/ai11c-label-catalog`
 **SUB-SCOPES (a) AND (b) ARE COMPLETE — (a) PR #255, July 31, 2026; (b) PR #277, August 3,
-2026. Both source-only and undeployed. ONLY (c) AND (d) REMAIN CLAIMABLE.** This packet
+2026; (c) PR #300, August 4, 2026. All source-only and undeployed. ONLY (d) REMAINS
+CLAIMABLE.** This packet
 deliberately carries **no status line**: it is not complete while (c) and (d) are open, the
 grammar has no partial-completion form, and any status line here would make the dispatch law
 read (c) and (d) as unavailable when they are in fact open. Sub-scope completion is therefore
@@ -4325,6 +4325,16 @@ was caught in review.
 duplicated) out of *Workflow & notifications* into a dedicated **AI assistant** Settings
 section, with the *My settings* office read-only mirror preserved, the navigation contracts
 re-pointed, and decision 6's expanded data-at-rest disclosure added to the card.
+
+**(c), merged in PR #300 — do not redo:** the label catalog editor with the AI tier's
+first new table on both adapters, the spec §12 amendment and least-privilege grant/pin
+extension in the same PR, and the complete injection-mitigation set. Review record:
+3-lens fleet (Fable injection lens), 9 findings, 5 classes fixed on-branch — the four
+built-in typed-accept slugs made unremovable at route and both adapters, the 20-cap
+re-scoped to ACTIVE labels with a separate 100-row storage bound, the spec-§5.1 hostile
+fixture rebuilt against the live analysis path (an ACCEPTED hostile description proven
+unable to send, file, or bias siblings), idempotent normalization, and a writer census
+pinning the labels route as the table's sole writer.
 
 **(a), merged in PR #255 — do not redo:** the three typed accepts (project-update → the
 existing filing path; schedule and warranty → `POST /api/v1/tasks` with `source:"email"`,
