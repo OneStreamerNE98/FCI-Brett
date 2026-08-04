@@ -3582,7 +3582,12 @@ This is a DIRECTION for the values this packet picks, not a scope change: no new
 components, no framework, and the golden-hash pages change only via the A1 screenshot
 sign-off path. Where a value choice is ambiguous, Apple's Human Interface Guidelines are
 the tiebreaker. Moderation clause (owner, August 4, 2026): Apple-aligned values, never a
-wholesale re-skin — "you don't need to go overboard".
+wholesale re-skin — "you don't need to go overboard". **The goal behind the direction
+(owner, August 4, 2026): USABILITY — "a simple and easy to navigate webapp so users are
+more inclined to use it. That is why apple is so good."** Every DES packet weighs its
+choices against that goal first: fewer, clearer paths beats more options; navigation
+simplicity and task-completion speed for office staff are the acceptance lens, and
+Apple styling serves adoption rather than the reverse.
 
 **Framework adoption (Tailwind/shadcn/Radix) was considered and REJECTED**, recorded here
 so it is not re-proposed casually: it rewrites the markup of every page including the two
