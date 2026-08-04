@@ -56,6 +56,8 @@ test("exposes the authenticated user's Administrator flag through the shared acc
 
 test("uses one reconciled Administrator flag for shell and Settings content gates", async () => {
   const app = await read("app/FloorOpsApp.tsx");
+  const workspaceNavigationItems = sourceSection(app, "const workspaceNavItems", "const managementNavItems", "Workspace navigation item catalog");
+  const managementNavigationItems = sourceSection(app, "const managementNavItems", "function recordInitials", "Management navigation item catalog");
   const shell = sourceSection(app, "export function FloorOpsApp", "function Overview", "FloorOpsApp shell");
   const settingsView = sourceSection(app, "function SettingsView", "function LeadModal", "SettingsView");
 
@@ -66,6 +68,17 @@ test("uses one reconciled Administrator flag for shell and Settings content gate
   assert.match(shell, /const failClosedCurrentUserSettings = useCallback\(\(\) => \{[\s\S]+setIsAdmin\(false\)/);
   assert.equal([...shell.matchAll(/failClosedCurrentUserSettings\(\);/g)].length, 2);
   assert.match(shell, /onCurrentUserSettingsLoaded=\{reconcileCurrentUserSettings\}/);
+  assert.deepEqual(
+    [...workspaceNavigationItems.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]),
+    ["Overview", "Leads", "Clients", "Projects", "Inbox", "AI Assistant"],
+  );
+  assert.deepEqual(
+    [...managementNavigationItems.matchAll(/label: "([^"]+)"/g)].map((match) => match[1]),
+    ["Reports", "Settings"],
+  );
+  assert.doesNotMatch(workspaceNavigationItems, /Schedule|Settings|Reports/);
+  assert.doesNotMatch(managementNavigationItems, /Schedule|AI Assistant/);
+  assert.match(shell, /managementNavItems\.filter\(\(\{ label \}\) => label !== "Settings" \|\| isAdmin\)\.map/);
   assert.match(shell, /\{isAdmin && <a href="\/management\/access"/);
   assert.match(shell, /Client Directory<\/button>\{isAdmin && <><button onClick=\{openDirectorySettings\}/);
   assert.match(shell, /\{isAdmin && <button onClick=\{openGoogleWorkspace\}><Building2 size=\{15\} \/> Google connection<\/button>\}/);

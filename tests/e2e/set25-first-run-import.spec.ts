@@ -341,7 +341,7 @@ test("SET-25 refreshes imported records after confirmation even when the import 
   await card.getByRole("button", { name: "Confirm selected clients", exact: true }).click();
   await confirmationStarted;
 
-  await page.getByRole("link", { name: /^Clients ·/u }).click();
+  await page.getByRole("link", { name: "Clients", exact: true }).click();
   await expect(page).toHaveURL(/\/clients$/u);
   releaseConfirmation();
   await expect(page.getByText(TEST_CLIENT, { exact: true })).toBeVisible();

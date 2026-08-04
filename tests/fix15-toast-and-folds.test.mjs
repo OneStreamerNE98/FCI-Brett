@@ -140,6 +140,6 @@ test("N7-8 inserts saved meetings using the server's meetingAt then createdAt de
 
 test("FIX-15 leaves both exhausted page-layout golden hashes byte-identical", async () => {
   const sourceText = await source(goldenPath);
-  assert.match(sourceText, /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "ba8255dba5b118c91ec0d1a478c4aede9303238f0ca9c9708bea2d4b890f018b";/u);
+  assert.match(sourceText, /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "4b2d9803d4d5d6e7d8fc7544ab7f862d87a076f4bfa0412ba498c66e8a12dd12";/u);
   assert.match(sourceText, /const REPORTS_LEGACY_SECTIONS_SHA256 = "4ba01e91ed4a31e0b6da7a0a6ec2334894145cddaacf63bc99e24efd30b999b6";/u);
 });

@@ -71,7 +71,7 @@ async function mockOverview(page: Page, dashboardState: { value: ReturnType<type
           },
           pageLayouts: {
             overview: {
-              order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"],
+              order: ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
               hidden: [],
             },
             reports: {

@@ -16,7 +16,6 @@ export const PAGE_LAYOUT_SECTION_CATALOG = {
     { key: "metrics", label: "Overview metrics", access: "office" },
     { key: "todays-meetings", label: "Today's meetings", access: "office" },
     { key: "lead-pipeline", label: "Lead pipeline", access: "office" },
-    { key: "scheduling", label: "Scheduling", access: "office" },
     { key: "active-projects", label: "Active projects", access: "office" },
     { key: "gmail-project-inbox", label: "Gmail project inbox", access: "office" },
   ],
@@ -35,8 +34,19 @@ export type PageLayoutSectionKey = typeof PAGE_LAYOUT_SECTION_CATALOG[PageLayout
 export type PageLayoutSpanSize = "half" | "full";
 
 export const PAGE_LAYOUT_RESIZABLE_SECTIONS = {
-  overview: ["lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"],
+  overview: ["lead-pipeline", "active-projects", "gmail-project-inbox"],
   reports: ["pipeline-by-stage", "projects-by-status"],
+} as const satisfies Record<PageLayoutPage, readonly PageLayoutSectionKey[]>;
+
+/**
+ * The curated default spans. Overview's lead pipeline is full-bleed by default, so
+ * the non-editing default render, `resolveArrangedSpans`, and the editor's width
+ * toggles all read one model instead of agreeing only by accident. A default span
+ * must stay resizable and visible, or a default layout could not be saved back.
+ */
+export const PAGE_LAYOUT_DEFAULT_FULL_WIDTH = {
+  overview: ["lead-pipeline"],
+  reports: [],
 } as const satisfies Record<PageLayoutPage, readonly PageLayoutSectionKey[]>;
 
 export type PageLayout = {
@@ -72,10 +82,13 @@ export function pageLayoutSectionCatalog(page: PageLayoutPage, isAdmin: boolean)
 }
 
 export function defaultPageLayout(page: PageLayoutPage, isAdmin: boolean): PageLayout {
+  const order = pageLayoutSectionCatalog(page, isAdmin).map(({ key }) => key as PageLayoutSectionKey);
+  const visible = new Set<string>(order);
+  const defaultFullWidth = PAGE_LAYOUT_DEFAULT_FULL_WIDTH[page] as readonly PageLayoutSectionKey[];
   return {
-    order: pageLayoutSectionCatalog(page, isAdmin).map(({ key }) => key as PageLayoutSectionKey),
+    order,
     hidden: [],
-    fullWidth: [],
+    fullWidth: defaultFullWidth.filter((key) => visible.has(key) && isPageLayoutSectionResizable(page, key)),
   };
 }
 
@@ -92,7 +105,10 @@ function normalizePageLayoutForRead(value: unknown, page: PageLayoutPage, isAdmi
   const layout = isRecord(value) ? value : {};
   const rawOrder = Array.isArray(layout.order) ? layout.order : [];
   const rawHidden = Array.isArray(layout.hidden) ? layout.hidden : [];
-  const rawFullWidth = Array.isArray(layout.fullWidth) ? layout.fullWidth : [];
+  // A layout saved before spans existed (or the `{}` column default) carries no
+  // fullWidth at all and must keep the curated default. An explicit array is the
+  // user's own choice and is honoured verbatim, including an empty one.
+  const rawFullWidth = Array.isArray(layout.fullWidth) ? layout.fullWidth : defaults.fullWidth;
   const seenOrder = new Set<string>();
   const seenHidden = new Set<string>();
   const seenFullWidth = new Set<string>();
@@ -219,8 +235,10 @@ export function mergePageLayoutsForWrite(storedValue: string | null | undefined,
 
 export function isDefaultPageLayout(layout: PageLayout, page: PageLayoutPage, isAdmin: boolean) {
   const defaults = defaultPageLayout(page, isAdmin);
+  const defaultFullWidth = new Set<string>(defaults.fullWidth);
   return layout.hidden.length === 0
-    && layout.fullWidth.length === 0
+    && layout.fullWidth.length === defaultFullWidth.size
+    && layout.fullWidth.every((key) => defaultFullWidth.has(key))
     && layout.order.length === defaults.order.length
     && layout.order.every((key, index) => key === defaults.order[index]);
 }

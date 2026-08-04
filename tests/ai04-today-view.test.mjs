@@ -527,6 +527,6 @@ test("AI-04 source keeps one shared read, exact UI contracts, and one dashboard 
   assert.match(app, /window\.clearTimeout\(timeoutId\)/u);
   assert.match(app, /onMeetingRecorded=\{\(\) => void refreshDashboardSnapshot\(\)/u);
   assert.match(panel, /const currentTimestamp = Date\.now\(\);[\s\S]*calendarDateRange\(\s*currentTimestamp,\s*today\.displayTimezone,\s*\)\.day === today\.day;[\s\S]*responseIsCurrent\s*\? localDayRolloverDelay\(currentTimestamp, today\.displayTimezone\)\s*: 0;[\s\S]*window\.setTimeout\(\(\) => void load\(\), Math\.max\(1_000, rolloverDelay\)\)/u);
-  assert.match(goldens, /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "ba8255dba5b118c91ec0d1a478c4aede9303238f0ca9c9708bea2d4b890f018b";/u);
+  assert.match(goldens, /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "4b2d9803d4d5d6e7d8fc7544ab7f862d87a076f4bfa0412ba498c66e8a12dd12";/u);
   assert.match(goldens, /const REPORTS_LEGACY_SECTIONS_SHA256 = "4ba01e91ed4a31e0b6da7a0a6ec2334894145cddaacf63bc99e24efd30b999b6";/u);
 });

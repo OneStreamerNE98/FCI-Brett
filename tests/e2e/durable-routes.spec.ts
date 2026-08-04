@@ -79,9 +79,13 @@ test("all primary views support direct entry and current-link semantics", async 
     const response = await page.goto(route.path);
     expect(response?.ok(), route.path).toBe(true);
     await expect(page.getByRole("heading", { level: 1, name: route.heading })).toBeVisible();
-    if (route.view !== "Schedule") {
-      await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: new RegExp(`^${route.view} ·`) })).toHaveAttribute("aria-current", "page");
+    const navigation = page.getByRole("navigation", { name: "Main navigation" });
+    if (route.view === "Schedule") {
+      await expect(navigation.getByRole("link", { name: "Schedule", exact: true })).toHaveCount(0);
+    } else {
+      await expect(navigation.getByRole("link", { name: route.view, exact: true })).toHaveAttribute("aria-current", "page");
     }
+    await expect(navigation.locator(".feature-state")).toHaveCount(0);
     await expect(page.locator("vite-error-overlay, nextjs-portal")).toHaveCount(0);
   }
   expectHealthyBrowser(issues);
@@ -92,8 +96,8 @@ test("real navigation links preserve Back and Forward history", async ({ page })
   await page.goto("/");
   await waitForHydratedApp(page);
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
-  const projects = navigation.getByRole("link", { name: "Projects · In development" });
-  const settings = navigation.getByRole("link", { name: "Settings · In development" });
+  const projects = navigation.getByRole("link", { name: "Projects", exact: true });
+  const settings = navigation.getByRole("link", { name: "Settings", exact: true });
   await expect(projects).toHaveAttribute("href", "/projects");
   await projects.click();
   await expect(page).toHaveURL("http://localhost:4173/projects");
@@ -313,7 +317,7 @@ test("mobile link navigation closes the drawer and preserves the destination", a
   await waitForHydratedApp(page);
   await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
-  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Projects · In development" }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Projects", exact: true }).click();
   await expect(page).toHaveURL("http://localhost:4173/projects");
   await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
   await expect(page.locator("#application-navigation")).toHaveAttribute("aria-hidden", "true");

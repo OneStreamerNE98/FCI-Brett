@@ -33,7 +33,7 @@ test("AI-10 lead capture stays review-first and reuses the existing lead and rev
   assert.doesNotMatch(analysisRoute, leadWriter);
 });
 
-test("ordinary Add lead keeps its established defaults while create mode exposes optional review fields", async () => {
+test("ordinary Add lead exposes optional contact details while keeping its established defaults", async () => {
   const app = await read("app/FloorOpsApp.tsx");
 
   assert.match(app, /onAdd=\{\(\) => setLeadModal\(\{\}\)\}/u);
@@ -41,10 +41,15 @@ test("ordinary Add lead keeps its established defaults while create mode exposes
     app,
     /const inboxPrefill = props\.mode === "create" && props\.initialValues !== undefined;/u,
   );
+  assert.match(
+    app,
+    /<label>Contact email <span className="optional-label">Optional<\/span><input name="contactEmail"[\s\S]+?<label>Contact phone <span className="optional-label">Optional<\/span><input name="contactPhone"/u,
+    "DES-16 makes phone and email available on every create path",
+  );
   assert.equal(
     app.match(/\{\(editMode \|\| inboxPrefill\) && <div className="form-row">/gu)?.length,
-    3,
-    "the optional review rows stay hidden on the ordinary create path",
+    2,
+    "only stage/status and next-action/owner remain conditional review rows",
   );
   assert.match(app, /seed\?\.source \?\? "Website"/u);
   assert.match(app, /seed\?\.stage \?\? "New inquiry"/u);

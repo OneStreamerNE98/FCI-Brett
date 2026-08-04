@@ -300,10 +300,9 @@ test("DES-04 keeps shell controls honest, reachable, and responsive", async () =
   assert.match(shell, /window\.addEventListener\("scroll", handleScroll, \{ passive: true \}\)/);
   assert.match(shell, /window\.requestAnimationFrame\(applyScrollDirection\)/);
   assert.match(shell, /topbar\?\.addEventListener\("focusin", handleFocusIn\)/);
-  assert.equal(shell.match(/aria-label=\{`\$\{label\} · \$\{state\}`\}/g)?.length, 2);
-  assert.match(shell, /aria-label="People & Access · In development"/);
-  assert.equal(shell.match(/<FeatureStateBadge state=\{state\} variant="compact" \/>/g)?.length, 2);
-  assert.match(shell, /<FeatureStateBadge state="In development" variant="compact" \/>/);
+  const mainNavigation = sourceSection(shell, '<nav className="main-nav"', "</nav>", "main navigation");
+  assert.match(mainNavigation, /<span className="nav-label">\{label\}<\/span>/);
+  assert.doesNotMatch(mainNavigation, /FeatureStateBadge| · \$\{state\}| · In development/);
 
   assert.match(badge, /\{compact \? featureStateCompactLabels\[state\] : state\}/);
   assert.match(badge, /data-compact-label=\{compact \? undefined : featureStateCompactLabels\[state\]\}/);
@@ -860,14 +859,20 @@ test("files Gmail only after an explicit single-project review", async () => {
   assert.match(filingRoute, /inboxRetained: true/);
 });
 
-test("labels unfinished features without presenting placeholder controls", async () => {
-  const [app, badge] = await Promise.all([
+test("keeps feature states on honest surfaces while production navigation has no build badges or Schedule entry", async () => {
+  // The vocabulary and placeholder bans below cover the whole app surface: narrowing
+  // them to FloorOpsApp would stop them reaching InboxView, AssistantView, TodayPanel,
+  // GmailReplyModal and every settings panel. Only the nav-scoped assertions read the
+  // shell source, because only they need that one file's <nav> section.
+  const [app, shell, badge] = await Promise.all([
     readAppSurface(),
+    read("app/FloorOpsApp.tsx"),
     read("app/components/FeatureStateBadge.tsx"),
   ]);
-  const navItems = app.match(/const navItems:[\s\S]+?= \[([\s\S]+?)\n\];/)?.[1] ?? "";
+  const mainNavigation = sourceSection(shell, '<nav className="main-nav"', "</nav>", "main navigation");
 
-  assert.match(navItems, /label: "Schedule"[\s\S]+?state: "Planned"/);
+  assert.doesNotMatch(shell, /\{ label: "Schedule", icon: CalendarDays/);
+  assert.doesNotMatch(mainNavigation, /FeatureStateBadge|In development|Planned|Working/);
   assert.match(app, /state="Working"/);
   assert.match(app, /state="In development"/);
   assert.match(app, /"Setup required"/);
@@ -921,8 +926,7 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
   assert.doesNotMatch(css, /\.metric-top small/);
 
   assert.match(app, /function unavailableMetricNote\(state: LiveDataState\) \{\s+return state === "error" \? "Unavailable until live records load" : "Loading current totals";\s+\}/);
-  assert.match(overview, /<PanelHeader title="Scheduling" badge="Planned" action="View status"/);
-  assert.doesNotMatch(overview, /<PanelHeader title="Scheduling" subtitle="Planned"/);
+  assert.doesNotMatch(overview, /schedule-panel|<PanelHeader title="Scheduling"|onView\("Schedule"\)/);
   assert.match(overview, /<PanelHeader title="Gmail project inbox" subtitle="Google Workspace Gmail" subtitleKind="source"/);
   assert.doesNotMatch(app, /<span>Meetings<\/span><strong>Working<\/strong>/);
 
@@ -930,8 +934,7 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
   assert.match(app, /<Navigation size=\{19\} aria-hidden="true" \/>/);
   assert.match(app, /<strong>Workspace navigation<\/strong>/);
   assert.match(app, /<button onClick=\{\(\) => navigateToView\("Inbox"\)\}>Open the Gmail project inbox<\/button>/);
-  assert.match(app, /<button onClick=\{\(\) => navigateToView\("Schedule"\)\}>View scheduling status<\/button>/);
-  assert.doesNotMatch(app, /aria-label="Notifications"|<strong>Notifications<\/strong>|Schedule alerts will appear after scheduling is connected/);
+  assert.doesNotMatch(app, /<button onClick=\{\(\) => navigateToView\("Schedule"\)\}>View scheduling status<\/button>|aria-label="Notifications"|<strong>Notifications<\/strong>|Schedule alerts will appear after scheduling is connected/);
 
   assert.match(primitives, /subtitleKind\?: "status" \| "source"; badge\?: FeatureState/);
   assert.match(primitives, /className=\{`panel-header-subtitle panel-header-subtitle-\$\{subtitleKind\}`\}/);

@@ -1,7 +1,7 @@
 import {
   leadNumberFor,
   leadResponse,
-  validateLeadValues,
+  validateLeadValuesWithIssue,
   type LeadRow,
 } from "../domain/lead";
 import { persistedAddress, type PersistedAddress } from "../domain/address-validation";
@@ -67,17 +67,18 @@ export async function createLead(
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, kind: "invalid", message: "Lead details must be valid JSON." };
   }
-  const values = validateLeadValues({
+  const validation = validateLeadValuesWithIssue({
     ...(input as Record<string, unknown>),
     ownerEmail: (input as Record<string, unknown>).ownerEmail ?? authorization.actorId,
   });
-  if (!values) {
+  if (!validation.ok) {
     return {
       ok: false,
       kind: "invalid",
-      message: "Enter a valid company, contact, project, source, stage, site, value, next action, owner email, and status.",
+      message: validation.message,
     };
   }
+  const values = validation.value;
   if (dependencies.formLeadReview && values.source !== "Google Form") {
     return {
       ok: false,
