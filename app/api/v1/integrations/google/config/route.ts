@@ -5,7 +5,10 @@ import type { D1Database } from "../../../../../adapters/d1/d1-database";
 import { createD1WorkspaceSettingsRepository } from "../../../../../adapters/d1/workspace-settings-repository";
 import { WORKSPACE_SETTINGS_ID } from "../../../../../domain/workspace-settings";
 import { parseBoundedJsonObject } from "../../../../../lib/api-json-body";
-import { getEffectiveGoogleRuntimeConfig } from "../../../../../lib/google-oauth-sites";
+import {
+  getConnectionScope,
+  getEffectiveGoogleRuntimeConfig,
+} from "../../../../../lib/google-oauth-sites";
 import { noStoreJson as json, noStoreResponse } from "../../../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
@@ -31,7 +34,6 @@ export async function PATCH(request: NextRequest) {
   if (originError) return noStoreResponse(originError);
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return noStoreResponse(auth.response);
-  await ensureWorkspaceSchema();
 
   const parsed = await parseBoundedJsonObject(request, {
     maximumBytes: MAXIMUM_BODY_BYTES,
@@ -45,7 +47,14 @@ export async function PATCH(request: NextRequest) {
   ) {
     return json({ error: "Choose whether app-managed Drive provisioning is enabled." }, 400);
   }
+  if (getConnectionScope().simulation) {
+    return json({
+      error: "Drive provisioning is always enabled in simulation and cannot be changed.",
+      code: "simulation_configuration_fixed",
+    }, 409);
+  }
 
+  await ensureWorkspaceSchema();
   await createD1WorkspaceSettingsRepository(
     env.DB as unknown as D1Database,
   ).mergeSettings({

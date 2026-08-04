@@ -23,16 +23,32 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24782 } },
 });
 
-const [sites, effective, chat] = await Promise.all([
+const [sites, effective, chat, runtimeConfigRoute] = await Promise.all([
   vite.ssrLoadModule("/app/lib/google-oauth-sites.ts"),
   vite.ssrLoadModule("/app/lib/workspace-effective-config.ts"),
   vite.ssrLoadModule("/app/lib/google-chat-notifier.ts"),
+  vite.ssrLoadModule("/app/api/v1/integrations/google/config/route.ts"),
 ]);
 
 after(async () => {
   delete globalThis.__FCI_TEST_CLOUDFLARE_ENV__;
   await vite.close();
 });
+
+function routeRequest(body) {
+  const url = new URL("https://fci.example.test/api/v1/integrations/google/config");
+  const request = new Request(url, {
+    method: "PATCH",
+    headers: {
+      origin: url.origin,
+      "content-type": "application/json",
+      "oai-authenticated-user-email": "admin@example.test",
+    },
+    body: JSON.stringify(body),
+  });
+  Object.defineProperty(request, "nextUrl", { value: url });
+  return request;
+}
 
 test("getConnectionScope executes synchronously without reading DB", () => {
   const input = {
@@ -97,6 +113,40 @@ test("Drive preserves its normalized legacy gate while Chat remains literal-only
   );
 });
 
+test("simulation rejects Drive provisioning writes after validation and before persistence", async () => {
+  let databaseCalls = 0;
+  for (const key of Object.keys(workerEnvironment)) delete workerEnvironment[key];
+  Object.assign(workerEnvironment, {
+    NODE_ENV: "production",
+    FCI_OFFICE_EMAILS: "admin@example.test",
+    FCI_ADMIN_EMAILS: "admin@example.test",
+    GOOGLE_INTEGRATION_MODE: "simulation",
+    DB: {
+      prepare() {
+        databaseCalls += 1;
+        throw new Error("simulation configuration must not touch persistence");
+      },
+    },
+  });
+
+  const invalid = await runtimeConfigRoute.PATCH(routeRequest({
+    driveProvisioningEnabled: false,
+    extra: true,
+  }));
+  assert.equal(invalid.status, 400);
+
+  const response = await runtimeConfigRoute.PATCH(routeRequest({
+    driveProvisioningEnabled: false,
+  }));
+  assert.equal(response.status, 409);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), {
+    error: "Drive provisioning is always enabled in simulation and cannot be changed.",
+    code: "simulation_configuration_fixed",
+  });
+  assert.equal(databaseCalls, 0);
+});
+
 test("hot list GET handlers use only the synchronous connection scope", async () => {
   const routes = [
     "app/api/v1/clients/route.ts",
@@ -150,17 +200,109 @@ test("simulation presents Drive provisioning as forced and cannot claim a saved 
   assert.match(panel, /simulation \? "Always enabled in simulation"/u);
 });
 
+const COVERED_ENVIRONMENT_NAMES = Object.freeze([
+  "GOOGLE_WORKSPACE_SHARED_DRIVE_ID",
+  "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID",
+  "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID",
+  "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID",
+  "GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID",
+  "GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED",
+  "GOOGLE_CHAT_NOTIFICATIONS_ENABLED",
+  "OPENAI_MODEL",
+]);
+const COVERED_TOP_LEVEL_CONFIGURATION_PROPERTIES = Object.freeze([
+  "clientDirectorySheetId",
+  "clientAppointmentsCalendarId",
+  "fieldScheduleCalendarId",
+  "leadFormResponseSheetId",
+  "provisioningEnabled",
+]);
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertNoRawResolverReads(source, relative) {
+  for (const name of COVERED_ENVIRONMENT_NAMES) {
+    const escaped = escapeRegex(name);
+    const rawRead = new RegExp(
+      `(?:process\\.env|environment|env)\\s*(?:\\.\\s*${escaped}|\\[\\s*["']${escaped}["']\\s*\\])`,
+      "u",
+    );
+    assert.doesNotMatch(source, rawRead, `${relative} reads ${name} outside its resolver owner`);
+  }
+
+  const topLevel = COVERED_TOP_LEVEL_CONFIGURATION_PROPERTIES.map(escapeRegex).join("|");
+  const destructured = `(?:${topLevel}|rootFolderId)`;
+  const directAccess = new RegExp(
+    `getGoogleRuntimeConfig\\([^;)]*\\)\\s*(?:(?:\\.\\s*(?:${topLevel}))|(?:\\[\\s*["'](?:${topLevel})["']\\s*\\])|(?:\\.\\s*drive\\s*\\.\\s*rootFolderId))`,
+    "u",
+  );
+  assert.doesNotMatch(
+    source,
+    directAccess,
+    `${relative} chains a resolver-covered field from raw configuration`,
+  );
+  for (const directDestructuring of source.matchAll(
+    /(?:const|let)\s*\{([^;]*?)\}\s*=\s*getGoogleRuntimeConfig\([^;]*\)\s*;/gu,
+  )) {
+    assert.doesNotMatch(
+      directDestructuring[1],
+      new RegExp(`\\b${destructured}\\b`, "u"),
+      `${relative} destructures a resolver-covered field from raw configuration`,
+    );
+  }
+
+  for (const assignment of source.matchAll(
+    /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*getGoogleRuntimeConfig\([^;]*\);/gu,
+  )) {
+    const variable = escapeRegex(assignment[1]);
+    const boundAccess = new RegExp(
+      `(?<!\\.)\\b${variable}\\s*(?:(?:\\.\\s*(?:${topLevel}))|(?:\\[\\s*["'](?:${topLevel})["']\\s*\\])|(?:\\.\\s*drive\\s*\\.\\s*rootFolderId))`,
+      "u",
+    );
+    assert.doesNotMatch(
+      source,
+      boundAccess,
+      `${relative} reads a resolver-covered field from raw ${assignment[1]}`,
+    );
+    for (const boundDestructuring of source.matchAll(
+      new RegExp(`(?:const|let)\\s*\\{([^;]*?)\\}\\s*=\\s*${variable}\\s*;`, "gu"),
+    )) {
+      assert.doesNotMatch(
+        boundDestructuring[1],
+        new RegExp(`\\b${destructured}\\b`, "u"),
+        `${relative} destructures a resolver-covered field from raw ${assignment[1]}`,
+      );
+    }
+  }
+}
+
+test("raw-reader guard catches direct and bound destructuring mutations", () => {
+  assert.throws(
+    () => assertNoRawResolverReads(
+      "const { provisioningEnabled } = getGoogleRuntimeConfig();",
+      "direct-destructuring-fixture.ts",
+    ),
+    /destructures a resolver-covered field/u,
+  );
+  assert.throws(
+    () => assertNoRawResolverReads(
+      "const raw = getGoogleRuntimeConfig(); const { leadFormResponseSheetId: sheet } = raw;",
+      "bound-destructuring-fixture.ts",
+    ),
+    /destructures a resolver-covered field/u,
+  );
+  assert.throws(
+    () => assertNoRawResolverReads(
+      "const { drive: { rootFolderId } } = getGoogleRuntimeConfig();",
+      "nested-destructuring-fixture.ts",
+    ),
+    /destructures a resolver-covered field/u,
+  );
+});
+
 test("resolver-covered environment values have no raw readers outside their owners", async () => {
-  const covered = [
-    "GOOGLE_WORKSPACE_SHARED_DRIVE_ID",
-    "GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID",
-    "GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID",
-    "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID",
-    "GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID",
-    "GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED",
-    "GOOGLE_CHAT_NOTIFICATIONS_ENABLED",
-    "OPENAI_MODEL",
-  ];
   const allowed = new Set([
     "app/lib/google-oauth.ts",
     "app/lib/workspace-effective-config.ts",
@@ -177,29 +319,6 @@ test("resolver-covered environment values have no raw readers outside their owne
     const relative = absolute.slice(rootPath.replaceAll("\\", "/").length);
     if (allowed.has(relative)) continue;
     const source = await readFile(absolute, "utf8");
-    for (const name of covered) {
-      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const rawRead = new RegExp(
-        `(?:process\\.env|environment|env)\\s*(?:\\.\\s*${escaped}|\\[\\s*["']${escaped}["']\\s*\\])`,
-        "u",
-      );
-      assert.doesNotMatch(source, rawRead, `${relative} reads ${name} outside its resolver owner`);
-    }
-    const coveredProperties = "(?:clientDirectorySheetId|clientAppointmentsCalendarId|fieldScheduleCalendarId|leadFormResponseSheetId|provisioningEnabled|drive\\.rootFolderId)";
-    assert.doesNotMatch(
-      source,
-      new RegExp(`getGoogleRuntimeConfig\\([^)]*\\)\\s*\\.\\s*${coveredProperties}`, "u"),
-      `${relative} chains a resolver-covered field from raw configuration`,
-    );
-    for (const assignment of source.matchAll(
-      /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*getGoogleRuntimeConfig\([^;]*\);/gu,
-    )) {
-      const variable = assignment[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      assert.doesNotMatch(
-        source,
-        new RegExp(`(?<!\\.)\\b${variable}\\.${coveredProperties}`, "u"),
-        `${relative} reads a resolver-covered field from raw ${assignment[1]}`,
-      );
-    }
+    assertNoRawResolverReads(source, relative);
   }
 });

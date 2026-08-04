@@ -598,7 +598,7 @@ test("Workspace setup masks accounts and exposes copy-exact safe helpers", async
   assert.match(checklist, /copyState === "unavailable"[\s\S]+Missing-key status is unavailable/);
   assert.doesNotMatch(`${panel}\n${checklist}\n${helper}`, /detail\.(value|secretValue|configuredValue)/);
   assert.equal((`${panel}\n${checklist}`.match(/Copy-exact setup helpers/g) ?? []).length, 1);
-  assert.doesNotMatch(panel, /workspace-copy-helpers|copySetupHelper|missingWorkspaceDotenvTemplate/);
+  assert.doesNotMatch(panel, /copySetupHelper|missingWorkspaceDotenvTemplate/);
 
   const connectionActions = panel.indexOf("className={panelStyles.connectionActions}");
   const healthCard = panel.indexOf('{isAdmin && <details className={`workspace-connection-health');

@@ -1387,7 +1387,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
           sharedDriveDomainUsersOnly={sharedDriveDomainUsersOnly}
           environmentNotes={<>
             {!simulation && <p className="workspace-env-note"><strong>Drive authority:</strong> adopt the Shared Drive in Resources to save its ID in the app; <code>GOOGLE_WORKSPACE_SHARED_DRIVE_ID</code> remains a first-boot fallback.</p>}
-            <section className="workspace-runtime-configuration" aria-labelledby="workspace-runtime-configuration-heading">
+            <section className="workspace-copy-helpers" aria-labelledby="workspace-runtime-configuration-heading">
               <div><h4 id="workspace-runtime-configuration-heading">App-managed Workspace configuration</h4><p>App-saved values win. Hosted values remain bootstrap fallbacks.</p></div>
               <article>
                 <div><strong>Project-folder provisioning</strong><span>Source: {simulation ? "Simulation fixture (always enabled)" : effectiveConfigurationSourceLabel(workspace?.provisioningSource)}</span></div>
