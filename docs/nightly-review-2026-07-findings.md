@@ -487,6 +487,7 @@ golden spec passes; `npm test`, `npm run test:e2e`, and `npm run lint` are green
 **Effort:** small. **Cost:** $0.
 
 ### NFIX-07 · Scanner false-signal classes, resilient scan method, and the three live August 3 defects (small)
+**Status:** In progress — `claude/nfix07-scanner-and-css`
 
 **Why:** the August 3 design-review session produced three scanner failures before one
 trustworthy run: (1) phantom overlaps — elements scrolled out of an overflow:auto ancestor
