@@ -133,15 +133,51 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   and the correction lands as a dated amendment banner (orchestrator-authored, or
   proposed in the PR body for the orchestrator to place). A PR never edits the
   criteria it is graded against (rule recorded August 4, 2026, after EDIT-09).
-- **Kimi — implementer (added August 4, 2026):** a third build agent on the same terms
-  as Codex — builds packets exactly as written (why/do/accept), one packet per draft PR,
-  `kimi/*` branches, its own clone, and the same post-merge ledger flip duty. Its PRs go
-  through the identical orchestrator review before merge; the review pipeline is
-  author-agnostic. Same prohibition on rewriting the criteria it is graded against.
+- **Kimi — implementer, senior track (added August 4, 2026; role revised the same day
+  after adversarial design review):** a third build agent under every implementer law —
+  packets exactly as written, one packet per draft PR, `kimi/*` branches, its own clone,
+  the post-merge ledger flip duty, and the prohibition on editing the criteria it is
+  graded against. Two tracks, separately gated:
+  - **Senior-implementer track** — eligibility for large/complex packets. Gate: three
+    completed packets, at least one with a >300-line diff or touching a pinned/golden
+    surface, judged on PROCESS FACTS: zero pushes after the recorded approval head, zero
+    edits to graded criteria, zero pushes into another agent's active fix window. Until
+    the gate passes, packet size is the orchestrator's discretion.
+  - **Advisory-reviewer track** — NOT active; activates only after the senior gate, and
+    then dry-run first (findings delivered to the orchestrator privately and scored for
+    precision before any PR comment is posted). When live: findings post as PR comments
+    prefixed with the literal token `KIMI-ADVISORY:`; such comments are EXCLUDED from
+    the address-every-automated-comment rule; findings count only if posted before the
+    orchestrator's verdict comment — later findings become new packets, never PR
+    reopeners; no step of any merge sequence waits on or names an advisory reviewer;
+    advisory findings about another agent's work are never an input to packet routing;
+    an advisory reviewer never pushes to another agent's branch and never opens a PR
+    touching files under another agent's open claim.
+  Assignment is by dispatch: an implementer claims only packets the orchestrator's
+  dispatch (relayed by the owner) names for it — the branch prefix on the claim line is
+  the assignment record. Precedence everywhere: owner > orchestrator verdict > CI >
+  advisory comments.
 - **Owner (Jason) — merge authority and gates:** merges PRs (may delegate a named PR),
   and holds every owner gate: new scopes, API keys, billing, live resources,
   deployment, second user, real data.
-- Neither agent merges the other agent's PR without the owner explicitly delegating
+- **The approval head is frozen (recorded August 4, 2026, after the WS-19 rewrite).**
+  The orchestrator's review verdict names the approved head SHA (`APPROVED-HEAD: <sha>`
+  in the verdict comment). ANY push to that branch past the approved head — by any
+  agent, for any reason — voids the approval and requires re-review of the delta before
+  merge. History rewrites of a branch under review are never acceptable; a rewrite that
+  orphans a reviewed commit is treated as unreviewed work in its entirety.
+- **Head movement during fix work stops the work (stop-verify-resume).** Any agent
+  applying fixes to a branch verifies the remote head before starting and before
+  pushing; if the head moved, it STOPS, adjudicates the movement with
+  `git range-diff` (all reviewed commits byte-identical + finding surfaces untouched →
+  benign, re-point and continue; anything else → escalate to the orchestrator), and
+  never force-pushes over another agent's commits. Fast-forward pushes only during fix
+  work.
+- **Per-agent git identity.** Each agent's clone sets its own `git config user.name`
+  (e.g. "Codex (agent)", "Kimi (agent)") so commit attribution matches the branch
+  prefix. A commit on an agent-prefixed branch whose committer identity names a
+  different agent is a review-blocking finding.
+- No agent merges another agent's PR without the owner explicitly delegating
   that PR by number. Review findings are addressed by the branch's owning agent.
 
 ## Useful commands
