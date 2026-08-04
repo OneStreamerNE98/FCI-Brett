@@ -921,6 +921,12 @@ export function InboxView({
         );
         return;
       }
+      // A refresh clicked while the PATCH was in flight swept the queue before the
+      // reset committed, and refreshReviewQueue would dedupe onto that stale run.
+      // Await it out, then start a refresh guaranteed to observe the reset rows —
+      // the success toast must describe a sweep that could actually recover them.
+      const staleRefresh = reviewQueueRefreshInFlightRef.current;
+      if (staleRefresh) await staleRefresh.catch(() => null);
       const queue = await refreshReviewQueue();
       notify(
         queue
