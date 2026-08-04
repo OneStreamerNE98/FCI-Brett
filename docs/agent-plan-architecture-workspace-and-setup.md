@@ -1842,6 +1842,8 @@ reset does NOT clear it (lives in workspace_settings, not connection-scoped tabl
 assert in test).
 
 ### SET-09 · Integration audit viewer (small, after SET-01+02)
+**Status:** In progress — `kimi/set09-integration-audit-viewer`
+
 **NARROWED July 30, 2026 — WS-10 shipped the events reader, so most of this packet is
 already built.** The original text said `google_integration_events` "has no reader anywhere
 (verified: no audit route exists)" and planned to build one. That premise is now false:

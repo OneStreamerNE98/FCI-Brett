@@ -124,6 +124,20 @@
   color: var(--ink);
 }
 
+.loadMoreRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.loadMoreRow > :global(.soft-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .limitNote,
 .checkedAt {
   font-style: italic;
