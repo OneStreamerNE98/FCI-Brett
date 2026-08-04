@@ -47,7 +47,7 @@ test("AI label editor round-trips generated labels and preserves used labels as 
         status: 200,
         contentType: "application/json",
         headers: { "Cache-Control": "no-store" },
-        body: JSON.stringify({ labels, maximumLabels: 20 }),
+        body: JSON.stringify({ labels, maximumLabels: 20, maximumRows: 100 }),
       });
       return;
     }
