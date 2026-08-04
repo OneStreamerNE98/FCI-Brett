@@ -3420,6 +3420,69 @@ byte-identical after the change; `npm test`, `npm run test:e2e`, `npm run lint` 
 outcomes.
 **Effort:** medium. **Cost:** $0.
 
+### DES-13 · Design-language consolidation: color, type, and spacing scales with a drift guard (medium)
+
+**Why:** owner request, August 3, 2026 — a more elegant UI "in line with UIs from nice
+companies." The gap was measured, not assumed, across `app/globals.css` plus every
+`*.module.css` on origin/main (212KB of CSS):
+- **431 distinct hex colors, zero color tokens.** The 26 existing tokens cover radius,
+  shadow, and control sizing only.
+- **469 of 525 `font-size` declarations are `12px`** (7 distinct sizes exist: 12/13/14/16/
+  21/24/11). There is no typographic hierarchy — when everything is small, nothing leads
+  the eye.
+- **`font-weight: 800` is the working default (95 uses)**, with 850 and 750 oddballs; when
+  everything is bold, nothing is emphasized — this is the measured cause of the "bulky"
+  perception.
+- **19 raw pixel gap values dominated by odd numbers** (9px ×44, 7px ×43, 5px ×34, 3px
+  ×25): no spacing scale, and the micro-source of the "margins all over the place"
+  perception even where the macro grid is a uniform 16px.
+- **Radii and shadows are already tokenized and are the two dimensions that feel right** —
+  868 `var()` usages prove the token mechanism works in this codebase; it was simply never
+  extended to color, type, or spacing.
+**Framework adoption (Tailwind/shadcn/Radix) was considered and REJECTED**, recorded here
+so it is not re-proposed casually: it rewrites the markup of every page including the two
+golden-hash-pinned ones, re-litigates the owner-approved design authority, and abandons the
+dependency-light house style — to buy consistency that token consolidation delivers at a
+fraction of the cost. Revisit only if a full visual redesign is ever commissioned, and do
+this packet first anyway: the scales are the migration rails.
+
+**Do:**
+1. **Semantic color tokens** (~28: ink/muted-ink, surface/raised/sunken, line, accent and
+   states, semantic status colors), replacing the 431 raw hexes. The remap is mechanical
+   and scriptable; the naming is deliberate. Text/background pairs keep WCAG AA contrast.
+2. **Type scale and weight diet:** 13px body / 12px captions / defined heading steps with
+   set line-heights; weight 800+ demoted to display-only, 600 becomes the working bold;
+   the 850/750 oddballs eliminated.
+3. **4px-base spacing scale** (~6 steps) replacing the 19 raw gap values; the odd-pixel
+   values map to their nearest step.
+4. **Motion tokens:** the 12 ad-hoc transition declarations collapse to two duration
+   tokens and one easing.
+5. **A drift guard test**, same philosophy as every other guard in this repo: new CSS may
+   not introduce a raw hex color or an off-scale px value for gap/padding/font-size/
+   radius; a small allowlist file holds the legitimate exceptions (`50%`, `999px`, `0`).
+   The guard runs deps-free so it gates every future UI packet.
+6. **Consciously re-point** the mutation-sensitive CSS-string pins and any geometry-based
+   e2e assertions the type/weight changes shift — enumerated by name in the PR, never
+   silently.
+
+**Constraints:** CSS-values-only — **zero markup or class changes**, so both golden hashes
+remain byte-identical by construction (assert it anyway); takes the `globals.css` lock and
+touches the settings module CSS; **no `app/FloorOpsApp.tsx` change and no queue slot**;
+`docs/dashboard-design-spec.md`'s token table is updated in the same PR so the design
+authority records the new scales; the owner reviews before/after screenshots at
+390/834/1280 **before merge** — this changes the look of every page and carries owner
+sign-off, not silent taste.
+
+**Accept:** a hex census over app CSS returns ≤ the agreed token count plus allowlist
+(measured by the drift guard, running in CI); the font-size census matches the scale
+exactly; no `font-weight` above 700 outside the display allowlist; the gap census is
+on-scale; both golden hashes byte-identical; the drift guard goes red on a fixture that
+introduces one raw hex (negative test); every re-pointed pin enumerated in the PR;
+`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium. **Cost:** $0. **Sequencing:** after NFIX-07 (same `globals.css` lock),
+**before** DES-12, grid views, and the button de-bulking — all three consume these scales
+instead of inventing their own.
+
 # Workstream G — AI assistant & automation (AI)
 
 Owner-approved July 23, 2026. Design authority: `docs/ai-assistant-spec.md`
