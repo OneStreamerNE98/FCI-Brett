@@ -2902,6 +2902,7 @@ navigation URL shape pinned; no server proxying of map tiles. **Effort:** small.
 **Cost:** $0 (Embed API free unlimited; URLs free).
 
 ### GI-04 · Address validation + autocomplete on lead, client, and project address entry (medium, after WS-15; FloorOpsApp queue) — OWNER PRIORITY (July 21)
+**Status:** In progress — `codex/gi04-address-validation`
 **Why:** Typo-proof, USPS-standardized addresses with lat/lng captured wherever an
 address enters the system — one prevented wrong-address truck roll pays for years of
 usage.
@@ -4420,7 +4421,7 @@ its bullet — leaving four claimants. Recommended claim order, most valuable fi
   fetches its own data and sources `isAdmin` itself. AI-12 instead takes the inbox-file
   cluster (`app/api/v1/inbox-analysis/route.ts` + `app/inbox/components/InboxView.tsx`);
   claimants serialize on those files, not on this slot.
-- **GI-04** — unavoidable. The lead, client and project modals and their record mappers are
+- **GI-04** — **In progress — `codex/gi04-address-validation` holds the slot.** Unavoidable. The lead, client and project modals and their record mappers are
   inline in that file.
 - **GI-05** — the project drawer and its Planned-capabilities list
   (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
