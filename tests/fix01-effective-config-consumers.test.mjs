@@ -24,6 +24,7 @@ const APP_IDS = Object.freeze({
 });
 
 const state = {
+  blueprint: null,
   connection: null,
   providerCalls: [],
   queries: [],
@@ -51,7 +52,7 @@ const database = {
       },
       async first() {
         query.kind = "first";
-        if (/FROM workspace_blueprints WHERE connection_key = \?/u.test(sql)) return null;
+        if (/FROM workspace_blueprints WHERE connection_key = \?/u.test(sql)) return state.blueprint;
         if (/FROM workspace_resources WHERE connection_key = \? AND resource_type = \? AND resource_key = \?/u.test(sql)) {
           return state.resources.find((row) => row.connection_key === query.values[0] && row.resource_type === query.values[1] && row.resource_key === query.values[2]) ?? null;
         }
@@ -103,6 +104,7 @@ const [
   clientsRoute,
   projectsRoute,
   workspaceRoute,
+  blueprintModule,
 ] = await Promise.all([
   vite.ssrLoadModule("/app/lib/google-oauth-sites.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/gmail/_route-helpers.ts"),
@@ -112,6 +114,7 @@ const [
   vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
   vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
   vite.ssrLoadModule("/app/api/v1/google-workspace/route.ts"),
+  vite.ssrLoadModule("/app/lib/workspace-blueprint.ts"),
 ]);
 
 const refreshTokenCiphertext = await oauthSites.encryptGoogleSecret(
@@ -155,6 +158,7 @@ function appResources() {
 }
 
 function configure({
+  blueprint = null,
   resources = [],
   ids = ENV_IDS,
   connected = true,
@@ -195,6 +199,16 @@ function configure({
       "https://www.googleapis.com/auth/spreadsheets",
     ]),
     status: "connected",
+  } : null;
+  state.blueprint = blueprint ? {
+    id: "blueprint-1",
+    connection_key: "google-workspace",
+    version: 3,
+    blueprint_json: JSON.stringify(blueprint),
+    created_by: ADMIN_EMAIL,
+    created_at: 1_790_000_000_000,
+    updated_by: ADMIN_EMAIL,
+    updated_at: 1_790_000_001_000,
   } : null;
   state.providerCalls = [];
   state.queries = [];
@@ -403,6 +417,38 @@ test("Workspace readiness exposes the resolved Calendar ID so an adopted overrid
   // imply, so a divergence is detectable by comparing against what the field holds.
   assert.notEqual(appointments.externalId, ENV_IDS.appointments);
   assert.equal(payload.workspace.calendars.fieldSchedule.externalId, APP_IDS.fieldSchedule);
+});
+
+test("Workspace readiness and folder-plan preview both consume the persisted blueprint", async () => {
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.naming.clientFolderPattern = "{name} [{code}]";
+  blueprint.naming.projectFolderPattern = "{year} · {number} · {name}";
+  blueprint.drive.clientFolders.push({ key: "site-surveys", name: "Site Surveys", management: "owner", children: [] });
+  blueprint.drive.projectFolders.push({ key: "field-notes", name: "07_Field Notes", management: "owner", children: [] });
+  configure({ blueprint });
+
+  const readiness = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
+  assert.equal(readiness.status, 200);
+  const readinessPayload = await readiness.json();
+  assert.equal(readinessPayload.blueprint.naming.clientFolderPattern, "{name} [{code}]");
+  assert.ok(readinessPayload.blueprint.drive.projectFolders.some((folder) => folder.key === "field-notes"));
+
+  const preview = await workspaceRoute.POST(officeRequest(
+    "/api/v1/google-workspace",
+    "POST",
+    {
+      clientCode: "CL-042",
+      clientName: "FCI TEST Client",
+      projectNumber: "PR-009",
+      projectName: "FCI TEST Project",
+    },
+  ));
+  assert.equal(preview.status, 200);
+  const previewPayload = await preview.json();
+  assert.match(previewPayload.plan.clientFolder, /FCI TEST Client \[CL-042\]$/u);
+  assert.ok(previewPayload.plan.clientFolders.includes("Site Surveys"));
+  assert.match(previewPayload.plan.projectFolder, /\/\d{4}\/\d{4} · PR-009 · FCI TEST Project$/u);
+  assert.ok(previewPayload.plan.projectFolders.includes("07_Field Notes"));
 });
 
 test("Calendar verify probes events.list and adopts the ID into the registry", async () => {

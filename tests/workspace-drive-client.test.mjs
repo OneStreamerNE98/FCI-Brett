@@ -12,9 +12,10 @@ const vite = await createServer({
   appType: "custom",
   server: { middlewareMode: true, hmr: { port: 24736 } },
 });
-const [{ GoogleDriveClient }, { seedWorkspaceBlueprint }] = await Promise.all([
+const [{ GoogleDriveClient }, { seedWorkspaceBlueprint }, { buildProjectFolderPlan }] = await Promise.all([
   vite.ssrLoadModule("/app/lib/google-drive.ts"),
   vite.ssrLoadModule("/app/lib/workspace-blueprint.ts"),
+  vite.ssrLoadModule("/app/lib/google-workspace.ts"),
 ]);
 
 after(async () => {
@@ -93,6 +94,56 @@ function inMemoryDriveProvider(initialFiles) {
     },
   };
 }
+
+test("the seed project-folder preview remains byte-compatible while saved folders and names are consumed", () => {
+  const seed = seedWorkspaceBlueprint();
+  assert.deepEqual(buildProjectFolderPlan({
+    blueprint: seed,
+    clientCode: "FCI TEST",
+    clientName: "Client",
+    projectNumber: "FCI2026-902",
+    projectName: "Project",
+    year: "2026",
+  }), {
+    clientFolder: "01_Client Accounts/FCI TEST — Client",
+    clientFolders: ["00_Client Profile & Master Documents", "Projects (shortcuts only)"],
+    projectFolder: "02_Projects/2026/FCI2026-902 — Project",
+    projectFolders: [
+      "00_Admin",
+      "01_Lead & Proposal",
+      "02_Contract & Submittals",
+      "03_Schedule & Field",
+      "04_Photos & QA",
+      "05_Correspondence / Email Archive",
+      "05_Correspondence / Email Attachments",
+      "06_Closeout",
+    ],
+    gmailLabels: ["FCI/Intake", "FCI/Needs Review", "FCI/Filed"],
+  });
+
+  const customized = structuredClone(seed);
+  customized.naming.clientFolderPattern = "{name} [{code}]";
+  customized.naming.projectFolderPattern = "{year} · {name} ({number})";
+  customized.drive.clientFolders.push({ key: "site-surveys", name: "Site Surveys", management: "owner", children: [] });
+  customized.drive.projectFolders.push({
+    key: "field-notes",
+    name: "07_Field Notes",
+    management: "owner",
+    children: [{ key: "daily-logs", name: "Daily Logs", management: "owner", children: [] }],
+  });
+  const plan = buildProjectFolderPlan({
+    blueprint: customized,
+    clientCode: "CL-042",
+    clientName: "FCI TEST Client",
+    projectNumber: "PR-009",
+    projectName: "FCI TEST Project",
+    year: "2027",
+  });
+  assert.equal(plan.clientFolder, "01_Client Accounts/FCI TEST Client [CL-042]");
+  assert.ok(plan.clientFolders.includes("Site Surveys"));
+  assert.equal(plan.projectFolder, "02_Projects/2027/2027 · FCI TEST Project (PR-009)");
+  assert.ok(plan.projectFolders.includes("07_Field Notes / Daily Logs"));
+});
 
 test("Drive client gets and exhaustively finds Shared Drives with restriction flags", async () => {
   const calls = [];
@@ -485,6 +536,14 @@ test("simulated Drive provider provisions beneath renamed roots from the persist
   const blueprint = structuredClone(seedWorkspaceBlueprint());
   blueprint.drive.roots.find((folder) => folder.key === "client-accounts").name = "01_Renamed Client Accounts";
   blueprint.drive.roots.find((folder) => folder.key === "projects").name = "02_Renamed Projects";
+  blueprint.naming.clientFolderPattern = "{name} [{code}]";
+  blueprint.naming.projectFolderPattern = "{year} · {number} · {name}";
+  blueprint.drive.clientFolders.push({
+    key: "site-surveys",
+    name: "Site Surveys",
+    management: "owner",
+    children: [],
+  });
   blueprint.drive.projectFolders.find((folder) => folder.key === "lead-proposal").name = "01_Custom Lead Package";
   blueprint.drive.projectFolders.push({
     key: "field-notes",
@@ -527,20 +586,77 @@ test("simulated Drive provider provisions beneath renamed roots from the persist
   });
 
   assert.equal(provider.files.get(provisioned.clientFolder.id).parents[0], "client-accounts-root");
+  assert.equal(provider.files.get(provisioned.clientFolder.id).name, "DO NOT USE [FCI TEST]");
+  assert.ok(provider.children(provisioned.clientFolder.id).some((folder) => (
+    folder.name === "Site Surveys"
+    && folder.appProperties.fciFolderKey === "site-surveys"
+    && folder.appProperties.fciClientId === "client-1"
+    && folder.appProperties.fciFolderKind === "client-child"
+  )));
   const yearFolder = provider.children("projects-root").find((folder) => folder.name === "2026");
   assert.ok(yearFolder);
   assert.equal(provider.files.get(provisioned.projectFolder.id).parents[0], yearFolder.id);
+  assert.equal(provider.files.get(provisioned.projectFolder.id).name, "2026 · FCI2026-001 · FCI TEST — DO NOT USE");
   const projectChildren = provider.children(provisioned.projectFolder.id);
-  assert.ok(projectChildren.some((folder) => folder.name === "01_Custom Lead Package"));
+  assert.ok(projectChildren.some((folder) => (
+    folder.name === "01_Custom Lead Package"
+    && folder.appProperties.fciFolderKey === "lead-proposal"
+    && folder.appProperties.fciProjectId === "project-1"
+    && folder.appProperties.fciFolderKind === "project-child"
+  )));
   assert.equal(projectChildren.some((folder) => folder.name === "01_Lead & Proposal"), false);
   const fieldNotes = projectChildren.find((folder) => folder.name === "07_Field Notes");
   assert.ok(fieldNotes);
-  assert.ok(provider.children(fieldNotes.id).some((folder) => folder.name === "Daily Logs"));
+  assert.ok(provider.children(fieldNotes.id).some((folder) => (
+    folder.name === "Daily Logs" && folder.appProperties.fciFolderKey === "daily-logs"
+  )));
+  const archive = await client.resolveManagedProjectFolderPath(
+    provisioned.projectFolder.id,
+    "05_Correspondence / Email Archive",
+    "project-1",
+  );
+  assert.equal(archive.name, "Email Archive");
   assert.deepEqual(
     provider.children("shared-drive-root").map((folder) => folder.id).sort(),
     ["client-accounts-root", "projects-root"],
   );
   assert.equal(provider.calls.some((call) => call.method === "POST" && ["01_Client Accounts", "02_Projects"].includes(call.body?.name)), false);
+  assert.equal(provider.calls.some((call) => call.method === "DELETE"), false);
+});
+
+test("provisioning reuses stable entity identities and adopts legacy child stamps additively", async () => {
+  const blueprint = structuredClone(seedWorkspaceBlueprint());
+  blueprint.naming.clientFolderPattern = "{name} [{code}]";
+  blueprint.naming.projectFolderPattern = "{year} · {number} · {name}";
+  const provider = inMemoryDriveProvider([
+    { id: "shared-drive-root", name: "FCI Operations", mimeType: "application/vnd.google-apps.folder", parents: [], trashed: false, appProperties: {} },
+    { id: "client-accounts-root", name: "01_Client Accounts", mimeType: "application/vnd.google-apps.folder", parents: ["shared-drive-root"], trashed: false, appProperties: { fciRootKey: "client-accounts" } },
+    { id: "projects-root", name: "02_Projects", mimeType: "application/vnd.google-apps.folder", parents: ["shared-drive-root"], trashed: false, appProperties: { fciRootKey: "projects" } },
+    { id: "legacy-client", name: "CL-042 — Legacy client name", mimeType: "application/vnd.google-apps.folder", parents: ["client-accounts-root"], trashed: false, appProperties: { fciClientId: "client-legacy", fciFolderKind: "client" } },
+    { id: "legacy-profile", name: "00_Client Profile & Master Documents", mimeType: "application/vnd.google-apps.folder", parents: ["legacy-client"], trashed: false, appProperties: { fciClientId: "client-legacy", fciFolderKind: "client-profile" } },
+    { id: "legacy-shortcuts", name: "Projects (shortcuts only)", mimeType: "application/vnd.google-apps.folder", parents: ["legacy-client"], trashed: false, appProperties: { fciClientId: "client-legacy", fciFolderKind: "client-project-links" } },
+  ]);
+  const client = new GoogleDriveClient("test-token", config(), provider.fetcher);
+
+  const provisioned = await client.provisionProjectFolders({
+    client: { id: "client-legacy", code: "CL-042", name: "Current client name" },
+    project: { id: "project-new", number: "PR-009", name: "FCI TEST Project", year: "2027" },
+    blueprint,
+  });
+
+  assert.equal(provisioned.clientFolder.id, "legacy-client");
+  assert.equal(provider.children("client-accounts-root").filter((folder) => folder.appProperties.fciClientId === "client-legacy").length, 1);
+  assert.deepEqual(provider.files.get("legacy-profile").appProperties, {
+    fciClientId: "client-legacy",
+    fciFolderKind: "client-profile",
+    fciFolderKey: "client-profile",
+  });
+  assert.deepEqual(provider.files.get("legacy-shortcuts").appProperties, {
+    fciClientId: "client-legacy",
+    fciFolderKind: "client-project-links",
+    fciFolderKey: "project-shortcuts",
+  });
+  assert.equal(provider.files.get(provisioned.projectFolder.id).name, "2027 · PR-009 · FCI TEST Project");
   assert.equal(provider.calls.some((call) => call.method === "DELETE"), false);
 });
 
@@ -603,9 +719,12 @@ test("project provisioning is wired to effective setup and has no static root or
 
   assert.doesNotMatch(provisionSource, /01_Client Accounts|02_Projects|DRIVE_BLUEPRINT/u);
   assert.match(driveSource, /blueprint\.drive\.roots/u);
+  assert.match(driveSource, /blueprint\.drive\.clientFolders/u);
   assert.match(driveSource, /blueprint\.drive\.projectFolders/u);
   assert.match(provisionSource, /buildProjectDriveBlueprintPlan\(input\.blueprint\)/u);
-  assert.match(provisionSource, /blueprintPlan\.projectFolderPaths/u);
+  assert.match(provisionSource, /resolveWorkspaceBlueprintFolderNames\(input\.blueprint/u);
+  assert.match(provisionSource, /ensureTree\(clientFolder\.id, input\.blueprint\.drive\.clientFolders/u);
+  assert.match(provisionSource, /ensureTree\(projectFolder\.id, input\.blueprint\.drive\.projectFolders/u);
   assert.match(routeSource, /getEffectiveGoogleRuntimeSetup/u);
   assert.match(routeSource, /const \{ config, blueprint, resources \} = setup/u);
   assert.match(routeSource, /blueprint,\s*\n\s*\}\);/u);

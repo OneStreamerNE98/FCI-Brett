@@ -77,32 +77,6 @@ export type WorkspaceBlueprintRootFolder = Readonly<{
   management: WorkspaceBlueprintManagement;
 }>;
 
-/**
- * The development provisioning contract that predates the persisted blueprint.
- * Keep this export byte-compatible until SET-21 moves its remaining consumers.
- */
-export const DRIVE_BLUEPRINT = {
-  sharedDriveName: "FCI Operations",
-  roots: [
-    "00_Company Admin / Client Directory (Google Sheet)",
-    "01_Client Accounts / {CLIENT_CODE} — {CLIENT_NAME} / 00_Client Profile & Master Documents",
-    "02_Projects / {YEAR} / {PROJECT_NUMBER} — {PROJECT_NAME}",
-    "99_Archive",
-    "99_Unsorted Intake",
-  ],
-  projectFolders: [
-    "00_Admin",
-    "01_Lead & Proposal",
-    "02_Contract & Submittals",
-    "03_Schedule & Field",
-    "04_Photos & QA",
-    "05_Correspondence / Email Archive",
-    "05_Correspondence / Email Attachments",
-    "06_Closeout",
-  ],
-  gmailLabels: ["FCI/Intake", "FCI/Needs Review", "FCI/Filed"],
-} as const;
-
 export const WORKSPACE_BLUEPRINT_LIMITS = Object.freeze({
   folders: 50,
   templates: 20,
@@ -139,7 +113,7 @@ const SEED_WORKSPACE_BLUEPRINT: WorkspaceBlueprint = deepFreeze({
     projectFolderPattern: "{number} — {name}",
   },
   drive: {
-    sharedDriveName: DRIVE_BLUEPRINT.sharedDriveName,
+    sharedDriveName: "FCI Operations",
     roots: [
       {
         key: "company-admin",
@@ -190,9 +164,9 @@ const SEED_WORKSPACE_BLUEPRINT: WorkspaceBlueprint = deepFreeze({
   ],
   gmail: {
     labels: [
-      { key: "intake", name: DRIVE_BLUEPRINT.gmailLabels[0], management: "system" },
-      { key: "needs-review", name: DRIVE_BLUEPRINT.gmailLabels[1], management: "system" },
-      { key: "filed", name: DRIVE_BLUEPRINT.gmailLabels[2], management: "system" },
+      { key: "intake", name: "FCI/Intake", management: "system" },
+      { key: "needs-review", name: "FCI/Needs Review", management: "system" },
+      { key: "filed", name: "FCI/Filed", management: "system" },
     ],
   },
   calendars: [
@@ -219,6 +193,49 @@ const SEED_WORKSPACE_BLUEPRINT: WorkspaceBlueprint = deepFreeze({
     },
   ],
 });
+
+export type WorkspaceBlueprintFolderNamingInput = Readonly<{
+  clientCode: string;
+  clientName: string;
+  projectNumber: string;
+  projectName: string;
+  year: string;
+}>;
+
+/** Resolves the blueprint's closed naming-token catalog for one client/project pair. */
+export function resolveWorkspaceBlueprintFolderNames(
+  blueprint: WorkspaceBlueprint,
+  input: WorkspaceBlueprintFolderNamingInput,
+) {
+  const render = (pattern: string, values: Readonly<Record<string, string>>) => (
+    pattern.replace(/\{(?:code|name|number|year)\}/gu, (token) => values[token] ?? token)
+  );
+  return Object.freeze({
+    clientFolderName: render(blueprint.naming.clientFolderPattern, {
+      "{code}": input.clientCode,
+      "{name}": input.clientName,
+    }),
+    projectFolderName: render(blueprint.naming.projectFolderPattern, {
+      "{name}": input.projectName,
+      "{number}": input.projectNumber,
+      "{year}": input.year,
+    }),
+  });
+}
+
+/** Returns the provisioned leaf paths while preserving blueprint/visual order. */
+export function workspaceBlueprintLeafFolderPaths(
+  folders: readonly WorkspaceBlueprintFolder[],
+) {
+  const paths: Array<readonly string[]> = [];
+  const append = (folder: WorkspaceBlueprintFolder, parentPath: readonly string[]) => {
+    const path = Object.freeze([...parentPath, folder.name]);
+    if (folder.children.length === 0) paths.push(path);
+    else for (const child of folder.children) append(child, path);
+  };
+  for (const folder of folders) append(folder, []);
+  return Object.freeze(paths);
+}
 
 export class WorkspaceBlueprintValidationError extends Error {
   readonly path: string;

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { env } from "cloudflare:workers";
-import { buildProjectFolderPlan, DRIVE_BLUEPRINT } from "../../../lib/google-workspace";
+import { buildProjectFolderPlan } from "../../../lib/google-workspace";
 import { getEffectiveGoogleRuntimeSetup, getGoogleConnectionStatus } from "../../../lib/google-oauth-sites";
 import { readGoogleChatPublicConfig } from "../../../lib/google-chat-notifier-sites";
 import { requireOfficeUser, requireSameOrigin } from "../../../lib/workspace-auth";
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
       enabledServices: google.enabledServices,
       broadScopeAcknowledged: google.broadScopeAcknowledged,
     },
-    blueprint: DRIVE_BLUEPRINT,
+    blueprint: setup.blueprint,
     requiredEnvironment: missingDetails.map((detail) => detail.label),
     nextStep: google.simulation ? "Local Workspace simulation is ready. No Google account is connected and no data is sent to Google." : connection.requiresReauthorization ? "Reconnect the approved Workspace account and approve every selected service." : connection.connected ? "Google Workspace services are connected." : credentialsPresent ? "An FCI administrator can now connect Google Workspace." : "Add the missing Workspace configuration values before authorizing Google.",
   });
@@ -124,5 +124,7 @@ export async function POST(request: NextRequest) {
   };
   const { clientCode, clientName, projectNumber, projectName } = body;
   if (!clientCode || !clientName || !projectNumber || !projectName) return noStore({ error: "client and project details are required" }, { status: 400 });
-  return noStore({ plan: buildProjectFolderPlan({ clientCode, clientName, projectNumber, projectName }) });
+  await ensureWorkspaceSchema();
+  const { blueprint } = await getEffectiveGoogleRuntimeSetup();
+  return noStore({ plan: buildProjectFolderPlan({ blueprint, clientCode, clientName, projectNumber, projectName }) });
 }

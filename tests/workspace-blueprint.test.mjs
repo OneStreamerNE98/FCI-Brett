@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  DRIVE_BLUEPRINT,
   WORKSPACE_BLUEPRINT_LIMITS,
   WorkspaceBlueprintValidationError,
   flattenWorkspaceBlueprintFolders,
+  resolveWorkspaceBlueprintFolderNames,
   sanitizeWorkspaceBlueprint,
   seedWorkspaceBlueprint,
   summarizeWorkspaceBlueprintChanges,
@@ -42,10 +42,25 @@ test("seed preserves the legacy Drive/Gmail contract and includes FCI Holidays",
     seed.drive.roots.find((folder) => folder.key === "unsorted-intake").name,
   ];
 
-  assert.equal(seed.drive.sharedDriveName, DRIVE_BLUEPRINT.sharedDriveName);
-  assert.deepEqual(legacyRoots, [...DRIVE_BLUEPRINT.roots]);
-  assert.deepEqual(projectPaths, [...DRIVE_BLUEPRINT.projectFolders]);
-  assert.deepEqual(seed.gmail.labels.map((label) => label.name), [...DRIVE_BLUEPRINT.gmailLabels]);
+  assert.equal(seed.drive.sharedDriveName, "FCI Operations");
+  assert.deepEqual(legacyRoots, [
+    "00_Company Admin / Client Directory (Google Sheet)",
+    "01_Client Accounts / {CLIENT_CODE} — {CLIENT_NAME} / 00_Client Profile & Master Documents",
+    "02_Projects / {YEAR} / {PROJECT_NUMBER} — {PROJECT_NAME}",
+    "99_Archive",
+    "99_Unsorted Intake",
+  ]);
+  assert.deepEqual(projectPaths, [
+    "00_Admin",
+    "01_Lead & Proposal",
+    "02_Contract & Submittals",
+    "03_Schedule & Field",
+    "04_Photos & QA",
+    "05_Correspondence / Email Archive",
+    "05_Correspondence / Email Attachments",
+    "06_Closeout",
+  ]);
+  assert.deepEqual(seed.gmail.labels.map((label) => label.name), ["FCI/Intake", "FCI/Needs Review", "FCI/Filed"]);
   assert.deepEqual(seed.calendars.map((calendar) => calendar.name), [
     "FCI • Client Appointments",
     "FCI • Field Schedule",
@@ -55,6 +70,25 @@ test("seed preserves the legacy Drive/Gmail contract and includes FCI Holidays",
   assert.equal(seed.spreadsheets[0].role, "system-mirror");
   assert.equal(Object.isFrozen(seed), true);
   assert.equal(Object.isFrozen(seed.drive.roots), true);
+});
+
+test("folder naming substitutes only the blueprint's closed context tokens", () => {
+  const blueprint = draft();
+  blueprint.naming.clientFolderPattern = "{name} ({code})";
+  blueprint.naming.projectFolderPattern = "{year} · {name} · {number}";
+  assert.deepEqual(
+    resolveWorkspaceBlueprintFolderNames(sanitizeWorkspaceBlueprint(blueprint), {
+      clientCode: "CL-042",
+      clientName: "FCI TEST Client",
+      projectNumber: "PR-009",
+      projectName: "FCI TEST Project",
+      year: "2027",
+    }),
+    {
+      clientFolderName: "FCI TEST Client (CL-042)",
+      projectFolderName: "2027 · FCI TEST Project · PR-009",
+    },
+  );
 });
 
 test("sanitizer accepts owner edits and normalizes detached data", () => {
