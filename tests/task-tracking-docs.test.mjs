@@ -110,7 +110,7 @@ function assertPacketDocumentStructure(path, markdown) {
     assert.doesNotMatch(statusLine, /^Status:/, `${path}:${index + 2} must use the bold Status marker`);
     assert.match(
       statusLine,
-      /^\*\*Status:\*\* (?:Complete — PR #\d+(?: \+ PR #\d+)*|In review — PR #\d+|In progress — `(?:codex|claude)\/[^`]+`|Blocked — .+|Resolved in PR #\d+|Superseded — absorbed into [A-Z]+-\d+)(?:[,.]|$)/,
+      /^\*\*Status:\*\* (?:Complete — PR #\d+(?: \+ PR #\d+)*|Complete — owner, [A-Z][a-z]+ \d{1,2}, \d{4}|In review — PR #\d+|In progress — `(?:codex|claude)\/[^`]+`|Blocked — .+|Resolved in PR #\d+|Superseded — absorbed into [A-Z]+-\d+)(?:[,.]|$)/,
       `${path}:${index + 2} has an invalid status-line shape`,
     );
   }
@@ -197,6 +197,19 @@ test("packet headings, status markers, and stale-reference detection stay struct
   assert.throws(
     () => assertPacketDocumentStructure("fixture.md", "## FIXTURE-01 · Missing marker\n\nStatus: Complete — PR #54, July 20, 2026."),
     /place Status directly below its packet heading/,
+  );
+  assert.doesNotThrow(() =>
+    assertPacketDocumentStructure(
+      "fixture.md",
+      "## FIXTURE-02 · Owner-completed form\n**Status:** Complete — owner, August 3, 2026.",
+    ),
+  );
+  assert.throws(
+    () => assertPacketDocumentStructure(
+      "fixture.md",
+      "## FIXTURE-02 · Owner-completed form\n**Status:** Complete — owner.",
+    ),
+    /invalid status-line shape/,
   );
 
   for (const staleLine of [

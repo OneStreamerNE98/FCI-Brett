@@ -537,3 +537,23 @@ tests/nfix07-layout-scan-guards.test.mjs; a healthy full run reports vacuousPage
 the two golden-hash constants are untouched; `npm test`, `npm run test:e2e`,
 `npm run lint` named with outcomes.
 **Effort:** small. **Cost:** $0.
+
+### NFIX-08 · iPhone info-tooltips never display on tap (small)
+
+**Why:** owner-reported on iPhone, August 3, 2026. Verified so far: the touch handling in
+`app/components/WorkspaceInfoHint.tsx` is CORRECT (pointer-type-gated hover, tap toggles
+`tapped`), the open state engages (wrapper gains `open`, `aria-expanded` flips true at
+390px), and the tooltip is positioned on-screen and unclipped. What could NOT be verified
+in tooling: whether it paints — background tabs and off-screen iframes do not advance CSS
+transitions, so the measurement is unreliable. **Hypothesis, not finding:** the tooltip
+transitions `visibility` (`app/globals.css:671`), a known-fragile pattern that iOS Safari
+is the browser most likely to leave stuck.
+**Do:** confirm on a real iPhone FIRST (device + iOS version recorded in the PR); if
+confirmed, stop transitioning `visibility` — toggle it discretely and animate only
+opacity/transform; add a regression e2e at iPhone width dispatching the touch pointer
+sequence and asserting computed visibility AND opacity afterward; verify desktop hover
+behavior is unchanged.
+**Accept:** the device check is recorded with evidence; the regression spec passes; a
+deliberate re-break (restoring the visibility transition) fails the new spec; desktop
+hover/focus behavior unchanged; `npm test`, `npm run test:e2e`, `npm run lint` named.
+**Effort:** small. **Cost:** $0.

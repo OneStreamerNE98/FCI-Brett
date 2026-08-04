@@ -98,10 +98,17 @@ so the Edit control sits in the identical place on both pages.
 
 ## 7. Test discipline (every packet)
 
-Golden SHA256 hashes in `tests/e2e/page-layouts.spec.ts` regenerate in exactly
-TWO packets (DES-05: both hashes; DES-07: Reports only), each isolated to one PR
-with the diff reviewed to contain only that packet's deltas; every other packet
-treats unchanged hashes as an acceptance criterion. All e2e `aria-label`s and
+Golden SHA256 hashes in `tests/e2e/page-layouts.spec.ts` regenerate only as a
+sanctioned event available to ANY packet whose PR includes owner-approved
+before/after screenshots of both pinned pages at 1280 (with the change
+rationale) and updates the three additional pinning suites in the same commit;
+each regeneration stays isolated to one PR with the diff reviewed to contain
+only that packet's deltas, and every other packet treats unchanged hashes as an
+acceptance criterion. The named-packet restriction (historically DES-05: both
+hashes; DES-07: Reports only) was lifted August 3, 2026 by owner decision under
+the standing law-lift rule (checklist 06); scope of the lift: the authority
+model only — the hashes, the pinned selectors, and the three-suite requirement
+are unchanged. All e2e `aria-label`s and
 `data-layout-*` attributes are preserved byte-identical. Pinned-source tests
 (`tests/rendered-html.test.mjs` CSS strings, asset SHA256s, copy pins) are
 updated mutation-sensitively in the same PR as the change — never deleted.

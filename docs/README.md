@@ -10,6 +10,7 @@ this index is the map. (Added July 24, 2026; keep current when adding docs.)
 - [brett-handoff.md](brett-handoff.md) — the one-page read-only-first Google inventory handoff for Brett.
 - [nightly-reviews/](nightly-reviews/README.md) — the nightly review program: what ran each night, findings, recommendations. Specs for the six un-run nights live in [nightly-reviews/SPECS.md](nightly-reviews/SPECS.md).
 - [20-user-product-and-architecture-review.md](20-user-product-and-architecture-review.md) — how the app serves a ~20-person org.
+- [enhancement-briefs/](enhancement-briefs/README.md) — owner planning briefs (not packets: no status lines, ignored by the dispatch law; packets are filed from them at wave start, and the ledger wins on conflict).
 
 ## For admins & staff
 
