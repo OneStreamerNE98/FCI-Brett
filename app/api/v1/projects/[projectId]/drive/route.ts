@@ -83,6 +83,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
       return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
     }
   }
+  let blueprintPlan: ReturnType<typeof buildProjectDriveBlueprintPlan>;
+  try {
+    blueprintPlan = buildProjectDriveBlueprintPlan(blueprint);
+  } catch (error) {
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
+  }
   let drive: GoogleDriveClient | null = null;
   if (!config.simulation) {
     try {
@@ -104,7 +110,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
 
   try {
     if (config.simulation) {
-      const blueprintPlan = buildProjectDriveBlueprintPlan(blueprint);
       const folderNames = resolveWorkspaceBlueprintFolderNames(blueprint, {
         clientCode: project.client_code,
         clientName: project.client_name,

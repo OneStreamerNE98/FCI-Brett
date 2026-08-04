@@ -10,6 +10,7 @@ import {
   type WorkspaceBlueprint,
   type WorkspaceBlueprintFolder,
 } from "./workspace-blueprint";
+import { assertProvisionableWorkspaceBlueprint } from "./workspace-blueprint-provisioning";
 import {
   WORKSPACE_TEMPLATE_TOKEN_LEGEND,
   type WorkspaceTemplateTokenValues,
@@ -157,8 +158,9 @@ export function workspaceBlueprintFolderKeys(blueprint: WorkspaceBlueprint): Rea
 }
 
 export function buildProjectDriveBlueprintPlan(blueprint: WorkspaceBlueprint) {
-  const accountsRoot = blueprint.drive.roots.find((folder) => folder.key === "client-accounts");
-  const projectsRoot = blueprint.drive.roots.find((folder) => folder.key === "projects");
+  const provisionableBlueprint = assertProvisionableWorkspaceBlueprint(blueprint);
+  const accountsRoot = provisionableBlueprint.drive.roots.find((folder) => folder.key === "client-accounts");
+  const projectsRoot = provisionableBlueprint.drive.roots.find((folder) => folder.key === "projects");
   if (!accountsRoot || !projectsRoot) {
     throw new GoogleIntegrationError(
       "workspace_blueprint_root_missing",
@@ -169,8 +171,8 @@ export function buildProjectDriveBlueprintPlan(blueprint: WorkspaceBlueprint) {
   return Object.freeze({
     accountsRoot,
     projectsRoot,
-    clientFolderPaths: workspaceBlueprintLeafFolderPaths(blueprint.drive.clientFolders),
-    projectFolderPaths: workspaceBlueprintLeafFolderPaths(blueprint.drive.projectFolders),
+    clientFolderPaths: workspaceBlueprintLeafFolderPaths(provisionableBlueprint.drive.clientFolders),
+    projectFolderPaths: workspaceBlueprintLeafFolderPaths(provisionableBlueprint.drive.projectFolders),
   });
 }
 

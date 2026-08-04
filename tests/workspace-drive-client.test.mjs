@@ -12,7 +12,7 @@ const vite = await createServer({
   appType: "custom",
   server: { middlewareMode: true, hmr: { port: 24736 } },
 });
-const [{ GoogleDriveClient }, { seedWorkspaceBlueprint }, { buildProjectFolderPlan }] = await Promise.all([
+const [{ GoogleDriveClient }, { sanitizeWorkspaceBlueprint, seedWorkspaceBlueprint }, { buildProjectFolderPlan }] = await Promise.all([
   vite.ssrLoadModule("/app/lib/google-drive.ts"),
   vite.ssrLoadModule("/app/lib/workspace-blueprint.ts"),
   vite.ssrLoadModule("/app/lib/google-workspace.ts"),
@@ -679,6 +679,35 @@ function provisionProject(client, blueprint) {
     blueprint,
   });
 }
+
+test("legacy duplicate sibling names fail project provisioning before the first Drive request", async () => {
+  const draft = structuredClone(seedWorkspaceBlueprint());
+  draft.drive.projectFolders.unshift(
+    { key: "first-duplicate", name: "00_Duplicate", management: "owner", children: [] },
+    { key: "second-duplicate", name: "00_Duplicate", management: "owner", children: [] },
+  );
+  const widenedRead = sanitizeWorkspaceBlueprint(draft, { enforceUniqueSiblingNames: false });
+  const provider = provisionedProjectFixture({
+    id: "existing-correspondence",
+    name: "05_Correspondence",
+    mimeType: "application/vnd.google-apps.folder",
+    parents: ["the-project"],
+    trashed: false,
+    appProperties: { fciFolderKey: "correspondence", fciProjectId: "project-1", fciFolderKind: "project-child" },
+  });
+  const client = new GoogleDriveClient("test-token", config(), provider.fetcher);
+
+  await assert.rejects(
+    provisionProject(client, widenedRead),
+    (error) => (
+      error.code === "drive_folder_identity_conflict"
+      && error.status === 409
+      && /duplicates the sibling folder name/u.test(error.message)
+    ),
+  );
+  assert.equal(provider.calls.length, 0, "validation must run before verifyRootFolder or createFolder");
+  assert.equal(provider.files.size, 7, "no Drive fixture row may be created or changed");
+});
 
 // Reproduced review defect: an owner deleted an owner-managed project folder and re-added a
 // folder with the same name under a new key. The Drive folder kept the removed key's stamp, so

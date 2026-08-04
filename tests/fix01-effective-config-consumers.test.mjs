@@ -521,6 +521,32 @@ test("Folder-plan preview answers a missing blueprint root with a typed 409, not
   }
 });
 
+test("Folder-plan preview rejects a widened legacy duplicate before presenting an unsafe plan", async () => {
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.drive.projectFolders.unshift(
+    { key: "first-project-sibling", name: "00_Duplicate", management: "owner", children: [] },
+    { key: "second-project-sibling", name: "00_Duplicate", management: "owner", children: [] },
+  );
+  configure({ blueprint });
+
+  const response = await workspaceRoute.POST(officeRequest(
+    "/api/v1/google-workspace",
+    "POST",
+    {
+      clientCode: "CL-042",
+      clientName: "FCI TEST Client",
+      projectNumber: "PR-009",
+      projectName: "FCI TEST Project",
+    },
+  ));
+  const payload = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(payload.code, "drive_folder_identity_conflict");
+  assert.match(payload.error, /duplicates the sibling folder name/u);
+  assert.equal("plan" in payload, false);
+});
+
 test("Calendar verify probes events.list and adopts the ID into the registry", async () => {
   configure({ resources: [], ids: ENV_IDS });
   const response = await calendarVerifyRoute.POST(officeRequest(

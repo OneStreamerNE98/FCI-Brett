@@ -5,6 +5,7 @@ import {
   workspaceBlueprintLeafFolderPaths,
   type WorkspaceBlueprint,
 } from "./workspace-blueprint";
+import { assertProvisionableWorkspaceBlueprint } from "./workspace-blueprint-provisioning";
 
 export type FilingRuleDraft = {
   id?: string;
@@ -190,8 +191,9 @@ export function buildProjectFolderPlan(input: {
   year?: string;
 }) {
   const year = input.year ?? new Date().getUTCFullYear().toString();
-  const accountsRoot = input.blueprint.drive.roots.find((folder) => folder.key === "client-accounts");
-  const projectsRoot = input.blueprint.drive.roots.find((folder) => folder.key === "projects");
+  const blueprint = assertProvisionableWorkspaceBlueprint(input.blueprint);
+  const accountsRoot = blueprint.drive.roots.find((folder) => folder.key === "client-accounts");
+  const projectsRoot = blueprint.drive.roots.find((folder) => folder.key === "projects");
   // Same condition, same typed answer as buildProjectDriveBlueprintPlan in google-drive.ts:
   // the blueprint editor lets an owner remove either root in one click and the sanitizer
   // accepts it, so the preview has to report a 409 the caller can act on, not a bare throw
@@ -203,15 +205,15 @@ export function buildProjectFolderPlan(input: {
       409,
     );
   }
-  const names = resolveWorkspaceBlueprintFolderNames(input.blueprint, { ...input, year });
+  const names = resolveWorkspaceBlueprintFolderNames(blueprint, { ...input, year });
   const leafPaths = (folders: WorkspaceBlueprint["drive"]["projectFolders"]) => (
     Object.freeze(workspaceBlueprintLeafFolderPaths(folders).map((path) => path.join(" / ")))
   );
   return {
     clientFolder: `${accountsRoot.name}/${names.clientFolderName}`,
-    clientFolders: leafPaths(input.blueprint.drive.clientFolders),
+    clientFolders: leafPaths(blueprint.drive.clientFolders),
     projectFolder: `${projectsRoot.name}/${year}/${names.projectFolderName}`,
-    projectFolders: leafPaths(input.blueprint.drive.projectFolders),
-    gmailLabels: input.blueprint.gmail.labels.map((label) => label.name),
+    projectFolders: leafPaths(blueprint.drive.projectFolders),
+    gmailLabels: blueprint.gmail.labels.map((label) => label.name),
   };
 }

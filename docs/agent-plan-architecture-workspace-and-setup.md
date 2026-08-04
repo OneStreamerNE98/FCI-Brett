@@ -2138,7 +2138,7 @@ create/adopt branches mocked; simulation e2e.
 **Effort:** medium.
 
 ### SET-21 · Project/client provisioning consumes the blueprint (medium, after SET-15) — LAST in the dashboard-setup feature
-**Status:** In progress — `codex/set21-blueprint-provisioning`
+**Status:** In progress — `codex/set21-blueprint-provisioning-followup`
 **Why (corrected August 3, 2026 — the earlier "add a project subfolder still needs a
 code change" justification was false: `buildProjectDriveBlueprintPlan` at
 `app/lib/google-drive.ts:1508` already derives project subfolders from the blueprint):**
