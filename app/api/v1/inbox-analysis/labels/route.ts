@@ -37,15 +37,6 @@ function validationResponse(error: unknown) {
     : null;
 }
 
-function mutationAuth(request: NextRequest) {
-  const originError = requireSameOrigin(request);
-  if (originError) return noStoreResponse(originError);
-  const auth = requireOfficeUser(request, { admin: true });
-  if ("response" in auth) return noStoreResponse(auth.response);
-  const rateLimit = enforceDevelopmentRequestRateLimit("assistant-labels", auth.user.email);
-  return rateLimit ? noStoreResponse(rateLimit) : null;
-}
-
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return noStoreResponse(auth.response);
@@ -57,8 +48,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authError = mutationAuth(request);
-  if (authError) return authError;
+  const originError = requireSameOrigin(request);
+  if (originError) return noStoreResponse(originError);
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const rateLimit = enforceDevelopmentRequestRateLimit("inbox-analysis", auth.user.email);
+  if (rateLimit) return noStoreResponse(rateLimit);
   const parsed = await mutationBody(request);
   if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
   if (!exactKeys(parsed.body, ["description"])) {
@@ -86,8 +81,12 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const authError = mutationAuth(request);
-  if (authError) return authError;
+  const originError = requireSameOrigin(request);
+  if (originError) return noStoreResponse(originError);
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const rateLimit = enforceDevelopmentRequestRateLimit("inbox-analysis", auth.user.email);
+  if (rateLimit) return noStoreResponse(rateLimit);
   const parsed = await mutationBody(request);
   if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
   if (!exactKeys(parsed.body, ["slug", "description"])) {
@@ -109,8 +108,12 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const authError = mutationAuth(request);
-  if (authError) return authError;
+  const originError = requireSameOrigin(request);
+  if (originError) return noStoreResponse(originError);
+  const auth = requireOfficeUser(request, { admin: true });
+  if ("response" in auth) return noStoreResponse(auth.response);
+  const rateLimit = enforceDevelopmentRequestRateLimit("inbox-analysis", auth.user.email);
+  if (rateLimit) return noStoreResponse(rateLimit);
   const parsed = await mutationBody(request);
   if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
   if (!exactKeys(parsed.body, ["slug"])) {
