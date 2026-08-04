@@ -127,8 +127,8 @@ export function createD1GoogleOauthPersistence(database: D1GoogleOauthDatabase):
               WHERE shared_drive_id IS NOT NULL
                  OR client_directory_sheet_id IS NOT NULL
                  OR intake_mailbox IS NOT NULL
-                 OR CASE WHEN json_valid(settings_json) THEN json_extract(settings_json, '$.appointmentCalendarId') END IS NOT NULL
-                 OR CASE WHEN json_valid(settings_json) THEN json_extract(settings_json, '$.fieldCalendarId') END IS NOT NULL
+                 OR CASE WHEN json_valid(settings_json) THEN NULLIF(json_extract(settings_json, '$.appointmentCalendarId'), '') END IS NOT NULL
+                 OR CASE WHEN json_valid(settings_json) THEN NULLIF(json_extract(settings_json, '$.fieldCalendarId'), '') END IS NOT NULL
            )
         LIMIT 1`)
         .bind(

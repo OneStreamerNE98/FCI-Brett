@@ -377,6 +377,36 @@ test("excluded audit and OAuth rows do not arm the guard", async () => {
   }
 });
 
+test("the normalizer's persisted empty-string calendar defaults do not arm the guard", async () => {
+  // Every workspace-preferences save persists the full normalized settings object, and
+  // the normalizer emits appointmentCalendarId/fieldCalendarId as "" when unset. SQLite's
+  // json_extract returns TEXT '' (not NULL) for those, so without NULLIF the probe would
+  // count a timezone-only save as tenant data and refuse every different-subject connect.
+  const database = new TenantDatabase();
+  try {
+    insertConnection(database);
+    database.database.exec(`
+      INSERT INTO workspace_settings (
+        id, shared_drive_id, client_directory_sheet_id, intake_mailbox,
+        settings_json, updated_by, updated_at
+      ) VALUES (
+        'workspace', NULL, NULL, NULL,
+        '{"appointmentCalendarId":"","fieldCalendarId":"","nonTenantPreference":"preserve-me"}',
+        'previous-admin@example.test', 10
+      );
+    `);
+    const adapter = d1Oauth.createD1GoogleOauthPersistence(database);
+    assert.equal(await adapter.hasTenantScopedData(CONNECTION_KEY), false);
+
+    database.database.exec(
+      "UPDATE workspace_settings SET settings_json = json_set(settings_json, '$.appointmentCalendarId', 'real-appointments') WHERE id = 'workspace'",
+    );
+    assert.equal(await adapter.hasTenantScopedData(CONNECTION_KEY), true);
+  } finally {
+    database.close();
+  }
+});
+
 test("tenant reset requires admin, same-origin, disconnected state, and exact stored-email confirmation", async () => {
   const database = new TenantDatabase();
   configure(database);
