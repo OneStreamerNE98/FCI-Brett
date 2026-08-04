@@ -740,6 +740,12 @@ test("stage anchors open completed targets and survive hash navigation history",
 });
 
 test("Client Directory and Testing launch bounce links land on their exact setup stages", async ({ page }) => {
+  const expectStageAtSetupAnchor = async (number: WorkspaceStageNumber) => {
+    await expect.poll(async () => {
+      const top = await setupStage(page, number).evaluate((element) => element.getBoundingClientRect().top);
+      return top >= 85 && top <= 88;
+    }, { message: `Stage ${number} should settle at the setup anchor` }).toBe(true);
+  };
   const unavailableMirror = {
     ...unsyncedMirror(),
     configured: false,
@@ -761,9 +767,8 @@ test("Client Directory and Testing launch bounce links land on their exact setup
   await directoryLink.click();
   await expect(page).toHaveURL(/\/settings\?section=google-workspace#workspace-stage-3$/);
   await expect(stageToggle(page, 3)).toHaveAttribute("aria-expanded", "true");
-  const directoryTargetTop = await setupStage(page, 3).evaluate((element) => element.getBoundingClientRect().top);
-  expect(directoryTargetTop).toBeGreaterThanOrEqual(85);
-  expect(directoryTargetTop).toBeLessThanOrEqual(88);
+  await waitForStageShellToSettle(page);
+  await expectStageAtSetupAnchor(3);
 
   await page.goto("/settings?section=testing-launch");
   const testingLink = page.getByRole("link", { name: "Open Google Workspace setup", exact: true });
@@ -771,9 +776,8 @@ test("Client Directory and Testing launch bounce links land on their exact setup
   await testingLink.click();
   await expect(page).toHaveURL(/\/settings\?section=google-workspace#workspace-stage-4$/);
   await expect(stageToggle(page, 4)).toHaveAttribute("aria-expanded", "true");
-  const testingTargetTop = await setupStage(page, 4).evaluate((element) => element.getBoundingClientRect().top);
-  expect(testingTargetTop).toBeGreaterThanOrEqual(85);
-  expect(testingTargetTop).toBeLessThanOrEqual(88);
+  await waitForStageShellToSettle(page);
+  await expectStageAtSetupAnchor(4);
 });
 
 test("Stage 4 keeps normative copy, polished mirror labels, and operational upkeep routes", async ({ page }) => {

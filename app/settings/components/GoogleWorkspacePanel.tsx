@@ -507,7 +507,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     settled: false,
   });
   const readinessChecked = useRef(false);
-  const stageThreeSubsectionsInitialized = useRef(false);
+  const [stageThreeSubsectionsInitialized, setStageThreeSubsectionsInitialized] = useState(false);
   const workspaceResourcesLoadIdRef = useRef(0);
 
   const updateStageThreeCreationStatus = useCallback((next: StageThreeSubsectionStatus) => {
@@ -527,7 +527,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   }, []);
 
   const toggleStageThreeSubsection = useCallback((subsectionKey: StageThreeSubsectionKey) => {
-    stageThreeSubsectionsInitialized.current = true;
+    setStageThreeSubsectionsInitialized(true);
     setStageThreeSubsectionOpen((current) => ({
       ...current,
       [subsectionKey]: !current[subsectionKey],
@@ -537,23 +537,27 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   useEffect(() => {
     if (
       !isAdmin
-      || stageThreeSubsectionsInitialized.current
+      || stageThreeSubsectionsInitialized
       || !stageThreeCreationStatus.settled
       || !stageThreeBlueprintStatus.settled
     ) return;
 
-    stageThreeSubsectionsInitialized.current = true;
     const firstIncomplete = !stageThreeCreationStatus.complete
       ? "creation"
       : !stageThreeBlueprintStatus.complete
         ? "blueprint"
         : null;
-    setStageThreeSubsectionOpen({
-      creation: firstIncomplete === "creation",
-      blueprint: firstIncomplete === "blueprint",
+    const initializationFrame = window.requestAnimationFrame(() => {
+      setStageThreeSubsectionsInitialized(true);
+      setStageThreeSubsectionOpen({
+        creation: firstIncomplete === "creation",
+        blueprint: firstIncomplete === "blueprint",
+      });
     });
+    return () => window.cancelAnimationFrame(initializationFrame);
   }, [
     isAdmin,
+    stageThreeSubsectionsInitialized,
     stageThreeBlueprintStatus.complete,
     stageThreeBlueprintStatus.settled,
     stageThreeCreationStatus.complete,
@@ -1184,6 +1188,14 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     || workspaceResourcesState === "idle"
     || workspaceResourcesState === "loading"
     || sheetsWorking;
+  const stageThreeLayoutSettled = !statusSourcesLoading && (
+    !isAdmin
+    || (
+      stageThreeCreationStatus.settled
+      && stageThreeBlueprintStatus.settled
+      && stageThreeSubsectionsInitialized
+    )
+  );
   const allStatusSourcesAvailable = Boolean(workspace && connectionHealth && workspaceResources);
   const statusSourcesUnavailable = workspaceReadinessState === "error"
     || connectionHealthState === "error"
@@ -1532,7 +1544,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
         tone={neutralStageStatus ? "neutral" : stageThreeComplete ? "done" : stageTwoComplete ? "current" : "waiting"}
         complete={stageThreeComplete}
         firstIncomplete={currentStageNumber === 3}
-        layoutSettled={!statusSourcesLoading}
+        layoutSettled={stageThreeLayoutSettled}
         statusHint="This stage is complete when every required Drive, folder, spreadsheet, and template resource is created or adopted."
       >
         {isAdmin ? <div className={panelStyles.stageThreeFrame}>

@@ -85,7 +85,9 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /scheduleAnchorScroll[\s\S]+scrollIntoView\(\{ block: "start" \}\)/);
   assert.match(panel, /if \(layoutSettled\) \{[\s\S]+if \(hashTargeted\.current\) scheduleAnchorScroll\(\)[\s\S]+return;[\s\S]+new ResizeObserver/);
   assert.match(panel, /observer\.observe\(stageList\)[\s\S]+observer\.disconnect\(\)/);
-  assert.equal(panel.match(/layoutSettled=\{!statusSourcesLoading\}/g)?.length, 4);
+  assert.equal(panel.match(/layoutSettled=\{!statusSourcesLoading\}/g)?.length, 3);
+  assert.equal(panel.match(/layoutSettled=\{stageThreeLayoutSettled\}/g)?.length, 1);
+  assert.match(panel, /const stageThreeLayoutSettled = !statusSourcesLoading && \([\s\S]+!isAdmin[\s\S]+stageThreeCreationStatus\.settled[\s\S]+stageThreeBlueprintStatus\.settled[\s\S]+stageThreeSubsectionsInitialized[\s\S]+\);/);
   assert.match(panel, /if \(hashTargeted\.current\) scheduleAnchorScroll\(\)/);
   assert.match(panel, /ref=\{sectionRef\}/);
   assert.match(panel, /id=\{anchorId\}/);
@@ -175,7 +177,7 @@ test("Stage 3 subsections share the stage disclosure contract and initialize onc
   assert.match(panel, /creation: false,[\s\S]+blueprint: false/);
   assert.match(
     panel,
-    /const toggleStageThreeSubsection = useCallback\([\s\S]{0,300}stageThreeSubsectionsInitialized\.current = true;[\s\S]{0,300}setStageThreeSubsectionOpen/,
+    /const toggleStageThreeSubsection = useCallback\([\s\S]{0,300}setStageThreeSubsectionsInitialized\(true\);[\s\S]{0,300}setStageThreeSubsectionOpen/,
   );
   assert.match(
     panel,
