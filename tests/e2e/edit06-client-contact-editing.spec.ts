@@ -164,6 +164,77 @@ test("client create and both editors round-trip every reachable field at desktop
   await expectAccessible(page, ".contact-edit-modal");
 });
 
+test("contact editor keeps the active input mounted and focused while initial focus settles", async ({ page }) => {
+  const suffix = String(Date.now());
+  const created = await createClient(page.request, `focus race ${suffix}`);
+  const clientName = `FCI TEST — DO NOT USE — EDIT-06 focus race ${suffix}`;
+
+  await page.goto("/clients");
+  await page.getByRole("button", { name: new RegExp(clientName) }).click();
+  const drawer = page.getByRole("dialog", { name: `${clientName} client account` });
+
+  // Deterministic ordering, no wall clock: capture the overlay's mount-effect rAF
+  // callback instead of delaying it, so the test — not machine load — decides when the
+  // initial-focus attempt runs. A timing-based version went vacuously green whenever a
+  // loaded machine let the delayed callback fire before contactPhone.focus() landed.
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      __edit09PendingFrames?: FrameRequestCallback[];
+      __edit09RestoreRequestAnimationFrame?: () => void;
+    };
+    const requestAnimationFrameBeforeTest = window.requestAnimationFrame.bind(window);
+    testWindow.__edit09PendingFrames = [];
+    testWindow.__edit09RestoreRequestAnimationFrame = () => {
+      window.requestAnimationFrame = requestAnimationFrameBeforeTest;
+      delete testWindow.__edit09RestoreRequestAnimationFrame;
+    };
+    window.requestAnimationFrame = (callback) => {
+      testWindow.__edit09PendingFrames?.push(callback);
+      return 0;
+    };
+  });
+
+  await drawer.getByRole("button", { name: "Edit primary contact" }).click();
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & {
+      __edit09RestoreRequestAnimationFrame?: () => void;
+    };
+    testWindow.__edit09RestoreRequestAnimationFrame?.();
+  });
+
+  const editor = page.getByRole("dialog", { name: `Edit primary contact for ${created.clientCode}` });
+  const contactName = editor.getByLabel("Primary contact");
+  const contactPhone = editor.getByLabel(/Contact phone/);
+  await contactPhone.focus();
+  const focusedPhoneNode = await contactPhone.elementHandle();
+  expect(focusedPhoneNode).not.toBeNull();
+  await focusedPhoneNode?.evaluate((node) => { node.setAttribute("data-edit09-node", "stable"); });
+
+  // Fail-loud precondition: the overlay must actually have registered its deferred
+  // initial-focus callback while patched — otherwise this test proves nothing.
+  const pendingFrameCount = await page.evaluate(() => {
+    const testWindow = window as typeof window & { __edit09PendingFrames?: FrameRequestCallback[] };
+    return testWindow.__edit09PendingFrames?.length ?? 0;
+  });
+  expect(pendingFrameCount).toBeGreaterThan(0);
+
+  // NOW fire the captured initial-focus callback(s), with focus already on the phone
+  // input — the exact race, reproduced on demand.
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & { __edit09PendingFrames?: FrameRequestCallback[] };
+    const pending = testWindow.__edit09PendingFrames ?? [];
+    testWindow.__edit09PendingFrames = [];
+    for (const callback of pending) callback(performance.now());
+  });
+
+  await expect(contactPhone).toBeFocused();
+  expect(await focusedPhoneNode?.evaluate((node) => node.isConnected)).toBe(true);
+  await expect(contactPhone).toHaveAttribute("data-edit09-node", "stable");
+  await contactPhone.fill("555-0196");
+  await expect(contactName).toHaveValue("Original Contact");
+  await expect(contactPhone).toHaveValue("555-0196");
+});
+
 test("stale client and contact drafts show scoped saved values and require explicit re-apply", async ({ page }) => {
   const suffix = String(Date.now());
   const created = await createClient(page.request, `conflict ${suffix}`);

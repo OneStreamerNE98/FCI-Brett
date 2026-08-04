@@ -128,7 +128,11 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   code) are additionally read line-by-line by the orchestrator itself.
 - **Codex — implementer:** builds the packets exactly as written in the plan ledger
   (why/do/accept), one packet per draft PR, and runs the complete post-merge ledger
-  flip after each of its merges.
+  flip after each of its merges. If a build disproves a packet premise, the
+  implementer does NOT rewrite the packet's Why/Do/Accept: the original text stays,
+  and the correction lands as a dated amendment banner (orchestrator-authored, or
+  proposed in the PR body for the orchestrator to place). A PR never edits the
+  criteria it is graded against (rule recorded August 4, 2026, after EDIT-09).
 - **Owner (Jason) — merge authority and gates:** merges PRs (may delegate a named PR),
   and holds every owner gate: new scopes, API keys, billing, live resources,
   deployment, second user, real data.

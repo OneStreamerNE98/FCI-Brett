@@ -136,6 +136,9 @@ export function AccessibleOverlay({
     const restoreOutsideInteraction = inertOutside(backdrop);
 
     const focusFrame = window.requestAnimationFrame(() => {
+      if (overlayStack[overlayStack.length - 1] !== token) return;
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      if (activeElement && panel.contains(activeElement)) return;
       const focusable = focusableElements(panel);
       const preferredTarget = panel.querySelector<HTMLElement>("[data-overlay-initial-focus]");
       const initialTarget = preferredTarget && focusable.includes(preferredTarget)

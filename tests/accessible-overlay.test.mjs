@@ -40,6 +40,7 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /event\.key === "Escape"/);
   assert.match(overlay, /event\.key !== "Tab"/);
   assert.match(overlay, /overlayStack\[overlayStack\.length - 1\] !== token/);
+  assert.match(overlay, /const activeElement = document\.activeElement instanceof HTMLElement[\s\S]*panel\.contains\(activeElement\)\) return;/);
   assert.match(overlay, /document\.body\.style\.overflow = "hidden"/);
   assert.match(overlay, /inertOutsideState = new Map/);
   assert.match(overlay, /const restoreOutsideInteraction = inertOutside\(backdrop\)/);

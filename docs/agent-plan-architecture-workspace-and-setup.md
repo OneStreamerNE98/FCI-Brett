@@ -1070,6 +1070,20 @@ outcomes.
 **Effort:** small. **Cost:** $0.
 
 ### EDIT-09 · The contact editor re-renders mid-edit and lands a value in the wrong field (small-medium)
+**Status:** In progress — `codex/edit09-contact-editor-race`
+
+**CORRECTED August 4, 2026 (orchestrator, from the build trace + review) — the remount
+premise below is disproven; the packet text is preserved as written.** The trace showed the
+phone input's DOM node stayed connected throughout: the cause is not a re-render or remount
+but `AccessibleOverlay`'s delayed initial-focus callback
+(`app/components/AccessibleOverlay.tsx:138`, a mount-effect `requestAnimationFrame`)
+replacing focus that already sits inside the panel — read the Do's re-render language
+accordingly; the anti-pattern instruction stands unchanged and was honored (the fix is
+source-side, the pre-existing spec assertions are untouched). One clause below also
+overstates the corrected mechanism: with an rAF-scheduled focus that normally lands before
+first paint, the residual window for a human is roughly one frame — the reliable victims
+are automated input and loaded machines, exactly the CI class that exposed it; the
+cross-field corruption class is real either way.
 **Why:** CI on PR #280 (August 3, 2026) recorded a retry-only pass of
 `tests/e2e/edit06-client-contact-editing.spec.ts`. The stored row showed
 `primary_contact_name: "Updated Contact555-0196"` and
@@ -4749,8 +4763,13 @@ DES-14, so it follows the extraction. If EDIT-09's dialog host proves to live in
   fetches its own data and sources `isAdmin` itself. AI-12 instead takes the inbox-file
   cluster (`app/api/v1/inbox-analysis/route.ts` + `app/inbox/components/InboxView.tsx`);
   claimants serialize on those files, not on this slot.
-- **GI-04** — **In review — PR #291; the branch still holds the slot.** Unavoidable. The lead, client and project modals and their record mappers are
-  inline in that file.
+- **EDIT-09** — takes NO `FloorOpsApp.tsx` slot (build evidence, August 4, 2026): the
+  defect lived in the shared `AccessibleOverlay` primitive and the fix changes zero
+  `FloorOpsApp.tsx` lines. An earlier claim bullet asserted the slot was "Unavoidable"
+  before the diagnosis existed; it is retired — a slot claim follows the diff, never the
+  other way around.
+- **GI-04** — merged in PR #291 and released the slot. Its lead, client and project modals
+  and record mappers are inline in that file.
 - **GI-05** — the project drawer and its Planned-capabilities list
   (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
 - **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
