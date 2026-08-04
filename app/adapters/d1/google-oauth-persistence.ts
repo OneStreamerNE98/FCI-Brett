@@ -29,6 +29,7 @@ type OauthAttemptRow = Readonly<{
 
 type ConnectionRow = Readonly<{
   id: string;
+  google_subject: string;
   google_email: string;
   refresh_token_ciphertext: string;
   key_version: string;
@@ -53,6 +54,7 @@ function connection(row: ConnectionRow | null): StoredGoogleConnection | null {
   if (!row) return null;
   return {
     id: row.id,
+    googleSubject: row.google_subject,
     googleEmail: row.google_email,
     refreshTokenCiphertext: row.refresh_token_ciphertext,
     keyVersion: row.key_version,
@@ -95,10 +97,53 @@ export function createD1GoogleOauthPersistence(database: D1GoogleOauthDatabase):
     },
 
     async findConnection(connectionKey) {
-      const row = await database.prepare("SELECT id, google_email, refresh_token_ciphertext, key_version, scopes_json, status FROM google_connections WHERE connection_key = ?")
+      const row = await database.prepare("SELECT id, google_subject, google_email, refresh_token_ciphertext, key_version, scopes_json, status FROM google_connections WHERE connection_key = ?")
         .bind(connectionKey)
         .first<ConnectionRow>();
       return connection(row);
+    },
+
+    async hasTenantScopedData(connectionKey) {
+      const row = await database.prepare(`SELECT 1 AS tenant_data_exists
+        WHERE EXISTS (SELECT 1 FROM google_form_lead_reviews WHERE connection_key = ?)
+           OR EXISTS (SELECT 1 FROM google_form_lead_intake_watermarks WHERE connection_key = ?)
+           OR EXISTS (SELECT 1 FROM mail_items WHERE connection_key = ?)
+           OR EXISTS (
+             SELECT 1
+               FROM gmail_file_archives AS archives
+               LEFT JOIN gmail_file_archive_artifacts AS artifacts ON artifacts.archive_id = archives.id
+              WHERE archives.connection_key = ?
+           )
+           OR EXISTS (SELECT 1 FROM drive_folder_mappings WHERE connection_key = ?)
+           OR EXISTS (SELECT 1 FROM google_drive_operations WHERE connection_key = ?)
+           OR EXISTS (SELECT 1 FROM google_sheet_sync_state WHERE connection_key = ?)
+           OR EXISTS (SELECT 1 FROM workspace_resources WHERE connection_key = ?)
+           OR EXISTS (SELECT 1 FROM workspace_blueprints WHERE connection_key = ?)
+           OR EXISTS (SELECT 1 FROM clients WHERE drive_folder_id IS NOT NULL OR drive_url IS NOT NULL)
+           OR EXISTS (SELECT 1 FROM projects WHERE drive_folder_id IS NOT NULL OR drive_url IS NOT NULL)
+           OR EXISTS (
+             SELECT 1
+               FROM workspace_settings
+              WHERE shared_drive_id IS NOT NULL
+                 OR client_directory_sheet_id IS NOT NULL
+                 OR intake_mailbox IS NOT NULL
+                 OR CASE WHEN json_valid(settings_json) THEN NULLIF(json_extract(settings_json, '$.appointmentCalendarId'), '') END IS NOT NULL
+                 OR CASE WHEN json_valid(settings_json) THEN NULLIF(json_extract(settings_json, '$.fieldCalendarId'), '') END IS NOT NULL
+           )
+        LIMIT 1`)
+        .bind(
+          connectionKey,
+          connectionKey,
+          connectionKey,
+          connectionKey,
+          connectionKey,
+          connectionKey,
+          connectionKey,
+          connectionKey,
+          connectionKey,
+        )
+        .first<{ tenant_data_exists: number }>();
+      return row?.tenant_data_exists === 1;
     },
 
     async revokeConnection(input) {

@@ -434,6 +434,7 @@ Press **Connect Google Workspace**, sign in as the **single approved company acc
 If you are in simulation, this stage instead offers **Reset simulation data**, which restores the safe sample Gmail, Calendar, Drive, and Sheets data.
 
 Two buttons you will meet here later:
+
 - **Reconnect Google Workspace** — appears if Google ever needs you to re-approve permissions.
 - **Disconnect Workspace** — severs this app's access immediately and asks Google to revoke
   the grant. Two things to know. The connection record is **kept, marked revoked**, so the
@@ -442,6 +443,10 @@ Two buttons you will meet here later:
   reached to confirm the revocation, you get a warning rather than a success message: the app
   can no longer revoke it for you, so finish the job by removing **FCI Operations** under the
   connected Google account's security settings.
+
+After a connection is disconnected, administrators can also choose **Start fresh on a new tenant**. Use this only for an intentional company Workspace move. The app requires you to type the stored connected account exactly before it proceeds; the configured environment account is not accepted as a substitute. The reset deletes the revoked connection tombstone and all saved Gmail, Drive, Calendar, Sheets, resource, blueprint, and sync identifiers for that tenant. Client and project business rows survive, but both their saved Drive folder IDs and Drive URLs are cleared. Gmail-derived tasks survive with their old message references cleared, and non-tenant Workspace settings remain.
+
+This reset is destructive. In particular, it discards filed-email evidence: those rows point to Drive files in the old tenant, and the app will no longer be able to read those files after the move. Keeping the rows would preserve the appearance of an audit trail without usable evidence. The app records one administrator audit event naming the discarded stored account, but it cannot restore the removed evidence or identifiers. Connect and provision the new tenant only after the reset completes.
 
 Administrators also get a small **Connection health** expander showing the connected account and, per service, whether it is *Enabled* in the app and *Granted* by Google. Note the honest caveat the app itself prints: this reflects the saved consent, not a live health check.
 

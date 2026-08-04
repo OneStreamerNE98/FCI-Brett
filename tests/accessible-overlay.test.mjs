@@ -52,7 +52,7 @@ test("provides one nested-overlay-aware accessible interaction foundation", asyn
   assert.match(overlay, /event\.target !== event\.currentTarget/);
   assert.match(overlay, /!closeOnBackdropRef\.current \|\| busyRef\.current/);
 
-  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 17);
+  assert.equal(overlayConsumers.match(/<AccessibleOverlay\b/g)?.length, 18);
   assert.doesNotMatch(overlayConsumers, /<div className="modal-backdrop"/);
   assert.doesNotMatch(overlayConsumers, /<div className="drawer-backdrop"/);
   assert.match(overlayConsumers, /variant="drawer"/);
