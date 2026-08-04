@@ -15,19 +15,26 @@ import { getGoogleRuntimeConfig } from "../../../../lib/google-oauth-sites";
 
 const MAX_WORKSPACE_SETTINGS_BODY_BYTES = 8_000;
 
-async function readSettings(repository: WorkspaceSettingsRepository) {
+async function readSettings(repository: WorkspaceSettingsRepository, isAdmin: boolean) {
   const record = await repository.findById(WORKSPACE_SETTINGS_ID);
   const config = getGoogleRuntimeConfig();
+  // The option list is the hosted GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS allowlist — every
+  // company address permitted to connect Google. This route is only `requireOfficeUser`, and
+  // the sole consumer of the list is the mailbox selector in GoogleWorkspacePanel, which
+  // renders inside that panel's `{isAdmin && environmentNotes}` region; WorkspaceDefaultsPanel
+  // reads `settings` alone. No non-admin consumer exists, so non-admins get no allowlist at
+  // all. The saved `settings.intakeMailbox` stays readable exactly as before.
+  const options = isAdmin ? { intakeMailboxOptions: config.expectedGoogleEmails } : {};
   if (!record) {
     return {
       settings: DEFAULT_WORKSPACE_PREFERENCES,
-      intakeMailboxOptions: config.expectedGoogleEmails,
+      ...options,
       updatedAt: null,
     };
   }
   return {
     settings: normalizeWorkspacePreferences(record.settings),
-    intakeMailboxOptions: config.expectedGoogleEmails,
+    ...options,
     updatedAt: record.updatedAt,
   };
 }
@@ -60,7 +67,7 @@ export async function GET(request: NextRequest) {
   const repository = createD1WorkspaceSettingsRepository(
     env.DB as unknown as D1Database,
   );
-  return NextResponse.json(await readSettings(repository), { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(await readSettings(repository, auth.user.isAdmin), { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -104,5 +111,5 @@ export async function PATCH(request: NextRequest) {
     updatedBy: auth.user.email,
     updatedAt: now,
   });
-  return NextResponse.json(await readSettings(repository), { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(await readSettings(repository, auth.user.isAdmin), { headers: { "Cache-Control": "no-store" } });
 }

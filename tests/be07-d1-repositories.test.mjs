@@ -835,7 +835,9 @@ test("Workspace Settings GET/PATCH keep their public contract while delegating p
       appointmentCalendarId: "client-calendar",
       fieldCalendarId: "field-calendar",
     },
-    intakeMailboxOptions: [],
+    // No `intakeMailboxOptions`: this GET is an office user, and the hosted
+    // GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS allowlist is administrator-only. The saved
+    // `settings.intakeMailbox` above stays readable, so the deep-equal still pins it.
     updatedAt: 40,
   });
 

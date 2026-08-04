@@ -40,9 +40,18 @@ Keep the current ChatGPT development identity separately allowlisted through `FC
 
 When Gmail is enabled, keep every permitted connection identity in the environment-owned
 `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` list, then select one of those addresses in Settings
-as the intake mailbox. Connect OAuth as that exact address. Gmail operates as the connected
-account (`users/me`); the application does not use domain-wide delegation to read another
-mailbox, and readiness fails closed when the selected and connected addresses differ.
+as the intake mailbox. On a first connection, connect OAuth as that exact address. Gmail
+operates as the connected account (`users/me`); the application does not use domain-wide
+delegation to read another mailbox, and readiness fails closed when the selected and
+connected addresses differ.
+
+Repairing a later mismatch is not symmetric. Re-selecting the account that is **already
+connected** is the non-destructive fix. Connecting as a different Google account is refused
+once the tenant holds saved Workspace data — the saved intake mailbox alone arms that check —
+so changing the effective mailbox to a different account on an established tenant requires the
+destructive **Start fresh on a new tenant** reset, which discards filed-email evidence and the
+tenant's saved resource identifiers. Do not treat "reconnect as the new address" as a repair
+step.
 
 ## Secret hosted values
 

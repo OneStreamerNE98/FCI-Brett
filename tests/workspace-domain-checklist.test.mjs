@@ -144,7 +144,7 @@ test("compound account mismatch and reauthorization evidence fail closed", () =>
   const mismatch = statuses(evidence({
     connectReady: true,
     missingDetails: [{
-      label: "Google Workspace intake mailbox dispatch@example.test matching connected account operations@example.test",
+      label: "Google Workspace intake mailbox dispatch@example.test matching connected account op•••@example.test",
       envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
       secret: false,
     }],

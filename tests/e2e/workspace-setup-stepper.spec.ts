@@ -83,7 +83,7 @@ type WorkspaceResourcesPayload = {
   };
 };
 
-const missingInvariant = "Google Workspace intake mailbox dispatch@cherryhillfci.com matching connected account operations@cherryhillfci.com";
+const missingInvariant = "Google Workspace intake mailbox dispatch@cherryhillfci.com matching connected account op•••@cherryhillfci.com";
 
 function readiness(overrides: Record<string, unknown> = {}): ReadinessPayload {
   return {
@@ -2656,6 +2656,42 @@ test("first-load registry failure with no prior data hides Shared Drive adoption
   await expect(sharedDrive.getByRole("button", { name: "Find and adopt", exact: true })).toHaveCount(0);
   await expect(sharedDrive.getByRole("button", { name: "Verify and adopt", exact: true })).toHaveCount(0);
   await expect(sharedDrive.getByText("Adoption controls become available when the resource registry returns the Shared Drive row.", { exact: true })).toBeVisible();
+});
+
+// Review defect: the resources GET and the settings GET were awaited in one Promise.all inside
+// a single try/catch, so an unrelated settings failure rejected the pair and blanked the whole
+// Stage 3 surface behind a resources error message. They are independent surfaces: the resource
+// inventory owns the stage, the settings read owns only the mailbox selector.
+test("a settings-read failure degrades only the intake mailbox selector, not the Stage 3 surface", async ({ page }) => {
+  await mockReadyWorkspaceForStageThree(page);
+  await page.route("**/api/v1/settings/workspace", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "FCI TEST settings unavailable" }),
+    });
+  });
+
+  await page.goto("/settings?section=google-workspace#workspace-stage-3");
+  await setStageExpanded(page, 3, true);
+  await setStageThreeSubsectionExpanded(page, "creation", true);
+
+  // Stage 3 renders from its own endpoint, which succeeded.
+  const sharedDrive = creationRow(page, "shared-drive");
+  await expect(sharedDrive.getByRole("heading", { level: 4, name: "Shared Drive", exact: true })).toBeVisible();
+  await expect(sharedDrive.getByText("Adoption controls become available when the resource registry returns the Shared Drive row.", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Workspace resource status could not be loaded. Retry before using this setup summary.", { exact: true })).toHaveCount(0);
+
+  // Only the mailbox selector degrades, with its own error, its own retry, and saving blocked
+  // so the unloaded empty selection cannot overwrite the stored mailbox.
+  await setStageExpanded(page, 1, true);
+  const runtimeConfiguration = setupStage(page, 1).locator(
+    'section[aria-labelledby="workspace-runtime-configuration-heading"]',
+  );
+  await expect(runtimeConfiguration.getByRole("alert")).toContainText("The saved intake mailbox could not be loaded.");
+  await expect(runtimeConfiguration.getByRole("button", { name: "Retry mailbox", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Gmail intake mailbox")).toBeDisabled();
+  await expect(runtimeConfiguration.getByRole("button", { name: "Save mailbox", exact: true })).toBeDisabled();
 });
 
 test("stale Shared Drive registry data keeps adopt locked while direct verification remains available", async ({ page }) => {

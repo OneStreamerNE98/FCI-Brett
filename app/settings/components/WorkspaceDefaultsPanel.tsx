@@ -8,6 +8,7 @@ import { WorkspaceInfoHint } from "../../components/WorkspaceInfoHint";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { ChatNotificationSettingsCard } from "./ChatNotificationSettingsCard";
 import { SettingsDataNotice } from "./SettingsDataNotice";
+import { buildWorkspaceDefaultsPatchBody } from "./workspace-defaults-request";
 import styles from "./WorkspaceDefaultsPanel.module.css";
 
 type NotificationKind = "success" | "info" | "warning" | "error";
@@ -156,7 +157,9 @@ export function WorkspaceDefaultsPanel({ mode, notify, onGoogleSetup, isAdmin }:
     if (!isAdmin || loadState !== "ready") return;
     setSaving(true);
     try {
-      const response = await fetch("/api/v1/settings/workspace", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+      // Never send intakeMailbox: GoogleWorkspacePanel owns that selection, and the route
+      // reads presence of the key as intent to write it. See workspace-defaults-request.ts.
+      const response = await fetch("/api/v1/settings/workspace", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buildWorkspaceDefaultsPatchBody(settings)) });
       const data = await response.json().catch(() => ({})) as { settings?: WorkspacePreferenceValues; error?: string };
       if (!response.ok || !data.settings) throw new Error(data.error ?? "Settings could not be saved.");
       invalidateCachedGet("/api/v1/settings/workspace");

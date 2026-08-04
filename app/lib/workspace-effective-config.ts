@@ -1,3 +1,4 @@
+import { maskGoogleAccountAddress } from "./google-account-mask.ts";
 import type { GoogleRuntimeConfig } from "./google-oauth";
 
 export const WORKSPACE_RESOURCE_TYPES = [
@@ -284,7 +285,12 @@ export function applyEffectiveWorkspaceConfig(
         : normalizedConnectedGoogleEmail
           && normalizedConnectedGoogleEmail !== intakeMailbox.value
           ? {
-              label: `Google Workspace intake mailbox ${intakeMailbox.value} matching connected account ${normalizedConnectedGoogleEmail}`,
+              // `missing`/`missingDetails` reach every office user through
+              // GET /api/v1/google-workspace, which masks the same address one field away in
+              // `connection.account`. So the connected address is masked here too. The saved
+              // intake mailbox stays readable: the office UI already shows that selector and
+              // its option list, so masking it here would hide nothing.
+              label: `Google Workspace intake mailbox ${intakeMailbox.value} matching connected account ${maskGoogleAccountAddress(normalizedConnectedGoogleEmail) ?? "the connected account"}`,
               envVar: INTAKE_MAILBOX_ENV_VAR,
               secret: false,
             }

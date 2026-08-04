@@ -61,6 +61,7 @@ type WorkspaceReadiness = {
   requiresReauthorization?: boolean;
   provisioningEnabled?: boolean;
   provisioningSource?: EffectiveConfigurationSource;
+  intakeMailboxSource?: EffectiveConfigurationSource;
   gmailEnabled?: boolean;
   calendarEnabled?: boolean;
   sheetsEnabled?: boolean;
@@ -479,6 +480,7 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
   const [leadFormResponseSheetId, setLeadFormResponseSheetId] = useState("");
   const [intakeMailbox, setIntakeMailbox] = useState("");
   const [intakeMailboxOptions, setIntakeMailboxOptions] = useState<string[]>([]);
+  const [intakeMailboxError, setIntakeMailboxError] = useState<string | null>(null);
   const [gmailLabelsReady, setGmailLabelsReady] = useState(false);
   const [gmailTestEmailPassed, setGmailTestEmailPassed] = useState(false);
   const [calendarChecked, setCalendarChecked] = useState(false);
@@ -677,6 +679,21 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     }
   }, [isAdmin]);
 
+  /** Fills the mailbox selector. Owns its own error state: this read must never be able to
+   *  settle the Stage 3 surface, which belongs to the resources endpoint alone. */
+  const loadIntakeMailboxSettings = useCallback(async (force = false, isCurrent: () => boolean = () => true) => {
+    try {
+      const settingsData = await cachedGetJson<WorkspaceSettingsPayload>("/api/v1/settings/workspace", { force });
+      if (!isCurrent()) return;
+      setIntakeMailbox(settingsData.settings?.intakeMailbox ?? "");
+      setIntakeMailboxOptions(settingsData.intakeMailboxOptions ?? []);
+      setIntakeMailboxError(null);
+    } catch {
+      if (!isCurrent()) return;
+      setIntakeMailboxError("The saved intake mailbox could not be loaded. The rest of this stage is unaffected.");
+    }
+  }, []);
+
   const loadWorkspaceResources = useCallback(async (force = false) => {
     if (!isAdmin) return;
     // Gate on the latest invocation: with a ?google=... OAuth callback the admin
@@ -688,22 +705,24 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
     const loadId = ++workspaceResourcesLoadIdRef.current;
     setWorkspaceResourcesState("loading");
     setWorkspaceResourcesError(null);
-    try {
-      const [data, settingsData] = await Promise.all([
-        cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force }),
-        cachedGetJson<WorkspaceSettingsPayload>("/api/v1/settings/workspace", { force }),
-      ]);
-      if (loadId !== workspaceResourcesLoadIdRef.current) return;
-      setWorkspaceResources(data);
-      setIntakeMailbox(settingsData.settings?.intakeMailbox ?? "");
-      setIntakeMailboxOptions(settingsData.intakeMailboxOptions ?? []);
+    const isCurrent = () => loadId === workspaceResourcesLoadIdRef.current;
+    // Two independent surfaces, settled independently. The resource inventory drives the whole
+    // Stage 3 panel — Shared Drive adoption, the blueprint editor, the creation flows — while
+    // the settings read only fills the mailbox selector. Awaiting both in one try/catch let an
+    // unrelated settings 500 blank the entire stage behind a resources error message.
+    const [resources] = await Promise.allSettled([
+      cachedGetJson<WorkspaceSetupResourcesPayload>("/api/v1/integrations/google/setup/resources", { force }),
+      loadIntakeMailboxSettings(force, isCurrent),
+    ]);
+    if (!isCurrent()) return;
+    if (resources.status === "fulfilled") {
+      setWorkspaceResources(resources.value);
       setWorkspaceResourcesState("ready");
-    } catch {
-      if (loadId !== workspaceResourcesLoadIdRef.current) return;
-      setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
-      setWorkspaceResourcesState("error");
+      return;
     }
-  }, [isAdmin]);
+    setWorkspaceResourcesError("Workspace resource status could not be loaded. Retry before using this setup summary.");
+    setWorkspaceResourcesState("error");
+  }, [isAdmin, loadIntakeMailboxSettings]);
 
   const refreshWorkspaceSetup = useCallback(async (force = false) => {
     await Promise.all([
@@ -1447,14 +1466,18 @@ export function GoogleWorkspacePanel({ notify, projects, isAdmin }: { notify: No
                 <AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={simulation || runtimeConfigurationWorking !== null} onClick={() => void saveDriveProvisioning(workspace?.provisioningEnabled !== true)}>{simulation ? "Always enabled in simulation" : runtimeConfigurationWorking === "drive" ? "Saving…" : workspace?.provisioningEnabled ? "Disable provisioning" : "Enable provisioning"}</AdministratorActionButton>
               </article>
               <article>
-                <div><label htmlFor="workspace-intake-mailbox"><strong>Gmail intake mailbox</strong></label><span>Choose one account from the hosted authorized-account allowlist. The app reads Gmail as the connected account.</span></div>
+                <div><label htmlFor="workspace-intake-mailbox"><strong>Gmail intake mailbox</strong></label><span>Source: {effectiveConfigurationSourceLabel(workspace?.intakeMailboxSource)}</span><span>Choose one account from the hosted authorized-account allowlist. The app reads Gmail as the connected account.</span></div>
+                {intakeMailboxError && <div className="workspace-connection-health-error" role="alert"><span>{intakeMailboxError}</span><button className="soft-button" type="button" onClick={() => void loadIntakeMailboxSettings(true)}>Retry mailbox</button></div>}
                 <div className="workspace-copy-value">
-                  <select id="workspace-intake-mailbox" value={intakeMailbox} onChange={(event) => setIntakeMailbox(event.target.value)} disabled={!isAdmin || simulation || runtimeConfigurationWorking !== null}>
+                  <select id="workspace-intake-mailbox" value={intakeMailbox} onChange={(event) => setIntakeMailbox(event.target.value)} disabled={!isAdmin || simulation || runtimeConfigurationWorking !== null || intakeMailboxError !== null}>
                     <option value="">Use hosted intake mailbox</option>
                     {intakeMailbox && !intakeMailboxOptions.includes(intakeMailbox) && <option value={intakeMailbox} disabled>{intakeMailbox} (no longer authorized)</option>}
                     {intakeMailboxOptions.map((mailbox) => <option value={mailbox} key={mailbox}>{mailbox}</option>)}
                   </select>
-                  <AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={simulation || runtimeConfigurationWorking !== null} onClick={() => void saveIntakeMailbox()}>{simulation ? "Hosted selection unavailable in simulation" : runtimeConfigurationWorking === "intake-mailbox" ? "Saving…" : "Save mailbox"}</AdministratorActionButton>
+                  {/* Saving is blocked while the read failed: the selector never loaded, so its
+                      value is the empty "use hosted mailbox" option, and saving that would
+                      clear a stored selection the operator cannot even see. */}
+                  <AdministratorActionButton type="button" className="soft-button" isAdmin={isAdmin} disabled={simulation || runtimeConfigurationWorking !== null || intakeMailboxError !== null} onClick={() => void saveIntakeMailbox()}>{simulation ? "Hosted selection unavailable in simulation" : runtimeConfigurationWorking === "intake-mailbox" ? "Saving…" : "Save mailbox"}</AdministratorActionButton>
                 </div>
               </article>
               <article>

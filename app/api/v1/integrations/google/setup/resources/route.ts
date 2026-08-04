@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getEffectiveGoogleRuntimeSetup } from "../../../../../../lib/google-oauth-sites";
 import { flattenWorkspaceRootFolders, type WorkspaceBlueprint } from "../../../../../../lib/workspace-blueprint";
+import { maskGoogleAccountAddress } from "../../../../../../lib/google-account-mask.ts";
 import { requireOfficeUser } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
 
@@ -112,13 +113,6 @@ function resourceState(
   return source === "env" ? "Found" as const : "Not configured" as const;
 }
 
-function maskAccount(email: string) {
-  const normalized = email.trim().toLowerCase();
-  const [local, domain] = normalized.split("@");
-  if (!local || !domain) return null;
-  return `${local.slice(0, 2)}•••@${domain}`;
-}
-
 export async function GET(request: NextRequest) {
   // Like the existing connection-status GET, this read-only route relies on
   // authenticated Administrator access and does not require a mutation-only
@@ -173,7 +167,7 @@ export async function GET(request: NextRequest) {
       connectionAccount: config.simulation
         ? "Local Workspace simulation"
         : connection && connection.status !== "revoked"
-          ? maskAccount(connection.google_email)
+          ? maskGoogleAccountAddress(connection.google_email)
           : null,
       intakeMailboxMatches,
       allowedDomains: config.allowedDomains,

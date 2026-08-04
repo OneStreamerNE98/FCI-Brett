@@ -1,3 +1,4 @@
+import { maskGoogleAccountAddress } from "./google-account-mask.ts";
 import { GoogleIntegrationError } from "./google-integration-error";
 import {
   fetchGoogleProvider,
@@ -769,7 +770,7 @@ export async function getGoogleConnectionStatus(
   return {
     connected: status === "connected",
     status,
-    account: email && !severed ? `${email.slice(0, 2)}•••@${email.split("@")[1] ?? ""}` : null,
+    account: !severed ? maskGoogleAccountAddress(email) : null,
     services,
     grantedServices: severed ? null : grantedServices,
     requiresReauthorization: severed ? false : requiresReauthorization,

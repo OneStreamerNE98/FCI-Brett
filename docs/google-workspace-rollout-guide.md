@@ -185,10 +185,19 @@ Parts 6 through 8 change Google Cloud or Google Admin configuration. Complete th
 
 **Connected-mailbox invariant for Parts 6–10:** the environment may authorize multiple
 company accounts, but Settings must select one of those accounts as the Gmail intake
-mailbox. Connect OAuth as that selected account. The Gmail client calls Google as
-`users/me`, and domain-wide delegation is intentionally forbidden, so the app cannot read
-a different intake mailbox. Readiness fails closed when Gmail is enabled and the selected
-mailbox does not equal the connected account.
+mailbox. The Gmail client calls Google as `users/me`, and domain-wide delegation is
+intentionally forbidden, so the app cannot read a different intake mailbox.
+Readiness fails closed when Gmail is enabled and the selected mailbox does not equal
+the connected account.
+
+On a **first** connection, connect OAuth as the account you selected. After that the order is
+no longer free: once the tenant holds saved Workspace data — and the saved intake mailbox on
+its own is enough — connecting as a different Google account is refused with a different-tenant
+error. Repair a mismatch by re-selecting the account that is **already connected**; that is the
+only non-destructive fix. Moving the effective mailbox to a different account instead requires
+the destructive **Start fresh on a new tenant** reset (see "Stage 2 — Connect" in
+`settings-guide.md`), which discards filed-email evidence along with the tenant's saved Gmail,
+Drive, Calendar, Sheets, resource, and blueprint identifiers.
 
 ## Part 6: configure the Google Auth platform
 

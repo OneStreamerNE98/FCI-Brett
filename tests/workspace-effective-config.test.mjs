@@ -292,7 +292,7 @@ test("saved intake mailbox resolves over env and mismatches only the connected a
   assert.deepEqual(mismatched.missingDetails.filter((detail) => (
     detail.envVar === "GOOGLE_WORKSPACE_INTAKE_MAILBOX"
   )), [{
-    label: "Google Workspace intake mailbox dispatch@cherryhillfci.com matching connected account operations@cherryhillfci.com",
+    label: "Google Workspace intake mailbox dispatch@cherryhillfci.com matching connected account op•••@cherryhillfci.com",
     envVar: "GOOGLE_WORKSPACE_INTAKE_MAILBOX",
     secret: false,
   }]);
