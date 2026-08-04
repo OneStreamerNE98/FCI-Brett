@@ -20,7 +20,11 @@ import {
   authorizedLeadOwnerEmail,
   authorizedLeadResponse,
 } from "../../../../lib/authorized-lead-response";
-import { resolveAddressMutation } from "../../../../lib/address-mutation-sites";
+import {
+  releaseFailedAddressMutation,
+  resolveAddressMutation,
+  type AddressMutationSuccess,
+} from "../../../../lib/address-mutation-sites";
 import { persistedAddress } from "../../../../domain/address-validation";
 
 type RouteContext = { params: Promise<{ leadId: string }> };
@@ -125,7 +129,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   await ensureWorkspaceSchema();
   const database = env.DB as unknown as D1Database;
+  const repository = createD1LeadRepository(database);
+  const current = await repository.findById(leadId);
+  if (!current) return noStore({ error: "Lead not found." }, { status: 404 });
+  if (normalized.value.version && normalized.value.version !== current.version) {
+    return leadConflictResponse(current, normalized, auth.user.email);
+  }
   let trustedAddress;
+  let addressResolution: AddressMutationSuccess | undefined;
   if (Object.hasOwn(normalized.value, "site")) {
     const resolved = await resolveAddressMutation(database, {
       actorId: auth.user.email,
@@ -138,14 +149,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (!resolved.ok) return noStore({ error: resolved.message }, { status: 400 });
     normalized.value.site = resolved.value.address!;
     trustedAddress = resolved.value;
+    addressResolution = resolved;
   } else if (addressReview !== undefined) {
     return noStore({ error: "Address review requires a lead site update." }, { status: 400 });
-  }
-  const repository = createD1LeadRepository(database);
-  const current = await repository.findById(leadId);
-  if (!current) return noStore({ error: "Lead not found." }, { status: 404 });
-  if (normalized.value.version && normalized.value.version !== current.version) {
-    return leadConflictResponse(current, normalized, auth.user.email);
   }
   const currentValues = leadValues(current);
   const values = mergeLeadPatch(currentValues, normalized.value);
@@ -201,9 +207,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     activities,
   });
   if (result.outcome === "lead-not-found") {
+    if (addressResolution) await releaseFailedAddressMutation(database, addressResolution);
     return noStore({ error: "Lead not found." }, { status: 404 });
   }
   if (result.outcome === "conflict") {
+    if (addressResolution) await releaseFailedAddressMutation(database, addressResolution);
     const latest = await repository.findById(leadId);
     if (!latest) return noStore({ error: "Lead not found." }, { status: 404 });
     return leadConflictResponse(latest, normalized, auth.user.email);

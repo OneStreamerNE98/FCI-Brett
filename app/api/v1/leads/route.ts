@@ -16,7 +16,10 @@ import {
   authorizedLeadOwnerEmail,
   authorizedLeadPayload,
 } from "../../../lib/authorized-lead-response";
-import { resolveAddressMutation } from "../../../lib/address-mutation-sites";
+import {
+  releaseFailedAddressMutation,
+  resolveAddressMutation,
+} from "../../../lib/address-mutation-sites";
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -106,6 +109,7 @@ export async function POST(request: NextRequest) {
     address.value,
   );
   if (!result.ok) {
+    await releaseFailedAddressMutation(database, address);
     const status = result.kind === "forbidden" ? 403 : result.kind === "invalid" ? 400 : 409;
     return NextResponse.json({
       error: result.message,

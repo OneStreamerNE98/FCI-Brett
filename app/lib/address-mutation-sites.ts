@@ -1,4 +1,8 @@
-import { consumeAddressValidationReview } from "../adapters/d1/address-validation-reviews";
+import {
+  consumeAddressValidationReview,
+  releaseAddressValidationReview,
+  type AddressReviewConsumptionClaim,
+} from "../adapters/d1/address-validation-reviews";
 import type { D1Database } from "../adapters/d1/d1-database";
 import {
   normalizeAddressReviewReference,
@@ -8,8 +12,14 @@ import {
   type PersistedAddress,
 } from "../domain/address-validation";
 
+export type AddressMutationSuccess = {
+  ok: true;
+  value: PersistedAddress;
+  reviewClaim?: AddressReviewConsumptionClaim;
+};
+
 export type AddressMutationResolution =
-  | { ok: true; value: PersistedAddress }
+  | AddressMutationSuccess
   | { ok: false; message: string };
 
 export async function resolveAddressMutation(
@@ -39,7 +49,7 @@ export async function resolveAddressMutation(
   if (!review) {
     return { ok: false, message: "Address review reference is invalid." };
   }
-  return consumeAddressValidationReview(database, {
+  const consumed = await consumeAddressValidationReview(database, {
     actorId: input.actorId,
     entityKind: input.entityKind,
     targetId: input.targetId,
@@ -47,4 +57,17 @@ export async function resolveAddressMutation(
     review,
     now: input.now ?? Date.now(),
   });
+  return consumed.ok
+    ? { ok: true, value: consumed.value, reviewClaim: consumed.claim }
+    : consumed;
+}
+
+/** Release only after a known result proves that no record mutation committed. */
+export async function releaseFailedAddressMutation(
+  database: D1Database,
+  resolution: AddressMutationSuccess,
+): Promise<void> {
+  if (resolution.reviewClaim) {
+    await releaseAddressValidationReview(database, resolution.reviewClaim);
+  }
 }

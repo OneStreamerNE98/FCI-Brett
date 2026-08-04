@@ -25,6 +25,10 @@ const ADDRESS_VALIDATION_KEYS = new Set([
   "sessionToken",
 ]);
 
+function abortedReviewResponse() {
+  return noStoreJson({ error: "Address review was canceled." }, 499);
+}
+
 export async function POST(request: NextRequest) {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
@@ -59,17 +63,24 @@ export async function POST(request: NextRequest) {
       400,
     );
   }
+  if (request.signal.aborted) return abortedReviewResponse();
 
   await ensureWorkspaceSchema();
+  if (request.signal.aborted) return abortedReviewResponse();
   const runtime = getSitesAddressValidationRuntime();
+  const providerSignal = AbortSignal.any([
+    request.signal,
+    AbortSignal.timeout(8_000),
+  ]);
   const result = await validateAddress(
     { address, sessionToken },
     runtime,
     {
       fetch: globalThis.fetch,
-      signal: AbortSignal.timeout(8_000),
+      signal: providerSignal,
     },
   );
+  if (request.signal.aborted) return abortedReviewResponse();
   const review = await insertAddressValidationReview(
     env.DB as unknown as D1Database,
     {

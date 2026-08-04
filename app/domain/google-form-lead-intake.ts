@@ -12,6 +12,7 @@ import type {
   GoogleFormLeadReviewDraft,
   GoogleFormLeadReviewState,
 } from "../ports/google-form-lead-intake.ts";
+import { MAX_ADDRESS_LENGTH } from "./address-validation.ts";
 
 export type GoogleFormLeadSourceRow = Readonly<{
   sourceRow: number;
@@ -42,7 +43,14 @@ export const GOOGLE_FORM_LEAD_REVIEW_STATUSES = Object.freeze([
   "dismissed",
 ] as const);
 
-const CELL_MAXIMUMS = Object.freeze([100, 160, 300, 160, 160, 254] as const);
+const CELL_MAXIMUMS = Object.freeze([
+  100,
+  160,
+  MAX_ADDRESS_LENGTH,
+  160,
+  160,
+  254,
+] as const);
 const SUBMISSION_KEY_PATTERN = /^[a-f0-9]{64}$/u;
 
 export class GoogleFormLeadIntakeValidationError extends Error {
@@ -176,7 +184,7 @@ export function parseGoogleFormLeadProposal(value: unknown) {
   const project = normalizedCell(value.projectName, 180);
   const source = normalizedCell(value.source, 80);
   const stage = normalizedCell(value.stage, 80);
-  const site = normalizedCell(value.site, 300);
+  const site = normalizedCell(value.site, MAX_ADDRESS_LENGTH);
   const nextAction = normalizedCell(value.nextAction, 500);
   const rooms = value.rooms === null ? null : normalizedCell(value.rooms, 160);
   const flooringType = value.flooringType === null

@@ -79,11 +79,14 @@ export function AddressValidationField({
   const [choice, setChoice] = useState<AddressReviewReference["choice"] | null>(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [tokenizedAutocompleteStarted, setTokenizedAutocompleteStarted] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const sessionRef = useRef<AddressAutocompleteSession | null>(null);
   sessionRef.current ??= createAddressAutocompleteSession();
   const suggestionRequestRef = useRef(0);
+  const suggestionAbortRef = useRef<AbortController | null>(null);
+  const reviewAbortRef = useRef<AbortController | null>(null);
   const acceptedSuggestionRef = useRef<string | null>(null);
   const liveAutocompleteApiKey = placesAutocompleteBrowserKey(mapsRuntime);
   const availabilityHint = addressAvailabilityHint(mapsRuntime);
@@ -94,14 +97,26 @@ export function AddressValidationField({
     input.setCustomValidity(
       review && choice === null
         ? "Choose the standardized suggestion or explicitly keep the typed address."
-        : "",
+        : tokenizedAutocompleteStarted
+          ? "Review this address before saving because autocomplete was used."
+          : "",
     );
-  }, [choice, review]);
+  }, [choice, review, tokenizedAutocompleteStarted]);
+
+  useEffect(() => () => {
+    // Cancel/navigation must never cause a hidden validation write. Dropping
+    // the local token prevents reuse; Google bills any already-issued
+    // autocomplete requests in that abandoned session per request.
+    suggestionAbortRef.current?.abort();
+    reviewAbortRef.current?.abort();
+    sessionRef.current?.complete();
+  }, []);
 
   useEffect(() => {
     const query = value.trim();
     if (
       disabled
+      || validating
       || query.length < 3
       || review
       || acceptedSuggestionRef.current === value
@@ -110,9 +125,10 @@ export function AddressValidationField({
     }
     const requestId = suggestionRequestRef.current + 1;
     suggestionRequestRef.current = requestId;
-    const token = sessionRef.current.token();
     const controller = new AbortController();
+    suggestionAbortRef.current = controller;
     const timeout = window.setTimeout(async () => {
+      if (suggestionRequestRef.current !== requestId) return;
       if (mapsRuntime.simulation) {
         if (suggestionRequestRef.current === requestId) {
           const normalized = query.toLowerCase();
@@ -128,6 +144,8 @@ export function AddressValidationField({
       }
       const apiKey = liveAutocompleteApiKey;
       if (!apiKey) return;
+      const token = sessionRef.current.token();
+      setTokenizedAutocompleteStarted(true);
       setLoadingSuggestions(true);
       try {
         const response = await fetch(PLACES_AUTOCOMPLETE_ENDPOINT, {
@@ -164,17 +182,25 @@ export function AddressValidationField({
     return () => {
       window.clearTimeout(timeout);
       controller.abort();
+      if (suggestionAbortRef.current === controller) suggestionAbortRef.current = null;
     };
   }, [
     mapsRuntime.simulation,
     liveAutocompleteApiKey,
     disabled,
     review,
+    validating,
     value,
   ]);
 
   function resetReview(nextValue: string, suppressSuggestions = false) {
     acceptedSuggestionRef.current = suppressSuggestions ? nextValue : null;
+    if (!nextValue.trim()) {
+      // An optional address may be cleared after autocomplete. Abandon that
+      // provider session honestly so an empty field cannot become unsavable.
+      sessionRef.current.complete();
+      setTokenizedAutocompleteStarted(false);
+    }
     setReview(null);
     setChoice(null);
     setSuggestions([]);
@@ -187,8 +213,17 @@ export function AddressValidationField({
   async function requestReview() {
     const address = value.trim();
     if (!address) return;
+    // Freeze this exact value and stop its debounce/in-flight request before
+    // validation can terminate the shared session token.
+    acceptedSuggestionRef.current = value;
+    suggestionRequestRef.current += 1;
+    suggestionAbortRef.current?.abort();
+    suggestionAbortRef.current = null;
+    const reviewController = new AbortController();
+    reviewAbortRef.current = reviewController;
     const token = sessionRef.current.token();
     setValidating(true);
+    setLoadingSuggestions(false);
     setError("");
     setSuggestions([]);
     try {
@@ -201,6 +236,7 @@ export function AddressValidationField({
           targetId,
           sessionToken: token,
         }),
+        signal: reviewController.signal,
       });
       const payload = await response.json().catch(() => ({})) as {
         review?: ReviewResponse;
@@ -213,13 +249,16 @@ export function AddressValidationField({
       setChoice(null);
       onReviewChange(null);
     } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Address review is unavailable.");
     } finally {
       // The browser cannot know whether a failed response happened before or
       // after provider validation. Conservatively close every settled review
       // attempt so no later request can reuse a possibly terminated token.
       sessionRef.current.complete();
+      setTokenizedAutocompleteStarted(false);
       setValidating(false);
+      if (reviewAbortRef.current === reviewController) reviewAbortRef.current = null;
     }
   }
 
@@ -293,7 +332,7 @@ export function AddressValidationField({
         aria-autocomplete="list"
         aria-haspopup="listbox"
         aria-expanded={visibleSuggestions.length > 0}
-        aria-invalid={review !== null && choice === null}
+        aria-invalid={tokenizedAutocompleteStarted || review !== null && choice === null}
         aria-controls={`${id}-address-suggestions`}
         aria-activedescendant={activeSuggestion >= 0 && visibleSuggestions.length > activeSuggestion
           ? `${id}-address-suggestion-${activeSuggestion}`
@@ -339,6 +378,10 @@ export function AddressValidationField({
       </button>
       {suggestionsAvailable && loadingSuggestions
         && <span className={styles.status}>Finding suggestions…</span>}
+      {tokenizedAutocompleteStarted && !review && !validating
+        && <span className={styles.hint}>
+          Autocomplete was used. Review this address before saving so the session can end with validation.
+        </span>}
       {availabilityHint && <span className={styles.hint}>{availabilityHint}</span>}
     </div>
     <div id={`${id}-address-status`} aria-live="polite">

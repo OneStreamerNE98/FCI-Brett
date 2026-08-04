@@ -11,6 +11,7 @@ import type {
   FirstRunImportSnapshot,
   FirstRunImportStoredClient,
 } from "../ports/first-run-import-repository.ts";
+import { MAX_ADDRESS_LENGTH } from "./address-validation.ts";
 
 // Ten client rows stay below the development D1 per-invocation query budget
 // even when every row includes contact and provenance statements.
@@ -665,7 +666,7 @@ async function normalizeProjectRows(
     const clientCode = optionalText(rawClientCode, 80);
     const clientName = optionalText(rawClientName, 180);
     const clientEmail = emailValue(rawClientEmail);
-    const site = optionalText(rawSite, 300);
+    const site = optionalText(rawSite, MAX_ADDRESS_LENGTH);
     const estimatedValue = integerValue(rawEstimatedValue);
     const squareFeet = integerValue(rawSquareFeet, { positive: true });
     const contractValue = integerValue(rawContractValue);

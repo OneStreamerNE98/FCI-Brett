@@ -43,8 +43,17 @@ export type SavedAddressReview = Readonly<{
 }>;
 
 export type ConsumeAddressReviewResult =
-  | { ok: true; value: PersistedAddress }
+  | { ok: true; value: PersistedAddress; claim: AddressReviewConsumptionClaim }
   | { ok: false; message: string };
+
+export type AddressReviewConsumptionClaim = Readonly<{
+  id: string;
+  actorId: string;
+  entityKind: AddressEntityKind;
+  targetId: string;
+  inputAddress: string;
+  consumedAt: number;
+}>;
 
 function savedReview(
   id: string,
@@ -120,7 +129,10 @@ export async function insertAddressValidationReview(
   return savedReview(input.id, input.result, expiresAt);
 }
 
-function standardizedResolution(row: AddressValidationReviewRow): ConsumeAddressReviewResult {
+function standardizedResolution(
+  row: AddressValidationReviewRow,
+  claim: AddressReviewConsumptionClaim,
+): ConsumeAddressReviewResult {
   if (
     !row.standardized_address
     || !coordinatesAreValid(row.latitude, row.longitude)
@@ -150,6 +162,7 @@ function standardizedResolution(row: AddressValidationReviewRow): ConsumeAddress
       longitude: row.longitude,
       verdict,
     }),
+    claim,
   };
 }
 
@@ -198,6 +211,44 @@ export async function consumeAddressValidationReview(
   if (!row) {
     throw new Error("Claimed address validation review could not be reloaded.");
   }
-  if (input.review.choice === "typed") return { ok: true, value: typedAddress(row.input_address) };
-  return standardizedResolution(row);
+  const claim = Object.freeze({
+    id: input.review.id,
+    actorId: input.actorId,
+    entityKind: input.entityKind,
+    targetId: input.targetId,
+    inputAddress: input.inputAddress,
+    consumedAt: input.now,
+  });
+  if (input.review.choice === "typed") {
+    return { ok: true, value: typedAddress(row.input_address), claim };
+  }
+  const resolution = standardizedResolution(row, claim);
+  if (!resolution.ok) await releaseAddressValidationReview(database, claim);
+  return resolution;
+}
+
+/**
+ * Releases a provisional claim only after the caller proves that its record
+ * mutation did not commit. Every binding, including the claim timestamp,
+ * prevents one failed request from reopening another request's consumption.
+ */
+export async function releaseAddressValidationReview(
+  database: D1Database,
+  claim: AddressReviewConsumptionClaim,
+): Promise<void> {
+  const released = await database.prepare(
+    `UPDATE address_validation_reviews SET consumed_at = NULL
+     WHERE id = ? AND actor_id = ? AND entity_kind = ? AND target_id = ?
+       AND input_address = ? AND consumed_at = ?`,
+  ).bind(
+    claim.id,
+    claim.actorId,
+    claim.entityKind,
+    claim.targetId,
+    claim.inputAddress,
+    claim.consumedAt,
+  ).run();
+  if (released.meta.changes !== 1) {
+    throw new Error("Address validation review claim was not released exactly once.");
+  }
 }

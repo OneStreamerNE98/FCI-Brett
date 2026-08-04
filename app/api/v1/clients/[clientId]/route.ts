@@ -11,7 +11,11 @@ import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { noStoreJson, noStoreResponse } from "../../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
-import { resolveAddressMutation } from "../../../../lib/address-mutation-sites";
+import {
+  releaseFailedAddressMutation,
+  resolveAddressMutation,
+  type AddressMutationSuccess,
+} from "../../../../lib/address-mutation-sites";
 
 type RouteContext = { params: Promise<{ clientId: string }> };
 
@@ -32,6 +36,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const { addressReview, ...clientBody } = parsed.body;
   const database = env.DB as unknown as D1Database;
   let trustedAddress;
+  let addressResolution: AddressMutationSuccess | undefined;
   if (Object.hasOwn(clientBody, "siteAddress")) {
     const resolved = await resolveAddressMutation(database, {
       actorId: auth.user.email,
@@ -43,6 +48,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (!resolved.ok) return noStoreJson({ error: resolved.message }, 400);
     clientBody.siteAddress = resolved.value.address;
     trustedAddress = resolved.value;
+    addressResolution = resolved;
   } else if (addressReview !== undefined) {
     return noStoreJson({ error: "Address review requires a site address update." }, 400);
   }
@@ -58,6 +64,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     trustedAddress,
   );
   if (!result.ok) {
+    if (addressResolution) await releaseFailedAddressMutation(database, addressResolution);
     const status = result.kind === "forbidden"
       ? 403
       : result.kind === "conflict" || result.kind === "duplicate"

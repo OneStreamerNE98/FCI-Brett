@@ -11,7 +11,10 @@ import { clientCreationHttpResult } from "../../../lib/creation-http-result";
 import { getConnectionScope, getEffectiveGoogleRuntimeSetup } from "../../../lib/google-oauth-sites";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
-import { resolveAddressMutation } from "../../../lib/address-mutation-sites";
+import {
+  releaseFailedAddressMutation,
+  resolveAddressMutation,
+} from "../../../lib/address-mutation-sites";
 import { noStoreJson as noStore } from "../../../lib/no-store-json";
 
 const MAX_CLIENT_BODY_BYTES = 64_000;
@@ -67,6 +70,7 @@ export async function POST(request: NextRequest) {
     },
     address.value,
   );
+  if (!result.ok) await releaseFailedAddressMutation(database, address);
   const httpResult = clientCreationHttpResult(result);
   return noStore(httpResult.body, { status: httpResult.status });
 }

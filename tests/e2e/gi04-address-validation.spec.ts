@@ -83,7 +83,7 @@ async function reviewAndChooseStandardized(
   const field = addressField(dialog, entityKind);
   const input = field.getByRole("combobox", { name: inputLabel, exact: true });
   if (await input.inputValue() !== typedAddress) await input.fill(typedAddress);
-  await Promise.all([
+  const [response] = await Promise.all([
     dialog.page().waitForResponse((response) => (
       new URL(response.url()).pathname === "/api/v1/address-validation"
       && response.request().method() === "POST"
@@ -97,6 +97,7 @@ async function reviewAndChooseStandardized(
   await field.getByRole("button", { name: "Use standardized address" }).click();
   await expect(input).toHaveValue(typedAddress);
   await expect(field.getByText("Standardized address selected", { exact: true })).toBeVisible();
+  return (await response.json() as { review: { id: string } }).review.id;
 }
 
 async function apiRows(
@@ -172,63 +173,163 @@ async function createEditFixtures(request: APIRequestContext, suffix: string) {
 test.beforeEach(clearGi04Records);
 test.afterEach(clearGi04Records);
 
-test("live autocomplete starts only when both Maps key configurations are available", async ({ page }) => {
+test("rendered live autocomplete requires complete configuration and terminates before Save", async ({ page }) => {
   const browserErrors = captureUnexpectedBrowserErrors(page);
+  const placesTokens: string[] = [];
+  const validationTokens: string[] = [];
+  let markDelayedAutocompleteStarted!: () => void;
+  let releaseDelayedAutocomplete!: () => void;
+  const delayedAutocompleteStarted = new Promise<void>((resolve) => {
+    markDelayedAutocompleteStarted = resolve;
+  });
+  const delayedAutocompleteRelease = new Promise<void>((resolve) => {
+    releaseDelayedAutocomplete = resolve;
+  });
+  await page.route("https://places.googleapis.com/v1/places:autocomplete", async (route) => {
+    const body = route.request().postDataJSON() as {
+      input?: unknown;
+      sessionToken?: unknown;
+    };
+    if (typeof body.sessionToken === "string") placesTokens.push(body.sessionToken);
+    const delayed = body.input === "123 Test Street autocomplete in flight";
+    if (delayed) {
+      markDelayedAutocompleteStarted();
+      await delayedAutocompleteRelease;
+      if (route.request().failure()) return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        suggestions: [{
+          placePrediction: {
+            placeId: "FCI_TEST_PLACE",
+            text: { text: standardizedAddress },
+          },
+        }],
+      }),
+    });
+  });
+  page.on("request", (request) => {
+    if (
+      new URL(request.url()).pathname === "/api/v1/address-validation"
+      && request.method() === "POST"
+    ) {
+      const body = request.postDataJSON() as { sessionToken?: unknown };
+      if (typeof body.sessionToken === "string") validationTokens.push(body.sessionToken);
+    }
+  });
   await gotoLiveView(page, "/leads", "/api/v1/leads");
 
-  const availability = await page.evaluate(async () => {
-    const modulePath = "/app/features/address-validation/address-autocomplete-session.ts";
-    const helpers = await import(modulePath) as {
-      placesAutocompleteBrowserKey: (runtime: {
-        simulation: boolean;
-        browserApiKey: string | null;
-        addressValidationEnabled: boolean;
-        serverAddressValidationAvailable: boolean;
-      }) => string | null;
-      addressAvailabilityHint: (runtime: {
-        simulation: boolean;
-        browserApiKey: string | null;
-        addressValidationEnabled: boolean;
-        serverAddressValidationAvailable: boolean;
-      }) => string | null;
-    };
-    const ready = {
-      simulation: false,
-      browserApiKey: "FCI_TEST_BROWSER_KEY",
-      addressValidationEnabled: true,
-      serverAddressValidationAvailable: true,
-    };
-    const serverMissing = {
-      ...ready,
-      serverAddressValidationAvailable: false,
-    };
-    const browserMissing = {
-      ...ready,
-      browserApiKey: null,
-    };
-    const bothMissing = {
-      ...serverMissing,
-      browserApiKey: null,
-    };
-    return {
-      readyKey: helpers.placesAutocompleteBrowserKey(ready),
-      readyHint: helpers.addressAvailabilityHint(ready),
-      serverMissingKey: helpers.placesAutocompleteBrowserKey(serverMissing),
-      serverMissingHint: helpers.addressAvailabilityHint(serverMissing),
-      browserMissingKey: helpers.placesAutocompleteBrowserKey(browserMissing),
-      browserMissingHint: helpers.addressAvailabilityHint(browserMissing),
-      bothMissingHint: helpers.addressAvailabilityHint(bothMissing),
-    };
-  });
+  async function mountHarness(runtime: {
+    simulation: boolean;
+    browserApiKey: string | null;
+    addressValidationEnabled: boolean;
+    serverAddressValidationAvailable: boolean;
+  }) {
+    await page.evaluate(async (mapsRuntime) => {
+      const harnessPath = "/tests/e2e/fixtures/gi04-address-harness.tsx";
+      const harness = await import(harnessPath);
+      harness.mountAddressValidationHarness(mapsRuntime);
+    }, runtime);
+    await expect(page.getByRole("combobox", { name: "Harness site" })).toBeVisible();
+  }
 
-  expect(availability).toEqual({
-    readyKey: "FCI_TEST_BROWSER_KEY",
-    readyHint: null,
-    serverMissingKey: null,
-    serverMissingHint: "Address review and autocomplete are unavailable because the server validation configuration is missing. Typed addresses stay unvalidated with no coordinates.",
-    browserMissingKey: null,
-    browserMissingHint: "Autocomplete is unavailable because its browser configuration is missing. Server review remains available and reports whether validation succeeded.",
-    bothMissingHint: "Address review and autocomplete are unavailable because both Maps key configurations are missing. Typed addresses stay unvalidated with no coordinates.",
+  const readyRuntime = {
+    simulation: false,
+    browserApiKey: "FCI_TEST_BROWSER_KEY",
+    addressValidationEnabled: true,
+    serverAddressValidationAvailable: true,
+  };
+  await mountHarness({
+    ...readyRuntime,
+    serverAddressValidationAvailable: false,
+  });
+  const input = page.getByRole("combobox", { name: "Harness site" });
+  await input.fill("123 Test Street server missing");
+  await expect(page.getByText(
+    "Address review and autocomplete are unavailable because the server validation configuration is missing. Typed addresses stay unvalidated with no coordinates.",
+    { exact: true },
+  )).toBeVisible();
+  await page.waitForTimeout(350);
+  expect(placesTokens).toEqual([]);
+  await page.getByRole("button", { name: "Harness save" }).click();
+  await expect(page.locator("#gi04-address-harness")).toHaveAttribute("data-submits", "1");
+
+  await mountHarness(readyRuntime);
+  const readyInput = page.getByRole("combobox", { name: "Harness site" });
+  await readyInput.fill("123 Test Street live config");
+  await expect.poll(() => placesTokens.length).toBe(1);
+  await expect(page.getByRole("option", { name: standardizedAddress })).toBeVisible();
+  const attribution = page.getByText("Google Maps", { exact: true });
+  await expect(attribution).toBeVisible();
+  expect(await attribution.evaluate((element) => Number.parseFloat(
+    window.getComputedStyle(element).fontSize,
+  ))).toBeGreaterThanOrEqual(12);
+  await expect(page.getByText(
+    "Autocomplete was used. Review this address before saving so the session can end with validation.",
+    { exact: true },
+  )).toBeVisible();
+  await expect(readyInput).toHaveAttribute("aria-invalid", "true");
+  await page.getByRole("button", { name: "Harness save" }).click();
+  await expect(page.locator("#gi04-address-harness")).toHaveAttribute("data-submits", "0");
+  expect(await readyInput.evaluate((element: HTMLInputElement) => element.validationMessage))
+    .toBe("Review this address before saving because autocomplete was used.");
+
+  await readyInput.fill("");
+  await expect(readyInput).toHaveAttribute("aria-invalid", "false");
+  expect(await readyInput.evaluate((element: HTMLInputElement) => element.validationMessage))
+    .toBe("");
+  await page.getByRole("button", { name: "Harness save" }).click();
+  await expect(page.locator("#gi04-address-harness")).toHaveAttribute("data-submits", "1");
+
+  await mountHarness(readyRuntime);
+  const reviewInput = page.getByRole("combobox", { name: "Harness site" });
+  await reviewInput.fill("123 Test Street live config review");
+  await expect.poll(() => placesTokens.length).toBe(2);
+  expect(placesTokens[1]).not.toBe(placesTokens[0]);
+  await page.getByRole("button", { name: "Harness save" }).click();
+  await expect(page.locator("#gi04-address-harness")).toHaveAttribute("data-submits", "0");
+
+  const reviewButton = page.getByRole("button", { name: "Review address" });
+  await page.keyboard.press("Tab");
+  await expect(reviewButton).toBeFocused();
+  await Promise.all([
+    page.waitForResponse((response) => (
+      new URL(response.url()).pathname === "/api/v1/address-validation"
+      && response.request().method() === "POST"
+    )),
+    page.keyboard.press("Enter"),
+  ]);
+  expect(validationTokens).toEqual([placesTokens[1]]);
+  await page.getByRole("button", { name: "Use standardized address" }).click();
+  await expect(reviewInput).toHaveAttribute("aria-invalid", "false");
+  await page.getByRole("button", { name: "Harness save" }).click();
+  await expect(page.locator("#gi04-address-harness")).toHaveAttribute("data-submits", "1");
+
+  await mountHarness(readyRuntime);
+  const inFlightInput = page.getByRole("combobox", { name: "Harness site" });
+  await inFlightInput.fill("123 Test Street autocomplete in flight");
+  await delayedAutocompleteStarted;
+  await expect.poll(() => placesTokens.length).toBe(3);
+  const inFlightToken = placesTokens[2];
+  await Promise.all([
+    page.waitForResponse((response) => (
+      new URL(response.url()).pathname === "/api/v1/address-validation"
+      && response.request().method() === "POST"
+    )),
+    page.getByRole("button", { name: "Review address" }).click(),
+  ]);
+  releaseDelayedAutocomplete();
+  await expect(page.getByRole("option", { name: standardizedAddress })).toHaveCount(0);
+  await page.waitForTimeout(350);
+  expect(placesTokens).toHaveLength(3);
+  expect(validationTokens[1]).toBe(inFlightToken);
+
+  await page.evaluate(async () => {
+    const harnessPath = "/tests/e2e/fixtures/gi04-address-harness.tsx";
+    const harness = await import(harnessPath);
+    harness.unmountAddressValidationHarness();
   });
   expect(browserErrors).toEqual([]);
 });
@@ -398,19 +499,54 @@ test("simulation reviews addresses on lead, client, and project edit forms", asy
   const leadDrawer = page.getByRole("dialog", { name: new RegExp(fixture.lead.leadNumber) });
   await leadDrawer.getByRole("button", { name: "Edit lead" }).click();
   const leadEditor = page.getByRole("dialog", { name: `Edit ${fixture.lead.leadNumber}` });
-  await reviewAndChooseStandardized(
+  const leadReviewId = await reviewAndChooseStandardized(
     leadEditor,
     "lead",
     "Project site",
     `123 Test Street GI-04 lead edit ${suffix}`,
   );
+  const leadBeforeConflict = (await apiRows(page.request, "/api/v1/leads", "leads"))
+    .find((row) => row.id === fixture.lead.id);
+  const conflictBump = await page.request.patch(`/api/v1/leads/${fixture.lead.id}`, {
+    headers: { Origin: origin },
+    data: {
+      version: leadBeforeConflict?.version,
+      nextAction: "FCI TEST — DO NOT USE — GI-04 concurrent lead update",
+    },
+  });
+  expect(conflictBump.status()).toBe(200);
   await leadEditor.getByRole("button", { name: "Save changes" }).click();
+  await expect(leadEditor).toBeVisible();
+  const expectedConflictConsole =
+    "console: Failed to load resource: the server responded with a status of 409 (Conflict)";
+  await expect.poll(() => browserErrors.filter(
+    (entry) => entry === expectedConflictConsole,
+  ).length).toBe(1);
+  browserErrors.splice(browserErrors.indexOf(expectedConflictConsole), 1);
+  await expect(leadEditor.getByRole("alert")).toHaveText(
+    "This lead changed while you were editing. Your address review is still selected; review the other entries, then choose Re-apply changes.",
+  );
+  await expect(leadEditor.getByText("Standardized address selected", { exact: true })).toBeVisible();
+  await leadEditor.getByRole("button", { name: "Re-apply changes" }).click();
   await expect(leadEditor).toBeHidden();
-  expect((await apiRows(page.request, "/api/v1/leads", "leads"))
-    .find((row) => row.id === fixture.lead.id)).toEqual(expect.objectContaining({
-    site: standardizedAddress,
-    addressValidationVerdict: "simulated",
-  }));
+  const savedLead = (await apiRows(page.request, "/api/v1/leads", "leads"))
+    .find((row) => row.id === fixture.lead.id);
+  expect(savedLead).toEqual(expect.objectContaining({
+      site: standardizedAddress,
+      addressValidationVerdict: "simulated",
+    }));
+  const replay = await page.request.patch(`/api/v1/leads/${fixture.lead.id}`, {
+    headers: { Origin: origin },
+    data: {
+      version: savedLead?.version,
+      site: `123 Test Street GI-04 lead edit ${suffix}`,
+      addressReview: { id: leadReviewId, choice: "standardized" },
+    },
+  });
+  expect(replay.status()).toBe(400);
+  expect(await replay.json()).toEqual({
+    error: "Address review expired, changed, or was already used. Review the address again.",
+  });
 
   await gotoLiveView(page, "/clients", "/api/v1/clients");
   await page.getByRole("button", { name: new RegExp(fixture.client.name) }).click();

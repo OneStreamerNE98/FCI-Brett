@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { after, beforeEach, test } from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 
 const APP_ORIGIN = "https://fci.example.test";
@@ -39,6 +41,9 @@ const [
   route,
   autocompleteSession,
   mapsSites,
+  addressField,
+  googleFormIntake,
+  firstRunImport,
 ] = await Promise.all([
   vite.ssrLoadModule("/app/domain/address-validation.ts"),
   vite.ssrLoadModule("/app/features/address-validation/address-validation.ts"),
@@ -48,6 +53,9 @@ const [
   vite.ssrLoadModule("/app/api/v1/address-validation/route.ts"),
   vite.ssrLoadModule("/app/features/address-validation/address-autocomplete-session.ts"),
   vite.ssrLoadModule("/app/lib/job-site-maps-sites.ts"),
+  vite.ssrLoadModule("/app/features/address-validation/AddressValidationField.tsx"),
+  vite.ssrLoadModule("/app/domain/google-form-lead-intake.ts"),
+  vite.ssrLoadModule("/app/domain/first-run-import.ts"),
 ]);
 
 after(async () => {
@@ -76,7 +84,7 @@ test("autocomplete reuses one token and rotates after every settled review attem
   assert.equal(component.match(/sessionRef\.current\.token\(\)/gu)?.length, 2);
   assert.match(
     component,
-    /\} catch \(caught\) \{[\s\S]{0,500}\} finally \{[\s\S]{0,500}sessionRef\.current\.complete\(\);\s*setValidating\(false\);/u,
+    /\} catch \(caught\) \{[\s\S]{0,500}\} finally \{[\s\S]{0,500}sessionRef\.current\.complete\(\);[\s\S]{0,100}setValidating\(false\);/u,
   );
 });
 
@@ -155,6 +163,25 @@ test("Places autocomplete requires the owner gate and both key configurations", 
     addressValidationEnabled: true,
     serverAddressValidationAvailable: false,
   });
+  const serverMissingMarkup = renderToStaticMarkup(React.createElement(
+    addressField.AddressValidationField,
+    {
+      id: "server-rendered-address",
+      name: "site",
+      label: "Site",
+      value: "123 Test Street",
+      entityKind: "project",
+      targetId: "new",
+      mapsRuntime: mapsSites.getSitesJobSiteMapsRuntimeConfig(),
+      onChange() {},
+      onReviewChange() {},
+    },
+  ));
+  assert.match(
+    serverMissingMarkup,
+    /Address review and autocomplete are unavailable because the server validation configuration is missing\./u,
+  );
+  assert.doesNotMatch(serverMissingMarkup, /FCI_TEST_SERVER_KEY_MUST_NOT_LEAK/u);
 
   const component = await readFile(
     new URL("../app/features/address-validation/AddressValidationField.tsx", import.meta.url),
@@ -165,6 +192,16 @@ test("Places autocomplete requires the owner gate and both key configurations", 
   assert.match(component, /"X-Goog-Api-Key": apiKey/u);
   assert.match(component, /className=\{styles\.attribution\} translate="no">Google Maps/u);
   assert.doesNotMatch(component, /SERVER_API_KEY|serverApiKey/u);
+  assert.match(component, /useEffect\(\(\) => \(\) => \{[\s\S]{0,300}sessionRef\.current\?\.complete\(\);/u);
+  assert.match(component, /Review this address before saving because autocomplete was used\./u);
+  assert.match(component, /\|\| validating/u);
+  assert.match(
+    component,
+    /suggestionRequestRef\.current \+= 1;[\s\S]{0,200}suggestionAbortRef\.current\?\.abort\(\)/u,
+  );
+  assert.match(component, /reviewAbortRef\.current\?\.abort\(\)/u);
+  assert.match(component, /signal: reviewController\.signal/u);
+  assert.doesNotMatch(component, /keepalive|sendBeacon/u);
 
   const mapsSitesSource = await readFile(
     new URL("../app/lib/job-site-maps-sites.ts", import.meta.url),
@@ -280,7 +317,7 @@ function reviewResult(overrides = {}) {
   };
 }
 
-function request(body, email = ACTOR, origin = APP_ORIGIN) {
+function request(body, email = ACTOR, origin = APP_ORIGIN, signal) {
   const url = new URL("/api/v1/address-validation", APP_ORIGIN);
   const headers = new Headers({
     origin,
@@ -291,6 +328,7 @@ function request(body, email = ACTOR, origin = APP_ORIGIN) {
     method: "POST",
     headers,
     body: JSON.stringify(body),
+    signal,
   });
   Object.defineProperty(value, "nextUrl", { value: url });
   return value;
@@ -313,6 +351,94 @@ test("address text, identifiers, and review references are closed and bounded", 
     choice: "typed",
   });
   assert.equal(domain.normalizeAddressReviewReference({ id: "review-1", choice: "typed", verdict: "validated" }), null);
+});
+
+test("shared 280-character address law rejects Google Form and first-run project overflow", async () => {
+  const atLimit = "A".repeat(domain.MAX_ADDRESS_LENGTH);
+  const overflows = [
+    "B".repeat(domain.MAX_ADDRESS_LENGTH + 1),
+    "C".repeat(300),
+  ];
+  const formRows = await googleFormIntake.mapGoogleFormLeadRows({
+    clients: [],
+    rows: [atLimit, ...overflows].map((address, index) => ({
+      sourceRow: index + 2,
+      cells: [
+        `2026-08-03T14:0${index}:00Z`,
+        `FCI TEST — DO NOT USE — GI-04 address ${index}`,
+        address,
+        "Office",
+        "LVT",
+        "gi04@example.test",
+      ],
+    })),
+  });
+  assert.equal(formRows[0].state, "ready");
+  assert.equal(formRows[0].proposal.site.length, domain.MAX_ADDRESS_LENGTH);
+  for (const row of formRows.slice(1)) {
+    assert.equal(row.state, "invalid");
+    assert.equal(row.proposal.site, "");
+    assert.ok(row.reasons.includes("Address contains an unsupported or oversized value."));
+    assert.equal(googleFormIntake.parseGoogleFormLeadProposal({
+      ...formRows[0].proposal,
+      site: overflows[row.sourceRow - 3],
+    }), null);
+  }
+
+  const projectHeaders = [
+    "Project Name",
+    "Client Code",
+    "Client / Company",
+    "Client Email",
+    "Site",
+    "Status",
+    "Estimated Value",
+    "Flooring Category",
+    "Square Feet",
+    "Contract Value",
+    "Segment",
+  ];
+  const storedClient = {
+    id: "gi04-client",
+    clientCode: "CL-GI040001",
+    sourceClientCodes: [],
+    name: "FCI TEST — DO NOT USE — GI-04 stored client",
+    emails: ["gi04-client@example.test"],
+    phones: [],
+    addresses: [],
+    addressDigests: [],
+  };
+  const projectPreview = await firstRunImport.previewFirstRunImport({
+    entity: "projects",
+    expectedHeaders: projectHeaders,
+    snapshot: { clients: [storedClient], projects: [] },
+    values: [
+      projectHeaders,
+      ...[atLimit, ...overflows].map((site, index) => [
+        `FCI TEST — DO NOT USE — GI-04 project ${index}`,
+        storedClient.clientCode,
+        storedClient.name,
+        storedClient.emails[0],
+        site,
+        "planning",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]),
+    ],
+  });
+  assert.deepEqual(projectPreview.rows.map(({ state }) => state), [
+    "ready",
+    "invalid",
+    "invalid",
+  ]);
+  assert.equal(projectPreview.rows[0].values.project.site.length, domain.MAX_ADDRESS_LENGTH);
+  for (const row of projectPreview.rows.slice(1)) {
+    assert.ok(row.issues.some(({ code }) => code === "project_site_invalid"));
+  }
+  assert.equal(projectPreview.confirmable, 1);
 });
 
 test("simulation is fixture-only and can never manufacture a live validated verdict", () => {
@@ -471,6 +597,14 @@ test("review receipts are actor/entity/target/address bound, expire, and consume
         longitude: -70.2568,
         verdict: "review-confirmed",
       },
+      claim: {
+        id,
+        actorId: ACTOR,
+        entityKind: "project",
+        targetId: "project-1",
+        inputAddress: TEST_ADDRESS,
+        consumedAt: NOW + 2,
+      },
     });
     assert.equal(database.row(id).consumed_at, NOW + 2);
     assert.equal((await reviews.consumeAddressValidationReview(database, {
@@ -556,10 +690,98 @@ test("typed fallback saves no geocode and never trusts client-supplied validatio
         longitude: null,
         verdict: "unvalidated",
       },
+      reviewClaim: {
+        id,
+        actorId: ACTOR,
+        entityKind: "lead",
+        targetId: "new",
+        inputAddress: TEST_ADDRESS,
+        consumedAt: NOW + 2,
+      },
     });
   } finally {
     database.close();
   }
+});
+
+test("failed record mutations release only their exact provisional review claim", async () => {
+  const database = new AddressReviewDatabase();
+  try {
+    const id = randomUUID();
+    await reviews.insertAddressValidationReview(database, {
+      id,
+      actorId: ACTOR,
+      entityKind: "client",
+      targetId: "client-1",
+      result: reviewResult(),
+      now: NOW,
+    });
+    const first = await mutation.resolveAddressMutation(database, {
+      actorId: ACTOR,
+      entityKind: "client",
+      targetId: "client-1",
+      rawAddress: TEST_ADDRESS,
+      rawReview: { id, choice: "standardized" },
+      now: NOW + 1,
+    });
+    assert.equal(first.ok, true);
+    assert.equal(database.row(id).consumed_at, NOW + 1);
+
+    // A known conflict/duplicate/not-found outcome did not mutate the record.
+    await mutation.releaseFailedAddressMutation(database, first);
+    assert.equal(database.row(id).consumed_at, null);
+
+    const retry = await mutation.resolveAddressMutation(database, {
+      actorId: ACTOR,
+      entityKind: "client",
+      targetId: "client-1",
+      rawAddress: TEST_ADDRESS,
+      rawReview: { id, choice: "standardized" },
+      now: NOW + 2,
+    });
+    assert.equal(retry.ok, true);
+    assert.equal(database.row(id).consumed_at, NOW + 2);
+
+    // A successful mutation deliberately retains the claim, so replay closes.
+    assert.equal((await mutation.resolveAddressMutation(database, {
+      actorId: ACTOR,
+      entityKind: "client",
+      targetId: "client-1",
+      rawAddress: TEST_ADDRESS,
+      rawReview: { id, choice: "standardized" },
+      now: NOW + 3,
+    })).ok, false);
+  } finally {
+    database.close();
+  }
+});
+
+test("all six record routes preserve provisional review claims on known mutation failures", async () => {
+  const routeCalls = new Map([
+    ["../app/api/v1/leads/route.ts", 1],
+    ["../app/api/v1/clients/route.ts", 1],
+    ["../app/api/v1/projects/route.ts", 1],
+    ["../app/api/v1/leads/[leadId]/route.ts", 2],
+    ["../app/api/v1/clients/[clientId]/route.ts", 1],
+    ["../app/api/v1/projects/[projectId]/route.ts", 1],
+  ]);
+  for (const [path, expectedCalls] of routeCalls) {
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.equal(
+      source.match(/await releaseFailedAddressMutation\(/gu)?.length,
+      expectedCalls,
+      path,
+    );
+  }
+  const leadPatch = await readFile(
+    new URL("../app/api/v1/leads/[leadId]/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    leadPatch.indexOf("normalized.value.version !== current.version")
+      < leadPatch.indexOf("resolveAddressMutation(database"),
+    "lead conflict comparison must happen before a review claim",
+  );
 });
 
 test("the shared route is bounded, closed-key, simulation-backed, and never returns a key", async () => {
@@ -605,6 +827,52 @@ test("the shared route is bounded, closed-key, simulation-backed, and never retu
       "SELECT COUNT(*) AS count FROM address_validation_reviews",
     ).get().count, 1);
   } finally {
+    database.close();
+  }
+});
+
+test("client cancellation aborts the provider and inserts no review receipt", async () => {
+  const database = new AddressReviewDatabase();
+  const originalFetch = globalThis.fetch;
+  let providerStarted;
+  const started = new Promise((resolve) => {
+    providerStarted = resolve;
+  });
+  let providerAborted = false;
+  globalThis.fetch = async (_url, init) => new Promise((_resolve, reject) => {
+    providerStarted();
+    init.signal.addEventListener("abort", () => {
+      providerAborted = true;
+      reject(new DOMException("canceled", "AbortError"));
+    }, { once: true });
+  });
+  try {
+    Object.assign(workerEnvironment, {
+      NODE_ENV: "test",
+      FCI_OFFICE_EMAILS: ACTOR,
+      GOOGLE_INTEGRATION_MODE: "workspace",
+      GOOGLE_MAPS_ADDRESS_VALIDATION_ENABLED: "true",
+      GOOGLE_MAPS_SERVER_API_KEY: "FCI_TEST_SECRET",
+      DB: database,
+    });
+    const controller = new AbortController();
+    const responsePromise = route.POST(request({
+      address: TEST_ADDRESS,
+      entityKind: "project",
+      targetId: "project-canceled",
+      sessionToken: "12345678-1234-4123-8123-123456789abf",
+    }, ACTOR, APP_ORIGIN, controller.signal));
+    await started;
+    controller.abort();
+    const response = await responsePromise;
+    assert.equal(response.status, 499);
+    assert.equal(providerAborted, true);
+    assert.deepEqual(await response.json(), { error: "Address review was canceled." });
+    assert.equal(database.database.prepare(
+      "SELECT COUNT(*) AS count FROM address_validation_reviews",
+    ).get().count, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
     database.close();
   }
 });

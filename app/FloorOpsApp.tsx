@@ -2166,7 +2166,6 @@ function LeadModal(props: LeadModalProps) {
   const seed: Partial<Lead> | null = props.mode === "edit" ? props.initialValues : props.initialValues ?? null;
   const [site, setSite] = useState(seed?.site ?? "");
   const [addressReview, setAddressReview] = useState<AddressReviewReference | null>(null);
-  const [addressFieldRevision, setAddressFieldRevision] = useState(0);
   const inboxPrefill = props.mode === "create" && props.initialValues !== undefined;
   const sourceOptions = ["Website", "Referral", "Bid invite", "Repeat client"];
   if (seed?.source && !sourceOptions.includes(seed.source)) sourceOptions.push(seed.source);
@@ -2284,14 +2283,10 @@ function LeadModal(props: LeadModalProps) {
       props.onClose();
     } catch (saveError) {
       if (saveError instanceof LeadEditConflictError) {
-        if (addressReview) {
-          setAddressReview(null);
-          setAddressFieldRevision((current) => current + 1);
-        }
         setConflictVersion(saveError.currentVersion);
         setConflictValues(saveError.currentValues);
         setError(addressReview
-          ? "This lead changed while you were editing. Review the address again, then choose Re-apply changes."
+          ? "This lead changed while you were editing. Your address review is still selected; review the other entries, then choose Re-apply changes."
           : "This lead changed while you were editing. Review your entries, then choose Re-apply changes.");
       } else {
         setError(saveError instanceof Error ? saveError.message : "Lead changes could not be saved.");
@@ -2311,7 +2306,7 @@ function LeadModal(props: LeadModalProps) {
       <div className="form-row"><label>Primary contact<input name="contact" required maxLength={160} placeholder="Full name" defaultValue={seed?.contact ?? ""} disabled={saving} />{savedValue("contactName")}</label><label>Lead source<select name="source" defaultValue={seed?.source ?? "Website"} disabled={saving}>{sourceOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("source")}</label></div>
       {(editMode || inboxPrefill) && <div className="form-row"><label>Contact email <span className="optional-label">Optional</span><input name="contactEmail" type="email" maxLength={254} defaultValue={seed?.contactEmail ?? ""} disabled={saving} />{savedValue("contactEmail")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="contactPhone" type="tel" maxLength={40} defaultValue={seed?.contactPhone ?? ""} disabled={saving} />{savedValue("contactPhone")}</label></div>}
       <label>Project / opportunity<input name="project" required maxLength={180} placeholder="Project name" defaultValue={seed?.project ?? ""} disabled={saving} />{savedValue("projectName")}</label>
-      <div className="form-row modal-hint-form-row"><div className="modal-hinted-field"><div className="modal-hint-label-row"><label htmlFor="lead-estimated-value">Estimated value</label><WorkspaceInfoHint label="Lead value help" text={LEAD_ESTIMATED_VALUE_HINT} anchor="auto" /></div><input id="lead-estimated-value" name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{inboxPrefill && seed?.estimatedValue === undefined && <small>Still needs typing before this lead can be added.</small>}{savedValue("estimatedValue")}</div><div><AddressValidationField key={addressFieldRevision} id="lead-site" name="site" label="Project site" value={site} required entityKind="lead" targetId={editLead?.id ?? "new"} mapsRuntime={props.mapsRuntime} disabled={saving} onChange={setSite} onReviewChange={setAddressReview} />{inboxPrefill && !seed?.site && <small>Still needs typing before this lead can be added.</small>}{savedValue("site")}</div></div>
+      <div className="form-row modal-hint-form-row"><div className="modal-hinted-field"><div className="modal-hint-label-row"><label htmlFor="lead-estimated-value">Estimated value</label><WorkspaceInfoHint label="Lead value help" text={LEAD_ESTIMATED_VALUE_HINT} anchor="auto" /></div><input id="lead-estimated-value" name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{inboxPrefill && seed?.estimatedValue === undefined && <small>Still needs typing before this lead can be added.</small>}{savedValue("estimatedValue")}</div><div><AddressValidationField id="lead-site" name="site" label="Project site" value={site} required entityKind="lead" targetId={editLead?.id ?? "new"} mapsRuntime={props.mapsRuntime} disabled={saving} onChange={setSite} onReviewChange={setAddressReview} />{inboxPrefill && !seed?.site && <small>Still needs typing before this lead can be added.</small>}{savedValue("site")}</div></div>
       {editMode && !props.isAdmin && <p id="lead-estimated-value-help" className="form-help"><ShieldCheck size={14} /> Estimated value is read-only here. An administrator can edit it.</p>}
       {(editMode || inboxPrefill) && <div className="form-row"><label>Stage<select name="stage" defaultValue={seed?.stage ?? "New inquiry"} disabled={saving}>{stageOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("stage")}</label>{editMode && <label>Lead status<select name="status" defaultValue={editLead?.status.toLowerCase()} disabled={saving}><option value="active">Active</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="archived">Archived</option></select>{savedValue("status")}</label>}</div>}
       <label>Next action<textarea name="notes" required maxLength={500} placeholder="What needs to happen next?" defaultValue={seed?.next ?? ""} disabled={saving} />{savedValue("nextAction")}</label>
@@ -2372,7 +2367,6 @@ function ClientEditModal({ client, mapsRuntime, onClose, onSave }: { client: Cli
   const initialSiteAddress = client.jobSite?.address ?? "";
   const [siteAddress, setSiteAddress] = useState(initialSiteAddress);
   const [addressReview, setAddressReview] = useState<AddressReviewReference | null>(null);
-  const [addressFieldRevision, setAddressFieldRevision] = useState(0);
   const industry = client.industryRaw ?? null;
   const industryOptions = industry && !(CLIENT_INDUSTRY_OPTIONS as readonly string[]).includes(industry)
     ? [industry, ...CLIENT_INDUSTRY_OPTIONS]
@@ -2420,14 +2414,10 @@ function ClientEditModal({ client, mapsRuntime, onClose, onSave }: { client: Cli
       onClose();
     } catch (saveError) {
       if (saveError instanceof ClientEditConflictError) {
-        if (addressReview) {
-          setAddressReview(null);
-          setAddressFieldRevision((current) => current + 1);
-        }
         setConflictVersion(saveError.currentVersion);
         setConflictValues(saveError.currentValues);
         setError(addressReview
-          ? "This client changed while you were editing. Review the address again, then choose Re-apply changes."
+          ? "This client changed while you were editing. Your address review is still selected; review the other entries, then choose Re-apply changes."
           : "This client changed while you were editing. Review your entries, then choose Re-apply changes.");
       } else {
         setError(saveError instanceof Error ? saveError.message : "Client changes could not be saved.");
@@ -2442,7 +2432,7 @@ function ClientEditModal({ client, mapsRuntime, onClose, onSave }: { client: Cli
     <form onSubmit={submit}>
       {error && <p className="project-operation-error" role="alert">{error}</p>}
       <label>Client business name<input data-overlay-initial-focus name="name" required maxLength={180} defaultValue={client.name} disabled={saving} />{savedValue("name")}</label>
-      <div><AddressValidationField key={addressFieldRevision} id="client-site-address" name="siteAddress" label="Primary site address" value={siteAddress} entityKind="client" targetId={client.id} mapsRuntime={mapsRuntime} disabled={saving} onChange={setSiteAddress} onReviewChange={setAddressReview} />{savedValue("siteAddress")}</div>
+      <div><AddressValidationField id="client-site-address" name="siteAddress" label="Primary site address" value={siteAddress} entityKind="client" targetId={client.id} mapsRuntime={mapsRuntime} disabled={saving} onChange={setSiteAddress} onReviewChange={setAddressReview} />{savedValue("siteAddress")}</div>
       <div className="form-row"><label>Industry <span className="optional-label">Optional</span><select name="industry" defaultValue={industry ?? ""} disabled={saving}><option value="">Not set</option>{industryOptions.map((option) => <option value={option} key={option}>{option}</option>)}</select>{savedValue("industry")}</label><label>Client status<select name="status" defaultValue={client.status.toLowerCase()} disabled={saving}>{CLIENT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select>{savedValue("status")}</label></div>
       <p className="form-help"><ShieldCheck size={14} /> Saving appends one before-and-after activity record. A newer saved version is never overwritten automatically.</p>
       <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : conflictVersion ? "Re-apply changes" : "Save changes"}</button></footer>
@@ -2638,7 +2628,6 @@ function ProjectEditModal({ project, clients, isAdmin, mapsRuntime, onClose, onS
   const storedSite = project.site === "Site pending" ? null : project.site;
   const [site, setSite] = useState(storedSite ?? "");
   const [addressReview, setAddressReview] = useState<AddressReviewReference | null>(null);
-  const [addressFieldRevision, setAddressFieldRevision] = useState(0);
 
   function savedValue(key: keyof ProjectConflictValues) {
     if (!Object.hasOwn(conflictValues, key)) return null;
@@ -2718,14 +2707,10 @@ function ProjectEditModal({ project, clients, isAdmin, mapsRuntime, onClose, onS
       onClose();
     } catch (saveError) {
       if (saveError instanceof ProjectEditConflictError) {
-        if (addressReview) {
-          setAddressReview(null);
-          setAddressFieldRevision((current) => current + 1);
-        }
         setConflictVersion(saveError.currentVersion);
         setConflictValues(saveError.currentValues);
         setError(addressReview
-          ? "This project changed while you were editing. Review the address again, then choose Re-apply changes."
+          ? "This project changed while you were editing. Your address review is still selected; review the other entries, then choose Re-apply changes."
           : "This project changed while you were editing. Review your entries, then choose Re-apply changes.");
       } else {
         setError(saveError instanceof Error ? saveError.message : "Project changes could not be saved.");
@@ -2741,7 +2726,7 @@ function ProjectEditModal({ project, clients, isAdmin, mapsRuntime, onClose, onS
       {error && <p className="project-operation-error" role="alert">{error}</p>}
       <label>Client<select data-overlay-initial-focus name="clientId" defaultValue={project.clientId} required disabled={saving}>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select>{savedValue("clientId")}</label>
       <label>Project name<input name="name" required maxLength={180} defaultValue={project.name} disabled={saving} />{savedValue("name")}</label>
-      <div><AddressValidationField key={addressFieldRevision} id="project-site" name="site" label="Site" value={site} entityKind="project" targetId={project.id} mapsRuntime={mapsRuntime} disabled={saving} onChange={setSite} onReviewChange={setAddressReview} />{savedValue("site")}</div>
+      <div><AddressValidationField id="project-site" name="site" label="Site" value={site} entityKind="project" targetId={project.id} mapsRuntime={mapsRuntime} disabled={saving} onChange={setSite} onReviewChange={setAddressReview} />{savedValue("site")}</div>
       {isAdmin ? <div className="form-row"><label>Status<select name="status" defaultValue={project.status.toLowerCase()} disabled={saving}>{PROJECT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select>{savedValue("status")}</label><label>Estimated value <span className="optional-label">Optional</span><input name="estimatedValue" type="number" min="0" step="1" inputMode="numeric" defaultValue={project.estimatedValue ?? ""} disabled={saving} />{savedValue("estimatedValue")}</label></div> : <><div className="drawer-stats" aria-label="Admin-only project fields"><div><span>Status</span><strong>{project.status}</strong></div><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Contract value</span><strong>{FINANCIAL_RESTRICTION_LABEL}</strong></div></div><p className="form-help"><ShieldCheck size={14} /> Status and financial fields are read-only here. An admin can edit them.</p></>}
       <div className="form-row"><label>Flooring category <span className="optional-label">Optional</span><select name="flooringCategory" defaultValue={project.flooringCategory ?? ""} disabled={saving}><option value="">Not yet captured</option>{FLOORING_CATEGORIES.map((category) => <option key={category} value={category}>{displayStatus(category, category)}</option>)}</select>{savedValue("flooringCategory")}</label><label>Square feet <span className="optional-label">Optional</span><input name="squareFeet" type="number" min="1" step="1" inputMode="numeric" defaultValue={project.squareFeet ?? ""} disabled={saving} />{savedValue("squareFeet")}</label></div>
       <label>Project segment <span className="optional-label">Optional</span><select name="segment" defaultValue={project.segment ?? ""} disabled={saving}><option value="">Derived from client industry</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select>{savedValue("segment")}</label>
