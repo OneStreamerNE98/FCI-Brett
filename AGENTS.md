@@ -31,7 +31,7 @@ Start with [`docs/README.md`](docs/README.md), the audience-grouped index of eve
 ## Required workflow
 
 1. Start from an up-to-date, clean `main` branch.
-2. Create an agent-prefixed branch: `codex/<short-feature-name>` for Codex, `claude/<short-feature-name>` for Claude.
+2. Create an agent-prefixed branch: `codex/<short-feature-name>` for Codex, `claude/<short-feature-name>` for Claude, `kimi/<short-feature-name>` for Kimi.
 3. Keep changes scoped and preserve unrelated user work.
 4. Run the relevant tests during development and run `npm test` before handoff.
 5. Open a pull request with a concise summary, verification evidence, and data/security impact note.
@@ -78,9 +78,9 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
 - **Pull first, every session.** Fetch and start from current `main` before any work,
   and pull again after the owner merges anything. Never build on a stale clone — a
   stale-based PR conflicts with everything.
-- **One branch per agent per task, always agent-prefixed** (`codex/*`, `claude/*`).
-  Never commit directly to `main`. The PR history doubles as the attribution log of
-  which agent did what — keep the prefixes honest.
+- **One branch per agent per task, always agent-prefixed** (`codex/*`, `claude/*`,
+  `kimi/*`). Never commit directly to `main`. The PR history doubles as the attribution
+  log of which agent did what — keep the prefixes honest.
 - **Pull requests are the only merge point.** The owner (Jason) reviews and merges;
   agents never merge their own or another agent's PR unless the owner explicitly
   delegates it for a named PR.
@@ -133,6 +133,11 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   and the correction lands as a dated amendment banner (orchestrator-authored, or
   proposed in the PR body for the orchestrator to place). A PR never edits the
   criteria it is graded against (rule recorded August 4, 2026, after EDIT-09).
+- **Kimi — implementer (added August 4, 2026):** a third build agent on the same terms
+  as Codex — builds packets exactly as written (why/do/accept), one packet per draft PR,
+  `kimi/*` branches, its own clone, and the same post-merge ledger flip duty. Its PRs go
+  through the identical orchestrator review before merge; the review pipeline is
+  author-agnostic. Same prohibition on rewriting the criteria it is graded against.
 - **Owner (Jason) — merge authority and gates:** merges PRs (may delegate a named PR),
   and holds every owner gate: new scopes, API keys, billing, live resources,
   deployment, second user, real data.
