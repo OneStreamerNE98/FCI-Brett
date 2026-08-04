@@ -3581,7 +3581,8 @@ table/toolbar idiom at desktop widths, iOS inset-grouped-list idiom in the card 
 This is a DIRECTION for the values this packet picks, not a scope change: no new
 components, no framework, and the golden-hash pages change only via the A1 screenshot
 sign-off path. Where a value choice is ambiguous, Apple's Human Interface Guidelines are
-the tiebreaker.
+the tiebreaker. Moderation clause (owner, August 4, 2026): Apple-aligned values, never a
+wholesale re-skin — "you don't need to go overboard".
 
 **Framework adoption (Tailwind/shadcn/Radix) was considered and REJECTED**, recorded here
 so it is not re-proposed casually: it rewrites the markup of every page including the two
