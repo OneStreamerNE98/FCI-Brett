@@ -1494,6 +1494,50 @@ unless the connection is already disconnected, so the destructive step can never
 token. State in the settings guide that a tenant move discards filed-email evidence — that
 evidence points at Drive files in a tenant the app will no longer be able to read, so keeping
 the rows would preserve the audit trail's appearance and not its substance.
+**Amendments (architecture review, August 3, 2026):** (d) connect-time tenant guard —
+`saveConnection` currently upserts a new `googleSubject` straight over the old row with no
+comparison (`app/lib/google-oauth.ts:860-871`; subject at `db/schema.ts:303`); on connect, if
+the incoming profile subject differs from the stored connection's `googleSubject` AND
+tenant-scoped rows exist under the connection key, refuse with instructions to run the reset
+first. (e) the reset must also field-level-clear the tenant values inside `workspace_settings`
+(`shared_drive_id`, `client_directory_sheet_id`, `intake_mailbox`) — the sim-reset batch this
+packet extends never touches that table, and a row-level clear would destroy non-tenant
+configuration. (f) the typed confirmation must name the tenant read from the STORED
+connection's `google_email`, not from env — env may already point at the new tenant at
+cutover.
+**Amendments (adversarial coherence review, August 3, 2026):** (g) the (d) row-existence
+probe is a NAMED WHITELIST, not "any keyed table has rows": tenant-scoped rows means rows
+in exactly `google_form_lead_reviews`, `google_form_lead_intake_watermarks`, `mail_items`,
+`gmail_file_archives` (plus artifacts via join), `drive_folder_mappings`,
+`google_drive_operations`, `google_sheet_sync_state`, `workspace_resources`,
+`workspace_blueprints`, or a non-null `clients.drive_folder_id`/`drive_url`,
+`projects.drive_folder_id`/`drive_url`, or `workspace_settings` tenant field — explicitly
+EXCLUDING `google_oauth_attempts` (connection-keyed, `db/schema.ts:289`, and the connect
+flow inserts the attempt row for this very connect at initiation,
+`app/adapters/d1/google-oauth-persistence.ts:68`, before the callback runs the guard, so
+counting it refuses every connect forever), `google_integration_events` (disconnect writes
+`oauth.disconnected` under the key, `app/lib/google-oauth.ts:780-798`, and any audit event
+the reset itself writes would re-arm the guard), and `google_connections` itself; a
+missing stored connection passes the guard. (h) tombstone disposition: the reset deletes
+the `google_connections` row after reading `google_email` for (f)'s confirmation, and (d)
+treats no-stored-row as pass — this reconciles Accept's "no row holding an identifier from
+the discarded tenant" clause, which the surviving tombstone (it retains
+`google_subject`/`google_email`, `db/schema.ts:303-304`) would otherwise violate. (i)
+field-level, not row-level, for clients/projects: `clients` and `projects` rows survive
+the reset with `drive_folder_id` AND `drive_url` nulled on BOTH tables — naming
+`clients.drive_url` (`db/schema.ts:40`), which finding 3 omits. (j) extend (e): also clear
+`appointmentCalendarId` and `fieldCalendarId` inside `workspace_settings.settings_json`
+(`app/domain/workspace-settings.ts:8-9,81-82`, saved via
+`app/api/v1/settings/workspace/route.ts:56-61`), and null `tasks.source_ref` on
+gmail-derived tasks (`app/application/task-operations.ts:157`; `db/schema.ts:157`) — a
+discarded tenant's message ids serve nothing. (k) audit: Accept gains one
+`activity_events` row (action `google_workspace.tenant_reset`, actor = the administrator,
+detail naming the discarded tenant's stored `google_email`); `activity_events` is not
+connection-keyed and must not be cleared by this reset. (l) Files: add
+`app/lib/google-oauth.ts` (the (d) guard edits `saveConnection`, `:860-871`) and
+`app/adapters/d1/google-oauth-persistence.ts`; the sibling route carries the inverse
+simulation gate (`config.simulation` → 409), which "runs in workspace mode" implies but
+must be stated.
 **Deliberately NOT in scope:** a data-preserving migration that re-points identifiers across
 tenants. It is far more work, and what it would preserve here is staging test data
 (`Project 2`, `Test Project`, `New Proj`), not business history. Running two tenants at once
@@ -1568,6 +1612,24 @@ is deliberately only the cheap half.**
 `gmail.modify`. Attaching a mailbox therefore confers **send and delete** on it, not read-only
 visibility. If shared inboxes are meant to be read-mostly, that needs a narrower scope, and a
 scope change forces disconnect/reconnect for every existing connection.
+**Spec amendment (owner + architecture review, August 3, 2026):** (i) two key scopes, named
+explicitly: gmail-side tables (`mail_items`, `gmail_file_archives` + artifacts, and
+`google_form_lead_*` if mailbox-scoped) become per-mailbox keys; workspace-level tables —
+`workspace_resources`, `workspace_blueprints`, `drive_folder_mappings`,
+`google_sheet_sync_state` — stay under ONE stable workspace-scope key, otherwise filing from
+a second mailbox finds no folder mappings and re-provisions duplicate Drive folders, making
+this packet's own accept criterion unsatisfiable. (ii) drop the `mail_items` connection_key
+column default `'google-workspace'` (`db/schema.ts:205`) in the same migration — a
+silent-misattribution hazard once keys vary. (iii) accept-criteria additions: FCI labels
+prepared per attached mailbox (labels are per-mailbox; the prep route currently runs against
+"the" connection); per-mailbox readiness is EQUALITY — the selected mailbox equals that
+connection's `google_email` — not membership in `AUTHORIZED_ACCOUNTS` (membership is
+save-time validation only; Gmail reads `users/me`, so only equality keeps the panel honest).
+(iv) split: sub-scope (a) is attach + mailbox picker + per-mailbox readiness; the per-person
+access grants move to the new WS-21. (v) recorded as settled (owner + architecture review,
+August 3, 2026): the permanent per-person key is the verified lowercase email —
+`user_preferences.userEmail` is already PK precedent; do not build a roles/capability engine
+for this.
 **Deliberately NOT in scope:** domain-wide delegation (forbidden in six documents and two
 checklists, and described by Google as bypassing end-user consent); per-user OAuth tokens;
 and reading a staff member's personal mailbox without that person signing in — which this
@@ -1583,6 +1645,32 @@ PostgreSQL CHECK pattern; the settings guide states the `gmail.modify` consequen
 **Sequencing:** after **WS-19** — both rewrite what `connection_key` means, and doing them in
 either order separately would rewrite the same 191 references twice.
 **Effort:** medium-large. **Cost:** $0.
+
+### WS-21 · Per-person shared-inbox access grants (small-medium, after WS-20)
+**Why:** owner decisions August 3, 2026 — staff work the shared inboxes; access level
+is view + file; assignment happens in the Settings UI. The existing capability system
+must not be used (always-true by construction: every route hard-codes the capability
+array it then checks, `app/application/creation-authorization.ts:32-34`).
+**Do:** one seam — `resolveMailboxAccess(email)` returning the set of mailboxes the
+signed-in user may work, computed as (env-bounded universe ∩ stored grants), with
+Administrators always receiving the full set. ALL Gmail-surface routes consult only
+this seam. Opened to granted office users: GET gmail/messages, GET+POST
+messages/[id]/file, GET inbox-analysis, PATCH inbox-analysis. Staying
+Administrator-only: send-test and any reply/send path, labels/prepare, POST
+inbox-analysis (provider spend). Storage: one top-level key per principal in
+`workspace_settings` (sanitized-email key to satisfy the merge-key charset), which
+makes concurrent edits to different people atomic and shrinks the recorded
+last-write-wins residual to same-person-same-instant; the save route must return
+read-back stored state, not an echo of input. On any storage read failure the
+resolver fails CLOSED to admin-only — never open. Every grant and revoke writes an
+`activity_events` row with actor and timestamp.
+**Accept:** a non-granted office user receives 403 on all four opened routes; a
+granted user passes exactly those and still 403s on the admin-only set (asserted
+per-route); Administrators unaffected; grant/revoke audited; a simulated storage
+failure yields admin-only, not open access; the settings guide describes this as an
+access list on the hosting-supplied identity, not an identity system; `npm test` +
+`npm run test:e2e` + `npm run lint` named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
 
 ### SET-01 · Extract the eight Settings panels into `app/settings/components/` (large, complete in source in PR #35; not deployed) — DO FIRST in the SET workstream
 **Status:** Complete — PR #35, July 19, 2026. Source-only and not deployed.
@@ -1711,7 +1799,9 @@ from sheets/status; Workflow=In development; Data & security=Planned; Testing &
 launch=In development) — never compute a badge from state that has no endpoint.
 Standardize the four different deep-link labels to one: "Open Google Workspace setup".
 Make nav label match panel heading. **URL slugs must not change** (callback redirects
-target `/settings?section=google-workspace`).
+target `/settings?section=google-workspace`). Absorbs SET-12 (August 3, 2026): the
+Data & security section's badge copy is corrected here — "Sign out everywhere" renders
+Setup required with one factual sentence; backup/retention stay Planned.
 **Accept:** badges render per mapping; computed ones react to mocked payloads; single
 deep-link string; slugs unchanged.
 
@@ -1730,7 +1820,7 @@ acceptance stays in checklist 05, not in-app.
 reset does NOT clear it (lives in workspace_settings, not connection-scoped tables —
 assert in test).
 
-### SET-09 · Integration audit viewer (medium, after SET-01+02)
+### SET-09 · Integration audit viewer (small, after SET-01+02)
 **NARROWED July 30, 2026 — WS-10 shipped the events reader, so most of this packet is
 already built.** The original text said `google_integration_events` "has no reader anywhere
 (verified: no audit route exists)" and planned to build one. That premise is now false:
@@ -1783,6 +1873,7 @@ spreadsheets action instead of naming the env var (env stays documented as fallb
 data; unconfigured state names `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID`.
 
 ### SET-12 · Data & security: Planned placeholders for backup/restore, retention/export, session revocation, live-data cleanup (small, after SET-01)
+**Status:** Superseded — absorbed into SET-07. Its session-revocation card would print a false claim on a security screen: "Sign out everywhere" is built (app/management/access/AdminAccessPage.tsx:390 wired at :572; route at app/platform/google-cloud/employee-request-router.ts:345) — the honest state is Setup required, not Planned. SET-07 absorbs the corrected Data & security copy; the remaining static placeholder cards do not justify a packet.
 **Why:** The section has zero controls while the backend plans commit to all four; the
 honest interim is named Planned placeholders, not silence.
 **Do:** Four cards with "Planned" badges and one factual sentence each; NO status
@@ -2026,8 +2117,14 @@ create/adopt branches mocked; simulation e2e.
 **Effort:** medium.
 
 ### SET-21 · Project/client provisioning consumes the blueprint (medium, after SET-15) — LAST in the dashboard-setup feature
-**Why:** Per-project/client provisioning must consume the blueprint's folder sets and
-naming patterns, or "add a project subfolder" still needs a code change.
+**Why (corrected August 3, 2026 — the earlier "add a project subfolder still needs a
+code change" justification was false: `buildProjectDriveBlueprintPlan` at
+`app/lib/google-drive.ts:1508` already derives project subfolders from the blueprint):**
+four Settings controls are editable and silently ignored by provisioning — the client
+folder set (string literals at `google-drive.ts:1527-1528`) and both naming patterns
+(`clientFolderPattern`/`projectFolderPattern`: zero consumers outside their definition
+and the Settings editor — `workspace-blueprint.ts:50-51,138-139,514-515`) — so the
+preview endpoint can disagree with what provisioning actually creates on a live tenant.
 **Do:** `buildProjectFolderPlan` + `provisionProjectFolders` consumers read
 `blueprint.drive.clientFolders`/`projectFolders` and `naming.*` patterns (token
 substitution; the sanitizer guarantees the system `05_Correspondence` subtree
@@ -2086,8 +2183,12 @@ images, and Office files natively with no new scopes and no file bytes proxied (
 viewer's own Google session provides access via Shared Drive membership). Open-in-Google
 and Download fallbacks; a clear guidance state when the preview is blocked (no Google
 session or no access); CSP `frame-src` allowance for `https://drive.google.com` only;
-simulation mode renders a placeholder preview card. Wire from the project files list
-and the template rows (SET-17, merged PR #92).
+simulation mode renders a placeholder preview card. Wire from the template rows
+(SET-17, merged PR #92) — corrected August 3, 2026: there is no persisted project
+files list to wire from (`ProjectFilesPanel.tsx:243-259` shows only this-session
+creations). Coordination: build WITH SET-26 as one packet — SET-26's search results
+are the listing SET-23 needs — and mount the viewer inside `ProjectFilesPanel.tsx`,
+NOT at the FloorOpsApp mount, so neither half takes the queue slot.
 **Accept:** rendered tests for viewer open/fallback/guidance states driven by mocked
 payloads; CSP change pinned by a test; no new scopes (grep); simulation e2e clicks a
 simulated file and sees the placeholder; office non-admin can view (viewing is routine
@@ -2141,6 +2242,10 @@ routine work) with bounded query length and result count; results open in the SE
 viewer. Simulation searches the simulated registry/fixtures. Build the search as a
 reusable server-side service: AI-03 registers it as the assistant's `drive_search`
 tool once it exists (cross-reference recorded in both packets — build once).
+Coordination (August 3, 2026): build WITH SET-23 as one packet — these search results
+are the listing SET-23's viewer opens from, and the viewer mounts inside
+`ProjectFilesPanel.tsx`, not at the FloorOpsApp mount, so neither half takes the
+queue slot.
 **Accept:** route tests (scoping to the project folder asserted in the request shape,
 bounded inputs, non-project files never returned in mocks); e2e simulated search →
 viewer open; no new scopes. **Effort:** small-medium. **Cost:** $0.
@@ -2458,6 +2563,76 @@ untouched** (this must not touch Overview or Reports markup); `npm test`,
 `npm run test:e2e`, `npm run lint` all named with outcomes.
 **Effort:** small. **Cost:** $0.
 
+### SET-40 · Effective-config extensions: every UI-manageable value through one resolver (medium, after SET-05)
+
+**Why:** the August 3 configuration audit and its adversarial review settled how "define it
+in the front end" is built: extend the shipped SET-13 resolver, do NOT blanket-migrate raw
+`getGoogleRuntimeConfig()` call sites (18 exist; all consume only connectionKey/simulation
+or token fields; adding two D1 reads to every hot list route is pure regression), and note
+three UI-bound values live entirely outside that config today (`OPENAI_MODEL` at
+app/lib/assistant-config-sites.ts:31, the Chat enable flag at
+app/lib/google-chat-notifier-sites.ts:74,109, the lead-form Sheet id at
+app/lib/google-form-lead-intake-config.ts:3-4).
+**Do:** (1) add GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID as the fifth entry in
+EFFECTIVE_WORKSPACE_RESOURCE_SPECS (app/lib/workspace-effective-config.ts:32-53) with a
+verify/adopt route cloned from calendar/verify — wiring the resolved id in as the app
+tier, not through the process.env fallback parameter; (2) repair the dead
+clientDirectorySheetId saved tier — the column is read by both adapters and written by
+neither (the D1 upsert hard-codes it NULL) — plus an adopt-by-ID field; (3) show the
+calendar ID inputs regardless of calendarSetupMode (WorkspaceDefaultsPanel.tsx gates them
+behind "use-existing", so owners on the default mode never see fields that already work);
+(4) OPENAI_MODEL becomes UI-editable with SAVE-TIME provider validation — on save the
+server calls the provider's model-lookup with the configured key and rejects unknown ids;
+env OPENAI_MODEL is retained as the emergency override; a runtime model-not-found surfaces
+the model name instead of a generic failure. A closed in-code allowlist is REJECTED (it
+converts the next model retirement from an env edit into a code deploy); (5)
+GOOGLE_CHAT_NOTIFICATIONS_ENABLED and GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED become
+admin toggles resolved app-first with env fallback; (6) a cheap synchronous
+`getConnectionScope()` accessor for the connectionKey/simulation consumers (no DB reads),
+plus a guard test forbidding any new raw read of a resolver-covered field.
+**Accept:** every moved value shows its source (app-saved / environment / none) in
+Settings; saved values win with env as bootstrap fallback; saving an unknown model id is
+rejected with the provider's reason; hot list routes gain zero DB reads (getConnectionScope
+asserted synchronous); the guard test goes red on a raw read of a resolver-covered field;
+settings guide and rollout guide updated; `npm test`, `npm run test:e2e`, `npm run lint`
+named with outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### SET-41 · Intake mailbox selected in Settings; the allowlist stays in env (medium, after SET-40)
+
+**Why:** owner request August 3, 2026 — define mailbox addresses in the front end. The
+configuration audit's verdict, upheld under adversarial review: env keeps
+GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS and ALLOWED_DOMAINS (a compromised admin session must
+not be able to widen the identity set it is validated against); the UI selects among them.
+Gmail reads `users/me` (app/lib/google-gmail.ts:9, sole use :661), so the mailbox the app
+reads IS the connected account — the one-account equality is an invariant to keep, not a
+limitation to relax.
+**Do:** store `intakeMailbox` in the workspace settings JSON document
+(`normalizeWorkspacePreferences`, following the officeNotificationEmail precedent — the
+dead `intake_mailbox` column stays untouched); feed it into the resolver via
+SavedWorkspaceRuntimeValues; SAVE-TIME validation in the settings route = membership in
+AUTHORIZED_ACCOUNTS and domain in ALLOWED_DOMAINS; RESOLVE-TIME readiness entry = equality
+with the connected account's google_email, firing only when a connection exists and
+differs (membership alone would let the panel claim intake=ops@ while users/me reads
+info@); re-key the composite pairing entry (google-oauth.ts:419-428, whose envVar is a
+display string the effective-config filter can never clear) to the real env-var key with
+the composite text moved to the label; the two mailbox entries block `oauthReady` but
+NEVER `connectReady` — authorize gates on connectReady, and blocking it locks the
+administrator out of the only self-heal path; fix the validateWorkspaceRecipient
+early-return (google-gmail.ts:518) so the default recipient runs through the same :527
+domain/allowlist validation; the panel offers a selector over the env allowlist entries.
+Do not preserve the singleton readiness form.
+**Accept:** with two allowlisted addresses in env, switching the intake mailbox in Settings
+takes effect with no redeploy; selecting a mailbox that is not the connected account shows
+a mismatch readiness entry naming both addresses, with oauthReady false and connectReady
+true (the authorize route stays reachable — asserted); saving an address outside the
+allowlist or domain is rejected at save time with the reason; the send-test default
+recipient cannot bypass domain validation; guards and pins re-run green; `npm test`,
+`npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium. **Coordinates:** WS-20's per-mailbox readiness later generalizes the
+equality entry per connection — build this packet's re-check as a helper WS-20 can call
+per mailbox.
+
 ---
 
 # Workstream D — Flooring KPIs & reporting (KPI)
@@ -2746,9 +2921,13 @@ simulation e2e on the lead, client, and project forms. **Effort:** medium. **Cos
 **Why:** Crew photo/measurement drops into project folders become visible in the app
 without folder re-listing — "what changed on this project" at a glance.
 **Do:** Serialized `changes.getStartPageToken`/`changes.list` cursor polling per
-Shared Drive (existing `auth/drive` scope; the page token never expires, so scheduled
-polling works with zero standing infrastructure — the same serialized pattern as the
-repo's chosen Gmail history polling; explicitly no `changes.watch`, no Pub/Sub).
+Shared Drive (existing `auth/drive` scope; the page token never expires; explicitly
+no `changes.watch`, no Pub/Sub). Corrected August 3, 2026: no Gmail history polling
+exists in this repo to pattern-match — `docs/google-workspace-watch-and-queue-design.md:15-18`
+records polling as not authorized, and no `scheduled()` handler or cron trigger
+exists. The scheduling model is an unmade OWNER decision that must be made before
+dispatch, not during: an admin-pressed bounded reader keeps this packet medium; real
+scheduling is large infrastructure.
 Changes are attributed to projects via the provisioned folder mappings and stored as
 bounded recent-activity rows; an activity panel on the project page renders them.
 Cursor state persisted alongside the existing sync-state pattern.
@@ -2779,7 +2958,10 @@ Gmail shows FCI context (client, project stage, install dates, folder link) with
 one-click file-to-project — including employees' own mailboxes the connector cannot
 see — and FCI links pasted in Docs/Sheets unfurl as live smart chips.
 **Do:** One Workspace Add-on with HTTP-endpoint (alternate-runtime) card endpoints on
-the existing Cloud Run service: Gmail contextual trigger using the deliberately narrow
+the Cloud Run service — corrected August 3, 2026: no such service exists yet (this
+ledger's own source-only production foundation entry records nothing provisioned), so
+do not schedule this packet until the production platform is deployed; revisit after
+cutover. Gmail contextual trigger using the deliberately narrow
 per-open-message scopes (`gmail.addons.execute`,
 `gmail.addons.current.message.readonly`, `userinfo.email`) mapped to the existing OIDC
 employee identity; file-to-project posts the message ID to the backend which runs the
@@ -3093,11 +3275,14 @@ layouts unaffected).
 ### DES-09 · Guardrail wrap-up + ledger closure (small; tests/docs only, last)
 **Why:** close the design-critique ledger's Phase-3/4 open items this series
 executes, and leave one truth.
-**Do:** commit the approved 1280/390 reference screenshots of the durable
-routes on the post-series frame; extend the axe matrix to the editor editing
-state and the notifications popover; update `docs/design-critique-fix-plan.md`
-(Phase 3/4 closed with PR references) and the findings ledger (FIX-08
-disposition); reconcile all DES statuses.
+**Do (narrowed August 3, 2026 — two sub-items struck as already delivered: the
+editor-editing-state axe extension exists twice, `tests/e2e/page-layouts.spec.ts:176`
+and `:701`, and the findings-ledger FIX-08 disposition is already recorded,
+`docs/full-review-2026-07-21-findings.md:301-302`):** commit the approved 1280/390
+reference screenshots of the durable routes on the post-series frame; add one
+notifications-popover axe assertion; update `docs/design-critique-fix-plan.md`
+(Phase 3/4 closed with PR references); reconcile all DES statuses. Residue is the
+reference screenshots plus the one notifications-popover axe assertion only.
 **Accept:** ledgers agree with reality; screenshots committed; guard suite
 green (empty font-size-zero allowlist + undersized-control guard).
 **Effort:** small. **Cost:** $0.
@@ -3192,6 +3377,142 @@ the byte-pinned default; no new dependency; no x/y coordinates, row-height
 resize, or third width size.
 **Effort:** A small-medium + B small (2 packets; down from the pre-design
 3–5 estimate). **Cost:** $0.
+
+### DES-12 · Layout editor: snap-in-place drag, touch support, and uniform card rhythm (medium)
+
+**Why:** owner request, August 3, 2026 — the movable cards are "not very UI friendly,"
+resizing feels limited, and the cards read as uneven, "margins all over the place."
+Verified against source and measured on the live site, the complaint decomposes into five
+findings:
+1. **Resizing is a binary toggle.** `PageLayoutSpanSize = "half" | "full"`
+   (`app/lib/page-layouts.ts:35`), only for sections whitelisted in
+   `PAGE_LAYOUT_RESIZABLE_SECTIONS`; no drag-resize exists anywhere.
+2. **A half card silently un-applies.** The packing rule (`page-layouts.ts:247-253`)
+   promotes `half` back to `full` unless the next section is also half, with zero feedback
+   — a control that silently ignores input, the truthfulness defect class this repo hunts.
+3. **Drop position is a blind threshold.** Placement lands above/below on a 65%-of-height
+   cursor test (`PageLayoutEditor.tsx:194`) with no insertion indicator, no preview, no
+   settle animation — the "not snapping into place" feel, precisely.
+4. **The drag likely does not work on iPhone/iPad at all.** It is built on HTML5
+   `draggable`/`DragEvent` (`PageLayoutEditor.tsx:200-204`), which iOS Safari largely does
+   not fire, leaving only the Move up/down buttons on touch. *Recorded as inference; the
+   packet's first task is confirming on a real device.*
+5. **The rhythm complaint is real but not where expected.** Measured live August 3, 2026:
+   Overview's `.page-layout-grid` is already uniform (16px gaps throughout, zero child
+   margins, half-pairs pixel-equal at 1440) — but **Reports has no `.page-layout-grid` at
+   all**, and card internal padding varies four ways on one page (`16px` ×11, `17px 18px`
+   ×2, `0 0 20px` ×1). Inner-edge misalignment reads as uneven margins even when
+   structural gaps are equal. The above-grid stack also mixes 16/24/−8px margins.
+
+**Do:**
+(a) **Pointer-based drag** replacing HTML5 DnD — one code path serving mouse and touch;
+the Move up/down buttons stay as the keyboard path; every target ≥44px.
+(b) **Snap-in-place:** a visible insertion placeholder while dragging, an animated settle
+on drop, and the editor previews the **resolved** layout live — a half card that will
+render full (finding 2) must look full in the editor before saving, with a one-line
+explanation of why.
+(c) **Dynamic width via divider-drag with snap stops.** Owner decision August 3, 2026
+(supersedes the same-day "two sizes only" answer): the owner wants to genuinely change
+card widths, within the 1-or-2-cards-per-row model, and asked for "whatever makes the
+most sense so cards can be resized." The reconciliation with his simultaneous symmetry
+requirement is: **resize the divider, not the card.** Dragging a paired card's inner edge
+moves the shared divider — the partner complements automatically so the pair always sums
+to one full row — and release snaps to fractional stops (`third | half | two-thirds`,
+extending `PageLayoutSpanSize`; legacy stored `"half"` widens-on-read to `1/2`). A card
+alone in its row always renders full — this generalizes the existing promotion rule and is
+what guarantees every row stays full-bleed with identical gaps. **Free-pixel widths were
+considered and rejected**: unequal leftover space per row is precisely the "margins all
+over the place" the owner asked to eliminate. Below the existing 820px collapse,
+fractions stack full-width exactly as halves do today.
+(d) **Uniform rhythm:** one spacing token consumed by every page-level grid; bring Reports
+onto the same layout grid as Overview (or, if that migration proves out of reach, a shared
+token with the reason stated in the PR); normalize card internal padding to the design-spec
+scale (the measured `17px 18px` and `0 0 20px` outliers); normalize or deliberately record
+the 16/24 above-grid scale.
+
+**Constraints:** all new chrome is edit-mode-only — Overview and Reports default markup is
+golden-hash-pinned (`tests/e2e/page-layouts.spec.ts:8-9`); CSS-value changes are
+hash-safe, markup or class changes inside pinned sections are not, and this packet has
+**no regeneration authority**. Design-spec CSS strings are pinned mutation-sensitively
+(`docs/dashboard-design-spec.md:104-107`). **Takes the `app/FloorOpsApp.tsx` queue slot
+AND the `globals.css` lock**; it must add itself to the FloorOpsApp claim-list tail in the
+same PR (the tail is introduced by the open PR #283 — if unmerged when this dispatches,
+append `→ DES-12` during that merge instead).
+
+**Accept:** drag-reorder and divider-resize verified by touch on a real iPhone and iPad,
+with device and OS version named in the PR; insertion placeholder and settle
+e2e-verified; dragging one card of a pair resizes both, the pair sums to a full row at
+every stop, and release lands exactly on a stop (asserted by measured widths, not class
+names); a fractional card left alone in its row renders full and the editor says why
+before save; legacy stored `"half"` layouts render byte-identically; a
+measured-uniformity spec asserts equal inter-card gaps and token-conformant padding at
+390/834/1280 on Overview **and** Reports, in default and edit modes; both golden hashes
+byte-identical after the change; `npm test`, `npm run test:e2e`, `npm run lint` named with
+outcomes.
+**Effort:** medium. **Cost:** $0.
+
+### DES-13 · Design-language consolidation: color, type, and spacing scales with a drift guard (medium)
+
+**Why:** owner request, August 3, 2026 — a more elegant UI "in line with UIs from nice
+companies." The gap was measured, not assumed, across `app/globals.css` plus every
+`*.module.css` on origin/main (212KB of CSS):
+- **431 distinct hex colors, zero color tokens.** The 26 existing tokens cover radius,
+  shadow, and control sizing only.
+- **469 of 525 `font-size` declarations are `12px`** (7 distinct sizes exist: 12/13/14/16/
+  21/24/11). There is no typographic hierarchy — when everything is small, nothing leads
+  the eye.
+- **`font-weight: 800` is the working default (95 uses)**, with 850 and 750 oddballs; when
+  everything is bold, nothing is emphasized — this is the measured cause of the "bulky"
+  perception.
+- **19 raw pixel gap values dominated by odd numbers** (9px ×44, 7px ×43, 5px ×34, 3px
+  ×25): no spacing scale, and the micro-source of the "margins all over the place"
+  perception even where the macro grid is a uniform 16px.
+- **Radii and shadows are already tokenized and are the two dimensions that feel right** —
+  868 `var()` usages prove the token mechanism works in this codebase; it was simply never
+  extended to color, type, or spacing.
+**Framework adoption (Tailwind/shadcn/Radix) was considered and REJECTED**, recorded here
+so it is not re-proposed casually: it rewrites the markup of every page including the two
+golden-hash-pinned ones, re-litigates the owner-approved design authority, and abandons the
+dependency-light house style — to buy consistency that token consolidation delivers at a
+fraction of the cost. Revisit only if a full visual redesign is ever commissioned, and do
+this packet first anyway: the scales are the migration rails.
+
+**Do:**
+1. **Semantic color tokens** (~28: ink/muted-ink, surface/raised/sunken, line, accent and
+   states, semantic status colors), replacing the 431 raw hexes. The remap is mechanical
+   and scriptable; the naming is deliberate. Text/background pairs keep WCAG AA contrast.
+2. **Type scale and weight diet:** 13px body / 12px captions / defined heading steps with
+   set line-heights; weight 800+ demoted to display-only, 600 becomes the working bold;
+   the 850/750 oddballs eliminated.
+3. **4px-base spacing scale** (~6 steps) replacing the 19 raw gap values; the odd-pixel
+   values map to their nearest step.
+4. **Motion tokens:** the 12 ad-hoc transition declarations collapse to two duration
+   tokens and one easing.
+5. **A drift guard test**, same philosophy as every other guard in this repo: new CSS may
+   not introduce a raw hex color or an off-scale px value for gap/padding/font-size/
+   radius; a small allowlist file holds the legitimate exceptions (`50%`, `999px`, `0`).
+   The guard runs deps-free so it gates every future UI packet.
+6. **Consciously re-point** the mutation-sensitive CSS-string pins and any geometry-based
+   e2e assertions the type/weight changes shift — enumerated by name in the PR, never
+   silently.
+
+**Constraints:** CSS-values-only — **zero markup or class changes**, so both golden hashes
+remain byte-identical by construction (assert it anyway); takes the `globals.css` lock and
+touches the settings module CSS; **no `app/FloorOpsApp.tsx` change and no queue slot**;
+`docs/dashboard-design-spec.md`'s token table is updated in the same PR so the design
+authority records the new scales; the owner reviews before/after screenshots at
+390/834/1280 **before merge** — this changes the look of every page and carries owner
+sign-off, not silent taste.
+
+**Accept:** a hex census over app CSS returns ≤ the agreed token count plus allowlist
+(measured by the drift guard, running in CI); the font-size census matches the scale
+exactly; no `font-weight` above 700 outside the display allowlist; the gap census is
+on-scale; both golden hashes byte-identical; the drift guard goes red on a fixture that
+introduces one raw hex (negative test); every re-pointed pin enumerated in the PR;
+`npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
+**Effort:** medium. **Cost:** $0. **Sequencing:** after NFIX-07 (same `globals.css` lock),
+**before** DES-12, grid views, and the button de-bulking — all three consume these scales
+instead of inventing their own.
 
 # Workstream G — AI assistant & automation (AI)
 

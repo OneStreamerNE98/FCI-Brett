@@ -313,13 +313,21 @@ asserted distinct from loading-state copy on Overview and Reports.
 ## Wave R4 — after the SET series (queued with the feature resume)
 
 ### FIX-09 · E2e through the real simulation backend (P2 F-7; medium)
-**Why:** 31 stubs mean the simulation backend — the product's deterministic test
-substrate — has zero browser-level coverage; a live-only bug in the simulated
-routes' contracts survives the suite.
-**Do:** add one unstubbed happy-path e2e per Google surface (connect-sim, drive
-setup, gmail filing, calendar hold, sheets sync) driving the REAL simulation
-routes end-to-end on the post-SET-29 frame; keep existing stubbed specs for
-edge/failure shaping.
+**Why (premise narrowed August 3, 2026):** F-7's "every browser test bypasses the
+simulation backend" is now false — `tests/e2e/set22-project-drive-files.spec.ts` is
+fully unstubbed and drives the real backend, and the stepper's real-reset path
+exists. The remaining gap is per-surface: gmail messages/filing, calendar
+(test-hold has zero e2e references), sheets/sync, and connection/connect-sim are
+still 100% intercepted (~360 `page.route`/`unroute` lines across 35 files; the
+"31 stubs" figure is stale). A live-only bug in those surfaces' simulated route
+contracts survives the suite.
+**Do:** add one unstubbed happy-path e2e per still-uncovered Google surface
+(connect-sim, gmail filing, calendar hold, sheets sync — drive setup is already
+delivered unstubbed by set22) driving the REAL simulation routes end-to-end on the
+post-SET-29 frame; keep existing stubbed specs for edge/failure shaping. Hard
+constraint: new real-backend specs must use the `registerSimulationResetRecovery`
+protocol (`tests/e2e/simulation-workspace.ts:94`) — the single-worker registry
+hazard broke PR #206 and recurred July 28.
 **Accept:** the new specs pass with network interception disabled for
 `/api/v1/integrations/google/**`; a deliberate simulation-route contract break
 fails them.
@@ -330,8 +338,9 @@ fails them.
 **Sequencing recap:** R1 = FIX-01 → FIX-02 → FIX-03 → FIX-04 → FIX-05 → FIX-06 →
 FIX-10 (FIX-01/02 share `google-drive.ts` call-graph — run in order; FIX-03..06 and
 FIX-10 are parallel-safe with each other but serialize with anything touching the
-same files). R2 = SET-29…SET-34. R3 = FIX-07 → FIX-08. R4 = FIX-09 + FIX-11 + FIX-12 + the
-feature queue. Engine feature packets (SET-17/18/21, SET-25, GI-04) remain
+same files). R2 = SET-29…SET-34. R3 = FIX-07 → FIX-08. R4's remainder (re-gated August 3,
+2026): FIX-09 and FIX-12 stay open, both rescoped; FIX-11 is gated on the allUsers
+invoker-grant review rather than a wave. Engine feature packets (SET-17/18/21, SET-25, GI-04) remain
 parallel-safe throughout, subject to the same-file rule.
 
 ---
@@ -374,6 +383,7 @@ most need anonymous protection. Dev Sites surface does not run this router; no d
 exposure. → **FIX-11.**
 
 ### F-15 · Throttle fires after 1–3 authorization DB round-trips (P3)
+**Status:** Superseded — absorbed into FIX-11. Premise re-verified intact August 3, 2026, but as a work item it is negative-value: the limiter keys on context.userId, which is derived by round-trip #1 (findSessionByTokenHash), so that read is structurally unremovable, and reordering ahead of the capability reads inverts the certified 401/403/404 denial precedence. The description stands as a finding only.
 For authenticated requests the identity-keyed limiter runs only after
 `findSessionByTokenHash`, optional `projectExistsForScope`, and optional
 `capabilityIsCurrentForScope` — so a rate-limited request still consumes those
@@ -389,12 +399,14 @@ dispatcher (validating the SET-28 extraction). No P0/P1 architectural defects. O
 latent hazard and three consolidation opportunities:
 
 ### F-16 · Duplicated Postgres advisory-lock ID across two subsystems (P2; VERIFIED)
+**Status:** Resolved in PR #112. The duplicated literal is gone — app/platform/postgres/advisory-locks.ts:6-7 assigns distinct IDs to the two subsystems and tests/postgres-advisory-locks.test.mjs:27-63 pins uniqueness, both imports, and ID-distinctness. The guard's app/-only scan residual is owned by FIX-12 item (4).
 `core-record-rehearsal.ts` and the admin-access mutation path independently hard-code
 the same advisory-lock id `7314269172071302` with no shared constant. Two subsystems
 sharing one lock id can block or serialize each other unexpectedly, and a future edit
 to one copy silently desyncs the pair. → **FIX-10.**
 
 ### F-17 · Per-route preamble hand-rolled 36 times; `no-store` applied 4 ways (P3)
+**Status:** Superseded — absorbed into FIX-12. The no-store helper (app/lib/no-store-json.ts, 42 importers), the shared Google error helper (app/lib/google-integration-error.ts:26, 13 users), and formatUsd (app/lib/format-usd.ts) were delivered by NFIX-03 (PR #197). The surviving gap — no route wrapper; the requireOfficeUser preamble now hand-rolled in 60 route files, up from 36 — moves to FIX-12's rescoped inventory.
 The `requireOfficeUser` + `"response" in auth` + `ensureWorkspaceSchema` (+
 `requireSameOrigin` for mutations) preamble is copy-pasted into all 36 routes, the
 `no-store` header uses four divergent idioms, and 8 routes omit it (already tracked by
@@ -403,6 +415,7 @@ construction — highest-value consolidation, but a broad diff; deferred to R4 a
 mechanical follow-up, not urgent.
 
 ### F-18 · Setup-action + settings-card boilerplate (P3)
+**Status:** Superseded — absorbed into FIX-12. The setup-action helper half was delivered by NFIX-03; the surviving settings-card loader-hook duplication (4 copies: AiAssistantSettingsCard.tsx:70, ChatNotificationSettingsCard.tsx:131, MySettingsPanel.tsx:44, WorkspaceDefaultsPanel.tsx:105) moves to FIX-12's rescoped inventory.
 The four lease-guarded setup routes each redefine local `response`/`errorResponse`
 helpers; at least three settings cards copy the same `loadRequestRef` stale-guard +
 loading/error state machine. Candidates for one shared helper each; small, low-risk,
@@ -426,21 +439,28 @@ distinct named constants instead — confirm intent from the two call sites firs
 location; both call sites import the constant; behavior unchanged.
 **Effort:** small. **Cost:** $0.
 
-### FIX-11 · Anonymous login-flow throttle (P2 F-14 + P3 F-15; small-medium; Wave R4, production-only)
+### FIX-11 · Anonymous login-flow throttle (P2 F-14; small; blocked on the allUsers invoker-grant review, production-only)
 **Why:** the identity-keyed limiter cannot cover the anonymous OIDC endpoints, which
 trigger outbound Google token calls — an amplification / cost vector.
-**Do:** add an anonymous/IP-or-global throttle in front of the router for
-`session/google/start` and `session/google/callback` (or inside the OIDC handlers),
-fail-closed and configurable via production-config, emitting a security-audit event
-on trip — mirroring BE-10's production limiter shape. Optionally move the
-identity-keyed check ahead of the sensitive-capability DB reads to address F-15. Dev
-Sites surface unaffected.
+**Do:** add an anonymous throttle in front of the router for
+`session/google/start` and `session/google/callback` (or inside the OIDC handlers):
+a per-process global bucket mirroring `request-rate-limit.ts` plus a bounded
+10-minute-TTL counter keyed on the attempt `state` value, which kills the replay
+amplification (stateless attempt cookie, `employee-oidc.ts:22`) that per-IP cannot
+(no x-forwarded-for parsing exists anywhere in `app/` or `production-runtime/`, and
+XFF trust behind a direct Cloud Run URL is spoofable). Fail-closed and configurable
+via production-config, emitting a security-audit event on trip — mirroring BE-10's
+production limiter shape. Dev Sites surface unaffected.
 **Accept:** threshold test that repeated anonymous start/callback calls get a
 throttled response + audit event; a legitimate single login is byte-identical; config
 default is fail-closed.
-**Effort:** small-medium. **Cost:** $0. **Note:** production-surface hardening —
-apply behind the same acceptance gate as the rest of the Cloud Run auth foundation;
-not a dev-environment blocker, which is why it is R4 rather than R1.
+**Effort:** small. **Cost:** $0. **Note (re-gated August 3, 2026):** FIX-11 is a
+**blocking precondition of granting the `allUsers` Cloud Run invoker binding** — the
+joint access-plus-authentication review `infrastructure/google-cloud/README.md:62`
+already requires. Until that grant, the anonymous endpoints are unreachable by
+construction (no invoker IAM resource exists anywhere in `infrastructure/`). Do not
+build earlier: the front-door topology decision (direct Cloud Run vs load balancer +
+Cloud Armor) is part of the same review and determines the throttle's shape.
 
 > **Wave R5 (July 23–24, 2026):** the holistic post-wave review's findings and
 > packets (FIX-13…FIX-19, with FIX-14/FIX-16 folded into SET-06 by owner
@@ -451,20 +471,28 @@ not a dev-environment blocker, which is why it is R4 rather than R1.
 **Why:** the July 22 R1 capture audit confirmed every finding is dispositioned, but
 three deferred items had prose and no owner. This packet is that owner, so nothing
 rides on memory.
-**Do:** (1) F-17 — one `withOfficeRoute` wrapper (origin → auth → schema → bounded
-body → no-store by construction) adopted incrementally across the 36 dev routes;
-the FIX-06 census tests become structural. (2) F-18 — one shared setup-action route
-helper (response/errorResponse/lease scaffolding for the four lease-guarded routes)
-and one shared settings-card fetch/state hook (built on the post-SET-29 frame — this
-is why the packet waits for R2). (3) FIX-03 residual — route project-Drive
-provisioning's `google_integration_events` through the shared constructors so
-simulation and live emit identical event types (closing the last event-parity
-divergence). (4) FIX-10 residual — widen the advisory-lock literal-uniqueness guard
+**Do (rescoped August 3, 2026 — the delivered route-helper half is struck: the
+response/errorResponse consolidation shipped in NFIX-03, PR #197):** the verified-open
+inventory is: (1) one `withOfficeRoute` wrapper (origin → auth → schema → bounded
+body → no-store by construction) adopted incrementally across the routes — the
+preamble is now hand-rolled in 60 route files; the FIX-06 census tests become
+structural. (2) one shared settings-card loader hook — the stale-guard +
+loading/error machine is copy-pasted in 4 components. (3) FIX-03 residual —
+drive-provisioning still hand-rolls raw `INSERT INTO google_integration_events`
+(`projects/[projectId]/drive/route.ts:35`, `drive/files/route.ts:282,304`) with no
+drive constructor in `app/lib/google-integration-events.ts`. (4) FIX-10 residual —
+the lock-guard scans `app/` only and omits `ADMIN_ACCESS_MUTATION_LOCK_ID`; widen
 beyond `app/` (include `production-runtime/`, `scripts/`, `worker/`, `db/`) and
-cover the admin id as well as the rehearsal id.
+cover the admin id as well as the rehearsal id. (5) accrued residuals recorded in
+later Status lines: SET-34 scroll-hijack + dead props (`TestingLaunchPanel.tsx:103-104`,
+`DirectorySyncPanel.tsx:539`), FIX-07 retry affordance, PR #140
+SQL-comment/partial-index items, PR #158 env-presence helper + hardcoded
+`secureSessionReady`, and the new gmail `_route-helpers.ts` duplication
+(`gmailErrorResponse`/`readBoundedJson` duplicating shared helpers). Consider
+splitting the mechanical 60-route wrapper adoption from the small-residual sweep —
+different risk profiles.
 **Accept:** wrapper-adopted routes return byte-identical responses (golden tests on
-a sample before/after); the setup-action helper keeps all four routes' route tests
-green unchanged; provisioning event parity pinned by a both-modes equality test;
+a sample before/after); provisioning event parity pinned by a both-modes equality test;
 the widened guard fails on a literal planted in `production-runtime/`; no behavior
 change anywhere.
 **Effort:** medium. **Cost:** $0.
