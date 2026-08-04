@@ -3567,6 +3567,7 @@ outcomes.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-13 · Design-language consolidation: color, type, and spacing scales with a drift guard (medium)
+**Status:** In progress — `codex/des13-design-tokens`
 
 **Why:** owner request, August 3, 2026 — a more elegant UI "in line with UIs from nice
 companies." The gap was measured, not assumed, across `app/globals.css` plus every
