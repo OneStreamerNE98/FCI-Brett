@@ -840,13 +840,32 @@ test("project provisioning is wired to effective setup and has no static root or
   assert.match(driveSource, /blueprint\.drive\.roots/u);
   assert.match(driveSource, /blueprint\.drive\.clientFolders/u);
   assert.match(driveSource, /blueprint\.drive\.projectFolders/u);
-  assert.match(provisionSource, /buildProjectDriveBlueprintPlan\(input\.blueprint\)/u);
-  assert.match(provisionSource, /resolveWorkspaceBlueprintFolderNames\(input\.blueprint/u);
+  // The plan is built from the preflighted blueprint, which is itself derived from
+  // input.blueprint — provisioning still reads no static seed, and now fails closed first.
+  assert.match(provisionSource, /const provisionableBlueprint = assertProvisionableWorkspaceBlueprint\(input\.blueprint\)/u);
+  assert.match(provisionSource, /buildProjectDriveBlueprintPlan\(provisionableBlueprint\)/u);
+  assert.match(provisionSource, /resolveWorkspaceBlueprintFolderNames\(provisionableBlueprint/u);
   assert.match(provisionSource, /ensureTree\(clientFolder\.id, input\.blueprint\.drive\.clientFolders/u);
   assert.match(provisionSource, /ensureTree\(projectFolder\.id, input\.blueprint\.drive\.projectFolders/u);
   assert.match(routeSource, /getEffectiveGoogleRuntimeSetup/u);
   assert.match(routeSource, /const \{ config, blueprint, resources \} = setup/u);
   assert.match(routeSource, /blueprint,\s*\n\s*\}\);/u);
+});
+
+test("the shared blueprint plan helper stays free of the provisioning preflight", async () => {
+  // buildProjectDriveBlueprintPlan also serves resolveSimulatedManagedProjectFolderPath,
+  // the simulation half of Gmail filing, which resolves provisioned folders and creates
+  // nothing. A preflight here 409s a read-only filing preview that live serves fine, so
+  // the assertion belongs to creator call sites only.
+  const driveSource = await readFile(new URL("../app/lib/google-drive.ts", import.meta.url), "utf8");
+  const planStart = driveSource.indexOf("export function buildProjectDriveBlueprintPlan");
+  const resolverStart = driveSource.indexOf("export function resolveSimulatedManagedProjectFolderPath");
+  assert.ok(planStart > 0 && resolverStart > planStart);
+  const planSource = driveSource.slice(planStart, resolverStart);
+  assert.doesNotMatch(planSource, /assertProvisionableWorkspaceBlueprint/u);
+
+  const resolverSource = driveSource.slice(resolverStart, driveSource.indexOf("\n}", resolverStart));
+  assert.doesNotMatch(resolverSource, /assertProvisionableWorkspaceBlueprint/u);
 });
 
 test("blueprint spreadsheet ensure searches the Shared Drive identity, creates with appProperties, and is idempotent after a move", async () => {

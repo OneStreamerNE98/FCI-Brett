@@ -969,6 +969,72 @@ test("live and simulation filing folder resolution share a fail-closed missing-f
   }
 });
 
+test("a legacy clientFolders duplicate cannot 409 simulation filing, which provisions nothing", async () => {
+  // The duplicate lives only in the per-client folder collection, so it cannot touch the
+  // project-folder paths filing resolves. Filing creates no folder in either mode, so the
+  // provisioning preflight must not reach it: simulation has to answer exactly like live,
+  // or a read-only preview 409s with a rename-your-folders message that live never shows.
+  const legacyDuplicateBlueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  legacyDuplicateBlueprint.drive.clientFolders.unshift(
+    { key: "legacy-client-duplicate-a", name: "00_Legacy", management: "owner", children: [] },
+    { key: "legacy-client-duplicate-b", name: "00_Legacy", management: "owner", children: [] },
+  );
+  const duplicateBlueprintRow = (connectionKey) => ({
+    id: `legacy-duplicate-blueprint-${connectionKey}`,
+    connection_key: connectionKey,
+    version: 2,
+    blueprint_json: JSON.stringify(legacyDuplicateBlueprint),
+  });
+
+  const simulationDatabase = createBehaviorDatabase();
+  simulationDatabase.state.blueprints.push(duplicateBlueprintRow(SIMULATION_CONNECTION));
+  const liveDatabase = createBehaviorDatabase();
+  liveDatabase.state.blueprints.push(duplicateBlueprintRow(LIVE_CONNECTION));
+  const liveMessageId = "live-msg-legacy-duplicate";
+  liveDatabase.state.mappings = [{
+    id: "live-project-mapping",
+    connection_key: LIVE_CONNECTION,
+    entity_type: "project",
+    entity_id: PROJECT_ID,
+    folder_key: "project-root",
+    drive_file_id: "live-project-root",
+    drive_url: "https://drive.google.test/live-project-root",
+  }];
+
+  try {
+    configureSimulation(simulationDatabase);
+    await simulation.getSimulationState();
+    const simulationPreview = await gmailFileRoute.GET(
+      routeRequest(`/api/v1/integrations/google/gmail/messages/${MESSAGE_ID}/file?projectId=${PROJECT_ID}`),
+      { params: Promise.resolve({ messageId: MESSAGE_ID }) },
+    );
+    assert.equal(simulationPreview.status, 200, JSON.stringify(await simulationPreview.clone().json()));
+    const simulationFiled = await gmailFileRoute.POST(
+      routeRequest(`/api/v1/integrations/google/gmail/messages/${MESSAGE_ID}/file`, "POST", { projectId: PROJECT_ID }),
+      { params: Promise.resolve({ messageId: MESSAGE_ID }) },
+    );
+    assert.equal(simulationFiled.status, 200, JSON.stringify(await simulationFiled.clone().json()));
+    assert.equal(simulationDatabase.state.archives[0].status, "filed");
+
+    await configureLive(liveDatabase);
+    installLiveFilingProvider(liveMessageId);
+    const livePreview = await gmailFileRoute.GET(
+      routeRequest(`/api/v1/integrations/google/gmail/messages/${liveMessageId}/file?projectId=${PROJECT_ID}`),
+      { params: Promise.resolve({ messageId: liveMessageId }) },
+    );
+    assert.equal(livePreview.status, 200, JSON.stringify(await livePreview.clone().json()));
+    const liveFiled = await gmailFileRoute.POST(
+      routeRequest(`/api/v1/integrations/google/gmail/messages/${liveMessageId}/file`, "POST", { projectId: PROJECT_ID }),
+      { params: Promise.resolve({ messageId: liveMessageId }) },
+    );
+    assert.equal(liveFiled.status, 200, JSON.stringify(await liveFiled.clone().json()));
+    assert.equal(livePreview.status, simulationPreview.status);
+    assert.equal(liveFiled.status, simulationFiled.status);
+  } finally {
+    configureSimulation(database);
+  }
+});
+
 test("live and simulation Gmail filing emit the same durable event-row shape", async () => {
   const simulationDatabase = createBehaviorDatabase();
   const liveDatabase = createBehaviorDatabase();

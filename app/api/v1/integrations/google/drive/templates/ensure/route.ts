@@ -24,6 +24,7 @@ import {
 } from "../../../../../../../lib/google-oauth-sites";
 import { GoogleIntegrationError } from "../../../../../../../lib/google-oauth";
 import { flattenWorkspaceRootFolders } from "../../../../../../../lib/workspace-blueprint";
+import { assertProvisionableWorkspaceBlueprint } from "../../../../../../../lib/workspace-blueprint-provisioning";
 import {
   parseWorkspaceReconcileMissingReview,
   type WorkspaceReconcileMissingReview,
@@ -110,6 +111,15 @@ export async function POST(request: NextRequest) {
       error: `Ensure the Shared Drive root folders before templates. Missing parent folder: ${templateFolder.parentKey}.`,
       code: "templates_parent_folder_missing",
     }, 409);
+  }
+
+  // This route creates a root-tree folder by blueprint name (`reuseByName` below), so it
+  // fails closed on a duplicate sibling name before the lease, the token exchange, and
+  // every provider mutation — the same preflight ensure-roots and project provisioning use.
+  try {
+    assertProvisionableWorkspaceBlueprint(blueprint);
+  } catch (error) {
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The Workspace templates could not be ensured. Try again."));
   }
 
   const lease = await acquireWorkspaceSetupLease(env.DB, {
