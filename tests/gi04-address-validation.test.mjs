@@ -30,7 +30,16 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24804 } },
 });
 
-const [domain, engine, reviews, mutation, config, route, autocompleteSession] = await Promise.all([
+const [
+  domain,
+  engine,
+  reviews,
+  mutation,
+  config,
+  route,
+  autocompleteSession,
+  mapsSites,
+] = await Promise.all([
   vite.ssrLoadModule("/app/domain/address-validation.ts"),
   vite.ssrLoadModule("/app/features/address-validation/address-validation.ts"),
   vite.ssrLoadModule("/app/adapters/d1/address-validation-reviews.ts"),
@@ -38,6 +47,7 @@ const [domain, engine, reviews, mutation, config, route, autocompleteSession] = 
   vite.ssrLoadModule("/app/lib/address-validation-sites.ts"),
   vite.ssrLoadModule("/app/api/v1/address-validation/route.ts"),
   vite.ssrLoadModule("/app/features/address-validation/address-autocomplete-session.ts"),
+  vite.ssrLoadModule("/app/lib/job-site-maps-sites.ts"),
 ]);
 
 after(async () => {
@@ -70,11 +80,12 @@ test("autocomplete reuses one token and rotates after every settled review attem
   );
 });
 
-test("Places browser autocomplete stays behind the owner gate and never reads the server key", async () => {
+test("Places autocomplete requires the owner gate and both key configurations", async () => {
   const runtime = {
     simulation: false,
     browserApiKey: "  FCI_TEST_BROWSER_KEY  ",
     addressValidationEnabled: false,
+    serverAddressValidationAvailable: true,
   };
   assert.equal(autocompleteSession.placesAutocompleteBrowserKey(runtime), null);
   assert.equal(autocompleteSession.placesAutocompleteBrowserKey({
@@ -86,10 +97,16 @@ test("Places browser autocomplete stays behind the owner gate and never reads th
     simulation: true,
     addressValidationEnabled: true,
   }), null);
+  assert.equal(autocompleteSession.placesAutocompleteBrowserKey({
+    ...runtime,
+    addressValidationEnabled: true,
+    serverAddressValidationAvailable: false,
+  }), null);
 
   assert.equal(autocompleteSession.addressAvailabilityHint({
     simulation: true,
     addressValidationEnabled: false,
+    serverAddressValidationAvailable: false,
   }), null);
   assert.equal(autocompleteSession.addressAvailabilityHint(runtime),
     "Maps address validation and autocomplete are unavailable until the owner enables them. Typed addresses stay unvalidated with no coordinates.");
@@ -101,12 +118,43 @@ test("Places browser autocomplete stays behind the owner gate and never reads th
   assert.equal(autocompleteSession.addressAvailabilityHint({
     ...runtime,
     addressValidationEnabled: true,
+    serverAddressValidationAvailable: false,
+  }), "Address review and autocomplete are unavailable because the server validation configuration is missing. Typed addresses stay unvalidated with no coordinates.");
+  assert.equal(autocompleteSession.addressAvailabilityHint({
+    ...runtime,
+    addressValidationEnabled: true,
+    browserApiKey: null,
+    serverAddressValidationAvailable: false,
+  }), "Address review and autocomplete are unavailable because both Maps key configurations are missing. Typed addresses stay unvalidated with no coordinates.");
+  assert.equal(autocompleteSession.addressAvailabilityHint({
+    ...runtime,
+    addressValidationEnabled: true,
   }), null);
   assert.equal(autocompleteSession.placesAutocompleteBrowserKey({
     ...runtime,
     browserApiKey: undefined,
     addressValidationEnabled: true,
   }), null);
+
+  Object.assign(workerEnvironment, {
+    GOOGLE_INTEGRATION_MODE: "workspace",
+    GOOGLE_MAPS_ADDRESS_VALIDATION_ENABLED: "true",
+    GOOGLE_MAPS_BROWSER_API_KEY: "FCI_TEST_BROWSER_KEY",
+    GOOGLE_MAPS_SERVER_API_KEY: "FCI_TEST_SERVER_KEY_MUST_NOT_LEAK",
+  });
+  assert.deepEqual(mapsSites.getSitesJobSiteMapsRuntimeConfig(), {
+    simulation: false,
+    browserApiKey: "FCI_TEST_BROWSER_KEY",
+    addressValidationEnabled: true,
+    serverAddressValidationAvailable: true,
+  });
+  workerEnvironment.GOOGLE_MAPS_SERVER_API_KEY = "   ";
+  assert.deepEqual(mapsSites.getSitesJobSiteMapsRuntimeConfig(), {
+    simulation: false,
+    browserApiKey: "FCI_TEST_BROWSER_KEY",
+    addressValidationEnabled: true,
+    serverAddressValidationAvailable: false,
+  });
 
   const component = await readFile(
     new URL("../app/features/address-validation/AddressValidationField.tsx", import.meta.url),
@@ -117,6 +165,13 @@ test("Places browser autocomplete stays behind the owner gate and never reads th
   assert.match(component, /"X-Goog-Api-Key": apiKey/u);
   assert.match(component, /className=\{styles\.attribution\} translate="no">Google Maps/u);
   assert.doesNotMatch(component, /SERVER_API_KEY|serverApiKey/u);
+
+  const mapsSitesSource = await readFile(
+    new URL("../app/lib/job-site-maps-sites.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(mapsSitesSource, /serverAddressValidationAvailable:\s*\n?\s*Boolean\(runtimeValue\(GOOGLE_MAPS_SERVER_API_KEY_ENV\)\?\.trim\(\)\)/u);
+  assert.doesNotMatch(mapsSitesSource, /serverApiKey\s*:/u);
 });
 
 class SqliteD1Statement {

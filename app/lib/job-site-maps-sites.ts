@@ -3,6 +3,10 @@ import {
   GOOGLE_MAPS_BROWSER_API_KEY_ENV,
   resolveJobSiteMapsRuntimeConfig,
 } from "../features/maps/job-site-map";
+import {
+  GOOGLE_MAPS_ADDRESS_VALIDATION_ENABLED_ENV,
+  GOOGLE_MAPS_SERVER_API_KEY_ENV,
+} from "./address-validation-sites";
 import { getGoogleRuntimeConfig } from "./google-oauth";
 
 type RuntimeEnvironment = Record<string, string | undefined>;
@@ -23,6 +27,9 @@ export function getSitesJobSiteMapsRuntimeConfig() {
   return resolveJobSiteMapsRuntimeConfig({
     simulation: googleRuntime.simulation,
     browserApiKey: runtimeValue(GOOGLE_MAPS_BROWSER_API_KEY_ENV),
-    addressValidationEnabled: enabled(runtimeValue("GOOGLE_MAPS_ADDRESS_VALIDATION_ENABLED")),
+    addressValidationEnabled:
+      enabled(runtimeValue(GOOGLE_MAPS_ADDRESS_VALIDATION_ENABLED_ENV)),
+    serverAddressValidationAvailable:
+      Boolean(runtimeValue(GOOGLE_MAPS_SERVER_API_KEY_ENV)?.trim()),
   });
 }

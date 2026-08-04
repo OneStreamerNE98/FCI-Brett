@@ -103,12 +103,22 @@ test("resolves no-address, simulation, missing-key, and live states fail closed"
     simulation: true,
     browserApiKey: "sim-configured-key",
     addressValidationEnabled: false,
+    serverAddressValidationAvailable: false,
   });
   assert.deepEqual(simulationNoKeyRuntime, {
     simulation: true,
     browserApiKey: null,
     addressValidationEnabled: false,
+    serverAddressValidationAvailable: false,
   });
+  assert.equal(maps.resolveJobSiteMapsRuntimeConfig({
+    simulation: false,
+    serverAddressValidationAvailable: true,
+  }).serverAddressValidationAvailable, true);
+  assert.equal(maps.resolveJobSiteMapsRuntimeConfig({
+    simulation: false,
+    serverAddressValidationAvailable: "true",
+  }).serverAddressValidationAvailable, false);
   assert.equal(maps.resolveJobSiteMapState(null, liveRuntime).kind, "no-address");
   assert.equal(maps.resolveJobSiteMapState(addressLocation, simulationKeyedRuntime).kind, "live");
   assert.equal(maps.resolveJobSiteMapState(addressLocation, simulationNoKeyRuntime).kind, "simulation");

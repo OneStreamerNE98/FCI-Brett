@@ -172,6 +172,67 @@ async function createEditFixtures(request: APIRequestContext, suffix: string) {
 test.beforeEach(clearGi04Records);
 test.afterEach(clearGi04Records);
 
+test("live autocomplete starts only when both Maps key configurations are available", async ({ page }) => {
+  const browserErrors = captureUnexpectedBrowserErrors(page);
+  await gotoLiveView(page, "/leads", "/api/v1/leads");
+
+  const availability = await page.evaluate(async () => {
+    const modulePath = "/app/features/address-validation/address-autocomplete-session.ts";
+    const helpers = await import(modulePath) as {
+      placesAutocompleteBrowserKey: (runtime: {
+        simulation: boolean;
+        browserApiKey: string | null;
+        addressValidationEnabled: boolean;
+        serverAddressValidationAvailable: boolean;
+      }) => string | null;
+      addressAvailabilityHint: (runtime: {
+        simulation: boolean;
+        browserApiKey: string | null;
+        addressValidationEnabled: boolean;
+        serverAddressValidationAvailable: boolean;
+      }) => string | null;
+    };
+    const ready = {
+      simulation: false,
+      browserApiKey: "FCI_TEST_BROWSER_KEY",
+      addressValidationEnabled: true,
+      serverAddressValidationAvailable: true,
+    };
+    const serverMissing = {
+      ...ready,
+      serverAddressValidationAvailable: false,
+    };
+    const browserMissing = {
+      ...ready,
+      browserApiKey: null,
+    };
+    const bothMissing = {
+      ...serverMissing,
+      browserApiKey: null,
+    };
+    return {
+      readyKey: helpers.placesAutocompleteBrowserKey(ready),
+      readyHint: helpers.addressAvailabilityHint(ready),
+      serverMissingKey: helpers.placesAutocompleteBrowserKey(serverMissing),
+      serverMissingHint: helpers.addressAvailabilityHint(serverMissing),
+      browserMissingKey: helpers.placesAutocompleteBrowserKey(browserMissing),
+      browserMissingHint: helpers.addressAvailabilityHint(browserMissing),
+      bothMissingHint: helpers.addressAvailabilityHint(bothMissing),
+    };
+  });
+
+  expect(availability).toEqual({
+    readyKey: "FCI_TEST_BROWSER_KEY",
+    readyHint: null,
+    serverMissingKey: null,
+    serverMissingHint: "Address review and autocomplete are unavailable because the server validation configuration is missing. Typed addresses stay unvalidated with no coordinates.",
+    browserMissingKey: null,
+    browserMissingHint: "Autocomplete is unavailable because its browser configuration is missing. Server review remains available and reports whether validation succeeded.",
+    bothMissingHint: "Address review and autocomplete are unavailable because both Maps key configurations are missing. Typed addresses stay unvalidated with no coordinates.",
+  });
+  expect(browserErrors).toEqual([]);
+});
+
 test("simulation reviews addresses on lead, client, and project create forms", async ({ page }) => {
   test.setTimeout(90_000);
   const browserErrors = captureUnexpectedBrowserErrors(page);

@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-const CSP = "frame-src 'self' https://www.google.com";
+const CSP = "frame-src 'self' https://www.google.com; connect-src 'self' https://places.googleapis.com";
 const projectName = "E2E Mobile Metadata Project";
 const projectNumber = "CF-2026-E2E00001";
 const projectAddress = "201 E2E Test Ave, Cherry Hill, NJ";
