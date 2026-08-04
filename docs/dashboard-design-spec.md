@@ -115,6 +115,15 @@ updated mutation-sensitively in the same PR as the change — never deleted.
 DES-02 adds the undersized-control guard (Phase-4 item); DES-04 empties the
 font-size-zero allowlist; DES-09 lands the reference screenshots.
 
+**Aesthetic direction (owner, August 4, 2026):** the design language aligns to Apple
+iOS/macOS — without going overboard — in service of the owner's stated goal: "a simple
+and easy to navigate webapp so users are more inclined to use it." Value-level
+execution and the Path A+ decision (no framework; evidence recorded) live in the plan
+ledger's DES-13; the standing usability acceptance lens for DES packets lives beside
+DES-16 in the same ledger. This spec's component grammar is unchanged by the
+direction; where a future value choice here is ambiguous, Apple's Human Interface
+Guidelines are the tiebreaker.
+
 ## 8. Order & interleaving (with the SET-30…34 series running in parallel)
 
 ```
