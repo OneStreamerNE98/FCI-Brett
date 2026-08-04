@@ -1,4 +1,5 @@
 import type { LeadRow } from "../../domain/lead";
+import { SAVED_ADDRESS_VERDICTS, typedAddress, type SavedAddressVerdict } from "../../domain/address-validation";
 import type {
   LeadCreationIntent,
   LeadRepository,
@@ -7,10 +8,25 @@ import type {
 import type { D1Database, D1PreparedStatement } from "./d1-database";
 import { d1RecordVersion, nextD1RecordVersion } from "./record-version.ts";
 
-type D1LeadRow = Omit<LeadRow, "version"> & { version: unknown };
+type D1LeadRow = Omit<LeadRow, "version" | "latitude" | "longitude" | "address_validation_verdict"> & {
+  latitude?: number | null;
+  longitude?: number | null;
+  address_validation_verdict?: string | null;
+  version: unknown;
+};
 
 function leadRow(row: D1LeadRow): LeadRow {
-  return { ...row, version: d1RecordVersion(row.version, "D1 lead version") };
+  const verdict = row.address_validation_verdict ?? null;
+  if (verdict !== null && !SAVED_ADDRESS_VERDICTS.includes(verdict as SavedAddressVerdict)) {
+    throw new Error("D1 lead address verdict is unsupported.");
+  }
+  return {
+    ...row,
+    latitude: row.latitude ?? null,
+    longitude: row.longitude ?? null,
+    address_validation_verdict: verdict as SavedAddressVerdict | null,
+    version: d1RecordVersion(row.version, "D1 lead version"),
+  };
 }
 
 async function currentLeadVersion(database: D1Database, leadId: string) {
@@ -72,9 +88,9 @@ export function createD1LeadRepository(database: D1Database): LeadRepository {
       }
       statements.push(
         database.prepare(intent.formLeadReview
-          ? "INSERT INTO leads (id, lead_number, company, contact_name, contact_email, contact_phone, project_name, source, stage, site, estimated_value, next_action, next_action_at, owner_email, status, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1"
-          : "INSERT INTO leads (id, lead_number, company, contact_name, contact_email, contact_phone, project_name, source, stage, site, estimated_value, next_action, next_action_at, owner_email, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(lead.id, lead.lead_number, lead.company, lead.contact_name, lead.contact_email, lead.contact_phone, lead.project_name, lead.source, lead.stage, lead.site, lead.estimated_value, lead.next_action, lead.next_action_at, lead.owner_email, lead.status, lead.created_by, lead.created_at, lead.updated_at),
+          ? "INSERT INTO leads (id, lead_number, company, contact_name, contact_email, contact_phone, project_name, source, stage, site, latitude, longitude, address_validation_verdict, estimated_value, next_action, next_action_at, owner_email, status, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1"
+          : "INSERT INTO leads (id, lead_number, company, contact_name, contact_email, contact_phone, project_name, source, stage, site, latitude, longitude, address_validation_verdict, estimated_value, next_action, next_action_at, owner_email, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(lead.id, lead.lead_number, lead.company, lead.contact_name, lead.contact_email, lead.contact_phone, lead.project_name, lead.source, lead.stage, lead.site, lead.latitude, lead.longitude, lead.address_validation_verdict, lead.estimated_value, lead.next_action, lead.next_action_at, lead.owner_email, lead.status, lead.created_by, lead.created_at, lead.updated_at),
       );
       statements.push(
         database.prepare(intent.formLeadReview
@@ -119,11 +135,12 @@ export function createD1LeadRepository(database: D1Database): LeadRepository {
 
     async update(intent: LeadUpdateIntent) {
       const { values } = intent;
+      const address = intent.address ?? typedAddress(values.site);
       const expectedVersion = d1RecordVersion(intent.expectedVersion, "Expected D1 lead version");
       const resultingVersion = nextD1RecordVersion(expectedVersion);
       const statements: D1PreparedStatement[] = [
-        database.prepare("UPDATE leads SET company = ?, contact_name = ?, contact_email = ?, contact_phone = ?, project_name = ?, source = ?, stage = ?, site = ?, estimated_value = ?, next_action = ?, next_action_at = ?, owner_email = ?, status = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?")
-          .bind(values.company, values.contactName, values.contactEmail, values.contactPhone, values.projectName, values.source, values.stage, values.site, values.estimatedValue, values.nextAction, values.nextActionAt, values.ownerEmail, values.status, intent.updatedAt, intent.leadId, expectedVersion),
+        database.prepare("UPDATE leads SET company = ?, contact_name = ?, contact_email = ?, contact_phone = ?, project_name = ?, source = ?, stage = ?, site = ?, latitude = ?, longitude = ?, address_validation_verdict = ?, estimated_value = ?, next_action = ?, next_action_at = ?, owner_email = ?, status = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?")
+          .bind(values.company, values.contactName, values.contactEmail, values.contactPhone, values.projectName, values.source, values.stage, values.site, address.latitude, address.longitude, address.verdict, values.estimatedValue, values.nextAction, values.nextActionAt, values.ownerEmail, values.status, intent.updatedAt, intent.leadId, expectedVersion),
       ];
       for (const activity of intent.activities) {
         statements.push(

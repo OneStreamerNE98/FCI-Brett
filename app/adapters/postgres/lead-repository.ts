@@ -1,4 +1,5 @@
 import { LEAD_STATUSES, type LeadRow, validateLeadValues } from "../../domain/lead";
+import { SAVED_ADDRESS_VERDICTS, typedAddress, type SavedAddressVerdict } from "../../domain/address-validation";
 import type {
   AcceptedLeadCreation,
   LeadCreationIntent,
@@ -39,6 +40,9 @@ type LeadDatabaseRow = Record<string, unknown> & {
   source: unknown;
   stage: unknown;
   site: unknown;
+  latitude: unknown;
+  longitude: unknown;
+  address_validation_verdict: unknown;
   estimated_value: unknown;
   next_action: unknown;
   next_action_at: unknown;
@@ -52,6 +56,7 @@ type LeadDatabaseRow = Record<string, unknown> & {
 
 const LEAD_SELECT = `SELECT id::text AS id, lead_number, company, contact_name,
        contact_email, contact_phone, project_name, source, stage, site,
+       latitude, longitude, address_validation_verdict,
        estimated_value::text AS estimated_value, next_action, next_action_at,
        owner_email, status, created_by, created_at, updated_at,
        version::text AS version
@@ -94,6 +99,16 @@ function leadRowFromPostgres(row: LeadDatabaseRow): LeadRow {
   if (!(LEAD_STATUSES as readonly string[]).includes(status)) {
     throw new Error("PostgreSQL lead status is unsupported");
   }
+  const addressVerdict = row.address_validation_verdict === null
+    || row.address_validation_verdict === undefined
+    ? null
+    : requiredText(row.address_validation_verdict, "PostgreSQL lead address verdict");
+  if (
+    addressVerdict !== null
+    && !SAVED_ADDRESS_VERDICTS.includes(addressVerdict as SavedAddressVerdict)
+  ) {
+    throw new Error("PostgreSQL lead address verdict is unsupported");
+  }
   return {
     id: row.id,
     lead_number: requiredText(row.lead_number, "PostgreSQL lead number"),
@@ -105,6 +120,9 @@ function leadRowFromPostgres(row: LeadDatabaseRow): LeadRow {
     source: requiredText(row.source, "PostgreSQL lead source"),
     stage: requiredText(row.stage, "PostgreSQL lead stage"),
     site: requiredText(row.site, "PostgreSQL lead site"),
+    latitude: row.latitude === undefined ? null : row.latitude as number | null,
+    longitude: row.longitude === undefined ? null : row.longitude as number | null,
+    address_validation_verdict: addressVerdict as SavedAddressVerdict | null,
     estimated_value: parsePostgresNumericSafeInteger(
       row.estimated_value,
       "PostgreSQL lead estimated value",
@@ -175,13 +193,22 @@ function leadCreationFingerprintInput(intent: LeadCreationIntent) {
     ? {
         version: 1,
         ...values,
+        latitude: intent.lead.latitude,
+        longitude: intent.lead.longitude,
+        addressValidationVerdict: intent.lead.address_validation_verdict,
         formLeadReviewId: parsePostgresUuid(
           intent.formLeadReview.id,
           "PostgreSQL Google Form review ID",
         ),
         formLeadReviewConnectionKey: intent.formLeadReview.connectionKey,
       }
-    : { version: 1, ...values };
+    : {
+        version: 1,
+        ...values,
+        latitude: intent.lead.latitude,
+        longitude: intent.lead.longitude,
+        addressValidationVerdict: intent.lead.address_validation_verdict,
+      };
 }
 
 export function calculatePostgresLeadCreationFingerprint(intent: LeadCreationIntent) {
@@ -333,22 +360,26 @@ export function createPostgresLeadRepository(
           const inserted = await client.query<LeadDatabaseRow>(
             `INSERT INTO leads (
                id, lead_number, company, contact_name, contact_email, contact_phone,
-               project_name, source, stage, site, estimated_value, next_action,
+               project_name, source, stage, site, latitude, longitude,
+               address_validation_verdict, estimated_value, next_action,
                next_action_at, owner_email, status, created_by, updated_by,
                created_at, updated_at, version
              ) VALUES (
                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-               $13, $14, $15, $16, $16, $17, $18, 1
+               $13, $14, $15, $16, $17, $18, $19, $19, $20, $21, 1
              )
              RETURNING id::text AS id, lead_number, company, contact_name,
                contact_email, contact_phone, project_name, source, stage, site,
+               latitude, longitude, address_validation_verdict,
                estimated_value::text AS estimated_value, next_action, next_action_at,
                owner_email, status, created_by, created_at, updated_at,
                version::text AS version`,
             [
               lead.id, lead.lead_number, lead.company, lead.contact_name,
               lead.contact_email, lead.contact_phone, lead.project_name, lead.source,
-              lead.stage, lead.site, lead.estimated_value, lead.next_action,
+              lead.stage, lead.site, lead.latitude, lead.longitude,
+              lead.address_validation_verdict,
+              lead.estimated_value, lead.next_action,
               lead.next_action_at === null ? null : new Date(lead.next_action_at),
               lead.owner_email, lead.status, lead.created_by,
               new Date(lead.created_at), new Date(lead.updated_at),
@@ -435,6 +466,7 @@ export function createPostgresLeadRepository(
       assertLeadUpdateIntent(intent);
       return withPostgresTransaction(pool, { schema: options.schema }, async (client) => {
         const values = intent.values;
+        const address = intent.address ?? typedAddress(values.site);
         const expectedVersion = parsePostgresPositiveBigint(
           intent.expectedVersion,
           "Expected PostgreSQL lead version",
@@ -443,18 +475,21 @@ export function createPostgresLeadRepository(
           `UPDATE leads SET
              company = $1, contact_name = $2, contact_email = $3, contact_phone = $4,
              project_name = $5, source = $6, stage = $7, site = $8,
-             estimated_value = $9, next_action = $10, next_action_at = $11,
-             owner_email = $12, status = $13, updated_by = $14, updated_at = $15,
+             latitude = $9, longitude = $10, address_validation_verdict = $11,
+             estimated_value = $12, next_action = $13, next_action_at = $14,
+             owner_email = $15, status = $16, updated_by = $17, updated_at = $18,
              version = version + 1
-           WHERE id = $16 AND version = $17::bigint
+           WHERE id = $19 AND version = $20::bigint
            RETURNING id::text AS id, lead_number, company, contact_name,
              contact_email, contact_phone, project_name, source, stage, site,
+             latitude, longitude, address_validation_verdict,
              estimated_value::text AS estimated_value, next_action, next_action_at,
              owner_email, status, created_by, created_at, updated_at,
              version::text AS version`,
           [
             values.company, values.contactName, values.contactEmail, values.contactPhone,
             values.projectName, values.source, values.stage, values.site,
+            address.latitude, address.longitude, address.verdict,
             values.estimatedValue, values.nextAction,
             values.nextActionAt === null ? null : new Date(values.nextActionAt),
             values.ownerEmail, values.status, intent.updatedBy, new Date(intent.updatedAt),

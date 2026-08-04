@@ -51,6 +51,9 @@ function leadIntent(overrides = {}) {
     source: "Referral",
     stage: "Qualified",
     site: "FCI TEST — DO NOT USE",
+    latitude: null,
+    longitude: null,
+    address_validation_verdict: "unvalidated",
     estimated_value: 125000,
     next_action: "Schedule site walk",
     next_action_at: UPDATED_AT + 86_400_000,
@@ -539,11 +542,11 @@ test("PostgreSQL lead update uses version CAS and writes one guarded audit row",
   };
   const client = new ScriptedPostgresClient([
     ...transactionSteps(),
-    step(/UPDATE leads SET[\s\S]*WHERE id = \$16 AND version = \$17::bigint/, result([
+    step(/UPDATE leads SET[\s\S]*WHERE id = \$19 AND version = \$20::bigint/, result([
       postgresLeadRow(updatedLead),
     ], 1), ({ values }) => {
-      assert.equal(values[15], LEAD_ID);
-      assert.equal(values[16], "1");
+      assert.equal(values[18], LEAD_ID);
+      assert.equal(values[19], "1");
     }),
     step(/INSERT INTO activity_events[\s\S]*WHERE EXISTS[\s\S]*version = \$8::bigint/, result([], 1), ({ values }) => {
       assert.equal(values[2], "Lead stage changed");
@@ -588,7 +591,7 @@ test("PostgreSQL lead stale version returns current version and writes no audit"
   const intent = leadIntent();
   const client = new ScriptedPostgresClient([
     ...transactionSteps(),
-    step(/UPDATE leads SET[\s\S]*WHERE id = \$16 AND version = \$17::bigint/, result([], 0)),
+    step(/UPDATE leads SET[\s\S]*WHERE id = \$19 AND version = \$20::bigint/, result([], 0)),
     step(/SELECT version::text AS version FROM leads WHERE id = \$1/, result([
       { version: "2" },
     ], 1)),

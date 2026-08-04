@@ -1,4 +1,5 @@
 import { normalizeProjectSegment, type ProjectSegment } from "./project-segment.ts";
+import { normalizeAddressText } from "./address-validation.ts";
 
 export const PROJECT_STATUSES = ["planning", "mobilizing", "installation", "closeout", "completed", "cancelled", "archived"] as const;
 export const FLOORING_CATEGORIES = ["hardwood", "carpet", "luxury-vinyl", "tile-stone", "laminate", "specialty", "mixed"] as const;
@@ -147,6 +148,8 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
   if (invalidManager) return invalidManager;
   const managerIds = [...new Set(normalizedManagers.map((result) => result.ok ? result.value : ""))];
   if (managerIds.length > 1) return { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR };
+  const site = normalizeAddressText(record.site);
+  if (site === undefined) return { ok: false, message: "project site must be 280 characters or fewer" };
 
   return {
     ok: true,
@@ -154,7 +157,7 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
       clientId,
       name,
       status,
-      site: (record.site as string | undefined)?.trim() || null,
+      site,
       projectManagerId: managerIds[0] ?? null,
       estimatedValue: estimatedValue ?? null,
       flooringCategory,

@@ -95,6 +95,9 @@ class ProjectD1Database {
         name TEXT NOT NULL,
         status TEXT NOT NULL,
         site TEXT,
+        latitude REAL,
+        longitude REAL,
+        address_validation_verdict TEXT,
         project_manager TEXT,
         estimated_value INTEGER,
         flooring_category TEXT,
@@ -235,7 +238,7 @@ test("project patch normalization is closed, version-fenced, and validates all n
   for (const [field, value, message] of [
     ["name", "", "Project name must be 180 characters or fewer."],
     ["status", "future", "Project status is invalid."],
-    ["site", 42, "Project site is invalid."],
+    ["site", 42, "Project site must be 280 characters or fewer."],
     ["clientId", "bad client", "Project client is invalid."],
     ["estimatedValue", -1, "Project estimated value must be a non-negative whole number."],
     ["flooringCategory", "future", "Project flooring category is invalid."],

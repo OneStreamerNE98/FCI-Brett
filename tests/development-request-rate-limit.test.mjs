@@ -81,6 +81,12 @@ const limitedRoutes = [
     firstWork: "await ensureWorkspaceSchema()",
   },
   {
+    path: "app/api/v1/address-validation/route.ts",
+    method: "POST",
+    scope: "address-validation",
+    firstWork: "await parseBoundedJsonObject(request",
+  },
+  {
     path: "app/api/v1/tasks/route.ts",
     method: "POST",
     scope: "tasks",

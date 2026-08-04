@@ -4,6 +4,7 @@ import {
   validateLeadValues,
   type LeadRow,
 } from "../domain/lead";
+import { persistedAddress, type PersistedAddress } from "../domain/address-validation";
 import type { LeadRepository } from "../ports/lead-repository";
 import { AUTHORIZATION_CAPABILITIES } from "./authorization-capabilities";
 import {
@@ -58,6 +59,7 @@ export async function createLead(
   input: unknown,
   authorization: CreationAuthorizationContext,
   dependencies: LeadOperationDependencies,
+  trustedAddress?: PersistedAddress,
 ): Promise<CreateLeadResult> {
   if (!canCreate(authorization, CREATION_CAPABILITIES.createLead)) {
     return { ok: false, kind: "forbidden", message: "You do not have permission to create leads." };
@@ -83,6 +85,7 @@ export async function createLead(
       message: "Google Form review leads must preserve their Google Form source.",
     };
   }
+  const address = persistedAddress(values.site, trustedAddress);
 
   const createdAt = dependencies.now();
   const id = dependencies.newId();
@@ -97,7 +100,10 @@ export async function createLead(
     project_name: values.projectName,
     source: values.source,
     stage: values.stage,
-    site: values.site,
+    site: address.address!,
+    latitude: address.latitude,
+    longitude: address.longitude,
+    address_validation_verdict: address.verdict,
     estimated_value: values.estimatedValue,
     next_action: values.nextAction,
     next_action_at: values.nextActionAt,

@@ -83,7 +83,7 @@ Do not reuse the broad data-connector client for employee sign-in.
 - [ ] Enable Maps Embed API, Address Validation API, and Places API (New); enable Routes API only when crew drive-time work is scheduled.
 - [ ] Create a browser API key restricted by HTTP referrer to the application hostname, and a server API key with IP/application restriction.
 - [ ] Set a Cloud Billing budget with alerts at $10 and $25.
-- [ ] **Paste the browser key's value into the hosted environment settings under the name `GOOGLE_MAPS_BROWSER_API_KEY`** (the name the app reads — `app/features/maps/job-site-map.ts`). Setting it is what turns job-site map embeds live; until then the map card shows its placeholder. The server key has no consumer yet — hold it until a packet names one.
+- [ ] **After GI-04 is reviewed and the owner approves live Maps use, set both restricted key values in hosted configuration:** `GOOGLE_MAPS_BROWSER_API_KEY` for embeds and Places Autocomplete (New), and `GOOGLE_MAPS_SERVER_API_KEY` for Address Validation. Keep `GOOGLE_MAPS_ADDRESS_VALIDATION_ENABLED=false` until the billing, API, restriction, and budget rows above are complete; then the owner may set it to `true`. Key presence alone never opens GI-04's billable calls. Set `GOOGLE_MAPS_ENABLE_USPS_CASS=true` only if the owner wants optional US/PR CASS processing. Never place either key value in this checklist or the repository.
 - [ ] Record the non-secret key names in the configuration inventory; never record key values.
 
 ## Completion result

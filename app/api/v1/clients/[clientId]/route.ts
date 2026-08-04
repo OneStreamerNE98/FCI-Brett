@@ -11,6 +11,7 @@ import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { noStoreJson, noStoreResponse } from "../../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
+import { resolveAddressMutation } from "../../../../lib/address-mutation-sites";
 
 type RouteContext = { params: Promise<{ clientId: string }> };
 
@@ -28,15 +29,33 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const { clientId } = await context.params;
   await ensureWorkspaceSchema();
+  const { addressReview, ...clientBody } = parsed.body;
+  const database = env.DB as unknown as D1Database;
+  let trustedAddress;
+  if (Object.hasOwn(clientBody, "siteAddress")) {
+    const resolved = await resolveAddressMutation(database, {
+      actorId: auth.user.email,
+      entityKind: "client",
+      targetId: clientId,
+      rawAddress: clientBody.siteAddress,
+      rawReview: addressReview,
+    });
+    if (!resolved.ok) return noStoreJson({ error: resolved.message }, 400);
+    clientBody.siteAddress = resolved.value.address;
+    trustedAddress = resolved.value;
+  } else if (addressReview !== undefined) {
+    return noStoreJson({ error: "Address review requires a site address update." }, 400);
+  }
   const result = await updateClient(
     clientId,
-    parsed.body,
+    clientBody,
     auth.user.email,
     {
-      repository: createD1ClientRepository(env.DB as unknown as D1Database),
+      repository: createD1ClientRepository(database),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
     },
+    trustedAddress,
   );
   if (!result.ok) {
     const status = result.kind === "forbidden"

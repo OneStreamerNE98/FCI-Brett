@@ -1,5 +1,6 @@
 import type { LeadRow, ValidatedLeadValues } from "../domain/lead";
 import type { VersionConflict } from "../domain/record-version";
+import type { PersistedAddress } from "../domain/address-validation";
 
 export type LeadActivityIntent = {
   id: string;
@@ -58,6 +59,7 @@ export type LeadUpdateIntent = {
   leadId: string;
   expectedVersion: string;
   values: ValidatedLeadValues;
+  address?: PersistedAddress;
   updatedAt: number;
   updatedBy: string;
   activities: LeadActivityIntent[];

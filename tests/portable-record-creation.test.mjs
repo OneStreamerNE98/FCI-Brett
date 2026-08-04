@@ -96,7 +96,13 @@ test("portable domain validation preserves the client and project API messages",
 
   assert.deepEqual(normalizeClientCreation({ name: "  FCI Test  " }), {
     ok: true,
-    value: { name: "FCI Test", industry: null, status: "active", primaryContact: null },
+    value: {
+      name: "FCI Test",
+      industry: null,
+      siteAddress: null,
+      status: "active",
+      primaryContact: null,
+    },
   });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "  FCI Test Project  " }), {
     ok: true,
@@ -223,6 +229,10 @@ test("client creation sends one atomic client, contact, and activity intent befo
       name: "FCI TEST Client",
       status: "prospect",
       industry: "Healthcare",
+      siteAddress: null,
+      latitude: null,
+      longitude: null,
+      addressValidationVerdict: null,
       createdBy: "development-user@cherryhillfci.com",
       createdAt: 1_783_914_000_000,
       updatedAt: 1_783_914_000_000,
@@ -308,6 +318,9 @@ test("project creation sends one atomic project and activity intent before mirro
       name: "Lobby Flooring",
       status: "mobilizing",
       site: "Cherry Hill, NJ",
+      latitude: null,
+      longitude: null,
+      addressValidationVerdict: "unvalidated",
       projectManagerId: "manager@cherryhillfci.com",
       estimatedValue: 125000,
       flooringCategory: "tile-stone",
@@ -390,7 +403,7 @@ test("the D1 adapter closes a direct third segment value behind its two-value SQ
     prepared[0].sql,
     /CASE WHEN \? = 'residential' THEN 'residential' WHEN \? = 'commercial' THEN 'commercial' WHEN LOWER\(TRIM\(COALESCE\(c\.industry, ''\)\)\) = 'residential' THEN 'residential' ELSE 'commercial' END/u,
   );
-  assert.deepEqual(prepared[0].values.slice(11, 13), ["mixed", "mixed"]);
+  assert.deepEqual(prepared[0].values.slice(14, 16), ["mixed", "mixed"]);
 });
 
 test("D1 project creates have no fingerprint dedupe and bind segment on every insert", async () => {
@@ -447,7 +460,7 @@ test("D1 project creates have no fingerprint dedupe and bind segment on every in
   );
   assert.equal(batches.length, 2, "each D1 create attempts its own atomic batch");
   assert.deepEqual(
-    batches.map(([projectInsert]) => projectInsert.values.slice(11, 13)),
+    batches.map(([projectInsert]) => projectInsert.values.slice(14, 16)),
     [
       [" Residential ", " Residential "],
       ["commercial", "commercial"],

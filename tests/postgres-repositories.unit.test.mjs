@@ -170,6 +170,10 @@ function clientIntent({ withContact = true } = {}) {
       name: "ＦＣＩ\u2003TEST — DO NOT USE",
       status: "active",
       industry: "  Flooring  ",
+      siteAddress: null,
+      latitude: null,
+      longitude: null,
+      addressValidationVerdict: null,
       createdBy: "actor@example.test",
       createdAt: CREATED_AT,
       updatedAt: UPDATED_AT,
@@ -205,6 +209,9 @@ function projectIntent() {
       name: "FCI TEST — DO NOT USE project",
       status: "active",
       site: "  Test site  ",
+      latitude: null,
+      longitude: null,
+      addressValidationVerdict: "unvalidated",
       projectManagerId: "manager@example.test",
       estimatedValue: 125_000,
       flooringCategory: "tile-stone",
@@ -360,6 +367,10 @@ test("client update CAS writes one guarded audit and a stale peer writes nothing
       name: "FCI TEST — DO NOT USE updated",
       status: "active",
       industry: "Flooring",
+      siteAddress: null,
+      latitude: null,
+      longitude: null,
+      addressValidationVerdict: null,
     },
     updatedAt: UPDATED_AT,
     updatedBy: "actor@example.test",
@@ -374,12 +385,16 @@ test("client update CAS writes one guarded audit and a stale peer writes nothing
   };
   const successfulClient = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
-    step(/UPDATE clients[\s\S]*WHERE id = \$7 AND version = \$8::bigint/, result([{
+    step(/UPDATE clients[\s\S]*WHERE id = \$11 AND version = \$12::bigint/, result([{
       id: CLIENT_ID,
       client_code: "CL-AB12CD34",
       name: updateIntent.values.name,
       status: updateIntent.values.status,
       industry: updateIntent.values.industry,
+      site_address: null,
+      latitude: null,
+      longitude: null,
+      address_validation_verdict: null,
       updated_at: new Date(UPDATED_AT),
       version: "2",
     }], 1), {
@@ -405,7 +420,7 @@ test("client update CAS writes one guarded audit and a stale peer writes nothing
 
   const staleClient = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
-    step(/UPDATE clients[\s\S]*WHERE id = \$7 AND version = \$8::bigint/, result([], 0)),
+    step(/UPDATE clients[\s\S]*WHERE id = \$11 AND version = \$12::bigint/, result([], 0)),
     step(/SELECT version::text AS version FROM clients WHERE id = \$1/, result([
       { version: "2" },
     ], 1)),
@@ -434,6 +449,10 @@ test("client update maps the normalized-name constraint to a typed duplicate out
       name: "  FCI TEST — DO NOT USE EXISTING  ",
       status: "active",
       industry: "Flooring",
+      siteAddress: null,
+      latitude: null,
+      longitude: null,
+      addressValidationVerdict: null,
     },
     updatedAt: UPDATED_AT,
     updatedBy: "actor@example.test",
@@ -804,7 +823,7 @@ test("project creation mirrors D1 exact-choice segment fallback and safely parse
       {
         inspect: ({ values }) => {
           assert.deepEqual(
-            values.slice(8, 12),
+            values.slice(11, 15),
             ["tile-stone", 2_500, 130_000, "commercial"],
             "a non-canonical direct choice derives from the locked client industry exactly like D1",
           );
@@ -854,6 +873,9 @@ test("project update CAS writes one guarded audit and a stale peer writes nothin
       name: "FCI TEST — DO NOT USE updated project",
       status: "planning",
       site: "Cherry Hill, NJ",
+      latitude: null,
+      longitude: null,
+      addressValidationVerdict: "unvalidated",
       estimatedValue: 125_000,
       flooringCategory: "tile-stone",
       squareFeet: 2_500,
@@ -873,13 +895,16 @@ test("project update CAS writes one guarded audit and a stale peer writes nothin
   };
   const successfulClient = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
-    step(/UPDATE projects[\s\S]*WHERE id = \$12 AND version = \$13::bigint/, result([{
+    step(/UPDATE projects[\s\S]*WHERE id = \$15 AND version = \$16::bigint/, result([{
       id: PROJECT_ID,
       project_number: "CF-2026-AB12CD34",
       client_id: CLIENT_ID,
       name: updateIntent.values.name,
       status: updateIntent.values.status,
       site: updateIntent.values.site,
+      latitude: null,
+      longitude: null,
+      address_validation_verdict: "unvalidated",
       project_manager: "manager@example.test",
       estimated_value: String(updateIntent.values.estimatedValue),
       flooring_category: updateIntent.values.flooringCategory,
@@ -911,7 +936,7 @@ test("project update CAS writes one guarded audit and a stale peer writes nothin
 
   const staleClient = new ScriptedPostgresClient([
     ...transactionSetupSteps(),
-    step(/UPDATE projects[\s\S]*WHERE id = \$12 AND version = \$13::bigint/, result([], 0)),
+    step(/UPDATE projects[\s\S]*WHERE id = \$15 AND version = \$16::bigint/, result([], 0)),
     step(/SELECT version::text AS version FROM projects WHERE id = \$1/, result([
       { version: "2" },
     ], 1)),

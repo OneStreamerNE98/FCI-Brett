@@ -14,6 +14,7 @@ import { projectCreationHttpResult } from "../../../lib/creation-http-result";
 import { getConnectionScope, getEffectiveGoogleRuntimeSetup } from "../../../lib/google-oauth-sites";
 import { trySyncGoogleDirectory } from "../../../lib/google-sheets-sites";
 import { parseBoundedJsonObject } from "../../../lib/api-json-body";
+import { resolveAddressMutation } from "../../../lib/address-mutation-sites";
 
 const MAX_PROJECT_BODY_BYTES = 64_000;
 
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
   const clientId = request.nextUrl.searchParams.get("clientId");
   // Resolve links only from the active provider. Simulation and the company
   // Shared Drive keep independent mappings for the same project.
-  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.segment, p.installation_started_at, p.installation_completed_at, p.had_callback, p.callback_note, p.created_by, p.created_at, p.updated_at, CAST(p.version AS TEXT) AS version, c.name AS client_name, c.client_code, c.industry AS client_industry, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
+  const query = "SELECT p.id, p.project_number, p.client_id, p.name, p.status, p.site, p.latitude, p.longitude, p.address_validation_verdict, p.project_manager, p.estimated_value, p.flooring_category, p.square_feet, p.contract_value, p.segment, p.installation_started_at, p.installation_completed_at, p.had_callback, p.callback_note, p.created_by, p.created_at, p.updated_at, CAST(p.version AS TEXT) AS version, c.name AS client_name, c.client_code, c.industry AS client_industry, m.drive_file_id AS drive_folder_id, m.drive_url AS drive_url FROM projects p JOIN clients c ON c.id = p.client_id LEFT JOIN drive_folder_mappings m ON m.connection_key = ? AND m.entity_type = 'project' AND m.entity_id = p.id AND m.folder_key = 'project-root'" + (clientId ? " WHERE p.client_id = ?" : "") + " ORDER BY p.updated_at DESC";
   const statement = env.DB.prepare(query);
   const result = clientId ? await statement.bind(config.connectionKey, clientId).all() : await statement.bind(config.connectionKey).all();
   const projects = result.results.map((row: unknown) => {
@@ -65,15 +66,26 @@ export async function POST(request: NextRequest) {
   if (!auth.user.isAdmin && parsed.body.contractValue !== undefined && parsed.body.contractValue !== null) {
     return NextResponse.json({ error: "An FCI administrator must record contract value." }, { status: 403 });
   }
+  const { addressReview, ...projectBody } = parsed.body;
+  const database = env.DB as unknown as D1Database;
+  const address = await resolveAddressMutation(database, {
+    actorId: auth.user.email,
+    entityKind: "project",
+    targetId: "new",
+    rawAddress: projectBody.site,
+    rawReview: addressReview,
+  });
+  if (!address.ok) return NextResponse.json({ error: address.message }, { status: 400 });
+  projectBody.site = address.value.address;
 
   const result = await createProject(
-    parsed.body,
+    projectBody,
     creationAuthorizationFor({
       actorId: auth.user.email,
       capabilities: [CREATION_CAPABILITIES.createProject],
     }),
     {
-      repository: createD1ProjectRepository(env.DB as unknown as D1Database),
+      repository: createD1ProjectRepository(database),
       directoryMirror: createDirectoryMirror(async (actor) => (
         trySyncGoogleDirectory((await getEffectiveGoogleRuntimeSetup()).config, actor)
       )),
@@ -81,6 +93,7 @@ export async function POST(request: NextRequest) {
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
     },
+    address.value,
   );
   const httpResult = projectCreationHttpResult(result);
   return NextResponse.json(httpResult.body, { status: httpResult.status });

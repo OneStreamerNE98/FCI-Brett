@@ -20,6 +20,8 @@ import {
   authorizedLeadOwnerEmail,
   authorizedLeadResponse,
 } from "../../../../lib/authorized-lead-response";
+import { resolveAddressMutation } from "../../../../lib/address-mutation-sites";
+import { persistedAddress } from "../../../../domain/address-validation";
 
 type RouteContext = { params: Promise<{ leadId: string }> };
 
@@ -98,7 +100,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     tooLargeMessage: "Lead details are too large.",
   });
   if (!parsed.ok) return noStore({ error: parsed.error }, { status: parsed.status });
-  const normalized = normalizeLeadPatch(parsed.body);
+  const { addressReview, ...leadBody } = parsed.body;
+  const normalized = normalizeLeadPatch(leadBody);
   if (!normalized.ok) return noStore({ error: normalized.message }, { status: 400 });
   // `isAdmin` is the only development-transport authorization primitive that
   // actually enforces an edit boundary today. Keep this check before every
@@ -121,7 +124,24 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   await ensureWorkspaceSchema();
-  const repository = createD1LeadRepository(env.DB as unknown as D1Database);
+  const database = env.DB as unknown as D1Database;
+  let trustedAddress;
+  if (Object.hasOwn(normalized.value, "site")) {
+    const resolved = await resolveAddressMutation(database, {
+      actorId: auth.user.email,
+      entityKind: "lead",
+      targetId: leadId,
+      rawAddress: normalized.value.site,
+      rawReview: addressReview,
+      required: true,
+    });
+    if (!resolved.ok) return noStore({ error: resolved.message }, { status: 400 });
+    normalized.value.site = resolved.value.address!;
+    trustedAddress = resolved.value;
+  } else if (addressReview !== undefined) {
+    return noStore({ error: "Address review requires a lead site update." }, { status: 400 });
+  }
+  const repository = createD1LeadRepository(database);
   const current = await repository.findById(leadId);
   if (!current) return noStore({ error: "Lead not found." }, { status: 404 });
   if (normalized.value.version && normalized.value.version !== current.version) {
@@ -129,6 +149,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
   const currentValues = leadValues(current);
   const values = mergeLeadPatch(currentValues, normalized.value);
+  const address = Object.hasOwn(normalized.value, "site")
+    ? persistedAddress(values.site, trustedAddress)
+    : {
+        address: current.site,
+        latitude: current.latitude,
+        longitude: current.longitude,
+        verdict: current.address_validation_verdict,
+      };
 
   const now = Date.now();
   const activities: LeadActivityIntent[] = [];
@@ -144,6 +172,22 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       createdAt: now,
     });
   }
+  const addressEvidenceChanged = Object.hasOwn(normalized.value, "site")
+    && (
+      current.latitude !== address.latitude
+      || current.longitude !== address.longitude
+      || current.address_validation_verdict !== address.verdict
+    );
+  if (addressEvidenceChanged && current.site === values.site) {
+    activities.push({
+      id: crypto.randomUUID(),
+      recordId: leadId,
+      action: "Lead site changed",
+      actor: auth.user.email,
+      detail: `Address review: ${current.address_validation_verdict ?? "Not set"} → ${address.verdict ?? "Not set"}`,
+      createdAt: now,
+    });
+  }
   if (activities.length === 0) {
     return noStore({ lead: authorizedLeadResponse(current, auth.user.email) });
   }
@@ -151,6 +195,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     leadId,
     expectedVersion: normalized.value.version ?? current.version,
     values,
+    address,
     updatedAt: now,
     updatedBy: auth.user.email,
     activities,

@@ -9,6 +9,7 @@ import {
   normalizeProjectSegment,
   type ProjectSegment,
 } from "./project-segment.ts";
+import { normalizeAddressText } from "./address-validation.ts";
 
 export const PROJECT_PATCH_KEYS = [
   "name",
@@ -102,14 +103,9 @@ export function normalizeProjectPatch(
     patch.status = value as ProjectStatus;
   }
   if (Object.hasOwn(body, "site")) {
-    if (
-      body.site !== null
-      && body.site !== ""
-      && typeof body.site !== "string"
-    ) {
-      return { ok: false, message: "Project site is invalid." };
-    }
-    patch.site = typeof body.site === "string" ? body.site.trim() || null : null;
+    const site = normalizeAddressText(body.site);
+    if (site === undefined) return { ok: false, message: "Project site must be 280 characters or fewer." };
+    patch.site = site;
   }
   if (Object.hasOwn(body, "clientId")) {
     const value = typeof body.clientId === "string" ? body.clientId.trim() : "";

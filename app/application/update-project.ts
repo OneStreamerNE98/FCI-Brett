@@ -12,6 +12,7 @@ import type {
 } from "../ports/project-repository.ts";
 import { normalizeProjectManagerId } from "../domain/project-creation.ts";
 import { officeIdentityForEmail } from "../lib/workspace-auth.ts";
+import { persistedAddress, type PersistedAddress } from "../domain/address-validation.ts";
 
 export const MAX_PROJECT_PATCH_BODY_BYTES = 64_000;
 
@@ -81,6 +82,9 @@ function projectValues(row: ProjectRow): ProjectFieldUpdateIntent["values"] {
     name: row.name,
     status: row.status,
     site: row.site,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    addressValidationVerdict: row.addressValidationVerdict,
     estimatedValue: row.estimatedValue,
     flooringCategory: row.flooringCategory,
     squareFeet: row.squareFeet,
@@ -139,6 +143,7 @@ export async function updateProject(
   input: unknown,
   authorization: UpdateProjectAuthorization,
   dependencies: UpdateProjectDependencies,
+  trustedAddress?: PersistedAddress,
 ): Promise<UpdateProjectResult> {
   if (!authorization.actorId.trim()) {
     return {
@@ -176,12 +181,30 @@ export async function updateProject(
 
   const currentValues = projectValues(current);
   const values = mergeProjectPatch(currentValues, normalized.value);
+  if (Object.hasOwn(normalized.value, "site")) {
+    const address = persistedAddress(normalized.value.site ?? null, trustedAddress);
+    values.site = address.address;
+    values.latitude = address.latitude;
+    values.longitude = address.longitude;
+    values.addressValidationVerdict = address.verdict;
+  }
   const changes = PROJECT_PATCH_KEYS.flatMap((key) => {
     if (!Object.hasOwn(normalized.value, key) || currentValues[key] === values[key]) return [];
     return [
       `${PROJECT_FIELD_LABELS[key]}: ${displayProjectChange(key, currentValues[key], values[key])}`,
     ];
   });
+  const addressEvidenceChanged = Object.hasOwn(normalized.value, "site")
+    && (
+      currentValues.latitude !== values.latitude
+      || currentValues.longitude !== values.longitude
+      || currentValues.addressValidationVerdict !== values.addressValidationVerdict
+    );
+  if (addressEvidenceChanged && currentValues.site === values.site) {
+    changes.push(
+      `Site address review: ${displayProjectField("site", currentValues.addressValidationVerdict)} → ${displayProjectField("site", values.addressValidationVerdict)}`,
+    );
+  }
   if (changes.length === 0) return { ok: true, value: current };
 
   const updatedAt = dependencies.now();
@@ -224,6 +247,9 @@ export function projectUpdateResponse(row: ProjectRow, isAdmin: boolean, actorEm
     name: row.name,
     status: row.status,
     site: row.site,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    addressValidationVerdict: row.addressValidationVerdict,
     // Same disclosure guarantee as the collection GET (projects/route.ts
     // authorizedProjectManagerId): a manager email is returned only when it is the
     // requesting actor or a current office identity — an offboarded manager's email

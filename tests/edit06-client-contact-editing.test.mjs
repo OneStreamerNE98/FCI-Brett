@@ -104,6 +104,10 @@ class ClientD1Database {
         normalized_name_key TEXT,
         status TEXT NOT NULL,
         industry TEXT,
+        site_address TEXT,
+        latitude REAL,
+        longitude REAL,
+        address_validation_verdict TEXT,
         created_by TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -252,7 +256,7 @@ function patchRequest(route, database, id, body, email = "office@example.test") 
 }
 
 test("client and contact patch validators are closed, partial, and version-fenced", () => {
-  assert.deepEqual([...CLIENT_PATCH_KEYS], ["name", "status", "industry"]);
+  assert.deepEqual([...CLIENT_PATCH_KEYS], ["name", "status", "industry", "siteAddress"]);
   assert.deepEqual([...CONTACT_PATCH_KEYS], ["name", "email", "phone", "role"]);
   assert.deepEqual(normalizeClientPatch({ status: " ARCHIVED ", version: "7" }), {
     ok: true,
@@ -640,6 +644,10 @@ test("a legacy near-duplicate client stays editable when its name does not chang
         name: "FCI TEST — DO NOT USE Legacy  Twin",
         status: "archived",
         industry: null,
+        siteAddress: null,
+        latitude: null,
+        longitude: null,
+        addressValidationVerdict: null,
       },
       updatedAt: UPDATED_AT + 1,
       updatedBy: "office@example.test",
@@ -663,6 +671,10 @@ test("a legacy near-duplicate client stays editable when its name does not chang
         name: "FCI TEST — DO NOT USE Legacy Twin",
         status: "active",
         industry: "Hospitality",
+        siteAddress: null,
+        latitude: null,
+        longitude: null,
+        addressValidationVerdict: null,
       },
       updatedAt: UPDATED_AT + 2,
       updatedBy: "office@example.test",
@@ -687,6 +699,10 @@ test("a legacy near-duplicate client stays editable when its name does not chang
         name: "FCI TEST — DO NOT USE Beta",
         status: "active",
         industry: "Hospitality",
+        siteAddress: null,
+        latitude: null,
+        longitude: null,
+        addressValidationVerdict: null,
       },
       updatedAt: UPDATED_AT + 3,
       updatedBy: "office@example.test",
