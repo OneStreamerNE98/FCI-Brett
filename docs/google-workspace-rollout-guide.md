@@ -425,7 +425,7 @@ configuration, consent, data migration, or deployment now.
        refresh status, and sync the Client Directory and Project Register.
 6. Later steps remain visible but blocked until the prior step is confirmed by its endpoint. In simulation, all five steps are marked **Simulated** and their controls remain testable without Google access.
 7. Use only clearly marked test records.
-8. After Shared Drive verification, enable **Project-folder provisioning** in the Stage 1 app-managed configuration. `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED` remains an environment bootstrap fallback, not the normal ongoing control.
+8. After Shared Drive verification, enable **Project-folder provisioning** in the Stage 1 app-managed configuration. `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED` remains an environment bootstrap fallback, not the normal ongoing control. Local simulation keeps provisioning fixed on for its safe sample-folder workflow and locks this control; it does not save a future live-mode preference.
 9. Create one test project folder and confirm it is inside the correct Shared Drive.
 
 ### Connector credential, encryption-key, and revocation recovery runbook

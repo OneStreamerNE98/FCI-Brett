@@ -322,7 +322,7 @@ Office users also see the company **AI assistant** card here in a read-only form
 
 The heart of company setup: connecting the one company Google account and creating the Shared Drive, folders, spreadsheets, and calendars the app uses. This is a four-stage flow and it has its own full walkthrough in the next section, "Connecting and verifying Google in plain words."
 
-The Stage 1 **App-managed Workspace configuration** controls three values that used to require a hosted-setting edit: project-folder provisioning, the Client Directory spreadsheet ID, and the Google Forms response spreadsheet ID. The two Sheet fields verify the exact ID against Google before adopting it. Each row names its effective source as **App-saved**, **Environment**, or **None**. App-saved values win; the matching environment values remain first-boot fallbacks. Hosted OAuth secrets and identity allowlists are still outside the app.
+The Stage 1 **App-managed Workspace configuration** controls three values that used to require a hosted-setting edit: project-folder provisioning, the Client Directory spreadsheet ID, and the Google Forms response spreadsheet ID. The two Sheet fields verify the exact ID against Google before adopting it. Each live-Workspace row names its effective source as **App-saved**, **Environment**, or **None**. App-saved values win; the matching environment values remain first-boot fallbacks. In local simulation, project-folder provisioning is fixed on for the safe sample-folder workflow: the row says **Simulation fixture (always enabled)**, its control is locked, and neither the UI nor the API can save a misleading future live-mode value. Hosted OAuth secrets and identity allowlists are still outside the app.
 
 ### 3. Calendar & appointments
 

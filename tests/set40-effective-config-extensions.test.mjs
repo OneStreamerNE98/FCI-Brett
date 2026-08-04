@@ -190,14 +190,18 @@ test("spreadsheet adoption fields remain Administrator-only while their sources 
 });
 
 test("simulation presents Drive provisioning as forced and cannot claim a saved toggle", async () => {
-  const panel = await readFile(
-    new URL("../app/settings/components/GoogleWorkspacePanel.tsx", import.meta.url),
-    "utf8",
-  );
+  const [panel, guide] = await Promise.all([
+    readFile(
+      new URL("../app/settings/components/GoogleWorkspacePanel.tsx", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../docs/settings-guide.md", import.meta.url), "utf8"),
+  ]);
   assert.match(panel, /if \(!isAdmin \|\| simulation\) return;/u);
   assert.match(panel, /Source: \{simulation \? "Simulation fixture \(always enabled\)"/u);
   assert.match(panel, /disabled=\{simulation \|\| runtimeConfigurationWorking !== null\}/u);
   assert.match(panel, /simulation \? "Always enabled in simulation"/u);
+  assert.match(guide, /Simulation fixture \(always enabled\)[\s\S]+neither the UI nor the API can save a misleading future live-mode value/u);
 });
 
 const COVERED_ENVIRONMENT_NAMES = Object.freeze([
