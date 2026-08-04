@@ -1528,8 +1528,8 @@ test("live Workspace setup advances only from endpoint-confirmed steps", async (
   });
 
   await page.goto("/settings?section=google-workspace");
-  await expect(page.getByRole("table", { name: "Hosted Workspace configuration" })).toBeVisible();
   await setStageExpanded(page, 1, true);
+  await expect(page.getByRole("table", { name: "Hosted Workspace configuration" })).toBeVisible();
   await expect(page.getByText(missingInvariant, { exact: true })).toBeVisible();
   await setStageExpanded(page, 2, true);
   await expect(setupStage(page, 2).locator(".workspace-stage-chip")).toHaveText("IN PROGRESS");
