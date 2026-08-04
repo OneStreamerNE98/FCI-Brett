@@ -103,6 +103,11 @@ export const EXPECTED_PRODUCTION_SCHEMA_HISTORY: readonly ExpectedProductionMigr
       name: "google_form_lead_intake",
       checksum: "sha256:887ceed9e0a760a0da7c791419c2458e9d1bf4fbb759e22130d045b507f40a29",
     }),
+    Object.freeze({
+      version: 14,
+      name: "address_validation",
+      checksum: "sha256:6cd292fa975603e1077caffca7e98b03cf386ea87445bbd6b99a666fd78b38ee",
+    }),
   ]);
 
 /**
@@ -164,6 +169,7 @@ export const EXPECTED_RUNTIME_TABLE_ACCESS: readonly ExpectedRuntimeTableAccess[
     runtimeTableAccess("tasks", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("google_form_lead_intake_watermarks", ["SELECT", "INSERT"]),
     runtimeTableAccess("google_form_lead_reviews", ["SELECT", "INSERT"]),
+    runtimeTableAccess("address_validation_reviews", ["SELECT", "INSERT", "DELETE"]),
     runtimeTableAccess("activity_events", ["INSERT"]),
     runtimeTableAccess("idempotency_requests", ["SELECT", "INSERT", "UPDATE"]),
     runtimeTableAccess("outbox_events", ["SELECT", "INSERT", "UPDATE"]),
@@ -247,6 +253,9 @@ export const EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS: readonly ExpectedRuntimeColu
       "name",
       "status",
       "site",
+      "latitude",
+      "longitude",
+      "address_validation_verdict",
       "project_manager",
       "estimated_value",
       "flooring_category",
@@ -274,6 +283,9 @@ export const EXPECTED_RUNTIME_COLUMN_UPDATE_ACCESS: readonly ExpectedRuntimeColu
       "reviewed_at",
       "updated_at",
       "accepted_lead_id",
+    ]),
+    runtimeColumnUpdateAccess("address_validation_reviews", [
+      "consumed_at",
     ]),
     runtimeColumnUpdateAccess("users", [
       "status",

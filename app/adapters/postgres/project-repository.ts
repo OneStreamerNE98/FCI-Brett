@@ -9,6 +9,7 @@ import {
   normalizeProjectSegment,
   resolveProjectSegment,
 } from "../../domain/project-segment";
+import { SAVED_ADDRESS_VERDICTS, type SavedAddressVerdict } from "../../domain/address-validation";
 import type {
   AcceptedProjectCreation,
   ProjectCreationIntent,
@@ -57,6 +58,9 @@ type ProjectDatabaseRow = ProjectInsertRow & {
   name: unknown;
   status: unknown;
   site: unknown;
+  latitude: unknown;
+  longitude: unknown;
+  address_validation_verdict: unknown;
   flooring_category: unknown;
   square_feet: unknown;
   contract_value: unknown;
@@ -65,7 +69,8 @@ type ProjectDatabaseRow = ProjectInsertRow & {
 };
 
 const PROJECT_SELECT = `SELECT id::text AS id, project_number,
-       client_id::text AS client_id, name, status, site, project_manager,
+       client_id::text AS client_id, name, status, site,
+       latitude, longitude, address_validation_verdict, project_manager,
        estimated_value::text AS estimated_value, flooring_category,
        square_feet::text AS square_feet, contract_value::text AS contract_value,
        segment, updated_at, version::text AS version
@@ -95,6 +100,9 @@ function projectCreationFingerprintInput(intent: ProjectCreationIntent) {
     name: intent.project.name,
     status: intent.project.status,
     site: intent.project.site?.trim() || null,
+    latitude: intent.project.latitude ?? null,
+    longitude: intent.project.longitude ?? null,
+    addressValidationVerdict: intent.project.addressValidationVerdict ?? null,
     projectManagerId: intent.project.projectManagerId,
     estimatedValue: intent.project.estimatedValue,
     flooringCategory: intent.project.flooringCategory,
@@ -262,6 +270,18 @@ function projectRowFromPostgres(row: ProjectDatabaseRow): ProjectRow {
   if (segmentText !== null && segment === null) {
     throw new Error("PostgreSQL project segment is unsupported");
   }
+  const addressVerdict = row.address_validation_verdict === undefined
+    ? null
+    : nullableText(
+        row.address_validation_verdict,
+        "PostgreSQL project address verdict",
+      );
+  if (
+    addressVerdict !== null
+    && !SAVED_ADDRESS_VERDICTS.includes(addressVerdict as SavedAddressVerdict)
+  ) {
+    throw new Error("PostgreSQL project address verdict is unsupported");
+  }
   return {
     id: row.id,
     projectNumber: row.project_number,
@@ -269,6 +289,9 @@ function projectRowFromPostgres(row: ProjectDatabaseRow): ProjectRow {
     name: row.name,
     status: row.status as ProjectStatus,
     site: nullableText(row.site, "PostgreSQL project site"),
+    latitude: row.latitude === undefined ? null : row.latitude as number | null,
+    longitude: row.longitude === undefined ? null : row.longitude as number | null,
+    addressValidationVerdict: addressVerdict as SavedAddressVerdict | null,
     projectManagerId: nullableText(row.project_manager, "PostgreSQL project manager"),
     estimatedValue: parsePostgresNumericSafeInteger(
       row.estimated_value,
@@ -465,12 +488,13 @@ export function createPostgresProjectRepository(
 
         const inserted = await client.query<ProjectInsertRow>(
           `INSERT INTO projects (
-             id, project_number, client_id, name, status, site, project_manager,
+             id, project_number, client_id, name, status, site,
+             latitude, longitude, address_validation_verdict, project_manager,
              estimated_value, flooring_category, square_feet, contract_value, segment,
              created_by, updated_by, created_at, updated_at, version
            )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-             $12, $13, $13, $14, $15, 1)
+             $12, $13, $14, $15, $16, $16, $17, $18, 1)
            RETURNING id::text AS id, project_number, project_manager,
                      estimated_value::text AS estimated_value, created_at,
                      version::text AS version`,
@@ -481,6 +505,9 @@ export function createPostgresProjectRepository(
             intent.project.name,
             intent.project.status,
             intent.project.site?.trim() || null,
+            intent.project.latitude ?? null,
+            intent.project.longitude ?? null,
+            intent.project.addressValidationVerdict ?? null,
             intent.project.projectManagerId,
             intent.project.estimatedValue,
             intent.project.flooringCategory,
@@ -568,12 +595,14 @@ export function createPostgresProjectRepository(
           const updated = await client.query<ProjectDatabaseRow>(
             `UPDATE projects
              SET client_id = $1, name = $2, status = $3, site = $4,
-                 estimated_value = $5, flooring_category = $6, square_feet = $7,
-                 contract_value = $8, segment = $9, updated_by = $10,
-                 updated_at = $11, version = version + 1
-             WHERE id = $12 AND version = $13::bigint
+                 latitude = $5, longitude = $6, address_validation_verdict = $7,
+                 estimated_value = $8, flooring_category = $9, square_feet = $10,
+                 contract_value = $11, segment = $12, updated_by = $13,
+                 updated_at = $14, version = version + 1
+             WHERE id = $15 AND version = $16::bigint
              RETURNING id::text AS id, project_number,
                        client_id::text AS client_id, name, status, site,
+                       latitude, longitude, address_validation_verdict,
                        project_manager, estimated_value::text AS estimated_value,
                        flooring_category, square_feet::text AS square_feet,
                        contract_value::text AS contract_value, segment,
@@ -583,6 +612,9 @@ export function createPostgresProjectRepository(
               values.name,
               values.status,
               values.site,
+              values.latitude,
+              values.longitude,
+              values.addressValidationVerdict,
               values.estimatedValue,
               values.flooringCategory,
               values.squareFeet,

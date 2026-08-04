@@ -11,6 +11,11 @@ import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { noStoreJson, noStoreResponse } from "../../../../lib/no-store-json";
 import { requireOfficeUser, requireSameOrigin } from "../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../_workspace-data";
+import {
+  releaseFailedAddressMutation,
+  resolveAddressMutation,
+  type AddressMutationSuccess,
+} from "../../../../lib/address-mutation-sites";
 
 type RouteContext = { params: Promise<{ projectId: string }> };
 
@@ -28,17 +33,38 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   const { projectId } = await context.params;
   await ensureWorkspaceSchema();
+  const { addressReview, ...projectBody } = parsed.body;
+  const database = env.DB as unknown as D1Database;
+  let trustedAddress;
+  let addressResolution: AddressMutationSuccess | undefined;
+  if (Object.hasOwn(projectBody, "site")) {
+    const resolved = await resolveAddressMutation(database, {
+      actorId: auth.user.email,
+      entityKind: "project",
+      targetId: projectId,
+      rawAddress: projectBody.site,
+      rawReview: addressReview,
+    });
+    if (!resolved.ok) return noStoreJson({ error: resolved.message }, 400);
+    projectBody.site = resolved.value.address;
+    trustedAddress = resolved.value;
+    addressResolution = resolved;
+  } else if (addressReview !== undefined) {
+    return noStoreJson({ error: "Address review requires a project site update." }, 400);
+  }
   const result = await updateProject(
     projectId,
-    parsed.body,
+    projectBody,
     { actorId: auth.user.email, isAdmin: auth.user.isAdmin },
     {
-      repository: createD1ProjectRepository(env.DB as unknown as D1Database),
+      repository: createD1ProjectRepository(database),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
     },
+    trustedAddress,
   );
   if (!result.ok) {
+    if (addressResolution) await releaseFailedAddressMutation(database, addressResolution);
     const status = result.kind === "forbidden"
       ? 403
       : result.kind === "conflict"

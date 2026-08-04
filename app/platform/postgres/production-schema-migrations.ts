@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { ADMIN_AUDIT_ACTIVITY_STATEMENTS } from "./admin-audit-activity-schema.ts";
 import { ADMIN_ACCESS_PERSISTENCE_STATEMENTS } from "./admin-access-persistence-schema.ts";
+import { ADDRESS_VALIDATION_SCHEMA_STATEMENTS } from "./address-validation-schema.ts";
 import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "./core-record-concurrency-schema.ts";
 import { FLOORING_KPI_SCHEMA_STATEMENTS } from "./flooring-kpi-schema.ts";
 import { GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS } from "./google-form-lead-intake-schema.ts";
@@ -473,6 +474,12 @@ export const PRODUCTION_SCHEMA_MIGRATIONS: readonly ProductionSchemaMigration[] 
     name: "google_form_lead_intake",
     checksum: "sha256:887ceed9e0a760a0da7c791419c2458e9d1bf4fbb759e22130d045b507f40a29",
     statements: GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS,
+  },
+  {
+    version: 14,
+    name: "address_validation",
+    checksum: "sha256:6cd292fa975603e1077caffca7e98b03cf386ea87445bbd6b99a666fd78b38ee",
+    statements: ADDRESS_VALIDATION_SCHEMA_STATEMENTS,
   },
 ];
 

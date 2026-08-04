@@ -28,6 +28,7 @@ import { TASK_SCHEMA_STATEMENTS } from "../app/platform/postgres/task-schema.ts"
 import { CORE_RECORD_CONCURRENCY_STATEMENTS } from "../app/platform/postgres/core-record-concurrency-schema.ts";
 import { MAIL_ITEM_ANALYSIS_SCHEMA_STATEMENTS } from "../app/platform/postgres/mail-item-analysis-schema.ts";
 import { GOOGLE_FORM_LEAD_INTAKE_SCHEMA_STATEMENTS } from "../app/platform/postgres/google-form-lead-intake-schema.ts";
+import { ADDRESS_VALIDATION_SCHEMA_STATEMENTS } from "../app/platform/postgres/address-validation-schema.ts";
 
 const MIGRATION_VERSIONS = PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version);
 const CURRENT_MIGRATION_VERSION = MIGRATION_VERSIONS.at(-1);
@@ -403,7 +404,7 @@ test("registers the non-structural core-record concurrency law as contiguous mig
     "sha256:03c2f1db12a9d09566877b99d11f7b53c756e1847e3cca93a29eb97db064bd10",
   );
   assert.deepEqual(PRODUCTION_SCHEMA_MIGRATIONS.map(({ version }) => version), [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
   ]);
   assert.deepEqual(
     migration.statements.map((statement) => {
@@ -549,6 +550,30 @@ test("registers GI-01's bounded watermark and review queue as immutable migratio
   assert.match(sql, /status = 'accepted'[\s\S]*accepted_lead_id IS NOT NULL/u);
   assert.match(sql, /CREATE INDEX google_form_lead_reviews_queue_idx/u);
   assert.match(sql, /CREATE INDEX google_form_lead_reviews_accepted_lead_idx/u);
+  assert.doesNotMatch(
+    sql,
+    /\b(?:DROP|TRUNCATE|DELETE|UPDATE|INSERT|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/iu,
+  );
+});
+
+test("registers GI-04 address evidence as additive immutable migration fourteen", () => {
+  const migration = PRODUCTION_SCHEMA_MIGRATIONS.find(({ version }) => version === 14);
+  assert.ok(migration);
+  assert.equal(migration.name, "address_validation");
+  assert.equal(migration.statements, ADDRESS_VALIDATION_SCHEMA_STATEMENTS);
+  assert.equal(
+    migration.checksum,
+    "sha256:6cd292fa975603e1077caffca7e98b03cf386ea87445bbd6b99a666fd78b38ee",
+  );
+  const sql = migration.statements.join("\n");
+  assert.match(sql, /CREATE TABLE address_validation_reviews/u);
+  assert.match(sql, /consumed_at timestamptz/u);
+  assert.match(sql, /entity_kind IN \('lead', 'client', 'project'\)/u);
+  assert.match(sql, /verdict IN \('validated', 'needs-confirmation', 'needs-correction', 'unvalidated', 'simulated'\)/u);
+  assert.match(sql, /simulated = \(verdict = 'simulated'\)/u);
+  assert.match(sql, /ALTER TABLE clients[\s\S]*ADD COLUMN site_address text/u);
+  assert.match(sql, /ALTER TABLE leads[\s\S]*ADD COLUMN latitude double precision/u);
+  assert.match(sql, /ALTER TABLE projects[\s\S]*ADD COLUMN address_validation_verdict text/u);
   assert.doesNotMatch(
     sql,
     /\b(?:DROP|TRUNCATE|DELETE|UPDATE|INSERT|CREATE INDEX CONCURRENTLY|IF NOT EXISTS)\b/iu,
@@ -939,6 +964,7 @@ test("defines the bounded production persistence schema with named constraints a
       "tasks",
       "google_form_lead_intake_watermarks",
       "google_form_lead_reviews",
+      "address_validation_reviews",
     ],
   );
   assert.doesNotMatch(versionedSql, /\bIF NOT EXISTS\b/i);

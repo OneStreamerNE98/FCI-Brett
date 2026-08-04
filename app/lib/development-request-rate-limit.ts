@@ -8,6 +8,7 @@ export const DEVELOPMENT_RATE_LIMIT_SCOPES = [
   "google-sheets-sync",
   "google-form-lead-intake",
   "project-drive-provisioning",
+  "address-validation",
   "tasks",
 ] as const;
 

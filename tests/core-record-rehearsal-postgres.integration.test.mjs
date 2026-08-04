@@ -257,6 +257,7 @@ test(
         targetSchema: schema,
         acknowledgment: CORE_REHEARSAL_ACKNOWLEDGMENT,
       });
+      assert.equal(report.formatVersion, 4);
       assert.equal(report.status, "reconciled");
       assert.equal(report.targetSchema, schema);
       assert.equal(report.tables.leads.sourceCount, fixture.leads.length);
@@ -284,6 +285,46 @@ test(
         squareFeet: String(fixture.projects[0].squareFeet),
         contractValue: String(fixture.projects[0].contractValue),
         segment: fixture.projects[0].segment,
+      }]);
+
+      const clientAddressReadback = await client.query(
+        `SELECT site_address AS "siteAddress", latitude, longitude,
+                address_validation_verdict AS "addressValidationVerdict"
+         FROM ${schema}.clients
+         WHERE id = $1`,
+        [fixture.clients[0].id],
+      );
+      assert.deepEqual(clientAddressReadback.rows, [{
+        siteAddress: fixture.clients[0].siteAddress,
+        latitude: fixture.clients[0].latitude,
+        longitude: fixture.clients[0].longitude,
+        addressValidationVerdict: fixture.clients[0].addressValidationVerdict,
+      }]);
+
+      const leadAddressReadback = await client.query(
+        `SELECT latitude, longitude,
+                address_validation_verdict AS "addressValidationVerdict"
+         FROM ${schema}.leads
+         WHERE id = $1`,
+        [fixture.leads[0].id],
+      );
+      assert.deepEqual(leadAddressReadback.rows, [{
+        latitude: fixture.leads[0].latitude,
+        longitude: fixture.leads[0].longitude,
+        addressValidationVerdict: fixture.leads[0].addressValidationVerdict,
+      }]);
+
+      const projectAddressReadback = await client.query(
+        `SELECT latitude, longitude,
+                address_validation_verdict AS "addressValidationVerdict"
+         FROM ${schema}.projects
+         WHERE id = $1`,
+        [fixture.projects[0].id],
+      );
+      assert.deepEqual(projectAddressReadback.rows, [{
+        latitude: fixture.projects[0].latitude,
+        longitude: fixture.projects[0].longitude,
+        addressValidationVerdict: fixture.projects[0].addressValidationVerdict,
       }]);
 
       const activityReferences = await client.query(

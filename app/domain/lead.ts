@@ -1,4 +1,5 @@
 import { normalizeRecordVersion } from "./record-version.ts";
+import type { SavedAddressVerdict } from "./address-validation.ts";
 
 export const MAX_LEAD_BODY_BYTES = 32_000;
 
@@ -61,6 +62,9 @@ export type LeadRow = {
   source: string;
   stage: string;
   site: string;
+  latitude: number | null;
+  longitude: number | null;
+  address_validation_verdict: SavedAddressVerdict | null;
   estimated_value: number;
   next_action: string;
   next_action_at: number | null;
@@ -118,6 +122,9 @@ export function leadResponse(row: LeadRow) {
     source: row.source,
     stage: row.stage,
     site: row.site,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    addressValidationVerdict: row.address_validation_verdict,
     estimatedValue: row.estimated_value,
     nextAction: row.next_action,
     nextActionAt: row.next_action_at ? new Date(row.next_action_at).toISOString() : null,
@@ -138,7 +145,7 @@ export function validateLeadValues(body: Record<string, unknown>): ValidatedLead
   const projectName = cleanText(body.projectName, 180);
   const source = cleanText(body.source, 80);
   const stage = cleanText(body.stage, 80);
-  const site = cleanText(body.site, 300);
+  const site = cleanText(body.site, 280);
   const estimatedValue = cleanEstimatedValue(body.estimatedValue);
   const nextAction = cleanText(body.nextAction, 500);
   const nextActionAt = cleanTimestamp(body.nextActionAt);
@@ -230,8 +237,8 @@ export function normalizeLeadPatch(body: Record<string, unknown>): LeadPatchVali
     patch.stage = value;
   }
   if (Object.hasOwn(body, "site")) {
-    const value = cleanText(body.site, 300);
-    if (!value) return { ok: false, message: "Lead site must be 300 characters or fewer." };
+    const value = cleanText(body.site, 280);
+    if (!value) return { ok: false, message: "Lead site must be 280 characters or fewer." };
     patch.site = value;
   }
   if (Object.hasOwn(body, "estimatedValue")) {

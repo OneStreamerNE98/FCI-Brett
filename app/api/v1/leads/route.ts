@@ -16,6 +16,10 @@ import {
   authorizedLeadOwnerEmail,
   authorizedLeadPayload,
 } from "../../../lib/authorized-lead-response";
+import {
+  releaseFailedAddressMutation,
+  resolveAddressMutation,
+} from "../../../lib/address-mutation-sites";
 
 export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request);
@@ -51,7 +55,8 @@ export async function POST(request: NextRequest) {
     tooLargeMessage: "Lead details are too large.",
   });
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: parsed.status });
-  const leadRequest = parseLeadCreationRequest(parsed.body);
+  const { addressReview, ...leadCreationBody } = parsed.body;
+  const leadRequest = parseLeadCreationRequest(leadCreationBody);
   if (!leadRequest.ok) return NextResponse.json({ error: leadRequest.error }, { status: 400 });
   if (leadRequest.formLeadReview) {
     const admin = requireOfficeUser(request, { admin: true });
@@ -71,14 +76,25 @@ export async function POST(request: NextRequest) {
     );
   }
   await ensureWorkspaceSchema();
+  const database = env.DB as unknown as D1Database;
+  const address = await resolveAddressMutation(database, {
+    actorId: auth.user.email,
+    entityKind: "lead",
+    targetId: "new",
+    rawAddress: leadRequest.body.site,
+    rawReview: addressReview,
+    required: true,
+  });
+  if (!address.ok) return NextResponse.json({ error: address.message }, { status: 400 });
+  const trustedLeadBody = { ...leadRequest.body, site: address.value.address };
   const result = await createLead(
-    leadRequest.body,
+    trustedLeadBody,
     creationAuthorizationFor({
       actorId: auth.user.email,
       capabilities: [AUTHORIZATION_CAPABILITIES.leadsCreate],
     }),
     {
-      repository: createD1LeadRepository(env.DB as unknown as D1Database),
+      repository: createD1LeadRepository(database),
       newId: () => crypto.randomUUID(),
       now: () => Date.now(),
       ...(leadRequest.formLeadReview
@@ -90,8 +106,10 @@ export async function POST(request: NextRequest) {
           }
         : {}),
     },
+    address.value,
   );
   if (!result.ok) {
+    await releaseFailedAddressMutation(database, address);
     const status = result.kind === "forbidden" ? 403 : result.kind === "invalid" ? 400 : 409;
     return NextResponse.json({
       error: result.message,

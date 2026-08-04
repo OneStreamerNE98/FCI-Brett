@@ -5,8 +5,9 @@ import {
 import { normalizeClientIndustry } from "./client-industry.ts";
 import { normalizeClientDisplayName } from "./client-name-key.ts";
 import { normalizeRecordVersion } from "./record-version.ts";
+import { normalizeAddressText } from "./address-validation.ts";
 
-export const CLIENT_PATCH_KEYS = ["name", "status", "industry"] as const;
+export const CLIENT_PATCH_KEYS = ["name", "status", "industry", "siteAddress"] as const;
 
 export type ClientPatchKey = typeof CLIENT_PATCH_KEYS[number];
 
@@ -14,6 +15,7 @@ export type ValidatedClientPatch = Partial<{
   name: string;
   status: ClientStatus;
   industry: string | null;
+  siteAddress: string | null;
 }> & {
   version: string;
 };
@@ -62,6 +64,13 @@ export function normalizeClientPatch(
       return { ok: false, message: "Client industry is invalid." };
     }
     patch.industry = value;
+  }
+  if (Object.hasOwn(body, "siteAddress")) {
+    const value = normalizeAddressText(body.siteAddress);
+    if (value === undefined) {
+      return { ok: false, message: "Client site address must be 280 characters or fewer." };
+    }
+    patch.siteAddress = value;
   }
   return { ok: true, value: patch };
 }

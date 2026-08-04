@@ -124,13 +124,14 @@ test("LeadModal create mode accepts prefill and the edit surface keeps all termi
     "contactEmail",
     "contactPhone",
     "project",
-    "site",
     "stage",
     "next",
     "ownerEmail",
   ]) {
     assert.match(app, new RegExp(`defaultValue=\\{seed\\?\\.${field}`, "u"));
   }
+  assert.match(app, /const \[site, setSite\] = useState\(seed\?\.site \?\? ""\)/u);
+  assert.match(app, /<AddressValidationField[^>]+id="lead-site"[^>]+value=\{site\}/u);
   assert.match(app, /defaultValue=\{dateTimeLocalInputValue\(seed\?\.nextActionAt/u);
   assert.match(app, /defaultValue=\{seed\?\.estimatedValue/u);
   // The archive-only decision's three terminal statuses stay reachable from the

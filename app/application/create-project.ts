@@ -1,4 +1,5 @@
 import { normalizeProjectCreation, normalizeProjectManagerAssignment, normalizeProjectManagerId, PROJECT_MANAGER_IDENTITY_ERROR } from "../domain/project-creation";
+import { persistedAddress, type PersistedAddress } from "../domain/address-validation";
 import type { DirectoryMirror } from "../ports/directory-mirror";
 import type { ProjectRepository } from "../ports/project-repository";
 import { canCreate, CREATION_CAPABILITIES, type CreationAuthorizationContext } from "./creation-authorization";
@@ -61,6 +62,7 @@ export async function createProject(
   input: unknown,
   authorization: CreationAuthorizationContext,
   dependencies: CreateProjectDependencies,
+  trustedAddress?: PersistedAddress,
 ): Promise<CreateProjectResult> {
   if (!canCreate(authorization, CREATION_CAPABILITIES.createProject)) {
     return { ok: false, kind: "forbidden", message: "You do not have permission to create projects." };
@@ -68,6 +70,7 @@ export async function createProject(
 
   const normalized = normalizeProjectCreation(input);
   if (!normalized.ok) return { ok: false, kind: "invalid", message: normalized.message };
+  const address = persistedAddress(normalized.value.site, trustedAddress);
 
   const managerCandidate = normalizeProjectManagerId(normalized.value.projectManagerId ?? authorization.actorId);
   if (!managerCandidate.ok) {
@@ -90,7 +93,10 @@ export async function createProject(
       clientId: normalized.value.clientId,
       name: normalized.value.name,
       status: normalized.value.status,
-      site: normalized.value.site,
+      site: address.address,
+      latitude: address.latitude,
+      longitude: address.longitude,
+      addressValidationVerdict: address.verdict,
       projectManagerId: projectManagerId.value,
       estimatedValue: normalized.value.estimatedValue,
       flooringCategory: normalized.value.flooringCategory,

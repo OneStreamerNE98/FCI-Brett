@@ -1,0 +1,197 @@
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.labelRow {
+  align-items: baseline;
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.label {
+  color: var(--ink, #24322b);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+}
+
+/* Neutralize the global `.modal label { margin-bottom: 14px }` field-wrapper
+   spacing so the label-to-input gap stays at the 6px modal standard. */
+.field .label {
+  margin-bottom: 0;
+}
+
+.limit {
+  color: var(--muted, #66736c);
+  font-size: 0.7rem;
+}
+
+.inputWrap {
+  position: relative;
+}
+
+.field .input {
+  margin-top: 0;
+  width: 100%;
+}
+
+.suggestions {
+  background: #fff;
+  border: 1px solid rgba(45, 74, 60, 0.2);
+  border-radius: 0.65rem;
+  box-shadow: 0 12px 30px rgba(33, 51, 42, 0.13);
+  left: 0;
+  margin: 0.25rem 0 0;
+  max-height: 12rem;
+  overflow-y: auto;
+  padding: 0.3rem;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 12;
+}
+
+.suggestionList {
+  display: grid;
+}
+
+.suggestion {
+  background: transparent;
+  border: 0;
+  border-radius: 0.45rem;
+  color: #24322b;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.58rem 0.65rem;
+  text-align: left;
+}
+
+.suggestion:hover,
+.suggestion:focus-visible,
+.suggestion[aria-selected="true"] {
+  background: #eef5f0;
+  outline: none;
+}
+
+.attribution {
+  color: #5e5e5e;
+  display: block;
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.65rem 0.25rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reviewButton,
+.choiceButton {
+  align-items: center;
+  border: 1px solid var(--line, #ded7cf);
+  border-radius: var(--radius-pill, 999px);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  gap: 0.35rem;
+  min-height: var(--control-standard, 40px);
+  padding: 0.42rem 0.7rem;
+}
+
+.reviewButton,
+.choiceButton {
+  background: var(--surface, #fff);
+  color: var(--accent, #5b5048);
+}
+
+.choiceButtonPrimary {
+  background: var(--accent, #5b5048);
+  border-color: var(--accent, #5b5048);
+  color: #fff;
+}
+
+.choiceButtonPrimary:hover {
+  background: var(--accent-dark, #3d3632);
+  border-color: var(--accent-dark, #3d3632);
+}
+
+.reviewButton:disabled,
+.choiceButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.hint,
+.status {
+  color: var(--muted, #66736c);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.review {
+  background: #f5f8f6;
+  border: 1px solid rgba(45, 74, 60, 0.18);
+  border-radius: 0.7rem;
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem;
+}
+
+.review strong {
+  color: #24322b;
+  font-size: 0.78rem;
+}
+
+.address {
+  color: #315742;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.warning {
+  color: #875a20;
+}
+
+.confirmed {
+  color: #315742;
+  font-weight: 700;
+}
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 560px) {
+  .actions {
+    align-items: stretch;
+  }
+
+  .reviewButton,
+  .choiceButton {
+    justify-content: center;
+    min-height: var(--target-min, 44px);
+    width: 100%;
+  }
+
+  .suggestion {
+    align-items: center;
+    display: flex;
+    min-height: var(--target-min, 44px);
+  }
+}

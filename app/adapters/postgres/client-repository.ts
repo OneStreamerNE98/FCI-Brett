@@ -1,4 +1,5 @@
 import { CLIENT_STATUSES, type ClientStatus } from "../../domain/client-creation";
+import { SAVED_ADDRESS_VERDICTS, type SavedAddressVerdict } from "../../domain/address-validation";
 import { normalizeClientNameKey } from "../../domain/client-name-key";
 import type {
   AcceptedClientCreation,
@@ -35,6 +36,10 @@ type ClientInsertRow = Record<string, unknown> & {
 type ClientDatabaseRow = ClientInsertRow & {
   status: unknown;
   industry: unknown;
+  site_address: unknown;
+  latitude: unknown;
+  longitude: unknown;
+  address_validation_verdict: unknown;
   updated_at: unknown;
 };
 
@@ -51,6 +56,7 @@ type ContactDatabaseRow = Record<string, unknown> & {
 };
 
 const CLIENT_SELECT = `SELECT id::text AS id, client_code, name, status, industry,
+       site_address, latitude, longitude, address_validation_verdict,
        updated_at, version::text AS version
 FROM clients`;
 
@@ -83,6 +89,10 @@ function clientCreationFingerprintInput(intent: ClientCreationIntent) {
     normalizedNameKey: normalizeClientNameKey(intent.client.name),
     status: intent.client.status,
     industry: intent.client.industry?.trim() || null,
+    siteAddress: intent.client.siteAddress ?? null,
+    latitude: intent.client.latitude ?? null,
+    longitude: intent.client.longitude ?? null,
+    addressValidationVerdict: intent.client.addressValidationVerdict ?? null,
     primaryContact: intent.primaryContact
       ? {
           name: intent.primaryContact.name,
@@ -173,6 +183,10 @@ function clientFromRow(row: ClientInsertRow): AcceptedClientCreation {
 }
 
 function clientRowFromPostgres(row: ClientDatabaseRow): ClientRow {
+  const siteAddress = row.site_address ?? null;
+  const latitude = row.latitude ?? null;
+  const longitude = row.longitude ?? null;
+  const addressVerdict = row.address_validation_verdict ?? null;
   if (
     typeof row.id !== "string"
     || !isPostgresUuid(row.id)
@@ -181,6 +195,11 @@ function clientRowFromPostgres(row: ClientDatabaseRow): ClientRow {
     || typeof row.status !== "string"
     || !CLIENT_STATUSES.includes(row.status as ClientStatus)
     || row.industry !== null && typeof row.industry !== "string"
+    || siteAddress !== null && typeof siteAddress !== "string"
+    || latitude !== null && typeof latitude !== "number"
+    || longitude !== null && typeof longitude !== "number"
+    || addressVerdict !== null
+      && !SAVED_ADDRESS_VERDICTS.includes(addressVerdict as SavedAddressVerdict)
   ) {
     throw new Error("PostgreSQL client row is invalid");
   }
@@ -190,6 +209,10 @@ function clientRowFromPostgres(row: ClientDatabaseRow): ClientRow {
     name: row.name,
     status: row.status as ClientStatus,
     industry: row.industry,
+    siteAddress: siteAddress as string | null,
+    latitude: latitude as number | null,
+    longitude: longitude as number | null,
+    addressValidationVerdict: addressVerdict as SavedAddressVerdict | null,
     updatedAt: parsePostgresTimestamp(row.updated_at, "PostgreSQL client updated_at"),
     version: parsePostgresPositiveBigint(row.version, "PostgreSQL client version"),
   };
@@ -295,8 +318,9 @@ export function createPostgresClientRepository(
           const inserted = await client.query<ClientInsertRow>(
             `INSERT INTO clients (
                id, client_code, name, normalized_name_key, status, industry,
+               site_address, latitude, longitude, address_validation_verdict,
                created_by, updated_by, created_at, updated_at, version
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, 1)
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, $12, $13, 1)
              ON CONFLICT ON CONSTRAINT clients_normalized_name_key_key DO NOTHING
              RETURNING id::text AS id, client_code, name, created_at,
                        version::text AS version`,
@@ -307,6 +331,10 @@ export function createPostgresClientRepository(
               normalizeClientNameKey(intent.client.name),
               intent.client.status,
               intent.client.industry?.trim() || null,
+              intent.client.siteAddress ?? null,
+              intent.client.latitude ?? null,
+              intent.client.longitude ?? null,
+              intent.client.addressValidationVerdict ?? null,
               intent.client.createdBy,
               new Date(intent.client.createdAt),
               new Date(intent.client.updatedAt),
@@ -426,15 +454,22 @@ export function createPostgresClientRepository(
           const updated = await client.query<ClientDatabaseRow>(
             `UPDATE clients
              SET name = $1, normalized_name_key = $2, status = $3, industry = $4,
-                 updated_by = $5, updated_at = $6, version = version + 1
-             WHERE id = $7 AND version = $8::bigint
+                 site_address = $5, latitude = $6, longitude = $7,
+                 address_validation_verdict = $8,
+                 updated_by = $9, updated_at = $10, version = version + 1
+             WHERE id = $11 AND version = $12::bigint
              RETURNING id::text AS id, client_code, name, status, industry,
+                       site_address, latitude, longitude, address_validation_verdict,
                        updated_at, version::text AS version`,
             [
               intent.values.name,
               normalizeClientNameKey(intent.values.name),
               intent.values.status,
               intent.values.industry,
+              intent.values.siteAddress,
+              intent.values.latitude,
+              intent.values.longitude,
+              intent.values.addressValidationVerdict,
               intent.updatedBy,
               new Date(intent.updatedAt),
               intent.clientId,

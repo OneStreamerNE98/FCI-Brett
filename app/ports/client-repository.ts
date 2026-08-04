@@ -1,5 +1,6 @@
 import type { ClientStatus } from "../domain/client-creation";
 import type { VersionConflict } from "../domain/record-version";
+import type { SavedAddressVerdict } from "../domain/address-validation";
 
 export type ClientActivityIntent = {
   id: string;
@@ -17,6 +18,10 @@ export type ClientCreationIntent = {
     name: string;
     status: ClientStatus;
     industry: string | null;
+    siteAddress: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    addressValidationVerdict: SavedAddressVerdict | null;
     createdBy: string;
     createdAt: number;
     updatedAt: number;
@@ -58,6 +63,10 @@ export type ClientRow = {
   name: string;
   status: ClientStatus;
   industry: string | null;
+  siteAddress: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  addressValidationVerdict: SavedAddressVerdict | null;
   updatedAt: number;
   version: string;
 };
@@ -69,6 +78,10 @@ export type ClientFieldUpdateIntent = {
     name: string;
     status: ClientStatus;
     industry: string | null;
+    siteAddress: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    addressValidationVerdict: SavedAddressVerdict | null;
   };
   updatedAt: number;
   updatedBy: string;

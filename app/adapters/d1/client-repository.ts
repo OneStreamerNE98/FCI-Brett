@@ -1,4 +1,5 @@
 import { CLIENT_STATUSES, type ClientStatus } from "../../domain/client-creation";
+import { SAVED_ADDRESS_VERDICTS, type SavedAddressVerdict } from "../../domain/address-validation";
 import { normalizeClientNameKey } from "../../domain/client-name-key";
 import type {
   ClientCreationIntent,
@@ -15,6 +16,10 @@ type D1ClientRow = {
   name: string;
   status: string;
   industry: string | null;
+  site_address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  address_validation_verdict: string | null;
   updated_at: number;
   version: unknown;
 };
@@ -32,8 +37,19 @@ type D1ContactRow = {
 };
 
 function clientRow(row: D1ClientRow): ClientRow {
-  if (!CLIENT_STATUSES.includes(row.status as ClientStatus)) {
-    throw new Error("D1 client status is unsupported.");
+  const siteAddress = row.site_address ?? null;
+  const latitude = row.latitude ?? null;
+  const longitude = row.longitude ?? null;
+  const addressVerdict = row.address_validation_verdict ?? null;
+  if (
+    !CLIENT_STATUSES.includes(row.status as ClientStatus)
+    || siteAddress !== null && typeof siteAddress !== "string"
+    || latitude !== null && typeof latitude !== "number"
+    || longitude !== null && typeof longitude !== "number"
+    || addressVerdict !== null
+      && !SAVED_ADDRESS_VERDICTS.includes(addressVerdict as SavedAddressVerdict)
+  ) {
+    throw new Error("D1 client row is unsupported.");
   }
   return {
     id: row.id,
@@ -41,6 +57,10 @@ function clientRow(row: D1ClientRow): ClientRow {
     name: row.name,
     status: row.status as ClientStatus,
     industry: row.industry,
+    siteAddress,
+    latitude,
+    longitude,
+    addressValidationVerdict: addressVerdict as SavedAddressVerdict | null,
     updatedAt: row.updated_at,
     version: d1RecordVersion(row.version, "D1 client version"),
   };
@@ -156,7 +176,7 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
   return {
     async findById(clientId) {
       const row = await database
-        .prepare("SELECT id, client_code, name, status, industry, updated_at, version FROM clients WHERE id = ?")
+        .prepare("SELECT id, client_code, name, status, industry, site_address, latitude, longitude, address_validation_verdict, updated_at, version FROM clients WHERE id = ?")
         .bind(clientId)
         .first<D1ClientRow>();
       return row ? clientRow(row) : null;
@@ -177,8 +197,8 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
       }
       const normalizedNameKey = normalizeClientNameKey(client.name);
       const statements: D1PreparedStatement[] = [
-        database.prepare("INSERT INTO clients (id, client_code, name, normalized_name_key, status, industry, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM clients WHERE LOWER(name) = LOWER(?) LIMIT 1)")
-          .bind(client.id, client.clientCode, client.name, normalizedNameKey, client.status, client.industry, client.createdBy, client.createdAt, client.updatedAt, client.name),
+        database.prepare("INSERT INTO clients (id, client_code, name, normalized_name_key, status, industry, site_address, latitude, longitude, address_validation_verdict, created_by, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM clients WHERE LOWER(name) = LOWER(?) LIMIT 1)")
+          .bind(client.id, client.clientCode, client.name, normalizedNameKey, client.status, client.industry, client.siteAddress ?? null, client.latitude ?? null, client.longitude ?? null, client.addressValidationVerdict ?? null, client.createdBy, client.createdAt, client.updatedAt, client.name),
         database.prepare("INSERT INTO activity_events (id, record_id, action, actor, detail, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM clients WHERE id = ? AND client_code = ? AND name = ? AND created_by = ? AND created_at = ?)")
           .bind(activity.id, activity.recordId, activity.action, activity.actor, activity.detail, activity.createdAt, client.id, client.clientCode, client.name, client.createdBy, client.createdAt),
       ];
@@ -228,12 +248,16 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
       let results;
       try {
         results = await database.batch([
-          database.prepare("UPDATE clients SET name = ?, normalized_name_key = ?, status = ?, industry = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND NOT EXISTS (SELECT 1 FROM clients AS duplicate WHERE duplicate.id <> ? AND LOWER(duplicate.name) = LOWER(?) LIMIT 1)")
+          database.prepare("UPDATE clients SET name = ?, normalized_name_key = ?, status = ?, industry = ?, site_address = ?, latitude = ?, longitude = ?, address_validation_verdict = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND NOT EXISTS (SELECT 1 FROM clients AS duplicate WHERE duplicate.id <> ? AND LOWER(duplicate.name) = LOWER(?) LIMIT 1)")
             .bind(
               values.name,
               normalizedNameKey,
               values.status,
               values.industry,
+              values.siteAddress,
+              values.latitude,
+              values.longitude,
+              values.addressValidationVerdict,
               intent.updatedAt,
               intent.clientId,
               expectedVersion,
@@ -269,7 +293,7 @@ export function createD1ClientRepository(database: D1Database): ClientRepository
         return { outcome: "conflict", currentVersion };
       }
       const updated = await database
-        .prepare("SELECT id, client_code, name, status, industry, updated_at, version FROM clients WHERE id = ?")
+        .prepare("SELECT id, client_code, name, status, industry, site_address, latitude, longitude, address_validation_verdict, updated_at, version FROM clients WHERE id = ?")
         .bind(intent.clientId)
         .first<D1ClientRow>();
       if (!updated) throw new Error("D1 client update did not return the updated client");

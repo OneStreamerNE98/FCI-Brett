@@ -1,4 +1,5 @@
 import { normalizeClientCreation } from "../domain/client-creation";
+import { persistedAddress, type PersistedAddress } from "../domain/address-validation";
 import type { ClientRepository } from "../ports/client-repository";
 import type { DirectoryMirror } from "../ports/directory-mirror";
 import { canCreate, CREATION_CAPABILITIES, type CreationAuthorizationContext } from "./creation-authorization";
@@ -35,6 +36,7 @@ export async function createClient(
   input: unknown,
   authorization: CreationAuthorizationContext,
   dependencies: CreateClientDependencies,
+  trustedAddress?: PersistedAddress,
 ): Promise<CreateClientResult> {
   if (!canCreate(authorization, CREATION_CAPABILITIES.createClient)) {
     return { ok: false, kind: "forbidden", message: "You do not have permission to create clients." };
@@ -42,6 +44,7 @@ export async function createClient(
 
   const normalized = normalizeClientCreation(input);
   if (!normalized.ok) return { ok: false, kind: "invalid", message: normalized.message };
+  const address = persistedAddress(normalized.value.siteAddress, trustedAddress);
 
   const createdAt = dependencies.now();
   const id = dependencies.newId();
@@ -55,6 +58,10 @@ export async function createClient(
       name: normalized.value.name,
       status: normalized.value.status,
       industry: normalized.value.industry,
+      siteAddress: address.address,
+      latitude: address.latitude,
+      longitude: address.longitude,
+      addressValidationVerdict: address.verdict,
       createdBy: authorization.actorId,
       createdAt,
       updatedAt: createdAt,

@@ -2,6 +2,7 @@ import type { ProjectStatus } from "../domain/project-creation";
 import type { FlooringCategory } from "../domain/project-creation";
 import type { VersionConflict } from "../domain/record-version";
 import type { ProjectSegment } from "../domain/project-segment";
+import type { SavedAddressVerdict } from "../domain/address-validation";
 
 export type ProjectCreationIntent = {
   project: {
@@ -11,6 +12,9 @@ export type ProjectCreationIntent = {
     name: string;
     status: ProjectStatus;
     site: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    addressValidationVerdict: SavedAddressVerdict | null;
     projectManagerId: string;
     estimatedValue: number | null;
     flooringCategory: string | null;
@@ -107,6 +111,9 @@ export type ProjectRow = {
   name: string;
   status: ProjectStatus;
   site: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  addressValidationVerdict: SavedAddressVerdict | null;
   projectManagerId: string | null;
   estimatedValue: number | null;
   flooringCategory: FlooringCategory | null;
@@ -126,6 +133,9 @@ export type ProjectFieldUpdateIntent = {
     | "name"
     | "status"
     | "site"
+    | "latitude"
+    | "longitude"
+    | "addressValidationVerdict"
     | "estimatedValue"
     | "flooringCategory"
     | "squareFeet"

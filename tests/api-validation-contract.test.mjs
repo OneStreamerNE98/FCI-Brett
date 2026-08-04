@@ -34,8 +34,9 @@ test("project creation validates string and numeric JSON fields before use", asy
     read("app/domain/project-creation.ts"),
   ]);
 
-  assert.match(domain, /\["clientId", "name", "status", "site", "projectManager", "projectManagerId"\]/);
+  assert.match(domain, /\["clientId", "name", "status", "projectManager", "projectManagerId"\]/);
   assert.match(domain, /typeof record\[field\] !== "string"/);
+  assert.match(domain, /record\.site !== undefined && record\.site !== null && typeof record\.site !== "string"/);
   assert.match(domain, /record\[field\] !== null && typeof record\[field\] !== "number"/);
   assert.match(domain, /Number\.isSafeInteger\(estimatedValue\)/);
   assert.match(domain, /FLOORING_CATEGORIES/);

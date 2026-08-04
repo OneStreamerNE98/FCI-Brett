@@ -149,6 +149,10 @@ export function AccessibleOverlay({
 
       if (event.key === "Escape") {
         if (panel.querySelector(".info-hint.open")) return;
+        const eventTarget = event.target instanceof HTMLElement ? event.target : null;
+        // Give an expanded combobox the first Escape so it can dismiss its
+        // listbox without also closing the containing editor.
+        if (eventTarget?.matches('[role="combobox"][aria-expanded="true"]')) return;
         event.preventDefault();
         event.stopPropagation();
         if (!busyRef.current) onCloseRef.current();

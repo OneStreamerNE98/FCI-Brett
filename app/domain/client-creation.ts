@@ -1,5 +1,6 @@
 import { normalizeClientIndustry } from "./client-industry.ts";
 import { normalizeClientDisplayName } from "./client-name-key.ts";
+import { normalizeAddressText } from "./address-validation.ts";
 import {
   normalizeContactEmail,
   normalizeContactName,
@@ -21,6 +22,7 @@ export type NormalizedPrimaryContact = {
 export type NormalizedClientCreation = {
   name: string;
   industry: string | null;
+  siteAddress: string | null;
   status: ClientStatus;
   primaryContact: NormalizedPrimaryContact | null;
 };
@@ -40,6 +42,11 @@ export function normalizeClientCreation(input: unknown): ClientCreationValidatio
   for (const field of ["name", "status"] as const) {
     if (record[field] !== undefined && typeof record[field] !== "string") return invalidJsonDetails();
   }
+  if (
+    record.siteAddress !== undefined
+    && record.siteAddress !== null
+    && typeof record.siteAddress !== "string"
+  ) return invalidJsonDetails();
 
   let primaryContact: Record<string, unknown> | undefined;
   if (record.primaryContact !== undefined) {
@@ -68,6 +75,10 @@ export function normalizeClientCreation(input: unknown): ClientCreationValidatio
   if (!CLIENT_STATUSES.includes(status)) return { ok: false, message: "client status is invalid" };
   const industry = normalizeClientIndustry(record.industry ?? null);
   if (industry === undefined) return { ok: false, message: "client industry is invalid" };
+  const siteAddress = normalizeAddressText(record.siteAddress);
+  if (siteAddress === undefined) {
+    return { ok: false, message: "client site address must be 280 characters or fewer" };
+  }
 
   let normalizedPrimaryContact: NormalizedPrimaryContact | null = null;
   if (primaryContact) {
@@ -101,6 +112,7 @@ export function normalizeClientCreation(input: unknown): ClientCreationValidatio
     value: {
       name,
       industry,
+      siteAddress,
       status,
       primaryContact: normalizedPrimaryContact,
     },

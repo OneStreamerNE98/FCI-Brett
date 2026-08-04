@@ -9,6 +9,7 @@ import type {
   ClientRepository,
   ClientRow,
 } from "../ports/client-repository.ts";
+import { persistedAddress, type PersistedAddress } from "../domain/address-validation.ts";
 
 export const MAX_CLIENT_PATCH_BODY_BYTES = 64_000;
 
@@ -41,6 +42,7 @@ const CLIENT_FIELD_LABELS = {
   name: "Name",
   status: "Status",
   industry: "Industry",
+  siteAddress: "Site address",
 } as const satisfies Record<ClientPatchKey, string>;
 
 function clientValues(row: ClientRow): ClientFieldUpdateIntent["values"] {
@@ -48,6 +50,10 @@ function clientValues(row: ClientRow): ClientFieldUpdateIntent["values"] {
     name: row.name,
     status: row.status,
     industry: row.industry,
+    siteAddress: row.siteAddress,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    addressValidationVerdict: row.addressValidationVerdict,
   };
 }
 
@@ -55,12 +61,14 @@ function mergeClientPatch(
   current: ClientFieldUpdateIntent["values"],
   patch: ValidatedClientPatch,
 ): ClientFieldUpdateIntent["values"] {
-  return Object.fromEntries(
-    Object.entries(current).map(([key, value]) => [
-      key,
-      Object.hasOwn(patch, key) ? patch[key as ClientPatchKey] : value,
-    ]),
-  ) as ClientFieldUpdateIntent["values"];
+  return {
+    ...current,
+    ...Object.fromEntries(
+      CLIENT_PATCH_KEYS.flatMap((key) =>
+        Object.hasOwn(patch, key) ? [[key, patch[key]]] : []
+      ),
+    ),
+  } as ClientFieldUpdateIntent["values"];
 }
 
 function clientConflict(
@@ -90,6 +98,7 @@ export async function updateClient(
   input: unknown,
   actorId: string,
   dependencies: UpdateClientDependencies,
+  trustedAddress?: PersistedAddress,
 ): Promise<UpdateClientResult> {
   if (!actorId.trim()) {
     return {
@@ -119,12 +128,30 @@ export async function updateClient(
 
   const currentValues = clientValues(current);
   const values = mergeClientPatch(currentValues, normalized.value);
+  if (Object.hasOwn(normalized.value, "siteAddress")) {
+    const address = persistedAddress(normalized.value.siteAddress ?? null, trustedAddress);
+    values.siteAddress = address.address;
+    values.latitude = address.latitude;
+    values.longitude = address.longitude;
+    values.addressValidationVerdict = address.verdict;
+  }
   const changes = CLIENT_PATCH_KEYS.flatMap((key) => {
     if (!Object.hasOwn(normalized.value, key) || currentValues[key] === values[key]) return [];
     return [
       `${CLIENT_FIELD_LABELS[key]}: ${displayValue(currentValues[key])} → ${displayValue(values[key])}`,
     ];
   });
+  const addressEvidenceChanged = Object.hasOwn(normalized.value, "siteAddress")
+    && (
+      currentValues.latitude !== values.latitude
+      || currentValues.longitude !== values.longitude
+      || currentValues.addressValidationVerdict !== values.addressValidationVerdict
+    );
+  if (addressEvidenceChanged && currentValues.siteAddress === values.siteAddress) {
+    changes.push(
+      `Site address review: ${displayValue(currentValues.addressValidationVerdict)} → ${displayValue(values.addressValidationVerdict)}`,
+    );
+  }
   if (changes.length === 0) return { ok: true, value: current };
 
   const updatedAt = dependencies.now();
@@ -170,6 +197,10 @@ export function clientUpdateResponse(row: ClientRow) {
     name: row.name,
     status: row.status,
     industry: row.industry,
+    siteAddress: row.siteAddress,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    addressValidationVerdict: row.addressValidationVerdict,
     updatedAt: row.updatedAt,
     version: row.version,
   };

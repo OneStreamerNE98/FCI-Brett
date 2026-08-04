@@ -1,6 +1,7 @@
-export const APPLICATION_CONTENT_SECURITY_POLICY = "frame-src 'self' https://www.google.com";
+export const APPLICATION_CONTENT_SECURITY_POLICY =
+  "frame-src 'self' https://www.google.com; connect-src 'self' https://places.googleapis.com";
 
-function contentSecurityPolicyWithMapsFrameSource(existingPolicy: string | null) {
+function contentSecurityPolicyWithGoogleMapsSources(existingPolicy: string | null) {
   const directives = (existingPolicy ?? "")
     .split(";")
     .map((directive) => directive.trim())
@@ -11,8 +12,21 @@ function contentSecurityPolicyWithMapsFrameSource(existingPolicy: string | null)
     .filter((source) => source.toLowerCase() !== "'none'");
   const requiredFrameSources = ["'self'", "https://www.google.com"];
   const uniqueFrameSources = [...new Set([...frameSources, ...requiredFrameSources])];
-  const retainedDirectives = directives.filter((directive) => !/^frame-src(?:\s|$)/i.test(directive));
-  return [...retainedDirectives, `frame-src ${uniqueFrameSources.join(" ")}`].join("; ");
+  const connectSources = directives
+    .filter((directive) => /^connect-src(?:\s|$)/i.test(directive))
+    .flatMap((directive) => directive.split(/\s+/).slice(1))
+    .filter((source) => source.toLowerCase() !== "'none'");
+  const requiredConnectSources = ["'self'", "https://places.googleapis.com"];
+  const uniqueConnectSources = [...new Set([...connectSources, ...requiredConnectSources])];
+  const retainedDirectives = directives.filter((directive) => (
+    !/^frame-src(?:\s|$)/i.test(directive)
+    && !/^connect-src(?:\s|$)/i.test(directive)
+  ));
+  return [
+    ...retainedDirectives,
+    `frame-src ${uniqueFrameSources.join(" ")}`,
+    `connect-src ${uniqueConnectSources.join(" ")}`,
+  ].join("; ");
 }
 
 export function applyApplicationSecurityHeaders(response: Response) {
@@ -22,7 +36,7 @@ export function applyApplicationSecurityHeaders(response: Response) {
   const headers = new Headers(response.headers);
   headers.set(
     "Content-Security-Policy",
-    contentSecurityPolicyWithMapsFrameSource(headers.get("Content-Security-Policy")),
+    contentSecurityPolicyWithGoogleMapsSources(headers.get("Content-Security-Policy")),
   );
   return new Response(response.body, {
     status: response.status,

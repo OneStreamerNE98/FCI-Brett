@@ -449,7 +449,7 @@ async function assertCreationMirror(route, path, body, resources, ids, expectedS
   configure({ resources, ids, tokenFailure: true });
   const response = await route.POST(officeRequest(path, "POST", body));
   const payload = await response.json();
-  assert.equal(response.status, 201);
+  assert.equal(response.status, 201, JSON.stringify(payload));
   assert.equal(payload.sheetSync.status, "pending");
   assert.equal(failedDirectoryEvent()?.values[5], expectedSheetId);
 }
@@ -512,7 +512,7 @@ test("effective-config lookup stays inside the optional post-create mirror bound
     configure({ resources: appResources(), ids: null, resourceFailure: true });
     const response = await creation.route.POST(officeRequest(creation.path, "POST", creation.body));
     const payload = await response.json();
-    assert.equal(response.status, 201);
+    assert.equal(response.status, 201, JSON.stringify(payload));
     assert.equal(payload.sheetSync.status, "pending");
     const durableInsertIndex = state.queries.findIndex((query) => creation.durableInsert.test(query.sql));
     const registryReadIndex = state.queries.findIndex((query) => /FROM workspace_resources/u.test(query.sql));
