@@ -1466,7 +1466,7 @@ different keys both appear; the filing write path untouched (diff-scoped asserti
 assistant-adjacent read modules; zero `FloorOpsApp.tsx`.
 
 ### WS-19 · Tenant cutover — make a Workspace switch survivable (medium)
-**Status:** In review — PR #288
+**Status:** Complete — PR #288, August 4, 2026. Source-only and undeployed. Branch reset to the fleet-reviewed head before merge: an unreviewed post-approval rewrite (connection-generation fencing, 45 files) was discarded by owner decision and parked for the WS-20 wave — see the PR #288 disposition comment for the preserved SHAs.
 **Why:** the owner is live on a staging tenant (`grass.wedding`) and intends to move to the
 production Cherry Hill Workspace. Today that move **corrupts state silently instead of
 failing closed**, because nothing in the database records which tenant a Google identifier
@@ -2576,7 +2576,7 @@ untouched** (this must not touch Overview or Reports markup); `npm test`,
 **Effort:** small. **Cost:** $0.
 
 ### SET-40 · Effective-config extensions: every UI-manageable value through one resolver (medium, after SET-05)
-**Status:** In review — PR #290.
+**Status:** Complete — PR #290, August 4, 2026. Source-only and undeployed. Review record: 3-lens fleet, 8 confirmed findings fixed on-branch (guard truthfulness ×2, accidental Chat adoption, adopt-route write order, source-enum unity, pin restore); stack rebuilt onto the reviewed WS-19 base with the fencing-integration commit dropped and its non-fencing e2e coverage restored in a reviewed fix-up.
 
 **Why:** the August 3 configuration audit and its adversarial review settled how "define it
 in the front end" is built: extend the shipped SET-13 resolver, do NOT blanket-migrate raw
@@ -2994,7 +2994,7 @@ navigation URL shape pinned; no server proxying of map tiles. **Effort:** small.
 **Cost:** $0 (Embed API free unlimited; URLs free).
 
 ### GI-04 · Address validation + autocomplete on lead, client, and project address entry (medium, after WS-15; FloorOpsApp queue) — OWNER PRIORITY (July 21)
-**Status:** In review — PR #291.
+**Status:** Complete — PR #291, August 4, 2026. Source-only and undeployed. Review record: 4-lens fleet, 8 confirmed findings fixed on-branch (mount autofire + save blocking P1s, dropdown dismissal, touch tiers, modal grammar, receipt races, spinner); golden hashes byte-identical throughout.
 **Why:** Typo-proof, USPS-standardized addresses with lat/lng captured wherever an
 address enters the system — one prevented wrong-address truck roll pays for years of
 usage.
@@ -4307,7 +4307,7 @@ view cannot ship with;
 **Effort:** large. **Cost:** provider spend within the existing budget.
 
 ### AI-12 · A failed inbox analysis is invisible, and a provider outage reads as "You're caught up" (medium)
-**Status:** In review — PR #287
+**Status:** Complete — PR #287, August 4, 2026. Source-only and undeployed. Review record: 3-lens fleet, 1 confirmed P3 fixed on-branch (retry toast racing a stale in-flight refresh).
 **Why:** observed live on the deployed site August 3, 2026, by the owner, with a real test
 email. While the OpenAI provider was returning errors, every analysed message stored
 `status: "failed"` — and three independent behaviours then combined to hide it completely:
