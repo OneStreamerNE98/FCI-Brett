@@ -173,18 +173,25 @@ test("contact editor keeps the active input mounted and focused while initial fo
   await page.getByRole("button", { name: new RegExp(clientName) }).click();
   const drawer = page.getByRole("dialog", { name: `${clientName} client account` });
 
+  // Deterministic ordering, no wall clock: capture the overlay's mount-effect rAF
+  // callback instead of delaying it, so the test — not machine load — decides when the
+  // initial-focus attempt runs. A timing-based version went vacuously green whenever a
+  // loaded machine let the delayed callback fire before contactPhone.focus() landed.
   await page.evaluate(() => {
     const testWindow = window as typeof window & {
+      __edit09PendingFrames?: FrameRequestCallback[];
       __edit09RestoreRequestAnimationFrame?: () => void;
     };
     const requestAnimationFrameBeforeTest = window.requestAnimationFrame.bind(window);
+    testWindow.__edit09PendingFrames = [];
     testWindow.__edit09RestoreRequestAnimationFrame = () => {
       window.requestAnimationFrame = requestAnimationFrameBeforeTest;
       delete testWindow.__edit09RestoreRequestAnimationFrame;
     };
-    window.requestAnimationFrame = (callback) => requestAnimationFrameBeforeTest((timestamp) => {
-      window.setTimeout(() => callback(timestamp), 200);
-    });
+    window.requestAnimationFrame = (callback) => {
+      testWindow.__edit09PendingFrames?.push(callback);
+      return 0;
+    };
   });
 
   await drawer.getByRole("button", { name: "Edit primary contact" }).click();
@@ -203,7 +210,22 @@ test("contact editor keeps the active input mounted and focused while initial fo
   expect(focusedPhoneNode).not.toBeNull();
   await focusedPhoneNode?.evaluate((node) => { node.setAttribute("data-edit09-node", "stable"); });
 
-  await page.waitForTimeout(300);
+  // Fail-loud precondition: the overlay must actually have registered its deferred
+  // initial-focus callback while patched — otherwise this test proves nothing.
+  const pendingFrameCount = await page.evaluate(() => {
+    const testWindow = window as typeof window & { __edit09PendingFrames?: FrameRequestCallback[] };
+    return testWindow.__edit09PendingFrames?.length ?? 0;
+  });
+  expect(pendingFrameCount).toBeGreaterThan(0);
+
+  // NOW fire the captured initial-focus callback(s), with focus already on the phone
+  // input — the exact race, reproduced on demand.
+  await page.evaluate(() => {
+    const testWindow = window as typeof window & { __edit09PendingFrames?: FrameRequestCallback[] };
+    const pending = testWindow.__edit09PendingFrames ?? [];
+    testWindow.__edit09PendingFrames = [];
+    for (const callback of pending) callback(performance.now());
+  });
 
   await expect(contactPhone).toBeFocused();
   expect(await focusedPhoneNode?.evaluate((node) => node.isConnected)).toBe(true);
