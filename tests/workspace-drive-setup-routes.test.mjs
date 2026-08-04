@@ -1208,6 +1208,63 @@ test("project provisioning rejects widened duplicate siblings before simulation 
   }
 });
 
+test("a live existing mapping cannot bypass duplicate-name preflight", async () => {
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.drive.projectFolders.unshift(
+    { key: "first-project-sibling", name: "00_Duplicate", management: "owner", children: [] },
+    { key: "second-project-sibling", name: "00_Duplicate", management: "owner", children: [] },
+  );
+  const database = fakeDatabase({ blueprint, blueprintConnectionKey: "google-workspace" });
+  await workspaceEnvironment(database, { GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED: "true" });
+  database.state.resources.push(savedResource({
+    id: "shared",
+    resourceType: "drive.shared-drive",
+    resourceKey: "primary",
+    externalId: "app-shared-drive-123",
+    name: "FCI Operations",
+  }));
+  database.state.project = {
+    id: "project-existing-duplicate-blueprint",
+    project_number: "FCI2026-906",
+    name: "FCI TEST — DO NOT USE",
+    client_id: "client-existing-duplicate-blueprint",
+    client_code: "FCI TEST",
+    client_name: "DO NOT USE",
+  };
+  database.state.mapping = {
+    drive_file_id: "existing-project-folder-123",
+    drive_url: "https://drive.google.test/existing-project-folder-123",
+  };
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("Existing-mapping duplicate-name preflight must not request a token or Drive file.");
+  };
+
+  const response = await projectDriveRoute.POST(
+    routeRequest(`/api/v1/projects/${database.state.project.id}/drive`),
+    { params: Promise.resolve({ projectId: database.state.project.id }) },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.code, "drive_folder_identity_conflict");
+  assert.equal(providerCalls, 0, "preflight must run before token exchange or drive.assertContained");
+  assert.equal(database.state.leases.size, 0);
+  assert.deepEqual(database.state.mappings, []);
+  assert.deepEqual(database.state.mapping, {
+    drive_file_id: "existing-project-folder-123",
+    drive_url: "https://drive.google.test/existing-project-folder-123",
+  });
+  assert.deepEqual(database.state.activities, []);
+  assert.deepEqual(database.state.events, []);
+  assert.equal(
+    database.state.queries.some((query) => /^(?:INSERT|UPDATE|DELETE)\b/u.test(query.sql.trimStart())),
+    false,
+    "the rejected fast path must not issue a persistence mutation",
+  );
+});
+
 test("reconcile-only folder rename fences stale reviews and restores simulation metadata if its audit fails", async () => {
   const database = fakeDatabase();
   simulationEnvironment(database);

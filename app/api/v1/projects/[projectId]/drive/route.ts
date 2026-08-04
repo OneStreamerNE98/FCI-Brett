@@ -69,6 +69,12 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   if (!project) return noStore({ error: "Project not found." }, { status: 404 });
   const projectYear = project.project_number.slice(3, 7) || new Date().getUTCFullYear().toString();
 
+  let blueprintPlan: ReturnType<typeof buildProjectDriveBlueprintPlan>;
+  try {
+    blueprintPlan = buildProjectDriveBlueprintPlan(blueprint);
+  } catch (error) {
+    return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
+  }
   const existing = await env.DB.prepare("SELECT drive_file_id, drive_url FROM drive_folder_mappings WHERE connection_key = ? AND entity_type = 'project' AND entity_id = ? AND folder_key = 'project-root'")
     .bind(config.connectionKey, project.id)
     .first<MappingRow>();
@@ -82,12 +88,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
     } catch (error) {
       return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
     }
-  }
-  let blueprintPlan: ReturnType<typeof buildProjectDriveBlueprintPlan>;
-  try {
-    blueprintPlan = buildProjectDriveBlueprintPlan(blueprint);
-  } catch (error) {
-    return noStoreResponse(googleIntegrationErrorResponse(error, "The project Drive workspace could not be created. Try again."));
   }
   let drive: GoogleDriveClient | null = null;
   if (!config.simulation) {
