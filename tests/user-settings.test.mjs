@@ -165,13 +165,13 @@ test("GET and PATCH read and write only the authenticated identity row", async (
     displayTimezone: "America/Chicago",
     replySignature: "Admin signature",
     notificationPreferences: notificationPreferences("lead.created"),
-    pageLayouts: pageLayouts("scheduling", "gmail-project-inbox", "projects-by-status", "future-reports"),
+    pageLayouts: pageLayouts("lead-pipeline", "gmail-project-inbox", "projects-by-status", "future-reports"),
   };
   const officePreferences = {
     displayTimezone: "America/Denver",
     replySignature: "Office signature",
     notificationPreferences: notificationPreferences("calendar.schedule_changed"),
-    pageLayouts: pageLayouts("active-projects", "scheduling", "business-kpis", "summary-metrics"),
+    pageLayouts: pageLayouts("active-projects", "lead-pipeline", "business-kpis", "summary-metrics"),
   };
 
   const adminWrite = await route.PATCH(routeRequest(ADMIN_EMAIL, "PATCH", adminPreferences));
@@ -225,7 +225,7 @@ test("widens stale stored layouts and preserves them through unrelated partial u
   const before = await route.GET(routeRequest(OFFICE_EMAIL));
   const beforeBody = await before.json();
   assert.deepEqual(beforeBody.preferences.pageLayouts.overview, {
-    order: ["scheduling", "metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
+    order: ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
     hidden: ["gmail-project-inbox"],
     fullWidth: [],
   });
@@ -256,7 +256,7 @@ test("page-layout-only PATCH preserves every existing SET-28 preference", async 
     },
   });
   setEnvironment(database);
-  const nextLayouts = pageLayouts("scheduling", "gmail-project-inbox", "projects-by-status", "future-reports");
+  const nextLayouts = pageLayouts("active-projects", "gmail-project-inbox", "projects-by-status", "future-reports");
 
   const update = await route.PATCH(routeRequest(OFFICE_EMAIL, "PATCH", { pageLayouts: nextLayouts }));
   assert.equal(update.status, 200);

@@ -51,7 +51,7 @@ const clients: MockClientRow[] = [
 
 const defaultPageLayouts = {
   overview: {
-    order: ["metrics", "todays-meetings", "lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"],
+    order: ["metrics", "todays-meetings", "lead-pipeline", "active-projects", "gmail-project-inbox"],
     hidden: [],
   },
   reports: {

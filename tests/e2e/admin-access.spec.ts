@@ -130,7 +130,7 @@ async function openAccessPage(page: Page) {
 test("direct route renders the compact access page and survives link navigation, refresh, Back, and Forward", async ({ page }) => {
   const api = await installAccessApi(page);
   await page.goto("/");
-  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "People & Access · In development" }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "People & Access", exact: true }).click();
   await expect(page).toHaveURL("http://localhost:4173/management/access");
   await expect(page.getByRole("heading", { level: 1, name: "People & Access" })).toBeVisible();
   await expect(page.getByText("4", { exact: true }).first()).toBeVisible();

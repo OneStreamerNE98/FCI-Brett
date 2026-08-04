@@ -25,6 +25,12 @@ export type ValidatedLeadValues = {
   status: LeadStatus;
 };
 
+export type LeadValueField = keyof ValidatedLeadValues;
+
+export type LeadValuesValidation =
+  | { ok: true; value: ValidatedLeadValues }
+  | { ok: false; field: LeadValueField; message: string };
+
 export const LEAD_PATCH_KEYS = [
   "company",
   "contactName",
@@ -137,24 +143,34 @@ export function leadResponse(row: LeadRow) {
   };
 }
 
-export function validateLeadValues(body: Record<string, unknown>): ValidatedLeadValues | null {
+export function validateLeadValuesWithIssue(body: Record<string, unknown>): LeadValuesValidation {
   const company = cleanText(body.company, 180);
+  if (!company) return { ok: false, field: "company", message: "Enter a client company name with 180 characters or fewer." };
   const contactName = cleanText(body.contactName, 160);
+  if (!contactName) return { ok: false, field: "contactName", message: "Enter a primary contact name with 160 characters or fewer." };
   const contactEmail = cleanEmail(body.contactEmail);
+  if (contactEmail === undefined) return { ok: false, field: "contactEmail", message: "Enter a valid contact email address or leave it blank." };
   const contactPhone = cleanText(body.contactPhone, 40, false);
+  if (contactPhone === undefined) return { ok: false, field: "contactPhone", message: "Enter a contact phone number with 40 characters or fewer, or leave it blank." };
   const projectName = cleanText(body.projectName, 180);
+  if (!projectName) return { ok: false, field: "projectName", message: "Enter a project or opportunity name with 180 characters or fewer." };
   const source = cleanText(body.source, 80);
+  if (!source) return { ok: false, field: "source", message: "Enter a lead source with 80 characters or fewer." };
   const stage = cleanText(body.stage, 80);
+  if (!stage) return { ok: false, field: "stage", message: "Enter a lead stage with 80 characters or fewer." };
   const site = cleanText(body.site, 280);
+  if (!site) return { ok: false, field: "site", message: "Enter a project site address with 280 characters or fewer." };
   const estimatedValue = cleanEstimatedValue(body.estimatedValue);
+  if (estimatedValue === undefined) return { ok: false, field: "estimatedValue", message: "Enter an estimated value as a whole number from 0 to 2,147,483,647." };
   const nextAction = cleanText(body.nextAction, 500);
+  if (!nextAction) return { ok: false, field: "nextAction", message: "Enter the next action with 500 characters or fewer." };
   const nextActionAt = cleanTimestamp(body.nextActionAt);
+  if (nextActionAt === undefined) return { ok: false, field: "nextActionAt", message: "Enter a valid next action date and time or leave it blank." };
   const ownerEmail = cleanEmail(body.ownerEmail, true);
+  if (!ownerEmail) return { ok: false, field: "ownerEmail", message: "Enter a valid lead owner email address." };
   const status = cleanText(body.status ?? "active", 20);
-  if (!company || !contactName || contactEmail === undefined || contactPhone === undefined || !projectName || !source || !stage || !site || estimatedValue === undefined || !nextAction || nextActionAt === undefined || !ownerEmail || !status || !LEAD_STATUS_SET.has(status)) {
-    return null;
-  }
-  return {
+  if (!status || !LEAD_STATUS_SET.has(status)) return { ok: false, field: "status", message: "Choose a valid lead status." };
+  return { ok: true, value: {
     company,
     contactName,
     contactEmail,
@@ -168,7 +184,12 @@ export function validateLeadValues(body: Record<string, unknown>): ValidatedLead
     nextActionAt,
     ownerEmail,
     status: status as LeadStatus,
-  };
+  } };
+}
+
+export function validateLeadValues(body: Record<string, unknown>): ValidatedLeadValues | null {
+  const result = validateLeadValuesWithIssue(body);
+  return result.ok ? result.value : null;
 }
 
 const LEAD_PATCH_KEY_SET = new Set<string>([...LEAD_PATCH_KEYS, "version"]);

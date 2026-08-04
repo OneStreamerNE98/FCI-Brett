@@ -176,7 +176,7 @@ test("mobile navigation traps focus and restores the menu trigger on every close
   await expect(trigger).toBeFocused();
 });
 
-test("mobile navigation keeps management labels and compact status on one line without horizontal scrolling", async ({ page }) => {
+test("mobile navigation keeps plain labels on one line without build badges or Schedule", async ({ page }) => {
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/");
@@ -184,11 +184,8 @@ test("mobile navigation keeps management labels and compact status on one line w
 
     await page.getByRole("button", { name: "Open navigation" }).click();
     const navigation = page.getByRole("navigation", { name: "Main navigation" });
-    const managementLinks = [
-      { link: navigation.getByRole("link", { name: "Reports · Working" }), compactState: "Working", fullState: "Working" },
-      { link: navigation.getByRole("link", { name: "Settings · In development" }), compactState: "Dev", fullState: "In development" },
-      { link: navigation.getByRole("link", { name: "People & Access · In development" }), compactState: "Dev", fullState: "In development" },
-    ];
+    const managementLinks = ["Reports", "Settings", "People & Access"]
+      .map((name) => navigation.getByRole("link", { name, exact: true }));
 
     await expect(navigation).toBeVisible();
     const navigationWidth = await navigation.evaluate((element) => ({
@@ -197,13 +194,24 @@ test("mobile navigation keeps management labels and compact status on one line w
     }));
     expect(navigationWidth.scrollWidth).toBeLessThanOrEqual(navigationWidth.clientWidth);
 
-    for (const { link, compactState, fullState } of managementLinks) {
+    await expect(navigation.locator(".feature-state")).toHaveCount(0);
+    await expect(navigation.getByRole("link", { name: "Schedule", exact: true })).toHaveCount(0);
+    expect(await navigation.locator(":scope > p, :scope > a").allTextContents()).toEqual([
+      "Workspace",
+      "Overview",
+      "Leads",
+      "Clients",
+      "Projects",
+      "Inbox",
+      "AI Assistant",
+      "Management",
+      "Reports",
+      "Settings",
+      "People & Access",
+    ]);
+
+    for (const link of managementLinks) {
       await expect(link).toBeVisible();
-      const stateBadge = link.locator(".feature-state");
-      await expect(stateBadge).toBeVisible();
-      await expect(stateBadge).toHaveText(compactState);
-      await expect(stateBadge).toHaveAttribute("aria-label", fullState);
-      await expect(stateBadge).toHaveAttribute("title", new RegExp(`^${fullState}:`));
       const labelLayout = await link.locator(".nav-label").evaluate((element) => {
         const style = window.getComputedStyle(element);
         const bounds = element.getBoundingClientRect();
@@ -380,22 +388,19 @@ test("global search supports the keyboard and returns focus after opening a proj
   await expect(search).toBeFocused();
 });
 
-test("feature labels distinguish working, in-development, setup-required, and planned experiences", async ({ page }) => {
+test("production navigation omits build labels and Schedule while project plans remain honest", async ({ page }) => {
   await page.goto("/");
   await waitForLiveRecords(page);
 
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
   await expect(page.getByRole("status", { name: "Development environment; test data only" })).toContainText("Development environment · Test data only");
-  await expect(navigation.getByRole("link", { name: "Overview · Working" }).locator(".feature-state")).toHaveText("Working");
-  await expect(navigation.getByRole("link", { name: "Projects · In development" }).locator(".feature-state")).toHaveText("Dev");
+  await expect(navigation.getByRole("link", { name: "Overview", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Projects", exact: true })).toBeVisible();
+  await expect(navigation.locator(".feature-state")).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "Schedule", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "View scheduling status" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "View scheduling status" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Schedule & crews" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "What the scheduling workspace will include" })).toBeVisible();
-  await expect(page.locator(".page-heading .feature-state")).toHaveText("Planned");
-  await expect(page.getByRole("button", { name: /publish|assign/i })).toHaveCount(0);
-
-  await navigation.getByRole("link", { name: "Projects · In development" }).click();
+  await navigation.getByRole("link", { name: "Projects", exact: true }).click();
   const row = page.getByRole("button", { name: new RegExp(projectName) });
   await row.click();
   const drawer = page.getByRole("dialog", { name: new RegExp(projectNumber) });
@@ -413,7 +418,7 @@ test("390px project rows preserve schedule, site, and value metadata", async ({ 
   await waitForLiveRecords(page);
 
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("link", { name: "Projects · In development" }).click();
+  await page.getByRole("link", { name: "Projects", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
 
   const row = page.getByRole("button", { name: new RegExp(projectName) });

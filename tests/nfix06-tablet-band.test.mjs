@@ -76,7 +76,7 @@ test("NFIX-06 contains the Testing & launch setup action inside its tablet card"
 test("NFIX-06 leaves both page-layout golden constants byte-identical", () => {
   assert.match(
     pageLayoutSpec,
-    /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "ba8255dba5b118c91ec0d1a478c4aede9303238f0ca9c9708bea2d4b890f018b";/,
+    /const OVERVIEW_LEGACY_SECTIONS_SHA256 = "4b2d9803d4d5d6e7d8fc7544ab7f862d87a076f4bfa0412ba498c66e8a12dd12";/,
   );
   assert.match(
     pageLayoutSpec,

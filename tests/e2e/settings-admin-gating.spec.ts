@@ -60,7 +60,8 @@ async function expectConservativeSettingsPresentation(page: Page) {
   await expect(page.getByRole("heading", { level: 2, name: "My settings" })).toBeVisible();
 
   const mainNavigation = page.getByRole("navigation", { name: "Main navigation" });
-  await expect(mainNavigation.getByRole("link", { name: "People & Access · In development" })).toHaveCount(0);
+  await expect(mainNavigation.getByRole("link", { name: "Settings", exact: true })).toHaveCount(0);
+  await expect(mainNavigation.getByRole("link", { name: "People & Access", exact: true })).toHaveCount(0);
   const settingsNavigation = page.locator(".settings-nav");
   await expect(settingsNavigation.getByRole("button")).toHaveCount(1);
   await expect(settingsNavigation.getByRole("button", { name: "My settings", exact: true })).toHaveAttribute("aria-current", "page");
@@ -97,7 +98,10 @@ test("Administrator identity keeps protected Settings actions available", async 
 
   const identity = await readIdentity(page);
   expect(identity).toEqual({ status: 200, body: expect.objectContaining({ isAdmin: true }) });
-  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "People & Access · In development" })).toBeVisible();
+  const mainNavigation = page.getByRole("navigation", { name: "Main navigation" });
+  await expect(mainNavigation.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+  await expect(mainNavigation.getByRole("link", { name: "People & Access", exact: true })).toBeVisible();
+  await expect(mainNavigation.locator(".feature-state")).toHaveCount(0);
   const accountActions = page.locator(".profile");
   await accountActions.click();
   await expect(page.locator("#account-actions-popover").getByRole("button", { name: "Google connection" })).toBeVisible();
@@ -155,7 +159,10 @@ test("Office identity sees My settings only and never renders company or Adminis
 
   const identity = await readIdentity(page);
   expect(identity).toEqual({ status: 200, body: expect.objectContaining({ isAdmin: false }) });
-  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "People & Access · In development" })).toHaveCount(0);
+  const mainNavigation = page.getByRole("navigation", { name: "Main navigation" });
+  await expect(mainNavigation.getByRole("link", { name: "Settings", exact: true })).toHaveCount(0);
+  await expect(mainNavigation.getByRole("link", { name: "People & Access", exact: true })).toHaveCount(0);
+  await expect(mainNavigation.locator(".feature-state")).toHaveCount(0);
   const navigation = page.locator(".settings-nav");
   await expect(navigation.getByRole("button")).toHaveCount(1);
   await expect(navigation.getByRole("button", { name: "My settings", exact: true })).toHaveAttribute("aria-current", "page");

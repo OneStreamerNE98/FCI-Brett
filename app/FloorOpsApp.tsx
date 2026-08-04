@@ -17,7 +17,7 @@ import type { InboxLeadProposal } from "./inbox/components/InboxView";
 import { DEFAULT_FILING_RULES, type FilingRuleDraft } from "./lib/google-workspace";
 import { dashboardTimeContext, friendlyFirstName } from "./lib/time-context";
 import { AccessibleOverlay } from "./components/AccessibleOverlay";
-import { FeatureStateBadge, type FeatureState } from "./components/FeatureStateBadge";
+import { FeatureStateBadge } from "./components/FeatureStateBadge";
 import { WorkspaceInfoHint } from "./components/WorkspaceInfoHint";
 import { Avatar, Metric, OperationsEmptyState, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
 import { OperationsActionableList, OperationsActionableListItem } from "./components/operations/OperationsActionableList";
@@ -419,12 +419,18 @@ const focusableControlSelector = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-const navItems: { label: OperationsView; icon: typeof LayoutDashboard; state: FeatureState }[] = [
-  { label: "Overview", icon: LayoutDashboard, state: "Working" }, { label: "Leads", icon: Zap, state: "In development" },
-  { label: "Clients", icon: ContactRound, state: "In development" }, { label: "Projects", icon: BriefcaseBusiness, state: "In development" },
-  { label: "Schedule", icon: CalendarDays, state: "Planned" },
-  { label: "Inbox", icon: Inbox, state: "In development" }, { label: "AI Assistant", icon: Sparkles, state: "In development" },
-  { label: "Reports", icon: Activity, state: "Working" }, { label: "Settings", icon: Settings, state: "In development" },
+const workspaceNavItems: { label: OperationsView; icon: typeof LayoutDashboard }[] = [
+  { label: "Overview", icon: LayoutDashboard },
+  { label: "Leads", icon: Zap },
+  { label: "Clients", icon: ContactRound },
+  { label: "Projects", icon: BriefcaseBusiness },
+  { label: "Inbox", icon: Inbox },
+  { label: "AI Assistant", icon: Sparkles },
+];
+
+const managementNavItems: { label: OperationsView; icon: typeof LayoutDashboard }[] = [
+  { label: "Reports", icon: Activity },
+  { label: "Settings", icon: Settings },
 ];
 
 function recordInitials(value: string) {
@@ -1742,10 +1748,10 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
         <button ref={mobileNavigationCloseRef} className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
         <nav className="main-nav" aria-label="Main navigation">
           <p>Workspace</p>
-          {navItems.slice(0, 6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} variant="compact" /></Link>)}
+          {workspaceNavItems.map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
           <p>Management</p>
-          {navItems.slice(6).map(({ label, icon: Icon, state }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={`${label} · ${state}`} title={`${label} · ${state}`}><Icon size={18} /><span className="nav-label">{label}</span><FeatureStateBadge state={state} variant="compact" /></Link>)}
-          {isAdmin && <a href="/management/access" aria-label="People & Access · In development" title="People & Access · In development"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span><FeatureStateBadge state="In development" variant="compact" /></a>}
+          {managementNavItems.filter(({ label }) => label !== "Settings" || isAdmin).map(({ label, icon: Icon }) => <Link key={label} href={operationsPath(label)} className={view === label ? "active" : ""} onClick={closeNavigationMenus} aria-current={view === label ? "page" : undefined} aria-label={label} title={label}><Icon size={18} /><span className="nav-label">{label}</span></Link>)}
+          {isAdmin && <a href="/management/access" aria-label="People & Access" title="People & Access"><ShieldCheck size={18} /><span className="nav-label">People &amp; Access</span></a>}
         </nav>
         <div ref={workspaceMenuRef} className="sidebar-menu-wrap workspace-menu-wrap">
           <button className="workspace-card" onClick={() => { setWorkspaceMenuOpen((current) => !current); setProfileMenuOpen(false); setNotificationsOpen(false); }} aria-controls="workspace-actions-popover" aria-expanded={workspaceMenuOpen} title="Workspace actions"><div className="workspace-icon"><Building2 size={17} /></div><div><span>{development ? "Development workspace" : "Production workspace"}</span><strong>Floor Coverings International</strong></div><ChevronDown size={16} /></button>
@@ -1803,7 +1809,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
               ><span>{result.kind === "project" ? <BriefcaseBusiness size={14} /> : result.kind === "contact" ? <ContactRound size={14} /> : <Users size={14} />}</span><div><strong>{result.title}</strong><small>{result.kind} · {result.subtitle}</small></div><ChevronRight size={14} /></button>)}
             </div>}
           </form>
-          <div className="top-actions"><div ref={notificationsMenuRef} className="notification-wrap"><button className="icon-button" onClick={() => { setNotificationsOpen((current) => !current); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label="Workspace navigation" title="Workspace navigation" aria-controls="notifications-popover" aria-expanded={notificationsOpen}><Navigation size={19} aria-hidden="true" /></button>{notificationsOpen && <div id="notifications-popover" className="notification-menu"><strong>Workspace navigation</strong><button onClick={() => navigateToView("Inbox")}>Open the Gmail project inbox</button><button onClick={() => navigateToView("Schedule")}>View scheduling status</button></div>}</div></div>
+          <div className="top-actions"><div ref={notificationsMenuRef} className="notification-wrap"><button className="icon-button" onClick={() => { setNotificationsOpen((current) => !current); setWorkspaceMenuOpen(false); setProfileMenuOpen(false); }} aria-label="Workspace navigation" title="Workspace navigation" aria-controls="notifications-popover" aria-expanded={notificationsOpen}><Navigation size={19} aria-hidden="true" /></button>{notificationsOpen && <div id="notifications-popover" className="notification-menu"><strong>Workspace navigation</strong><button onClick={() => navigateToView("Inbox")}>Open the Gmail project inbox</button></div>}</div></div>
         </header>
 
         <div className="page-wrap">
@@ -1925,7 +1931,7 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
         {todayMeetingsHaveDroppedRows && <li><div className="bar-chart-row"><span className="bar-chart-label">Additional meeting count unavailable</span><span>One or more project records did not load.</span><strong>Unavailable</strong><span className="bar-chart-spacer" aria-hidden="true" /></div></li>}
       </ul> : <OperationsEmptyState variant="table">{state === "ready" && todayMeetingsHaveDroppedRows ? "Saved meetings cannot be displayed until their project records load." : state === "ready" ? "No today or upcoming project meetings are saved." : state === "error" ? "Today's meetings are unavailable until live records load." : "Loading today's meetings…"}</OperationsEmptyState>}
     </section>,
-    "lead-pipeline": <div className="panel pipeline-panel">
+    "lead-pipeline": <div className="panel pipeline-panel page-layout-span-all">
         <PanelHeader title="Lead pipeline" subtitle={`${activeLeads.length} active records`} action="View all" onAction={() => onView("Leads")} />
         {activeLeads.length > 0 ? <OperationsActionableList ariaLabel="Lead pipeline records" columns={PIPELINE_ACTIONABLE_COLUMNS} headerClassName="pipeline-head">
           {activeLeads.slice(0, 4).map((lead) => <OperationsActionableListItem
@@ -1942,10 +1948,6 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
           </OperationsActionableListItem>)}
         </OperationsActionableList> : state === "ready" ? <OperationsEmptyState variant="table">No active leads yet. Add the first opportunity to begin the live pipeline.</OperationsEmptyState> : null}
       </div>,
-    scheduling: <div className="panel schedule-panel">
-        <PanelHeader title="Scheduling" badge="Planned" action="View status" onAction={() => onView("Schedule")} />
-        <OperationsEmptyState variant="dashboard"><CalendarDays size={20} /><div><strong>Scheduling is planned for a later milestone</strong><p>{dashboard?.readiness.scheduleReason ?? "Workers, crews, shifts, conflicts, and acknowledgements will appear here after the scheduling foundation is approved."}</p></div></OperationsEmptyState>
-      </div>,
     "active-projects": <div className="panel projects-panel"><PanelHeader title="Active projects" subtitle={`${activeProjects.length} active`} action="View projects" onAction={() => onView("Projects")} /><div className="project-cards">{activeProjects.slice(0, 6).map((project) => <button className="project-card" key={project.number} onClick={() => onProject(project)}><div className="project-card-top"><Status text={project.status} /><ChevronRight size={17} aria-hidden="true" /></div><span className="project-number">{project.number}</span><h3>{project.name}</h3><p>{project.client}</p><div className="project-meta"><span><MapPin size={13} />{project.site}</span><span>{project.value}</span></div></button>)}{activeProjects.length === 0 && state === "ready" ? <OperationsEmptyState variant="table">No active projects. Completed, cancelled, and archived work remains available on the Projects page.</OperationsEmptyState> : null}</div></div>,
     "gmail-project-inbox": <div className="panel inbox-panel"><PanelHeader title="Gmail project inbox" subtitle="Google Workspace Gmail" subtitleKind="source" action="Open inbox" onAction={() => onView("Inbox")} /><OperationsEmptyState variant="dashboard"><Mail size={20} /><div><strong>Review every message before filing</strong><p>Select the exact project and approve the copy before anything is saved to Drive.</p></div></OperationsEmptyState><button className="inbox-cta" onClick={() => onView("Inbox")}><Mail size={15} /> Open Gmail project inbox</button></div>,
   } as const;
@@ -1956,12 +1958,12 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
     const defaultSections = <>
       {sectionNodes.metrics}
       {sectionNodes["todays-meetings"]}
-      <section className="dashboard-grid">{sectionNodes["lead-pipeline"]}{sectionNodes.scheduling}</section>
+      <section className="dashboard-grid">{sectionNodes["lead-pipeline"]}</section>
       <section className="dashboard-grid lower-grid">{sectionNodes["active-projects"]}{sectionNodes["gmail-project-inbox"]}</section>
     </>;
     const arrangedSections = <><div className="page-layout-grid page-layout-grid-overview">{arrangedSpans.map(({ key, size }) => <div className={size === "full" ? "page-layout-span-all" : "page-layout-item"} data-page-layout-section={key} data-page-layout-size={size} key={key}>{section(key, sectionNodes[key])}</div>)}</div>{endDropZone}</>;
     return <>
-      <PageTitle eyebrow={dateLabel} title={`${greeting}${firstName ? `, ${firstName}` : ""}.`} text={recordsReady ? "Here’s the latest from your operations workspace." : "Connecting to your operations workspace."} state="Working" action={<><button className="soft-button" onClick={() => onView("Schedule")}><CalendarDays size={16} /> View scheduling status</button>{editButton}</>} />
+      <PageTitle eyebrow={dateLabel} title={`${greeting}${firstName ? `, ${firstName}` : ""}.`} text={recordsReady ? "Here’s the latest from your operations workspace." : "Connecting to your operations workspace."} state="Working" action={editButton} />
       {editor}
       {!editing && isDefaultPageLayout(activeLayout, "overview", isAdmin) ? defaultSections : arrangedSections}
     </>;
@@ -2304,7 +2306,7 @@ function LeadModal(props: LeadModalProps) {
       {error && <p className="project-operation-error" role="alert">{error}</p>}
       <label>Client company<input data-overlay-initial-focus name="company" required maxLength={180} placeholder="Business name" defaultValue={seed?.company ?? ""} disabled={saving} />{savedValue("company")}</label>
       <div className="form-row"><label>Primary contact<input name="contact" required maxLength={160} placeholder="Full name" defaultValue={seed?.contact ?? ""} disabled={saving} />{savedValue("contactName")}</label><label>Lead source<select name="source" defaultValue={seed?.source ?? "Website"} disabled={saving}>{sourceOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("source")}</label></div>
-      {(editMode || inboxPrefill) && <div className="form-row"><label>Contact email <span className="optional-label">Optional</span><input name="contactEmail" type="email" maxLength={254} defaultValue={seed?.contactEmail ?? ""} disabled={saving} />{savedValue("contactEmail")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="contactPhone" type="tel" maxLength={40} defaultValue={seed?.contactPhone ?? ""} disabled={saving} />{savedValue("contactPhone")}</label></div>}
+      <div className="form-row"><label>Contact email <span className="optional-label">Optional</span><input name="contactEmail" type="email" maxLength={254} defaultValue={seed?.contactEmail ?? ""} disabled={saving} />{savedValue("contactEmail")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="contactPhone" type="tel" maxLength={40} defaultValue={seed?.contactPhone ?? ""} disabled={saving} />{savedValue("contactPhone")}</label></div>
       <label>Project / opportunity<input name="project" required maxLength={180} placeholder="Project name" defaultValue={seed?.project ?? ""} disabled={saving} />{savedValue("projectName")}</label>
       <div className="form-row modal-hint-form-row"><div className="modal-hinted-field"><div className="modal-hint-label-row"><label htmlFor="lead-estimated-value">Estimated value</label><WorkspaceInfoHint label="Lead value help" text={LEAD_ESTIMATED_VALUE_HINT} anchor="auto" /></div><input id="lead-estimated-value" name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{inboxPrefill && seed?.estimatedValue === undefined && <small>Still needs typing before this lead can be added.</small>}{savedValue("estimatedValue")}</div><div className="modal-address-field"><AddressValidationField id="lead-site" name="site" label="Project site" value={site} required entityKind="lead" targetId={editLead?.id ?? "new"} mapsRuntime={props.mapsRuntime} disabled={saving} onChange={setSite} onReviewChange={setAddressReview} />{inboxPrefill && !seed?.site && <small>Still needs typing before this lead can be added.</small>}{savedValue("site")}</div></div>
       {editMode && !props.isAdmin && <p id="lead-estimated-value-help" className="form-help"><ShieldCheck size={14} /> Estimated value is read-only here. An administrator can edit it.</p>}

@@ -33,7 +33,7 @@ test("notifications use typed persistent errors and navigation disclosure popove
   await expect(workspaceNavigation).toBeVisible();
   await expect(workspaceNavigation.getByText("Workspace navigation", { exact: true })).toBeVisible();
   await expect(workspaceNavigation.getByRole("button", { name: "Open the Gmail project inbox" })).toBeVisible();
-  await expect(workspaceNavigation.getByRole("button", { name: "View scheduling status" })).toBeVisible();
+  await expect(workspaceNavigation.getByRole("button", { name: "View scheduling status" })).toHaveCount(0);
   await expect(workspaceNavigation.getByText("Notifications", { exact: true })).toHaveCount(0);
   await expect(workspaceNavigation.getByText("Schedule alerts will appear after scheduling is connected", { exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
@@ -70,7 +70,8 @@ test("settings never expose editable defaults after a failed load and support re
   });
 
   await openReadyApp(page);
-  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Settings · In development" }).click();
+  await page.getByRole("button", { name: /account actions/i }).click();
+  await page.locator("#account-actions-popover").getByRole("button", { name: "My settings", exact: true }).click();
   const accountError = page.getByRole("alert").filter({ hasText: "Saved settings could not be loaded" });
   await expect(accountError).toBeVisible();
   await expect(page.getByRole("button", { name: "Save my settings" })).toHaveCount(0);
@@ -78,7 +79,7 @@ test("settings never expose editable defaults after a failed load and support re
   failAccountSettings = false;
   await accountError.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("button", { name: "Save my settings" })).toBeEnabled();
-  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "People & Access · In development" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "People & Access", exact: true })).toBeVisible();
   await page.getByTitle("Workspace actions").click();
   await expect(page.locator("#workspace-actions-popover").getByRole("button", { name: "Google Workspace" })).toBeVisible();
   await page.getByTitle("Workspace actions").click();

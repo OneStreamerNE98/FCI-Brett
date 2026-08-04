@@ -16,7 +16,6 @@ export const PAGE_LAYOUT_SECTION_CATALOG = {
     { key: "metrics", label: "Overview metrics", access: "office" },
     { key: "todays-meetings", label: "Today's meetings", access: "office" },
     { key: "lead-pipeline", label: "Lead pipeline", access: "office" },
-    { key: "scheduling", label: "Scheduling", access: "office" },
     { key: "active-projects", label: "Active projects", access: "office" },
     { key: "gmail-project-inbox", label: "Gmail project inbox", access: "office" },
   ],
@@ -35,7 +34,7 @@ export type PageLayoutSectionKey = typeof PAGE_LAYOUT_SECTION_CATALOG[PageLayout
 export type PageLayoutSpanSize = "half" | "full";
 
 export const PAGE_LAYOUT_RESIZABLE_SECTIONS = {
-  overview: ["lead-pipeline", "scheduling", "active-projects", "gmail-project-inbox"],
+  overview: ["lead-pipeline", "active-projects", "gmail-project-inbox"],
   reports: ["pipeline-by-stage", "projects-by-status"],
 } as const satisfies Record<PageLayoutPage, readonly PageLayoutSectionKey[]>;
 

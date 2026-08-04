@@ -85,7 +85,16 @@ async function reviewAndChooseStandardized(
   // the accessible name is matched as a prefix within the single-combobox
   // field container rather than exactly.
   const input = field.getByRole("combobox", { name: inputLabel });
-  if (await input.inputValue() !== typedAddress) await input.fill(typedAddress);
+  const addressChanged = await input.inputValue() !== typedAddress;
+  if (addressChanged) await input.fill(typedAddress);
+  // The simulated autocomplete response can arrive between fill() and the
+  // review click. Dismiss it through the component's supported keyboard path
+  // so the absolutely positioned option cannot intercept the review button.
+  if (addressChanged) await expect(input).toHaveAttribute("aria-expanded", "true");
+  if (await input.getAttribute("aria-expanded") === "true") {
+    await input.press("Escape");
+    await expect(input).toHaveAttribute("aria-expanded", "false");
+  }
   const [response] = await Promise.all([
     dialog.page().waitForResponse((response) => (
       new URL(response.url()).pathname === "/api/v1/address-validation"
@@ -383,6 +392,8 @@ test("simulation reviews addresses on lead, client, and project create forms", a
   const leadDialog = page.getByRole("dialog", { name: "Add a lead" });
   await leadDialog.getByLabel("Client company").fill(leadCompany);
   await leadDialog.getByLabel("Primary contact").fill("GI-04 Create Lead");
+  await leadDialog.getByLabel(/Contact email/).fill(`gi04-lead-${suffix}@example.test`);
+  await leadDialog.getByLabel(/Contact phone/).fill("555-0416");
   await leadDialog.getByLabel("Project / opportunity").fill("GI-04 create opportunity");
   await leadDialog.getByLabel("Estimated value").fill("30000");
   await leadDialog.getByRole("textbox", { name: "Next action", exact: true }).fill("Confirm the reviewed address");
@@ -438,6 +449,8 @@ test("simulation reviews addresses on lead, client, and project create forms", a
   const savedLead = (await apiRows(page.request, "/api/v1/leads", "leads"))
     .find((row) => row.company === leadCompany);
   expect(savedLead).toEqual(expect.objectContaining({
+    contactEmail: `gi04-lead-${suffix}@example.test`,
+    contactPhone: "555-0416",
     site: standardizedAddress,
     latitude: 43.6591,
     longitude: -70.2568,
