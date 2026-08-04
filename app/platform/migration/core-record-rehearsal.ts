@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 
+import {
+  MAX_ADDRESS_LENGTH,
+  SAVED_ADDRESS_VERDICTS,
+  type SavedAddressVerdict,
+} from "../../domain/address-validation.ts";
 import { normalizeClientNameKey } from "../../domain/client-name-key.ts";
 import {
   FLOORING_CATEGORIES,
@@ -209,6 +214,10 @@ type PreparedClient = {
   normalizedNameKey: string;
   status: "active" | "prospect" | "inactive" | "archived";
   industry: string | null;
+  siteAddress: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  addressValidationVerdict: SavedAddressVerdict | null;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -243,6 +252,9 @@ type PreparedProject = {
     | "cancelled"
     | "archived";
   site: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  addressValidationVerdict: SavedAddressVerdict | null;
   projectManager: string | null;
   estimatedValue: number | null;
   flooringCategory: FlooringCategory | null;
@@ -267,6 +279,9 @@ type PreparedLead = {
   source: string;
   stage: string;
   site: string;
+  latitude: number | null;
+  longitude: number | null;
+  addressValidationVerdict: SavedAddressVerdict | null;
   estimatedValue: number;
   nextAction: string;
   nextActionAt: string | null;
@@ -367,7 +382,7 @@ export type CoreRecordRehearsalPlan = {
 };
 
 export type CoreRecordRehearsalReport = {
-  formatVersion: 3;
+  formatVersion: 4;
   dataClassification: "test";
   scope: "bounded-core-only";
   targetEnvironment: RehearsalEnvironment;
@@ -442,6 +457,7 @@ const PROJECT_STATUSES = new Set([
 ]);
 const FLOORING_CATEGORY_SET = new Set<string>(FLOORING_CATEGORIES);
 const LEAD_STATUSES = new Set(["active", "converted", "lost", "archived"]);
+const SAVED_ADDRESS_VERDICT_SET = new Set<string>(SAVED_ADDRESS_VERDICTS);
 // This PostgreSQL-facing rehearsal set matches the registered v8 constraint.
 const PROJECT_MEETING_TYPES = new Set([
   "client",
@@ -486,6 +502,10 @@ const CLIENT_KEYS = [
   "normalizedNameKey",
   "status",
   "industry",
+  "siteAddress",
+  "latitude",
+  "longitude",
+  "addressValidationVerdict",
   "driveFolderId",
   "driveUrl",
   "createdBy",
@@ -513,6 +533,9 @@ const PROJECT_KEYS = [
   "name",
   "status",
   "site",
+  "latitude",
+  "longitude",
+  "addressValidationVerdict",
   "projectManager",
   "estimatedValue",
   "flooringCategory",
@@ -538,6 +561,9 @@ const LEAD_KEYS = [
   "source",
   "stage",
   "site",
+  "latitude",
+  "longitude",
+  "addressValidationVerdict",
   "estimatedValue",
   "nextAction",
   "nextActionAt",
@@ -661,6 +687,78 @@ function nullableProductionText(
     fail("invalid_snapshot_value", `${label} contains an unsupported control character`);
   }
   return text;
+}
+
+type PreparedAddressEvidence = {
+  latitude: number | null;
+  longitude: number | null;
+  addressValidationVerdict: SavedAddressVerdict | null;
+};
+
+function nullableCoordinate(
+  value: unknown,
+  label: string,
+  minimum: number,
+  maximum: number,
+): number | null {
+  if (value === null) return null;
+  if (
+    typeof value !== "number"
+    || !Number.isFinite(value)
+    || value < minimum
+    || value > maximum
+  ) {
+    fail(
+      "invalid_snapshot_value",
+      `${label} must be null or a finite number from ${minimum} through ${maximum}`,
+    );
+  }
+  return value;
+}
+
+function preparedAddressEvidence(
+  address: string | null,
+  latitudeValue: unknown,
+  longitudeValue: unknown,
+  verdictValue: unknown,
+  label: string,
+): PreparedAddressEvidence {
+  const latitude = nullableCoordinate(latitudeValue, `${label}.latitude`, -90, 90);
+  const longitude = nullableCoordinate(longitudeValue, `${label}.longitude`, -180, 180);
+  const verdict = verdictValue === null
+    ? null
+    : productionText(verdictValue, `${label}.addressValidationVerdict`, 32);
+  if (verdict !== null && !SAVED_ADDRESS_VERDICT_SET.has(verdict)) {
+    fail(
+      "invalid_snapshot_value",
+      `${label}.addressValidationVerdict is not a supported saved verdict`,
+    );
+  }
+  if ((latitude === null) !== (longitude === null)) {
+    fail("invalid_snapshot_value", `${label} coordinates must both be null or both be present`);
+  }
+  if (address === null) {
+    if (latitude !== null || longitude !== null || verdict !== null) {
+      fail("invalid_snapshot_value", `${label} cannot carry evidence without an address`);
+    }
+  } else if (verdict === null || verdict === "unvalidated") {
+    if (latitude !== null || longitude !== null) {
+      fail(
+        "invalid_snapshot_value",
+        `${label} legacy or unvalidated address evidence cannot carry coordinates`,
+      );
+    }
+  } else if (latitude === null || longitude === null) {
+    fail(
+      "invalid_snapshot_value",
+      `${label} reviewed address evidence must carry bounded coordinates`,
+    );
+  }
+  return {
+    latitude,
+    longitude,
+    addressValidationVerdict: verdict as SavedAddressVerdict | null,
+  };
 }
 
 function normalizedEmail(value: unknown, label: string, required: true): string;
@@ -863,9 +961,9 @@ function tableEvidence<T extends { id: string }>(table: string, rows: readonly T
   const ordered = [...rows].sort((left, right) => left.id.localeCompare(right.id));
   return {
     count: ordered.length,
-    contentSha256: sha256Evidence(`${table}:content:v3`, ordered),
+    contentSha256: sha256Evidence(`${table}:content:v4`, ordered),
     identifiersSha256: sha256Evidence(
-      `${table}:identifiers:v3`,
+      `${table}:identifiers:v4`,
       ordered.map((row) => row.id),
     ),
   };
@@ -935,7 +1033,7 @@ function prepareSnapshot(value: unknown): {
   deferredSourceCounts: Record<DeferredSourceCategory, 0>;
 } {
   const source = exactObject(value, TOP_LEVEL_KEYS, "snapshot");
-  if (source.formatVersion !== 3) fail("unsupported_snapshot_version", "snapshot.formatVersion must be 3");
+  if (source.formatVersion !== 4) fail("unsupported_snapshot_version", "snapshot.formatVersion must be 4");
   if (source.dataClassification !== "test") {
     fail("unsafe_data_classification", "snapshot.dataClassification must be test");
   }
@@ -983,6 +1081,18 @@ function prepareSnapshot(value: unknown): {
     }
     const status = requiredText(row.status, `clients[${index}].status`) as PreparedClient["status"];
     if (!CLIENT_STATUSES.has(status)) fail("invalid_status", `clients[${index}].status is unsupported`);
+    const siteAddress = nullableProductionText(
+      row.siteAddress,
+      `clients[${index}].siteAddress`,
+      MAX_ADDRESS_LENGTH,
+    );
+    const addressEvidence = preparedAddressEvidence(
+      siteAddress,
+      row.latitude,
+      row.longitude,
+      row.addressValidationVerdict,
+      `clients[${index}]`,
+    );
     if (row.driveFolderId !== null || row.driveUrl !== null) {
       fail("unsupported_legacy_drive_data", `clients[${index}] contains deferred legacy Drive fields`);
     }
@@ -996,6 +1106,8 @@ function prepareSnapshot(value: unknown): {
       normalizedNameKey,
       status,
       industry: nullableText(row.industry, `clients[${index}].industry`),
+      siteAddress,
+      ...addressEvidence,
       createdBy: requiredText(row.createdBy, `clients[${index}].createdBy`),
       updatedBy: requiredText(row.updatedBy, `clients[${index}].updatedBy`),
       createdAt,
@@ -1048,7 +1160,7 @@ function prepareSnapshot(value: unknown): {
     const company = productionText(row.company, `leads[${index}].company`, 180);
     const contactName = productionText(row.contactName, `leads[${index}].contactName`, 160);
     const projectName = productionText(row.projectName, `leads[${index}].projectName`, 180);
-    const site = productionText(row.site, `leads[${index}].site`, 300);
+    const site = productionText(row.site, `leads[${index}].site`, MAX_ADDRESS_LENGTH);
     if (
       !markedTestRecordName(company) ||
       !markedTestRecordName(contactName) ||
@@ -1072,6 +1184,13 @@ function prepareSnapshot(value: unknown): {
     const createdAt = canonicalTimestamp(row.createdAt, `leads[${index}].createdAt`);
     const updatedAt = canonicalTimestamp(row.updatedAt, `leads[${index}].updatedAt`);
     if (updatedAt < createdAt) fail("invalid_timestamp_order", `leads[${index}] timestamps are out of order`);
+    const addressEvidence = preparedAddressEvidence(
+      site,
+      row.latitude,
+      row.longitude,
+      row.addressValidationVerdict,
+      `leads[${index}]`,
+    );
     return {
       id,
       leadNumber,
@@ -1083,6 +1202,7 @@ function prepareSnapshot(value: unknown): {
       source: productionText(row.source, `leads[${index}].source`, 80),
       stage: productionText(row.stage, `leads[${index}].stage`, 80),
       site,
+      ...addressEvidence,
       estimatedValue: postgresInteger(row.estimatedValue, `leads[${index}].estimatedValue`),
       nextAction: productionText(row.nextAction, `leads[${index}].nextAction`, 500),
       nextActionAt,
@@ -1118,6 +1238,18 @@ function prepareSnapshot(value: unknown): {
     if (row.driveFolderId !== null || row.driveUrl !== null) {
       fail("unsupported_legacy_drive_data", `projects[${index}] contains deferred legacy Drive fields`);
     }
+    const site = nullableProductionText(
+      row.site,
+      `projects[${index}].site`,
+      MAX_ADDRESS_LENGTH,
+    );
+    const addressEvidence = preparedAddressEvidence(
+      site,
+      row.latitude,
+      row.longitude,
+      row.addressValidationVerdict,
+      `projects[${index}]`,
+    );
     const flooringCategory = row.flooringCategory === null
       ? null
       : productionText(
@@ -1147,7 +1279,8 @@ function prepareSnapshot(value: unknown): {
       clientId,
       name,
       status,
-      site: nullableText(row.site, `projects[${index}].site`),
+      site,
+      ...addressEvidence,
       projectManager: nullableText(row.projectManager, `projects[${index}].projectManager`),
       estimatedValue: nullableEstimatedValue(row.estimatedValue, `projects[${index}].estimatedValue`),
       flooringCategory,
@@ -1414,6 +1547,10 @@ async function insertPreparedRows(
       "normalized_name_key",
       "status",
       "industry",
+      "site_address",
+      "latitude",
+      "longitude",
+      "address_validation_verdict",
       "created_by",
       "updated_by",
       "created_at",
@@ -1427,6 +1564,10 @@ async function insertPreparedRows(
       row.normalizedNameKey,
       row.status,
       row.industry,
+      row.siteAddress,
+      row.latitude,
+      row.longitude,
+      row.addressValidationVerdict,
       row.createdBy,
       row.updatedBy,
       row.createdAt,
@@ -1465,6 +1606,9 @@ async function insertPreparedRows(
       "source",
       "stage",
       "site",
+      "latitude",
+      "longitude",
+      "address_validation_verdict",
       "estimated_value",
       "next_action",
       "next_action_at",
@@ -1487,6 +1631,9 @@ async function insertPreparedRows(
       row.source,
       row.stage,
       row.site,
+      row.latitude,
+      row.longitude,
+      row.addressValidationVerdict,
       row.estimatedValue,
       row.nextAction,
       row.nextActionAt,
@@ -1509,6 +1656,9 @@ async function insertPreparedRows(
       "name",
       "status",
       "site",
+      "latitude",
+      "longitude",
+      "address_validation_verdict",
       "project_manager",
       "estimated_value",
       "flooring_category",
@@ -1528,6 +1678,9 @@ async function insertPreparedRows(
       row.name,
       row.status,
       row.site,
+      row.latitude,
+      row.longitude,
+      row.addressValidationVerdict,
       row.projectManager,
       row.estimatedValue,
       row.flooringCategory,
@@ -1698,6 +1851,8 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
   const clients = await client.query(
     `SELECT id::text AS "id", client_code AS "clientCode", name,
             normalized_name_key AS "normalizedNameKey", status, industry,
+            site_address AS "siteAddress", latitude, longitude,
+            address_validation_verdict AS "addressValidationVerdict",
             created_by AS "createdBy", updated_by AS "updatedBy",
             created_at AS "createdAt", updated_at AS "updatedAt", version::text AS "version"
      FROM clients ORDER BY id`,
@@ -1712,7 +1867,9 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
     `SELECT id::text AS "id", lead_number AS "leadNumber", company,
             contact_name AS "contactName", contact_email AS "contactEmail",
             contact_phone AS "contactPhone", project_name AS "projectName", source, stage,
-            site, estimated_value AS "estimatedValue", next_action AS "nextAction",
+            site, latitude, longitude,
+            address_validation_verdict AS "addressValidationVerdict",
+            estimated_value AS "estimatedValue", next_action AS "nextAction",
             next_action_at AS "nextActionAt", owner_email AS "ownerEmail", status,
             created_by AS "createdBy", updated_by AS "updatedBy", created_at AS "createdAt",
             updated_at AS "updatedAt", version::text AS "version"
@@ -1720,7 +1877,9 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
   );
   const projects = await client.query(
     `SELECT id::text AS "id", project_number AS "projectNumber", client_id::text AS "clientId",
-            name, status, site, project_manager AS "projectManager",
+            name, status, site, latitude, longitude,
+            address_validation_verdict AS "addressValidationVerdict",
+            project_manager AS "projectManager",
             estimated_value::text AS "estimatedValue",
             flooring_category AS "flooringCategory",
             square_feet::text AS "squareFeet",
@@ -1750,7 +1909,7 @@ async function readDestinationRows(client: CoreRehearsalClient): Promise<Prepare
   );
 
   const targetLikeSnapshot = {
-    formatVersion: 3,
+    formatVersion: 4,
     dataClassification: "test",
     sourceSystem: CORE_REHEARSAL_SOURCE_SYSTEM,
     deferredSourceCounts: Object.fromEntries(
@@ -1938,7 +2097,7 @@ export async function runCoreRecordRehearsal(
     transactionStarted = false;
 
     return {
-      formatVersion: 3,
+      formatVersion: 4,
       dataClassification: "test",
       scope: "bounded-core-only",
       targetEnvironment: plan.targetEnvironment,

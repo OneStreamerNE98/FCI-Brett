@@ -65,6 +65,44 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
   assert.equal(plan.rows.projects[0].id, fixture.projects[0].id);
   assert.deepEqual(
     {
+      client: {
+        siteAddress: plan.rows.clients[0].siteAddress,
+        latitude: plan.rows.clients[0].latitude,
+        longitude: plan.rows.clients[0].longitude,
+        verdict: plan.rows.clients[0].addressValidationVerdict,
+      },
+      lead: {
+        latitude: plan.rows.leads[0].latitude,
+        longitude: plan.rows.leads[0].longitude,
+        verdict: plan.rows.leads[0].addressValidationVerdict,
+      },
+      project: {
+        latitude: plan.rows.projects[0].latitude,
+        longitude: plan.rows.projects[0].longitude,
+        verdict: plan.rows.projects[0].addressValidationVerdict,
+      },
+    },
+    {
+      client: {
+        siteAddress: fixture.clients[0].siteAddress,
+        latitude: fixture.clients[0].latitude,
+        longitude: fixture.clients[0].longitude,
+        verdict: fixture.clients[0].addressValidationVerdict,
+      },
+      lead: {
+        latitude: fixture.leads[0].latitude,
+        longitude: fixture.leads[0].longitude,
+        verdict: fixture.leads[0].addressValidationVerdict,
+      },
+      project: {
+        latitude: fixture.projects[0].latitude,
+        longitude: fixture.projects[0].longitude,
+        verdict: fixture.projects[0].addressValidationVerdict,
+      },
+    },
+  );
+  assert.deepEqual(
+    {
       flooringCategory: plan.rows.projects[0].flooringCategory,
       squareFeet: plan.rows.projects[0].squareFeet,
       contractValue: plan.rows.projects[0].contractValue,
@@ -90,8 +128,8 @@ test("bounded core rehearsal validates marked test data and emits row-free deter
   );
   assert.equal(
     plan.sourceEvidence.projects.contentSha256,
-    "sha256:47344b72ed459be8c4eb6f47c3a2b647cf0325df3b5cfeb21755fe90d45e0db4",
-    "the format-v3 project evidence includes the registered KPI-04 and BE-16 values",
+    "sha256:304a1a079245e7b1348ded0450e1809840ae02c1a4e1644a6553838da85ac1e0",
+    "the format-v4 project evidence includes KPI, segment, and GI-04 address evidence",
   );
 
   const serializedEvidence = JSON.stringify(plan.sourceEvidence);
@@ -182,9 +220,9 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
 
   const rehearsalSource = await readFile(rehearsalSourceUrl, "utf8");
   assert.doesNotMatch(rehearsalSource, /from ["'][^"']*db\/schema/);
-  assert.match(rehearsalSource, /\$\{table\}:content:v3/);
-  assert.match(rehearsalSource, /\$\{table\}:identifiers:v3/);
-  assert.doesNotMatch(rehearsalSource, /\$\{table\}:(?:content|identifiers):v[12]/);
+  assert.match(rehearsalSource, /\$\{table\}:content:v4/);
+  assert.match(rehearsalSource, /\$\{table\}:identifiers:v4/);
+  assert.doesNotMatch(rehearsalSource, /\$\{table\}:(?:content|identifiers):v[123]/);
 
   const inventory = createCoreRecordRehearsalPlan(fixture, options).sourceInventory;
   assert.equal(inventory.length, 28);
@@ -244,7 +282,7 @@ test("D1 inventory discovery uses table metadata and cannot lose a table to decl
 
 test("bounded core rehearsal refuses unsafe targets before connecting", () => {
   const oldFormat = clone(fixture);
-  oldFormat.formatVersion = 2;
+  oldFormat.formatVersion = 3;
   expectRefusal(() => createCoreRecordRehearsalPlan(oldFormat, options), "unsupported_snapshot_version");
   expectRefusal(
     () => createCoreRecordRehearsalPlan(fixture, { ...options, targetEnvironment: "production" }),
@@ -389,7 +427,7 @@ test("phone-call meetings enter the PostgreSQL-facing rehearsal plan after v8 re
   );
 });
 
-test("v3 project KPI and segment fields are exact-shape and fail closed on invalid values", async () => {
+test("v4 project KPI and segment fields are exact-shape and fail closed on invalid values", async () => {
   for (const field of ["flooringCategory", "squareFeet", "contractValue", "segment"]) {
     const missing = clone(fixture);
     delete missing.projects[0][field];
@@ -431,6 +469,112 @@ test("v3 project KPI and segment fields are exact-shape and fail closed on inval
   }
 });
 
+test("v4 address evidence is exact-shape, bounded, and relationship-safe before database access", () => {
+  for (const [collection, fields] of [
+    ["clients", ["siteAddress", "latitude", "longitude", "addressValidationVerdict"]],
+    ["leads", ["latitude", "longitude", "addressValidationVerdict"]],
+    ["projects", ["latitude", "longitude", "addressValidationVerdict"]],
+  ]) {
+    for (const field of fields) {
+      const missing = clone(fixture);
+      delete missing[collection][0][field];
+      expectRefusal(
+        () => createCoreRecordRehearsalPlan(missing, options),
+        "unsupported_snapshot_field",
+      );
+    }
+  }
+
+  const invalidMutations = [
+    (snapshot) => { snapshot.clients[0].siteAddress = "x".repeat(281); },
+    (snapshot) => { snapshot.projects[0].site = "FCI TEST — DO NOT USE\nSite"; },
+    (snapshot) => { snapshot.leads[0].latitude = 91; },
+    (snapshot) => { snapshot.projects[0].longitude = -181; },
+    (snapshot) => { snapshot.clients[0].latitude = Number.NaN; },
+    (snapshot) => { snapshot.leads[0].longitude = null; },
+    (snapshot) => { snapshot.projects[0].addressValidationVerdict = "needs-confirmation"; },
+    (snapshot) => {
+      snapshot.clients[0].addressValidationVerdict = "unvalidated";
+    },
+    (snapshot) => {
+      snapshot.leads[0].addressValidationVerdict = "validated";
+      snapshot.leads[0].latitude = null;
+      snapshot.leads[0].longitude = null;
+    },
+    (snapshot) => {
+      snapshot.projects[0].site = null;
+    },
+  ];
+  for (const mutate of invalidMutations) {
+    const invalid = clone(fixture);
+    mutate(invalid);
+    expectRefusal(
+      () => createCoreRecordRehearsalPlan(invalid, options),
+      "invalid_snapshot_value",
+    );
+  }
+
+  const legacy = clone(fixture);
+  for (const row of [legacy.clients[0], legacy.leads[0], legacy.projects[0]]) {
+    row.latitude = null;
+    row.longitude = null;
+    row.addressValidationVerdict = null;
+  }
+  const legacyPlan = createCoreRecordRehearsalPlan(legacy, options);
+  assert.equal(legacyPlan.rows.clients[0].addressValidationVerdict, null);
+  assert.equal(legacyPlan.rows.leads[0].addressValidationVerdict, null);
+  assert.equal(legacyPlan.rows.projects[0].addressValidationVerdict, null);
+
+  const typed = clone(legacy);
+  for (const row of [typed.clients[0], typed.leads[0], typed.projects[0]]) {
+    row.addressValidationVerdict = "unvalidated";
+  }
+  assert.deepEqual(
+    [
+      createCoreRecordRehearsalPlan(typed, options).rows.clients[0].latitude,
+      createCoreRecordRehearsalPlan(typed, options).rows.leads[0].longitude,
+      createCoreRecordRehearsalPlan(typed, options).rows.projects[0].addressValidationVerdict,
+    ],
+    [null, null, "unvalidated"],
+  );
+
+  const noOptionalAddresses = clone(fixture);
+  Object.assign(noOptionalAddresses.clients[0], {
+    siteAddress: null,
+    latitude: null,
+    longitude: null,
+    addressValidationVerdict: null,
+  });
+  Object.assign(noOptionalAddresses.projects[0], {
+    site: null,
+    latitude: null,
+    longitude: null,
+    addressValidationVerdict: null,
+  });
+  assert.equal(
+    createCoreRecordRehearsalPlan(noOptionalAddresses, options).rows.projects[0].site,
+    null,
+  );
+});
+
+test("v4 evidence hashes every persisted address field without changing identifiers", () => {
+  const baseline = createCoreRecordRehearsalPlan(fixture, options).sourceEvidence;
+  for (const [table, mutate] of [
+    ["clients", (snapshot) => { snapshot.clients[0].longitude = -70.2; }],
+    ["clients", (snapshot) => { snapshot.clients[0].addressValidationVerdict = "review-confirmed"; }],
+    ["leads", (snapshot) => { snapshot.leads[0].latitude = 39.9; }],
+    ["leads", (snapshot) => { snapshot.leads[0].site += " Suite 1"; }],
+    ["projects", (snapshot) => { snapshot.projects[0].longitude = -70.2; }],
+    ["projects", (snapshot) => { snapshot.projects[0].addressValidationVerdict = "validated"; }],
+  ]) {
+    const changed = clone(fixture);
+    mutate(changed);
+    const evidence = createCoreRecordRehearsalPlan(changed, options).sourceEvidence[table];
+    assert.notEqual(evidence.contentSha256, baseline[table].contentSha256);
+    assert.equal(evidence.identifiersSha256, baseline[table].identifiersSha256);
+  }
+});
+
 function destinationRows(source = fixture) {
   return {
     clients: source.clients.map((row) => ({
@@ -440,6 +584,10 @@ function destinationRows(source = fixture) {
       normalizedNameKey: row.normalizedNameKey,
       status: row.status,
       industry: row.industry,
+      siteAddress: row.siteAddress,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      addressValidationVerdict: row.addressValidationVerdict,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
       createdAt: new Date(row.createdAt),
@@ -464,6 +612,9 @@ function destinationRows(source = fixture) {
       name: row.name,
       status: row.status,
       site: row.site,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      addressValidationVerdict: row.addressValidationVerdict,
       projectManager: row.projectManager,
       estimatedValue: row.estimatedValue === null ? null : String(row.estimatedValue),
       flooringCategory: row.flooringCategory,
@@ -576,7 +727,7 @@ function fakePool(client) {
 test("bounded core rehearsal uses the restricted role, reconciles inside one transaction, and emits no rows", async () => {
   const client = new FakeRehearsalClient();
   const report = await runCoreRecordRehearsal(fakePool(client), fixture, options);
-  assert.equal(report.formatVersion, 3);
+  assert.equal(report.formatVersion, 4);
   assert.equal(report.status, "reconciled");
   assert.equal(report.cutoverReady, false);
   assert.deepEqual(report.sideEffects, {
@@ -600,11 +751,18 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
   const sql = client.queries.map((query) => query.sql).join("\n");
   assert.match(sql, new RegExp(`SET LOCAL ROLE ${CORE_REHEARSAL_IMPORTER_ROLE}`));
   assert.match(sql, /BEGIN[\s\S]*COMMIT/);
-  assert.match(sql, /INSERT INTO leads/);
+  assert.match(
+    sql,
+    /INSERT INTO clients \(id, client_code, name, normalized_name_key, status, industry, site_address, latitude, longitude, address_validation_verdict, created_by,/,
+  );
+  assert.match(
+    sql,
+    /INSERT INTO leads \(id, lead_number, company, contact_name, contact_email, contact_phone, project_name, source, stage, site, latitude, longitude, address_validation_verdict, estimated_value,/,
+  );
   assert.match(sql, /INSERT INTO project_meetings/);
   assert.match(
     sql,
-    /INSERT INTO projects \(id, project_number, client_id, name, status, site, project_manager, estimated_value, flooring_category, square_feet, contract_value, segment,/,
+    /INSERT INTO projects \(id, project_number, client_id, name, status, site, latitude, longitude, address_validation_verdict, project_manager, estimated_value, flooring_category, square_feet, contract_value, segment,/,
   );
   assert.match(sql, /INSERT INTO activity_events \(id, client_id, project_id, lead_id,/);
   assert.match(sql, /COALESCE\(client_id, project_id, lead_id\)::text/);
@@ -619,16 +777,60 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
     client.queries.findIndex((query) => query.sql.includes("set_config('search_path'")) <
       client.queries.findIndex((query) => query.sql.startsWith("INSERT INTO clients")),
   );
+  const clientInsert = client.queries.find((query) => query.sql.startsWith("INSERT INTO clients"));
+  const leadInsert = client.queries.find((query) => query.sql.startsWith("INSERT INTO leads"));
   const projectInsert = client.queries.find((query) => query.sql.startsWith("INSERT INTO projects"));
+  assert.ok(clientInsert);
+  assert.ok(leadInsert);
   assert.ok(projectInsert);
   assert.deepEqual(
-    projectInsert.values.slice(8, 12),
+    clientInsert.values.slice(6, 10),
+    [
+      fixture.clients[0].siteAddress,
+      fixture.clients[0].latitude,
+      fixture.clients[0].longitude,
+      fixture.clients[0].addressValidationVerdict,
+    ],
+  );
+  assert.deepEqual(
+    leadInsert.values.slice(10, 13),
+    [
+      fixture.leads[0].latitude,
+      fixture.leads[0].longitude,
+      fixture.leads[0].addressValidationVerdict,
+    ],
+  );
+  assert.deepEqual(
+    projectInsert.values.slice(6, 9),
+    [
+      fixture.projects[0].latitude,
+      fixture.projects[0].longitude,
+      fixture.projects[0].addressValidationVerdict,
+    ],
+  );
+  assert.deepEqual(
+    projectInsert.values.slice(11, 15),
     [
       fixture.projects[0].flooringCategory,
       fixture.projects[0].squareFeet,
       fixture.projects[0].contractValue,
       fixture.projects[0].segment,
     ],
+  );
+  const clientRead = client.queries.find((query) => query.sql.includes("FROM clients ORDER BY id"));
+  const leadRead = client.queries.find((query) => query.sql.includes("FROM leads ORDER BY id"));
+  const projectRead = client.queries.find((query) => query.sql.includes("FROM projects ORDER BY id"));
+  assert.match(
+    clientRead?.sql ?? "",
+    /site_address AS "siteAddress", latitude, longitude,[\s\S]*address_validation_verdict AS "addressValidationVerdict"/,
+  );
+  assert.match(
+    leadRead?.sql ?? "",
+    /site, latitude, longitude,[\s\S]*address_validation_verdict AS "addressValidationVerdict"/,
+  );
+  assert.match(
+    projectRead?.sql ?? "",
+    /site, latitude, longitude,[\s\S]*address_validation_verdict AS "addressValidationVerdict"/,
   );
 
   const serializedReport = JSON.stringify(report);
@@ -647,6 +849,25 @@ test("bounded core rehearsal rolls back when destination segment evidence is tam
   });
   assert.ok(client.queries.some((query) => query.sql === "ROLLBACK"));
   assert.ok(!client.queries.some((query) => query.sql === "COMMIT"));
+});
+
+test("bounded core rehearsal rolls back when destination address evidence is tampered", async () => {
+  for (const mutate of [
+    (rows) => { rows.clients[0].longitude = -70.2; },
+    (rows) => { rows.leads[0].addressValidationVerdict = "validated"; },
+    (rows) => { rows.projects[0].latitude = 43.6; },
+  ]) {
+    const tampered = destinationRows();
+    mutate(tampered);
+    const client = new FakeRehearsalClient({ targetRows: tampered });
+    await assert.rejects(runCoreRecordRehearsal(fakePool(client), fixture, options), (error) => {
+      assert.ok(error instanceof CoreRecordRehearsalError);
+      assert.equal(error.code, "reconciliation_mismatch");
+      return true;
+    });
+    assert.ok(client.queries.some((query) => query.sql === "ROLLBACK"));
+    assert.ok(!client.queries.some((query) => query.sql === "COMMIT"));
+  }
 });
 
 test("bounded core rehearsal rejects lead target tampering", async () => {

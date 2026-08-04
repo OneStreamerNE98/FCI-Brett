@@ -54,15 +54,21 @@ least-privilege review, executor/verifier, cost window, and cleanup procedure.
 - [ ] Exercise the approved forward-fix or restore-based rollback path and repeat
   reconciliation after recovery.
 
-The current format-version-3 bounded core rehearsal always reports
-`cutoverReady: false`. Its report inventories all 24 D1 tables plus R2 with a
+The current format-version-4 bounded core rehearsal always reports
+`cutoverReady: false`. Its report inventories all 27 D1 tables plus R2 with a
 reasoned disposition. Only clients, contacts, leads, projects, project meetings,
 and classified activity carry bounded rows and receive end-to-end hash
 reconciliation. Project rows must include `flooringCategory`, `squareFeet`,
-`contractValue`, and nullable `segment` in the hashed format-v3 shape.
+`contractValue`, and nullable `segment` in the hashed format-v4 shape. Client
+rows must also include `siteAddress`, `latitude`, `longitude`, and
+`addressValidationVerdict`; lead and project rows include the three evidence
+fields alongside `site`. Registered production migration v14 and the rehearsal
+importer validate, import, read back, and hash the closed saved-verdict and
+coordinate relationships without inventing validation for legacy null evidence.
 Registered production migrations v9 and v10 plus the rehearsal importer
 validate, import, read back, and hash those four values. Format v2 is rejected
-before database access rather than redefined.
+before database access rather than redefined, and format v3 is likewise rejected
+rather than silently expanded.
 Every inventory-only category, including the additive AI-01 tasks table, must
 likewise remain zero or the command fails before database access. Registered
 production migration v7 now defines the four BE-07 settings, preferences,
@@ -71,7 +77,8 @@ widened meeting-type constraint, contiguous v9 adds all seven project KPI
 columns, and contiguous v10 adds the closed-catalog project segment. The
 snapshot still carries no rows for those
 inventory-only categories, while `phone-call` meetings now pass validation and
-rehearse against the registered v8 constraint. Passing it is useful source
+rehearse against the registered v8 constraint. Short-lived address-validation
+review receipts remain excluded and zero-only rather than migrated. Passing it is useful source
 evidence but is not a complete migration or cutover rehearsal.
 
 ### Degraded-mode route contract (BE-14, July 24, 2026)
