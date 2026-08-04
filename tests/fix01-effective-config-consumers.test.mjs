@@ -24,6 +24,7 @@ const APP_IDS = Object.freeze({
 });
 
 const state = {
+  blueprint: null,
   connection: null,
   providerCalls: [],
   queries: [],
@@ -51,7 +52,7 @@ const database = {
       },
       async first() {
         query.kind = "first";
-        if (/FROM workspace_blueprints WHERE connection_key = \?/u.test(sql)) return null;
+        if (/FROM workspace_blueprints WHERE connection_key = \?/u.test(sql)) return state.blueprint;
         if (/FROM workspace_resources WHERE connection_key = \? AND resource_type = \? AND resource_key = \?/u.test(sql)) {
           return state.resources.find((row) => row.connection_key === query.values[0] && row.resource_type === query.values[1] && row.resource_key === query.values[2]) ?? null;
         }
@@ -103,6 +104,7 @@ const [
   clientsRoute,
   projectsRoute,
   workspaceRoute,
+  blueprintModule,
 ] = await Promise.all([
   vite.ssrLoadModule("/app/lib/google-oauth-sites.ts"),
   vite.ssrLoadModule("/app/api/v1/integrations/google/gmail/_route-helpers.ts"),
@@ -112,6 +114,7 @@ const [
   vite.ssrLoadModule("/app/api/v1/clients/route.ts"),
   vite.ssrLoadModule("/app/api/v1/projects/route.ts"),
   vite.ssrLoadModule("/app/api/v1/google-workspace/route.ts"),
+  vite.ssrLoadModule("/app/lib/workspace-blueprint.ts"),
 ]);
 
 const refreshTokenCiphertext = await oauthSites.encryptGoogleSecret(
@@ -155,6 +158,7 @@ function appResources() {
 }
 
 function configure({
+  blueprint = null,
   resources = [],
   ids = ENV_IDS,
   connected = true,
@@ -196,6 +200,16 @@ function configure({
     ]),
     status: "connected",
   } : null;
+  state.blueprint = blueprint ? {
+    id: "blueprint-1",
+    connection_key: "google-workspace",
+    version: 3,
+    blueprint_json: JSON.stringify(blueprint),
+    created_by: ADMIN_EMAIL,
+    created_at: 1_790_000_000_000,
+    updated_by: ADMIN_EMAIL,
+    updated_at: 1_790_000_001_000,
+  } : null;
   state.providerCalls = [];
   state.queries = [];
   state.resourceFailure = resourceFailure;
@@ -203,13 +217,13 @@ function configure({
   state.tokenFailure = tokenFailure;
 }
 
-function officeRequest(path, method = "GET", body) {
+function officeRequest(path, method = "GET", body, email = ADMIN_EMAIL) {
   const url = new URL(path, "https://fci.example.test");
   return new Request(url, {
     method,
     headers: {
       ...(method === "GET" ? {} : { origin: url.origin, "content-type": "application/json" }),
-      "oai-authenticated-user-email": ADMIN_EMAIL,
+      "oai-authenticated-user-email": email,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -403,6 +417,108 @@ test("Workspace readiness exposes the resolved Calendar ID so an adopted overrid
   // imply, so a divergence is detectable by comparing against what the field holds.
   assert.notEqual(appointments.externalId, ENV_IDS.appointments);
   assert.equal(payload.workspace.calendars.fieldSchedule.externalId, APP_IDS.fieldSchedule);
+});
+
+test("Workspace readiness and folder-plan preview both consume the persisted blueprint", async () => {
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.naming.clientFolderPattern = "{name} [{code}]";
+  blueprint.naming.projectFolderPattern = "{year} · {number} · {name}";
+  blueprint.drive.clientFolders.push({ key: "site-surveys", name: "Site Surveys", management: "owner", children: [] });
+  blueprint.drive.projectFolders.push({ key: "field-notes", name: "07_Field Notes", management: "owner", children: [] });
+  configure({ blueprint });
+
+  const readiness = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"));
+  assert.equal(readiness.status, 200);
+  const readinessPayload = await readiness.json();
+  assert.equal(readinessPayload.blueprint.naming.clientFolderPattern, "{name} [{code}]");
+  assert.ok(readinessPayload.blueprint.drive.projectFolders.some((folder) => folder.key === "field-notes"));
+
+  const preview = await workspaceRoute.POST(officeRequest(
+    "/api/v1/google-workspace",
+    "POST",
+    {
+      clientCode: "CL-042",
+      clientName: "FCI TEST Client",
+      projectNumber: "PR-009",
+      projectName: "FCI TEST Project",
+    },
+  ));
+  assert.equal(preview.status, 200);
+  const previewPayload = await preview.json();
+  assert.match(previewPayload.plan.clientFolder, /FCI TEST Client \[CL-042\]$/u);
+  assert.ok(previewPayload.plan.clientFolders.includes("Site Surveys"));
+  assert.match(previewPayload.plan.projectFolder, /\/\d{4}\/\d{4} · PR-009 · FCI TEST Project$/u);
+  assert.ok(previewPayload.plan.projectFolders.includes("07_Field Notes"));
+});
+
+// Review defect: this route is `requireOfficeUser` with no admin option, and it is fetched by a
+// non-admin-reachable page (InboxView). Returning the persisted, admin-edited blueprint here
+// handed every office user the whole tenant configuration document — business name, naming
+// patterns, and the full folder/template/spreadsheet/calendar layout — while every other route
+// that returns that document is admin-gated. No client consumer reads the field, so non-admins
+// simply do not get it.
+test("Workspace readiness withholds the persisted tenant blueprint from non-admin office users", async () => {
+  const officeEmail = "office@cherryhillfci.com";
+  const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+  blueprint.business.displayName = "FCI TEST Tenant Business";
+  blueprint.naming.clientFolderPattern = "{name} [{code}]";
+  blueprint.drive.sharedDriveName = "FCI TEST Tenant Drive";
+  blueprint.drive.projectFolders.push({ key: "field-notes", name: "07_FCI TEST Field Notes", management: "owner", children: [] });
+  blueprint.templates.push({ key: "tenant-letter", name: "FCI TEST Tenant Letter", kind: "doc", targetFolderKey: "templates", management: "owner" });
+  configure({ blueprint, overrides: { FCI_OFFICE_EMAILS: `${ADMIN_EMAIL},${officeEmail}` } });
+
+  const nonAdmin = await workspaceRoute.GET(officeRequest("/api/v1/google-workspace", "GET", undefined, officeEmail));
+  assert.equal(nonAdmin.status, 200);
+  const nonAdminBody = await nonAdmin.text();
+  assert.equal(JSON.parse(nonAdminBody).blueprint, undefined);
+  for (const persisted of [
+    "FCI TEST Tenant Business",
+    "{name} [{code}]",
+    "07_FCI TEST Field Notes",
+    "FCI TEST Tenant Letter",
+  ]) {
+    assert.equal(nonAdminBody.includes(persisted), false, `non-admin payload disclosed ${persisted}`);
+  }
+  // Boundary: `workspace.storageName` is the Shared Drive's display name. It has resolved from
+  // the persisted blueprint since before this change, it is unchanged here, and it is one of
+  // the fields consumers actually read — so it stays, and only the configuration document goes.
+  assert.equal(JSON.parse(nonAdminBody).workspace.storageName, "FCI TEST Tenant Drive");
+  // The rest of the readiness payload still has to work for a non-admin caller.
+  assert.equal(JSON.parse(nonAdminBody).workspace.connectionStatus, "connected");
+
+  const adminPayload = await (await workspaceRoute.GET(officeRequest("/api/v1/google-workspace"))).json();
+  assert.equal(adminPayload.blueprint.business.displayName, "FCI TEST Tenant Business");
+  assert.equal(adminPayload.blueprint.naming.clientFolderPattern, "{name} [{code}]");
+  assert.ok(adminPayload.blueprint.drive.projectFolders.some((folder) => folder.key === "field-notes"));
+  assert.ok(adminPayload.blueprint.templates.some((template) => template.key === "tenant-letter"));
+});
+
+// Review defect: the blueprint editor lets an owner remove the client-accounts or projects root
+// in one click and the sanitizer accepts it, so the preview reached a state where it threw a
+// bare Error and the route returned an unhandled 500. The sibling provisioning helper answers
+// the identical condition with a typed 409, and the preview must agree.
+test("Folder-plan preview answers a missing blueprint root with a typed 409, not an unhandled 500", async () => {
+  for (const removedRoot of ["client-accounts", "projects"]) {
+    const blueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
+    blueprint.drive.roots = blueprint.drive.roots.filter((folder) => folder.key !== removedRoot);
+    blueprint.spreadsheets = blueprint.spreadsheets.filter((sheet) => sheet.targetFolderKey !== removedRoot);
+    configure({ blueprint });
+
+    const response = await workspaceRoute.POST(officeRequest(
+      "/api/v1/google-workspace",
+      "POST",
+      {
+        clientCode: "CL-042",
+        clientName: "FCI TEST Client",
+        projectNumber: "PR-009",
+        projectName: "FCI TEST Project",
+      },
+    ));
+    assert.equal(response.status, 409, `${removedRoot} removed`);
+    const payload = await response.json();
+    assert.equal(payload.code, "workspace_blueprint_root_missing", `${removedRoot} removed`);
+    assert.match(payload.error, /client-accounts and projects roots/u);
+  }
 });
 
 test("Calendar verify probes events.list and adopts the ID into the registry", async () => {

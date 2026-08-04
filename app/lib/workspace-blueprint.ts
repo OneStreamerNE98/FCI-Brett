@@ -77,32 +77,6 @@ export type WorkspaceBlueprintRootFolder = Readonly<{
   management: WorkspaceBlueprintManagement;
 }>;
 
-/**
- * The development provisioning contract that predates the persisted blueprint.
- * Keep this export byte-compatible until SET-21 moves its remaining consumers.
- */
-export const DRIVE_BLUEPRINT = {
-  sharedDriveName: "FCI Operations",
-  roots: [
-    "00_Company Admin / Client Directory (Google Sheet)",
-    "01_Client Accounts / {CLIENT_CODE} — {CLIENT_NAME} / 00_Client Profile & Master Documents",
-    "02_Projects / {YEAR} / {PROJECT_NUMBER} — {PROJECT_NAME}",
-    "99_Archive",
-    "99_Unsorted Intake",
-  ],
-  projectFolders: [
-    "00_Admin",
-    "01_Lead & Proposal",
-    "02_Contract & Submittals",
-    "03_Schedule & Field",
-    "04_Photos & QA",
-    "05_Correspondence / Email Archive",
-    "05_Correspondence / Email Attachments",
-    "06_Closeout",
-  ],
-  gmailLabels: ["FCI/Intake", "FCI/Needs Review", "FCI/Filed"],
-} as const;
-
 export const WORKSPACE_BLUEPRINT_LIMITS = Object.freeze({
   folders: 50,
   templates: 20,
@@ -139,7 +113,7 @@ const SEED_WORKSPACE_BLUEPRINT: WorkspaceBlueprint = deepFreeze({
     projectFolderPattern: "{number} — {name}",
   },
   drive: {
-    sharedDriveName: DRIVE_BLUEPRINT.sharedDriveName,
+    sharedDriveName: "FCI Operations",
     roots: [
       {
         key: "company-admin",
@@ -190,9 +164,9 @@ const SEED_WORKSPACE_BLUEPRINT: WorkspaceBlueprint = deepFreeze({
   ],
   gmail: {
     labels: [
-      { key: "intake", name: DRIVE_BLUEPRINT.gmailLabels[0], management: "system" },
-      { key: "needs-review", name: DRIVE_BLUEPRINT.gmailLabels[1], management: "system" },
-      { key: "filed", name: DRIVE_BLUEPRINT.gmailLabels[2], management: "system" },
+      { key: "intake", name: "FCI/Intake", management: "system" },
+      { key: "needs-review", name: "FCI/Needs Review", management: "system" },
+      { key: "filed", name: "FCI/Filed", management: "system" },
     ],
   },
   calendars: [
@@ -219,6 +193,49 @@ const SEED_WORKSPACE_BLUEPRINT: WorkspaceBlueprint = deepFreeze({
     },
   ],
 });
+
+export type WorkspaceBlueprintFolderNamingInput = Readonly<{
+  clientCode: string;
+  clientName: string;
+  projectNumber: string;
+  projectName: string;
+  year: string;
+}>;
+
+/** Resolves the blueprint's closed naming-token catalog for one client/project pair. */
+export function resolveWorkspaceBlueprintFolderNames(
+  blueprint: WorkspaceBlueprint,
+  input: WorkspaceBlueprintFolderNamingInput,
+) {
+  const render = (pattern: string, values: Readonly<Record<string, string>>) => (
+    pattern.replace(/\{(?:code|name|number|year)\}/gu, (token) => values[token] ?? token)
+  );
+  return Object.freeze({
+    clientFolderName: render(blueprint.naming.clientFolderPattern, {
+      "{code}": input.clientCode,
+      "{name}": input.clientName,
+    }),
+    projectFolderName: render(blueprint.naming.projectFolderPattern, {
+      "{name}": input.projectName,
+      "{number}": input.projectNumber,
+      "{year}": input.year,
+    }),
+  });
+}
+
+/** Returns the provisioned leaf paths while preserving blueprint/visual order. */
+export function workspaceBlueprintLeafFolderPaths(
+  folders: readonly WorkspaceBlueprintFolder[],
+) {
+  const paths: Array<readonly string[]> = [];
+  const append = (folder: WorkspaceBlueprintFolder, parentPath: readonly string[]) => {
+    const path = Object.freeze([...parentPath, folder.name]);
+    if (folder.children.length === 0) paths.push(path);
+    else for (const child of folder.children) append(child, path);
+  };
+  for (const folder of folders) append(folder, []);
+  return Object.freeze(paths);
+}
 
 export class WorkspaceBlueprintValidationError extends Error {
   readonly path: string;
@@ -320,12 +337,28 @@ function uniqueKey(value: string, path: string, keys: Set<string>) {
   keys.add(value);
 }
 
+/**
+ * Two siblings with the same name are indistinguishable to Drive, which resolves a
+ * blueprint folder by name whenever no stamped folder exists yet. Provisioning then
+ * adopts the first match for both keys and fails the walk with a 409, while simulation
+ * happily reports the same blueprint as provisioned. Rejecting the state at save time is
+ * what keeps live and simulation in parity, so this is deliberately a sanitizer rule and
+ * not a provisioning-only guard.
+ */
+function uniqueSiblingName(value: string, path: string, names: Set<string>) {
+  const normalized = value.toLowerCase();
+  if (names.has(normalized)) invalid(path, `duplicates the sibling folder name ${value}.`);
+  names.add(normalized);
+}
+
 function sanitizeFolder(
   value: unknown,
   path: string,
   depth: number,
   folderKeys: Set<string>,
   counter: { value: number },
+  siblingNames: Set<string>,
+  enforceSiblingNames: boolean,
 ): WorkspaceBlueprintFolder {
   if (depth > WORKSPACE_BLUEPRINT_LIMITS.folderDepth) invalid(path, `exceeds the maximum folder depth of ${WORKSPACE_BLUEPRINT_LIMITS.folderDepth}.`);
   const record = object(value, path, ["key", "name", "management", "children"]);
@@ -337,11 +370,16 @@ function sanitizeFolder(
   if (depth === WORKSPACE_BLUEPRINT_LIMITS.folderDepth && childValues.length) {
     invalid(`${path}.children`, `would exceed the maximum folder depth of ${WORKSPACE_BLUEPRINT_LIMITS.folderDepth}.`);
   }
+  const name = folderName(record.name, `${path}.name`);
+  if (enforceSiblingNames) uniqueSiblingName(name, `${path}.name`, siblingNames);
+  // Each folder opens its own sibling scope, so the same name may appear at a different
+  // depth or in another collection — only folders that would share one Drive parent collide.
+  const childNames = new Set<string>();
   return {
     key: folderKey,
-    name: folderName(record.name, `${path}.name`),
+    name,
     management: management(record.management, `${path}.management`),
-    children: childValues.map((child, index) => sanitizeFolder(child, `${path}.children[${index}]`, depth + 1, folderKeys, counter)),
+    children: childValues.map((child, index) => sanitizeFolder(child, `${path}.children[${index}]`, depth + 1, folderKeys, counter, childNames, enforceSiblingNames)),
   };
 }
 
@@ -457,21 +495,43 @@ export function seedWorkspaceBlueprint(): WorkspaceBlueprint {
   return deepFreeze(structuredClone(SEED_WORKSPACE_BLUEPRINT));
 }
 
+export type SanitizeWorkspaceBlueprintOptions = Readonly<{
+  /**
+   * Sibling-name uniqueness is a WRITE rule, not a shape rule. Persisted rows are
+   * re-sanitized on every read, so enforcing it there would make a blueprint saved before
+   * the rule existed throw on load — taking down the whole Workspace surface, including the
+   * settings screen that is the only place to repair it. Reads therefore pass `false` and
+   * such a blueprint stays loadable and fixable; every owner-facing write keeps the default,
+   * which is what stops new ones from being created.
+   */
+  enforceUniqueSiblingNames?: boolean;
+}>;
+
 /**
  * Validates the complete closed blueprint contract and returns a normalized,
  * immutable value safe for persistence and later setup consumers.
  */
-export function sanitizeWorkspaceBlueprint(value: unknown): WorkspaceBlueprint {
+export function sanitizeWorkspaceBlueprint(
+  value: unknown,
+  options: SanitizeWorkspaceBlueprintOptions = {},
+): WorkspaceBlueprint {
+  const enforceSiblingNames = options.enforceUniqueSiblingNames !== false;
   const root = object(value, "blueprint", ["business", "naming", "drive", "spreadsheets", "templates", "gmail", "calendars"]);
   const business = object(root.business, "blueprint.business", ["displayName"]);
   const naming = object(root.naming, "blueprint.naming", ["clientFolderPattern", "projectFolderPattern"]);
   const drive = object(root.drive, "blueprint.drive", ["sharedDriveName", "roots", "clientFolders", "projectFolders"]);
   const folderKeys = new Set<string>();
   const folderCounter = { value: 0 };
-  const roots = array(drive.roots, "blueprint.drive.roots").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.roots[${index}]`, 1, folderKeys, folderCounter));
+  const rootNames = new Set<string>();
+  const clientFolderNames = new Set<string>();
+  const projectFolderNames = new Set<string>();
+  // One sibling-name scope per collection: the Shared Drive root tree, the folders created
+  // under every client, and the folders created under every project each land in a different
+  // Drive parent, so a name reused across them is legitimate.
+  const roots = array(drive.roots, "blueprint.drive.roots").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.roots[${index}]`, 1, folderKeys, folderCounter, rootNames, enforceSiblingNames));
   const rootFolderKeys = new Set(folderKeys);
-  const clientFolders = array(drive.clientFolders, "blueprint.drive.clientFolders").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.clientFolders[${index}]`, 1, folderKeys, folderCounter));
-  const projectFolders = array(drive.projectFolders, "blueprint.drive.projectFolders").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.projectFolders[${index}]`, 1, folderKeys, folderCounter));
+  const clientFolders = array(drive.clientFolders, "blueprint.drive.clientFolders").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.clientFolders[${index}]`, 1, folderKeys, folderCounter, clientFolderNames, enforceSiblingNames));
+  const projectFolders = array(drive.projectFolders, "blueprint.drive.projectFolders").map((folder, index) => sanitizeFolder(folder, `blueprint.drive.projectFolders[${index}]`, 1, folderKeys, folderCounter, projectFolderNames, enforceSiblingNames));
 
   const spreadsheetValues = array(root.spreadsheets, "blueprint.spreadsheets");
   if (spreadsheetValues.length > WORKSPACE_BLUEPRINT_LIMITS.spreadsheets) invalid("blueprint.spreadsheets", `cannot contain more than ${WORKSPACE_BLUEPRINT_LIMITS.spreadsheets} entries.`);

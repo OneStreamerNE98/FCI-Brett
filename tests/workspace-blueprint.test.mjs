@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  DRIVE_BLUEPRINT,
   WORKSPACE_BLUEPRINT_LIMITS,
   WorkspaceBlueprintValidationError,
   flattenWorkspaceBlueprintFolders,
+  resolveWorkspaceBlueprintFolderNames,
   sanitizeWorkspaceBlueprint,
   seedWorkspaceBlueprint,
   summarizeWorkspaceBlueprintChanges,
@@ -42,10 +43,25 @@ test("seed preserves the legacy Drive/Gmail contract and includes FCI Holidays",
     seed.drive.roots.find((folder) => folder.key === "unsorted-intake").name,
   ];
 
-  assert.equal(seed.drive.sharedDriveName, DRIVE_BLUEPRINT.sharedDriveName);
-  assert.deepEqual(legacyRoots, [...DRIVE_BLUEPRINT.roots]);
-  assert.deepEqual(projectPaths, [...DRIVE_BLUEPRINT.projectFolders]);
-  assert.deepEqual(seed.gmail.labels.map((label) => label.name), [...DRIVE_BLUEPRINT.gmailLabels]);
+  assert.equal(seed.drive.sharedDriveName, "FCI Operations");
+  assert.deepEqual(legacyRoots, [
+    "00_Company Admin / Client Directory (Google Sheet)",
+    "01_Client Accounts / {CLIENT_CODE} — {CLIENT_NAME} / 00_Client Profile & Master Documents",
+    "02_Projects / {YEAR} / {PROJECT_NUMBER} — {PROJECT_NAME}",
+    "99_Archive",
+    "99_Unsorted Intake",
+  ]);
+  assert.deepEqual(projectPaths, [
+    "00_Admin",
+    "01_Lead & Proposal",
+    "02_Contract & Submittals",
+    "03_Schedule & Field",
+    "04_Photos & QA",
+    "05_Correspondence / Email Archive",
+    "05_Correspondence / Email Attachments",
+    "06_Closeout",
+  ]);
+  assert.deepEqual(seed.gmail.labels.map((label) => label.name), ["FCI/Intake", "FCI/Needs Review", "FCI/Filed"]);
   assert.deepEqual(seed.calendars.map((calendar) => calendar.name), [
     "FCI • Client Appointments",
     "FCI • Field Schedule",
@@ -55,6 +71,25 @@ test("seed preserves the legacy Drive/Gmail contract and includes FCI Holidays",
   assert.equal(seed.spreadsheets[0].role, "system-mirror");
   assert.equal(Object.isFrozen(seed), true);
   assert.equal(Object.isFrozen(seed.drive.roots), true);
+});
+
+test("folder naming substitutes only the blueprint's closed context tokens", () => {
+  const blueprint = draft();
+  blueprint.naming.clientFolderPattern = "{name} ({code})";
+  blueprint.naming.projectFolderPattern = "{year} · {name} · {number}";
+  assert.deepEqual(
+    resolveWorkspaceBlueprintFolderNames(sanitizeWorkspaceBlueprint(blueprint), {
+      clientCode: "CL-042",
+      clientName: "FCI TEST Client",
+      projectNumber: "PR-009",
+      projectName: "FCI TEST Project",
+      year: "2027",
+    }),
+    {
+      clientFolderName: "FCI TEST Client (CL-042)",
+      projectFolderName: "2027 · FCI TEST Project · PR-009",
+    },
+  );
 });
 
 test("sanitizer accepts owner edits and normalizes detached data", () => {
@@ -134,6 +169,102 @@ test("sanitizer enforces folder keys, names, depth, counts, tokens, and referenc
       assert.ok(error.path.startsWith(pathPrefix), `${error.path} should start with ${pathPrefix}`);
     });
   }
+});
+
+// Reproduced review defect: the sanitizer enforced unique KEYS but never unique sibling NAMES,
+// so two clicks of "Add folder" saved two siblings both named "New folder". Drive resolves a
+// blueprint folder by name whenever no stamped folder exists yet, so live provisioning adopted
+// the first sibling for both keys and threw drive_folder_identity_conflict mid-walk — while
+// simulation reported the very same blueprint as provisioned. Rejecting the state at save time
+// is what restores live/simulation parity.
+test("sibling folders cannot share a name within one scope", async (t) => {
+  for (const [collection, colliding] of [
+    ["roots", "99_Archive"],
+    ["clientFolders", "Projects (shortcuts only)"],
+    ["projectFolders", "06_Closeout"],
+  ]) {
+    await t.test(collection, () => {
+      const error = validationError((value) => {
+        value.drive[collection].push({ key: "new-folder", name: colliding, management: "owner", children: [] });
+      });
+      assert.match(error.message, /duplicates the sibling folder name/u);
+      assert.ok(error.message.includes(colliding), `${error.message} should name the collision`);
+      assert.match(error.path, new RegExp(`^blueprint\\.drive\\.${collection}\\[\\d+\\]\\.name$`, "u"));
+    });
+  }
+
+  await t.test("nested siblings", () => {
+    const error = validationError((value) => {
+      value.drive.roots.find((folder) => folder.key === "company-admin").children.push({
+        key: "new-folder",
+        name: "Templates",
+        management: "owner",
+        children: [],
+      });
+    });
+    assert.match(error.message, /duplicates the sibling folder name Templates\./u);
+    assert.match(error.path, /^blueprint\.drive\.roots\[0\]\.children\[1\]\.name$/u);
+  });
+
+  await t.test("comparison is trimmed and case-insensitive", () => {
+    const error = validationError((value) => {
+      value.drive.projectFolders.push({ key: "new-folder", name: "  06_closeout  ", management: "owner", children: [] });
+    });
+    assert.match(error.message, /duplicates the sibling folder name 06_closeout\./u);
+  });
+});
+
+// Sibling-name uniqueness is a WRITE rule. Persisted blueprints are re-sanitized on every read,
+// so enforcing it there would make a blueprint saved before the rule existed throw on load and
+// take down the settings screen that is the only place to repair it — trading one permanently
+// bricked state for a worse one. The read path opts out; nothing else may.
+test("an already-persisted duplicate sibling name still loads so it stays repairable", () => {
+  const value = draft();
+  value.drive.projectFolders.push({ key: "new-folder", name: "06_Closeout", management: "owner", children: [] });
+
+  assert.throws(() => sanitizeWorkspaceBlueprint(value), WorkspaceBlueprintValidationError);
+  const tolerated = sanitizeWorkspaceBlueprint(value, { enforceUniqueSiblingNames: false });
+  assert.equal(tolerated.drive.projectFolders.filter((folder) => folder.name === "06_Closeout").length, 2);
+  // Opting out relaxes only this rule — every other contract still applies.
+  assert.throws(
+    () => sanitizeWorkspaceBlueprint({ ...value, naming: { ...value.naming, clientFolderPattern: "{name}" } }, { enforceUniqueSiblingNames: false }),
+    WorkspaceBlueprintValidationError,
+  );
+});
+
+// The rule is per sibling set, not global: folders in different collections and at different
+// depths are created under different Drive parents, so reusing one name across them is normal.
+test("the same folder name may be reused across scopes and depths", () => {
+  const value = draft();
+  value.drive.clientFolders.push({ key: "client-photos", name: "Photos", management: "owner", children: [] });
+  value.drive.projectFolders.push({ key: "project-photos", name: "Photos", management: "owner", children: [] });
+  value.drive.roots.find((folder) => folder.key === "company-admin").children.push({
+    key: "admin-photos",
+    name: "Photos",
+    management: "owner",
+    children: [],
+  });
+  value.drive.roots.push({ key: "photos-root", name: "Photos", management: "owner", children: [] });
+
+  const sanitized = sanitizeWorkspaceBlueprint(value);
+  assert.equal(sanitized.drive.clientFolders.find((folder) => folder.key === "client-photos").name, "Photos");
+  assert.equal(sanitized.drive.projectFolders.find((folder) => folder.key === "project-photos").name, "Photos");
+  assert.equal(sanitized.drive.roots.find((folder) => folder.key === "photos-root").name, "Photos");
+  assert.equal(
+    sanitized.drive.roots.find((folder) => folder.key === "company-admin").children.find((folder) => folder.key === "admin-photos").name,
+    "Photos",
+  );
+});
+
+// The editor must not mint the collision the sanitizer now rejects, or "Add folder" twice would
+// meet a validation error instead of adding a folder. The helpers stay unexported because
+// settings-component-boundaries pins this module's single export, so pin the wiring by source.
+test("the blueprint editor mints a unique default name for each added sibling", async () => {
+  const editor = await readFile(new URL("../app/settings/components/WorkspaceBlueprintEditor.tsx", import.meta.url), "utf8");
+  assert.match(editor, /function unusedFolderName\(base: string, existing: Set<string>\)[\s\S]{0,220}\$\{base\} \$\{suffix\+\+\}/u);
+  assert.match(editor, /function siblingFolderNames\([\s\S]{0,400}folder\.name\.trim\(\)\.toLowerCase\(\)/u);
+  assert.match(editor, /const name = unusedFolderName\("New folder", siblingFolderNames\(next\.drive\[collection\], parentKey\)\);/u);
+  assert.match(editor, /const folder: FolderDraft = \{ key, name, management: "owner", children: \[\] \};/u);
 });
 
 test("spreadsheet roles accept import and reference while reserving system-mirror", () => {

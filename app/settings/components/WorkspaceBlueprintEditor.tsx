@@ -98,6 +98,25 @@ function unusedKey(base: string, existing: Set<string>) {
   return candidate;
 }
 
+/** Sibling names, folded the way the sanitizer folds them, for the set a new folder joins. */
+function siblingFolderNames(collection: FolderDraft[], parentKey?: string) {
+  let siblings = collection;
+  if (parentKey) {
+    let matched: FolderDraft[] = [];
+    visitFolder(collection, parentKey, (parent) => { matched = parent.children; });
+    siblings = matched;
+  }
+  return new Set(siblings.map((folder) => folder.name.trim().toLowerCase()));
+}
+
+/** Saving two same-named siblings is rejected, so never mint the collision in the first place. */
+function unusedFolderName(base: string, existing: Set<string>) {
+  let candidate = base;
+  let suffix = 2;
+  while (existing.has(candidate.toLowerCase())) candidate = `${base} ${suffix++}`;
+  return candidate;
+}
+
 function LockBadge({ label, reason }: { label: string; reason: string }) {
   const descriptionId = useId();
   return <span className="workspace-blueprint-lock-wrap">
@@ -215,7 +234,8 @@ export function WorkspaceBlueprintEditor({
     updateDraft((next) => {
       if (flattenWorkspaceBlueprintFolders(next).length >= WORKSPACE_BLUEPRINT_LIMITS.folders) return;
       const key = unusedKey("new-folder", allFolderKeys(next));
-      const folder: FolderDraft = { key, name: "New folder", management: "owner", children: [] };
+      const name = unusedFolderName("New folder", siblingFolderNames(next.drive[collection], parentKey));
+      const folder: FolderDraft = { key, name, management: "owner", children: [] };
       if (parentKey) visitFolder(next.drive[collection], parentKey, (parent) => { parent.children.push(folder); });
       else next.drive[collection].push(folder);
     });

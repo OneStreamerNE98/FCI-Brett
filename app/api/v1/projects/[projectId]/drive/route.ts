@@ -5,6 +5,7 @@ import { googleIntegrationErrorResponse } from "../../../../../lib/google-integr
 import { GoogleIntegrationError, getEffectiveGoogleRuntimeSetup, getGoogleAccessToken } from "../../../../../lib/google-oauth-sites";
 import { enforceDevelopmentRequestRateLimit } from "../../../../../lib/development-request-rate-limit";
 import { trySyncGoogleDirectory } from "../../../../../lib/google-sheets-sites";
+import { resolveWorkspaceBlueprintFolderNames } from "../../../../../lib/workspace-blueprint";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../_workspace-data";
 import { noStoreJson as noStore, noStoreResponse } from "../../../../../lib/no-store-json";
@@ -104,6 +105,13 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
   try {
     if (config.simulation) {
       const blueprintPlan = buildProjectDriveBlueprintPlan(blueprint);
+      const folderNames = resolveWorkspaceBlueprintFolderNames(blueprint, {
+        clientCode: project.client_code,
+        clientName: project.client_name,
+        projectNumber: project.project_number,
+        projectName: project.name,
+        year: projectYear,
+      });
       const completedAt = Date.now();
       const clientFolderId = `sim-client-${project.client_id}`;
       const projectFolderId = `sim-project-${project.id}`;
@@ -114,7 +122,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
       ))?.externalId ?? `workspace-simulation-folder-${key}`;
       const accountsRootId = registeredRootId(blueprintPlan.accountsRoot.key);
       const projectsRootId = registeredRootId(blueprintPlan.projectsRoot.key);
-      const projectFolderName = `${project.project_number} — ${project.name}`;
+      const projectFolderName = folderNames.projectFolderName;
       const completionResults = await env.DB.batch([
         env.DB.prepare(`INSERT INTO drive_folder_mappings (id, connection_key, entity_type, entity_id, folder_key, drive_file_id, parent_drive_file_id, drive_url, created_at, updated_at) SELECT ?, ?, 'client', ?, 'client-root', ?, NULL, ?, ?, ? WHERE ${OPERATION_LEASE_EXISTS} ON CONFLICT(connection_key, entity_type, entity_id, folder_key) DO UPDATE SET drive_file_id = excluded.drive_file_id, drive_url = excluded.drive_url, updated_at = excluded.updated_at`)
           .bind(crypto.randomUUID(), config.connectionKey, project.client_id, clientFolderId, clientUrl, completedAt, completedAt, operationKey, leaseExpiresAt),
@@ -143,8 +151,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ pr
           clientFolder: {
             id: clientFolderId,
             parentId: accountsRootId,
-            path: `${blueprintPlan.accountsRoot.name} / ${project.client_code} — ${project.client_name}`,
+            path: `${blueprintPlan.accountsRoot.name} / ${folderNames.clientFolderName}`,
           },
+          clientFolders: blueprintPlan.clientFolderPaths.map((path) => (
+            `${blueprintPlan.accountsRoot.name} / ${folderNames.clientFolderName} / ${path.join(" / ")}`
+          )),
           projectFolder: {
             id: projectFolderId,
             rootId: projectsRootId,

@@ -94,7 +94,10 @@ function persisted(row: WorkspaceBlueprintRow): PersistedWorkspaceBlueprint {
     version: row.version,
     // Blueprints saved before spreadsheet roles were introduced remain valid.
     // The next owner save persists the explicit upgraded shape.
-    blueprint: sanitizeWorkspaceBlueprint(upgradeStoredBlueprint(parsed)),
+    // Sibling-name uniqueness is likewise a write-time rule: a blueprint saved before it
+    // existed must still load, or the owner loses the settings screen that is the only place
+    // to fix it. Provisioning still reports the duplicate as a 409 until they do.
+    blueprint: sanitizeWorkspaceBlueprint(upgradeStoredBlueprint(parsed), { enforceUniqueSiblingNames: false }),
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedBy: row.updated_by,

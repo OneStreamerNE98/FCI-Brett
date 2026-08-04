@@ -1,6 +1,10 @@
-import { DRIVE_BLUEPRINT, seedWorkspaceBlueprint } from "./workspace-blueprint";
-
-export { DRIVE_BLUEPRINT } from "./workspace-blueprint";
+import { GoogleIntegrationError } from "./google-integration-error";
+import {
+  resolveWorkspaceBlueprintFolderNames,
+  seedWorkspaceBlueprint,
+  workspaceBlueprintLeafFolderPaths,
+  type WorkspaceBlueprint,
+} from "./workspace-blueprint";
 
 export type FilingRuleDraft = {
   id?: string;
@@ -178,21 +182,36 @@ export function resolveDriveWorkspace(input: {
 }
 
 export function buildProjectFolderPlan(input: {
+  blueprint: WorkspaceBlueprint;
   clientCode: string;
   clientName: string;
   projectNumber: string;
   projectName: string;
   year?: string;
 }) {
-  const blueprint = seedWorkspaceBlueprint();
   const year = input.year ?? new Date().getUTCFullYear().toString();
-  const clientFolder = `01_Client Accounts/${input.clientCode} — ${input.clientName}`;
-  const projectFolder = `02_Projects/${year}/${input.projectNumber} — ${input.projectName}`;
+  const accountsRoot = input.blueprint.drive.roots.find((folder) => folder.key === "client-accounts");
+  const projectsRoot = input.blueprint.drive.roots.find((folder) => folder.key === "projects");
+  // Same condition, same typed answer as buildProjectDriveBlueprintPlan in google-drive.ts:
+  // the blueprint editor lets an owner remove either root in one click and the sanitizer
+  // accepts it, so the preview has to report a 409 the caller can act on, not a bare throw
+  // the route turns into an unhandled 500.
+  if (!accountsRoot || !projectsRoot) {
+    throw new GoogleIntegrationError(
+      "workspace_blueprint_root_missing",
+      "The workspace blueprint must define both the client-accounts and projects roots before project folders can be provisioned.",
+      409,
+    );
+  }
+  const names = resolveWorkspaceBlueprintFolderNames(input.blueprint, { ...input, year });
+  const leafPaths = (folders: WorkspaceBlueprint["drive"]["projectFolders"]) => (
+    Object.freeze(workspaceBlueprintLeafFolderPaths(folders).map((path) => path.join(" / ")))
+  );
   return {
-    clientFolder,
-    clientFolders: ["00_Client Profile & Master Documents", "Projects (shortcuts only)"],
-    projectFolder,
-    projectFolders: DRIVE_BLUEPRINT.projectFolders,
-    gmailLabels: blueprint.gmail.labels.map((label) => label.name),
+    clientFolder: `${accountsRoot.name}/${names.clientFolderName}`,
+    clientFolders: leafPaths(input.blueprint.drive.clientFolders),
+    projectFolder: `${projectsRoot.name}/${year}/${names.projectFolderName}`,
+    projectFolders: leafPaths(input.blueprint.drive.projectFolders),
+    gmailLabels: input.blueprint.gmail.labels.map((label) => label.name),
   };
 }

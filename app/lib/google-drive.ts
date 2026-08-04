@@ -4,7 +4,12 @@ import {
   type GoogleFetchPolicy,
   type GoogleFetchResilienceDependencies,
 } from "./google-fetch-resilience";
-import type { WorkspaceBlueprint, WorkspaceBlueprintFolder } from "./workspace-blueprint";
+import {
+  resolveWorkspaceBlueprintFolderNames,
+  workspaceBlueprintLeafFolderPaths,
+  type WorkspaceBlueprint,
+  type WorkspaceBlueprintFolder,
+} from "./workspace-blueprint";
 import {
   WORKSPACE_TEMPLATE_TOKEN_LEGEND,
   type WorkspaceTemplateTokenValues,
@@ -27,6 +32,7 @@ const MAX_SETUP_PROVIDER_NAME_LENGTH = 180;
 const MAX_SETUP_PROVIDER_ID_LENGTH = 200;
 const MAX_SETUP_PAGE_TOKEN_LENGTH = 512;
 const LEGACY_WORKSPACE_FOLDER_IDENTITY = "fciWorkspaceFolder";
+const PROVISIONED_BLUEPRINT_FOLDER_IDENTITY = "fciFolderKey";
 const LEGACY_PROVISIONING_ROOT_KEYS = new Set(["client-accounts", "projects"]);
 
 type DriveFile = {
@@ -135,6 +141,21 @@ export type DriveSetupItem = Readonly<{
   appProperties: Readonly<Record<string, string>>;
 }>;
 
+/** Every folder key the saved blueprint still defines, across all three collections. */
+export function workspaceBlueprintFolderKeys(blueprint: WorkspaceBlueprint): ReadonlySet<string> {
+  const keys = new Set<string>();
+  const walk = (folders: readonly WorkspaceBlueprintFolder[]) => {
+    for (const folder of folders) {
+      keys.add(folder.key);
+      walk(folder.children);
+    }
+  };
+  walk(blueprint.drive.roots);
+  walk(blueprint.drive.clientFolders);
+  walk(blueprint.drive.projectFolders);
+  return keys;
+}
+
 export function buildProjectDriveBlueprintPlan(blueprint: WorkspaceBlueprint) {
   const accountsRoot = blueprint.drive.roots.find((folder) => folder.key === "client-accounts");
   const projectsRoot = blueprint.drive.roots.find((folder) => folder.key === "projects");
@@ -145,17 +166,11 @@ export function buildProjectDriveBlueprintPlan(blueprint: WorkspaceBlueprint) {
       409,
     );
   }
-  const projectFolderPaths: Array<readonly string[]> = [];
-  const append = (folder: WorkspaceBlueprintFolder, parentPath: readonly string[]) => {
-    const path = Object.freeze([...parentPath, folder.name]);
-    if (folder.children.length === 0) projectFolderPaths.push(path);
-    else for (const child of folder.children) append(child, path);
-  };
-  for (const folder of blueprint.drive.projectFolders) append(folder, []);
   return Object.freeze({
     accountsRoot,
     projectsRoot,
-    projectFolderPaths: Object.freeze(projectFolderPaths),
+    clientFolderPaths: workspaceBlueprintLeafFolderPaths(blueprint.drive.clientFolders),
+    projectFolderPaths: workspaceBlueprintLeafFolderPaths(blueprint.drive.projectFolders),
   });
 }
 
@@ -1009,12 +1024,14 @@ export class GoogleDriveClient {
 
   private async getOrCreateFolder(parentId: string, name: string, options: { identity?: FolderIdentity; properties?: Record<string, string>; reuseByName?: boolean } = {}) {
     await this.assertContained(parentId);
-    const matches = await this.childFolders(parentId, name, options.identity);
-    if (matches.length === 1) return matches[0];
-    if (matches.length > 1) {
+    const managed = options.identity
+      ? await this.childFoldersByIdentity(parentId, options.identity)
+      : await this.childFolders(parentId, name);
+    if (managed.length === 1) return managed[0];
+    if (managed.length > 1) {
       throw new GoogleIntegrationError("duplicate_drive_folder", `More than one managed Google Drive folder matched ${name}.`, 409);
     }
-    if (!options.identity && options.reuseByName !== false) {
+    if (options.reuseByName !== false) {
       const namedMatches = await this.childFolders(parentId, name);
       if (namedMatches.length === 1) return namedMatches[0];
       if (namedMatches.length > 1) {
@@ -1022,6 +1039,78 @@ export class GoogleDriveClient {
       }
     }
     return this.createFolder(parentId, name, options.properties);
+  }
+
+  private async ensureProvisionedBlueprintFolder(input: {
+    parentId: string;
+    folder: WorkspaceBlueprintFolder;
+    entityProperty: "fciClientId" | "fciProjectId";
+    entityId: string;
+    folderKind: "client-profile" | "client-project-links" | "client-child" | "project-child";
+    blueprintFolderKeys: ReadonlySet<string>;
+  }) {
+    const identity = {
+      key: PROVISIONED_BLUEPRINT_FOLDER_IDENTITY,
+      value: input.folder.key,
+    } satisfies FolderIdentity;
+    const properties = normalizedAppProperties({
+      [PROVISIONED_BLUEPRINT_FOLDER_IDENTITY]: input.folder.key,
+      [input.entityProperty]: input.entityId,
+      fciFolderKind: input.folderKind,
+    });
+    const canonical = async (folder: DriveFile, adoptableByName = false) => {
+      const currentKey = folder.appProperties?.[PROVISIONED_BLUEPRINT_FOLDER_IDENTITY];
+      const currentEntity = folder.appProperties?.[input.entityProperty];
+      const currentKind = folder.appProperties?.fciFolderKind;
+      // A folder matched by NAME whose stamped key no longer appears anywhere in the saved
+      // blueprint is a leftover from an earlier blueprint version: the owner removed that key
+      // and re-added a folder of the same name under a new one. Without this the stale stamp is
+      // unreachable — it wins the identity comparison forever, so every later provisioning run
+      // 409s with no in-app way out. Re-stamping is a property UPDATE on the same folder; the
+      // folder is never moved, renamed, or deleted. A key that IS still in the blueprint stays a
+      // genuine conflict, because that other blueprint entry still owns this folder.
+      const staleStamp = adoptableByName
+        && typeof currentKey === "string"
+        && currentKey.length > 0
+        && !input.blueprintFolderKeys.has(currentKey);
+      if (
+        (currentKey && currentKey !== input.folder.key && !staleStamp)
+        || (currentEntity && currentEntity !== input.entityId)
+        || (currentKind && currentKind !== input.folderKind)
+      ) {
+        throw new GoogleIntegrationError(
+          "drive_folder_identity_conflict",
+          `The Google Drive folder named ${input.folder.name} already belongs to another managed blueprint item.`,
+          409,
+        );
+      }
+      return Object.entries(properties).some(([key, value]) => folder.appProperties?.[key] !== value)
+        ? this.stampFolder(folder, properties)
+        : folder;
+    };
+
+    await this.assertContained(input.parentId);
+    const managed = await this.childFoldersByIdentity(input.parentId, identity);
+    if (managed.length > 1) {
+      throw new GoogleIntegrationError("duplicate_drive_folder", `More than one managed Google Drive folder matched ${input.folder.name}.`, 409);
+    }
+    if (managed.length === 1) return canonical(managed[0]);
+
+    const named = await this.childFolders(input.parentId, input.folder.name);
+    if (named.length > 1) {
+      throw new GoogleIntegrationError("ambiguous_drive_folder", `More than one Google Drive folder is named ${input.folder.name}.`, 409);
+    }
+    if (named.length === 1) return canonical(named[0], true);
+
+    const created = await this.createFolder(input.parentId, input.folder.name, properties);
+    if (Object.entries(properties).some(([key, value]) => created.appProperties?.[key] !== value)) {
+      throw new GoogleIntegrationError(
+        "drive_create_invalid_response",
+        "Google Drive did not confirm the managed blueprint folder identity. Check Drive before retrying.",
+        503,
+      );
+    }
+    return created;
   }
 
   /**
@@ -1506,6 +1595,14 @@ export class GoogleDriveClient {
     blueprint: WorkspaceBlueprint;
   }) {
     const blueprintPlan = buildProjectDriveBlueprintPlan(input.blueprint);
+    const blueprintFolderKeys = workspaceBlueprintFolderKeys(input.blueprint);
+    const folderNames = resolveWorkspaceBlueprintFolderNames(input.blueprint, {
+      clientCode: input.client.code,
+      clientName: input.client.name,
+      projectNumber: input.project.number,
+      projectName: input.project.name,
+      year: input.project.year,
+    });
     const root = await this.verifyRootFolder();
     const accountsRoot = (await this.ensureBlueprintFolder({
       parentId: root.id,
@@ -1519,29 +1616,46 @@ export class GoogleDriveClient {
       name: blueprintPlan.projectsRoot.name,
       reuseByName: true,
     })).folder;
-    const clientFolder = await this.getOrCreateFolder(accountsRoot.id, `${input.client.code} — ${input.client.name}`, {
+    const clientFolder = await this.getOrCreateFolder(accountsRoot.id, folderNames.clientFolderName, {
       identity: { key: "fciClientId", value: input.client.id },
       properties: { fciClientId: input.client.id, fciFolderKind: "client" },
       reuseByName: false,
     });
-    await this.getOrCreateFolder(clientFolder.id, "00_Client Profile & Master Documents", { properties: { fciClientId: input.client.id, fciFolderKind: "client-profile" } });
-    await this.getOrCreateFolder(clientFolder.id, "Projects (shortcuts only)", { properties: { fciClientId: input.client.id, fciFolderKind: "client-project-links" } });
+
+    const ensureTree = async (
+      parentId: string,
+      folders: readonly WorkspaceBlueprintFolder[],
+      entityProperty: "fciClientId" | "fciProjectId",
+      entityId: string,
+    ) => {
+      for (const folder of folders) {
+        const folderKind = entityProperty === "fciProjectId"
+          ? "project-child" as const
+          : folder.key === "client-profile"
+            ? "client-profile" as const
+            : folder.key === "project-shortcuts"
+              ? "client-project-links" as const
+              : "client-child" as const;
+        const child = await this.ensureProvisionedBlueprintFolder({
+          parentId,
+          folder,
+          entityProperty,
+          entityId,
+          folderKind,
+          blueprintFolderKeys,
+        });
+        await ensureTree(child.id, folder.children, entityProperty, entityId);
+      }
+    };
+    await ensureTree(clientFolder.id, input.blueprint.drive.clientFolders, "fciClientId", input.client.id);
 
     const yearFolder = await this.getOrCreateFolder(projectsRoot.id, input.project.year, { properties: { fciWorkspaceFolder: `projects-${input.project.year}` } });
-    const projectFolder = await this.getOrCreateFolder(yearFolder.id, `${input.project.number} — ${input.project.name}`, {
+    const projectFolder = await this.getOrCreateFolder(yearFolder.id, folderNames.projectFolderName, {
       identity: { key: "fciProjectId", value: input.project.id },
       properties: { fciProjectId: input.project.id, fciFolderKind: "project" },
       reuseByName: false,
     });
-
-    for (const folderPath of blueprintPlan.projectFolderPaths) {
-      let parent: { id: string } = projectFolder;
-      for (const name of folderPath) {
-        parent = await this.getOrCreateFolder(parent.id, name, {
-          properties: { fciProjectId: input.project.id, fciFolderKind: "project-child" },
-        });
-      }
-    }
+    await ensureTree(projectFolder.id, input.blueprint.drive.projectFolders, "fciProjectId", input.project.id);
 
     return {
       root,

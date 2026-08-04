@@ -892,6 +892,8 @@ test("setup mutations reject non-admin and cross-origin requests before database
 test("simulation adopt → ensure → rename → blueprint-aware project provision is end-to-end", async () => {
   const fixtureBlueprint = structuredClone(blueprintModule.seedWorkspaceBlueprint());
   fixtureBlueprint.drive.sharedDriveName = "FCI Custom Operations";
+  fixtureBlueprint.naming.clientFolderPattern = "{name} [{code}]";
+  fixtureBlueprint.naming.projectFolderPattern = "{year} · {number} · {name}";
   fixtureBlueprint.drive.roots.push({
     key: "fixture-operations",
     name: "03_Fixture Operations",
@@ -904,6 +906,12 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
     name: "07_Field Notes",
     management: "owner",
     children: [{ key: "daily-logs", name: "Daily Logs", management: "owner", children: [] }],
+  });
+  fixtureBlueprint.drive.clientFolders.push({
+    key: "site-surveys",
+    name: "Site Surveys",
+    management: "owner",
+    children: [],
   });
   fixtureBlueprint.spreadsheets.push(
     { key: "first-run-import", name: "First-run Import", targetFolderKey: "company-admin", management: "owner", role: "import" },
@@ -1050,7 +1058,12 @@ test("simulation adopt → ensure → rename → blueprint-aware project provisi
     name: "02_Custom Projects",
   });
   assert.equal(provisioned.simulationPlan.projectFolder.rootId, "workspace-simulation-folder-projects");
-  assert.match(provisioned.simulationPlan.projectFolder.path, /^02_Custom Projects \/ 2026 \/ FCI2026-902/u);
+  assert.equal(
+    provisioned.simulationPlan.clientFolder.path,
+    "01_Client Accounts / DO NOT USE [FCI TEST]",
+  );
+  assert.ok(provisioned.simulationPlan.clientFolders.some((path) => path.endsWith("Site Surveys")));
+  assert.match(provisioned.simulationPlan.projectFolder.path, /^02_Custom Projects \/ 2026 \/ 2026 · FCI2026-902/u);
   assert.ok(provisioned.simulationPlan.projectFolders.some((path) => path.endsWith("01_Custom Lead Package")));
   assert.ok(provisioned.simulationPlan.projectFolders.some((path) => path.endsWith("07_Field Notes / Daily Logs")));
   assert.equal(provisioned.simulationPlan.projectFolders.some((path) => path.includes("01_Lead & Proposal")), false);
