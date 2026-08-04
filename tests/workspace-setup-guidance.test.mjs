@@ -425,8 +425,9 @@ test("Workspace resources stay endpoint-owned in one dependency-ordered Stage 3 
   assert.match(stageOneSource, /WorkspaceDomainChecklistCard/);
   assert.match(stageOneSource, /simulation=\{simulation\}/);
   assert.doesNotMatch(stageOneSource, /bannerSimulation/);
-  assert.match(stageOneSource, /Drive authority:[\s\S]+GOOGLE_WORKSPACE_SHARED_DRIVE_ID[\s\S]+GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED/);
-  assert.match(stageOneSource, /Sheets authority:[\s\S]+GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID[\s\S]+first-boot fallback/);
+  assert.match(stageOneSource, /Drive authority:[\s\S]+GOOGLE_WORKSPACE_SHARED_DRIVE_ID/);
+  assert.match(stageOneSource, /App-managed Workspace configuration[\s\S]+Project-folder provisioning[\s\S]+Client Directory spreadsheet ID[\s\S]+Lead-form response spreadsheet ID/);
+  assert.match(stageOneSource, /App-saved values win\. Hosted values remain bootstrap fallbacks\./);
   assert.match(stageTwoSource, /Company account authorization/);
   assert.match(stageTwoSource, /Simulation runs locally, and nothing is sent to Google/);
   assert.match(stageTwoSource, /<details className=\{`workspace-connection-health/);

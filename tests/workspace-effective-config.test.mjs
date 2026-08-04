@@ -23,6 +23,7 @@ function completeEnvironment(overrides = {}) {
     GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID: "environment-directory-sheet-id",
     GOOGLE_WORKSPACE_CLIENT_APPOINTMENTS_CALENDAR_ID: "environment-client-calendar-id",
     GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID: "environment-field-calendar-id",
+    GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID: "environment-lead-form-sheet-id",
     GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED: "true",
     ...overrides,
   };
@@ -175,6 +176,13 @@ const RESOURCE_CASES = [
     envVar: "GOOGLE_WORKSPACE_FIELD_SCHEDULE_CALENDAR_ID",
     read: (config) => config.fieldScheduleCalendarId,
   },
+  {
+    name: "leadFormResponseSheet",
+    resourceType: "sheets.spreadsheet",
+    resourceKey: "lead-form-responses",
+    envVar: "GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID",
+    read: (config) => config.leadFormResponseSheetId,
+  },
 ];
 
 test("base getGoogleRuntimeConfig remains pinned on a complete fixture environment", () => {
@@ -203,6 +211,8 @@ test("base getGoogleRuntimeConfig remains pinned on a complete fixture environme
     intakeMailbox: "operations@cherryhillfci.com",
     clientAppointmentsCalendarId: "environment-client-calendar-id",
     fieldScheduleCalendarId: "environment-field-calendar-id",
+    leadFormResponseSheetId: "environment-lead-form-sheet-id",
+    leadFormResponseSheetIdInvalid: false,
     enabledServices: ["drive", "gmail", "calendar", "sheets"],
     serviceScopes: {
       drive: "https://www.googleapis.com/auth/drive",
@@ -222,6 +232,7 @@ test("base getGoogleRuntimeConfig remains pinned on a complete fixture environme
     missingDetails: [],
     oauthReady: true,
     provisioningEnabled: true,
+    driveProvisioningEnvironmentValue: "true",
     gmailEnabled: true,
     calendarEnabled: true,
     sheetsEnabled: true,
@@ -264,7 +275,7 @@ test("persisted Workspace settings override calendar and sheet environment seeds
   assert.equal(applied.fieldScheduleCalendarId, "saved-field-calendar-id");
 });
 
-test("resolver covers every app-presence by environment-presence combination for all four IDs", () => {
+test("resolver covers every app-presence by environment-presence combination for all five IDs", () => {
   for (const resourceCase of RESOURCE_CASES) {
     for (const appPresent of [false, true]) {
       for (const envPresent of [false, true]) {

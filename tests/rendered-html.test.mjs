@@ -68,7 +68,7 @@ test("renders feature-gated Google Chat routing without a webhook-value field", 
   assert.match(card, /Read-only notification routing/);
   assert.match(card, /config\.missingDetails\.map/);
   assert.match(card, /space\.secretEnvVar/);
-  assert.match(card, /body: JSON\.stringify\(\{ events: events\.map\(\(\{ type, enabled, spaceKey \}\)/);
+  assert.match(card, /body: JSON\.stringify\(\{[\s\S]+featureEnabled,[\s\S]+events: events\.map\(\(\{ type, enabled, spaceKey \}\)/);
   assert.doesNotMatch(card, /<input[^>]+type="url"|<textarea[^>]+(?:webhook|secret|token)/i);
   assert.match(defaults, /<div className="settings-panel-stack">[\s\S]+<ChatNotificationSettingsCard notify=\{notify\} isAdmin=\{isAdmin\}/);
   assert.match(defaults, /loadState !== "ready"[\s\S]+mode === "workflow" \? <WorkflowSettingsStack/);

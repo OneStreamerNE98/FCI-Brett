@@ -288,7 +288,7 @@ test("source pins the authorization order, SELECT-only route, Settings surface, 
 
   const authIndex = routeSource.indexOf("requireOfficeUser(request, { admin: true })");
   assert.ok(authIndex >= 0);
-  assert.ok(authIndex < routeSource.indexOf("getGoogleRuntimeConfig()"));
+  assert.ok(authIndex < routeSource.indexOf("getConnectionScope()"));
   assert.ok(authIndex < routeSource.indexOf("env.DB.prepare("));
   assert.doesNotMatch(routeSource, /ensureWorkspaceSchema/u);
   assert.doesNotMatch(routeSource, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b/u);

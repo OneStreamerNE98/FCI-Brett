@@ -117,12 +117,13 @@ function routeRequest(path, email, method = "GET", body, origin = "https://fci.e
   return request;
 }
 
-test("the global Chat gate suppresses queued inbox-review work before defer", () => {
+test("the app-capable Chat gate keeps callers synchronous and resolves disabled state in deferred work", async () => {
   const database = fakeDatabase();
   setEnvironment(database, {
     GOOGLE_CHAT_NOTIFICATIONS_ENABLED: "false",
   });
   let deferCalls = 0;
+  let deferredTask;
 
   const returned = sites.queueGoogleChatNotification(
     {
@@ -132,14 +133,17 @@ test("the global Chat gate suppresses queued inbox-review work before defer", ()
     },
     ADMIN_EMAIL,
     "https://fci.example.test",
-    () => {
+    (task) => {
       deferCalls += 1;
+      deferredTask = task;
     },
   );
 
   assert.equal(returned, undefined);
-  assert.equal(deferCalls, 0);
-  assert.equal(database.queries.length, 0);
+  assert.equal(deferCalls, 1);
+  assert.ok(deferredTask instanceof Promise);
+  await deferredTask;
+  assert.equal(database.queries.filter((query) => query.operation === "run").length, 0);
 });
 
 function exactUpdate(overrides = {}) {
@@ -234,6 +238,7 @@ test("PATCH is same-origin Administrator-only, persists a distinct row, and retu
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(body.canEdit, true);
   assert.equal(body.featureEnabled, true);
+  assert.equal(body.featureSource, "environment");
   assert.equal(body.mode, "webhook");
   assert.equal(body.events.find((event) => event.type === "lead.created").enabled, true);
   assert.equal(body.events.find((event) => event.type === "project.warranty_follow_up_due").spaceKey, "service");
@@ -255,6 +260,26 @@ test("PATCH is same-origin Administrator-only, persists a distinct row, and retu
   const reloaded = await getResponse.json();
   assert.equal(reloaded.events.find((event) => event.type === "lead.created").enabled, true);
   assert.equal(reloaded.canEdit, false);
+});
+
+test("app-saved Chat enable toggle wins over the environment bootstrap value", async () => {
+  const database = fakeDatabase();
+  setEnvironment(database, { GOOGLE_CHAT_NOTIFICATIONS_ENABLED: "true" });
+  const response = await route.PATCH(routeRequest(
+    "/api/v1/integrations/google/chat/config",
+    ADMIN_EMAIL,
+    "PATCH",
+    { ...exactUpdate(), featureEnabled: false },
+  ));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.featureEnabled, false);
+  assert.equal(body.featureSource, "app");
+  assert.equal(body.mode, "disabled");
+  assert.equal(
+    JSON.parse(database.rows.get("google-chat-routing").settings_json).notificationsEnabled,
+    false,
+  );
 });
 
 test("simulation PATCH and safe public helper expose no secret and never post", async () => {

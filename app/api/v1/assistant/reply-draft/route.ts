@@ -8,10 +8,7 @@ import {
   readReplyFilingInputs,
   resolveReplyProjectRecords,
 } from "../../../../application/assistant/reply-draft";
-import {
-  assistantRuntimeConfiguration,
-  readSitesAssistantConfiguration,
-} from "../../../../lib/assistant-config-sites";
+import { readSitesAssistantConfiguration } from "../../../../lib/assistant-config-sites";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../../lib/development-request-rate-limit";
 import { validateGmailMessageId } from "../../../../lib/google-gmail";
@@ -117,7 +114,6 @@ export async function POST(request: NextRequest) {
       },
       filing,
     });
-    const runtime = assistantRuntimeConfiguration(environment);
     const apiKey = runtimeValue("OPENAI_API_KEY");
     if (!apiKey) {
       return noStoreJson(
@@ -133,7 +129,7 @@ export async function POST(request: NextRequest) {
       emailBody,
       records,
       signature: preferences?.replySignature?.trim() || null,
-      provider: new OpenAIResponsesProvider({ apiKey, model: runtime.model }),
+      provider: new OpenAIResponsesProvider({ apiKey, model: configuration.model }),
       signal: request.signal,
     });
     if (!draft) {

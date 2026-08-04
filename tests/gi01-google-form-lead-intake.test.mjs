@@ -394,6 +394,14 @@ test("GI-01 config exposes presence only and simulation needs no hosted Sheet va
     GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID: "linkedResponseSheet_12345",
   }, false).configured, true);
   assert.deepEqual(config.googleFormLeadIntakeConfig({
+    GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID: "environmentResponseSheet_12345",
+  }, false, "appSavedResponseSheet_12345"), {
+    configured: true,
+    invalid: false,
+    spreadsheetId: "appSavedResponseSheet_12345",
+    source: "app-saved",
+  });
+  assert.deepEqual(config.googleFormLeadIntakeConfig({
     GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID: "not a provider id",
   }, false), {
     configured: false,
@@ -1173,6 +1181,7 @@ test("GI-01 admin simulation check queues once, never creates a lead, and second
       configured: true,
       invalidConfiguration: false,
       configurationName: "GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID",
+      configurationSource: "simulation",
       simulation: true,
       actorEmail: ADMIN_EMAIL,
       rowLimit: 25,
@@ -1313,6 +1322,7 @@ test("GI-01 workspace route acquires a Sheets token, performs the bounded produc
       configured: true,
       invalidConfiguration: false,
       configurationName: "GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID",
+      configurationSource: "environment",
       simulation: false,
       actorEmail: ADMIN_EMAIL,
       rowLimit: 25,
@@ -1818,7 +1828,7 @@ test("GI-01 source laws pin manual triggering, adapter parity, safe acceptance o
   assert.match(productionSchema, /last_processed_submission_key text NOT NULL/u);
   assert.match(productionSchema, /UNIQUE \(\s*connection_key,\s*spreadsheet_id,\s*submission_key\s*\)/u);
   assert.match(leadRouteSource, /requireOfficeUser\(request, \{ admin: true \}\)/u);
-  assert.match(leadRouteSource, /connectionKey: getGoogleRuntimeConfig\(\)\.connectionKey/u);
+  assert.match(leadRouteSource, /connectionKey: getConnectionScope\(\)\.connectionKey/u);
   assert.match(leadRouteSource, /result\.formLeadReview\?\.replayed !== true/u);
   assert.match(d1LeadSource, /UPDATE google_form_lead_reviews[\s\S]*status = 'needs-review'/u);
   assert.match(d1LeadSource, /INSERT INTO leads[\s\S]*WHERE changes\(\) = 1/u);

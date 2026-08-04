@@ -71,7 +71,10 @@ async function runGoogleChatNotification(
     actor,
     appOrigin,
     {
-      notificationsEnabled: googleChatNotificationsEnabled(environment),
+      notificationsEnabled: googleChatNotificationsEnabled(
+        environment,
+        stored.routing.notificationsEnabled,
+      ),
       simulation: googleConfig.simulation,
       routing: stored.routing,
     },
@@ -104,12 +107,8 @@ export function queueGoogleChatNotification(
   appOrigin: string,
   defer: GoogleChatDefer = waitUntil,
 ): void {
-  let enabled = false;
-  try {
-    enabled = googleChatNotificationsEnabled(sitesEnvironment());
-  } catch {
-    return;
-  }
-  if (!enabled) return;
+  // The app-saved gate lives beside the routing catalog in D1. Defer the
+  // lookup with the notification task so callers remain synchronous and do
+  // not gain a foreground persistence read.
   deferGoogleChatTask(defer, () => runGoogleChatNotification(event, actor, appOrigin));
 }

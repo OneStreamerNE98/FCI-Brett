@@ -29,6 +29,15 @@ export function getGoogleRuntimeConfig(input?: oauth.EnvironmentValues) {
   return oauth.getGoogleRuntimeConfig(input ?? env as unknown as oauth.EnvironmentValues);
 }
 
+/** Cheap synchronous scope for list routes; it performs no persistence reads. */
+export function getConnectionScope(input?: oauth.EnvironmentValues) {
+  const config = getGoogleRuntimeConfig(input);
+  return Object.freeze({
+    connectionKey: config.connectionKey,
+    simulation: config.simulation,
+  });
+}
+
 export type EffectiveGoogleRuntimeSetup = Readonly<{
   config: EffectiveGoogleRuntimeConfig;
   resources: Awaited<ReturnType<typeof listWorkspaceResources>>;
@@ -45,6 +54,10 @@ function savedWorkspaceRuntimeValues(
     clientDirectorySheetId: record?.clientDirectorySheetId,
     clientAppointmentsCalendarId: preferences.appointmentCalendarId,
     fieldScheduleCalendarId: preferences.fieldCalendarId,
+    driveProvisioningEnabled:
+      typeof record?.settings.driveProvisioningEnabled === "boolean"
+        ? record.settings.driveProvisioningEnabled
+        : null,
   });
 }
 
@@ -64,7 +77,11 @@ export async function getEffectiveGoogleRuntimeSetup(): Promise<EffectiveGoogleR
     savedRows,
     savedWorkspaceRuntimeValues(persistedSettings),
   );
-  const effective = applyEffectiveWorkspaceConfig(config, effectiveResources);
+  const effective = applyEffectiveWorkspaceConfig(
+    config,
+    effectiveResources,
+    savedWorkspaceRuntimeValues(persistedSettings),
+  );
   const namedConfig = Object.freeze({
     ...effective,
     drive: Object.freeze({
@@ -92,13 +109,15 @@ export async function getEffectiveGoogleRuntimeConfig(): Promise<EffectiveGoogle
     listWorkspaceResources(env.DB, config.connectionKey),
     workspaceSettings.findById(WORKSPACE_SETTINGS_ID),
   ]);
+  const savedValues = savedWorkspaceRuntimeValues(persistedSettings);
   return applyEffectiveWorkspaceConfig(
     config,
     resolveEffectiveWorkspaceResources(
       config,
       savedRows,
-      savedWorkspaceRuntimeValues(persistedSettings),
+      savedValues,
     ),
+    savedValues,
   );
 }
 

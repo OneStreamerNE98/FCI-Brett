@@ -135,7 +135,10 @@ contract.
 
 Do not hand-create a directory workbook for a new setup. An existing
 `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` can remain as a first-boot/legacy fallback,
-but an app-managed registry ID becomes authoritative after **Ensure spreadsheets**.
+but an app-managed registry ID becomes authoritative after **Ensure spreadsheets**. To
+adopt an existing workbook directly, paste its ID into the Stage 1 **Client Directory
+spreadsheet ID** field and select **Verify and adopt**. Successful verification repairs
+the saved `clientDirectorySheetId` tier as well as the resource-registry row.
 
 The application remains the source of truth. The spreadsheet is one-way: use it to view, filter, export, and maintain the intentionally spreadsheet-owned Account Notes column. Other spreadsheet edits do not write back into the application.
 
@@ -305,13 +308,19 @@ after verification the saved field alone no longer decides what runtime uses. Wh
 differ the panel names the calendar actually in force and tells you to verify the new ID to
 switch — saving by itself will not move appointments to it.
 No wider Calendar scope is required.
+The ID fields and verification actions remain visible even while **Plan to create two
+shared FCI calendars** is selected; the setup-mode choice never hides working authority
+controls.
 
 The Google Forms lead-intake action uses the existing Sheets scope. It performs a
 bounded read only when an administrator presses **Check for new form responses**;
 there is no scheduler, webhook, Pub/Sub subscription, or additional OAuth scope.
 The owner records both the Form ID and linked response Sheet ID in
 [checklist 11](task-checklists/11-google-quick-wins.md), while only the response
-Sheet ID is needed by the runtime setting above.
+Sheet ID is needed at runtime. Paste that ID into the Stage 1 **Lead-form response
+spreadsheet ID** field and choose **Verify and adopt**. The app-managed resource becomes
+authoritative; `GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID` remains only a bootstrap
+fallback.
 The linked Sheet must contain exactly **Timestamp**, **Name**, **Address**, **Rooms**,
 **Flooring Type**, and **Preferred Contact**, in that order and capitalization. Do
 not enable automatic email collection unless the intake contract is deliberately
@@ -337,13 +346,23 @@ GOOGLE_CHAT_SERVICE_WEBHOOK_URL=<hosted secret>
 
 Settings → Workflow & notifications shows each exact secret name and only its
 configured/missing state. Administrators map the five closed event types to those
-fixed space aliases and enable them individually; office users see the same mapping
+fixed space aliases, save the global enable toggle, and enable routes individually;
+office users see the same mapping
 read-only. The browser never receives a webhook URL. See the
 [Google Chat notification boundary](google-chat-notifications.md).
 
+`GOOGLE_CHAT_NOTIFICATIONS_ENABLED` is now a bootstrap fallback. The card shows
+**App-saved**, **Environment**, or **None**, and an app-saved true or false wins. Webhook
+URLs remain hosted secrets and are never app-managed.
+
 For the current development environment, `FCI_OFFICE_EMAILS` is the ChatGPT sign-in email. It is deliberately separate from `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS`, which is the company Google account allowed to connect data. `GOOGLE_WORKSPACE_AUTHORIZED_ACCOUNTS` must contain exactly one account, and `GOOGLE_WORKSPACE_INTAKE_MAILBOX` must be that same address.
 
-Keep folder provisioning `false` until Drive verification passes. Saving source files or `.openai/hosting.json` does not configure these values; a saved Sites version must be deployed separately before a hosted environment-setting change takes effect.
+Keep folder provisioning `false` until Drive verification passes. The environment value
+is a bootstrap fallback; after verification, use the Stage 1 app toggle. Its
+**App-saved**, **Environment**, or **None** label states which tier is effective. Saving
+source files or `.openai/hosting.json` does not configure hosted fallbacks; a saved Sites
+version must be deployed separately before a hosted environment-setting change takes
+effect.
 
 Settings → Google Workspace reports missing prerequisites in a semantic table with the business label, exact environment key, and either **Hosted environment value** or **Hosted secret — never in the app or Git**. The table reports presence or absence only; it never returns a configured value or secret. It also reports the cross-field requirement **Google Workspace intake mailbox matching the single approved connection account**, not merely the two individual variables.
 
@@ -406,7 +425,7 @@ configuration, consent, data migration, or deployment now.
        refresh status, and sync the Client Directory and Project Register.
 6. Later steps remain visible but blocked until the prior step is confirmed by its endpoint. In simulation, all five steps are marked **Simulated** and their controls remain testable without Google access.
 7. Use only clearly marked test records.
-8. After Shared Drive verification, set `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED=true` in the hosted environment and deploy the environment update; it is not an in-app toggle.
+8. After Shared Drive verification, enable **Project-folder provisioning** in the Stage 1 app-managed configuration. `GOOGLE_WORKSPACE_DRIVE_PROVISIONING_ENABLED` remains an environment bootstrap fallback, not the normal ongoing control.
 9. Create one test project folder and confirm it is inside the correct Shared Drive.
 
 ### Connector credential, encryption-key, and revocation recovery runbook

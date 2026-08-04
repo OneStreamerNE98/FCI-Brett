@@ -78,6 +78,7 @@ export type GoogleChatRoute = Readonly<{
 
 export type GoogleChatRoutingSettings = Readonly<{
   routes: readonly GoogleChatRoute[];
+  notificationsEnabled?: boolean;
 }>;
 
 export type GoogleChatNotificationEvent =
@@ -145,6 +146,7 @@ export type GoogleChatCardsV2Payload = Readonly<{
 
 export type GoogleChatPublicConfig = Readonly<{
   featureEnabled: boolean;
+  featureSource: "app" | "environment" | "none";
   mode: "disabled" | "simulation" | "webhook";
   events: readonly Readonly<{
     type: GoogleChatEventType;
@@ -201,9 +203,7 @@ export type GoogleChatDefer = (task: Promise<void>) => void;
 const EVENT_TYPES = new Set<string>(GOOGLE_CHAT_EVENT_CATALOG.map(({ eventType }) => eventType));
 const SPACE_KEYS = new Set<string>(GOOGLE_CHAT_SPACE_CATALOG.map(({ spaceKey }) => spaceKey));
 const ROUTE_KEYS = ["eventType", "enabled", "spaceKey"] as const;
-const ROUTING_KEYS = ["routes"] as const;
 const EVENT_UPDATE_KEYS = ["type", "enabled", "spaceKey"] as const;
-const UPDATE_KEYS = ["events"] as const;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
 const MIN_RETRY_DELAY_MS = 25;
 const MAX_RETRY_DELAY_MS = 5_000;
@@ -242,7 +242,14 @@ export function defaultGoogleChatRouting(): GoogleChatRoutingSettings {
 function parseStoredGoogleChatRouting(value: unknown): GoogleChatRoutingSettings | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const input = value as Record<string, unknown>;
-  if (!exactObjectKeys(input, ROUTING_KEYS) || !Array.isArray(input.routes)) return null;
+  const storedKeys = Object.keys(input);
+  if (
+    !storedKeys.every((key) => key === "routes" || key === "notificationsEnabled")
+    || !storedKeys.includes("routes")
+    || !Array.isArray(input.routes)
+    || (Object.hasOwn(input, "notificationsEnabled")
+      && typeof input.notificationsEnabled !== "boolean")
+  ) return null;
 
   const routes = new Map<GoogleChatEventType, GoogleChatRoute>(
     defaultGoogleChatRouting().routes.map((route) => [route.eventType, route]),
@@ -270,6 +277,9 @@ function parseStoredGoogleChatRouting(value: unknown): GoogleChatRoutingSettings
 
   return Object.freeze({
     routes: Object.freeze(GOOGLE_CHAT_EVENT_CATALOG.map(({ eventType }) => routes.get(eventType)!)),
+    ...(typeof input.notificationsEnabled === "boolean"
+      ? { notificationsEnabled: input.notificationsEnabled }
+      : {}),
   });
 }
 
@@ -277,7 +287,14 @@ function parseStoredGoogleChatRouting(value: unknown): GoogleChatRoutingSettings
 export function parseGoogleChatRoutingUpdate(value: unknown): GoogleChatRoutingSettings | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const input = value as Record<string, unknown>;
-  if (!exactObjectKeys(input, UPDATE_KEYS) || !Array.isArray(input.events)) return null;
+  const updateKeys = Object.keys(input);
+  if (
+    !updateKeys.every((key) => key === "events" || key === "featureEnabled")
+    || !updateKeys.includes("events")
+    || !Array.isArray(input.events)
+    || (Object.hasOwn(input, "featureEnabled")
+      && typeof input.featureEnabled !== "boolean")
+  ) return null;
   if (input.events.length !== GOOGLE_CHAT_EVENT_CATALOG.length) return null;
 
   const routes = new Map<GoogleChatEventType, GoogleChatRoute>();
@@ -300,6 +317,9 @@ export function parseGoogleChatRoutingUpdate(value: unknown): GoogleChatRoutingS
   if (routes.size !== GOOGLE_CHAT_EVENT_CATALOG.length) return null;
   return Object.freeze({
     routes: Object.freeze(GOOGLE_CHAT_EVENT_CATALOG.map(({ eventType }) => routes.get(eventType)!)),
+    ...(typeof input.featureEnabled === "boolean"
+      ? { notificationsEnabled: input.featureEnabled }
+      : {}),
   });
 }
 
@@ -308,8 +328,21 @@ export function normalizeStoredGoogleChatRouting(value: unknown): GoogleChatRout
 }
 
 /** The feature gate is deliberately literal: whitespace/case variants remain disabled. */
-export function googleChatNotificationsEnabled(environment: GoogleChatEnvironment) {
-  return environment[GOOGLE_CHAT_NOTIFICATIONS_GATE_ENV_VAR] === "true";
+export function googleChatNotificationsResolution(
+  environment: GoogleChatEnvironment,
+  appSavedValue?: boolean,
+) {
+  return resolveEffectiveBooleanConfiguration(
+    appSavedValue,
+    environment[GOOGLE_CHAT_NOTIFICATIONS_GATE_ENV_VAR],
+  );
+}
+
+export function googleChatNotificationsEnabled(
+  environment: GoogleChatEnvironment,
+  appSavedValue?: boolean,
+) {
+  return googleChatNotificationsResolution(environment, appSavedValue).value;
 }
 
 function configuredSecret(environment: GoogleChatEnvironment, envVar: string) {
@@ -332,8 +365,12 @@ export function buildGoogleChatPublicConfig(input: Readonly<{
   routing: GoogleChatRoutingSettings;
   updatedAt: number | null;
 }>): GoogleChatPublicConfig {
-  const notificationsEnabled = googleChatNotificationsEnabled(input.environment);
   const routing = normalizeStoredGoogleChatRouting(input.routing);
+  const notifications = googleChatNotificationsResolution(
+    input.environment,
+    routing.notificationsEnabled,
+  );
+  const notificationsEnabled = notifications.value;
   const spaces = GOOGLE_CHAT_SPACE_CATALOG.map((space) => Object.freeze({
     key: space.spaceKey,
     label: space.label,
@@ -357,6 +394,7 @@ export function buildGoogleChatPublicConfig(input: Readonly<{
 
   return Object.freeze({
     featureEnabled: notificationsEnabled,
+    featureSource: notifications.source,
     mode: notificationsEnabled ? (input.simulation ? "simulation" : "webhook") : "disabled",
     events: Object.freeze(GOOGLE_CHAT_EVENT_CATALOG.map((entry) => {
       const route = routing.routes.find((candidate) => candidate.eventType === entry.eventType)!;
@@ -732,3 +770,4 @@ export function deferGoogleChatTask(
 export function googleChatWebhookEnvironmentName(spaceKey: GoogleChatSpaceKey) {
   return spaceDefinition(spaceKey).envVar;
 }
+import { resolveEffectiveBooleanConfiguration } from "./workspace-effective-config";

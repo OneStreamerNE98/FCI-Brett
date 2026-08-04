@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { NextRequest } from "next/server";
 
-import { getGoogleRuntimeConfig } from "../../../../../lib/google-oauth-sites";
+import { getConnectionScope } from "../../../../../lib/google-oauth-sites";
 import { noStoreJson, noStoreResponse } from "../../../../../lib/no-store-json";
 import { requireOfficeUser } from "../../../../../lib/workspace-auth";
 
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return noStoreResponse(auth.response);
 
-  const config = getGoogleRuntimeConfig();
+  const config = getConnectionScope();
   const checkedAt = Date.now();
   const [driveResult, archiveResult, eventResult] = await Promise.all([
     env.DB.prepare(
@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
   }));
 
   return noStoreJson({
-    runtimeMode: config.environment,
+    runtimeMode: config.simulation ? "simulation" : "workspace",
     simulation: config.simulation,
     checkedAt,
     limits: { perCategory: RESULT_LIMIT },

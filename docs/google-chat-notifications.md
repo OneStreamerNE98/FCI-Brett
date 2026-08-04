@@ -4,7 +4,7 @@ Status: GI-02 source-only implementation with AI-07b's task-assignment event and
 
 ## Purpose and current scope
 
-FCI Operations can prepare one-way Google Chat notifications for five operational events. Incoming webhooks require no OAuth scope, but each space has its own secret webhook URL. The application stores only event routing choices; webhook URLs remain hosted secrets and are never returned to the browser, stored in D1, written to Git, or included in audit detail.
+FCI Operations can prepare one-way Google Chat notifications for five operational events. Incoming webhooks require no OAuth scope, but each space has its own secret webhook URL. The application stores the global enable choice and event routing choices; webhook URLs remain hosted secrets and are never returned to the browser, stored in D1, written to Git, or included in audit detail.
 
 | Event type | Notification | FCI destination | Current trigger |
 | --- | --- | --- | --- |
@@ -29,7 +29,7 @@ All values below belong in approved hosted runtime configuration. The gate is a 
 
 | Environment name | Purpose | Secret |
 | --- | --- | --- |
-| `GOOGLE_CHAT_NOTIFICATIONS_ENABLED` | Exact `true` enables the hosted delivery gate; absent, invalid, or `false` stays off | No |
+| `GOOGLE_CHAT_NOTIFICATIONS_ENABLED` | Bootstrap fallback for the app-managed enable toggle; only exact `true`/`false` is accepted | No |
 | `GOOGLE_CHAT_SALES_WEBHOOK_URL` | Sales and intake Chat space | Yes |
 | `GOOGLE_CHAT_OFFICE_OPS_WEBHOOK_URL` | Office operations and filing-review Chat space | Yes |
 | `GOOGLE_CHAT_FIELD_WEBHOOK_URL` | Field operations Chat space | Yes |
@@ -37,11 +37,11 @@ All values below belong in approved hosted runtime configuration. The gate is a 
 
 Do not paste a webhook URL into Settings, `.env.example`, a pull request, a ticket, a log, or an audit record. The URL contains both the Google Chat key and token. This source-only packet does not authorize creating a webhook or changing hosted configuration.
 
-Settings → Workflow & notifications reads `GET /api/v1/integrations/google/chat/config`. Office users can see the event-to-space map and the exact secret names with configured/missing presence only. Administrators may update the five event toggles and their fixed space aliases through the same-origin, bounded `PATCH` route. The endpoint never accepts or returns a URL or caller-supplied environment-variable name.
+Settings → Workflow & notifications reads `GET /api/v1/integrations/google/chat/config`. Office users can see the effective enable state/source, event-to-space map, and exact secret names with configured/missing presence only. Administrators may save the global app toggle plus the five event toggles and their fixed space aliases through the same-origin, bounded `PATCH` route. App-saved true or false wins over the hosted bootstrap fallback. The endpoint never accepts or returns a URL or caller-supplied environment-variable name.
 
 ## Delivery and failure isolation
 
-- The hosted gate and the event toggle must both be enabled. Both default to off.
+- The effective app/environment gate and the event toggle must both be enabled. Both default to off.
 - The notifier builds a bounded Google Chat `cardsV2` message with mobile `fallbackText` and one absolute HTTPS deep link chosen from the closed catalog.
 - Dynamic card text is bounded and escaped. The event builders do not select dedicated contact-email, contact-phone, site-address, or financial-value fields.
 - The triggering request hands delivery to the Worker execution lifetime and returns without waiting for Chat.

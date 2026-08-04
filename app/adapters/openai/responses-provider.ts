@@ -16,12 +16,76 @@ type OpenAIResponsesProviderOptions = {
   timeoutMilliseconds?: number;
 };
 
+export type OpenAIModelLookupResult = Readonly<
+  | { ok: true; model: string }
+  | { ok: false; model: string; reason: string; status: number }
+>;
+
 type OpenAIContinuation = {
   input: unknown[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function providerErrorMessage(value: unknown, secrets: readonly string[] = []) {
+  if (!isRecord(value) || !isRecord(value.error)) return null;
+  if (typeof value.error.message !== "string") return null;
+  let message = value.error.message
+    .replace(/[\u0000-\u001f\u007f]/gu, " ")
+    .trim();
+  for (const secret of secrets) {
+    if (secret) message = message.replaceAll(secret, "[redacted]");
+  }
+  return message ? message.slice(0, 500) : null;
+}
+
+/** Validates a caller-supplied model against the provider; no local allowlist. */
+export async function lookupOpenAIModel(input: Readonly<{
+  apiKey: string;
+  model: string;
+  fetchImpl?: FetchLike;
+}>): Promise<OpenAIModelLookupResult> {
+  const model = input.model.trim();
+  const fetchImpl = input.fetchImpl ?? fetch;
+  let response: Response;
+  try {
+    response = await fetchImpl(
+      `https://api.openai.com/v1/models/${encodeURIComponent(model)}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${input.apiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+  } catch {
+    return Object.freeze({
+      ok: false,
+      model,
+      reason: "OpenAI model validation is temporarily unavailable. Try again.",
+      status: 503,
+    });
+  }
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    return Object.freeze({
+      ok: false,
+      model,
+      reason: providerErrorMessage(body, [input.apiKey])
+        ?? `OpenAI model lookup failed with status ${response.status}.`,
+      status: response.status,
+    });
+  }
+  if (!isRecord(body) || typeof body.id !== "string" || body.id !== model) {
+    return Object.freeze({
+      ok: false,
+      model,
+      reason: "OpenAI returned an unexpected model record.",
+      status: 502,
+    });
+  }
+  return Object.freeze({ ok: true, model });
 }
 
 function continuationInput(value: unknown) {
@@ -183,10 +247,21 @@ export class OpenAIResponsesProvider implements AssistantProvider {
             },
           }),
         });
+        const body = await response.json().catch(() => null);
         if (!response.ok) {
-          throw new Error(`OpenAI Responses failed with status ${response.status}.`);
+          const reason = providerErrorMessage(body, [this.#apiKey]);
+          if (response.status === 404) {
+            throw new Error(
+              `OpenAI model "${this.#model}" was not found or is unavailable${reason ? `: ${reason}` : "."}`,
+            );
+          }
+          throw new Error(
+            reason
+              ? `OpenAI Responses failed for model "${this.#model}": ${reason}`
+              : `OpenAI Responses failed for model "${this.#model}" with status ${response.status}.`,
+          );
         }
-        return response.json();
+        return body;
       }, controller.signal);
       return completionFromResponse(responseData, input);
     } finally {

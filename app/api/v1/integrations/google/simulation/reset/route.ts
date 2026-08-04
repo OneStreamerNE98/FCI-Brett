@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { NextRequest, NextResponse } from "next/server";
-import { getGoogleRuntimeConfig } from "../../../../../../lib/google-oauth-sites";
+import { getConnectionScope } from "../../../../../../lib/google-oauth-sites";
 import { resetWorkspaceSimulation } from "../../../../../../lib/workspace-simulation";
 import { requireOfficeUser, requireSameOrigin } from "../../../../../../lib/workspace-auth";
 import { ensureWorkspaceSchema } from "../../../../_workspace-data";
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const auth = requireOfficeUser(request, { admin: true });
   if ("response" in auth) return auth.response;
   await ensureWorkspaceSchema();
-  const config = getGoogleRuntimeConfig();
+  const config = getConnectionScope();
   if (!config.simulation) return NextResponse.json({ error: "Simulation reset is available only in local Workspace simulation mode." }, { status: 409 });
 
   await env.DB.batch([

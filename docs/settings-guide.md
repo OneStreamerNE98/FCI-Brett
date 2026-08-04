@@ -322,9 +322,11 @@ Office users also see the company **AI assistant** card here in a read-only form
 
 The heart of company setup: connecting the one company Google account and creating the Shared Drive, folders, spreadsheets, and calendars the app uses. This is a four-stage flow and it has its own full walkthrough in the next section, "Connecting and verifying Google in plain words."
 
+The Stage 1 **App-managed Workspace configuration** controls three values that used to require a hosted-setting edit: project-folder provisioning, the Client Directory spreadsheet ID, and the Google Forms response spreadsheet ID. The two Sheet fields verify the exact ID against Google before adopting it. Each row names its effective source as **App-saved**, **Environment**, or **None**. App-saved values win; the matching environment values remain first-boot fallbacks. Hosted OAuth secrets and identity allowlists are still outside the app.
+
 ### 3. Calendar & appointments
 
-The plan for the company's two shared calendars: one named **FCI • Client Appointments** (site visits, measurements, client meetings) and one named **FCI • Field Schedule** (crew and job assignments). You choose whether to create two new shared calendars or point at existing ones, set the timezone, and save the appointment-reminder default.
+The plan for the company's two shared calendars: one named **FCI • Client Appointments** (site visits, measurements, client meetings) and one named **FCI • Field Schedule** (crew and job assignments). You choose whether to create two new shared calendars or point at existing ones, set the timezone, and save the appointment-reminder default. Both Calendar ID fields and their **Verify calendar** actions stay visible in either setup mode, including the recommended default mode. Their status says whether runtime uses an app-saved value, an environment fallback, or no value.
 
 The **Appointment reminder hours** field is marked **Planned**: it is saved for the upcoming reminder worker, but saving it does not send anything yet. Its value is separate from the client- and crew-reminder defaults under Workflow & notifications. The panel is also honest that FCI Operations stays authoritative — if someone later edits an app-created Google event, it gets flagged for review rather than silently overwritten.
 
@@ -344,7 +346,7 @@ The **Client Directory & Project Register** — a one-way Google Sheets mirror o
 
 One column is deliberately yours to edit: **Account Notes**. Everything else on the generated Project Register will be overwritten on the next sync, so do not hand-edit it. Spreadsheet edits do not write back into the app.
 
-If the mirror is not configured, the card links directly to **Google Workspace → Stage 3**. `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` remains the fallback configuration name; the app shows only that name, never a configured value.
+If the mirror is not configured, the card links directly to **Google Workspace → Stage 3**. An Administrator can paste the existing workbook ID into Stage 1 and choose **Verify and adopt**; the verified ID is saved both as the app-managed resource and as the Client Directory saved tier. `GOOGLE_WORKSPACE_CLIENT_DIRECTORY_SHEET_ID` remains a bootstrap fallback.
 
 **Updated July 25, 2026.** Administrators can use **First-run data import** below the mirror cards to review existing clients first and projects second, in batches of up to 10 rows. The preferred source is a blueprint spreadsheet with the clearly marked **Clients Import** and **Projects Import** tabs; a bounded CSV is the alternative. Previewing never creates records. The administrator must select each ready row (or use **Select all ready rows**) and confirm it. Client duplicates are reviewed by email, phone, or address; the readable client address is not saved, only a one-way duplicate-check fingerprint (an unsalted SHA-256 digest of the normalized address) for safe re-runs — it cannot be read back by inspection, but because street addresses are low-entropy it is a stable identifier, not a privacy guarantee. Every project must match one saved client by code, name, or email, and an unmatched project never creates a client for itself. Once records exist, the import tools collapse until an administrator explicitly reopens them. This source build remains development-only: every imported client or project name must begin with **FCI TEST — DO NOT USE**, and real client data stays blocked until the WS-11 acceptance gate and owner launch approval are complete.
 
@@ -367,6 +369,9 @@ so the administrator does not create it twice. Real-data
 rows that otherwise validate do not advance the watermark while the WS-11/owner gate
 is closed. Invalid non-test rows are redacted, queued with blank required lead fields,
 and checkpointed so one malformed response cannot block later submissions.
+The linked response workbook is selected in **Google Workspace → Stage 1** with its own
+**Verify and adopt** field. `GOOGLE_WORKSPACE_LEAD_FORM_RESPONSE_SHEET_ID` is only the
+bootstrap fallback after SET-40; the app-managed verified ID wins.
 
 > [SCREENSHOT 6 — see Screenshot index]
 
@@ -374,13 +379,13 @@ and checkpointed so one malformed response cannot block later submissions.
 
 Simple office defaults — independent client- and crew-reminder hours, and an office notification email — plus Google Chat routing. All three defaults are marked **Planned**: they remain editable and persist separately, but the upcoming reminder worker does not send anything yet. An older saved appointment-reminder value remains the appointment default only; it is not copied into the newer client-reminder field.
 
-- **Google Chat notification routing.** You can review which five event types are allowed to notify which approved Google Chat space, and switch each on individually. It is off by default. Webhook addresses are secrets that live in the hosting environment and never appear in the app or the browser.
+- **Google Chat notification routing.** You can enable or disable the integration in the app, review which five event types are allowed to notify which approved Google Chat space, and switch each route on individually. The card identifies the enable source as **App-saved**, **Environment**, or **None**. App-saved wins and `GOOGLE_CHAT_NOTIFICATIONS_ENABLED` remains a bootstrap fallback. Webhook addresses are secrets that live in the hosting environment and never appear in the app or browser.
 
 > [SCREENSHOT 7 — see Screenshot index]
 
 ### 7. AI assistant
 
-The dedicated administrator section shows the provider (**OpenAI**), company API-key state (**Configured** or **Missing**), and configured model name — never the key value. Five switches control **Organization-wide answers**, **Inbox filing suggestions**, **Inbox analysis**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured, and all five have server consumers. The current card shows **In development** on organization-wide answers, Inbox suggestions, and Inbox analysis, and the older **Planned** badge on Reply drafting and Task extraction; those last two badges lag their shipped, review-first consumers and are recorded for a presentation follow-up. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
+The dedicated administrator section shows the provider (**OpenAI**), company API-key state (**Configured** or **Missing**), effective model name and source — never the key value. Administrators can type any provider model ID; there is deliberately no code allowlist. When the model field is intentionally changed, Save performs an OpenAI model lookup with the server-held key and rejects an unknown ID with the provider's bounded reason. A feature-only save does not validate or rewrite the model. Five switches control **Organization-wide answers**, **Inbox filing suggestions**, **Inbox analysis**, **Reply drafting**, and **Task extraction from meetings**. They default to on when the key is Configured, and all five have server consumers. The current card shows **In development** on organization-wide answers, Inbox suggestions, and Inbox analysis, and the older **Planned** badge on Reply drafting and Task extraction; those last two badges lag their shipped, review-first consumers and are recorded for a presentation follow-up. When the key is Missing, the switches are unavailable and the card says: “Add OPENAI_API_KEY to the hosting environment to enable AI features. Everything else keeps working without it.” See "The AI assistant setup" below.
 
 The section also states what Inbox analysis saves: the email subject, sender, received date, and analysis result persist in the app database. That stored snapshot can include customer names and subject lines, and turning Inbox analysis off stops future sweeps without erasing results already saved.
 
@@ -545,7 +550,7 @@ Administrators can review the source readiness for that change under **Settings 
 
 **Do I need a ChatGPT account? No.** Nobody on your team ever links a personal ChatGPT or OpenAI account, and nobody logs into OpenAI. The assistant runs on **one company OpenAI API key** that the administrator (in practice, the developer) sets once in the hosting environment's settings — not in the app, not in the code, not in email. Every user simply shares that one company key behind the scenes.
 
-Because it is a secret, the app never shows the key itself. The **AI assistant** Settings card shows only whether it is **Configured** or **Missing**, together with **OpenAI** as the provider and the model name. Administrators find the editable card in **Settings → AI assistant**; office users see the same information and feature states read-only in **My settings**. When the key is Missing, the feature controls are unavailable and the app says plainly to add the company key to the hosting environment — it never fakes a ready state.
+Because it is a secret, the app never shows the key itself. The **AI assistant** Settings card shows only whether it is **Configured** or **Missing**, together with **OpenAI** as the provider and the effective model name/source. Administrators find the editable card in **Settings → AI assistant**; office users see the same information and feature states read-only in **My settings**. Normally the validated app-saved model is active. `OPENAI_MODEL` is the explicit exception to the other SET-40 precedence rules: when present, it is an emergency environment override. The card then shows the override as effective, shows the preserved app-saved fallback separately, and disables fallback editing until the hosted override is removed. Feature-only saves never copy the override into the saved fallback and never call model lookup. When the key is Missing, the feature controls are unavailable and the app says plainly to add the company key to the hosting environment — it never fakes a ready state.
 
 The five company-wide feature switches are **Organization-wide answers**,
 **Inbox filing suggestions**, **Inbox analysis**, **Reply drafting**, and

@@ -171,6 +171,35 @@ test("D1 atomically preserves both racing top-level settings saves and unknown s
   }
 });
 
+test("D1 writes the Client Directory saved tier only when explicitly requested", async () => {
+  const database = new SqliteD1Database();
+  try {
+    const repository = workspaceSettingsModule.createD1WorkspaceSettingsRepository(database);
+    await repository.mergeSettings({
+      id: "workspace",
+      clientDirectorySheetId: "adopted-directory-sheet-id",
+      settings: { retained: true },
+      updatedBy: "admin@example.test",
+      updatedAt: 10,
+    });
+    assert.equal(
+      (await repository.findById("workspace")).clientDirectorySheetId,
+      "adopted-directory-sheet-id",
+    );
+    await repository.mergeSettings({
+      id: "workspace",
+      settings: { anotherOwner: "saved" },
+      updatedBy: "other@example.test",
+      updatedAt: 11,
+    });
+    const stored = await repository.findById("workspace");
+    assert.equal(stored.clientDirectorySheetId, "adopted-directory-sheet-id");
+    assert.deepEqual(stored.settings, { retained: true, anotherOwner: "saved" });
+  } finally {
+    database.close();
+  }
+});
+
 function seedWorkspaceRow(database, settingsJson) {
   database.database.prepare(`
     INSERT INTO workspace_settings (
@@ -287,7 +316,7 @@ test("every workspace_settings writer uses the shared merge port", async () => {
   assert.match(d1, /settings_json = json_patch\(/u);
   assert.match(
     postgres,
-    /workspace_settings\.settings_json - \$5::text\[\][\s\S]*\|\| EXCLUDED\.settings_json/u,
+    /workspace_settings\.settings_json - \$\$\{keysParameter\}::text\[\][\s\S]*\|\| EXCLUDED\.settings_json/u,
   );
   assert.doesNotMatch(
     `${d1}\n${postgres}`,

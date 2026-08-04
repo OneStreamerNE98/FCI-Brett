@@ -7,10 +7,7 @@ import {
   readMeetingTaskSource,
   recordsOnlyTaskProposals,
 } from "../../../../application/assistant/extract-tasks";
-import {
-  assistantRuntimeConfiguration,
-  readSitesAssistantConfiguration,
-} from "../../../../lib/assistant-config-sites";
+import { readSitesAssistantConfiguration } from "../../../../lib/assistant-config-sites";
 import { parseBoundedJsonObject } from "../../../../lib/api-json-body";
 import { enforceDevelopmentRequestRateLimit } from "../../../../lib/development-request-rate-limit";
 import { noStoreJson as noStore, noStoreResponse } from "../../../../lib/no-store-json";
@@ -113,10 +110,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const runtime = assistantRuntimeConfiguration(environment);
   const apiKey = runtimeValue("OPENAI_API_KEY");
   const provider = apiKey
-    ? new OpenAIResponsesProvider({ apiKey, model: runtime.model })
+    ? new OpenAIResponsesProvider({ apiKey, model: configuration.model })
     : null;
   const proposals = provider
     ? await extractTaskProposals({

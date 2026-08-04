@@ -52,6 +52,10 @@ export function createD1WorkspaceSettingsRepository(
 
     async mergeSettings(input) {
       const merge = prepareWorkspaceSettingsMerge(input.settings);
+      const writesClientDirectorySheetId = Object.hasOwn(
+        input,
+        "clientDirectorySheetId",
+      );
       const storedDocument = `
         CASE
           WHEN json_valid(workspace_settings.settings_json)
@@ -66,6 +70,10 @@ export function createD1WorkspaceSettingsRepository(
       const mergeBase = merge.keys.length > 0
         ? `json_remove(${storedDocument}, ${merge.keys.map(() => "?").join(", ")})`
         : storedDocument;
+      const clientDirectoryInsert = writesClientDirectorySheetId ? "?" : "NULL";
+      const clientDirectoryUpdate = writesClientDirectorySheetId
+        ? "client_directory_sheet_id = excluded.client_directory_sheet_id,"
+        : "";
       // The conflict update only applies when the RESULTING merged document
       // fits the byte bound, measured on its UTF-8 bytes via a BLOB cast (not
       // characters). When the guard fails the upsert is a no-op — changes() is
@@ -79,8 +87,9 @@ export function createD1WorkspaceSettingsRepository(
           `INSERT INTO workspace_settings (
              id, shared_drive_id, client_directory_sheet_id, intake_mailbox,
              settings_json, updated_by, updated_at
-           ) VALUES (?, NULL, NULL, NULL, ?, ?, ?)
+           ) VALUES (?, NULL, ${clientDirectoryInsert}, NULL, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
+             ${clientDirectoryUpdate}
              settings_json = json_patch(${mergeBase}, excluded.settings_json),
              updated_by = excluded.updated_by,
              updated_at = excluded.updated_at
@@ -90,6 +99,9 @@ export function createD1WorkspaceSettingsRepository(
         )
         .bind(
           input.id,
+          ...(writesClientDirectorySheetId
+            ? [input.clientDirectorySheetId ?? null]
+            : []),
           merge.serialized,
           input.updatedBy,
           input.updatedAt,
