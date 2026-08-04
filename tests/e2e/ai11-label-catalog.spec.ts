@@ -18,6 +18,11 @@ const seedLabels: Label[] = [
 
 test("AI label editor round-trips generated labels and preserves used labels as retired", async ({ page }) => {
   let labels = structuredClone(seedLabels);
+  const generatedSlugs = [
+    "label_11111111111111111111111111111111",
+    "label_22222222222222222222222222222222",
+  ] as const;
+  let generatedSlugIndex = 0;
   const writes: Array<{ method: string; body: Record<string, unknown> }> = [];
   await page.route("**/api/v1/assistant/config", async (route) => {
     await route.fulfill({
@@ -55,7 +60,7 @@ test("AI label editor round-trips generated labels and preserves used labels as 
     writes.push({ method, body });
     if (method === "POST") {
       const label: Label = {
-        slug: "label_12345678123442348234123456789abc",
+        slug: generatedSlugs[generatedSlugIndex++],
         description: String(body.description),
         retired: false,
         createdAt: 10,
@@ -72,9 +77,9 @@ test("AI label editor round-trips generated labels and preserves used labels as 
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
       return;
     }
-    if (method === "DELETE" && body.slug === "lead") {
-      labels = labels.map((label) => label.slug === "lead" ? { ...label, retired: true, updatedAt: 30 } : label);
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ slug: "lead", outcome: "retired" }) });
+    if (method === "DELETE" && body.slug === generatedSlugs[1]) {
+      labels = labels.map((label) => label.slug === body.slug ? { ...label, retired: true, updatedAt: 30 } : label);
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ slug: body.slug, outcome: "retired" }) });
       return;
     }
     labels = labels.filter(({ slug }) => slug !== body.slug);
@@ -86,28 +91,38 @@ test("AI label editor round-trips generated labels and preserves used labels as 
   await expect(page.getByRole("heading", { level: 3, name: "Inbox analysis labels" })).toBeVisible();
   await expect(page.getByText("4/20", { exact: true })).toBeVisible();
 
+  const lead = page.locator("article").filter({ hasText: /^lead/u });
+  await expect(lead.getByText("Built-in", { exact: true })).toBeVisible();
+  await expect(lead.getByRole("button", { name: "Remove label" })).toHaveCount(0);
+  await lead.getByLabel("Description").fill("An edited built-in lead description.");
+  await lead.getByRole("button", { name: "Save description" }).click();
+  await expect(lead.getByLabel("Description")).toHaveValue("An edited built-in lead description.");
+
   await page.getByLabel("New label description").fill("FCI TEST custom intent.");
   await page.getByRole("button", { name: "Add label" }).click();
-  await expect(page.getByText("label_12345678123442348234123456789abc", { exact: true })).toBeVisible();
-  expect(writes[0]).toEqual({
+  await expect(page.getByText(generatedSlugs[0], { exact: true })).toBeVisible();
+  expect(writes).toContainEqual({
     method: "POST",
     body: { description: "FCI TEST custom intent." },
   });
 
-  const custom = page.locator("article").filter({ hasText: "label_12345678123442348234123456789abc" });
+  const custom = page.locator("article").filter({ hasText: generatedSlugs[0] });
   await custom.getByLabel("Description").fill("FCI TEST edited intent.");
   await custom.getByRole("button", { name: "Save description" }).click();
   await expect(custom.getByLabel("Description")).toHaveValue("FCI TEST edited intent.");
   await custom.getByRole("button", { name: "Remove label" }).click();
   await expect(custom).toHaveCount(0);
 
-  const lead = page.locator("article").filter({ hasText: /^lead/u });
-  await lead.getByRole("button", { name: "Remove label" }).click();
-  await expect(lead.getByText("Retired", { exact: true })).toBeVisible();
-  await expect(lead.getByRole("button", { name: "Remove label" })).toHaveCount(0);
-  await lead.getByLabel("Description").fill("An edited historical lead description.");
-  await lead.getByRole("button", { name: "Save description" }).click();
-  await expect(lead.getByLabel("Description")).toHaveValue("An edited historical lead description.");
+  await page.getByLabel("New label description").fill("FCI TEST used intent.");
+  await page.getByRole("button", { name: "Add label" }).click();
+  const used = page.locator("article").filter({ hasText: generatedSlugs[1] });
+  await expect(used).toBeVisible();
+  await used.getByRole("button", { name: "Remove label" }).click();
+  await expect(used.getByText("Retired", { exact: true })).toBeVisible();
+  await expect(used.getByRole("button", { name: "Remove label" })).toHaveCount(0);
+  await used.getByLabel("Description").fill("An edited historical custom description.");
+  await used.getByRole("button", { name: "Save description" }).click();
+  await expect(used.getByLabel("Description")).toHaveValue("An edited historical custom description.");
 
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
