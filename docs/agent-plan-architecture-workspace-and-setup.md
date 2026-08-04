@@ -3815,6 +3815,120 @@ pins (route guards, no auto-file) all still green; `npm test`, `npm run test:e2e
 **Effort:** small-medium. **Cost:** $0. **Takes the inbox-file cluster** (InboxView),
 so it dispatches after AI-11(c) merges.
 
+### The August 4 responsive-layout audit series (DES-19…DES-24)
+
+Filed from the owner-commissioned Opus audit committed verbatim at
+[`docs/design-reviews/2026-08-04-responsive-layout-audit.md`](design-reviews/2026-08-04-responsive-layout-audit.md)
+(Figma evidence board linked there). Each packet cites its audit section rather than
+duplicating it — the audit is the evidence record; these packets are the work orders.
+All six honor the usability acceptance lens and the Apple direction recorded under
+DES-13. Sequencing below is binding; none of these dispatch before their named
+predecessors merge.
+
+### DES-19 · Responsive layout primitives and the dynamic-state guard (medium-large; after DES-13 and DES-14)
+
+**Why:** audit P1 #1, P3 "viewport patches" (11 breakpoint values, 142 local layout
+rules, 9 wrapping), and P3 "tests weak on state transitions" — conditional states break
+because every action row re-solves layout locally, and the default-state test surface
+cannot see it. Audit P2 "global overflow hiding" also lands here: document-width checks
+pass while children clip.
+**Do:** (1) the container-aware primitives the audit names — `PageHeader`,
+`PanelHeader`, `ResponsiveActionGroup`, `ModalFooter`, `DisclosureHeader` — sized by
+container queries on available width, not viewport; every control in them owns the
+target-size contract (44px phone tier, documented dense desktop variants); (2) the
+reusable state-matrix guard the audit specifies (`{route, trigger, stableState,
+viewports}` asserting nearest-clipping-ancestor escape, sanctioned action-group
+layouts, no unauthorized title/button wrap, one visible scroll owner per overlay stack,
+stable labels on uninvoked controls, screenshots at 390/820-834/1181/1280); (3) the
+generic nearest-clipping test replacing document-width-only checks, with an allow-listed
+scroller list. This packet BUILDS the primitives and the guard; migrations are DES-21.
+**Accept:** per the audit's fix directions; the state-matrix guard runs on at least the
+Overview-edit and project-drawer-edit states and fails on a deliberately broken variant
+of each assertion class; golden hashes untouched (primitives ship unused by pinned
+pages until DES-21). `npm test`, `npm run test:e2e`, `npm run lint` named.
+**Effort:** medium-large. **Cost:** $0.
+
+### DES-20 · Settings navigation architecture: the phone index and the tablet double-rail (medium; after DES-19)
+
+**Why:** audit P1 #2 — the nine-item Settings index precedes the active panel (panel
+starts at y≈906 on a 844px phone viewport; 431px of index at 820px), and at 821-900 the
+app rail + 220px Settings rail leave ~278px of content; the recorded 821-900 patches fix
+headings, not the three-column pressure.
+**Do:** the audit's fix direction — a compact sticky section selector/disclosure
+(`SettingsSectionSwitcher`, built on DES-19's primitives) replacing the full index at
+phone/tablet; rail-collapse order at intermediate widths (one rail yields before content
+drops below a defined minimum); container-query contract so 820/821 is not a cliff.
+**Coordinates:** SET-07 (settings IA consistency) stays a separate packet — SET-07 is
+labels/badges/deep-links; this is the navigation architecture. If both are open, SET-07
+dispatches after this merges.
+**Accept:** audit measurements reversed — the active panel is visible within the first
+phone viewport; ≥ the defined content minimum at every width 768-1024; the 821-900
+heading patches become redundant and are removed in the same PR; state-matrix screenshots
+at the audit's widths. `npm test`, `npm run test:e2e`, `npm run lint` named.
+**Effort:** medium. **Cost:** $0.
+
+### DES-21 · Conditional-action migrations to the primitives (medium-large; after DES-19; FloorOpsApp queue)
+
+**Why:** audit P1 #1 (the Overview edit-mode control wrap at 1280 — the owner's original
+report), P2 "shared busy booleans" (a read-only click relabels an uninvoked Create
+button), and the migration half of P3 "viewport patches".
+**Do:** migrate PageLayoutEditor headers, Workspace verification rows, Inbox headers,
+drawer footers, and form result panels onto DES-19's primitives; split shared busy
+booleans into per-action state (the audit's calendarReadState/calendarCreateState
+direction) with labels stable on uninvoked controls; pin the 1181/1280 half-width edit
+states.
+**Takes the FloorOpsApp slot** (drawer footers and the layout-edit headers are inline);
+claim in the tail behind whatever holds it at dispatch. Golden pages: the Overview edit
+chrome is outside the pinned markup — verify; if any pinned markup must change, the A1
+screenshot path applies.
+**Accept:** the audit's P1 reproduction (uneven two-line headers at 1280 edit mode) is
+gone with screenshots; every migrated group passes the state-matrix guard; busy-state
+labels pinned; `npm test`, `npm run test:e2e`, `npm run lint` named.
+**Effort:** medium-large. **Cost:** $0.
+
+### DES-22 · Overlay scroll ownership (small-medium; after DES-17)
+
+**Why:** audit P2 "nested drawer + edit modal produces two visible scroll systems" —
+inert is correct, but two scrollbars are visible and the drawer remains a competing
+context.
+**Do:** one active scroll owner per the audit's options (hide/replace the drawer body
+while a nested editor is open, or make the nested backdrop cover the drawer scroll
+track — pick with evidence, record the choice); add the one-visible-scroll-owner
+assertion to the DES-19 state-matrix guard. Sequenced after DES-17 because both touch
+`AccessibleOverlay` (serialize on that file).
+**Accept:** the audit's phone/tablet reproductions show a single scrollbar; the
+assertion fails on a deliberately restored second scroller; focus containment and
+Escape behavior byte-identical (existing overlay suite green unmodified).
+**Effort:** small-medium. **Cost:** $0.
+
+### DES-23 · Leads board phone presentation (medium; after DES-15)
+
+**Why:** audit P2 "the mobile Leads board is responsive by scrolling, but not
+phone-optimized" — 260px columns in a horizontal scroller with no position affordance.
+**Do:** per the audit and the DES-15/Apple direction: stage tabs or segmented control
+(iOS idiom) on phones, board preserved at tablet/laptop; if any scroller remains, snap
+points and an explicit stage-position cue. Builds on DES-15's board/list machinery —
+sequence after it and reuse its persistence for the chosen stage.
+**Accept:** at 390 no horizontal board scroller without snap+cue; stage navigation
+reachable with one thumb; DES-15's suite green; state-matrix screenshots.
+**Effort:** medium. **Cost:** $0.
+
+### DES-24 · Settings surface-depth grammar: end the card tunnel (medium; after DES-13)
+
+**Why:** audit P2 "border-on-border card nesting" — the Stage-4 reproduction stacks
+four bordered layers (~49px padding per side before content); structural grouping,
+semantic status, and supporting prose all use the same bordered-card treatment.
+**Do:** the audit's surface-depth grammar verbatim (one primary bordered surface per
+section; spacing/headings/bands/dividers for subgroups; tinted borders reserved for
+semantic states; flatten the named Client Directory and Stage-4 hierarchies; never two
+adjacent full panels without section-level reason; borders never the only group
+signal). Values ride DES-13's tokens — sequence after it.
+**Accept:** the audit's packet-ready acceptance verbatim (one primary container at
+390/820/1280, semantic warning stays distinct, ≤2 simultaneous structural outlines
+around any verification content, materially wider content in screenshots, no
+golden-hash change unless separately authorized).
+**Effort:** medium. **Cost:** $0.
+
 # Workstream G — AI assistant & automation (AI)
 
 Owner-approved July 23, 2026. Design authority: `docs/ai-assistant-spec.md`
