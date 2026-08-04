@@ -1484,3 +1484,94 @@ test("AI-10 pins the five-page / one-hundred-message sweep cap at source", async
     /Math\.min\(\s*MAX_INBOX_ANALYSIS_PAGES,\s*Math\.floor\(\(MAX_INBOX_ANALYSIS_MESSAGES - work\.length\) \/ 20\)/u,
   );
 });
+
+test("AI-12 resets an exhausted provider failure into a fresh bounded retry budget", async () => {
+  const database = new InboxAnalysisDatabase();
+  try {
+    const message = summary("message-ai12-provider-recovery");
+    const gmail = gmailClient([message]);
+    let providerRecovered = false;
+    const provider = fixtureProvider(({ messageId }) => {
+      if (!providerRecovered) throw new Error("Injected provider outage.");
+      return providerOutput(messageId);
+    });
+    const repository = mailItemModule.createD1MailItemRepository(database);
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
+      assert.deepEqual(
+        await repository.getExhaustedAnalysisFailureSummary(
+          CONNECTION_KEY,
+          application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        ),
+        attempt === 3
+          ? { count: 1, reason: "analysis_failed" }
+          : { count: 0, reason: null },
+        "the honest failure signal appears only after the third failed sweep",
+      );
+    }
+
+    const exhausted = database.rows()[0];
+    assert.equal(exhausted.failure_attempts, 3);
+    assert.equal(exhausted.status, "failed");
+    assert.equal(
+      await repository.resetExhaustedAnalysisFailures(
+        CONNECTION_KEY,
+        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        1_775_000_000_100,
+      ),
+      1,
+    );
+    const reset = database.rows()[0];
+    assert.equal(reset.status, "failed");
+    assert.equal(reset.failure_attempts, 1);
+    assert.equal(reset.error_code, "analysis_failed");
+    assert.notEqual(
+      reset.attempted_label_definition_version,
+      application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      "a non-current marker resets the version-aware retry budget without violating the failed-row check",
+    );
+    assert.deepEqual(
+      await repository.getExhaustedAnalysisFailureSummary(
+        CONNECTION_KEY,
+        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      ),
+      { count: 0, reason: null },
+    );
+    assert.deepEqual(
+      (await repository.listRetryableAnalysisRows(
+        CONNECTION_KEY,
+        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      )).map((item) => item.gmailMessageId),
+      [message.id],
+    );
+
+    await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
+    const firstFailedRetry = database.rows()[0];
+    assert.equal(
+      firstFailedRetry.failure_attempts,
+      1,
+      "the first failed manual retry restarts at attempt one, not attempt two",
+    );
+    assert.equal(
+      firstFailedRetry.attempted_label_definition_version,
+      application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+    );
+    assert.deepEqual(
+      await repository.getExhaustedAnalysisFailureSummary(
+        CONNECTION_KEY,
+        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      ),
+      { count: 0, reason: null },
+    );
+
+    providerRecovered = true;
+    await route.runInboxAnalysisSweep(sweepInput(database, gmail, provider));
+    const recovered = database.rows()[0];
+    assert.equal(recovered.status, "needs-review");
+    assert.equal(recovered.failure_attempts, 0);
+    assert.equal(recovered.error_code, null);
+  } finally {
+    database.close();
+  }
+});

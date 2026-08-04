@@ -13,10 +13,45 @@ import type {
   MailItemRepository,
   MailItemUpsertResult,
 } from "../../ports/mail-item-repository";
+import {
+  RETRYABLE_EXHAUSTED_ANALYSIS_ERROR_CODES,
+} from "../../ports/mail-item-repository";
 import type { D1Database } from "./d1-database";
 
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 500;
+const MANUAL_ANALYSIS_RETRY_MARKER = "manual-retry-requested";
+const ALTERNATE_MANUAL_ANALYSIS_RETRY_MARKER = "manual-retry-requested-alt";
+
+function manualAnalysisRetryMarker(currentLabelDefinitionVersion: string) {
+  return currentLabelDefinitionVersion === MANUAL_ANALYSIS_RETRY_MARKER
+    ? ALTERNATE_MANUAL_ANALYSIS_RETRY_MARKER
+    : MANUAL_ANALYSIS_RETRY_MARKER;
+}
+
+function analysisFailureSummary(
+  row: { failed_count: unknown; failed_reason: unknown },
+) {
+  const count = Number(row?.failed_count ?? 0);
+  const reason = row?.failed_reason ?? null;
+  if (
+    !Number.isSafeInteger(count)
+    || count < 0
+    || (count > 0 && (
+      typeof reason !== "string"
+      || !reason.trim()
+      || reason.length > 120
+      || /[\u0000-\u001f\u007f]/.test(reason)
+    ))
+    || (count === 0 && reason !== null)
+  ) {
+    throw new Error("D1 exhausted analysis failure summary was invalid");
+  }
+  return Object.freeze({
+    count,
+    reason: count === 0 ? null : reason as string,
+  });
+}
 
 function boundedLimit(value: number | undefined) {
   return Number.isSafeInteger(value) && Number(value) >= 1 && Number(value) <= MAX_LIST_LIMIT
@@ -191,6 +226,60 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         )
         .all<Record<string, unknown>>();
       return result.results.map(normalizeStoredMailItem);
+    },
+
+    async getExhaustedAnalysisFailureSummary(
+      connectionKey,
+      currentLabelDefinitionVersion,
+    ) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedLabelDefinitionVersion =
+        normalizeMailItemLabelDefinitionVersion(currentLabelDefinitionVersion);
+      const row = await database
+        .prepare(
+          "SELECT COUNT(*) AS failed_count, MIN(error_code) AS failed_reason FROM mail_items WHERE connection_key = ? AND status = 'failed' AND failure_attempts >= ? AND attempted_label_definition_version = ? AND error_code != 'analysis_daily_limit_reached'",
+        )
+        .bind(
+          normalizedConnectionKey,
+          MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
+          normalizedLabelDefinitionVersion,
+        )
+        .first<{ failed_count: unknown; failed_reason: unknown }>();
+      if (!row) {
+        throw new Error("D1 exhausted analysis failure summary returned no row");
+      }
+      return analysisFailureSummary(row);
+    },
+
+    async resetExhaustedAnalysisFailures(
+      connectionKey,
+      currentLabelDefinitionVersion,
+      updatedAt,
+    ) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedLabelDefinitionVersion =
+        normalizeMailItemLabelDefinitionVersion(currentLabelDefinitionVersion);
+      if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) {
+        throw new TypeError("Mail item updated_at is invalid");
+      }
+      const result = await database
+        .prepare(
+          "UPDATE mail_items SET failure_attempts = 1, attempted_label_definition_version = ?, updated_at = ? WHERE connection_key = ? AND status = 'failed' AND failure_attempts >= ? AND attempted_label_definition_version = ? AND error_code IN (?, ?, ?, ?)",
+        )
+        .bind(
+          manualAnalysisRetryMarker(normalizedLabelDefinitionVersion),
+          updatedAt,
+          normalizedConnectionKey,
+          MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
+          normalizedLabelDefinitionVersion,
+          ...RETRYABLE_EXHAUSTED_ANALYSIS_ERROR_CODES,
+        )
+        .run();
+      const changes = Number(result.meta.changes ?? 0);
+      if (!Number.isSafeInteger(changes) || changes < 0) {
+        throw new Error("D1 exhausted analysis reset count was invalid");
+      }
+      return changes;
     },
 
     async markCoverageComplete(connectionKey) {

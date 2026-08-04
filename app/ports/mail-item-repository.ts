@@ -20,6 +20,18 @@ export type MailItemStatusPage = Readonly<{
   totalCount: number;
 }>;
 
+export const RETRYABLE_EXHAUSTED_ANALYSIS_ERROR_CODES = Object.freeze([
+  "analysis_failed",
+  "analysis_deadline_exceeded",
+  "analysis_item_failed",
+  "analysis_state_read_failed",
+] as const);
+
+export type MailItemAnalysisFailureSummary = Readonly<{
+  count: number;
+  reason: string | null;
+}>;
+
 export interface MailItemRepository {
   findById(id: string): Promise<MailItem | null>;
   findByGmailMessageId(
@@ -41,6 +53,21 @@ export interface MailItemRepository {
     currentLabelDefinitionVersion: string,
     limit?: number,
   ): Promise<MailItem[]>;
+  getExhaustedAnalysisFailureSummary(
+    connectionKey: string,
+    currentLabelDefinitionVersion: string,
+  ): Promise<MailItemAnalysisFailureSummary>;
+  /**
+   * Resets only exhausted provider-analysis failures with one guarded statement.
+   * The persisted failed-state invariant requires at least one attempt, so adapters
+   * store the minimum valid attempt plus a non-current version marker. The sweep's
+   * version-aware counter therefore restarts at one after the next failed attempt.
+   */
+  resetExhaustedAnalysisFailures(
+    connectionKey: string,
+    currentLabelDefinitionVersion: string,
+    updatedAt: number,
+  ): Promise<number>;
   markCoverageComplete(connectionKey: string): Promise<void>;
   /**
    * Retires a needs-review row. `outcome` records WHY it left the queue: `accepted`
