@@ -3807,32 +3807,62 @@ The one honest signal that exists does not fire: `analysisFailed`
 (`app/inbox/components/InboxView.tsx:693`) is set only when the POST itself rejects. A `200`
 response whose every message failed leaves it false.
 **Consequence, and why this outranks a cosmetic fix:** a total AI outage is indistinguishable
-from an empty inbox, and every message analysed during it is **permanently unrecoverable** —
-restoring the provider does not bring them back, because the rows are no longer retryable.
-The owner's test email is still lost. At 20-person scale that is a customer enquiry that
-silently never reaches the queue.
+from an empty inbox, and any message that failed on **three sweeps** during it exhausts and
+becomes unrecoverable by the sweep — restoring the provider does not bring exhausted rows
+back, because they are no longer retryable. A row at attempts 1–2 self-heals on the next
+sweep after provider recovery (`needsRetry`, `route.ts:580`); only exhausted rows stay lost,
+and the owner's test email is among them if three failing sweeps ran. At 20-person scale
+that is a customer enquiry that silently never reaches the queue.
 **Do:**
 1. **Surface the failure.** Return a failed count and a representative reason from the queue
    GET, and render an honest line on the review queue ("N messages could not be analysed —
    <reason>"). Do **not** put failed rows in the needs-review list: they carry no analysis to
    review, and padding the queue with un-reviewable rows is the opposite of the fix.
-2. **Stop claiming caught-up when it is not true.** `caught-up` must not be returned while
-   non-retryable failed rows exist for the connection. Either add a distinct
-   `terminationReason` or carry the failed count in the payload — but the UI must be able to
-   tell "nothing new" from "some of it broke".
+2. **Qualify caught-up from the payload — the carry design (adversarial review, August 3,
+   2026).** The queue GET adds optional, **omitted-when-zero** `failedCount` and
+   `failedReason` fields counting only **exhausted** non-retryable rows:
+   `status = 'failed' AND failure_attempts >= MAX_MAIL_ITEM_FAILURE_ATTEMPTS AND
+   attempted_label_definition_version = current AND error_code !=
+   'analysis_daily_limit_reached'` — i.e. NOT-`needsRetry` (`route.ts:574-582`). Counting
+   all failed rows would label mid-retry and daily-capped rows "could not be analysed"
+   while the sweep is about to retry them. `SweepResult`, `terminationReason`, and both
+   message literals stay **untouched**: the ai10 termination pins and the route's
+   `:844-849` deliberate design are load-bearing and must not be edited. The UI qualifies
+   the caught-up banner from GET data — the honest line renders beside it, so the operator
+   can tell "nothing new" from "some of it broke".
 3. **Make an exhausted row recoverable.** An Administrator-only, bounded "Retry failed
-   analyses" action that clears `failureAttempts` for rows whose `errorCode` indicates a
-   provider or transport failure. It must NOT resurrect per-message permanent failures — a
-   message deleted from Gmail 404s forever, and the existing comment at `:845-848` records
-   exactly why those are pinned.
+   analyses" action that clears `failureAttempts` for a retry allowlist pinned **by
+   name**. Include: `analysis_failed`, `analysis_deadline_exceeded`,
+   `analysis_item_failed`, `analysis_state_read_failed`. Exclude by name:
+   `gmail_read_failed` — an accepted gap, recorded here: the bare catch
+   (`route.ts:836-850`) writes one errorCode for both a transient Gmail outage and a
+   permanent 404, so Gmail-outage-exhausted rows stay unrecoverable by this action rather
+   than letting a Gmail-deleted message be resurrected — plus
+   `analysis_daily_limit_reached`, `analysis_request_aborted`, and
+   `analysis_retire_failed`. Implementation: one guarded set-based UPDATE
+   (`… WHERE status = 'failed' AND error_code IN (…)`) via a **new repository method** —
+   no list-then-upsert (the upsert guard permits overwriting needs-review rows, so that
+   read-modify-write race clobbers paid analyses). The action lives in the EXISTING
+   `route.ts` so the mutation-sensitive writer census stays byte-identical, and the
+   request body shape is chosen deliberately against the strict parsers, which reject
+   unknown keys.
 **Deliberately NOT in scope:** raising the retry cap, and auto-retrying on every sweep. Both
 re-bill the provider on a persistent outage, which is the failure mode that produced this in
 the first place.
 **Files:** `app/api/v1/inbox-analysis/route.ts`, `app/inbox/components/InboxView.tsx`,
-`docs/settings-guide.md`, tests. Zero `FloorOpsApp.tsx`; no schema change (`mail_items`
-already carries `status`, `failure_attempts` and `error_code`).
+`app/ports/mail-item-repository.ts`, `app/adapters/d1/mail-item-repository.ts`, and
+`app/adapters/postgres/mail-item-repository.ts` (the exhausted-count query and the guarded
+clear-attempts UPDATE are new port methods), `docs/settings-guide.md`, tests —
+`tests/ai10-inbox-analysis-route.test.mjs` and `tests/ai10-inbox-review-queue.test.mjs`
+are **add-scenarios-only (no pin edits)**, and the GET fixtures in
+`tests/e2e/ai10-inbox-analysis-trigger.spec.ts` and `tests/e2e/ai11-typed-accepts.spec.ts`
+are tolerant-reader-only (the new GET fields stay optional, so existing fixtures fulfill
+unchanged). Zero `FloorOpsApp.tsx`; no schema change (`mail_items` already carries
+`status`, `failure_attempts` and `error_code`).
 **Accept:** with the provider forced to fail, the review queue states how many messages could
-not be analysed and why, and the sweep does not report "You're caught up"; after the provider
+not be analysed and why, and the operator does not see an **unqualified** "You're caught up"
+while exhausted failed rows exist — exhausted-only counting means the honest line appears
+only after three failing sweeps, and the accept scenario must say so; after the provider
 recovers, the retry action re-analyses previously exhausted rows and they arrive in
 needs-review; a message that 404s in Gmail is **not** resurrected by that action (asserted
 separately, because it is the case that must stay pinned); the assistant-tree write guard
@@ -4050,18 +4080,22 @@ SET-26 UI (blocked on SET-23) → HINT-02-B.
 **Every named packet above is now merged, so the slot is FREE.** The next claimant takes it
 from the tail below.
 
-**Tail added August 3, 2026 — five open packets need this slot and none of them were on the
-list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58` names as
-the canonical example of the single-file rule, had gone stale in the one direction that
-matters: packets kept being filed with `FloorOpsApp.tsx` in scope without adding themselves.
-Any two of the five below could have been dispatched in parallel and collided. Recommended
-claim order, most valuable first:
+**Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
+were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`
+names as the canonical example of the single-file rule, had gone stale in the one direction
+that matters: packets kept being filed with `FloorOpsApp.tsx` in scope without adding
+themselves. Any two of the five below could have been dispatched in parallel and collided.
+Adversarial review (August 3, 2026) then established that AI-12 takes no slot at all — see
+its bullet — leaving four claimants. Recommended claim order, most valuable first:
 
-**AI-12 → GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-10 (variants a/b only).**
+**GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-10 (variants a/b only).**
 
-- **AI-12** — the failed-analysis surface mounts alongside the existing `bucket` state at the
-  `InboxView` mount (`app/FloorOpsApp.tsx:1784`). *Inferred from the mount pattern; a
-  claimant who finds a no-FloorOpsApp path should take it and say so.*
+- **AI-12** — takes NO `FloorOpsApp.tsx` slot (adversarial review, August 3, 2026): the
+  mount (`app/FloorOpsApp.tsx:1784`) passes no analysis or queue state — `bucket` is a
+  label-navigation enum — and everything AI-12 touches lives inside `InboxView`, which
+  fetches its own data and sources `isAdmin` itself. AI-12 instead takes the inbox-file
+  cluster (`app/api/v1/inbox-analysis/route.ts` + `app/inbox/components/InboxView.tsx`);
+  claimants serialize on those files, not on this slot.
 - **GI-04** — unavoidable. The lead, client and project modals and their record mappers are
   inline in that file.
 - **GI-05** — the project drawer and its Planned-capabilities list
