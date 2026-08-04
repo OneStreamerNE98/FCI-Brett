@@ -51,7 +51,7 @@ beforeEach(() => {
   for (const key of Object.keys(workerEnvironment)) delete workerEnvironment[key];
 });
 
-test("autocomplete reuses one token through validation and resets after termination", async () => {
+test("autocomplete reuses one token and rotates after every settled review attempt", async () => {
   const generated = ["autocomplete-session-one", "autocomplete-session-two"];
   const session = autocompleteSession.createAddressAutocompleteSession(() => generated.shift());
   assert.equal(session.token(), "autocomplete-session-one");
@@ -64,7 +64,10 @@ test("autocomplete reuses one token through validation and resets after terminat
     "utf8",
   );
   assert.equal(component.match(/sessionRef\.current\.token\(\)/gu)?.length, 2);
-  assert.match(component, /setReview\(payload\.review\)[\s\S]{0,300}sessionRef\.current\.complete\(\)/u);
+  assert.match(
+    component,
+    /\} catch \(caught\) \{[\s\S]{0,500}\} finally \{[\s\S]{0,500}sessionRef\.current\.complete\(\);\s*setValidating\(false\);/u,
+  );
 });
 
 test("Places browser autocomplete stays behind the owner gate and never reads the server key", async () => {
@@ -83,6 +86,22 @@ test("Places browser autocomplete stays behind the owner gate and never reads th
     simulation: true,
     addressValidationEnabled: true,
   }), null);
+
+  assert.equal(autocompleteSession.addressAvailabilityHint({
+    simulation: true,
+    addressValidationEnabled: false,
+  }), null);
+  assert.equal(autocompleteSession.addressAvailabilityHint(runtime),
+    "Maps address validation and autocomplete are unavailable until the owner enables them. Typed addresses stay unvalidated with no coordinates.");
+  assert.equal(autocompleteSession.addressAvailabilityHint({
+    ...runtime,
+    addressValidationEnabled: true,
+    browserApiKey: " ",
+  }), "Autocomplete is unavailable because its browser configuration is missing. Server review remains available and reports whether validation succeeded.");
+  assert.equal(autocompleteSession.addressAvailabilityHint({
+    ...runtime,
+    addressValidationEnabled: true,
+  }), null);
   assert.equal(autocompleteSession.placesAutocompleteBrowserKey({
     ...runtime,
     browserApiKey: undefined,
@@ -94,6 +113,7 @@ test("Places browser autocomplete stays behind the owner gate and never reads th
     "utf8",
   );
   assert.match(component, /placesAutocompleteBrowserKey\(mapsRuntime\)/u);
+  assert.match(component, /addressAvailabilityHint\(mapsRuntime\)/u);
   assert.match(component, /"X-Goog-Api-Key": apiKey/u);
   assert.match(component, /className=\{styles\.attribution\} translate="no">Google Maps/u);
   assert.doesNotMatch(component, /SERVER_API_KEY|serverApiKey/u);

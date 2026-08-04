@@ -78,6 +78,7 @@ test("portable domain validation preserves the client and project API messages",
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", squareFeet: 12.5 }), { ok: false, message: "square feet must be a positive whole number" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", contractValue: -1 }), { ok: false, message: "contract value must be a non-negative whole number" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", contractValue: "100" }), { ok: false, message: "Project details must be valid JSON." });
+  assert.equal(normalizeProjectCreation({ clientId: "client-1", name: "Test", site: null }).ok, true);
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", segment: 42 }), { ok: false, message: "Project details must be valid JSON." });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", segment: "mixed" }), { ok: false, message: "project segment is invalid" });
   assert.deepEqual(normalizeProjectCreation({ clientId: "client-1", name: "Test", projectManager: "Morgan" }), { ok: false, message: PROJECT_MANAGER_IDENTITY_ERROR });

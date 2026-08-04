@@ -5,6 +5,7 @@
   "deferredSourceCounts": {
     "records": 0,
     "webhook_receipts": 0,
+    "address_validation_reviews": 0,
     "tasks": 0,
     "google_form_lead_intake_watermarks": 0,
     "google_form_lead_reviews": 0,

@@ -138,7 +138,7 @@ test("bounded core rehearsal preserves canonical positive record versions beyond
 
 test("bounded core rehearsal inventory exactly classifies every D1 table plus R2 without a runtime D1 import", async () => {
   const schemaTables = discoverD1TableNames(d1Schema);
-  assert.equal(schemaTables.length, 26);
+  assert.equal(schemaTables.length, 27);
   assert.deepEqual(
     CORE_REHEARSAL_SOURCE_INVENTORY.map((entry) => entry.sourceCategory).sort(),
     [...schemaTables, "r2_objects"].sort(),
@@ -151,6 +151,7 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
       records: "excluded",
       activity_events: "transformed",
       webhook_receipts: "excluded",
+      address_validation_reviews: "excluded",
       clients: "transformed",
       contacts: "transformed",
       leads: "migrated",
@@ -186,13 +187,14 @@ test("bounded core rehearsal inventory exactly classifies every D1 table plus R2
   assert.doesNotMatch(rehearsalSource, /\$\{table\}:(?:content|identifiers):v[12]/);
 
   const inventory = createCoreRecordRehearsalPlan(fixture, options).sourceInventory;
-  assert.equal(inventory.length, 27);
+  assert.equal(inventory.length, 28);
   assert.deepEqual(
     Object.fromEntries(inventory.map((entry) => [entry.sourceCategory, entry.sourceCount])),
     {
       records: 0,
       activity_events: 3,
       webhook_receipts: 0,
+      address_validation_reviews: 0,
       clients: 1,
       contacts: 1,
       leads: 1,
@@ -583,7 +585,7 @@ test("bounded core rehearsal uses the restricted role, reconciles inside one tra
     providerCalls: 0,
   });
   assert.ok(Object.values(report.tables).every((table) => table.matched));
-  assert.equal(report.sourceInventory.length, 27);
+  assert.equal(report.sourceInventory.length, 28);
   assert.deepEqual(
     report.sourceInventory.map(({ sourceCategory, disposition, sourceCount }) => ({
       sourceCategory,

@@ -30,4 +30,18 @@ export function placesAutocompleteBrowserKey(
   if (runtime.simulation || !runtime.addressValidationEnabled) return null;
   return runtime.browserApiKey?.trim() || null;
 }
+
+/** Explains only the unavailable capability without guessing at server-key state. */
+export function addressAvailabilityHint(
+  runtime: JobSiteMapsRuntimeConfig,
+): string | null {
+  if (runtime.simulation) return null;
+  if (!runtime.addressValidationEnabled) {
+    return "Maps address validation and autocomplete are unavailable until the owner enables them. Typed addresses stay unvalidated with no coordinates.";
+  }
+  if (!runtime.browserApiKey?.trim()) {
+    return "Autocomplete is unavailable because its browser configuration is missing. Server review remains available and reports whether validation succeeded.";
+  }
+  return null;
+}
 import type { JobSiteMapsRuntimeConfig } from "../maps/job-site-map";

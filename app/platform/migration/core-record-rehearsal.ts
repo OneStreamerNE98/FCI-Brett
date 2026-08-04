@@ -42,6 +42,11 @@ export const CORE_REHEARSAL_SOURCE_INVENTORY = [
     reason: "Development webhook delivery receipts are transient replay-control data.",
   },
   {
+    sourceCategory: "address_validation_reviews",
+    disposition: "excluded",
+    reason: "Short-lived address-review receipts are transient one-time authorization evidence and must be recreated, never migrated.",
+  },
+  {
     sourceCategory: "clients",
     disposition: "transformed",
     reason: "Test clients are normalized to the production client schema without legacy Drive fields.",
@@ -166,6 +171,7 @@ export const CORE_REHEARSAL_SOURCE_INVENTORY = [
 export const DEFERRED_SOURCE_CATEGORIES = [
   "records",
   "webhook_receipts",
+  "address_validation_reviews",
   "tasks",
   "google_form_lead_intake_watermarks",
   "google_form_lead_reviews",

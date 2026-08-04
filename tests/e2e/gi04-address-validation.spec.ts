@@ -203,20 +203,38 @@ test("simulation reviews addresses on lead, client, and project create forms", a
   const leadField = addressField(leadDialog, "lead");
   const leadInput = leadField.getByRole("combobox", { name: "Project site", exact: true });
   await leadInput.fill(leadAddress);
+  await page.route("**/api/v1/address-validation", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "FCI TEST review failure" }),
+    });
+  }, { times: 1 });
+  await Promise.all([
+    page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/address-validation"),
+    leadField.getByRole("button", { name: "Review address" }).click(),
+  ]);
+  await expect(leadField.getByRole("alert")).toHaveText("FCI TEST review failure");
+  await expect.poll(() => reviewTokens.length).toBe(1);
+  const expectedFailureConsole = "console: Failed to load resource: the server responded with a status of 503 (Service Unavailable)";
+  await expect.poll(() => browserErrors.filter((entry) => entry === expectedFailureConsole).length).toBe(1);
+  browserErrors.splice(browserErrors.indexOf(expectedFailureConsole), 1);
+
   await Promise.all([
     page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/address-validation"),
     leadField.getByRole("button", { name: "Review address" }).click(),
   ]);
   await expect(leadField.locator("[data-address-review-verdict]")).toContainText(standardizedAddress);
   await expect(leadInput).toHaveValue(leadAddress);
-  await expect.poll(() => reviewTokens.length).toBe(1);
+  await expect.poll(() => reviewTokens.length).toBe(2);
+  expect(reviewTokens[1]).not.toBe(reviewTokens[0]);
 
   await Promise.all([
     page.waitForResponse((response) => new URL(response.url()).pathname === "/api/v1/address-validation"),
     leadField.getByRole("button", { name: "Review again" }).click(),
   ]);
-  await expect.poll(() => reviewTokens.length).toBe(2);
-  expect(reviewTokens[1]).not.toBe(reviewTokens[0]);
+  await expect.poll(() => reviewTokens.length).toBe(3);
+  expect(reviewTokens[2]).not.toBe(reviewTokens[1]);
 
   await leadDialog.getByRole("button", { name: "Add to pipeline" }).click();
   await expect(leadDialog).toBeVisible();

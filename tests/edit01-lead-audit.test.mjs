@@ -229,7 +229,7 @@ test("lead patch normalization is closed, field-specific, and preserves explicit
     ["projectName", "", "Lead project name must be 180 characters or fewer."],
     ["source", "", "Lead source must be 80 characters or fewer."],
     ["stage", "", "Lead stage must be 80 characters or fewer."],
-    ["site", "", "Lead site must be 300 characters or fewer."],
+    ["site", "", "Lead site must be 280 characters or fewer."],
     ["estimatedValue", -1, "Lead estimated value must be a non-negative whole number."],
     ["nextAction", "", "Lead next action must be 500 characters or fewer."],
     ["nextActionAt", "not-a-time", "Lead next action due date is invalid."],

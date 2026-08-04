@@ -97,8 +97,11 @@ export function normalizeProjectCreation(input: unknown): ProjectCreationValidat
   if (!input || typeof input !== "object" || Array.isArray(input)) return invalidJsonDetails();
 
   const record = input as Record<string, unknown>;
-  for (const field of ["clientId", "name", "status", "site", "projectManager", "projectManagerId"] as const) {
+  for (const field of ["clientId", "name", "status", "projectManager", "projectManagerId"] as const) {
     if (record[field] !== undefined && typeof record[field] !== "string") return invalidJsonDetails();
+  }
+  if (record.site !== undefined && record.site !== null && typeof record.site !== "string") {
+    return invalidJsonDetails();
   }
   if (record.flooringCategory !== undefined && record.flooringCategory !== null && typeof record.flooringCategory !== "string") return invalidJsonDetails();
   if (record.segment !== undefined && record.segment !== null && typeof record.segment !== "string") return invalidJsonDetails();

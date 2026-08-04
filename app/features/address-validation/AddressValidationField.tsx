@@ -10,6 +10,7 @@ import type {
 } from "../../domain/address-validation";
 import type { JobSiteMapsRuntimeConfig } from "../maps/job-site-map";
 import {
+  addressAvailabilityHint,
   createAddressAutocompleteSession,
   placesAutocompleteBrowserKey,
   type AddressAutocompleteSession,
@@ -85,6 +86,7 @@ export function AddressValidationField({
   const suggestionRequestRef = useRef(0);
   const acceptedSuggestionRef = useRef<string | null>(null);
   const liveAutocompleteApiKey = placesAutocompleteBrowserKey(mapsRuntime);
+  const availabilityHint = addressAvailabilityHint(mapsRuntime);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -210,12 +212,13 @@ export function AddressValidationField({
       setReview(payload.review);
       setChoice(null);
       onReviewChange(null);
-      // The validation call terminates this autocomplete session. Any later
-      // edit starts with a fresh token, as required by Places Autocomplete New.
-      sessionRef.current.complete();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Address review is unavailable.");
     } finally {
+      // The browser cannot know whether a failed response happened before or
+      // after provider validation. Conservatively close every settled review
+      // attempt so no later request can reuse a possibly terminated token.
+      sessionRef.current.complete();
       setValidating(false);
     }
   }
@@ -336,11 +339,7 @@ export function AddressValidationField({
       </button>
       {suggestionsAvailable && loadingSuggestions
         && <span className={styles.status}>Finding suggestions…</span>}
-      {!mapsRuntime.simulation
-        && (!mapsRuntime.addressValidationEnabled || !mapsRuntime.browserApiKey)
-        && <span className={styles.hint}>
-          Autocomplete is unavailable; server review will safely fall back to typed text while Maps validation is not enabled.
-        </span>}
+      {availabilityHint && <span className={styles.hint}>{availabilityHint}</span>}
     </div>
     <div id={`${id}-address-status`} aria-live="polite">
       {error && <p className={`${styles.status} ${styles.warning}`} role="alert">{error}</p>}
