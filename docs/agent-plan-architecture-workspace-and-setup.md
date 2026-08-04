@@ -1462,6 +1462,7 @@ different keys both appear; the filing write path untouched (diff-scoped asserti
 assistant-adjacent read modules; zero `FloorOpsApp.tsx`.
 
 ### WS-19 · Tenant cutover — make a Workspace switch survivable (medium)
+**Status:** In progress — `codex/ws19-tenant-cutover`
 **Why:** the owner is live on a staging tenant (`grass.wedding`) and intends to move to the
 production Cherry Hill Workspace. Today that move **corrupts state silently instead of
 failing closed**, because nothing in the database records which tenant a Google identifier
