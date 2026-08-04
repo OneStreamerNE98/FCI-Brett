@@ -495,20 +495,31 @@ were counted as overlapping distant controls; every hit was disproven by element
 (2) an auth-wall blind spot — 102 page-views of an "Access not authorized" page reported a
 clean all-clear, because the vacuity guard checked only for error overlays and empty
 bodies; (3) the seeded dev server dies under sustained scanning (three times in one day),
-silently truncating coverage that then reads as clean. The method that worked first time:
-authenticated same-origin iframe probes against the DEPLOYED site — 51 page-views, 17
-routes, three widths, zero infrastructure failures. The session also measured three live
-CSS defects that survived NFIX-06.
-**Do:** commit the two probe fixes to tools/nightly/layout-scan.mjs (same-scroll-context
+silently truncating coverage that then reads as clean. Implementation measurement exposed
+a third false-signal class behind the session's headline overlap: Chromium keeps
+full-size layout rects on the descendants of a closed `<details>` (its details-content is
+content-visibility, not display:none), so every collapsed disclosure spawns phantom
+overlaps and overflows. The measured "Rename/Open controls overlap the Operations health
+controls" finding is exactly that artefact — the ~150px "container" is the closed article
+height, every intersection hit-tests to nothing, and with the details genuinely open the
+article grows to hold the 885px resource list with 13px clearance at each of
+390/834/1024/1280 — a scanner false signal, not a live CSS defect. The method that worked
+first time: authenticated same-origin iframe probes against the DEPLOYED site — 51
+page-views, 17 routes, three widths, zero infrastructure failures. Two live CSS defects
+did survive NFIX-06, both in the 821–900 settings band where the two-column settings
+layout leaves only ~230–330px of content width; fixing them surfaced a third live defect
+in the same band, visible while Workspace setup is incomplete.
+**Do:** commit the three probe fixes to tools/nightly/layout-scan.mjs (same-scroll-context
 gating for overlap detection; vacuity guard extended with an auth-wall text match and a
-minimum-control-count floor); document the deployed-site iframe method as the primary
-scan method in the nightly runbook, with the local seeded server as fallback only, and add
-chunked scanning with health checks between chunks so a dying server truncates loudly, not
-silently; fix the three measured defects — Settings → Google Workspace Rename/Open
-controls overlapping the Operations health controls at every width (the resource list
-paints outside its container), Settings → Client Directory "Check for new form responses"
-clipped 49px at 834, Settings → Calendar "Google connection" clipped 15px at 834. CSS-only;
-takes the globals.css lock and the relevant settings module CSS.
+minimum-control-count floor, the decision exported as a testable pure predicate;
+closed-details ghost-rect filtering); document the deployed-site iframe method as the
+primary scan method in the nightly runbook, with the local seeded server as fallback only,
+and add chunked scanning with health checks between chunks so a dying server truncates
+loudly, not silently; fix the three live CSS defects — Settings → Client Directory "Check
+for new form responses" clipped 49px at 834, Settings → Calendar "Google connection"
+clipped 15px at 834, and the Stage 3 creation card's action rows overflowing the viewport
+by up to 146px at 834 while Workspace setup is incomplete. CSS-only; takes the globals.css
+lock and the relevant settings module CSS.
 **Accept:** a deployed-site scan at 390/834/1280 reports zero overlaps and zero clipped
 controls on the three named surfaces; a fixture auth-wall page is flagged vacuous, not
 clean; a healthy full run reports vacuousPageViews 0; the two golden-hash constants are

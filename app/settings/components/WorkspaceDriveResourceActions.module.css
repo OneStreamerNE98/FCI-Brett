@@ -180,6 +180,13 @@
 
 .rowActions {
   display: grid;
+  /* NFIX-07: pin the single column to the row's width. The implicit `auto` track sized
+     itself to the action row's max-content (362.89px measured inside a 140px row at an
+     834px viewport — the 821-900 settings band squeezes the whole creation column to
+     ~215px), so .actionButtons never received a definite width to wrap within and its
+     buttons ran up to 146px past the viewport, unreachable. With minmax(0,1fr) the flex
+     row gets the real column width and wraps; when space suffices nothing changes. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   min-width: 0;
 }

@@ -18,6 +18,7 @@
 import { chromium } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const ORIGIN = process.env.FCI_E2E_ORIGIN ?? "http://localhost:4173";
 const USER = process.env.FCI_LOCAL_DEV_USER_EMAIL ?? "e2e-admin@example.test";
@@ -33,6 +34,10 @@ const WIDTHS = String(arg("widths", "768,834,1024,600,720,900"))
   .filter((value) => Number.isInteger(value) && value > 0);
 const OUT = String(arg("out", "work/nightly/layout-scan.json"));
 const HEIGHT = Number(arg("height", "1000"));
+// Chunk size for the health-checked scan loop below. Six page-views per chunk keeps the
+// between-chunk probe frequent enough that a dying server truncates within seconds of
+// dying, without measurably slowing a healthy run.
+const CHUNK = Math.max(1, Number(arg("chunk", "6")));
 
 const SETTINGS_SECTIONS = [
   "google-workspace",
@@ -61,6 +66,30 @@ const ROUTES = [
   { id: "management-access", path: "/management/access" },
 ];
 
+/**
+ * The vacuity decision, extracted as a pure function so it can be unit-tested without a
+ * browser. A page-view is vacuous — its zero-findings result must NOT be trusted — when:
+ *   - a Vite error overlay element is present (Night 1's original blind spot: a full pass
+ *     of error overlays read as a clean all-clear);
+ *   - the body text carries a word-bounded infrastructure-failure marker;
+ *   - the body text carries an auth-wall marker. August 3's blind spot: 102 page-views of
+ *     an "Access not authorized" page reported clean, because this guard checked only for
+ *     error overlays and empty bodies;
+ *   - fewer than 3 interactive controls rendered. Every real page in this app has many;
+ *     an auth wall, crash page, or half-rendered shell has approximately none. The floor
+ *     catches broken states whose wording no text match anticipates;
+ *   - the body text is shorter than 40 characters.
+ */
+export function looksVacuous({ bodyText, controlCount, overlayCount }) {
+  const body = String(bodyText ?? "");
+  return (overlayCount ?? 0) > 0
+    || /\bfailed to fetch\b|\bcannot find module\b|\binternal server error\b|\bunhandled runtime\b/i
+      .test(body)
+    || /\baccess not authorized\b|\bnot authorized\b|\bsigned out\b/i.test(body)
+    || (controlCount ?? 0) < 3
+    || body.trim().length < 40;
+}
+
 /** Runs in the page. Returns raw probe hits; adjudication happens outside. */
 const PROBE = () => {
   const MIN = 24;
@@ -68,6 +97,19 @@ const PROBE = () => {
     const style = getComputedStyle(element);
     if (style.visibility === "hidden" || style.display === "none" || style.opacity === "0") {
       return false;
+    }
+    // Chromium renders a closed <details> with content-visibility on ::details-content,
+    // NOT display:none — descendants keep their full-size layout rects while painting
+    // nothing and hit-testing to nothing. Every such ghost box sailed through the checks
+    // above and reported "overlaps" with the on-screen controls near the collapsed
+    // disclosure: the August 3 Rename/Open-buttons-overlap-the-next-row finding is exactly
+    // this artefact (every intersection returns elementFromPoint null), and the surface
+    // lays out correctly when the details is genuinely open. Only the summary row of a
+    // closed details is actually on screen.
+    const closedDetails = element.closest("details:not([open])");
+    if (closedDetails) {
+      const summary = closedDetails.querySelector(":scope > summary");
+      if (!summary || !summary.contains(element)) return false;
     }
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
@@ -81,6 +123,31 @@ const PROBE = () => {
       || element.textContent
       || "").replace(/\s+/g, " ").trim().slice(0, 60);
     return `${parts.join("")}${label ? ` :: ${label}` : ""}`;
+  };
+
+  // Two elements can only genuinely overlap if they share a scrolling context. The sidebar
+  // nav is overflow:auto and taller than its box, so its scrolled-away links report
+  // viewport rects that collide with the profile button sitting outside the nav — four
+  // phantom hits on the first run, every one disproved by elementFromPoint. Comparing
+  // scroll roots kills exactly that artefact and suppresses nothing else. (An earlier
+  // attempt excluded any clipped element outright; that dropped interactiveCount to 1 per
+  // page, because everything below the fold is "outside" its scroller at rest.)
+  const scrollRootOf = (node) => {
+    for (let anc = node.parentElement; anc && anc !== document.body; anc = anc.parentElement) {
+      const cs = getComputedStyle(anc);
+      if (/(auto|scroll|hidden)/.test(cs.overflowY + " " + cs.overflowX)) return anc;
+    }
+    return null;
+  };
+  // Overhang past the viewport edge is only a DEFECT when nothing can bring it into view.
+  // Inside a horizontal scroller it is intentional — the leads board scrolls sideways by
+  // design — so only unreachable overhang counts.
+  const reachableHorizontally = (node) => {
+    for (let anc = node.parentElement; anc && anc !== document.body; anc = anc.parentElement) {
+      const cs = getComputedStyle(anc);
+      if (/(auto|scroll)/.test(cs.overflowX) && anc.scrollWidth > anc.clientWidth + 1) return true;
+    }
+    return document.documentElement.scrollWidth > document.documentElement.clientWidth + 1;
   };
 
   const interactive = [...document.querySelectorAll(
@@ -125,6 +192,7 @@ const PROBE = () => {
       const b = targets[j].rect;
       if (targets[i].element.contains(targets[j].element)) continue;
       if (targets[j].element.contains(targets[i].element)) continue;
+      if (scrollRootOf(targets[i].element) !== scrollRootOf(targets[j].element)) continue;
       const overlapWidth = Math.min(a.right, b.right) - Math.max(a.left, b.left);
       const overlapHeight = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
       if (overlapWidth > 1 && overlapHeight > 1) {
@@ -141,7 +209,8 @@ const PROBE = () => {
   const overflowing = [...document.querySelectorAll("body *")]
     .filter(isVisible)
     .map((element) => ({ element, rect: element.getBoundingClientRect() }))
-    .filter(({ rect }) => rect.right > viewportWidth + 1 && rect.width > 4)
+    .filter(({ element, rect }) => rect.right > viewportWidth + 1 && rect.width > 4
+      && !reachableHorizontally(element))
     .slice(0, 40)
     .map(({ element, rect }) => ({
       target: describe(element),
@@ -174,78 +243,131 @@ const PROBE = () => {
   };
 };
 
-const browser = await chromium.launch();
-const context = await browser.newContext({
-  extraHTTPHeaders: {
-    "oai-authenticated-user-email": USER,
-    "oai-authenticated-user-full-name": encodeURIComponent("Nightly Scanner"),
-    "oai-authenticated-user-full-name-encoding": "percent-encoded-utf-8",
-  },
-});
-const page = await context.newPage();
-
-const results = [];
-let vacuous = 0;
-
-for (const width of WIDTHS) {
-  await page.setViewportSize({ width, height: HEIGHT });
-  for (const route of ROUTES) {
-    const url = `${ORIGIN}${route.path}`;
-    let record = { route: route.id, path: route.path, width };
-    try {
-      const response = await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
-      await page.waitForTimeout(250);
-      // Vacuity guard. Night 1's first full pass returned zero findings because every page
-      // was a Vite error overlay; it was caught only by eyeballing screenshots. Detect it
-      // here so a silent all-clear can never be mistaken for a clean result again.
-      const body = (await page.locator("body").innerText().catch(() => "")).slice(0, 400);
-      // Detect the Vite error overlay by its DOM element, not by matching its text. A
-      // text match on "vite" flagged every People & Access page-view on the first run
-      // because the page contains the word "Invite" — a scanner that cries wolf is worse
-      // than no scanner, since the whole point of this guard is that a silent all-clear
-      // cannot be trusted. Word-bounded text markers remain as a secondary signal.
-      const overlay = await page.locator("vite-error-overlay").count().catch(() => 0);
-      const looksBroken = overlay > 0
-        || /\bfailed to fetch\b|\bcannot find module\b|\binternal server error\b|\bunhandled runtime\b/i
-          .test(body)
-        || body.trim().length < 40;
-      if (looksBroken) vacuous += 1;
-      record = {
-        ...record,
-        status: response?.status() ?? null,
-        vacuous: looksBroken,
-        bodyHead: looksBroken ? body.replace(/\s+/g, " ").slice(0, 200) : undefined,
-        ...(await page.evaluate(PROBE)),
-      };
-    } catch (error) {
-      vacuous += 1;
-      record = { ...record, error: String(error).slice(0, 200), vacuous: true };
-    }
-    results.push(record);
-    process.stdout.write(`${route.id}@${width} `);
+// The seeded dev server dies under sustained scanning — three times on August 3 alone —
+// and a scan whose tail silently never ran reads exactly like a clean scan. Between
+// chunks, prove the server is still answering; a dead server must truncate LOUDLY.
+async function serverStillAlive() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5_000);
+  try {
+    await fetch(`${ORIGIN}/`, {
+      signal: controller.signal,
+      headers: { "oai-authenticated-user-email": USER },
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-await browser.close();
+async function main() {
+  const browser = await chromium.launch();
+  const context = await browser.newContext({
+    extraHTTPHeaders: {
+      "oai-authenticated-user-email": USER,
+      "oai-authenticated-user-full-name": encodeURIComponent("Nightly Scanner"),
+      "oai-authenticated-user-full-name-encoding": "percent-encoded-utf-8",
+    },
+  });
+  const page = await context.newPage();
 
-const summary = {
-  origin: ORIGIN,
-  widths: WIDTHS,
-  routes: ROUTES.length,
-  pageViews: results.length,
-  vacuousPageViews: vacuous,
-  totals: {
-    pageOverflow: results.filter((r) => r.pageOverflow?.overflows).length,
-    spacingFailures: results.reduce((sum, r) => sum + (r.spacingFailureTotal ?? 0), 0),
-    overlaps: results.reduce((sum, r) => sum + (r.overlapTotal ?? 0), 0),
-    overflowingElements: results.reduce((sum, r) => sum + (r.overflowingTotal ?? 0), 0),
-  },
-};
+  const pageViews = WIDTHS.flatMap((width) => ROUTES.map((route) => ({ route, width })));
+  const results = [];
+  let vacuous = 0;
+  let scanAborted = false;
 
-await mkdir(dirname(OUT), { recursive: true });
-await writeFile(OUT, JSON.stringify({ summary, results }, null, 2));
+  for (let start = 0; start < pageViews.length; start += CHUNK) {
+    if (start > 0 && !(await serverStillAlive())) {
+      scanAborted = true;
+      for (const { route, width } of pageViews.slice(start)) {
+        vacuous += 1;
+        results.push({
+          route: route.id,
+          path: route.path,
+          width,
+          vacuous: true,
+          error: "server-died",
+        });
+      }
+      break;
+    }
+    for (const { route, width } of pageViews.slice(start, start + CHUNK)) {
+      await page.setViewportSize({ width, height: HEIGHT });
+      const url = `${ORIGIN}${route.path}`;
+      let record = { route: route.id, path: route.path, width };
+      try {
+        const response = await page.goto(url, { waitUntil: "networkidle", timeout: 30_000 });
+        await page.waitForTimeout(250);
+        // Vacuity guard. Night 1's first full pass returned zero findings because every page
+        // was a Vite error overlay; it was caught only by eyeballing screenshots. Detect it
+        // here so a silent all-clear can never be mistaken for a clean result again.
+        const body = (await page.locator("body").innerText().catch(() => "")).slice(0, 400);
+        // Detect the Vite error overlay by its DOM element, not by matching its text. A
+        // text match on "vite" flagged every People & Access page-view on the first run
+        // because the page contains the word "Invite" — a scanner that cries wolf is worse
+        // than no scanner, since the whole point of this guard is that a silent all-clear
+        // cannot be trusted. Word-bounded text markers remain as a secondary signal.
+        const overlay = await page.locator("vite-error-overlay").count().catch(() => 0);
+        const controlCount = await page
+          .locator('button, a[href], input:not([type="hidden"]), select, textarea')
+          .count()
+          .catch(() => 0);
+        const looksBroken = looksVacuous({
+          bodyText: body,
+          controlCount,
+          overlayCount: overlay,
+        });
+        if (looksBroken) vacuous += 1;
+        record = {
+          ...record,
+          status: response?.status() ?? null,
+          vacuous: looksBroken,
+          bodyHead: looksBroken ? body.replace(/\s+/g, " ").slice(0, 200) : undefined,
+          ...(await page.evaluate(PROBE)),
+        };
+      } catch (error) {
+        vacuous += 1;
+        record = { ...record, error: String(error).slice(0, 200), vacuous: true };
+      }
+      results.push(record);
+      process.stdout.write(`${route.id}@${width} `);
+    }
+  }
 
-console.log(`\n\n${JSON.stringify(summary, null, 2)}`);
-if (vacuous > 0) {
-  console.log(`\nWARNING: ${vacuous}/${results.length} page-views look vacuous. Findings from this run are NOT trustworthy until the server state is fixed.`);
+  await browser.close();
+
+  const summary = {
+    origin: ORIGIN,
+    widths: WIDTHS,
+    routes: ROUTES.length,
+    pageViews: results.length,
+    vacuousPageViews: vacuous,
+    scanAborted,
+    totals: {
+      pageOverflow: results.filter((r) => r.pageOverflow?.overflows).length,
+      spacingFailures: results.reduce((sum, r) => sum + (r.spacingFailureTotal ?? 0), 0),
+      overlaps: results.reduce((sum, r) => sum + (r.overlapTotal ?? 0), 0),
+      overflowingElements: results.reduce((sum, r) => sum + (r.overflowingTotal ?? 0), 0),
+    },
+  };
+
+  await mkdir(dirname(OUT), { recursive: true });
+  await writeFile(OUT, JSON.stringify({ summary, results }, null, 2));
+
+  console.log(`\n\n${JSON.stringify(summary, null, 2)}`);
+  if (vacuous > 0) {
+    console.log(`\nWARNING: ${vacuous}/${results.length} page-views look vacuous. Findings from this run are NOT trustworthy until the server state is fixed.`);
+  }
+  if (scanAborted) {
+    console.error(`\nSCAN ABORTED: the server stopped answering mid-scan. Every unvisited page-view is recorded as vacuous ("server-died"). This run proves NOTHING about the pages it never reached — restart the server and re-run.`);
+    process.exitCode = 1;
+  }
+}
+
+// Only run the scan when executed directly (`node tools/nightly/layout-scan.mjs`). The
+// guard exists so unit tests can import looksVacuous without launching a browser.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
 }
