@@ -22,6 +22,7 @@ const chatConfigFixture: ChatConfig = {
   canEdit: true,
   mode: "simulation",
   featureEnabled: true,
+  featureSource: "app",
   events: [
     { type: "lead.created", label: "New lead", description: "A new lead is ready for office review.", enabled: false, spaceKey: "sales" },
     { type: "gmail.filing_review_needed", label: "Filing review needed", description: "A Gmail thread needs a project filing decision.", enabled: true, spaceKey: "office-ops" },
@@ -106,6 +107,11 @@ test("Administrator can save closed Google Chat event routing without receiving 
   const card = page.locator(".chat-notification-settings");
   await expect(card.getByRole("heading", { level: 2, name: "Google Chat notifications" })).toBeVisible();
   await expect(card.getByRole("status")).toContainText("Simulation log only");
+  await expect(
+    card.locator("p.form-help").filter({ hasText: "Enable source:" }),
+  ).toHaveText(/Enable source:\s*App-saved/u);
+  const featureToggle = card.getByRole("checkbox", { name: /Enable Google Chat notifications/u });
+  await expect(featureToggle).toBeChecked();
   await expect(card).toContainText("GOOGLE_CHAT_SALES_WEBHOOK_URL");
   await expect(card).toContainText("GOOGLE_CHAT_OFFICE_OPS_WEBHOOK_URL");
   await expect(card).toContainText("GOOGLE_CHAT_FIELD_WEBHOOK_URL");
@@ -113,6 +119,7 @@ test("Administrator can save closed Google Chat event routing without receiving 
   await expect(page.locator("body")).not.toContainText(forbiddenWebhookSentinel);
   await expect(page.locator("body")).not.toContainText(forbiddenTokenSentinel);
 
+  await featureToggle.uncheck();
   await card.getByRole("checkbox", { name: /New lead/ }).check();
   await card.getByLabel("Chat space for New lead").selectOption("office-ops");
   await card.getByRole("button", { name: "Save Chat routing" }).click();
@@ -126,6 +133,7 @@ test("Administrator can save closed Google Chat event routing without receiving 
       { type: "task.assigned", enabled: false, spaceKey: "office-ops" },
     ],
   });
+  await expect(featureToggle).not.toBeChecked();
   await expectNoHorizontalOverflow(page);
 
   // A routing-only save must leave the stored gate untouched: the PATCH body

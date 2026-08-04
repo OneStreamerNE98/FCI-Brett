@@ -226,6 +226,37 @@ test("Forms review queue consumes every effective Sheet source and points remedi
   assert.doesNotMatch(panel, /Set <code>\{intake\.configurationName\}<\/code> in the hosted environment/u);
 });
 
+test("live spreadsheet adoption takes the Sheets access token directly and writes the registry row first", async () => {
+  const [clientDirectory, leadForm] = await Promise.all([
+    readFile(
+      new URL("../app/api/v1/integrations/google/sheets/client-directory/verify/route.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../app/api/v1/integrations/google/sheets/lead-form/verify/route.ts", import.meta.url),
+      "utf8",
+    ),
+  ]);
+  for (const [name, source] of [
+    ["Client Directory", clientDirectory],
+    ["lead-form responses", leadForm],
+  ]) {
+    assert.match(source, /await getGoogleAccessToken\(config, "sheets"\)/u, name);
+    assert.match(source, /await upsertWorkspaceResource\(env\.DB, \{/u, name);
+    assert.doesNotMatch(source, /getGoogleAccessContext/u, name);
+    assert.doesNotMatch(source, /access\.connectionId/u, name);
+  }
+  // The registry row is the tier the runtime resolver ranks highest, so the
+  // Client Directory route writes it before the outranked bootstrap mirror:
+  // if the mirror write fails, the ranking tier already holds the verified ID.
+  assert.ok(
+    clientDirectory.indexOf("await upsertWorkspaceResource(env.DB, {")
+      < clientDirectory.indexOf("createD1WorkspaceSettingsRepository("),
+    "Client Directory registry write must precede the settings mirror",
+  );
+  assert.doesNotMatch(clientDirectory, /googleConnectionId/u);
+});
+
 test("simulation presents Drive provisioning as forced and cannot claim a saved toggle", async () => {
   const [panel, guide] = await Promise.all([
     readFile(
