@@ -12,6 +12,9 @@ import type {
   MailItemRepository,
   MailItemUpsertResult,
 } from "../../ports/mail-item-repository";
+import {
+  RETRYABLE_EXHAUSTED_ANALYSIS_ERROR_CODES,
+} from "../../ports/mail-item-repository";
 import { withPostgresTransaction, type PostgresPool } from "./postgres-database";
 import {
   isNamedPostgresConstraint,
@@ -58,6 +61,33 @@ type MailItemDatabaseRow = Record<string, unknown> & {
 
 const DEFAULT_LIST_LIMIT = 100;
 const MAX_LIST_LIMIT = 500;
+const MANUAL_ANALYSIS_RETRY_MARKER = "manual-retry-requested";
+const ALTERNATE_MANUAL_ANALYSIS_RETRY_MARKER = "manual-retry-requested-alt";
+
+function manualAnalysisRetryMarker(currentLabelDefinitionVersion: string) {
+  return currentLabelDefinitionVersion === MANUAL_ANALYSIS_RETRY_MARKER
+    ? ALTERNATE_MANUAL_ANALYSIS_RETRY_MARKER
+    : MANUAL_ANALYSIS_RETRY_MARKER;
+}
+
+function analysisFailureSummary(
+  row: { failed_count: unknown; failed_reason: unknown } | undefined,
+) {
+  const count = Number(row?.failed_count ?? 0);
+  const reason = row?.failed_reason ?? null;
+  if (
+    !Number.isSafeInteger(count)
+    || count < 0
+    || (count > 0 && !boundedText(reason, 120))
+    || (count === 0 && reason !== null)
+  ) {
+    throw new Error("PostgreSQL exhausted analysis failure summary was invalid");
+  }
+  return Object.freeze({
+    count,
+    reason: count === 0 ? null : reason as string,
+  });
+}
 
 function boundedLimit(value: number | undefined) {
   return Number.isSafeInteger(value) && Number(value) >= 1 && Number(value) <= MAX_LIST_LIMIT
@@ -331,6 +361,84 @@ LIMIT $5`,
           return result.rows.map(mailItemFromPostgres);
         },
       );
+    },
+
+    async getExhaustedAnalysisFailureSummary(
+      connectionKey,
+      currentLabelDefinitionVersion,
+    ) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedLabelDefinitionVersion =
+        normalizeMailItemLabelDefinitionVersion(currentLabelDefinitionVersion);
+      return withPostgresTransaction(
+        pool,
+        { ...transactionOptions, readOnly: true },
+        async (client) => {
+          const result = await client.query<{
+            failed_count: unknown;
+            failed_reason: unknown;
+          }>(
+            `SELECT COUNT(*)::text AS failed_count,
+       MIN(error_code) AS failed_reason
+FROM mail_items
+WHERE connection_key = $1
+  AND status = 'failed'
+  AND failure_attempts >= $2
+  AND attempted_label_definition_version = $3
+  AND error_code != 'analysis_daily_limit_reached'`,
+            [
+              normalizedConnectionKey,
+              MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
+              normalizedLabelDefinitionVersion,
+            ],
+          );
+          if (result.rowCount !== 1) {
+            throw new Error(
+              "PostgreSQL exhausted analysis failure summary returned an invalid result",
+            );
+          }
+          return analysisFailureSummary(result.rows[0]);
+        },
+      );
+    },
+
+    async resetExhaustedAnalysisFailures(
+      connectionKey,
+      currentLabelDefinitionVersion,
+      updatedAt,
+    ) {
+      const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
+      const normalizedLabelDefinitionVersion =
+        normalizeMailItemLabelDefinitionVersion(currentLabelDefinitionVersion);
+      return withPostgresTransaction(pool, transactionOptions, async (client) => {
+        const result = await client.query(
+          `UPDATE mail_items
+SET failure_attempts = 1,
+    attempted_label_definition_version = $1,
+    updated_at = $2
+WHERE connection_key = $3
+  AND status = 'failed'
+  AND failure_attempts >= $4
+  AND attempted_label_definition_version = $5
+  AND error_code IN ($6, $7, $8, $9)`,
+          [
+            manualAnalysisRetryMarker(normalizedLabelDefinitionVersion),
+            persistenceDate(updatedAt, "PostgreSQL mail item updated_at"),
+            normalizedConnectionKey,
+            MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
+            normalizedLabelDefinitionVersion,
+            ...RETRYABLE_EXHAUSTED_ANALYSIS_ERROR_CODES,
+          ],
+        );
+        if (
+          result.rowCount === null
+          || !Number.isSafeInteger(result.rowCount)
+          || result.rowCount < 0
+        ) {
+          throw new Error("PostgreSQL exhausted analysis reset count was invalid");
+        }
+        return result.rowCount;
+      });
     },
 
     async markCoverageComplete(connectionKey) {

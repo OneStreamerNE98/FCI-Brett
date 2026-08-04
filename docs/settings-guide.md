@@ -203,6 +203,20 @@ database. Rendering the stored rows makes zero per-row Gmail calls; the
 separate bounded sweep may read newly encountered messages. **Mark reviewed**
 dismisses one row from the queue without changing Gmail.
 
+If a message exhausts all three analysis attempts, the review queue does not
+pretend that the empty review list means every message was handled. It shows
+**N messages could not be analysed — reason** beside the sweep result. This
+count includes only exhausted failures for the current analysis catalog, not a
+message that still has an automatic retry available or one paused by the daily
+provider limit. An Administrator can use **Retry failed analyses** after the AI
+provider recovers. That action resets the retry budget in one guarded database
+update and then runs the ordinary bounded, review-first sweep. It can recover
+provider, deadline, item-processing, and stored-state read failures. It
+deliberately does not reset a `gmail_read_failed` row, because that code can
+represent a permanently deleted Gmail message; daily-limit, aborted-request,
+and review-retirement failures are also excluded. No retry sends, files,
+labels, archives, drafts, or creates a lead.
+
 > [SCREENSHOT 4 — see Screenshot index]
 
 ---

@@ -111,6 +111,8 @@ type InboxReviewQueueRow = Readonly<{
 type InboxReviewQueue = Readonly<{
   rows: readonly InboxReviewQueueRow[];
   totalCount: number;
+  failedCount?: number;
+  failedReason?: string;
 }>;
 type InboxReviewQueueState = "idle" | "loading" | "ready" | "unavailable";
 type InboxAnalysisCoverage =
@@ -171,6 +173,21 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
     !Array.isArray(record.rows)
     || !Number.isSafeInteger(record.totalCount)
     || Number(record.totalCount) < 0
+  ) {
+    return null;
+  }
+  const hasFailedCount = Object.hasOwn(record, "failedCount");
+  const hasFailedReason = Object.hasOwn(record, "failedReason");
+  if (
+    hasFailedCount !== hasFailedReason
+    || (hasFailedCount && (
+      !Number.isSafeInteger(record.failedCount)
+      || Number(record.failedCount) < 1
+      || typeof record.failedReason !== "string"
+      || !record.failedReason.trim()
+      || record.failedReason.length > 120
+      || /[\u0000-\u001f\u007f]/.test(record.failedReason)
+    ))
   ) {
     return null;
   }
@@ -306,6 +323,12 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
   return Object.freeze({
     rows: Object.freeze(rows),
     totalCount: Number(record.totalCount),
+    ...(hasFailedCount
+      ? {
+          failedCount: Number(record.failedCount),
+          failedReason: record.failedReason as string,
+        }
+      : {}),
   });
 }
 
@@ -544,6 +567,11 @@ export function InboxView({
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [reviewRows, setReviewRows] = useState<readonly InboxReviewQueueRow[]>([]);
   const [reviewTotalCount, setReviewTotalCount] = useState(0);
+  const [failedAnalysisSummary, setFailedAnalysisSummary] = useState<Readonly<{
+    count: number;
+    reason: string;
+  }> | null>(null);
+  const [retryingFailedAnalyses, setRetryingFailedAnalyses] = useState(false);
   const [reviewQueueState, setReviewQueueState] =
     useState<InboxReviewQueueState>("idle");
   const [markingReviewId, setMarkingReviewId] = useState<string | null>(null);
@@ -724,6 +752,14 @@ export function InboxView({
       if (requestId !== reviewQueueRequestIdRef.current) return null;
       setReviewRows(queue.rows);
       setReviewTotalCount(queue.totalCount);
+      setFailedAnalysisSummary(
+        queue.failedCount === undefined || queue.failedReason === undefined
+          ? null
+          : Object.freeze({
+              count: queue.failedCount,
+              reason: queue.failedReason,
+            }),
+      );
       setLoadedBucket("needs-review");
       setReviewQueueState("ready");
       setError(null);
@@ -839,6 +875,68 @@ export function InboxView({
       await checkGmailConnection(true);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function retryFailedAnalyses() {
+    if (
+      retryingFailedAnalyses
+      || reviewQueueState === "loading"
+      || analysisLoading
+      || !isAdmin
+      || !gmailReady
+      || !inboxAnalysisReady
+    ) {
+      return;
+    }
+    setRetryingFailedAnalyses(true);
+    try {
+      const response = await fetch("/api/v1/inbox-analysis", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry-failed-analyses" }),
+      });
+      const body = await response.json().catch(() => null) as {
+        retriedCount?: unknown;
+        error?: unknown;
+      } | null;
+      if (
+        !response.ok
+        || !body
+        || !Number.isSafeInteger(body.retriedCount)
+        || Number(body.retriedCount) < 0
+      ) {
+        throw new Error(
+          typeof body?.error === "string"
+            ? body.error
+            : "Failed inbox analyses could not be retried.",
+        );
+      }
+      const retriedCount = Number(body.retriedCount);
+      if (retriedCount === 0) {
+        await loadReviewQueue();
+        notify(
+          "No provider-analysis failures were eligible for retry. Gmail read failures remain unchanged.",
+          "warning",
+        );
+        return;
+      }
+      const queue = await refreshReviewQueue();
+      notify(
+        queue
+          ? `Retried ${retriedCount} failed inbox ${retriedCount === 1 ? "analysis" : "analyses"}. Review any recovered messages before acting.`
+          : `Reset ${retriedCount} failed inbox ${retriedCount === 1 ? "analysis" : "analyses"} for retry. Refresh the queue to check recovery.`,
+        queue ? "success" : "warning",
+      );
+    } catch (retryError) {
+      notify(
+        retryError instanceof Error
+          ? retryError.message
+          : "Failed inbox analyses could not be retried.",
+        "error",
+      );
+    } finally {
+      setRetryingFailedAnalyses(false);
     }
   }
 
@@ -1348,6 +1446,25 @@ export function InboxView({
             {(analysisLoading || analysisCoverage) && <span className="gmail-search-help" role="status" aria-live="polite">
               {analysisLoading ? "Checking inbox analysis…" : analysisCoverage?.message}
             </span>}
+            {reviewQueueSelected && reviewQueueState === "ready" && failedAnalysisSummary && <>
+              <span className="gmail-search-help" role="status" aria-live="polite">
+                {failedAnalysisSummary.count} {failedAnalysisSummary.count === 1 ? "message" : "messages"} could not be analysed — {failedAnalysisSummary.reason}.
+              </span>
+              <button
+                className="soft-button"
+                type="button"
+                onClick={() => void retryFailedAnalyses()}
+                disabled={
+                  retryingFailedAnalyses
+                  || analysisLoading
+                  || queueReadInFlight
+                  || !gmailReady
+                  || !inboxAnalysisReady
+                }
+              >
+                <RefreshCw size={15} /> {retryingFailedAnalyses ? "Retrying…" : "Retry failed analyses"}
+              </button>
+            </>}
             {reviewQueueSelected && analysisFailed && !analysisLoading && <span className="gmail-search-help" role="status" aria-live="polite">
               Inbox analysis did not finish — this list may be incomplete.
             </span>}

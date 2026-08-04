@@ -1042,3 +1042,210 @@ test("a sweep reconciles any review row whose message was already filed", async 
     database.close();
   }
 });
+
+function insertExhaustedAnalysisFailure(database, {
+  id,
+  messageId,
+  errorCode,
+  failureAttempts = 3,
+  connectionKey = CONNECTION_KEY,
+  attemptedLabelDefinitionVersion =
+    application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+}) {
+  database.database.prepare(
+    `INSERT INTO mail_items (
+       id, connection_key, gmail_message_id, status,
+       attempted_label_definition_version, subject, sender,
+       failure_attempts, error_code, coverage_complete, created_at, updated_at
+     ) VALUES (?, ?, ?, 'failed', ?, ?, ?, ?, ?, 1, ?, ?)`,
+  ).run(
+    id,
+    connectionKey,
+    messageId,
+    attemptedLabelDefinitionVersion,
+    `FCI TEST failed analysis ${messageId}`,
+    "Failed Sender <failed@example.test>",
+    failureAttempts,
+    errorCode,
+    1_775_000_000_000,
+    1_775_000_000_000,
+  );
+}
+
+test("AI-12 queue GET omits zero failures and reports only current-catalog exhaustion", async () => {
+  const database = new ReviewQueueDatabase();
+  const originalDatabase = workerEnvironment.DB;
+  workerEnvironment.DB = database;
+  insertExhaustedAnalysisFailure(database, {
+    id: "failed-mid-retry",
+    messageId: "gmail-mid-retry",
+    errorCode: "analysis_failed",
+    failureAttempts: 2,
+  });
+  insertExhaustedAnalysisFailure(database, {
+    id: "failed-old-catalog",
+    messageId: "gmail-old-catalog",
+    errorCode: "analysis_failed",
+    attemptedLabelDefinitionVersion: "ai12-old-catalog",
+  });
+  insertExhaustedAnalysisFailure(database, {
+    id: "failed-daily-cap",
+    messageId: "gmail-daily-cap",
+    errorCode: "analysis_daily_limit_reached",
+  });
+  try {
+    const zero = await route.GET(routeRequest());
+    assert.equal(zero.status, 200);
+    assert.deepEqual(await zero.json(), { rows: [], totalCount: 0 });
+
+    database.database.prepare(
+      "UPDATE mail_items SET failure_attempts = 3 WHERE id = 'failed-mid-retry'",
+    ).run();
+    const exhausted = await route.GET(routeRequest());
+    assert.equal(exhausted.status, 200);
+    assert.deepEqual(await exhausted.json(), {
+      rows: [],
+      totalCount: 0,
+      failedCount: 1,
+      failedReason: "analysis_failed",
+    });
+  } finally {
+    workerEnvironment.DB = originalDatabase;
+    database.close();
+  }
+});
+
+test("AI-12 retry action is Administrator-only and atomically resets only the named allowlist", async () => {
+  const database = new ReviewQueueDatabase();
+  const originalDatabase = workerEnvironment.DB;
+  const originalPrepare = database.prepare.bind(database);
+  const resetStatements = [];
+  workerEnvironment.DB = database;
+  const allowed = [
+    "analysis_failed",
+    "analysis_deadline_exceeded",
+    "analysis_item_failed",
+    "analysis_state_read_failed",
+  ];
+  const excluded = [
+    "gmail_read_failed",
+    "analysis_daily_limit_reached",
+    "analysis_request_aborted",
+    "analysis_retire_failed",
+  ];
+  for (const [index, errorCode] of [...allowed, ...excluded].entries()) {
+    insertExhaustedAnalysisFailure(database, {
+      id: `failed-${index}`,
+      messageId: `gmail-failed-${index}`,
+      errorCode,
+    });
+  }
+  database.prepare = (sql) => {
+    if (/^UPDATE mail_items SET failure_attempts = 1/u.test(sql)) {
+      resetStatements.push(sql);
+    }
+    return originalPrepare(sql);
+  };
+  try {
+    const denied = await route.PATCH(routeRequest(OFFICE_EMAIL, {
+      method: "PATCH",
+      body: { action: "retry-failed-analyses" },
+    }));
+    assert.equal(denied.status, 403);
+    assert.ok(database.rows().every((row) => row.failure_attempts === 3));
+
+    const crossOrigin = await route.PATCH(routeRequest(ADMIN_EMAIL, {
+      method: "PATCH",
+      body: { action: "retry-failed-analyses" },
+      origin: "https://attacker.example.test",
+    }));
+    assert.equal(crossOrigin.status, 403);
+    assert.ok(database.rows().every((row) => row.failure_attempts === 3));
+
+    const unknownKey = await route.PATCH(routeRequest(ADMIN_EMAIL, {
+      method: "PATCH",
+      body: { action: "retry-failed-analyses", id: "failed-0" },
+    }));
+    assert.equal(unknownKey.status, 400);
+    assert.ok(database.rows().every((row) => row.failure_attempts === 3));
+
+    const response = await route.PATCH(routeRequest(ADMIN_EMAIL, {
+      method: "PATCH",
+      body: { action: "retry-failed-analyses" },
+    }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("Cache-Control"), "no-store");
+    assert.deepEqual(await response.json(), { retriedCount: 4 });
+    assert.equal(resetStatements.length, 1);
+    assert.match(
+      resetStatements[0],
+      /WHERE connection_key = \? AND status = 'failed' AND failure_attempts >= \? AND attempted_label_definition_version = \? AND error_code IN \(\?, \?, \?, \?\)$/u,
+      "the action is one guarded set-based update, never a list-then-upsert loop",
+    );
+
+    const rowsByError = new Map(database.rows().map((row) => [
+      row.error_code,
+      row,
+    ]));
+    for (const errorCode of allowed) {
+      const row = rowsByError.get(errorCode);
+      assert.equal(row.status, "failed");
+      assert.equal(row.failure_attempts, 1);
+      assert.notEqual(
+        row.attempted_label_definition_version,
+        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      );
+    }
+    for (const errorCode of excluded) {
+      const row = rowsByError.get(errorCode);
+      assert.equal(row.failure_attempts, 3);
+      assert.equal(
+        row.attempted_label_definition_version,
+        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      );
+    }
+
+    const repository = (await vite.ssrLoadModule(
+      "/app/adapters/d1/mail-item-repository.ts",
+    )).createD1MailItemRepository(database);
+    assert.doesNotMatch(
+      (await repository.listRetryableAnalysisRows(
+        CONNECTION_KEY,
+        application.INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      )).map((row) => row.errorCode).join(","),
+      /gmail_read_failed/u,
+      "a Gmail 404-class failure is not resurrected by the action",
+    );
+    const remaining = await route.GET(routeRequest());
+    const remainingBody = await remaining.json();
+    assert.equal(remainingBody.failedCount, 3);
+    assert.equal(remainingBody.failedReason, "analysis_request_aborted");
+  } finally {
+    workerEnvironment.DB = originalDatabase;
+    database.prepare = originalPrepare;
+    database.close();
+  }
+});
+
+test("AI-12 Inbox UI carries the optional failure signal beside coverage and exposes the bounded action", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(
+    new URL("app/inbox/components/InboxView.tsx", root),
+    "utf8",
+  );
+  assert.match(source, /failedCount\?: number;[\s\S]*failedReason\?: string;/u);
+  assert.match(
+    source,
+    /hasFailedCount !== hasFailedReason[\s\S]*Number\(record\.failedCount\) < 1/u,
+    "zero is represented by omission and the two fields cross the boundary together",
+  );
+  assert.match(
+    source,
+    /could not be analysed — \{failedAnalysisSummary\.reason\}/u,
+  );
+  assert.match(source, /"Retry failed analyses"/u);
+  assert.match(
+    source,
+    /body: JSON\.stringify\(\{ action: "retry-failed-analyses" \}\)/u,
+  );
+});

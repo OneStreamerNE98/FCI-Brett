@@ -185,6 +185,15 @@ function parseMarkReviewedRequest(body: Record<string, unknown>) {
   return Object.freeze({ id: body.id, outcome });
 }
 
+function parseRetryFailedAnalysesRequest(body: Record<string, unknown>) {
+  const keys = Object.keys(body);
+  return keys.length === 1
+    && keys[0] === "action"
+    && body.action === "retry-failed-analyses"
+    ? Object.freeze({ action: "retry-failed-analyses" as const })
+    : null;
+}
+
 function singleLineSnapshot(value: string | null, maximum: number) {
   if (!value) return null;
   const normalized = value
@@ -1389,14 +1398,23 @@ export async function GET(request: NextRequest) {
     const database = env.DB as unknown as D1Database;
     const repository = createD1MailItemRepository(database);
     const connectionKey = getGoogleRuntimeConfig().connectionKey;
-    const page = await repository.listByStatusPage(
-      connectionKey,
-      "needs-review",
-      500,
-    );
+    const [page, failed] = await Promise.all([
+      repository.listByStatusPage(
+        connectionKey,
+        "needs-review",
+        500,
+      ),
+      repository.getExhaustedAnalysisFailureSummary(
+        connectionKey,
+        INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+      ),
+    ]);
     return noStoreJson({
       rows: page.items.map(reviewQueueRow),
       totalCount: page.totalCount,
+      ...(failed.count > 0
+        ? { failedCount: failed.count, failedReason: failed.reason }
+        : {}),
     });
   } catch {
     return noStoreJson(
@@ -1423,9 +1441,10 @@ export async function PATCH(request: NextRequest) {
     tooLargeMessage: "Inbox review update is too large.",
   });
   if (!parsed.ok) return noStoreJson({ error: parsed.error }, parsed.status);
-  const update = parseMarkReviewedRequest(parsed.body);
-  if (!update) {
-    return noStoreJson({ error: "Choose one valid inbox review row." }, 400);
+  const retry = parseRetryFailedAnalysesRequest(parsed.body);
+  const update = retry ? null : parseMarkReviewedRequest(parsed.body);
+  if (!retry && !update) {
+    return noStoreJson({ error: "Choose one valid inbox review action." }, 400);
   }
 
   try {
@@ -1433,6 +1452,17 @@ export async function PATCH(request: NextRequest) {
     const database = env.DB as unknown as D1Database;
     const repository = createD1MailItemRepository(database);
     const connectionKey = getGoogleRuntimeConfig().connectionKey;
+    if (retry) {
+      const retriedCount = await repository.resetExhaustedAnalysisFailures(
+        connectionKey,
+        INBOX_ANALYSIS_LABEL_DEFINITION_VERSION,
+        Date.now(),
+      );
+      return noStoreJson({ retriedCount });
+    }
+    if (!update) {
+      return noStoreJson({ error: "Choose one valid inbox review action." }, 400);
+    }
     const dismissed = await repository.dismissNeedsReview(
       update.id,
       connectionKey,
@@ -1445,7 +1475,11 @@ export async function PATCH(request: NextRequest) {
     return noStoreJson({ id: update.id, status: update.outcome });
   } catch {
     return noStoreJson(
-      { error: "Inbox review row could not be marked reviewed." },
+      {
+        error: retry
+          ? "Failed inbox analyses could not be retried."
+          : "Inbox review row could not be marked reviewed.",
+      },
       500,
     );
   }
