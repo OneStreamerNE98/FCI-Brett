@@ -11,6 +11,7 @@ export type JobSiteLocation = Readonly<{
 export type JobSiteMapsRuntimeConfig = Readonly<{
   simulation: boolean;
   browserApiKey: string | null;
+  addressValidationEnabled: boolean;
 }>;
 
 export type JobSiteMapState = Readonly<{
@@ -92,6 +93,7 @@ export function buildGoogleMapsEmbedUrl(
 export function resolveJobSiteMapsRuntimeConfig(input: Readonly<{
   simulation: boolean;
   browserApiKey?: unknown;
+  addressValidationEnabled?: unknown;
 }>): JobSiteMapsRuntimeConfig {
   const browserApiKey = typeof input.browserApiKey === "string" && input.browserApiKey.trim()
     ? input.browserApiKey.trim()
@@ -103,6 +105,10 @@ export function resolveJobSiteMapsRuntimeConfig(input: Readonly<{
     // simulation (owner decision, July 25, 2026). Workspace surfaces stay
     // simulated; without a key, simulation keeps its placeholder card.
     browserApiKey,
+    // Autocomplete and Address Validation are billable together and remain
+    // behind WS-15's explicit owner gate. A key used by GI-03 embeds must not
+    // silently open GI-04's Places requests.
+    addressValidationEnabled: input.addressValidationEnabled === true,
   });
 }
 

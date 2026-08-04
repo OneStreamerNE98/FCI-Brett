@@ -11,6 +11,10 @@ function runtimeValue(name: string) {
   return (env as unknown as RuntimeEnvironment)[name] ?? process.env[name];
 }
 
+function enabled(value: string | undefined) {
+  return value?.trim().toLowerCase() === "true";
+}
+
 export function getSitesJobSiteMapsRuntimeConfig() {
   const googleRuntime = getGoogleRuntimeConfig({
     GOOGLE_INTEGRATION_MODE: runtimeValue("GOOGLE_INTEGRATION_MODE"),
@@ -19,5 +23,6 @@ export function getSitesJobSiteMapsRuntimeConfig() {
   return resolveJobSiteMapsRuntimeConfig({
     simulation: googleRuntime.simulation,
     browserApiKey: runtimeValue(GOOGLE_MAPS_BROWSER_API_KEY_ENV),
+    addressValidationEnabled: enabled(runtimeValue("GOOGLE_MAPS_ADDRESS_VALIDATION_ENABLED")),
   });
 }

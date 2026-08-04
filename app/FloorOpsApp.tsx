@@ -76,7 +76,9 @@ import { ProjectFileCreationModal, ProjectFilesPanel, useProjectFilesController 
 import { CLIENT_STATUSES } from "./domain/client-creation";
 import { FLOORING_CATEGORIES, PROJECT_STATUSES, type FlooringCategory } from "./domain/project-creation";
 import { CALLBACK_NOTE_MAX_LENGTH } from "./domain/project-operations";
+import type { AddressReviewReference } from "./domain/address-validation";
 import { normalizeRecordVersion } from "./domain/record-version";
+import { AddressValidationField } from "./features/address-validation/AddressValidationField";
 import { normalizeProjectSegment, resolveProjectSegment, type ProjectSegment } from "./domain/project-segment";
 
 type Lead = {
@@ -101,6 +103,7 @@ type Lead = {
   createdAt?: number | null;
   updatedAt?: number | null;
   version?: string;
+  addressReview?: AddressReviewReference;
 };
 type LeadEditPatch = Partial<{
   company: string;
@@ -116,6 +119,7 @@ type LeadEditPatch = Partial<{
   nextActionAt: string | null;
   ownerEmail: string;
   status: string;
+  addressReview?: AddressReviewReference;
 }>;
 type LeadConflictValues = Partial<{
   company: string;
@@ -147,6 +151,7 @@ type LeadModalProps =
       // modal is never reworked a second time (review finding, PR #231).
       initialValues?: Partial<Lead>;
       isAdmin: boolean;
+      mapsRuntime: JobSiteMapsRuntimeConfig;
       onClose: () => void;
       onSave: (lead: Lead) => Promise<void>;
     }
@@ -154,6 +159,7 @@ type LeadModalProps =
       mode: "edit";
       initialValues: Lead;
       isAdmin: boolean;
+      mapsRuntime: JobSiteMapsRuntimeConfig;
       onClose: () => void;
       onSave: (patch: LeadEditPatch, version: string) => Promise<void>;
     };
@@ -178,6 +184,7 @@ type Client = {
   color: string;
   googleStatus: "Ready" | "Setup pending";
   jobSite: JobSiteLocation | null;
+  addressReview?: AddressReviewReference;
   version?: string;
   driveFolderId?: string;
   driveUrl?: string;
@@ -186,8 +193,15 @@ type ClientEditPatch = Partial<{
   name: string;
   status: string;
   industry: string | null;
+  siteAddress: string | null;
+  addressReview?: AddressReviewReference;
 }>;
-type ClientConflictValues = ClientEditPatch;
+type ClientConflictValues = Partial<{
+  name: string;
+  status: string;
+  industry: string | null;
+  siteAddress: string | null;
+}>;
 type ClientUpdatePayload = {
   client?: {
     id: string;
@@ -195,6 +209,10 @@ type ClientUpdatePayload = {
     name: string;
     status: string;
     industry: string | null;
+    siteAddress: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    addressValidationVerdict: string | null;
     updatedAt: number;
     version: string;
   };
@@ -226,7 +244,7 @@ type ContactUpdatePayload = {
   currentVersion?: string;
   currentValues?: ContactConflictValues;
 };
-type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; version?: string; driveFolderId?: string; driveUrl?: string };
+type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; version?: string; driveFolderId?: string; driveUrl?: string; addressReview?: AddressReviewReference };
 type ProjectEditPatch = Partial<{
   name: string;
   status: string;
@@ -237,8 +255,9 @@ type ProjectEditPatch = Partial<{
   squareFeet: number | null;
   contractValue: number | null;
   segment: ProjectSegment | null;
+  addressReview?: AddressReviewReference;
 }>;
-type ProjectConflictValues = ProjectEditPatch;
+type ProjectConflictValues = Omit<ProjectEditPatch, "addressReview">;
 type ProjectUpdatePayload = {
   project?: {
     id: string;
@@ -247,6 +266,9 @@ type ProjectUpdatePayload = {
     name: string;
     status: string;
     site: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    addressValidationVerdict: string | null;
     projectManagerId: string | null;
     estimatedValue: number | null;
     flooringCategory: FlooringCategory | null;
@@ -1076,7 +1098,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   async function addLead(lead: Lead) {
     const afterCreate = leadModal?.afterCreate;
     try {
-      const response = await fetch("/api/v1/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: lead.company, contactName: lead.contact, projectName: lead.project, source: lead.source, stage: lead.stage, site: lead.site, estimatedValue: lead.estimatedValue, nextAction: lead.next, status: "active", ...(lead.contactEmail ? { contactEmail: lead.contactEmail } : {}), ...(lead.contactPhone ? { contactPhone: lead.contactPhone } : {}), ...(lead.nextActionAt ? { nextActionAt: lead.nextActionAt } : {}), ...(lead.ownerEmail ? { ownerEmail: lead.ownerEmail } : {}) }) });
+      const response = await fetch("/api/v1/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: lead.company, contactName: lead.contact, projectName: lead.project, source: lead.source, stage: lead.stage, site: lead.site, estimatedValue: lead.estimatedValue, nextAction: lead.next, status: "active", ...(lead.addressReview ? { addressReview: lead.addressReview } : {}), ...(lead.contactEmail ? { contactEmail: lead.contactEmail } : {}), ...(lead.contactPhone ? { contactPhone: lead.contactPhone } : {}), ...(lead.nextActionAt ? { nextActionAt: lead.nextActionAt } : {}), ...(lead.ownerEmail ? { ownerEmail: lead.ownerEmail } : {}) }) });
       const data = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Lead could not be saved.");
     } catch (error) {
@@ -1128,6 +1150,8 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           name: client.name,
           industry: client.industry,
           status: client.status.toLowerCase(),
+          siteAddress: client.jobSite?.address ?? null,
+          ...(client.addressReview ? { addressReview: client.addressReview } : {}),
           primaryContact: {
             name: client.contact,
             email: client.email,
@@ -1176,6 +1200,11 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           industry: saved.industry ?? "Commercial",
           industryRaw: saved.industry,
           status: displayStatus(saved.status, saved.status),
+          jobSite: normalizeJobSiteLocation({
+            address: saved.siteAddress,
+            latitude: saved.latitude,
+            longitude: saved.longitude,
+          }),
           initials: recordInitials(saved.name),
           version: normalizeRecordVersion(saved.version) ?? item.version,
         }
@@ -1238,7 +1267,7 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
   async function addProject(project: Project) {
     try {
       const estimatedValue = project.estimatedValue ?? undefined;
-      const response = await fetch("/api/v1/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: project.clientId, name: project.name, status: project.status.toLowerCase(), site: project.site, projectManagerId: project.managerId, estimatedValue, flooringCategory: project.flooringCategory ?? undefined, squareFeet: project.squareFeet ?? undefined, contractValue: project.contractValue ?? undefined, segment: project.segment ?? undefined }) });
+      const response = await fetch("/api/v1/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId: project.clientId, name: project.name, status: project.status.toLowerCase(), site: project.jobSite?.address ?? project.site, ...(project.addressReview ? { addressReview: project.addressReview } : {}), projectManagerId: project.managerId, estimatedValue, flooringCategory: project.flooringCategory ?? undefined, squareFeet: project.squareFeet ?? undefined, contractValue: project.contractValue ?? undefined, segment: project.segment ?? undefined }) });
       const errorData = await response.clone().json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(errorData.error ?? "Project could not be saved.");
       const data = await response.json() as { id: string; projectNumber: string; sheetSync?: { status?: string; message?: string } };
@@ -1277,7 +1306,11 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
     const estimatedValue = optionalRecordNumber(saved.estimatedValue);
     const squareFeet = optionalRecordNumber(saved.squareFeet);
     const contractValue = optionalRecordNumber(saved.contractValue);
-    const jobSite = normalizeJobSiteLocation({ address: saved.site });
+    const jobSite = normalizeJobSiteLocation({
+      address: saved.site,
+      latitude: saved.latitude,
+      longitude: saved.longitude,
+    });
     const savedSegment = saved.segment === null
       ? resolveProjectSegment(null, client?.industryRaw ?? client?.industry)
       : resolveProjectSegment(saved.segment);
@@ -1787,11 +1820,11 @@ export function FloorOpsApp({ initialView, environment, jobSiteMaps, userName, u
           {view === "Settings" && <SettingsView notify={notify} section={settingsArea} onSection={navigateToSettings} onTimezoneChange={setDisplayTimezone} onCurrentUserSettingsLoaded={reconcileCurrentUserSettings} rules={filingRules} projects={projectItems} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onGoogleSetup={openGoogleWorkspace} onAddRule={() => setRuleModal(true)} onUpdateRule={updateRule} onDeleteRule={deleteRule} sheetMirror={sheetMirror} onSyncGoogleSheet={syncGoogleSheet} onImportConfirmed={refreshDirectoryData} syncingSheet={sheetSyncing} />}
         </div>
       </main>
-      {leadModal && <LeadModal mode="create" initialValues={leadModal.initialValues} isAdmin={isAdmin} onClose={() => setLeadModal(null)} onSave={addLead} />}
-      {clientModal && <ClientModal onClose={() => setClientModal(false)} onSave={addClient} />}
-      {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} managerId={userEmail.trim().toLowerCase()} managerLabel={userName.trim() || userEmail} isAdmin={isAdmin} onClose={closeNewProject} onSave={addProject} />}
+      {leadModal && <LeadModal mode="create" initialValues={leadModal.initialValues} isAdmin={isAdmin} mapsRuntime={jobSiteMaps} onClose={() => setLeadModal(null)} onSave={addLead} />}
+      {clientModal && <ClientModal mapsRuntime={jobSiteMaps} onClose={() => setClientModal(false)} onSave={addClient} />}
+      {projectModal && <NewProjectModal clients={clients} initialClientId={projectModalClientId} managerId={userEmail.trim().toLowerCase()} managerLabel={userName.trim() || userEmail} isAdmin={isAdmin} mapsRuntime={jobSiteMaps} onClose={closeNewProject} onSave={addProject} />}
       {ruleModal && <RuleModal onClose={() => setRuleModal(false)} onSave={addRule} />}
-      {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} isAdmin={isAdmin} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} onSaveLead={saveLeadEdits} returnFocusRef={leadDrawerReturnFocusRef} fallbackFocusRef={workspaceSearchRef} />}
+      {leadOpen && selectedLead && <LeadDrawer lead={selectedLead} isAdmin={isAdmin} mapsRuntime={jobSiteMaps} onClose={() => setLeadOpen(false)} onAdvance={advanceLead} onSaveLead={saveLeadEdits} returnFocusRef={leadDrawerReturnFocusRef} fallbackFocusRef={workspaceSearchRef} />}
       {projectOpen && selectedProject && <ProjectDrawer project={selectedProject} clients={clients} jobSiteMaps={jobSiteMaps} onClose={() => setProjectOpen(false)} notify={notify} onSaveProject={saveProjectEdits} onProvisionDrive={provisionProjectDrive} onAssignToMe={assignProjectToCurrentUser} onRecordInstallationDates={recordProjectInstallationDates} onRecordFollowUpResult={recordProjectFollowUpResult} onMeetingRecorded={() => void refreshDashboardSnapshot().catch(() => {})} isAdmin={isAdmin} currentUserEmail={userEmail.trim().toLowerCase()} returnFocusRef={projectDrawerReturnFocusRef} />}
       {clientOpen && selectedClient && <ClientDrawer client={selectedClient} projects={projectItems.filter((project) => project.clientId === selectedClient.id)} jobSiteMaps={jobSiteMaps} onClose={() => setClientOpen(false)} onSaveClient={saveClientEdits} onSaveContact={saveContactEdits} onNewProject={() => { setClientOpen(false); openNewProject(selectedClient.id); }} onProject={(project) => { setClientOpen(false); openProject(project); }} returnFocusRef={clientDrawerReturnFocusRef} />}
       {toast && <div className={`toast toast-${toast.kind}`} role={toast.kind === "error" ? "alert" : "status"} aria-live={toast.kind === "error" ? "assertive" : "polite"} aria-atomic="true">
@@ -2131,6 +2164,9 @@ function LeadModal(props: LeadModalProps) {
   // seed feeds defaultValues in BOTH modes: full row in edit, optional prefill in
   // create (the AI-10 (f) consumption path). Mode logic stays keyed on editLead.
   const seed: Partial<Lead> | null = props.mode === "edit" ? props.initialValues : props.initialValues ?? null;
+  const [site, setSite] = useState(seed?.site ?? "");
+  const [addressReview, setAddressReview] = useState<AddressReviewReference | null>(null);
+  const [addressFieldRevision, setAddressFieldRevision] = useState(0);
   const inboxPrefill = props.mode === "create" && props.initialValues !== undefined;
   const sourceOptions = ["Website", "Referral", "Bid invite", "Repeat client"];
   if (seed?.source && !sourceOptions.includes(seed.source)) sourceOptions.push(seed.source);
@@ -2165,7 +2201,7 @@ function LeadModal(props: LeadModalProps) {
     const contactName = String(form.get("contact") ?? "").trim();
     const projectName = String(form.get("project") ?? "").trim();
     const source = String(form.get("source") ?? "").trim();
-    const site = String(form.get("site") ?? "").trim();
+    const normalizedSite = site.trim();
     const estimatedValue = Number(form.get("value") ?? editLead?.estimatedValue ?? 0);
     const nextAction = String(form.get("notes") ?? "").trim();
     const contactEmailText = String(form.get("contactEmail") ?? "").trim().toLowerCase();
@@ -2195,7 +2231,8 @@ function LeadModal(props: LeadModalProps) {
           next: nextAction,
           nextActionAt,
           ownerEmail: ownerEmail || null,
-          site,
+          site: normalizedSite,
+          ...(addressReview ? { addressReview } : {}),
           status: "active",
           initials: recordInitials(company),
           color: "sage",
@@ -2223,7 +2260,10 @@ function LeadModal(props: LeadModalProps) {
     if (projectName !== props.initialValues.project) patch.projectName = projectName;
     if (source !== props.initialValues.source) patch.source = source;
     if (stage !== props.initialValues.stage) patch.stage = stage;
-    if (site !== props.initialValues.site) patch.site = site;
+    if (normalizedSite !== props.initialValues.site || addressReview) {
+      patch.site = normalizedSite;
+      if (addressReview) patch.addressReview = addressReview;
+    }
     if (props.isAdmin && estimatedValue !== props.initialValues.estimatedValue) {
       patch.estimatedValue = estimatedValue;
     }
@@ -2244,9 +2284,15 @@ function LeadModal(props: LeadModalProps) {
       props.onClose();
     } catch (saveError) {
       if (saveError instanceof LeadEditConflictError) {
+        if (addressReview) {
+          setAddressReview(null);
+          setAddressFieldRevision((current) => current + 1);
+        }
         setConflictVersion(saveError.currentVersion);
         setConflictValues(saveError.currentValues);
-        setError("This lead changed while you were editing. Review your entries, then choose Re-apply changes.");
+        setError(addressReview
+          ? "This lead changed while you were editing. Review the address again, then choose Re-apply changes."
+          : "This lead changed while you were editing. Review your entries, then choose Re-apply changes.");
       } else {
         setError(saveError instanceof Error ? saveError.message : "Lead changes could not be saved.");
       }
@@ -2265,7 +2311,7 @@ function LeadModal(props: LeadModalProps) {
       <div className="form-row"><label>Primary contact<input name="contact" required maxLength={160} placeholder="Full name" defaultValue={seed?.contact ?? ""} disabled={saving} />{savedValue("contactName")}</label><label>Lead source<select name="source" defaultValue={seed?.source ?? "Website"} disabled={saving}>{sourceOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("source")}</label></div>
       {(editMode || inboxPrefill) && <div className="form-row"><label>Contact email <span className="optional-label">Optional</span><input name="contactEmail" type="email" maxLength={254} defaultValue={seed?.contactEmail ?? ""} disabled={saving} />{savedValue("contactEmail")}</label><label>Contact phone <span className="optional-label">Optional</span><input name="contactPhone" type="tel" maxLength={40} defaultValue={seed?.contactPhone ?? ""} disabled={saving} />{savedValue("contactPhone")}</label></div>}
       <label>Project / opportunity<input name="project" required maxLength={180} placeholder="Project name" defaultValue={seed?.project ?? ""} disabled={saving} />{savedValue("projectName")}</label>
-      <div className="form-row modal-hint-form-row"><div className="modal-hinted-field"><div className="modal-hint-label-row"><label htmlFor="lead-estimated-value">Estimated value</label><WorkspaceInfoHint label="Lead value help" text={LEAD_ESTIMATED_VALUE_HINT} anchor="auto" /></div><input id="lead-estimated-value" name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{inboxPrefill && seed?.estimatedValue === undefined && <small>Still needs typing before this lead can be added.</small>}{savedValue("estimatedValue")}</div><label>Project site<input name="site" required maxLength={300} placeholder="Address or city and state" defaultValue={seed?.site ?? ""} disabled={saving} />{inboxPrefill && !seed?.site && <small>Still needs typing before this lead can be added.</small>}{savedValue("site")}</label></div>
+      <div className="form-row modal-hint-form-row"><div className="modal-hinted-field"><div className="modal-hint-label-row"><label htmlFor="lead-estimated-value">Estimated value</label><WorkspaceInfoHint label="Lead value help" text={LEAD_ESTIMATED_VALUE_HINT} anchor="auto" /></div><input id="lead-estimated-value" name="value" type="number" min="0" max="2147483647" step="1" required placeholder="Estimated amount" defaultValue={seed?.estimatedValue ?? ""} disabled={saving || editMode && !props.isAdmin} aria-describedby={editMode && !props.isAdmin ? "lead-estimated-value-help" : undefined} />{inboxPrefill && seed?.estimatedValue === undefined && <small>Still needs typing before this lead can be added.</small>}{savedValue("estimatedValue")}</div><div><AddressValidationField key={addressFieldRevision} id="lead-site" name="site" label="Project site" value={site} required entityKind="lead" targetId={editLead?.id ?? "new"} mapsRuntime={props.mapsRuntime} disabled={saving} onChange={setSite} onReviewChange={setAddressReview} />{inboxPrefill && !seed?.site && <small>Still needs typing before this lead can be added.</small>}{savedValue("site")}</div></div>
       {editMode && !props.isAdmin && <p id="lead-estimated-value-help" className="form-help"><ShieldCheck size={14} /> Estimated value is read-only here. An administrator can edit it.</p>}
       {(editMode || inboxPrefill) && <div className="form-row"><label>Stage<select name="stage" defaultValue={seed?.stage ?? "New inquiry"} disabled={saving}>{stageOptions.map((option) => <option key={option}>{option}</option>)}</select>{savedValue("stage")}</label>{editMode && <label>Lead status<select name="status" defaultValue={editLead?.status.toLowerCase()} disabled={saving}><option value="active">Active</option><option value="converted">Converted</option><option value="lost">Lost</option><option value="archived">Archived</option></select>{savedValue("status")}</label>}</div>}
       <label>Next action<textarea name="notes" required maxLength={500} placeholder="What needs to happen next?" defaultValue={seed?.next ?? ""} disabled={saving} />{savedValue("nextAction")}</label>
@@ -2276,8 +2322,10 @@ function LeadModal(props: LeadModalProps) {
   </AccessibleOverlay>;
 }
 
-function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client: Client) => Promise<void> }) {
+function ClientModal({ mapsRuntime, onClose, onSave }: { mapsRuntime: JobSiteMapsRuntimeConfig; onClose: () => void; onSave: (client: Client) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
+  const [siteAddress, setSiteAddress] = useState("");
+  const [addressReview, setAddressReview] = useState<AddressReviewReference | null>(null);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -2298,7 +2346,8 @@ function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client
         initials: recordInitials(name),
         color: "sage",
         googleStatus: "Setup pending",
-        jobSite: null,
+        jobSite: normalizeJobSiteLocation({ address: siteAddress }),
+        ...(addressReview ? { addressReview } : {}),
       });
     } finally {
       setSaving(false);
@@ -2309,16 +2358,21 @@ function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client
     <div className="form-row"><label>Primary contact<input name="contact" required maxLength={180} placeholder="Full name" /></label><label>Work email<input name="email" type="email" maxLength={254} required placeholder="name@company.com" /></label></div>
     <div className="form-row"><label>Contact phone <span className="optional-label">Optional</span><input name="phone" type="tel" maxLength={80} placeholder="Phone number" /></label><label>Contact role<input name="role" required maxLength={120} defaultValue="Primary contact" /></label></div>
     <div className="form-row modal-hint-form-row"><label>Industry<select name="industry">{CLIENT_INDUSTRY_OPTIONS.map((industry) => <option value={industry} key={industry}>{industry}</option>)}</select></label><div className="modal-hinted-field"><div className="modal-hint-label-row"><label htmlFor="new-client-status">Client status</label><WorkspaceInfoHint label="Client lifecycle help" text={CLIENT_STATUS_HINT} anchor="right" /></div><select id="new-client-status" name="status" defaultValue="active">{CLIENT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select></div></div>
+    <AddressValidationField id="new-client-site-address" name="siteAddress" label="Primary site address" value={siteAddress} entityKind="client" targetId="new" mapsRuntime={mapsRuntime} disabled={saving} onChange={setSiteAddress} onReviewChange={setAddressReview} />
     <p className="form-help"><FolderTree size={14} /> The app saves the client and primary contact first, then syncs the Client Directory when Google Sheets is connected. The account folder is created with the first project workspace.</p>
     <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Add client"}</button></footer>
   </form></AccessibleOverlay>;
 }
 
-function ClientEditModal({ client, onClose, onSave }: { client: Client; onClose: () => void; onSave: (patch: ClientEditPatch, version: string) => Promise<void> }) {
+function ClientEditModal({ client, mapsRuntime, onClose, onSave }: { client: Client; mapsRuntime: JobSiteMapsRuntimeConfig; onClose: () => void; onSave: (patch: ClientEditPatch, version: string) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [conflictVersion, setConflictVersion] = useState<string | null>(null);
   const [conflictValues, setConflictValues] = useState<ClientConflictValues>({});
+  const initialSiteAddress = client.jobSite?.address ?? "";
+  const [siteAddress, setSiteAddress] = useState(initialSiteAddress);
+  const [addressReview, setAddressReview] = useState<AddressReviewReference | null>(null);
+  const [addressFieldRevision, setAddressFieldRevision] = useState(0);
   const industry = client.industryRaw ?? null;
   const industryOptions = industry && !(CLIENT_INDUSTRY_OPTIONS as readonly string[]).includes(industry)
     ? [industry, ...CLIENT_INDUSTRY_OPTIONS]
@@ -2351,6 +2405,11 @@ function ClientEditModal({ client, onClose, onSave }: { client: Client; onClose:
     if (name !== client.name) patch.name = name;
     if (nextIndustry !== industry) patch.industry = nextIndustry;
     if (status !== client.status.toLowerCase()) patch.status = status;
+    const normalizedSiteAddress = siteAddress.trim() || null;
+    if (normalizedSiteAddress !== (initialSiteAddress || null) || addressReview) {
+      patch.siteAddress = normalizedSiteAddress;
+      if (addressReview) patch.addressReview = addressReview;
+    }
     if (Object.keys(patch).length === 0) {
       setError("Change at least one client field before saving.");
       return;
@@ -2361,9 +2420,15 @@ function ClientEditModal({ client, onClose, onSave }: { client: Client; onClose:
       onClose();
     } catch (saveError) {
       if (saveError instanceof ClientEditConflictError) {
+        if (addressReview) {
+          setAddressReview(null);
+          setAddressFieldRevision((current) => current + 1);
+        }
         setConflictVersion(saveError.currentVersion);
         setConflictValues(saveError.currentValues);
-        setError("This client changed while you were editing. Review your entries, then choose Re-apply changes.");
+        setError(addressReview
+          ? "This client changed while you were editing. Review the address again, then choose Re-apply changes."
+          : "This client changed while you were editing. Review your entries, then choose Re-apply changes.");
       } else {
         setError(saveError instanceof Error ? saveError.message : "Client changes could not be saved.");
       }
@@ -2377,6 +2442,7 @@ function ClientEditModal({ client, onClose, onSave }: { client: Client; onClose:
     <form onSubmit={submit}>
       {error && <p className="project-operation-error" role="alert">{error}</p>}
       <label>Client business name<input data-overlay-initial-focus name="name" required maxLength={180} defaultValue={client.name} disabled={saving} />{savedValue("name")}</label>
+      <div><AddressValidationField key={addressFieldRevision} id="client-site-address" name="siteAddress" label="Primary site address" value={siteAddress} entityKind="client" targetId={client.id} mapsRuntime={mapsRuntime} disabled={saving} onChange={setSiteAddress} onReviewChange={setAddressReview} />{savedValue("siteAddress")}</div>
       <div className="form-row"><label>Industry <span className="optional-label">Optional</span><select name="industry" defaultValue={industry ?? ""} disabled={saving}><option value="">Not set</option>{industryOptions.map((option) => <option value={option} key={option}>{option}</option>)}</select>{savedValue("industry")}</label><label>Client status<select name="status" defaultValue={client.status.toLowerCase()} disabled={saving}>{CLIENT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select>{savedValue("status")}</label></div>
       <p className="form-help"><ShieldCheck size={14} /> Saving appends one before-and-after activity record. A newer saved version is never overwritten automatically.</p>
       <footer><button type="button" className="soft-button" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : conflictVersion ? "Re-apply changes" : "Save changes"}</button></footer>
@@ -2448,16 +2514,18 @@ function ContactEditModal({ client, onClose, onSave }: { client: Client; onClose
   </AccessibleOverlay>;
 }
 
-function NewProjectModal({ clients, initialClientId, managerId, managerLabel, isAdmin, onClose, onSave }: { clients: Client[]; initialClientId: string | null; managerId: string; managerLabel: string; isAdmin: boolean; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
+function NewProjectModal({ clients, initialClientId, managerId, managerLabel, isAdmin, mapsRuntime, onClose, onSave }: { clients: Client[]; initialClientId: string | null; managerId: string; managerLabel: string; isAdmin: boolean; mapsRuntime: JobSiteMapsRuntimeConfig; onClose: () => void; onSave: (project: Project) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); const estimatedValue = form.get("value") ? Number(form.get("value")) : null; const flooringCategory = optionalFlooringCategory(form.get("flooringCategory")); const squareFeet = form.get("squareFeet") ? Number(form.get("squareFeet")) : null; const contractValue = isAdmin && form.get("contractValue") ? Number(form.get("contractValue")) : null; const segment = normalizeProjectSegment(form.get("segment")); const jobSite = normalizeJobSiteLocation({ address: form.get("site") }); try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory, squareFeet, contractValue, segment, installationStartedAt: null, installationCompletedAt: null, hadCallback: false, callbackNote: null, site: jobSite?.address ?? "Site pending", jobSite, managerId, lead: projectManagerLabel(managerId, managerId, managerLabel), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
+  const [site, setSite] = useState("");
+  const [addressReview, setAddressReview] = useState<AddressReviewReference | null>(null);
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); const form = new FormData(event.currentTarget); const clientId = String(form.get("clientId")); const client = clients.find((item) => item.id === clientId); if (!client) { setSaving(false); return; } const name = String(form.get("name")); const estimatedValue = form.get("value") ? Number(form.get("value")) : null; const flooringCategory = optionalFlooringCategory(form.get("flooringCategory")); const squareFeet = form.get("squareFeet") ? Number(form.get("squareFeet")) : null; const contractValue = isAdmin && form.get("contractValue") ? Number(form.get("contractValue")) : null; const segment = normalizeProjectSegment(form.get("segment")); const jobSite = normalizeJobSiteLocation({ address: site }); try { await onSave({ id: "", clientId, number: "", client: client.name, name, status: String(form.get("status")), progress: 0, value: estimatedValue === null ? "TBD" : money(estimatedValue), estimatedValue, flooringCategory, squareFeet, contractValue, segment, installationStartedAt: null, installationCompletedAt: null, hadCallback: false, callbackNote: null, site: jobSite?.address ?? "Site pending", jobSite, ...(addressReview ? { addressReview } : {}), managerId, lead: projectManagerLabel(managerId, managerId, managerLabel), date: "Not scheduled", accent: client.color }); } finally { setSaving(false); } }
   const selectedClientId = initialClientId && clients.some((client) => client.id === initialClientId) ? initialClientId : clients[0]?.id ?? "";
   return <AccessibleOverlay ariaLabel="Create a project" contentClassName="modal" onClose={onClose} busy={saving}>
     <header><div><p className="eyebrow">Independent project</p><h2>Create a project</h2></div><button onClick={onClose} aria-label="Close" disabled={saving}><X size={20} /></button></header>
     <form onSubmit={submit}>
       <label>Client<select data-overlay-initial-focus name="clientId" required defaultValue={selectedClientId} disabled={clients.length === 0}>{clients.length === 0 && <option value="">Create a client first</option>}{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select></label>
       <label>Project name<input name="name" required placeholder="Project name" /></label>
-      <div className="form-row"><label>Site<input name="site" required placeholder="Address or city and state" /></label><div className="assigned-manager-field" aria-label={`Project manager: ${managerLabel}, signed-in account`}><span>Project manager</span><strong>{managerLabel}</strong><small>{managerId} · signed-in account</small></div></div>
+      <div className="form-row"><AddressValidationField id="new-project-site" name="site" label="Site" value={site} required entityKind="project" targetId="new" mapsRuntime={mapsRuntime} disabled={saving} onChange={setSite} onReviewChange={setAddressReview} /><div className="assigned-manager-field" aria-label={`Project manager: ${managerLabel}, signed-in account`}><span>Project manager</span><strong>{managerLabel}</strong><small>{managerId} · signed-in account</small></div></div>
       <div className="form-row">
         <div className="modal-hinted-field"><div className="modal-hint-label-row"><label htmlFor="new-project-status">Status</label><WorkspaceInfoHint label="Project phase help" text={PROJECT_STATUS_HINT} anchor="auto" /></div><select id="new-project-status" name="status"><option>Planning</option><option>Mobilizing</option><option>Installation</option><option>Closeout</option></select></div>
         <div className="modal-hinted-field"><div className="modal-hint-label-row"><label htmlFor="new-project-estimated-value">Estimated value <span className="optional-label">Optional</span></label><WorkspaceInfoHint label="Project value help" text={PROJECT_ESTIMATED_VALUE_HINT} anchor="right" /></div><input id="new-project-estimated-value" name="value" type="number" min="0" step="1" inputMode="numeric" placeholder="Estimated amount" /></div>
@@ -2476,7 +2544,7 @@ function NewProjectModal({ clients, initialClientId, managerId, managerLabel, is
   </AccessibleOverlay>;
 }
 
-function LeadDrawer({ lead, isAdmin, onClose, onAdvance, onSaveLead, returnFocusRef, fallbackFocusRef }: { lead: Lead; isAdmin: boolean; onClose: () => void; onAdvance: (id: string) => Promise<void>; onSaveLead: (lead: Lead, patch: LeadEditPatch, version: string) => Promise<void>; returnFocusRef?: RefObject<HTMLElement | null>; fallbackFocusRef?: RefObject<HTMLElement | null> }) {
+function LeadDrawer({ lead, isAdmin, mapsRuntime, onClose, onAdvance, onSaveLead, returnFocusRef, fallbackFocusRef }: { lead: Lead; isAdmin: boolean; mapsRuntime: JobSiteMapsRuntimeConfig; onClose: () => void; onAdvance: (id: string) => Promise<void>; onSaveLead: (lead: Lead, patch: LeadEditPatch, version: string) => Promise<void>; returnFocusRef?: RefObject<HTMLElement | null>; fallbackFocusRef?: RefObject<HTMLElement | null> }) {
   const [advancing, setAdvancing] = useState(false);
   const [editing, setEditing] = useState(false);
   const currentIndex = leadStages.findIndex((stage) => stage.toLowerCase() === lead.stage.toLowerCase());
@@ -2501,7 +2569,7 @@ function LeadDrawer({ lead, isAdmin, onClose, onAdvance, onSaveLead, returnFocus
     </div>
     <footer><button type="button" className="soft-button" onClick={() => setEditing(true)} disabled={advancing}><Settings size={16} /> Edit lead</button><button type="button" className="soft-button" onClick={onClose} disabled={advancing}>Close</button>{canAdvance && <button type="button" className="primary-button" onClick={() => void handleAdvance()} disabled={advancing}>{advancing ? "Advancing…" : <><span>Advance stage</span><ChevronRight size={16} /></>}</button>}</footer>
   </AccessibleOverlay>
-    {editing && <LeadModal mode="edit" initialValues={lead} isAdmin={isAdmin} onClose={() => setEditing(false)} onSave={(patch, version) => onSaveLead(lead, patch, version)} />}
+    {editing && <LeadModal mode="edit" initialValues={lead} isAdmin={isAdmin} mapsRuntime={mapsRuntime} onClose={() => setEditing(false)} onSave={(patch, version) => onSaveLead(lead, patch, version)} />}
   </>;
 }
 
@@ -2555,19 +2623,22 @@ function ProjectDrawer({ project, clients, jobSiteMaps, onClose, notify, onSaveP
         <button className="soft-button" onClick={handleDrive} disabled={busy}><FolderOpen size={16} /> {provisioning ? "Creating folder…" : project.driveUrl ? "Open Drive folder" : "Create Drive folder"}</button>
       </footer>
   </AccessibleOverlay>
-    {editing && <ProjectEditModal project={project} clients={clients} isAdmin={isAdmin} onClose={() => setEditing(false)} onSave={(patch, version) => onSaveProject(project, patch, version)} />}
+    {editing && <ProjectEditModal project={project} clients={clients} isAdmin={isAdmin} mapsRuntime={jobSiteMaps} onClose={() => setEditing(false)} onSave={(patch, version) => onSaveProject(project, patch, version)} />}
     {installationDatesOpen && <InstallationDatesModal project={project} onClose={() => setInstallationDatesOpen(false)} onSave={(installationStartedAt, installationCompletedAt) => onRecordInstallationDates(project, installationStartedAt, installationCompletedAt)} />}
     {followUpResultOpen && <FollowUpResultModal project={project} onClose={() => setFollowUpResultOpen(false)} onSave={(hadCallback, callbackNote) => onRecordFollowUpResult(project, hadCallback, callbackNote)} />}
     {projectFiles.modalOpen && projectFiles.catalogState.status === "ready" && projectFiles.catalogState.catalog.provisioned && <ProjectFileCreationModal catalog={projectFiles.catalogState.catalog} controller={projectFiles} projectId={project.id} projectNumber={project.number} returnFocusRef={projectFilesTriggerRef} />}
   </>;
 }
 
-function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { project: Project; clients: Client[]; isAdmin: boolean; onClose: () => void; onSave: (patch: ProjectEditPatch, version: string) => Promise<void> }) {
+function ProjectEditModal({ project, clients, isAdmin, mapsRuntime, onClose, onSave }: { project: Project; clients: Client[]; isAdmin: boolean; mapsRuntime: JobSiteMapsRuntimeConfig; onClose: () => void; onSave: (patch: ProjectEditPatch, version: string) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [conflictVersion, setConflictVersion] = useState<string | null>(null);
   const [conflictValues, setConflictValues] = useState<ProjectConflictValues>({});
-  const site = project.site === "Site pending" ? null : project.site;
+  const storedSite = project.site === "Site pending" ? null : project.site;
+  const [site, setSite] = useState(storedSite ?? "");
+  const [addressReview, setAddressReview] = useState<AddressReviewReference | null>(null);
+  const [addressFieldRevision, setAddressFieldRevision] = useState(0);
 
   function savedValue(key: keyof ProjectConflictValues) {
     if (!Object.hasOwn(conflictValues, key)) return null;
@@ -2609,7 +2680,7 @@ function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { proj
     const form = new FormData(event.currentTarget);
     const name = String(form.get("name") ?? "").trim();
     const clientId = String(form.get("clientId") ?? "").trim();
-    const nextSite = String(form.get("site") ?? "").trim() || null;
+    const nextSite = site.trim() || null;
     const flooringCategory = optionalFlooringCategory(form.get("flooringCategory"));
     const squareFeetText = String(form.get("squareFeet") ?? "").trim();
     const squareFeet = squareFeetText ? Number(squareFeetText) : null;
@@ -2618,7 +2689,10 @@ function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { proj
 
     if (name !== project.name) patch.name = name;
     if (clientId !== project.clientId) patch.clientId = clientId;
-    if (nextSite !== site) patch.site = nextSite;
+    if (nextSite !== storedSite || addressReview) {
+      patch.site = nextSite;
+      if (addressReview) patch.addressReview = addressReview;
+    }
     if (flooringCategory !== project.flooringCategory) patch.flooringCategory = flooringCategory;
     if (squareFeet !== project.squareFeet) patch.squareFeet = squareFeet;
     if (segment !== project.segment) patch.segment = segment;
@@ -2644,9 +2718,15 @@ function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { proj
       onClose();
     } catch (saveError) {
       if (saveError instanceof ProjectEditConflictError) {
+        if (addressReview) {
+          setAddressReview(null);
+          setAddressFieldRevision((current) => current + 1);
+        }
         setConflictVersion(saveError.currentVersion);
         setConflictValues(saveError.currentValues);
-        setError("This project changed while you were editing. Review your entries, then choose Re-apply changes.");
+        setError(addressReview
+          ? "This project changed while you were editing. Review the address again, then choose Re-apply changes."
+          : "This project changed while you were editing. Review your entries, then choose Re-apply changes.");
       } else {
         setError(saveError instanceof Error ? saveError.message : "Project changes could not be saved.");
       }
@@ -2661,7 +2741,7 @@ function ProjectEditModal({ project, clients, isAdmin, onClose, onSave }: { proj
       {error && <p className="project-operation-error" role="alert">{error}</p>}
       <label>Client<select data-overlay-initial-focus name="clientId" defaultValue={project.clientId} required disabled={saving}>{clients.map((client) => <option value={client.id} key={client.id}>{client.name} · {client.code}</option>)}</select>{savedValue("clientId")}</label>
       <label>Project name<input name="name" required maxLength={180} defaultValue={project.name} disabled={saving} />{savedValue("name")}</label>
-      <label>Site <span className="optional-label">Optional</span><input name="site" defaultValue={site ?? ""} placeholder="Address or city and state" disabled={saving} />{savedValue("site")}</label>
+      <div><AddressValidationField key={addressFieldRevision} id="project-site" name="site" label="Site" value={site} entityKind="project" targetId={project.id} mapsRuntime={mapsRuntime} disabled={saving} onChange={setSite} onReviewChange={setAddressReview} />{savedValue("site")}</div>
       {isAdmin ? <div className="form-row"><label>Status<select name="status" defaultValue={project.status.toLowerCase()} disabled={saving}>{PROJECT_STATUSES.map((status) => <option value={status} key={status}>{displayStatus(status, status)}</option>)}</select>{savedValue("status")}</label><label>Estimated value <span className="optional-label">Optional</span><input name="estimatedValue" type="number" min="0" step="1" inputMode="numeric" defaultValue={project.estimatedValue ?? ""} disabled={saving} />{savedValue("estimatedValue")}</label></div> : <><div className="drawer-stats" aria-label="Admin-only project fields"><div><span>Status</span><strong>{project.status}</strong></div><div><span>Estimated value</span><strong>{project.value}</strong></div><div><span>Contract value</span><strong>{FINANCIAL_RESTRICTION_LABEL}</strong></div></div><p className="form-help"><ShieldCheck size={14} /> Status and financial fields are read-only here. An admin can edit them.</p></>}
       <div className="form-row"><label>Flooring category <span className="optional-label">Optional</span><select name="flooringCategory" defaultValue={project.flooringCategory ?? ""} disabled={saving}><option value="">Not yet captured</option>{FLOORING_CATEGORIES.map((category) => <option key={category} value={category}>{displayStatus(category, category)}</option>)}</select>{savedValue("flooringCategory")}</label><label>Square feet <span className="optional-label">Optional</span><input name="squareFeet" type="number" min="1" step="1" inputMode="numeric" defaultValue={project.squareFeet ?? ""} disabled={saving} />{savedValue("squareFeet")}</label></div>
       <label>Project segment <span className="optional-label">Optional</span><select name="segment" defaultValue={project.segment ?? ""} disabled={saving}><option value="">Derived from client industry</option><option value="commercial">Commercial</option><option value="residential">Residential</option></select>{savedValue("segment")}</label>
@@ -2888,7 +2968,7 @@ function ClientDrawer({ client, projects, jobSiteMaps, onClose, onSaveClient, on
     </div>
     <footer><button type="button" className="soft-button" onClick={() => setEditingClient(true)}><Settings size={16} /> Edit client</button><button type="button" className="soft-button" onClick={() => setEditingContact(true)} disabled={!contactEditable} title={contactEditable ? "Edit the saved primary contact" : "Refresh after adding a primary contact"}><ContactRound size={16} /> Edit primary contact</button></footer>
   </AccessibleOverlay>
-    {editingClient && <ClientEditModal client={client} onClose={() => setEditingClient(false)} onSave={(patch, version) => onSaveClient(client, patch, version)} />}
+    {editingClient && <ClientEditModal client={client} mapsRuntime={jobSiteMaps} onClose={() => setEditingClient(false)} onSave={(patch, version) => onSaveClient(client, patch, version)} />}
     {editingContact && contactEditable && <ContactEditModal client={client} onClose={() => setEditingContact(false)} onSave={(patch, version) => onSaveContact(client, patch, version)} />}
   </>;
 }

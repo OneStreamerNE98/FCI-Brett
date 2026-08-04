@@ -99,8 +99,16 @@ test("resolves no-address, simulation, missing-key, and live states fail closed"
   // Maps is a Cloud browser embed, not a Workspace data operation: a
   // configured key renders live embeds even while Workspace runs in
   // simulation (owner decision, July 25, 2026).
-  assert.deepEqual(simulationKeyedRuntime, { simulation: true, browserApiKey: "sim-configured-key" });
-  assert.deepEqual(simulationNoKeyRuntime, { simulation: true, browserApiKey: null });
+  assert.deepEqual(simulationKeyedRuntime, {
+    simulation: true,
+    browserApiKey: "sim-configured-key",
+    addressValidationEnabled: false,
+  });
+  assert.deepEqual(simulationNoKeyRuntime, {
+    simulation: true,
+    browserApiKey: null,
+    addressValidationEnabled: false,
+  });
   assert.equal(maps.resolveJobSiteMapState(null, liveRuntime).kind, "no-address");
   assert.equal(maps.resolveJobSiteMapState(addressLocation, simulationKeyedRuntime).kind, "live");
   assert.equal(maps.resolveJobSiteMapState(addressLocation, simulationNoKeyRuntime).kind, "simulation");
@@ -154,14 +162,14 @@ test("renders address, no-address, simulation, and missing-key cards without fal
 test("pins the HTML CSP without changing non-HTML responses", () => {
   assert.equal(
     securityHeaders.APPLICATION_CONTENT_SECURITY_POLICY,
-    "frame-src 'self' https://www.google.com",
+    "frame-src 'self' https://www.google.com; connect-src 'self' https://places.googleapis.com",
   );
   const htmlResponse = securityHeaders.applyApplicationSecurityHeaders(new Response("<html></html>", {
     headers: { "Content-Type": "text/html; charset=utf-8" },
   }));
   assert.equal(
     htmlResponse.headers.get("content-security-policy"),
-    "frame-src 'self' https://www.google.com",
+    "frame-src 'self' https://www.google.com; connect-src 'self' https://places.googleapis.com",
   );
   const protectedHtmlResponse = securityHeaders.applyApplicationSecurityHeaders(new Response("<html></html>", {
     headers: {
@@ -171,7 +179,7 @@ test("pins the HTML CSP without changing non-HTML responses", () => {
   }));
   assert.equal(
     protectedHtmlResponse.headers.get("content-security-policy"),
-    "default-src 'self'; frame-ancestors 'none'; frame-src https://drive.google.com 'self' https://www.google.com",
+    "default-src 'self'; frame-ancestors 'none'; frame-src https://drive.google.com 'self' https://www.google.com; connect-src 'self' https://places.googleapis.com",
   );
   const jsonResponse = securityHeaders.applyApplicationSecurityHeaders(new Response("{}", {
     headers: { "Content-Type": "application/json" },

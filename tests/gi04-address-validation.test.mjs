@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { after, beforeEach, test } from "node:test";
@@ -29,13 +30,14 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24804 } },
 });
 
-const [domain, engine, reviews, mutation, config, route] = await Promise.all([
+const [domain, engine, reviews, mutation, config, route, autocompleteSession] = await Promise.all([
   vite.ssrLoadModule("/app/domain/address-validation.ts"),
   vite.ssrLoadModule("/app/features/address-validation/address-validation.ts"),
   vite.ssrLoadModule("/app/adapters/d1/address-validation-reviews.ts"),
   vite.ssrLoadModule("/app/lib/address-mutation-sites.ts"),
   vite.ssrLoadModule("/app/lib/address-validation-sites.ts"),
   vite.ssrLoadModule("/app/api/v1/address-validation/route.ts"),
+  vite.ssrLoadModule("/app/features/address-validation/address-autocomplete-session.ts"),
 ]);
 
 after(async () => {
@@ -47,6 +49,54 @@ after(async () => {
 
 beforeEach(() => {
   for (const key of Object.keys(workerEnvironment)) delete workerEnvironment[key];
+});
+
+test("autocomplete reuses one token through validation and resets after termination", async () => {
+  const generated = ["autocomplete-session-one", "autocomplete-session-two"];
+  const session = autocompleteSession.createAddressAutocompleteSession(() => generated.shift());
+  assert.equal(session.token(), "autocomplete-session-one");
+  assert.equal(session.token(), "autocomplete-session-one");
+  session.complete();
+  assert.equal(session.token(), "autocomplete-session-two");
+
+  const component = await readFile(
+    new URL("../app/features/address-validation/AddressValidationField.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.equal(component.match(/sessionRef\.current\.token\(\)/gu)?.length, 2);
+  assert.match(component, /setReview\(payload\.review\)[\s\S]{0,300}sessionRef\.current\.complete\(\)/u);
+});
+
+test("Places browser autocomplete stays behind the owner gate and never reads the server key", async () => {
+  const runtime = {
+    simulation: false,
+    browserApiKey: "  FCI_TEST_BROWSER_KEY  ",
+    addressValidationEnabled: false,
+  };
+  assert.equal(autocompleteSession.placesAutocompleteBrowserKey(runtime), null);
+  assert.equal(autocompleteSession.placesAutocompleteBrowserKey({
+    ...runtime,
+    addressValidationEnabled: true,
+  }), "FCI_TEST_BROWSER_KEY");
+  assert.equal(autocompleteSession.placesAutocompleteBrowserKey({
+    ...runtime,
+    simulation: true,
+    addressValidationEnabled: true,
+  }), null);
+  assert.equal(autocompleteSession.placesAutocompleteBrowserKey({
+    ...runtime,
+    browserApiKey: undefined,
+    addressValidationEnabled: true,
+  }), null);
+
+  const component = await readFile(
+    new URL("../app/features/address-validation/AddressValidationField.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(component, /placesAutocompleteBrowserKey\(mapsRuntime\)/u);
+  assert.match(component, /"X-Goog-Api-Key": apiKey/u);
+  assert.match(component, /className=\{styles\.attribution\} translate="no">Google Maps/u);
+  assert.doesNotMatch(component, /SERVER_API_KEY|serverApiKey/u);
 });
 
 class SqliteD1Statement {

@@ -299,7 +299,7 @@ async function triggerNewerDirectoryRefresh(page: Page, navigate = true) {
   await dialog.getByRole("textbox", { name: "Primary contact" }).fill("Refresh Contact");
   await dialog.getByRole("textbox", { name: "Project / opportunity" }).fill("Refresh ordering");
   await dialog.getByRole("spinbutton", { name: "Estimated value" }).fill("25000");
-  await dialog.getByRole("textbox", { name: "Project site" }).fill("Refresh Test Site");
+  await dialog.getByRole("combobox", { name: "Project site" }).fill("Refresh Test Site");
   await dialog.getByRole("textbox", { name: "Next action" }).fill("Keep the newest snapshot");
   await dialog.getByRole("button", { name: "Add to pipeline", exact: true }).click();
   await expect(page.getByText(freshLead.company, { exact: true })).toBeVisible();
