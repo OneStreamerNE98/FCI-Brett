@@ -1069,7 +1069,7 @@ change explained in the PR; `npm test`, `npm run test:e2e`, `npm run lint` all n
 outcomes.
 **Effort:** small. **Cost:** $0.
 
-### EDIT-09 · The contact editor re-renders mid-edit and lands a value in the wrong field (small-medium)
+### EDIT-09 · The contact editor redirects mid-edit input into the wrong field (small-medium)
 **Status:** In progress — `codex/edit09-contact-editor-race`
 **Why:** CI on PR #280 (August 3, 2026) recorded a retry-only pass of
 `tests/e2e/edit06-client-contact-editing.spec.ts`. The stored row showed
@@ -1078,24 +1078,23 @@ outcomes.
 while the phone field kept its previous value. The run went red only because the repo's
 `playwright-retry-only-pass` reporter refuses to pass a retry-only success; 264 other specs
 passed.
-**Why this is not merely a flaky test.** The spec fills four fields in sequence
-(`edit06-client-contact-editing.spec.ts` — Primary contact, Work email, Contact phone,
-Contact role). For a `fill()` to land in a previously-filled input, the editor re-rendered or
-remounted between two fills while one held focus. **A real user typing at ordinary speed hits
-the same window** — their keystrokes land in the field they already finished. Silent
-cross-field data corruption on a client record is worth more than a test-stability fix, and
-the flake is the symptom that exposed it.
-**Do:** find what re-renders `EditPrimaryContactDialog` mid-edit — a refetch resolving, a
-parent state update, or a changing `key` remounting the inputs — and stop it. **Prefer
-removing the re-render over adding waits to the spec:** a spec hardened with waits makes the
-symptom disappear while leaving the user-facing race in place, which is the worse outcome and
-the reason this packet exists. If the spec also needs hardening, do that second and say so
-explicitly in the PR.
+**Why this is not merely a flaky test.** The August 4 trace and a deterministic baseline
+reproduction disproved the original remount premise: the phone input's DOM node stayed
+connected. Instead, the delayed initial-focus callback in
+`app/components/AccessibleOverlay.tsx` ran after the phone input already held focus, moved
+focus back to the name input, and let the pending phone text land there. **A real user typing
+at ordinary speed hits the same window** — their keystrokes land in the field they already
+finished. Silent cross-field data corruption on a client record is worth more than a
+test-stability fix, and the flake is the symptom that exposed it.
+**Do:** stop `AccessibleOverlay`'s pending initial-focus callback from replacing focus that is
+already inside the topmost panel, while preserving initial focus when the panel has no active
+field. Fix that user-facing race first. If the spec also needs hardening, do that second and
+say so explicitly in the PR.
 **Files:** the client/contact editor components and their dialog host, plus the spec. Zero
 `FloorOpsApp.tsx` unless the dialog host proves to live there — if it does, claim the queue
 slot in the same PR.
-**Accept:** the diagnosis names the specific re-render source with a file:line, not "timing";
-a regression test proves the editor does not remount while one of its inputs holds focus;
+**Accept:** the diagnosis names the specific focus source with a file:line, not "timing";
+a regression test proves the active input stays connected and focused while initial focus settles;
 `edit06-client-contact-editing.spec.ts` passes **ten consecutive runs with retries disabled**
 (state the command and the outcome — a single green run does not evidence a race fix); `npm
 test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
