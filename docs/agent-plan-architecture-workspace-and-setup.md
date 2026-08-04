@@ -1065,6 +1065,37 @@ change explained in the PR; `npm test`, `npm run test:e2e`, `npm run lint` all n
 outcomes.
 **Effort:** small. **Cost:** $0.
 
+### EDIT-09 · The contact editor re-renders mid-edit and lands a value in the wrong field (small-medium)
+**Why:** CI on PR #280 (August 3, 2026) recorded a retry-only pass of
+`tests/e2e/edit06-client-contact-editing.spec.ts`. The stored row showed
+`primary_contact_name: "Updated Contact555-0196"` and
+`primary_contact_phone: "555-0106"` — the phone value was appended to the **name** field
+while the phone field kept its previous value. The run went red only because the repo's
+`playwright-retry-only-pass` reporter refuses to pass a retry-only success; 264 other specs
+passed.
+**Why this is not merely a flaky test.** The spec fills four fields in sequence
+(`edit06-client-contact-editing.spec.ts` — Primary contact, Work email, Contact phone,
+Contact role). For a `fill()` to land in a previously-filled input, the editor re-rendered or
+remounted between two fills while one held focus. **A real user typing at ordinary speed hits
+the same window** — their keystrokes land in the field they already finished. Silent
+cross-field data corruption on a client record is worth more than a test-stability fix, and
+the flake is the symptom that exposed it.
+**Do:** find what re-renders `EditPrimaryContactDialog` mid-edit — a refetch resolving, a
+parent state update, or a changing `key` remounting the inputs — and stop it. **Prefer
+removing the re-render over adding waits to the spec:** a spec hardened with waits makes the
+symptom disappear while leaving the user-facing race in place, which is the worse outcome and
+the reason this packet exists. If the spec also needs hardening, do that second and say so
+explicitly in the PR.
+**Files:** the client/contact editor components and their dialog host, plus the spec. Zero
+`FloorOpsApp.tsx` unless the dialog host proves to live there — if it does, claim the queue
+slot in the same PR.
+**Accept:** the diagnosis names the specific re-render source with a file:line, not "timing";
+a regression test proves the editor does not remount while one of its inputs holds focus;
+`edit06-client-contact-editing.spec.ts` passes **ten consecutive runs with retries disabled**
+(state the command and the outcome — a single green run does not evidence a race fix); `npm
+test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
 ---
 
 # Workstream B — Google Workspace connection & data flows (WS)
@@ -3758,6 +3789,87 @@ view cannot ship with;
 `npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
 **Effort:** large. **Cost:** provider spend within the existing budget.
 
+### AI-12 · A failed inbox analysis is invisible, and a provider outage reads as "You're caught up" (medium)
+**Why:** observed live on the deployed site August 3, 2026, by the owner, with a real test
+email. While the OpenAI provider was returning errors, every analysed message stored
+`status: "failed"` — and three independent behaviours then combined to hide it completely:
+1. **The queue never lists it.** `GET /api/v1/inbox-analysis` reads only
+   `listByStatusPage(connectionKey, "needs-review", 500)`, so a `failed` row is not in the
+   review queue and appears nowhere else in the UI.
+2. **It stops counting as work.** `needsRetry` (`app/api/v1/inbox-analysis/route.ts:574-582`)
+   returns false once `failureAttempts >= MAX_MAIL_ITEM_FAILURE_ATTEMPTS`
+   (3, `app/domain/mail-item.ts:29`), and `hasOutstandingBacklog` (`:594-605`) only counts
+   retryable rows. So an exhausted failure is not backlog.
+3. **The sweep then declares success.** With no retryable rows and coverage complete, the
+   sweep returns `terminationReason: "caught-up"` with the message **"You're caught up"** —
+   the exact string an operator sees when the mailbox genuinely has nothing new.
+The one honest signal that exists does not fire: `analysisFailed`
+(`app/inbox/components/InboxView.tsx:693`) is set only when the POST itself rejects. A `200`
+response whose every message failed leaves it false.
+**Consequence, and why this outranks a cosmetic fix:** a total AI outage is indistinguishable
+from an empty inbox, and any message that failed on **three sweeps** during it exhausts and
+becomes unrecoverable by the sweep — restoring the provider does not bring exhausted rows
+back, because they are no longer retryable. A row at attempts 1–2 self-heals on the next
+sweep after provider recovery (`needsRetry`, `route.ts:580`); only exhausted rows stay lost,
+and the owner's test email is among them if three failing sweeps ran. At 20-person scale
+that is a customer enquiry that silently never reaches the queue.
+**Do:**
+1. **Surface the failure.** Return a failed count and a representative reason from the queue
+   GET, and render an honest line on the review queue ("N messages could not be analysed —
+   <reason>"). Do **not** put failed rows in the needs-review list: they carry no analysis to
+   review, and padding the queue with un-reviewable rows is the opposite of the fix.
+2. **Qualify caught-up from the payload — the carry design (adversarial review, August 3,
+   2026).** The queue GET adds optional, **omitted-when-zero** `failedCount` and
+   `failedReason` fields counting only **exhausted** non-retryable rows:
+   `status = 'failed' AND failure_attempts >= MAX_MAIL_ITEM_FAILURE_ATTEMPTS AND
+   attempted_label_definition_version = current AND error_code !=
+   'analysis_daily_limit_reached'` — i.e. NOT-`needsRetry` (`route.ts:574-582`). Counting
+   all failed rows would label mid-retry and daily-capped rows "could not be analysed"
+   while the sweep is about to retry them. `SweepResult`, `terminationReason`, and both
+   message literals stay **untouched**: the ai10 termination pins and the route's
+   `:844-849` deliberate design are load-bearing and must not be edited. The UI qualifies
+   the caught-up banner from GET data — the honest line renders beside it, so the operator
+   can tell "nothing new" from "some of it broke".
+3. **Make an exhausted row recoverable.** An Administrator-only, bounded "Retry failed
+   analyses" action that clears `failureAttempts` for a retry allowlist pinned **by
+   name**. Include: `analysis_failed`, `analysis_deadline_exceeded`,
+   `analysis_item_failed`, `analysis_state_read_failed`. Exclude by name:
+   `gmail_read_failed` — an accepted gap, recorded here: the bare catch
+   (`route.ts:836-850`) writes one errorCode for both a transient Gmail outage and a
+   permanent 404, so Gmail-outage-exhausted rows stay unrecoverable by this action rather
+   than letting a Gmail-deleted message be resurrected — plus
+   `analysis_daily_limit_reached`, `analysis_request_aborted`, and
+   `analysis_retire_failed`. Implementation: one guarded set-based UPDATE
+   (`… WHERE status = 'failed' AND error_code IN (…)`) via a **new repository method** —
+   no list-then-upsert (the upsert guard permits overwriting needs-review rows, so that
+   read-modify-write race clobbers paid analyses). The action lives in the EXISTING
+   `route.ts` so the mutation-sensitive writer census stays byte-identical, and the
+   request body shape is chosen deliberately against the strict parsers, which reject
+   unknown keys.
+**Deliberately NOT in scope:** raising the retry cap, and auto-retrying on every sweep. Both
+re-bill the provider on a persistent outage, which is the failure mode that produced this in
+the first place.
+**Files:** `app/api/v1/inbox-analysis/route.ts`, `app/inbox/components/InboxView.tsx`,
+`app/ports/mail-item-repository.ts`, `app/adapters/d1/mail-item-repository.ts`, and
+`app/adapters/postgres/mail-item-repository.ts` (the exhausted-count query and the guarded
+clear-attempts UPDATE are new port methods), `docs/settings-guide.md`, tests —
+`tests/ai10-inbox-analysis-route.test.mjs` and `tests/ai10-inbox-review-queue.test.mjs`
+are **add-scenarios-only (no pin edits)**, and the GET fixtures in
+`tests/e2e/ai10-inbox-analysis-trigger.spec.ts` and `tests/e2e/ai11-typed-accepts.spec.ts`
+are tolerant-reader-only (the new GET fields stay optional, so existing fixtures fulfill
+unchanged). Zero `FloorOpsApp.tsx`; no schema change (`mail_items` already carries
+`status`, `failure_attempts` and `error_code`).
+**Accept:** with the provider forced to fail, the review queue states how many messages could
+not be analysed and why, and the operator does not see an **unqualified** "You're caught up"
+while exhausted failed rows exist — exhausted-only counting means the honest line appears
+only after three failing sweeps, and the accept scenario must say so; after the provider
+recovers, the retry action re-analyses previously exhausted rows and they arrive in
+needs-review; a message that 404s in Gmail is **not** resurrected by that action (asserted
+separately, because it is the case that must stay pinned); the assistant-tree write guard
+stays green unmodified; `npm test`, `npm run test:e2e`, `npm run lint` all named with
+outcomes.
+**Effort:** medium. **Cost:** re-analysis of recovered rows only, within the existing budget.
+
 # Workstream H — In-app guidance (HINT)
 
 Owner-approved July 23, 2026 (forms-only decision). Design authority:
@@ -3965,6 +4077,46 @@ queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-0
 DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
 **EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
 SET-26 UI (blocked on SET-23) → HINT-02-B.
+**Every named packet above is now merged, so the slot is FREE.** The next claimant takes it
+from the tail below.
+
+**Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
+were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`
+names as the canonical example of the single-file rule, had gone stale in the one direction
+that matters: packets kept being filed with `FloorOpsApp.tsx` in scope without adding
+themselves. Any two of the five below could have been dispatched in parallel and collided.
+Adversarial review (August 3, 2026) then established that AI-12 takes no slot at all — see
+its bullet — leaving four claimants. Recommended claim order, most valuable first:
+
+**GI-04 → GI-05 (if approved) → WS-20 (if approved) → DES-10 (variants a/b only).**
+
+- **AI-12** — takes NO `FloorOpsApp.tsx` slot (adversarial review, August 3, 2026): the
+  mount (`app/FloorOpsApp.tsx:1784`) passes no analysis or queue state — `bucket` is a
+  label-navigation enum — and everything AI-12 touches lives inside `InboxView`, which
+  fetches its own data and sources `isAdmin` itself. AI-12 instead takes the inbox-file
+  cluster (`app/api/v1/inbox-analysis/route.ts` + `app/inbox/components/InboxView.tsx`);
+  claimants serialize on those files, not on this slot.
+- **GI-04** — unavoidable. The lead, client and project modals and their record mappers are
+  inline in that file.
+- **GI-05** — the project drawer and its Planned-capabilities list
+  (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
+- **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
+  on two owner decisions recorded in its packet.
+- **DES-10** — only variants (a) and (b), which edit `app/FloorOpsApp.tsx:1701`. Variant (c)
+  is CSS-only and takes no slot.
+
+**Four more packets could take the slot and must NOT** — each is required to state its
+no-FloorOpsApp path in its own PR rather than consuming the serialised resource by default:
+**SET-23/SET-26** (mount the viewer inside `ProjectFilesPanel.tsx`), **SET-07** (the nav
+fetches its own state rather than taking a one-line prop threaded from
+`app/FloorOpsApp.tsx:2112` — a one-line prop is not a reason to serialise), **AI-11 (c)**
+(nest in `AiAssistantSettingsCard.tsx`), and **GI-06** (keep the filter in
+`ProjectFilesPanel`'s controller).
+
+**No exposure at all, and safe to run in parallel with whoever holds the slot:** WS-19,
+SET-21, SET-09, SET-27, DES-09, GI-07, and DES-10 variant (c). The Overview and Reports
+golden hashes (`tests/e2e/page-layouts.spec.ts:8-9`) are not at risk from any packet on this
+list.
 
 > **Reordered July 27, 2026 (owner decision + devils-advocate review).** Three deliberate
 > changes from the previous order: (1) **EDIT-05 (projects) now precedes EDIT-04 (leads)** —
