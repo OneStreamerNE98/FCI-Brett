@@ -1,4 +1,8 @@
 import {
+  MAX_ASSISTANT_LABELS,
+  normalizeAssistantLabelSlug,
+} from "../../domain/assistant-label-definition";
+import {
   MAX_MAIL_ITEM_FAILURE_ATTEMPTS,
   isMailItemRelationshipId,
   normalizeMailItemConnectionKey,
@@ -80,7 +84,7 @@ async function referenceExists(
 
 type MissingReferenceOutcome = Exclude<
   MailItemUpsertResult["outcome"],
-  "saved" | "terminal-preserved"
+  "saved" | "existing-preserved" | "terminal-preserved" | "label-catalog-changed"
 >;
 
 const REFERENCE_OUTCOMES = [
@@ -151,6 +155,17 @@ async function resolveStoredReferences(
   });
 }
 
+function normalizedIntentSlugs(intentSlugs: readonly string[]) {
+  if (!Array.isArray(intentSlugs) || intentSlugs.length > MAX_ASSISTANT_LABELS) {
+    throw new TypeError("Mail item analysis intent catalog is invalid");
+  }
+  const normalized = intentSlugs.map(normalizeAssistantLabelSlug);
+  if (new Set(normalized).size !== normalized.length) {
+    throw new TypeError("Mail item analysis intents must be unique");
+  }
+  return normalized;
+}
+
 export function createD1MailItemRepository(database: D1Database): MailItemRepository {
   return {
     async findById(id) {
@@ -215,7 +230,7 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         normalizeMailItemLabelDefinitionVersion(currentLabelDefinitionVersion);
       const result = await database
         .prepare(
-          "SELECT * FROM mail_items WHERE connection_key = ? AND (error_code = 'analysis_daily_limit_reached' OR failure_attempts < ? OR attempted_label_definition_version IS NOT ?) AND (status = 'failed' OR (status = 'needs-review' AND label_definition_version IS NOT ?)) ORDER BY updated_at ASC, id ASC LIMIT ?",
+          "SELECT * FROM mail_items WHERE connection_key = ? AND (error_code IN ('analysis_daily_limit_reached', 'analysis_label_catalog_changed') OR failure_attempts < ? OR attempted_label_definition_version IS NOT ?) AND (status = 'failed' OR (status = 'needs-review' AND label_definition_version IS NOT ?)) ORDER BY updated_at ASC, id ASC LIMIT ?",
         )
         .bind(
           normalizedConnectionKey,
@@ -237,7 +252,7 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         normalizeMailItemLabelDefinitionVersion(currentLabelDefinitionVersion);
       const row = await database
         .prepare(
-          "SELECT COUNT(*) AS failed_count, MIN(error_code) AS failed_reason FROM mail_items WHERE connection_key = ? AND status = 'failed' AND failure_attempts >= ? AND attempted_label_definition_version = ? AND error_code != 'analysis_daily_limit_reached'",
+          "SELECT COUNT(*) AS failed_count, MIN(error_code) AS failed_reason FROM mail_items WHERE connection_key = ? AND status = 'failed' AND failure_attempts >= ? AND attempted_label_definition_version = ? AND error_code NOT IN ('analysis_daily_limit_reached', 'analysis_label_catalog_changed')",
         )
         .bind(
           normalizedConnectionKey,
@@ -411,6 +426,93 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         throw new Error("D1 mail item was not upserted exactly once");
       }
       return Object.freeze({ outcome: "saved" });
+    },
+
+    async saveAnalysisIfLabelsActive(item, intentSlugs, mode) {
+      const invalidReferenceResult = invalidReference(item);
+      if (invalidReferenceResult) return invalidReferenceResult;
+      if (mode !== "upsert" && mode !== "insert-if-absent") {
+        throw new TypeError("Mail item analysis write mode is invalid");
+      }
+      if (typeof item.coverageComplete !== "boolean") {
+        throw new TypeError("Mail item coverage_complete must be boolean");
+      }
+      const slugs = normalizedIntentSlugs(intentSlugs);
+      const normalized = normalizeStoredMailItem(
+        item as unknown as Record<string, unknown>,
+      );
+      const referenceResolution = await resolveStoredReferences(database, normalized);
+      if (referenceResolution.kind === "result") return referenceResolution.result;
+      const relationshipSafe = referenceResolution.item;
+      const placeholders = slugs.map(() => "?").join(", ");
+      const activeCatalogGuard = slugs.length === 0
+        ? "1 = 1"
+        : `(SELECT COUNT(*) FROM assistant_label_definitions WHERE retired = 0 AND slug IN (${placeholders})) = ?`;
+      const conflictClause = mode === "insert-if-absent"
+        ? "DO NOTHING"
+        : `DO UPDATE SET gmail_thread_id = excluded.gmail_thread_id, client_id = excluded.client_id, suggested_project_id = excluded.suggested_project_id, approved_project_id = excluded.approved_project_id, status = excluded.status, match_reason = excluded.match_reason, email_drive_file_id = excluded.email_drive_file_id, analysis_payload = excluded.analysis_payload, party = excluded.party, confidence = excluded.confidence, content_hash = excluded.content_hash, label_definition_version = excluded.label_definition_version, attempted_label_definition_version = excluded.attempted_label_definition_version, subject = excluded.subject, sender = excluded.sender, received_at = excluded.received_at, failure_attempts = excluded.failure_attempts, error_code = excluded.error_code, coverage_complete = mail_items.coverage_complete OR excluded.coverage_complete, updated_at = excluded.updated_at WHERE mail_items.status IN ('needs-review', 'failed')`;
+      const result = await database.prepare(
+        `INSERT INTO mail_items (id, connection_key, gmail_message_id, gmail_thread_id, client_id, suggested_project_id, approved_project_id, status, match_reason, email_drive_file_id, analysis_payload, party, confidence, content_hash, label_definition_version, attempted_label_definition_version, subject, sender, received_at, failure_attempts, error_code, coverage_complete, created_at, updated_at)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE ${activeCatalogGuard}
+         ON CONFLICT(connection_key, gmail_message_id) ${conflictClause}`,
+      ).bind(
+        relationshipSafe.id,
+        relationshipSafe.connectionKey,
+        relationshipSafe.gmailMessageId,
+        relationshipSafe.gmailThreadId,
+        relationshipSafe.clientId,
+        relationshipSafe.suggestedProjectId,
+        relationshipSafe.approvedProjectId,
+        relationshipSafe.status,
+        relationshipSafe.matchReason,
+        relationshipSafe.emailDriveFileId,
+        serializeMailItemAnalysisPayload(relationshipSafe.analysisPayload),
+        relationshipSafe.party,
+        relationshipSafe.confidence,
+        relationshipSafe.contentHash,
+        relationshipSafe.labelDefinitionVersion,
+        relationshipSafe.attemptedLabelDefinitionVersion,
+        relationshipSafe.subject,
+        relationshipSafe.sender,
+        relationshipSafe.receivedAt,
+        relationshipSafe.failureAttempts,
+        relationshipSafe.errorCode,
+        relationshipSafe.coverageComplete ? 1 : 0,
+        relationshipSafe.createdAt,
+        relationshipSafe.updatedAt,
+        ...slugs,
+        ...(slugs.length === 0 ? [] : [slugs.length]),
+      ).run();
+      const changes = Number(result.meta.changes ?? 0);
+      if (changes === 1) return Object.freeze({ outcome: "saved" });
+      if (changes !== 0) {
+        throw new Error("D1 guarded mail item analysis was not written exactly once");
+      }
+
+      const existing = await database.prepare(
+        "SELECT status FROM mail_items WHERE connection_key = ? AND gmail_message_id = ?",
+      ).bind(
+        relationshipSafe.connectionKey,
+        relationshipSafe.gmailMessageId,
+      ).first<{ status: unknown }>();
+      if (existing) {
+        if (mode === "insert-if-absent") {
+          return Object.freeze({ outcome: "existing-preserved" });
+        }
+        if (existing.status !== "needs-review" && existing.status !== "failed") {
+          return Object.freeze({ outcome: "terminal-preserved" });
+        }
+      }
+      if (slugs.length > 0) {
+        const active = await database.prepare(
+          `SELECT COUNT(*) AS count FROM assistant_label_definitions WHERE retired = 0 AND slug IN (${placeholders})`,
+        ).bind(...slugs).first<{ count: unknown }>();
+        if (Number(active?.count ?? 0) !== slugs.length) {
+          return Object.freeze({ outcome: "label-catalog-changed" });
+        }
+      }
+      throw new Error("D1 guarded mail item analysis produced no deterministic outcome");
     },
   };
 }

@@ -3,6 +3,10 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Check, Database, KeyRound, Plus, ShieldCheck, Sparkles } from "lucide-react";
 import { FeatureStateBadge } from "../../components/FeatureStateBadge";
+import {
+  assistantLabelCodePointLength,
+  MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH,
+} from "../../domain/assistant-label-definition";
 import { cachedGetJson, invalidateCachedGet } from "../../lib/client-get-cache";
 import { SettingsDataNotice } from "./SettingsDataNotice";
 import styles from "./AiAssistantSettingsCard.module.css";
@@ -39,6 +43,12 @@ type AssistantLabel = {
   updatedAt: number;
 };
 type AssistantLabelCatalog = { labels: AssistantLabel[]; maximumLabels: number };
+
+function limitAssistantLabelDescription(value: string) {
+  return [...value]
+    .slice(0, MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH)
+    .join("");
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -97,7 +107,8 @@ function parseAssistantLabelCatalog(value: unknown): AssistantLabelCatalog {
       || !/^[A-Za-z0-9_-]{1,60}$/.test(candidate.slug)
       || typeof candidate.description !== "string"
       || !candidate.description.trim()
-      || candidate.description.length > 300
+      || assistantLabelCodePointLength(candidate.description)
+        > MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH
       || typeof candidate.retired !== "boolean"
       || !Number.isSafeInteger(candidate.createdAt)
       || !Number.isSafeInteger(candidate.updatedAt)
@@ -367,8 +378,10 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
               <textarea
                 id="assistant-new-label-description"
                 value={newLabelDescription}
-                onChange={(event) => setNewLabelDescription(event.target.value)}
-                maxLength={300}
+                onChange={(event) => setNewLabelDescription(
+                  limitAssistantLabelDescription(event.target.value),
+                )}
+                maxLength={MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH * 2}
                 rows={2}
                 disabled={labelSaving !== null || labelCatalog.labels.length >= labelCatalog.maximumLabels}
               />
@@ -404,9 +417,9 @@ export function AiAssistantSettingsCard({ notify, isAdmin }: { notify: Notify; i
                   value={labelEdits[label.slug] ?? label.description}
                   onChange={(event) => setLabelEdits((current) => ({
                     ...current,
-                    [label.slug]: event.target.value,
+                    [label.slug]: limitAssistantLabelDescription(event.target.value),
                   }))}
-                  maxLength={300}
+                  maxLength={MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH * 2}
                   rows={2}
                   disabled={labelSaving !== null}
                 />

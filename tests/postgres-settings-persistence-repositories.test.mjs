@@ -507,7 +507,7 @@ test("PostgreSQL mail items select retryable work before LIMIT and renew an exha
     assert.match(sql, /^SELECT id, connection_key/);
     assert.match(
       sql,
-      /error_code = 'analysis_daily_limit_reached'[\s\S]*failure_attempts < \$2[\s\S]*attempted_label_definition_version IS DISTINCT FROM \$3[\s\S]*status = 'failed'[\s\S]*status = 'needs-review'[\s\S]*label_definition_version IS DISTINCT FROM \$4[\s\S]*ORDER BY updated_at ASC, id ASC[\s\S]*LIMIT \$5/u,
+      /error_code IN \('analysis_daily_limit_reached', 'analysis_label_catalog_changed'\)[\s\S]*failure_attempts < \$2[\s\S]*attempted_label_definition_version IS DISTINCT FROM \$3[\s\S]*status = 'failed'[\s\S]*status = 'needs-review'[\s\S]*label_definition_version IS DISTINCT FROM \$4[\s\S]*ORDER BY updated_at ASC, id ASC[\s\S]*LIMIT \$5/u,
     );
     assert.ok(
       sql.indexOf("failure_attempts") < sql.indexOf("LIMIT"),
@@ -566,6 +566,55 @@ test("PostgreSQL mail-item insertIfAbsent preserves any existing analysis row on
     /ON CONFLICT \(connection_key, gmail_message_id\) DO NOTHING$/u,
   );
   assert.doesNotMatch(insert.sql, /DO UPDATE/u);
+});
+
+test("PostgreSQL mail-item analysis locks every active label before its guarded write", async () => {
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    if (/^SELECT slug[\s\S]*FROM assistant_label_definitions/u.test(sql)) {
+      return result([{ slug: "project-update" }], 1);
+    }
+    assert.match(sql, /^INSERT INTO mail_items/u);
+    return result([], 1);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+  assert.deepEqual(
+    await repository.saveAnalysisIfLabelsActive(
+      mailItem({ status: "needs-review" }),
+      ["project-update"],
+      "upsert",
+    ),
+    { outcome: "saved" },
+  );
+  const labelLock = dataQuery(pool, /^SELECT slug[\s\S]*assistant_label_definitions/u);
+  assert.deepEqual(labelLock.values, [["project-update"]]);
+  assert.match(labelLock.sql, /WHERE retired = false[\s\S]*FOR SHARE$/u);
+  const lockIndex = pool.queries.indexOf(labelLock);
+  const insertIndex = pool.queries.findIndex(({ sql }) => /^INSERT INTO mail_items/u.test(sql));
+  assert.ok(lockIndex >= 0 && insertIndex > lockIndex);
+});
+
+test("PostgreSQL mail-item analysis rejects a stale catalog snapshot without writing", async () => {
+  const pool = new RecordingPostgresPool(({ sql }) => {
+    assert.match(sql, /^SELECT slug[\s\S]*FROM assistant_label_definitions/u);
+    return result([], 0);
+  });
+  const repository = createPostgresMailItemRepository(pool, {
+    schema: "settings_test",
+  });
+  assert.deepEqual(
+    await repository.saveAnalysisIfLabelsActive(
+      mailItem({ status: "needs-review" }),
+      ["project-update"],
+      "upsert",
+    ),
+    { outcome: "label-catalog-changed" },
+  );
+  assert.equal(
+    pool.queries.some(({ sql }) => /^INSERT INTO mail_items/u.test(sql)),
+    false,
+  );
 });
 
 test("PostgreSQL mail items require valid record references and preserve creation time on upsert", async () => {

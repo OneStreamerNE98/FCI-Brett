@@ -131,6 +131,13 @@ type AssistantLabelCatalog = Readonly<{
   version: string;
 }>;
 
+class InboxAnalysisLabelCatalogChangedError extends Error {
+  constructor() {
+    super("Inbox analysis label catalog changed during classification.");
+    this.name = "InboxAnalysisLabelCatalogChangedError";
+  }
+}
+
 async function readAssistantLabelCatalog(
   database: D1Database,
 ): Promise<AssistantLabelCatalog> {
@@ -384,15 +391,22 @@ async function saveMailItem(
   repository: ReturnType<typeof createD1MailItemRepository>,
   item: MailItem,
   mode: "upsert" | "insert-if-absent" = "upsert",
+  activeIntentSlugs?: readonly string[],
 ) {
-  const result = mode === "insert-if-absent"
-    ? await repository.insertIfAbsent(item)
-    : await repository.upsert(item);
+  const persist = (candidate: MailItem) => activeIntentSlugs
+    ? repository.saveAnalysisIfLabelsActive(candidate, activeIntentSlugs, mode)
+    : mode === "insert-if-absent"
+      ? repository.insertIfAbsent(candidate)
+      : repository.upsert(candidate);
+  const result = await persist(item);
   if (result.outcome === "saved") return true;
   if (
     result.outcome === "existing-preserved"
     || result.outcome === "terminal-preserved"
   ) return false;
+  if (result.outcome === "label-catalog-changed") {
+    throw new InboxAnalysisLabelCatalogChangedError();
+  }
   // A project/client can be removed between the candidate SELECT and the
   // guarded repository write. Preserve the analysis row and its watermark,
   // but never retain a relationship the database could not verify.
@@ -404,14 +418,15 @@ async function saveMailItem(
       ? null
       : item.approvedProjectId,
   });
-  const fallback = mode === "insert-if-absent"
-    ? await repository.insertIfAbsent(withoutStaleReferences)
-    : await repository.upsert(withoutStaleReferences);
+  const fallback = await persist(withoutStaleReferences);
   if (fallback.outcome === "saved") return true;
   if (
     fallback.outcome !== "existing-preserved"
     && fallback.outcome !== "terminal-preserved"
   ) {
+    if (fallback.outcome === "label-catalog-changed") {
+      throw new InboxAnalysisLabelCatalogChangedError();
+    }
     throw new Error("Inbox analysis could not persist a relationship-safe row.");
   }
   return false;
@@ -578,6 +593,7 @@ async function saveAnalysis(input: {
     input.repository,
     item,
     input.existing ? "upsert" : "insert-if-absent",
+    input.analysis.intents,
   );
   return Object.freeze({
     item,
@@ -605,6 +621,7 @@ function needsRetry(item: MailItem, labelDefinitionVersion: string) {
   return item.status === "failed"
     && (
       item.errorCode === "analysis_daily_limit_reached"
+      || item.errorCode === "analysis_label_catalog_changed"
       || item.attemptedLabelDefinitionVersion
         !== labelDefinitionVersion
       || item.failureAttempts < MAX_MAIL_ITEM_FAILURE_ATTEMPTS
@@ -1088,7 +1105,7 @@ export async function runInboxAnalysisSweep(input: {
           if (await processWork(work[workIndex])) {
             durableProgressMessageIds.add(work[workIndex].messageId);
           }
-        } catch {
+        } catch (error) {
           // Keep one durable row for a swept message even if a pre-filter,
           // content hash, normalization, or first persistence attempt fails.
           // If storage itself is unavailable this retry still fails closed and
@@ -1099,9 +1116,15 @@ export async function runInboxAnalysisSweep(input: {
             messageId: work[workIndex].messageId,
             summary: work[workIndex].summary,
             existing: work[workIndex].existing,
-            errorCode: "analysis_item_failed",
+            errorCode: error instanceof InboxAnalysisLabelCatalogChangedError
+              ? "analysis_label_catalog_changed"
+              : "analysis_item_failed",
             now: now(),
             labelDefinitionVersion: labelCatalog.version,
+            countsAgainstAttemptBudget:
+              error instanceof InboxAnalysisLabelCatalogChangedError
+                ? false
+                : undefined,
           });
         }
       }

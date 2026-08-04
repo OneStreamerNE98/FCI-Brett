@@ -88,6 +88,17 @@ export function createD1AssistantLabelRepository(
       ).bind(normalizedSlug, normalizedSlug).run();
       if (changes(deleted) === 1) return "deleted";
 
+      // D1 serializes individual statements, but another request can save a
+      // guarded analysis between this method's first usage check and delete.
+      // Re-run the retirement after the guarded delete loses that race so the
+      // API never reports retirement while leaving a newly used label active.
+      const racedRetirement = await database.prepare(
+        `UPDATE assistant_label_definitions
+            SET retired = 1, updated_at = ?
+          WHERE slug = ? AND ${usedPredicate}`,
+      ).bind(normalizedUpdatedAt, normalizedSlug, normalizedSlug).run();
+      if (changes(racedRetirement) === 1) return "retired";
+
       const existing = await database.prepare(
         "SELECT retired FROM assistant_label_definitions WHERE slug = ?",
       ).bind(normalizedSlug).first<{ retired: unknown }>();

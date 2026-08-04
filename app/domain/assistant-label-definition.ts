@@ -51,7 +51,7 @@ export class AssistantLabelValidationError extends Error {
   }
 }
 
-function codePointLength(value: string) {
+export function assistantLabelCodePointLength(value: string) {
   return [...value].length;
 }
 
@@ -59,7 +59,7 @@ export function normalizeAssistantLabelSlug(value: unknown) {
   if (
     typeof value !== "string"
     || !ASSISTANT_LABEL_IDENTIFIER_PATTERN.test(value)
-    || codePointLength(value) > MAX_ASSISTANT_LABEL_SLUG_LENGTH
+    || assistantLabelCodePointLength(value) > MAX_ASSISTANT_LABEL_SLUG_LENGTH
   ) {
     throw new AssistantLabelValidationError("AI label slug is invalid.");
   }
@@ -74,6 +74,7 @@ export function normalizeAssistantLabelDescription(value: unknown) {
     .normalize("NFKC")
     .replace(BIDI_CONTROLS, "")
     .replace(/\r\n?/gu, "\n")
+    .replace(/[\u2028\u2029]/gu, "\n")
     .replace(CONTROL_CHARACTERS_EXCEPT_LINE_FEED, "");
   const lines = stripped.split("\n");
   if (lines.some((line) =>
@@ -94,7 +95,7 @@ export function normalizeAssistantLabelDescription(value: unknown) {
   if (!normalized) {
     throw new AssistantLabelValidationError("AI label description is required.");
   }
-  if (codePointLength(normalized) > MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH) {
+  if (assistantLabelCodePointLength(normalized) > MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH) {
     throw new AssistantLabelValidationError(
       `AI label descriptions cannot exceed ${MAX_ASSISTANT_LABEL_DESCRIPTION_LENGTH} characters.`,
     );

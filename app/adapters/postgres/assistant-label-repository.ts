@@ -108,6 +108,22 @@ export function createPostgresAssistantLabelRepository(
       const normalizedSlug = normalizeAssistantLabelSlug(slug);
       const normalizedUpdatedAt = normalizeAssistantLabelTimestamp(updatedAt, "AI label updated_at");
       return withPostgresTransaction(pool, transactionOptions, async (client) => {
+        // Serialize the catalog decision with guarded analysis writers. A
+        // writer holds FOR SHARE on every label until its mail_items write
+        // commits; taking FOR UPDATE here first means each subsequent READ
+        // COMMITTED statement sees that committed usage. In the inverse
+        // ordering, the writer waits here and then rejects the retired or
+        // deleted label rather than persisting a stale classification.
+        const locked = await client.query<{ retired: boolean }>(
+          `SELECT retired
+             FROM assistant_label_definitions
+            WHERE slug = $1
+            FOR UPDATE`,
+          [normalizedSlug],
+        );
+        if (locked.rowCount === 0) return "not-found";
+        if (locked.rows[0]?.retired === true) return "retired";
+
         const retired = await client.query(
           `UPDATE assistant_label_definitions
               SET retired = true, updated_at = $2

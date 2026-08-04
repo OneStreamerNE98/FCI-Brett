@@ -11,6 +11,7 @@ export type MailItemUpsertResult =
   | Readonly<{ outcome: "saved" }>
   | Readonly<{ outcome: "existing-preserved" }>
   | Readonly<{ outcome: "terminal-preserved" }>
+  | Readonly<{ outcome: "label-catalog-changed" }>
   | Readonly<{ outcome: "client-not-found" }>
   | Readonly<{ outcome: "suggested-project-not-found" }>
   | Readonly<{ outcome: "approved-project-not-found" }>;
@@ -85,4 +86,16 @@ export interface MailItemRepository {
   ): Promise<boolean>;
   insertIfAbsent(item: MailItem): Promise<MailItemUpsertResult>;
   upsert(item: MailItem): Promise<MailItemUpsertResult>;
+  /**
+   * Persists one classifier result only while every intent slug from the
+   * classifier's catalog snapshot still exists and is active. Adapters must
+   * make that predicate atomic with the mail_items write, so an administrator
+   * deleting an unused label cannot race an in-flight classification into an
+   * uninterpretable historical row.
+   */
+  saveAnalysisIfLabelsActive(
+    item: MailItem,
+    intentSlugs: readonly string[],
+    mode: "upsert" | "insert-if-absent",
+  ): Promise<MailItemUpsertResult>;
 }

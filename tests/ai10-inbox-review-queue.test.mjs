@@ -1118,6 +1118,12 @@ test("AI-12 queue GET omits zero failures and reports only current-catalog exhau
     errorCode: "analysis_daily_limit_reached",
     attemptedLabelDefinitionVersion: currentVersion,
   });
+  insertExhaustedAnalysisFailure(database, {
+    id: "failed-catalog-change",
+    messageId: "gmail-catalog-change",
+    errorCode: "analysis_label_catalog_changed",
+    attemptedLabelDefinitionVersion: currentVersion,
+  });
   try {
     const zero = await route.GET(routeRequest());
     assert.equal(zero.status, 200);
@@ -1163,6 +1169,7 @@ test("AI-12 retry action is Administrator-only and atomically resets only the na
   const excluded = [
     "gmail_read_failed",
     "analysis_daily_limit_reached",
+    "analysis_label_catalog_changed",
     "analysis_request_aborted",
     "analysis_retire_failed",
   ];
