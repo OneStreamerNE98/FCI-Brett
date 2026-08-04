@@ -127,6 +127,11 @@ type NeedsReviewNotification = Readonly<{
 
 type AssistantLabelCatalog = Readonly<{
   definitions: readonly InboxAnalysisLabelDefinition[];
+  labels: readonly Readonly<{
+    slug: string;
+    description: string;
+    retired: boolean;
+  }>[];
   knownSlugs: ReadonlySet<string>;
   version: string;
 }>;
@@ -145,9 +150,13 @@ async function readAssistantLabelCatalog(
   const definitions = Object.freeze(rows
     .filter(({ retired }) => !retired)
     .map(({ slug, description }) => Object.freeze({ slug, description })));
+  const labels = Object.freeze(rows.map(({ slug, description, retired }) =>
+    Object.freeze({ slug, description, retired })
+  ));
   return Object.freeze({
     definitions,
-    knownSlugs: new Set(rows.map(({ slug }) => slug)),
+    labels,
+    knownSlugs: new Set(labels.map(({ slug }) => slug)),
     version: inboxAnalysisLabelDefinitionVersion(definitions),
   });
 }
@@ -1488,6 +1497,7 @@ export async function GET(request: NextRequest) {
       ),
     ]);
     return noStoreJson({
+      labels: labelCatalog.labels,
       rows: page.items.map((item) => reviewQueueRow(item, labelCatalog.knownSlugs)),
       totalCount: page.totalCount,
       ...(failed.count > 0

@@ -24,6 +24,12 @@ import {
 } from "lucide-react";
 import { AccessibleOverlay } from "../../components/AccessibleOverlay";
 import { OperationsEmptyState, PageTitle } from "../../components/operations/OperationsPrimitives";
+import {
+  DEFAULT_ASSISTANT_LABEL_DEFINITIONS,
+  MAX_ASSISTANT_LABELS,
+  normalizeAssistantLabelDescription,
+  normalizeAssistantLabelSlug,
+} from "../../domain/assistant-label-definition";
 import { cachedGetJson } from "../../lib/client-get-cache";
 import {
   evaluateInboxFilingRules,
@@ -86,13 +92,12 @@ export type InboxLeadProposal = Readonly<{
   site: string | null;
   estimatedValue: number | null;
 }>;
-const INBOX_REVIEW_INTENTS = Object.freeze([
-  "lead",
-  "project-update",
-  "schedule",
-  "warranty",
-] as const);
-type InboxReviewIntent = typeof INBOX_REVIEW_INTENTS[number];
+type InboxReviewIntent = string;
+type InboxReviewLabel = Readonly<{
+  slug: string;
+  description: string;
+  retired: boolean;
+}>;
 type InboxReviewAnalysis = Readonly<{
   gmailMessageId: string;
   intents: readonly InboxReviewIntent[];
@@ -109,6 +114,7 @@ type InboxReviewQueueRow = Readonly<{
   leadProposal: InboxLeadProposal | null;
 }>;
 type InboxReviewQueue = Readonly<{
+  labels: ReadonlyMap<string, InboxReviewLabel>;
   rows: readonly InboxReviewQueueRow[];
   totalCount: number;
   failedCount?: number;
@@ -160,10 +166,59 @@ const inboxBucketLabels: Record<InboxBucket, string> = {
   filed: "FCI/Filed",
 };
 
+const DEFAULT_INBOX_REVIEW_LABELS: ReadonlyMap<string, InboxReviewLabel> = new Map(
+  DEFAULT_ASSISTANT_LABEL_DEFINITIONS.map(({ slug, description }) => [
+    slug,
+    Object.freeze({ slug, description, retired: false }),
+  ]),
+);
+
 function inboxDate(value: string | number | null) {
   if (!value) return "Date unavailable";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function inboxReviewLabels(value: unknown): ReadonlyMap<string, InboxReviewLabel> | null {
+  // Older test/dev responders predate the additive catalog field. Their four
+  // built-in labels remain readable, while any custom intent still fails
+  // closed unless its server-validated display metadata accompanies the row.
+  if (value === undefined) return DEFAULT_INBOX_REVIEW_LABELS;
+  if (!Array.isArray(value) || value.length > MAX_ASSISTANT_LABELS) {
+    return null;
+  }
+  const labels = new Map<string, InboxReviewLabel>();
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      return null;
+    }
+    const label = candidate as Record<string, unknown>;
+    if (
+      Object.keys(label).length !== 3
+      || typeof label.slug !== "string"
+      || typeof label.description !== "string"
+      || typeof label.retired !== "boolean"
+    ) {
+      return null;
+    }
+    try {
+      if (
+        normalizeAssistantLabelSlug(label.slug) !== label.slug
+        || normalizeAssistantLabelDescription(label.description) !== label.description
+      ) {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+    if (labels.has(label.slug)) return null;
+    labels.set(label.slug, Object.freeze({
+      slug: label.slug,
+      description: label.description,
+      retired: label.retired,
+    }));
+  }
+  return labels;
 }
 
 function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
@@ -176,6 +231,8 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
   ) {
     return null;
   }
+  const labels = inboxReviewLabels(record.labels);
+  if (!labels) return null;
   const hasFailedCount = Object.hasOwn(record, "failedCount");
   const hasFailedReason = Object.hasOwn(record, "failedReason");
   if (
@@ -219,15 +276,15 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
         return null;
       }
       const candidate = row.analysis as Record<string, unknown>;
-      const intentSet = new Set<string>(INBOX_REVIEW_INTENTS);
       if (
         Object.keys(candidate).length !== 5
         || typeof candidate.gmailMessageId !== "string"
         || !/^[A-Za-z0-9_-]{1,256}$/.test(candidate.gmailMessageId)
         || !Array.isArray(candidate.intents)
         || candidate.intents.length === 0
+        || candidate.intents.length > MAX_ASSISTANT_LABELS
         || candidate.intents.some((intent) =>
-          typeof intent !== "string" || !intentSet.has(intent)
+          typeof intent !== "string" || !labels.has(intent)
         )
         || new Set(candidate.intents).size !== candidate.intents.length
         || (
@@ -321,6 +378,7 @@ function inboxReviewQueue(value: unknown): InboxReviewQueue | null {
     }));
   }
   return Object.freeze({
+    labels,
     rows: Object.freeze(rows),
     totalCount: Number(record.totalCount),
     ...(hasFailedCount
@@ -351,11 +409,18 @@ function taskProposalText(
   return { title, details };
 }
 
-function reviewIntentLabel(intent: InboxReviewIntent) {
+function reviewIntentLabel(
+  intent: InboxReviewIntent,
+  labels: ReadonlyMap<string, InboxReviewLabel>,
+) {
+  const definition = labels.get(intent);
+  if (!definition) return "Saved label";
+  if (definition.retired) return `${definition.description} (retired)`;
   if (intent === "project-update") return "Project update";
   if (intent === "schedule") return "Schedule";
   if (intent === "warranty") return "Warranty callback";
-  return "Lead";
+  if (intent === "lead") return "Lead";
+  return definition.description;
 }
 
 function InboxTaskProposalModal({
@@ -566,6 +631,9 @@ export function InboxView({
   const [analysisCoverage, setAnalysisCoverage] = useState<InboxAnalysisCoverage | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [reviewRows, setReviewRows] = useState<readonly InboxReviewQueueRow[]>([]);
+  const [reviewLabels, setReviewLabels] = useState<ReadonlyMap<string, InboxReviewLabel>>(
+    DEFAULT_INBOX_REVIEW_LABELS,
+  );
   const [reviewTotalCount, setReviewTotalCount] = useState(0);
   const [failedAnalysisSummary, setFailedAnalysisSummary] = useState<Readonly<{
     count: number;
@@ -750,6 +818,7 @@ export function InboxView({
         throw new Error("The inbox review queue returned an invalid result.");
       }
       if (requestId !== reviewQueueRequestIdRef.current) return null;
+      setReviewLabels(queue.labels);
       setReviewRows(queue.rows);
       setReviewTotalCount(queue.totalCount);
       setFailedAnalysisSummary(
@@ -1577,7 +1646,7 @@ export function InboxView({
                       <p>Stored analysis · review required</p>
                       {row.analysis && <p>
                         Suggested actions: {row.analysis.intents
-                          .map(reviewIntentLabel)
+                          .map((intent) => reviewIntentLabel(intent, reviewLabels))
                           .join(" · ")}
                       </p>}
                       {leadRetirementErrorIds.has(row.id) && <p role="status">

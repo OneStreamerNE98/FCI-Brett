@@ -337,6 +337,16 @@ function providerOutput(messageId) {
   };
 }
 
+function defaultLabelPresentation(descriptionOverrides = {}) {
+  return application.INBOX_ANALYSIS_LABEL_DEFINITIONS
+    .map(({ slug, description }) => ({
+      slug,
+      description: descriptionOverrides[slug] ?? description,
+      retired: false,
+    }))
+    .toSorted((left, right) => left.slug.localeCompare(right.slug));
+}
+
 function sweepInput(database, client, provider, overrides = {}) {
   return {
     database,
@@ -385,6 +395,7 @@ test("review queue GET is admin, no-store, snapshot-counted, and network free", 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("Cache-Control"), "no-store");
     assert.deepEqual(await response.json(), {
+      labels: defaultLabelPresentation(),
       rows: [{
         id: "mail-live",
         subject: "FCI TEST stored review subject",
@@ -526,6 +537,58 @@ test("review queue GET exposes a closed server-derived analysis projection", asy
     });
     assert.equal(byId.get("mail-duplicate-intent").analysis, null);
     assert.equal(byId.get("mail-unknown-intent").analysis, null);
+  } finally {
+    workerEnvironment.DB = originalDatabase;
+    database.close();
+  }
+});
+
+test("review queue GET carries active and retired custom label meanings with historical rows", async () => {
+  const database = new ReviewQueueDatabase();
+  const originalDatabase = workerEnvironment.DB;
+  workerEnvironment.DB = database;
+  const activeSlug = `label_${"d".repeat(32)}`;
+  const retiredSlug = `label_${"e".repeat(32)}`;
+  database.database.prepare(
+    `INSERT INTO assistant_label_definitions
+       (slug, description, retired, created_at, updated_at)
+     VALUES (?, ?, 0, 10, 10), (?, ?, 1, 11, 12)`,
+  ).run(
+    activeSlug,
+    "Vendor billing request.",
+    retiredSlug,
+    "Historical callback category.",
+  );
+  database.insertReview({
+    id: "mail-custom-active-intent",
+    messageId: "gmail-custom-active-intent",
+    analysisPayload: { intents: [activeSlug] },
+  });
+  database.insertReview({
+    id: "mail-custom-retired-intent",
+    messageId: "gmail-custom-retired-intent",
+    analysisPayload: { intents: [retiredSlug] },
+  });
+  try {
+    const response = await route.GET(routeRequest());
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(
+      body.labels.filter(({ slug }) => slug === activeSlug || slug === retiredSlug),
+      [
+        { slug: activeSlug, description: "Vendor billing request.", retired: false },
+        { slug: retiredSlug, description: "Historical callback category.", retired: true },
+      ],
+    );
+    const byId = new Map(body.rows.map((row) => [row.id, row]));
+    assert.deepEqual(
+      byId.get("mail-custom-active-intent").analysis.intents,
+      [activeSlug],
+    );
+    assert.deepEqual(
+      byId.get("mail-custom-retired-intent").analysis.intents,
+      [retiredSlug],
+    );
   } finally {
     workerEnvironment.DB = originalDatabase;
     database.close();
@@ -1127,7 +1190,13 @@ test("AI-12 queue GET omits zero failures and reports only current-catalog exhau
   try {
     const zero = await route.GET(routeRequest());
     assert.equal(zero.status, 200);
-    assert.deepEqual(await zero.json(), { rows: [], totalCount: 0 });
+    assert.deepEqual(await zero.json(), {
+      labels: defaultLabelPresentation({
+        schedule: "A stored schedule definition used by the failure queries.",
+      }),
+      rows: [],
+      totalCount: 0,
+    });
 
     database.database.prepare(
       "UPDATE mail_items SET failure_attempts = 3 WHERE id = 'failed-mid-retry'",
@@ -1135,6 +1204,9 @@ test("AI-12 queue GET omits zero failures and reports only current-catalog exhau
     const exhausted = await route.GET(routeRequest());
     assert.equal(exhausted.status, 200);
     assert.deepEqual(await exhausted.json(), {
+      labels: defaultLabelPresentation({
+        schedule: "A stored schedule definition used by the failure queries.",
+      }),
       rows: [],
       totalCount: 0,
       failedCount: 1,
