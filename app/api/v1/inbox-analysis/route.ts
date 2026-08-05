@@ -1556,6 +1556,7 @@ export async function PATCH(request: NextRequest) {
       update.id,
       connectionKey,
       Date.now(),
+      auth.user.email,
       update.outcome,
     );
     if (!dismissed) {

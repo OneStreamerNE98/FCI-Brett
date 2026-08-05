@@ -37,6 +37,7 @@ const clientNormalizedNameMigrationPrefix = "0022_";
 const googleFormLeadIntakeMigrationPrefix = "0023_";
 const addressValidationMigrationPrefix = "0024_";
 const assistantLabelMigrationPrefix = "0025_";
+const mailItemReviewAttributionMigrationPrefix = "0026_";
 const allowedDestructiveMigrations = new Map([
   [
     "0008_strong_korg.sql",
@@ -838,6 +839,40 @@ test("adds AI-11(c)'s seeded label catalog in additive migration 0025", async ()
     version: "6",
     when: journalEntry.when,
     tag: "0025_blushing_ultimo",
+    breakpoints: true,
+  });
+});
+
+test("adds AI-11(d)'s review attribution columns in additive migration 0026", async () => {
+  const files = await migrationFiles(drizzleRoot);
+  const [migration] = files.filter((file) => file.startsWith(mailItemReviewAttributionMigrationPrefix));
+  assert.equal(migration, "0026_mail_item_review_attribution.sql");
+  assert.equal(files.filter((file) => file.startsWith(mailItemReviewAttributionMigrationPrefix)).length, 1);
+  const [migrationSql, previousSnapshot, snapshot, journal] = await Promise.all([
+    readFile(join(drizzleRoot, migration), "utf8"),
+    readFile(join(drizzleRoot, "meta", "0025_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "0026_snapshot.json"), "utf8").then(JSON.parse),
+    readFile(join(drizzleRoot, "meta", "_journal.json"), "utf8").then(JSON.parse),
+  ]);
+  assert.match(migrationSql, /ALTER TABLE `mail_items` ADD COLUMN `reviewed_by` text/u);
+  assert.match(migrationSql, /ALTER TABLE `mail_items` ADD COLUMN `reviewed_at` integer/u);
+  assert.match(migrationSql, /ALTER TABLE `mail_items` ADD COLUMN `accepted_intent` text/u);
+  assert.doesNotMatch(
+    sqlWithoutLiteralsOrComments(migrationSql),
+    /\b(?:DROP|UPDATE|DELETE|TRUNCATE|RENAME)\b/iu,
+  );
+  assert.equal(snapshot.prevId, previousSnapshot.id);
+  assert.ok(Object.hasOwn(previousSnapshot.tables.mail_items.columns, "coverage_complete"));
+  assert.ok(!Object.hasOwn(previousSnapshot.tables.mail_items.columns, "reviewed_by"));
+  assert.ok(Object.hasOwn(snapshot.tables.mail_items.columns, "reviewed_by"));
+  assert.ok(Object.hasOwn(snapshot.tables.mail_items.columns, "reviewed_at"));
+  assert.ok(Object.hasOwn(snapshot.tables.mail_items.columns, "accepted_intent"));
+  const journalEntry = journal.entries.at(-1);
+  assert.deepEqual(journalEntry, {
+    idx: 26,
+    version: "6",
+    when: journalEntry.when,
+    tag: "0026_mail_item_review_attribution",
     breakpoints: true,
   });
 });

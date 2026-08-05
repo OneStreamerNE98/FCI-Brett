@@ -831,6 +831,10 @@ test("filing a message retires its review row inside the lease-guarded batch", a
   );
   const statement = source.slice(mailItemUpdate, mailItemUpdate + 400);
   assert.match(statement, /approved_project_id = \?/u);
+  // AI-11(d): attribution columns must be written at every accept path.
+  assert.match(statement, /reviewed_by = \?/u);
+  assert.match(statement, /reviewed_at = \?/u);
+  assert.match(statement, /accepted_intent = \?/u);
   // A terminal row carrying retry state violates the v12 failure-state CHECK on
   // PostgreSQL and is rejected by normalizeStoredMailItem on read, so every
   // later sweep would throw on this message (review-bot P1, second round).

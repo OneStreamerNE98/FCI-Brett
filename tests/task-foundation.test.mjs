@@ -1272,6 +1272,8 @@ function inboxReviewTaskCreationIntent(
       intent,
       approvedProjectId: PROJECT_ID,
       acceptedAt: CREATED_AT,
+      reviewedBy: OFFICE_EMAIL,
+      acceptedIntent: intent,
     },
   };
 }

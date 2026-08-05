@@ -307,18 +307,15 @@ export function createD1MailItemRepository(database: D1Database): MailItemReposi
         .run();
     },
 
-    async dismissNeedsReview(id, connectionKey, updatedAt, outcome = "dismissed") {
+    async dismissNeedsReview(id, connectionKey, updatedAt, reviewedBy, outcome = "dismissed", acceptedIntent = undefined) {
       if (!boundedId(id)) return false;
-      // The outcome is BOUND, never interpolated, and the caller has already validated
-      // it against the two-value MailItemReviewOutcome union. Guard again here so a
-      // future caller cannot widen it into an arbitrary status write.
       if (outcome !== "accepted" && outcome !== "dismissed") return false;
       const normalizedConnectionKey = normalizeMailItemConnectionKey(connectionKey);
       const result = await database
         .prepare(
-          "UPDATE mail_items SET status = ?, attempted_label_definition_version = NULL, failure_attempts = 0, error_code = NULL, updated_at = ? WHERE id = ? AND connection_key = ? AND status = 'needs-review'",
+          "UPDATE mail_items SET status = ?, reviewed_by = ?, reviewed_at = ?, accepted_intent = ?, attempted_label_definition_version = NULL, failure_attempts = 0, error_code = NULL, updated_at = ? WHERE id = ? AND connection_key = ? AND status = 'needs-review'",
         )
-        .bind(outcome, updatedAt, id, normalizedConnectionKey)
+        .bind(outcome, reviewedBy, updatedAt, acceptedIntent, updatedAt, id, normalizedConnectionKey)
         .run();
       return Number(result.meta.changes ?? 0) === 1;
     },

@@ -162,8 +162,13 @@ const MAIL_ITEM_SELECT = `SELECT id, connection_key, gmail_message_id, gmail_thr
        email_drive_file_id, analysis_payload, party, confidence, content_hash,
        label_definition_version, attempted_label_definition_version,
        subject, sender, received_at, failure_attempts,
-       error_code, coverage_complete, created_at, updated_at
+       error_code, coverage_complete, reviewed_by, reviewed_at, accepted_intent,
+       created_at, updated_at
 FROM mail_items`;
+
+if (!MAIL_ITEM_SELECT.includes("reviewed_by") || !MAIL_ITEM_SELECT.includes("reviewed_at") || !MAIL_ITEM_SELECT.includes("accepted_intent")) {
+  throw new Error("MAIL_ITEM_SELECT must include reviewed_by, reviewed_at, and accepted_intent");
+}
 
 const MAIL_ITEM_REFERENCE_CONSTRAINTS = [
   "mail_items_client_id_fkey",
@@ -468,7 +473,7 @@ WHERE connection_key = $1 AND coverage_complete = false`,
       });
     },
 
-    async dismissNeedsReview(id, connectionKey, updatedAt, outcome = "dismissed") {
+    async dismissNeedsReview(id, connectionKey, updatedAt, reviewedBy, outcome = "dismissed", acceptedIntent = undefined) {
       if (!boundedText(id, 512)) return false;
       // Mirrors the D1 adapter exactly: the outcome is BOUND, never interpolated, and
       // re-guarded here so a future caller cannot widen it into an arbitrary status.
@@ -478,15 +483,21 @@ WHERE connection_key = $1 AND coverage_complete = false`,
         const result = await client.query(
           `UPDATE mail_items
 SET status = $1,
+    reviewed_by = $2,
+    reviewed_at = $3,
+    accepted_intent = $4,
     attempted_label_definition_version = NULL,
     failure_attempts = 0,
     error_code = NULL,
-    updated_at = $2
-WHERE id = $3
-  AND connection_key = $4
+    updated_at = $5
+WHERE id = $6
+  AND connection_key = $7
   AND status = 'needs-review'`,
           [
             outcome,
+            reviewedBy,
+            persistenceDate(updatedAt, "PostgreSQL mail item reviewed_at"),
+            acceptedIntent,
             persistenceDate(updatedAt, "PostgreSQL mail item updated_at"),
             id,
             normalizedConnectionKey,
