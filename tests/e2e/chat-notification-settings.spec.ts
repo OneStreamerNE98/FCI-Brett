@@ -50,10 +50,9 @@ function monitorBrowserIssues(page: Page, options: { allowExpectedServiceUnavail
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     const text = message.text();
-    const localVinextFontWarning = /^Not allowed to load local resource: file:\/\/\/.*\/\.vinext\/fonts\//u.test(text);
     const expectedServiceUnavailable = options.allowExpectedServiceUnavailable === true
       && text === "Failed to load resource: the server responded with a status of 503 (Service Unavailable)";
-    if (!localVinextFontWarning && !expectedServiceUnavailable) issues.push(`console.error: ${text}`);
+    if (!expectedServiceUnavailable) issues.push(`console.error: ${text}`);
   });
   page.on("pageerror", (error) => issues.push(`pageerror: ${error.stack ?? error.message}`));
   return issues;

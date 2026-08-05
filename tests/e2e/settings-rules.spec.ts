@@ -28,9 +28,7 @@ test("Inbox rules use a responsive semantic table and retain keyboard actions", 
 
   page.on("console", (message) => {
     const detail = message.text();
-    const localVinextFontWarning = detail.startsWith("Not allowed to load local resource: file:///")
-      && detail.includes("/.vinext/fonts/");
-    if (message.type() === "error" && !localVinextFontWarning) browserIssues.push(`console.error: ${detail}`);
+    if (message.type() === "error") browserIssues.push(`console.error: ${detail}`);
   });
   page.on("pageerror", (error) => browserIssues.push(`pageerror: ${error.stack ?? error.message}`));
 

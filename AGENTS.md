@@ -36,6 +36,67 @@ Start with [`docs/README.md`](docs/README.md), the audience-grouped index of eve
 4. Run the relevant tests during development and run `npm test` before handoff.
 5. Open a pull request with a concise summary, verification evidence, and data/security impact note.
 6. Do not deploy, change hosted configuration, migrate data, or merge to production without owner approval.
+- **Verification is a CI run id, not a number you typed (the verification block,
+  recorded August 5, 2026, after FIX-20 reported four failures on a `main` whose own
+  run had one).** This is what item 5's "verification evidence" means; the Handoff
+  requirements test bullet is satisfied by quoting this block in the handoff report,
+  never by omitting it there. Every pull request body carries:
+
+  ```
+  ### Verification
+  - **Run:** `<run-id>` <conclusion> — tests <n> / pass <n> / fail <n> / cancelled <n> / skipped <n> / todo <n>
+  - **Main:** `<run-id>` <success|failure> — fail <n>
+  - **Not mine:** each failure in Run that Main also shows, named; or `none`
+  - **Coverage:** output of `git diff --stat <APPROVED-HEAD>..HEAD -- tests/`, or `no approved head yet`
+  ```
+
+  **Run** is this branch's own CI run; **Main** is `main`'s newest run whose conclusion
+  is `success` or `failure`, because a `cancelled` run adjudicated nothing. Read both
+  with `gh run view <id> --log | grep -E "# (tests|pass|fail|cancelled|skipped|todo) "`
+  — six buckets, not three. Every number in the block therefore comes from CI and a
+  reviewer re-derives it with one command; **no local test count is ever load-bearing**,
+  which is what makes a degraded local environment harmless instead of persuasive.
+  **Never write "pre-existing" in a PR body.** A failure may sit on **Not mine** only if
+  it appears verbatim in
+  `gh run view <main-run-id> --log-failed | grep -E "not ok [0-9]"`:
+  cite it and you are believed, argue it and you are not. **Reporting a
+  genuinely red `main` is never held against the PR that reports it** — FIX-20's DES-13
+  catch was correct and saved a triage cycle across four pull requests. A **Coverage**
+  diff that removes an assertion names the assertion that replaced it and shows the
+  replacement still fails for the original defect, because green CI cannot detect a
+  change that deletes its own detector. Any line that cannot be produced reads
+  `blocked: <exact blocker>`, under the standing rule in `## Useful commands` that a
+  command which cannot run is recorded rather than assumed; a missing line is a claim
+  nobody made and is a review-blocking finding. The block describes exactly one head —
+  the one `gh run view <id> --json headSha` prints for its **Run**. An agent pushing to
+  a pull request it does not own, including a fix agent under stop-verify-resume,
+  **appends a new block and leaves the author's block unedited**; a block naming a
+  superseded head is stale rather than false, which is a finding against the pusher who
+  failed to append and never against the branch owner. Nothing in this law authorizes
+  editing another agent's pull request body.
+- **The reviewed head must still be an ancestor (containment, recorded August 5, 2026,
+  after `codex/set42-swr-doctrine` was rebuilt, dropped `a863e41`, and put a P1 back on
+  an all-green pull request).** The approval-head law above says what an orphaned commit
+  is worth; this says how anyone sees it. Run
+  `git merge-base --is-ancestor <APPROVED-HEAD> <current head>` before merge and at the
+  start of any review: exit 0 means the reviewed work is still there. A non-zero exit is
+  the approval-head law firing — the branch is unreviewed work in its entirety, disclosed
+  or not; this law adds a duty and never a cure. Before any verdict exists, the anchor is
+  the head named by the newest verification block's **Run** id.
+  **Fast-forward pushes stay legal and are expected**: one agent applying review fixes to
+  another agent's branch preserves containment by construction, owes no disclosure, and is
+  the mechanism that recovers from this incident — the target here is a head that no longer
+  contains reviewed work, never collaboration. Whoever moved a head past containment posts,
+  in the same working minute, a pull request comment carrying the before and after SHAs and
+  the complete output of
+  `git range-diff --no-patch origin/main..<before> origin/main..<after>` — **the whole
+  table, not a grep for `< -:`**, because a rebuild that preserves a commit's subject
+  reports as `!` and carries the same damage. If the before SHA cannot be fetched, that
+  comment reads `blocked: <exact blocker>`, names every SHA that is still known, and goes
+  to the owner the same minute. **Green CI is not evidence that nothing was lost:** the
+  SET-42 rebuild also cut `tests/e2e/set42-swr-doctrine.spec.ts` from 328 lines to 187 and
+  dropped both `/settings?section=google-workspace` visits, leaving an assertion that is
+  vacuously true on the pages the spec still opens.
 
 ## Deploying the Sites app — record every deployment
 
@@ -90,7 +151,11 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
   do not take it, and do not edit the files its branch touches. The
   `app/FloorOpsApp.tsx` single-file queue rule is the canonical example, and its queue
   order appendix is the claim list — a packet that adds a `FloorOpsApp.tsx` change must
-  add itself there in the same PR.
+  add itself there in the same PR. That slot scopes only what remains in the file: the
+  app shell and navigation, Overview, Reports, Settings dispatch, and the modal/drawer
+  cluster until DES-14b lands. Extracted record views (`LeadsView`, `ClientsView`,
+  `ProjectsView`, and `ScheduleView`) exit the queue permanently; work confined to those
+  modules does not claim the `FloorOpsApp.tsx` slot.
 - **A packet is available if and only if it has no status line.** Prose lists of
   "unclaimed packets" are historical narrative and have gone stale repeatedly; the status
   lines are the only dispatch authority. (The ledger guard also enforces heading grammar
@@ -143,9 +208,20 @@ Multiple AI agents work this repository from separate clones. Each agent is its 
     surface, judged on PROCESS FACTS: zero pushes after the recorded approval head, zero
     edits to graded criteria, zero pushes into another agent's active fix window. Until
     the gate passes, packet size is the orchestrator's discretion.
-  - **Advisory-reviewer track** — NOT active; activates only after the senior gate, and
-    then dry-run first (findings delivered to the orchestrator privately and scored for
-    precision before any PR comment is posted). When live: findings post as PR comments
+  - **Advisory-reviewer track** — **ACTIVATED EARLY by owner decision, August 5, 2026**
+    ("more reviewing, not the orchestrator yet") — the senior-implementer gate is NOT a
+    prerequisite for it, because reviewing is itself the training: every finding forces
+    reasoning about the laws rather than mere compliance with them. It runs dry-run first (findings delivered to the orchestrator privately and scored for
+    precision before any PR comment is posted; the reviewer receives that scorecard —
+    real findings, noise, and what the orchestrator's fleet caught that it missed — and
+    the channel goes live on PRs after ONE scored dry-run unless precision is poor —
+    shortened from two by owner decision, August 5, 2026: the BUILD layer already spans
+    three model families (Claude, OpenAI/Codex, Moonshot/Kimi), but the REVIEW layer is
+    entirely Claude — the orchestrator and every fleet agent — so an independent reviewer
+    from another family covers a blind spot nothing else in the process covers, and that
+    outweighs a longer probation).
+    Every agent joining the review layer reads
+    [`docs/agent-reviewer-briefing.md`](docs/agent-reviewer-briefing.md) first. When live: findings post as PR comments
     prefixed with the literal token `KIMI-ADVISORY:`; such comments are EXCLUDED from
     the address-every-automated-comment rule; findings count only if posted before the
     orchestrator's verdict comment — later findings become new packets, never PR
@@ -201,7 +277,48 @@ Packet Acceptance lines frequently require e2e evidence ("simulation e2e", "prov
 
 If a command cannot run, record the exact blocker rather than treating unverified work as complete. Known environment blocker: `npm test` requires Node ≥ 22.13.0 (`vinext` uses `node:fs/promises.glob`); on Node 20 it fails during the build, which is a toolchain problem, not a code failure.
 
-**Golden hashes.** The definition lives in the plan ledger's Global guardrail 7b — read that, not a summary. Short form: two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup; `npm run test:e2e` evaluates them against the live DOM, **and three Node suites additionally pin the digest constants byte-for-byte** (`ai04-today-view`, `fix15-toast-and-folds`, `nfix04-phone-polish`), so editing a digest also fails `npm test`. A mismatch is a signal, not a chore. Regeneration is a sanctioned event available to ANY packet whose PR includes owner-approved before/after screenshots of both pinned pages at 1280 (with the change rationale) and updates the three additional pinning suites in the same commit. The named-packet restriction was lifted August 3, 2026 by owner decision under the standing law-lift rule (checklist 06); scope of the lift: the authority model only — the hashes, the pinned selectors, and the three-suite requirement are unchanged. Never paste a new digest in to make a suite pass.
+**Golden hashes.** The definition lives in the plan ledger's Global guardrail 7b — read that, not a summary. Short form: two SHA-256 digests in `tests/e2e/page-layouts.spec.ts` freeze the Overview and Reports markup; `npm run test:e2e` evaluates them against the live DOM, **and four Node suites additionally pin the digest constants byte-for-byte** (`ai04-today-view`, `fix15-toast-and-folds`, `nfix04-phone-polish`, `nfix06-tablet-band`), so editing a digest also fails `npm test`. A mismatch is a signal, not a chore. Regeneration is a sanctioned event available to ANY packet whose PR includes owner-approved before/after screenshots of both pinned pages at 1280 (with the change rationale) and updates the four additional pinning suites in the same commit. The named-packet restriction was lifted August 3, 2026 by owner decision under the standing law-lift rule (checklist 06); scope of the lift: the authority model only — the hashes, the pinned selectors, and the four-suite requirement are unchanged. Never paste a new digest in to make a suite pass.
+
+## Environment traps that have each cost real work
+
+These are not style notes. Each one has produced a wrong conclusion or destroyed work in this
+repo, and each is invisible until it bites.
+
+- **A failure you did not reproduce in a healthy environment is not a failure.** Before believing
+  any test result, confirm the environment: `ls node_modules | wc -l` in the tree you are running
+  from (a near-empty result invalidates the run). A degraded environment produces a cluster of
+  unrelated-looking failures — `Cannot find module .../node_modules/@playwright/test/cli.js`,
+  Playwright `webServer` timeouts, `ENOENT dist/.openai/drizzle` — and, worst of all, it
+  reproduces the SAME wrong answer when you run it against `main`, so the check agrees with
+  itself and is still wrong. That is why the verification block above requires a CI run id and
+  why no local test count is load-bearing.
+- **Never `npm ci` in a worktree, and never delete or follow a `node_modules` junction.** Scratch
+  worktrees junction `node_modules` to the root clone; `npm ci` deletes the directory and
+  `git worktree remove --force` (or `rm -rf`) follows the junction. This has emptied the root
+  clone's `node_modules` four separate times, including during a READ-ONLY review. Use
+  `npm install`. To remove a worktree: `cmd //c rmdir <worktree>
+ode_modules` first (rmdir
+  unlinks a junction without recursing), then `git worktree remove`. No `rm -rf` fallback, ever.
+- **Exit-code masking — bitten three times.** `npm test | tail` and `&&`-chained greps return the
+  LAST command's status, so a failing suite reads as exit 0. The dangerous shape is
+  `node --test ... | grep -E "pass|fail" && git commit && git push` — the grep SUCCEEDS on a
+  failing run because it matched the word "fail", and the push proceeds with a red suite. Never
+  chain a commit or push behind a test command. Run tests, capture the status, check it, then
+  commit as a separate step.
+- **A PostgreSQL migration checksum lives in THREE places and they move together:** the registry
+  entry in `app/platform/postgres/production-schema-migrations.ts`, the literal pin in
+  `tests/production-schema-migrations.test.mjs`, and the reviewed duplicate in
+  `app/platform/google-cloud/database-readiness.ts`. The third is caught only by a CI-only
+  PostgreSQL-service test — **no deps-free local suite catches it**. After any checksum change,
+  `grep -rn <old digest>` must return zero. Related: `mail_items` and other shared tables exist
+  on BOTH PostgreSQL and Cloudflare D1, so a column addition is usually TWO migrations; D1 is the
+  engine most live routes use, and a PostgreSQL-only migration ships columns production cannot
+  write.
+- **The e2e suite shares ONE simulation server** (`workers: 1`). `workspace_resources` is seeded
+  once at db-prepare and the simulation reset deletes it without re-provisioning, so a spec that
+  runs a real reset permanently wipes state later specs read. A spec exercising the real reset
+  must restore the registry afterwards through the real simulation endpoints, with a
+  self-checking verify.
 
 ## Security and data rules
 

@@ -122,9 +122,9 @@ test("moves the admin AI card to its owner-approved section while preserving the
     "office users must receive the same AI card as a read-only My settings child",
   );
 
-  const catalogMatch = routes.match(/export const SETTINGS_SECTIONS = \[([\s\S]*?)\] as const;/u);
+  const catalogMatch = routes.match(/export const SETTINGS_SECTIONS = \[([\s\S]*?)\] as const satisfies/u);
   assert.ok(catalogMatch, "Settings must retain an explicit closed section catalog");
-  const catalog = [...catalogMatch[1].matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
+  const catalog = [...catalogMatch[1].matchAll(/\{ label: "([^"]+)"/gu)].map((match) => match[1]);
   assert.deepEqual(catalog, [
     "My settings",
     "Google Workspace",
@@ -138,7 +138,7 @@ test("moves the admin AI card to its owner-approved section while preserving the
   ]);
   assert.match(
     navigation,
-    /COMPANY_SECTIONS\.map\(\(companySection\) => <SectionButton key=\{companySection\} section=\{companySection\} label=\{companySection\}/u,
+    /COMPANY_SECTIONS\.map\(\(entry\) => <SectionButton[\s\S]*?key=\{entry\.label\}[\s\S]*?entry=\{entry\}/u,
     "AI-11(b) owner approval re-points AI-08's no-section pin: every company catalog entry, including AI assistant, must render in navigation",
   );
 });

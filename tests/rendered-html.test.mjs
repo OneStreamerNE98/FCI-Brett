@@ -21,9 +21,13 @@ const appSurfacePaths = [
   "app/assistant/components/TaskManagementPanel.tsx",
   "app/assistant/components/AssistantView.tsx",
   "app/assistant/components/TodayPanel.tsx",
+  "app/clients/components/ClientsView.tsx",
   "app/inbox/components/GmailReplyModal.tsx",
   "app/inbox/components/InboxView.tsx",
+  "app/leads/components/LeadsView.tsx",
   "app/projects/components/ProjectFilesPanel.tsx",
+  "app/projects/components/ProjectsView.tsx",
+  "app/schedule/components/ScheduleView.tsx",
   "app/settings/components/AiAssistantSettingsCard.tsx",
   "app/settings/components/ChatNotificationSettingsCard.tsx",
   "app/settings/components/DataSecurityPanel.tsx",
@@ -157,6 +161,8 @@ test("ships the Floor Coverings International product instead of starter content
   assert.match(layout, /fci-app-icon-master\.svg/);
   assert.match(layout, /fci-app-icon-master\.png/);
   assert.match(layout, /shortcut: "\/fci-app-icon-master\.svg"/);
+  assert.match(layout, /<body>\s*<ClientDataFreshnessBoundary \/>/u);
+  assert.doesNotMatch(layout, /next\/font|DM_Sans|Manrope|--font-body|--font-display/u);
   assert.match(app, /Leads & opportunities/);
   assert.match(app, /Schedule & crews/);
   assert.match(app, /Gmail project inbox/);
@@ -700,15 +706,16 @@ test("keeps the app authoritative while mirroring clients and projects to Google
 });
 
 test("wires development controls and exposes Workspace-only live configuration plus local simulation", async () => {
-  const [app, workspaceApi, envExample, testGuide, oauth, driveWorkspace] = await Promise.all([
-    readAppSurface(), read("app/api/v1/google-workspace/route.ts"),
+  const [app, recordTypes, workspaceApi, envExample, testGuide, oauth, driveWorkspace] = await Promise.all([
+    readAppSurface(), read("app/lib/record-types.ts"),
+    read("app/api/v1/google-workspace/route.ts"),
     read(".env.example"), read("docs/testing-and-google-workspace-setup.md"),
     read("app/lib/google-oauth.ts"), read("app/lib/google-workspace.ts"),
   ]);
   assert.match(app, /workspace-search/);
   assert.match(app, /setNotificationsOpen/);
   assert.match(app, /onAdvance\(lead\.id\)/);
-  assert.match(app, /scheduleDataAvailable/);
+  assert.match(recordTypes, /scheduleDataAvailable/);
   assert.match(app, /Workspace Gmail/);
   assert.match(app, /Load messages/);
   assert.match(app, /GmailFilingModal/);
@@ -911,7 +918,7 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
     read("app/globals.css"),
     read("docs/full-review-2026-07-21-findings.md"),
   ]);
-  const overview = sourceSection(app, "function Overview", "function LeadsView", "Overview metric section");
+  const overview = sourceSection(app, "function Overview", "function ReportBarRow", "Overview metric section");
   const reports = sourceSection(app, "function ReportsView", "function SettingsView", "Reports metric section");
   const metricCall = (source, label) => {
     const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -970,8 +977,14 @@ test("keeps DES-05 metric affordances and FIX-08 honesty rules mutation-sensitiv
 
 // DES-07 keeps these structure-level pins separate from neighboring packet guards.
 test("DES-07 unifies operation metrics, empty states, and pill aliases", async () => {
-  const [app, assistantView, inboxView, primitives, businessKpis, featureStateBadge, css, appComponents] = await Promise.all([
+  const [app, recordViews, assistantView, inboxView, primitives, businessKpis, featureStateBadge, css, appComponents] = await Promise.all([
     read("app/FloorOpsApp.tsx"),
+    Promise.all([
+      read("app/leads/components/LeadsView.tsx"),
+      read("app/clients/components/ClientsView.tsx"),
+      read("app/projects/components/ProjectsView.tsx"),
+      read("app/schedule/components/ScheduleView.tsx"),
+    ]).then((sources) => sources.join("\n")),
     read("app/assistant/components/AssistantView.tsx"),
     read("app/inbox/components/InboxView.tsx"),
     read("app/components/operations/OperationsPrimitives.tsx"),
@@ -994,7 +1007,7 @@ test("DES-07 unifies operation metrics, empty states, and pill aliases", async (
   assert.doesNotMatch(css, /\.business-kpi-card\{[^}]*(?:display|flex-direction|padding):/);
 
   assert.match(primitives, /export function OperationsEmptyState/);
-  const operationSurfaces = `${app}\n${assistantView}\n${inboxView}\n${businessKpis}`;
+  const operationSurfaces = `${app}\n${recordViews}\n${assistantView}\n${inboxView}\n${businessKpis}`;
   for (const variant of ["table", "dashboard", "page", "inbox", "source", "meeting", "board", "client-projects"]) {
     assert.match(operationSurfaces, new RegExp(`<OperationsEmptyState variant="${variant}"`), `Missing the ${variant} shared empty-state variant.`);
   }
@@ -1024,9 +1037,12 @@ test("DES-07 unifies operation metrics, empty states, and pill aliases", async (
 });
 
 test("uses authorized project-manager identities and exposes the narrow admin correction", async () => {
-  const app = await readAppSurface();
+  const [app, recordTypes] = await Promise.all([
+    readAppSurface(),
+    read("app/lib/record-types.ts"),
+  ]);
 
-  assert.match(app, /managerId: string \| null/);
+  assert.match(recordTypes, /managerId: string \| null/);
   assert.match(app, /project_manager_id === "string"/);
   assert.match(app, /projectManagerId: project\.managerId/);
   assert.doesNotMatch(app, /projectManager: project\.lead/);

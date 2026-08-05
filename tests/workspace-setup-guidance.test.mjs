@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { SETTINGS_SECTIONS } from "../app/lib/operations-routes.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
@@ -307,10 +308,23 @@ test("Workspace cross-links target stage anchors while rendered personal setting
   assert.doesNotMatch(directory, /onClick=\{onConfigure\}/);
   assert.doesNotMatch(testing, /onClick=\{onGoogleSetup\}/);
   assert.match(navigation, /const PERSONAL_SECTION: SettingsSection = "My settings"/);
-  assert.match(navigation, /<SectionButton section=\{PERSONAL_SECTION\} label="My settings"/);
+  // SET-07 replaced the literal label prop with the typed catalog entry. The fact still pinned:
+  // the personal row renders through the "My settings" catalog entry, under that one name.
+  assert.match(navigation, /const PERSONAL_SECTION_ENTRY = SETTINGS_SECTIONS\.find\(\(entry\) => entry\.label === PERSONAL_SECTION\)/);
+  assert.match(navigation, /<SectionButton entry=\{PERSONAL_SECTION_ENTRY\}/);
+  assert.match(navigation, /<span className=\{styles\.sectionLabel\}>\{entry\.navigationLabel\}<\/span>/);
+  const personalEntry = SETTINGS_SECTIONS.find((entry) => entry.label === "My settings");
+  assert.equal(personalEntry?.navigationLabel, "My settings");
   assert.doesNotMatch(navigation, /label="My account"/);
+  assert.doesNotMatch(routes, /My account/);
   assert.match(personal, /<h2>My settings<\/h2>/);
   assert.doesNotMatch(personal, /<h2>My account<\/h2>/);
+  // The literal slug record is gone; the catalog is now the single source, so pin the catalog and
+  // pin that the exported slug map is still derived from it.
+  assert.match(
+    routes,
+    /const settingsSectionSlugs = Object\.fromEntries\(\s*SETTINGS_SECTIONS\.map\(\(entry\) => \[entry\.label, entry\.slug\]\),?\s*\)/,
+  );
   for (const [section, slug] of [
     ["My settings", "account"],
     ["Google Workspace", "google-workspace"],
@@ -322,7 +336,9 @@ test("Workspace cross-links target stage anchors while rendered personal setting
     ["Data & security", "data-security"],
     ["Testing & launch", "testing-launch"],
   ]) {
-    assert.match(routes, new RegExp(`"${section}": "${slug}"`));
+    const entry = SETTINGS_SECTIONS.find((candidate) => candidate.label === section);
+    assert.ok(entry, `${section} must remain a Settings catalog entry`);
+    assert.equal(entry.slug, slug, `${section} must keep its documented deep-link slug`);
   }
 });
 

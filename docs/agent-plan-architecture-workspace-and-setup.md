@@ -1813,6 +1813,7 @@ reminder-hours fields round-trip independently (regression test); a custom rule'
 row visibly communicates it is not driving suggestions (pinned copy).
 
 ### SET-07 · Settings IA consistency: per-section badges, one deep-link label, nav/heading alignment (small, after SET-01)
+**Status:** Complete — PR #313, August 5, 2026. Source-only and undeployed. Settings navigation, deep-link slugs, and panel headings now derive from one typed catalog. Review found eight items (seven distinct): build badges had been reintroduced into the production Settings nav — including the single row a non-admin sees — one day after DES-16 retired them, so they were removed and the conflict disclosed rather than the stale packet text implemented; a pinned suite restored from red to 12/12; a mutation-blind assertion re-pointed; dead e2e route mocks restored; and a duplicated `/sheets/status` read per admin Settings load eliminated. Guide impact: `docs/settings-guide.md` updated for the renamed nav row.
 **Do:** Add `featureState` to SETTINGS_SECTIONS entries and render per-section badges
 (My account=Working; Google Workspace=In development; Calendar=Setup required, computed
 from SET-05's payload once landed; Inbox rules=In development; Client Directory=computed
@@ -1842,7 +1843,7 @@ reset does NOT clear it (lives in workspace_settings, not connection-scoped tabl
 assert in test).
 
 ### SET-09 · Integration audit viewer (small, after SET-01+02)
-**Status:** In progress — `kimi/set09-integration-audit-viewer`
+**Status:** Complete — PR #308, August 5, 2026. Source-only and undeployed. The integration audit viewer paginates by opaque cursor. Ten review findings were fixed on-branch. Two off-scale spacing values it added were caught later by DES-13's drift guard once both had merged, and repaired in PR #315. Guide impact: `docs/settings-guide.md` updated for the Load more capability.
 
 **NARROWED July 30, 2026 — WS-10 shipped the events reader, so most of this packet is
 already built.** The original text said `google_integration_events` "has no reader anywhere
@@ -2688,7 +2689,7 @@ equality entry per connection — build this packet's re-check as a helper WS-20
 per mailbox.
 
 ### SET-42 · Stale-while-revalidate everywhere: one data-freshness doctrine, zero refresh buttons (medium, after SET-40; InboxView portions after AI-12)
-**Status:** In progress — `codex/set42-swr-doctrine`
+**Status:** Complete — PR #311, August 5, 2026. Source-only and undeployed. Client reads share one cached-GET transport that revalidates on focus, visibility change, and navigation; eight refresh affordances are gone and seven loading mechanisms collapsed to one. Review found seven defects, six of which survived a branch rebuild that had discarded the first fix commit: a live Gmail API call firing on every focus (OAuth grant plus a mailbox round trip per trigger, per administrator) is un-enrolled and pinned by a repo-wide source census; paginated admin rows survive lifecycle revalidation; two deleted pins were restored and mutation-verified; a stalled GET can no longer wedge the doctrine. The day-rollover `setTimeout` was adjudicated compliant and allowlisted. Follow-up #320 fixed two further defects this packet introduced. Guide impact: none.
 
 **Why:** owner request, August 3, 2026 — stop pressing refresh/sync buttons, "one
 consistent way of doing things for everything," across all pages. A pattern census counted
@@ -3570,7 +3571,7 @@ outcomes.
 **Effort:** medium. **Cost:** $0.
 
 ### DES-13 · Design-language consolidation: color, type, and spacing scales with a drift guard (medium)
-**Status:** In progress — `codex/des13-design-tokens`
+**Status:** Complete — PR #309, August 5, 2026. Source-only and undeployed. 431 raw hexes consolidated to ~28 semantic tokens with an Apple-tuned type scale, a weight diet, and a 4-point spacing scale, enforced by `tests/des13-design-token-drift.test.mjs`. Review caught inverted semantic colours (errors rendered neutral, a danger tint on 23 hover surfaces) before merge. The drift guard immediately proved itself, catching a real breakage on main introduced by an un-rebased merge. Guide impact: none.
 
 **Why:** owner request, August 3, 2026 — a more elegant UI "in line with UIs from nice
 companies." The gap was measured, not assumed, across `app/globals.css` plus every
@@ -3678,7 +3679,8 @@ introduces one raw hex (negative test); every re-pointed pin enumerated in the P
 **before** DES-12, grid views, and the button de-bulking — all three consume these scales
 instead of inventing their own.
 
-### DES-14 · FloorOpsApp decomposition: extract the four record views (large, after GI-04)
+### DES-14 · FloorOpsApp decomposition: extract the four record views and their shared record contracts (large, after GI-04)
+**Status:** In progress — `codex/des14-floorops-decomposition`
 
 **Why:** `app/FloorOpsApp.tsx` (~200KB) is the reason the single-file queue-slot law
 exists, and that law serialized four separate owner requests in one day (grid views,
@@ -3686,27 +3688,124 @@ layout editor, presentation mode, rearrangeable nav). The extraction pattern is 
 this repo twice: AI-02 extracted the Assistant and Inbox surfaces; SET-01 extracted the
 eight Settings panels. **Owner decision August 3, 2026 (standing law-lift rule): dissolve
 the lock's cause rather than lift the law.**
-**Do:** extract LeadsView, ClientsView, ProjectsView, ScheduleView and the modals they
-own (LeadModal, the client/project create+edit modals, the meeting modal) into
-per-surface directories (`app/leads/components/`, `app/clients/components/`,
-`app/projects/components/` merging with the existing directory,
-`app/schedule/components/`), passing state and handlers via props exactly as the shipped
-extractions did. Move-only discipline: no logic changes, no markup changes, no renamed
+**Do:** extract LeadsView, ClientsView, ProjectsView and ScheduleView into per-surface
+directories (`app/leads/components/`, `app/clients/components/`, `app/projects/components/`
+— the only one that already exists — and `app/schedule/components/`). **The modals are NOT in
+this packet: the four views own none of them.** Every modal is mounted by the shell; DES-14b
+owns that cluster. **Extract the shared record contracts first**, because the views cannot
+compile without them: the `Lead`/`Client`/`Project` shapes, their `*EditPatch`,
+`*ConflictValues` and `*UpdatePayload` types and the four `*ConflictError` classes are
+declared inside `FloorOpsApp.tsx`, and re-exporting from there creates an import cycle. The
+prior extractions (AssistantView, InboxView) are NOT the pattern — they declared their own
+narrow types, which `tests/assistant-inbox-component-boundaries.test.mjs` actively pins;
+the record views need the full shapes. Helpers called from BOTH the departing views and the
+retained shell/Overview/ReportsView (`money`, `displayStatus`, `recordInitials`,
+`isActiveProject`, `terminalProjectStatuses`, `leadStages`) go to a second shared module —
+`tests/client-performance.test.mjs` pins the one-line body of `money()` to
+`FloorOpsApp.tsx`, so that pin moves deliberately. `PIPELINE_ACTIONABLE_COLUMNS` is consumed
+only by Overview and stays. Move-only discipline: no logic changes, no markup changes, no renamed
 props beyond what the move forces. Add per-directory boundary tests mirroring
 `tests/assistant-inbox-component-boundaries.test.mjs`, and re-point
 `tests/settings-component-boundaries.test.mjs`-style pins consciously if any listing they
 assert changes. **Amend the AGENTS.md queue-slot law text in the same PR:** the slot
-scopes what remains in `FloorOpsApp.tsx` (Overview, Reports, the app shell/nav);
-extracted surfaces exit the queue permanently.
+scopes what remains in `FloorOpsApp.tsx` (Overview, Reports, the app shell/nav, and the
+modal/drawer cluster until DES-14b lands); extracted **record views** exit the queue
+permanently. A views-only PR may not claim the modals left.
 **Constraints:** rendering must be byte-identical — the existing e2e suite including both
 golden hashes passes unmodified (extraction may not alter markup); large diff, so commits
 split per view; zero behavior change is the accept bar, not a hope.
-**Accept:** the four views and their modals live outside `FloorOpsApp.tsx`; the file
-shrinks by the moved line count; every existing e2e passes unmodified except the added
-boundary tests and the amended queue-law text; both golden constants byte-identical;
+**Accept:** the four views and the shared record contracts live outside `FloorOpsApp.tsx`;
+the file shrinks by the moved line count; **every Playwright e2e passes unmodified**, and each
+Node-suite re-point is enumerated individually in the PR body with the reason it moved (a
+views-only move breaks at least six — several assert by source-slicing `FloorOpsApp.tsx`, so
+moving markup out breaks them by construction); both golden constants byte-identical — they
+are pinned byte-for-byte by **four** suites, not three;
 `npm test`, `npm run test:e2e`, `npm run lint` named with outcomes.
 **Effort:** large. **Cost:** $0. **Takes the FloorOpsApp slot** (claimed in the tail by
 this filing — see the FloorOpsApp claim-list tail).
+
+### DES-26 · The vanishing retry: background revalidation unmounts an error notice mid-click (small-medium; after SET-42)
+
+**Why:** proven August 5, 2026 while fixing PR #319, not inferred. SET-42 gave settings panels
+two recovery paths: the explicit Retry button, and lifecycle revalidation. An instrumented probe
+that healed a failing endpoint and never clicked anything measured the panel self-recovering
+~206 ms later with `Retry buttons still in DOM: 0`. The CI call log for the same race reads
+`element was detached from the DOM, retrying`. Self-healing is correct and desirable — the defect
+is that the affordance disappears **while a person is reaching for it**, so the click lands on
+whatever replaced it. This is the adoption lens applied literally: a control that moves under the
+user is worse than one that fails honestly.
+**Do:** make an error notice's recovery affordance stable under background recovery. Either keep
+the notice mounted until it is dismissed or its retry completes (swapping its content, not its
+identity), or suppress the swap while the pointer is over the control. Decide deliberately and
+record which, because they differ for keyboard users. Apply to the shared error-notice component
+so every panel inherits it rather than fixing one site.
+**Accept:** a test proves that healing the endpoint while the pointer is over Retry does not
+detach the button, and that the panel still reaches `ready`; the existing self-recovery behaviour
+is unchanged when nobody is interacting; `npm test`, `npm run test:e2e`, `npm run lint` named
+with outcomes.
+**Effort:** small-medium. **Cost:** $0.
+
+### NFIX-09 · Every merge to main cancels the previous merge's verification (small; CI only)
+
+**Why:** `.github/workflows/ci.yml` sets `cancel-in-progress: true` on a concurrency group keyed
+on `github.ref`, which is CONSTANT for pushes to `main`. So each merge kills the still-running
+verification of the merge before it. Run 30968742912 — the DES-13 drift guard's own run — was
+cancelled 18 seconds after the next merge landed. The consequence is not theoretical: twice on
+August 5 the question "is main red?" could not be answered from CI, and the verification-block
+law had to tell agents to skip `cancelled` runs entirely because main's newest run is so often
+one. A red main blocks every open PR under the strict ruleset, so main's signal existing is a
+precondition for the whole merge pipeline.
+**Do:** change line 14 to `cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}` so PR
+branches still cancel superseded runs while main always completes its verification.
+**Constraints:** `tests/google-cloud-deployment-source.test.mjs` pins `/^  pull_request:\s*$/m`
+in this workflow — confirm the edit does not disturb it rather than assuming.
+**Accept:** two merges to main in quick succession both produce completed runs; the pinned
+assertion still passes; `npm test` named with outcome.
+**Effort:** small. **Cost:** $0.
+
+### NFIX-10 · 256 type errors nobody runs (medium; quality gate)
+
+**Why:** measured August 5, 2026 during the SET-07 review. `tsc -p tsconfig.json --noEmit`
+reports 256 errors on main, and **no CI step runs it**: `npm run build` is `vinext build`
+(esbuild strips types without checking), `build:cloud-run`'s tsconfig covers only
+production-runtime paths and never loads `app/settings`, and `npm run lint` is not type-aware.
+This is not cosmetic — TypeScript had ALREADY detected SET-07's dead e2e guard as
+`TS2367: This comparison appears to be unintentional` and nobody saw it, because nothing looks.
+A checker whose output no one reads is the same defect class as a test that cannot fail.
+**Do:** triage the 256 into (a) real defects, (b) mechanical import-extension noise (`TS5097`),
+and (c) environment declarations (`cloudflare:workers`). Fix (a). Resolve (b) and (c) by
+configuration if possible. Then add a CI step running the root typecheck, with an explicit,
+commented baseline if a clean zero is not reachable in one pass — a baseline that can only
+shrink is honest; a suppressed checker is not.
+**Constraints:** do not silence errors with `any` or `@ts-expect-error` without naming the
+reason inline. Do not weaken `strict`.
+**Accept:** the root typecheck runs in CI and fails on a NEW error (prove it with a deliberate
+mutation, then revert); the remaining count is recorded with its composition; every fix in
+category (a) is named individually in the PR body with what it would have broken.
+**Effort:** medium. **Cost:** $0.
+
+### DES-14b · FloorOpsApp decomposition: the modal and drawer cluster (large, after DES-14)
+
+**Why:** filed August 5, 2026 after measuring the file rather than assuming it. DES-14 as 
+originally written claimed the four record views owned the modals and would therefore dissolve 
+the single-file bottleneck. Measured on main at `4b2c468`: the four views are 13,845 bytes — 
+**6.7%** of a 207,403-byte file. The `FloorOpsApp` shell function is 72,141 bytes and the 
+modal/drawer cluster is 71,928 bytes; together **70%**. DES-14 alone therefore cannot retire the 
+queue-slot law, and this packet is the half that actually can.
+**Do:** extract the modal and drawer cluster — LeadModal, the client and project create/edit 
+modals, `ProjectDrawer` and the `ProjectMeetings`/`MeetingModal` pair it owns (note 
+`MeetingModal` is a PROJECT meeting modal reached through `ProjectDrawer`; it has no 
+relationship to ScheduleView) — into their per-surface directories, consuming the shared record 
+contracts DES-14 established rather than re-declaring them. Move-only discipline: no logic or 
+markup changes. **Amend the AGENTS.md queue-slot law again in the same PR:** with the cluster 
+out, the slot scopes only the shell, Overview and Reports.
+**Constraints:** rendering byte-identical; both golden constants unchanged; the shell keeps 
+mounting the modals, so the props it passes are the extraction boundary — enumerate them.
+**Accept:** the cluster lives outside `FloorOpsApp.tsx`; the file is under ~65KB; every 
+Playwright e2e passes unmodified with each Node-suite re-point enumerated individually and its 
+reason given; both golden constants byte-identical; `npm test`, `npm run test:e2e`, 
+`npm run lint` named with outcomes.
+**Effort:** large. **Cost:** $0. **Takes the FloorOpsApp slot after DES-14 releases it.**
 
 ### DES-15 · Record-page list views with sorting and search (medium-large, after DES-14)
 
@@ -3948,6 +4047,7 @@ golden-hash change unless separately authorized).
 **Effort:** medium. **Cost:** $0.
 
 ### DES-25 · Retire the dead webfont loading and migrate the last inline-style island (small; after DES-13)
+**Status:** Complete — PR #318, August 5, 2026. Source-only and undeployed. `next/font` is gone, so no visitor downloads DM Sans or Manrope for stylesheets that stopped referencing them; `PhoneInstallPanel`'s inline `<style>` island is a module CSS file on the DES-13 tokens, and its drift-guard allowlist entry is removed with a mutation test proving the guard goes red on a raw hex there. Review found no blocking defects; `.action` also gained a 44px minimum touch target. Guide impact: none.
 
 **Why:** DES-13 moved the application to a system font stack (owner decision, August 4,
 2026 — see the correction banner in DES-13). Two residues could not be cleaned there
@@ -4622,6 +4722,8 @@ view cannot ship with;
 `npm test`, `npm run test:e2e`, `npm run lint` all named with outcomes.
 **Effort:** large. **Cost:** provider spend within the existing budget.
 
+**AMENDED August 5, 2026, before (d) dispatch — the Resolution above undercounts the write surface, and two owner decisions are recorded here.** Verified against main at `6e46bbd`: a review outcome is written at **five** sites across **three** paths, not two. `dismissNeedsReview` (both adapters) carries only the manual dismiss and the lead accept. The schedule and warranty typed accepts retire the row atomically inside the task-creation batch (`app/adapters/d1/task-repository.ts`, `app/adapters/postgres/task-repository.ts`), reached from `app/application/task-operations.ts` where `authorization.actorId` is already in scope. The project-update accept retires the row inside the Gmail filing batch (`app/api/v1/integrations/google/gmail/messages/[messageId]/file/route.ts`), which is **D1-only, has no PostgreSQL twin, and also transitions from `failed`**. Threading only `dismissNeedsReview` satisfies this Resolution's literal words and still ships an activity view where every schedule accept, every warranty accept, and every project-update filing is anonymous — the exact condition the Accept clause forbids, and it would pass CI, because nothing on main pins those two paths against attribution. Additionally `mail_items` exists on both engines, so this is **two** additive migrations (PostgreSQL v16 and drizzle 0026), not one; D1 is the engine the live route uses, so a PostgreSQL-only migration ships columns the production path cannot write. The machine sweep at `app/api/v1/inbox-analysis/route.ts` has no human actor and must be left unattributed. **Owner decision, August 5, 2026:** (1) record which intent was accepted — the accepted intent is already known at all three accept paths and currently discarded, so one further nullable column makes the per-label counts exact rather than double-counting a multi-intent row; (2) `mail_items` holds **test data only**, so no date-fencing is required — but rows retired before PR #256 carry `dismissed` even where the outcome was a lead accept, and that is unrecoverable, so the view must not present pre-#256 rows as authoritative. The Mount clause's `app/FloorOpsApp.tsx:2119` is stale; the card mounts at `:2254`.
+
 ### AI-12 · A failed inbox analysis is invisible, and a provider outage reads as "You're caught up" (medium)
 **Status:** Complete — PR #287, August 4, 2026. Source-only and undeployed. Review record: 3-lens fleet, 1 confirmed P3 fixed on-branch (retry toast racing a stale in-flight refresh).
 **Why:** observed live on the deployed site August 3, 2026, by the owner, with a real test
@@ -4911,7 +5013,7 @@ queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-0
 DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
 **EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
 SET-26 UI (blocked on SET-23) → HINT-02-B.
-**Every named packet above is now merged. SET-42 now holds the slot from the tail below.**
+**Every named packet above is now merged. DES-14 now holds the slot from the tail below.**
 
 **Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
 were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`
@@ -4922,8 +5024,8 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**SET-42 (in progress on `codex/set42-swr-doctrine`) → GI-05 (if approved) →
-WS-20 (if approved) → DES-14 → DES-17 (shell scope,
+**DES-14 (in progress on `codex/des14-floorops-decomposition`) → DES-14b →
+GI-05 (if approved) → WS-20 (if approved) → DES-17 (shell scope,
 post-decomposition) → DES-10 (variants a/b only) → DES-12.**
 (DES-16 and DES-17 were added August 4, 2026 with the usability wave. DES-16 merged in
 PR #306 and released the slot; DES-17's slot need is the app-shell toast/boundary
@@ -4940,31 +5042,35 @@ machinery that remains in `FloorOpsApp.tsx` after DES-14, so it follows the extr
   `FloorOpsApp.tsx` lines. An earlier claim bullet asserted the slot was "Unavoidable"
   before the diagnosis existed; it is retired — a slot claim follows the diff, never the
   other way around.
+- **SET-07** — merged in PR #313 and is no longer a claimant. Its review fix threaded the
+  shell-owned `sheetMirror` value through one `FloorOpsApp.tsx` line at the Settings
+  audience-navigation mount; that file change was serialized rather than described as a
+  no-slot path.
 - **GI-04** — merged in PR #291 and released the slot. Its lead, client and project modals
   and record mappers are inline in that file.
 - **DES-16** — merged in PR #306 and released the slot. Its lead-capture modal,
   Overview Schedule entry points, and application navigation were inline in
   `app/FloorOpsApp.tsx`.
-- **SET-42** — **holds the slot on `codex/set42-swr-doctrine`.** Its core directory
-  reads and shared navigation-triggered revalidation are inline in `app/FloorOpsApp.tsx`.
+- **SET-42** — merged in PR #311 and released the slot. Its core directory reads and
+  shared navigation-triggered revalidation remain inline in `app/FloorOpsApp.tsx`.
 - **GI-05** — the project drawer and its Planned-capabilities list
-  (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
+  (inside `ProjectDrawer`). Also gated on an owner decision about scheduling.
 - **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
   on two owner decisions recorded in its packet.
-- **DES-14** — the extraction itself is the slot's last large holder: it moves the four
-  record views and their modals out of `app/FloorOpsApp.tsx`, and it amends the queue-slot
-  law in the same PR so extracted surfaces exit the queue permanently.
+- **DES-14** — **holds the slot on `codex/des14-floorops-decomposition`.** It moves the
+  four record views and their shared contracts out of `app/FloorOpsApp.tsx`; those record
+  views exit the queue permanently, while the modal/drawer cluster and shell scope remain.
+- **DES-14b** — follows DES-14 immediately and owns the modal/drawer cluster that DES-14
+  deliberately leaves in `app/FloorOpsApp.tsx`.
 - **DES-10** — only variants (a) and (b), which edit `app/FloorOpsApp.tsx:1701`. Variant (c)
   is CSS-only and takes no slot.
 - **DES-12** — editor chrome + resolved-preview rendering at the layout mount; also holds
   the `globals.css` lock.
 - **DES-15** — deliberately takes NO slot: it targets the post-DES-14 extracted views.
 
-**Four more packets could take the slot and must NOT** — each is required to state its
+**Three more packets could take the slot and must NOT** — each is required to state its
 no-FloorOpsApp path in its own PR rather than consuming the serialised resource by default:
-**SET-23/SET-26** (mount the viewer inside `ProjectFilesPanel.tsx`), **SET-07** (the nav
-fetches its own state rather than taking a one-line prop threaded from
-`app/FloorOpsApp.tsx:2112` — a one-line prop is not a reason to serialise), **AI-11 (c)**
+**SET-23/SET-26** (mount the viewer inside `ProjectFilesPanel.tsx`), **AI-11 (c)**
 (nest in `AiAssistantSettingsCard.tsx`), and **GI-06** (keep the filter in
 `ProjectFilesPanel`'s controller).
 

@@ -5,6 +5,44 @@ async function openReadyApp(page: import("@playwright/test").Page, url = "/") {
   await expect(page.getByText("Here’s the latest from your operations workspace.", { exact: true })).toBeVisible();
 }
 
+/**
+ * Counts reads of one mocked endpoint so a test can heal it only once the client has stopped
+ * reading it.
+ *
+ * Settings panels have two legitimate recovery paths: the explicit Retry button, and SET-42's
+ * background revalidation, which re-reads every subscribed URL after a navigation and keeps
+ * looping while mounted readers churn. Healing the endpoint while one of those background reads
+ * is still pending lets it succeed on its own, which correctly flips the panel to "ready" and
+ * unmounts the error notice — detaching the Retry button out from under an in-flight click.
+ * Waiting for the read pipeline to go quiet first leaves the explicit retry as the only thing
+ * that can recover the panel, which is exactly what these tests mean to prove.
+ */
+function trackReads() {
+  let inFlight = 0;
+  let lastSettledAt = 0;
+  return {
+    begin() {
+      inFlight += 1;
+    },
+    settle() {
+      inFlight -= 1;
+      lastSettledAt = Date.now();
+    },
+    async waitUntilQuiet(page: import("@playwright/test").Page, quietMs = 600) {
+      // Best-effort broadening: a background revalidation of the panel's *other* read
+      // (/api/v1/google-workspace) notifies the same panel, which then re-reads its settings
+      // URL. Bounded and non-fatal — the per-endpoint check below is the actual gate.
+      await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => {});
+      await expect
+        .poll(() => (inFlight === 0 && lastSettledAt > 0 ? Date.now() - lastSettledAt : 0), {
+          timeout: 15_000,
+          message: "settings reads never went quiet before the endpoint was healed",
+        })
+        .toBeGreaterThan(quietMs);
+    },
+  };
+}
+
 test("notifications use typed persistent errors and navigation disclosure popovers dismiss safely", async ({ page }) => {
   await openReadyApp(page);
   await page.clock.install();
@@ -54,19 +92,39 @@ test("notifications use typed persistent errors and navigation disclosure popove
 test("settings never expose editable defaults after a failed load and support retry", async ({ page }) => {
   let failAccountSettings = true;
   let failWorkspaceSettings = true;
+  const accountReads = trackReads();
+  const workspaceReads = trackReads();
   await page.route("**/api/v1/settings/me", async (route) => {
-    if (route.request().method() === "GET" && failAccountSettings) {
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Account settings unavailable" }) });
+    if (route.request().method() !== "GET") {
+      await route.continue();
       return;
     }
-    await route.continue();
+    accountReads.begin();
+    try {
+      if (failAccountSettings) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Account settings unavailable" }) });
+        return;
+      }
+      await route.continue();
+    } finally {
+      accountReads.settle();
+    }
   });
   await page.route("**/api/v1/settings/workspace", async (route) => {
-    if (route.request().method() === "GET" && failWorkspaceSettings) {
-      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Workspace settings unavailable" }) });
+    if (route.request().method() !== "GET") {
+      await route.continue();
       return;
     }
-    await route.continue();
+    workspaceReads.begin();
+    try {
+      if (failWorkspaceSettings) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Workspace settings unavailable" }) });
+        return;
+      }
+      await route.continue();
+    } finally {
+      workspaceReads.settle();
+    }
   });
 
   await openReadyApp(page);
@@ -76,6 +134,7 @@ test("settings never expose editable defaults after a failed load and support re
   await expect(accountError).toBeVisible();
   await expect(page.getByRole("button", { name: "Save my settings" })).toHaveCount(0);
 
+  await accountReads.waitUntilQuiet(page);
   failAccountSettings = false;
   await accountError.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("button", { name: "Save my settings" })).toBeEnabled();
@@ -89,6 +148,7 @@ test("settings never expose editable defaults after a failed load and support re
   await expect(workspaceError).toBeVisible();
   await expect(page.getByRole("button", { name: "Save calendar plan" })).toHaveCount(0);
 
+  await workspaceReads.waitUntilQuiet(page);
   failWorkspaceSettings = false;
   await workspaceError.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("button", { name: "Save calendar plan" })).toBeEnabled();

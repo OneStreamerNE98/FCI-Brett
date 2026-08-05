@@ -5,12 +5,16 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Activity, BriefcaseBusiness, Building2, CalendarDays, Check, CheckCircle2,
-  ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, CircleCheckBig, Clipboard, Clock3, ContactRound, ExternalLink, FolderOpen, FolderTree, HardHat,
+  ChevronDown, ChevronRight, ChevronsLeft, ChevronsRight, CircleAlert, Clipboard, Clock3, ContactRound, ExternalLink, FolderOpen, FolderTree, HardHat,
   Inbox, Info, LayoutDashboard, Mail, MapPin, Menu, MessageSquareText, MoreHorizontal, Navigation,
   LogOut, Plus, RefreshCw, Search, Settings, ShieldCheck, Sparkles, Users, X, Zap,
 } from "lucide-react";
 import type { AppEnvironment } from "./lib/app-environment";
 import { AssistantView } from "./assistant/components/AssistantView";
+import { ClientsView } from "./clients/components/ClientsView";
+import { LeadsView } from "./leads/components/LeadsView";
+import { ProjectsView } from "./projects/components/ProjectsView";
+import { ScheduleView } from "./schedule/components/ScheduleView";
 import { localDayRolloverDelay } from "./application/today-project-meetings";
 import { InboxView } from "./inbox/components/InboxView";
 import type { InboxLeadProposal } from "./inbox/components/InboxView";
@@ -23,13 +27,12 @@ import { WorkspaceInfoHint } from "./components/WorkspaceInfoHint";
 import { Avatar, Metric, OperationsEmptyState, PageTitle, PanelHeader, Status } from "./components/operations/OperationsPrimitives";
 import { OperationsActionableList, OperationsActionableListItem } from "./components/operations/OperationsActionableList";
 import { PageLayoutEditor } from "./components/operations/PageLayoutEditor";
-import { ActiveRouteFilter } from "./features/reports/ActiveRouteFilter";
 import { BusinessKpisPanel } from "./features/reports/BusinessKpisPanel";
 import { FINANCIAL_RESTRICTION_LABEL, FLOORING_KPI_TIME_ZONE, monthKeyForTimestamp } from "./features/reports/flooring-kpis";
 import { ProjectSegmentSelector } from "./features/projects/ProjectSegmentSelector";
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
 import { JobSiteMapCard } from "./features/maps/JobSiteMapCard";
-import { normalizeJobSiteLocation, type JobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
+import { normalizeJobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
 import {
   cachedGetJson,
   invalidateCachedGet,
@@ -39,7 +42,6 @@ import {
   useCachedGetSubscription,
 } from "./lib/client-get-hooks";
 import { CLIENT_INDUSTRY_OPTIONS, clientIndustryReportState } from "./lib/client-industries";
-import { formatUsd } from "./lib/format-usd";
 import {
   defaultPageLayouts,
   isDefaultPageLayout,
@@ -49,7 +51,7 @@ import {
   type PageLayoutPage,
   type PageLayouts,
 } from "./lib/page-layouts";
-import { sheetMirrorStatusLabel, type SheetMirrorStatus } from "./lib/sheet-mirror-status";
+import type { SheetMirrorStatus } from "./lib/sheet-mirror-status";
 import {
   canonicalOperationsSearch,
   inboxBucketFromSearch,
@@ -60,17 +62,45 @@ import {
   operationsPath,
   operationsViewForPath,
   PROJECT_LIFECYCLE_FILTERS,
-  PROJECT_STATUS_FILTERS,
   projectLifecycleFromSearch,
   projectStatusFromSearch,
   settingsSectionFromSearch,
   type InboxBucket,
-  type LeadStageFilter,
   type OperationsView,
   type ProjectLifecycleFilter,
   type ProjectStatusFilter,
   type SettingsSection,
 } from "./lib/operations-routes";
+import {
+  displayStatus,
+  isActiveProject,
+  leadStages,
+  money,
+  recordInitials,
+} from "./lib/record-display";
+import type {
+  AppNotification,
+  Client,
+  ClientConflictValues,
+  ClientEditPatch,
+  ClientUpdatePayload,
+  ContactConflictValues,
+  ContactEditPatch,
+  ContactUpdatePayload,
+  DashboardSummary,
+  Lead,
+  LeadConflictValues,
+  LeadEditPatch,
+  LeadUpdatePayload,
+  LiveDataState,
+  NotificationKind,
+  Notify,
+  Project,
+  ProjectConflictValues,
+  ProjectEditPatch,
+  ProjectMeeting,
+  ProjectUpdatePayload,
+} from "./lib/record-types";
 import { AiAssistantSettingsCard } from "./settings/components/AiAssistantSettingsCard";
 import { DataSecurityPanel } from "./settings/components/DataSecurityPanel";
 import { DirectorySyncPanel } from "./settings/components/DirectorySyncPanel";
@@ -87,69 +117,8 @@ import { CALLBACK_NOTE_MAX_LENGTH } from "./domain/project-operations";
 import type { AddressReviewReference } from "./domain/address-validation";
 import { normalizeRecordVersion } from "./domain/record-version";
 import { AddressValidationField } from "./features/address-validation/AddressValidationField";
-import { normalizeProjectSegment, resolveProjectSegment, type ProjectSegment } from "./domain/project-segment";
+import { normalizeProjectSegment, resolveProjectSegment } from "./domain/project-segment";
 
-type Lead = {
-  id: string;
-  number: string;
-  company: string;
-  contact: string;
-  contactEmail: string | null;
-  contactPhone: string | null;
-  project: string;
-  value: string;
-  estimatedValue: number;
-  stage: string;
-  source: string;
-  next: string;
-  nextActionAt: string | null;
-  ownerEmail: string | null;
-  site: string;
-  status: string;
-  initials: string;
-  color: string;
-  createdAt?: number | null;
-  updatedAt?: number | null;
-  version?: string;
-  addressReview?: AddressReviewReference;
-};
-type LeadEditPatch = Partial<{
-  company: string;
-  contactName: string;
-  contactEmail: string | null;
-  contactPhone: string | null;
-  projectName: string;
-  source: string;
-  stage: string;
-  site: string;
-  estimatedValue: number;
-  nextAction: string;
-  nextActionAt: string | null;
-  ownerEmail: string;
-  status: string;
-  addressReview?: AddressReviewReference;
-}>;
-type LeadConflictValues = Partial<{
-  company: string;
-  contactName: string;
-  contactEmail: string | null;
-  contactPhone: string | null;
-  projectName: string;
-  source: string;
-  stage: string;
-  site: string;
-  estimatedValue: number;
-  nextAction: string;
-  nextActionAt: number | null;
-  ownerEmail: string | null;
-  status: string;
-}>;
-type LeadUpdatePayload = {
-  lead?: Record<string, unknown>;
-  error?: string;
-  currentVersion?: string;
-  currentValues?: LeadConflictValues;
-};
 type LeadModalProps =
   | {
       mode: "create";
@@ -175,169 +144,16 @@ type LeadModalRequest = Readonly<{
   initialValues?: Partial<Lead>;
   afterCreate?: () => Promise<void>;
 }>;
-type Client = {
-  id: string;
-  code: string;
-  name: string;
-  contact: string;
-  contactId?: string;
-  contactPhone: string | null;
-  contactRole: string;
-  contactVersion?: string;
-  email: string;
-  industry: string;
-  industryRaw?: string | null;
-  status: string;
-  initials: string;
-  color: string;
-  googleStatus: "Ready" | "Setup pending";
-  jobSite: JobSiteLocation | null;
-  addressReview?: AddressReviewReference;
-  version?: string;
-  driveFolderId?: string;
-  driveUrl?: string;
-};
-type ClientEditPatch = Partial<{
-  name: string;
-  status: string;
-  industry: string | null;
-  siteAddress: string | null;
-  addressReview?: AddressReviewReference;
-}>;
-type ClientConflictValues = Partial<{
-  name: string;
-  status: string;
-  industry: string | null;
-  siteAddress: string | null;
-}>;
-type ClientUpdatePayload = {
-  client?: {
-    id: string;
-    clientCode: string;
-    name: string;
-    status: string;
-    industry: string | null;
-    siteAddress: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    addressValidationVerdict: string | null;
-    updatedAt: number;
-    version: string;
-  };
-  error?: string;
-  outcome?: "duplicate";
-  currentVersion?: string;
-  currentValues?: ClientConflictValues;
-};
-type ContactEditPatch = Partial<{
-  name: string;
-  email: string | null;
-  phone: string | null;
-  role: string;
-}>;
-type ContactConflictValues = ContactEditPatch;
-type ContactUpdatePayload = {
-  contact?: {
-    id: string;
-    clientId: string;
-    name: string;
-    email: string | null;
-    phone: string | null;
-    role: string;
-    isPrimary: boolean;
-    updatedAt: number;
-    version: string;
-  };
-  error?: string;
-  currentVersion?: string;
-  currentValues?: ContactConflictValues;
-};
-type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; version?: string; driveFolderId?: string; driveUrl?: string; addressReview?: AddressReviewReference };
-type ProjectEditPatch = Partial<{
-  name: string;
-  status: string;
-  site: string | null;
-  clientId: string;
-  estimatedValue: number | null;
-  flooringCategory: FlooringCategory | null;
-  squareFeet: number | null;
-  contractValue: number | null;
-  segment: ProjectSegment | null;
-  addressReview?: AddressReviewReference;
-}>;
-type ProjectConflictValues = Omit<ProjectEditPatch, "addressReview">;
-type ProjectUpdatePayload = {
-  project?: {
-    id: string;
-    projectNumber: string;
-    clientId: string;
-    name: string;
-    status: string;
-    site: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    addressValidationVerdict: string | null;
-    projectManagerId: string | null;
-    estimatedValue: number | null;
-    flooringCategory: FlooringCategory | null;
-    squareFeet: number | null;
-    contractValue: number | null;
-    segment: ProjectSegment | null;
-    updatedAt: number;
-    version: string;
-  };
-  error?: string;
-  currentVersion?: string;
-  currentValues?: ProjectConflictValues;
-};
-type DashboardSummary = {
-  generatedAt: number;
-  metrics: { activeLeads: number; estimatedPipelineValue: number; activeProjects: number; clientCount: number; meetingCount: number; filedEmailCount: number };
-  projectsByStatus: Array<{ status: string; count: number }>;
-  recentActivity: Array<{ id: string; action: string; detail: string | null; actor: string; created_at: number }>;
-  todayMeetings: {
-    items: Array<{ id: string; projectId: string; title: string; meetingAt: number; projectNumber: string; projectName: string }>;
-    total: number;
-  };
-  readiness: { scheduleDataAvailable: boolean; scheduleReason: string; reportsUseLiveProjectLeadTotals: boolean };
-};
-type LiveDataState = "loading" | "ready" | "error";
-type NotificationKind = "success" | "info" | "warning" | "error";
-type NotificationAction = { label: string; run: () => void };
-type AppNotification = { message: string; kind: NotificationKind; action?: NotificationAction };
-type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
-type ProjectMeeting = {
-  id: string;
-  projectId: string;
-  title: string;
-  meetingAt: string;
-  meetingType: string;
-  sourceProvider: "otter" | "link" | "manual";
-  sourceUrl: string | null;
-  attendees: string[];
-  notes: string | null;
-  transcript: string | null;
-  summary: string | null;
-  decisions: string | null;
-  actionItems: string[];
-  createdBy: string;
-  createdAt: number;
-  updatedAt: number;
-};
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
 type CurrentUserSettingsPayload = {
   preferences?: { displayTimezone?: unknown; pageLayouts?: unknown };
   isAdmin?: unknown;
 };
 
-const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((stage) => LEAD_STAGE_LABELS[stage]);
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
-const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
 const projectOperationDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: FLOORING_KPI_TIME_ZONE });
 const projectOperationDateInputFormatter = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: FLOORING_KPI_TIME_ZONE });
 const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
-const CLIENT_ACTIONABLE_COLUMNS = ["Client", "Primary contact", "Projects", ""] as const;
-const PROJECT_ACTIONABLE_COLUMNS = ["Project", "Status", "Schedule & site", "Value", ""] as const;
 const MOBILE_TOPBAR_SCROLL_THRESHOLD = 8;
 const SUCCESS_INFO_SUPPRESSION_MS = 2_000;
 const LEAD_ESTIMATED_VALUE_HINT = "Your rough estimate of the job's size before it's quoted. Feeds pipeline totals; it is not a committed contract amount.";
@@ -440,19 +256,6 @@ const managementNavItems: { label: OperationsView; icon: typeof LayoutDashboard 
   { label: "Reports", icon: Activity },
   { label: "Settings", icon: Settings },
 ];
-
-function recordInitials(value: string) {
-  return value.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
-}
-
-function displayStatus(value: unknown, fallback: string) {
-  const status = String(value ?? "").trim();
-  return status ? status.split(/[-_\s]+/).map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(" ") : fallback;
-}
-
-function money(value: number) {
-  return formatUsd(value);
-}
 
 function optionalRecordNumber(value: unknown) {
   const number = value === null || value === undefined || value === "" ? Number.NaN : Number(value);
@@ -572,16 +375,6 @@ function projectOperationTimestampFromDateInput(value: string) {
   const timestamp = Date.UTC(year, month - 1, day, 12);
   const date = new Date(timestamp);
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? timestamp : null;
-}
-
-function isActiveProject(project: Project) {
-  return !terminalProjectStatuses.has(project.status.toLowerCase());
-}
-
-function leadMatchesStageFilter(lead: Lead, filter: LeadStageFilter) {
-  const normalizedStage = lead.stage.toLowerCase();
-  if (filter === "other") return !leadStages.some((stage) => stage.toLowerCase() === normalizedStage);
-  return normalizedStage === LEAD_STAGE_LABELS[filter].toLowerCase();
 }
 
 function projectLifecycleFilter(value: string): ProjectLifecycleFilter | null {
@@ -2070,97 +1863,6 @@ function Overview({ firstName, timezone, leads, projects, dashboard, state, isAd
   }}</PageLayoutEditor>;
 }
 
-function LeadsView({ leads, state, filter, onAdd, onAdvance, onLead }: { leads: Lead[]; state: LiveDataState; filter: LeadStageFilter | null; onAdd: () => void; onAdvance: (id: string) => void; onLead: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
-  const activeLeads = leads.filter((lead) => lead.status.toLowerCase() === "active");
-  const visibleActiveLeads = filter ? activeLeads.filter((lead) => leadMatchesStageFilter(lead, filter)) : activeLeads;
-  const knownStages = new Set(leadStages.map((stage) => stage.toLowerCase()));
-  const standardLeads = visibleActiveLeads.filter((lead) => knownStages.has(lead.stage.toLowerCase()));
-  const customStageLeads = visibleActiveLeads.filter((lead) => !knownStages.has(lead.stage.toLowerCase()));
-  const inactiveLeads = leads.filter((lead) => lead.status.toLowerCase() !== "active");
-  const pipelineValue = visibleActiveLeads.reduce((total, lead) => total + lead.estimatedValue, 0);
-  const filterLabel = filter ? LEAD_STAGE_LABELS[filter] : null;
-  const summary = state === "ready"
-    ? filterLabel
-      ? `${visibleActiveLeads.length} active ${visibleActiveLeads.length === 1 ? "lead" : "leads"} in ${filterLabel} · ${money(pipelineValue)} estimated value`
-      : `${activeLeads.length} open opportunities · ${money(pipelineValue)} estimated value`
-    : "Loading current pipeline totals…";
-  const stagesToRender = filter && filter !== "other" ? [LEAD_STAGE_LABELS[filter]] : leadStages;
-
-  return <><PageTitle eyebrow="Sales pipeline" title="Leads & opportunities" text={summary} state="In development" action={<button className="primary-button" onClick={onAdd}><Plus size={17} /> Add lead</button>} />
-    {filterLabel && <ActiveRouteFilter focusKey={`lead:${filter}`} headingId="lead-stage-filter-title" title={`Filtered to ${filterLabel}`} description="Showing active leads that match the selected pipeline row." clearHref={operationsHref("Leads")} />}
-    {visibleActiveLeads.length === 0 && state === "ready" ? <OperationsEmptyState variant="page"><div><Zap size={25} /></div><h2>{filterLabel ? `No active leads in ${filterLabel}` : "No active leads"}</h2><p>{filterLabel ? "The report filter is valid, but no current records match it." : "Add your first lead. Inactive records remain listed below."}</p>{filterLabel ? <Link className="soft-button" href={operationsHref("Leads")}>Show all active leads</Link> : <button className="primary-button" onClick={onAdd}><Plus size={16} /> Add first lead</button>}</OperationsEmptyState> : standardLeads.length > 0 ? <div className={`board${filter ? " filtered-board" : ""}`}>{stagesToRender.map((stage) => { const stageLeads = standardLeads.filter((lead) => lead.stage.toLowerCase() === stage.toLowerCase()); return <section className="board-column" key={stage}><header><h2>{stage}</h2><b>{stageLeads.length}</b></header>{stageLeads.map((lead) => <article className="lead-card" key={lead.id}><div className="lead-card-head"><Avatar initials={lead.initials} color={lead.color} /><span>{lead.number}</span></div><h3>{lead.company}</h3><p>{lead.project}</p><div className="lead-value">{lead.value}</div><div className="lead-contact"><Users size={14} />{lead.contact}</div><button type="button" className="lead-detail-button" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button><footer><span>{lead.source}</span><button onClick={() => onAdvance(lead.id)} aria-label={`Advance ${lead.company} from ${lead.stage}`}>Advance <ChevronRight size={15} /></button></footer></article>)}{stageLeads.length === 0 && <OperationsEmptyState variant="board">No leads in this stage.</OperationsEmptyState>}</section>; })}</div> : null}
-    {customStageLeads.length > 0 && <LeadStatusPanel title="Custom pipeline stages" subtitle="These leads use stages outside the current pipeline. Review their stage before advancing them." leads={customStageLeads} onLead={onLead} />}
-    {!filter && inactiveLeads.length > 0 && <LeadStatusPanel title="Inactive leads" subtitle="Converted, lost, closed, and archived leads are excluded from active totals." leads={inactiveLeads} showRecordStatus onLead={onLead} />}
-  </>;
-}
-
-function LeadStatusPanel({ title, subtitle, leads, showRecordStatus = false, onLead }: { title: string; subtitle: string; leads: Lead[]; showRecordStatus?: boolean; onLead?: (lead: Lead, returnFocusTarget?: HTMLElement | null) => void }) {
-  return <section className="panel pipeline-panel"><PanelHeader title={title} subtitle={subtitle} /><div className="pipeline-head"><span>Client / opportunity</span><span>{showRecordStatus ? "Status" : "Stage"}</span><span>Est. value</span><span>Next action</span></div>{leads.map((lead) => <div className="pipeline-row" key={lead.id}><div className="client-cell"><Avatar initials={lead.initials} color={lead.color} /><div className="client-cell-copy"><strong>{lead.company}</strong><span>{lead.project}</span></div></div><div><Status text={showRecordStatus ? displayStatus(lead.status, "Inactive") : lead.stage} /></div><strong className="value-cell">{lead.value}</strong><div className="next-cell lead-status-next"><span><Clock3 size={14} />{lead.next}</span>{onLead && <button type="button" className="lead-status-detail" aria-label={`View details for ${lead.company}`} onClick={(event) => onLead(lead, event.currentTarget)}>View details <ChevronRight size={14} /></button>}</div></div>)}</section>;
-}
-
-function ClientsView({ clients, state, projectCounts, onAdd, onClient, onNewProject, sheetMirror, onSyncGoogleSheet, syncingSheet }: { clients: Client[]; state: LiveDataState; projectCounts: Map<string, number>; onAdd: () => void; onClient: (client: Client, returnFocusTarget?: HTMLElement | null) => void; onNewProject: () => void; sheetMirror: SheetMirrorStatus | null; onSyncGoogleSheet: () => Promise<void>; syncingSheet: boolean }) {
-  const [clientFilter, setClientFilter] = useState("");
-  const syncLabel = sheetMirrorStatusLabel(sheetMirror);
-  const synced = syncLabel === "Synced";
-  const needsAttention = syncLabel === "Needs attention";
-  const syncStateClass = synced ? "synced" : needsAttention ? "needs-attention" : syncLabel === "Checking sync" || syncLabel === "Syncing" ? "checking" : "not-synced";
-  const normalizedFilter = clientFilter.trim().toLowerCase();
-  const visibleClients = normalizedFilter ? clients.filter((client) => [client.name, client.code, client.contact, client.email].some((value) => value.toLowerCase().includes(normalizedFilter))) : clients;
-  return <><PageTitle eyebrow="Client directory" title="Clients" text="Keep each client’s contacts, account documents, and projects together." state="In development" action={<><button className="soft-button" onClick={onNewProject} disabled={clients.length === 0}><BriefcaseBusiness size={16} /> New project</button><button className="primary-button" onClick={onAdd}><Plus size={17} /> Add client</button></>} />
-    <section className="client-directory-banner"><div className="directory-badge"><FolderTree size={20} /></div><div><strong>Client records are managed here and mirrored to Google Sheets</strong><span>{sheetMirror?.reason ?? "The Client Directory preserves account notes, while the Project Register is generated from the app."}</span></div><div className="directory-sync-actions"><span className={`directory-status ${syncStateClass}`}>{synced ? <CircleCheckBig size={14} /> : <Clock3 size={14} />}{syncLabel}</span><button className="soft-button" onClick={() => void onSyncGoogleSheet()} disabled={syncingSheet}>{syncingSheet ? "Syncing…" : "Sync directory"}</button></div></section>
-    <div className="client-directory panel"><div className="client-directory-toolbar"><label><span>Find a client</span><div><Search size={15} /><input value={clientFilter} onChange={(event) => setClientFilter(event.target.value)} placeholder="Name, code, or email" /></div></label><small>{visibleClients.length} of {clients.length} clients</small></div><OperationsActionableList ariaLabel="Client directory" columns={CLIENT_ACTIONABLE_COLUMNS} headerClassName="client-table-head">
-      {visibleClients.map((client) => { const projectCount = projectCounts.get(client.id) ?? 0; return <OperationsActionableListItem
-        key={client.id}
-        className="client-table-row"
-        accessibleName={`Open client ${client.name}, ${client.code}`}
-        accessibleDescription={`Industry ${client.industry}. Primary contact ${client.contact}, ${client.email || "email to add"}. ${projectCount} ${projectCount === 1 ? "project" : "projects"}.`}
-        onActivate={(trigger) => onClient(client, trigger)}
-      >
-        <span className="client-identity"><Avatar initials={client.initials} color={client.color} /><span className="client-identity-copy"><strong>{client.name}</strong><small>{client.code} · {client.industry}</small></span></span>
-        <span className="client-primary-contact"><strong>{client.contact}</strong><small>{client.email || "Email to add"}</small></span>
-        <span className="client-project-count"><b>{projectCount}</b><small>{projectCount === 1 ? "project" : "projects"}</small></span>
-        <ChevronRight size={17} aria-hidden="true" />
-      </OperationsActionableListItem>})}
-    </OperationsActionableList>{clients.length === 0 && state === "ready" ? <OperationsEmptyState variant="table">No clients yet. Add the first client to create the live directory.</OperationsEmptyState> : visibleClients.length === 0 && state === "ready" ? <OperationsEmptyState variant="table">No clients match “{clientFilter.trim()}”.</OperationsEmptyState> : null}</div>
-  </>;
-}
-
-function ProjectsView({ projects, state, filter, lifecycle, onFilter, onProject, onNewProject }: { projects: Project[]; state: LiveDataState; filter: ProjectStatusFilter; lifecycle: ProjectLifecycleFilter | null; onFilter: (filter: ProjectStatusFilter) => void; onProject: (project: Project, returnFocusTarget?: HTMLElement | null) => void; onNewProject: () => void }) {
-  const filteredProjects = projects.filter((project) => {
-    const status = project.status.toLowerCase();
-    if (lifecycle) return status === lifecycle;
-    return filter === "Active" ? !terminalProjectStatuses.has(status) : status === filter.toLowerCase();
-  });
-  const filterCount = (stage: string) => stage === "Active" ? projects.filter(isActiveProject).length : projects.filter((project) => project.status.toLowerCase() === stage.toLowerCase()).length;
-  const lifecycleLabel = lifecycle ? displayStatus(lifecycle, "Unknown") : null;
-
-  return <><PageTitle eyebrow="Project delivery" title="Projects" text="Track every project separately, including repeat work for the same client." state="In development" action={<button className="primary-button" onClick={onNewProject}><Plus size={17} /> New project</button>} />
-    <div className="filterbar"><div className="tabs" aria-label="Project status filter">{PROJECT_STATUS_FILTERS.map((stage) => <button className={filter === stage ? "active" : ""} aria-pressed={filter === stage} key={stage} onClick={() => onFilter(stage)}>{stage}<b>{filterCount(stage)}</b></button>)}</div></div>
-    {lifecycleLabel && <ActiveRouteFilter focusKey={`project:${lifecycle}`} headingId="project-lifecycle-filter-title" title={`Filtered to ${lifecycleLabel}`} description="Showing projects with this exact lifecycle status." clearHref={operationsHref("Projects")} />}
-    <div className="projects-table panel"><OperationsActionableList ariaLabel="Projects" columns={PROJECT_ACTIONABLE_COLUMNS} headerClassName="projects-table-head">
-      {filteredProjects.map((project) => <OperationsActionableListItem
-        key={project.id}
-        className="projects-table-row"
-        accessibleName={`Open project ${project.number}: ${project.name}`}
-        accessibleDescription={`Client ${project.client}. Status ${project.status}. Schedule ${project.date}. Site ${project.site}. Estimated value ${project.value}.`}
-        onActivate={(trigger) => onProject(project, trigger)}
-      >
-        <span className="project-row-identity"><Avatar initials={recordInitials(project.client)} color={project.accent} /><span><strong>{project.name}</strong><small>{project.number} · {project.client}</small></span></span>
-        <span className="project-row-status"><Status text={project.status} /></span>
-        <span className="project-row-details"><span className={project.date.toLowerCase() === "not scheduled" ? "is-unscheduled" : ""}>{project.date}</span><small><MapPin size={12} aria-hidden="true" />{project.site}</small></span>
-        <strong className="project-row-value"><span>Estimated value</span>{project.value}</strong>
-        <ChevronRight size={17} aria-hidden="true" />
-      </OperationsActionableListItem>)}
-    </OperationsActionableList>{!filteredProjects.length && <OperationsEmptyState variant="table">{state === "ready" ? lifecycleLabel ? `There are no projects in ${lifecycleLabel}.` : filter === "Active" ? "No active projects yet." : `There are no ${filter.toLowerCase()} projects.` : "Loading projects…"}</OperationsEmptyState>}</div>
-  </>;
-}
-
-function ScheduleView({ dashboard, onSettings }: { dashboard: DashboardSummary | null; onSettings: () => void }) {
-  return <><PageTitle eyebrow="Field operations" title="Schedule & crews" text="Scheduling is planned for a later milestone." state="Planned" action={<button className="soft-button" onClick={onSettings}><Settings size={16} /> Workflow & notification settings</button>} />
-    <OperationsEmptyState variant="page"><div><CalendarDays size={27} /></div><h2>What the scheduling workspace will include</h2><p>{dashboard?.readiness.scheduleReason ?? "Workers, crews, shifts, conflicts, and assignment acknowledgements will appear here after the scheduling foundation is approved."}</p></OperationsEmptyState>
-  </>;
-}
-
 function ReportBarRow({ label, measure, width, href, accessibleName, focusId, destinationFocusKey }: { label: string; measure: string; width: number; href?: string; accessibleName?: string; focusId?: string; destinationFocusKey?: string }) {
   const content = <><span className="bar-chart-label">{label}</span><span className="bar-chart-track" aria-hidden="true"><i style={{ width: `${width}%` }} /></span><strong>{measure}</strong>{href ? <ChevronRight className="bar-chart-chevron" size={16} aria-hidden="true" /> : <span className="bar-chart-spacer" aria-hidden="true" />}</>;
   return <li>{href && accessibleName && focusId && destinationFocusKey ? <Link id={focusId} className="bar-chart-row actionable" href={href} aria-label={accessibleName} onClick={() => rememberReportReturnFocus(focusId, destinationFocusKey)}>{content}</Link> : <div className="bar-chart-row">{content}</div>}</li>;
@@ -2244,7 +1946,7 @@ function SettingsView({ notify, section, onSection, onTimezoneChange, onCurrentU
     ? "Manage shared Workspace, company defaults, security, and launch-readiness settings."
     : "Manage the preferences tied to your signed-in FCI account.";
   return <><PageTitle eyebrow="Control center" title="Settings" text={headingText} state="In development" />
-    <div className="settings-layout"><SettingsAudienceNavigation section={visibleSection} isAdmin={isAdmin} onSection={onSection} />
+    <div className="settings-layout"><SettingsAudienceNavigation section={visibleSection} isAdmin={isAdmin} sheetMirror={sheetMirror} onSection={onSection} />
       {visibleSection === "My settings" && <MySettingsPanel notify={notify} userName={userName} userEmail={userEmail} isAdmin={isAdmin} onTimezoneChange={onTimezoneChange} onSettingsLoaded={onCurrentUserSettingsLoaded} />}
       {isAdmin && visibleSection === "Google Workspace" && <GoogleWorkspacePanel notify={notify} projects={projects} isAdmin={isAdmin} />}
       {isAdmin && visibleSection === "Calendar & appointments" && <WorkspaceDefaultsPanel mode="calendar" notify={notify} onGoogleSetup={onGoogleSetup} isAdmin={isAdmin} />}

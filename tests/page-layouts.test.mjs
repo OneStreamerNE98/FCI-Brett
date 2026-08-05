@@ -230,7 +230,7 @@ test("span-only customization leaves the default branch while legacy layouts rem
 // "half". The spans now live in the model, so both renders and the editor read one answer.
 test("the default Overview layout resolves the same spans in the default and the arranged render", async () => {
   const app = await readFile(new URL("../app/FloorOpsApp.tsx", import.meta.url), "utf8");
-  const overview = sourceSection(app, "function Overview(", "function LeadsView(", "Overview render");
+  const overview = sourceSection(app, "function Overview(", "function ReportBarRow(", "Overview render");
   const defaults = defaultPageLayout("overview", false);
 
   assert.deepEqual(resolveArrangedSpans("overview", defaults.order, defaults.fullWidth), [

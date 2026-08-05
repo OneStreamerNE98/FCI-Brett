@@ -66,9 +66,6 @@ function captureUnexpectedBrowserErrors(page: Page) {
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     const text = message.text();
-    // vinext dev emits local-file font URLs on Windows; the same known
-    // development-only warning is present throughout the existing e2e suite.
-    if (text.includes("Not allowed to load local resource: file:///") && text.includes("/.vinext/fonts/")) return;
     errors.push(`console: ${text}`);
   });
   return errors;
