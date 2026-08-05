@@ -80,16 +80,17 @@ test("Google error routes use the shared response builder without changing cache
 });
 
 test("USD formatting has one shared zero-decimal formatter", async () => {
-  const [helper, app, reports] = await Promise.all([
+  const [helper, app, recordDisplay, reports] = await Promise.all([
     read("app/lib/format-usd.ts"),
     read("app/FloorOpsApp.tsx"),
+    read("app/lib/record-display.ts"),
     read("app/features/reports/BusinessKpisPanel.tsx"),
   ]);
   assert.match(helper, /const usdFormatter = new Intl\.NumberFormat\("en-US"/);
   assert.match(helper, /maximumFractionDigits: 0/);
-  assert.match(app, /import \{ formatUsd \} from "\.\/lib\/format-usd"/);
+  assert.match(recordDisplay, /import \{ formatUsd \} from "\.\/format-usd"/);
   assert.match(reports, /import \{ formatUsd \} from "\.\.\/\.\.\/lib\/format-usd"/);
-  assert.doesNotMatch(`${app}\n${reports}`, /maximumFractionDigits: 0/);
+  assert.doesNotMatch(`${app}\n${recordDisplay}\n${reports}`, /maximumFractionDigits: 0/);
 });
 
 test("the eight zero-reference exports stay deleted", async () => {
