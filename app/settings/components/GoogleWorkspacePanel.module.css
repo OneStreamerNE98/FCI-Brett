@@ -3,12 +3,12 @@
 }
 
 .statusModeNeutral {
-  background: var(--color-accent-soft);
+  background: var(--color-line-soft);
   color: var(--color-ink-muted);
 }
 
 .stageChipNeutral {
-  background: var(--color-accent-soft);
+  background: var(--color-line-soft);
   color: var(--color-ink-muted);
 }
 
@@ -41,7 +41,7 @@
 .connectionActionsHeader p {
   margin: 0;
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -129,7 +129,7 @@
 .connectionHealthAccount dd {
   margin: 4px 0 0;
   color: var(--ink);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   font-weight: var(--font-weight-semibold);
   overflow-wrap: anywhere;
 }
@@ -235,7 +235,7 @@
   color: var(--color-ink-muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-semibold);
-  line-height: 1.2;
+  line-height: var(--line-height-heading);
   letter-spacing: 0.03em;
   text-align: center;
   white-space: nowrap;
@@ -299,7 +299,7 @@
 .stageFourGroupHeader h3,
 .ongoingGroupHeader h3 {
   font-size: var(--font-size-label);
-  line-height: 1.35;
+  line-height: var(--line-height-caption);
 }
 
 .verificationList,

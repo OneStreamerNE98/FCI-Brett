@@ -109,12 +109,17 @@ test("Workspace setup is a four-stage endpoint-driven shell with callback refres
   assert.match(panel, /statusSourcesLoading[\s\S]+CHECKING[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE/);
   assert.match(panel, /statusSourcesLoading[\s\S]+Stage status pending[\s\S]+statusSourcesUnavailable[\s\S]+Current stage unavailable/);
   assert.match(panel, /statusSourcesLoading \|\| statusSourcesUnavailable[\s\S]+panelStyles\.statusModeNeutral/);
-  assert.match(panelStyles, /\.statusModeNeutral[\s\S]+background: var\(--color-accent-soft\)[\s\S]+color: var\(--color-ink-muted\)/);
+  // CHECKING / UNAVAILABLE are neutral states: they must not wear the READY green.
+  // [^}]* keeps the match inside the .statusModeNeutral rule body, so changing either
+  // declaration fails here instead of matching some later rule in the file.
+  assert.match(panelStyles, /\.statusModeNeutral\s*\{[^}]*background: var\(--color-line-soft\);[^}]*color: var\(--color-ink-muted\);[^}]*\}/u);
+  assert.doesNotMatch(panelStyles, /\.statusModeNeutral\s*\{[^}]*var\(--color-accent-soft\)/u);
   assert.match(panel, /const neutralStageStatus = statusSourcesLoading[\s\S]+CHECKING[\s\S]+statusSourcesUnavailable[\s\S]+UNAVAILABLE/);
   assert.equal(panel.match(/tone=\{neutralStageStatus \? "neutral"/g)?.length, 3);
   assert.match(panel, /tone=\{stageFourStatusNeutral \? "neutral" : stageFourReady \? "ready"/);
   assert.match(panel, /panelStyles\.stageChipNeutral/);
-  assert.match(panelStyles, /\.stageChipNeutral[\s\S]+background: var\(--color-accent-soft\)[\s\S]+color: var\(--color-ink-muted\)/);
+  assert.match(panelStyles, /\.stageChipNeutral\s*\{[^}]*background: var\(--color-line-soft\);[^}]*color: var\(--color-ink-muted\);[^}]*\}/u);
+  assert.doesNotMatch(panelStyles, /\.stageChipNeutral\s*\{[^}]*var\(--color-accent-soft\)/u);
   assert.match(panelStyles, /\.stageAnchor[\s\S]+scroll-margin-top: 86px/);
   assert.match(panel, /workspace-status-banner/);
   assert.match(panel, /workspace-status-mode/);

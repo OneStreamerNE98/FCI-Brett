@@ -201,17 +201,33 @@ test("keeps the global design-token and responsive foundations canonical", async
     "--shadow-card:0 1px 2px rgba(29,55,40,.04)",
     "--shadow-raised:0 5px 15px rgba(29,55,40,.06)",
     "--shadow-overlay:0 25px 70px rgba(35,31,32,.65)",
+    "--shadow-sticky:0 -5px 18px rgba(60,52,44,.07)",
+    "--shadow-drawer:-15px 0 50px rgba(35,31,32,.33)",
   ]) {
     assert.match(css, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
 
+  // The sticky blueprint footer sits on a LIGHT surface, so its separator shadow must
+  // be dark and its background near-opaque. --color-overlay/-soft are white and belong
+  // to the dark toast and spinner only; using them here made the shadow invisible and
+  // let page content scroll through the bar.
   assert.match(
     css,
-    /\.workspace-blueprint-footer\{[^}]*box-shadow:0 -5px 18px var\(--color-overlay-soft\)[^}]*\}/,
+    /\.workspace-blueprint-footer\{[^}]*background:var\(--color-surface-translucent\);box-shadow:var\(--shadow-sticky\)[^}]*\}/,
   );
+  assert.doesNotMatch(
+    css,
+    /\.workspace-blueprint-footer\{[^}]*var\(--color-overlay(?:-soft)?\)[^}]*\}/,
+  );
+  // --color-scrim is the 68% modal backdrop; reusing it as a drop-shadow colour doubled
+  // the drawer's shadow opacity against main's 33%.
   assert.match(
     css,
-    /\.project-drawer\{[^}]*box-shadow:-15px 0 50px var\(--color-scrim\)[^}]*\}/,
+    /\.project-drawer\{[^}]*box-shadow:var\(--shadow-drawer\)[^}]*\}/,
+  );
+  assert.doesNotMatch(
+    css,
+    /\.project-drawer\{[^}]*box-shadow:[^;}]*var\(--color-scrim\)[^}]*\}/,
   );
 });
 

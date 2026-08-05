@@ -76,7 +76,7 @@
 
 .missingNote p {
   margin: 0;
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -95,7 +95,7 @@
 .readOnlyNote strong,
 .readOnlyNote span {
   display: block;
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
 }
 
 .dataAtRestNote {
@@ -107,19 +107,19 @@
 .dataAtRestNote strong,
 .dataAtRestNote span {
   display: block;
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
 }
 
 .dataAtRestNote span {
   margin-top: 3px;
   color: var(--text-muted);
-  line-height: 1.45;
+  line-height: var(--line-height-body);
 }
 
 .readOnlyNote span {
   margin-top: 3px;
   color: var(--text-muted);
-  line-height: 1.45;
+  line-height: var(--line-height-body);
 }
 
 .featureFieldset {
@@ -251,7 +251,7 @@
 .labelPolicy {
   margin-top: 3px;
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 

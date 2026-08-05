@@ -1,0 +1,12 @@
+// Negative fixture for the DES-13 drift guard. This file is NOT part of the app; it
+// lives under tests/fixtures so the guard's app/ walk never sees it. It exists to
+// prove that a raw hex introduced inside a .tsx inline <style> block is detected.
+export function DriftFixture() {
+  return (
+    <div className="fixture">
+      <style>{`
+        .fixture { color: #123456; }
+      `}</style>
+    </div>
+  );
+}

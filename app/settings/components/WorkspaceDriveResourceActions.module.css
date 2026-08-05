@@ -28,7 +28,7 @@
   color: var(--color-ink-muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-semibold);
-  line-height: 1.2;
+  line-height: var(--line-height-heading);
   letter-spacing: 0.03em;
   text-align: center;
   white-space: nowrap;
@@ -42,14 +42,14 @@
 .cardIntro {
   margin: 0 0 13px;
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
 .resourceMessage {
   margin: 0 0 12px;
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -64,8 +64,8 @@
   border-radius: var(--radius-control);
   background: var(--color-surface-muted);
   color: var(--color-ink-muted);
-  font-size: var(--font-size-caption);
-  line-height: 1.45;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
 }
 
 .creationList {
@@ -367,7 +367,7 @@
 .resourceCopy small {
   color: var(--text-muted);
   font-size: var(--font-size-caption);
-  line-height: 1.35;
+  line-height: var(--line-height-caption);
   overflow-wrap: anywhere;
 }
 
@@ -414,7 +414,7 @@
 .emptyDetails {
   margin: 0;
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: 1.4;
 }
 

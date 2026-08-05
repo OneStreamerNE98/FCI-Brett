@@ -1,4 +1,9 @@
 {
-  "semanticColorTokenLimit": 28,
-  "lengthExceptions": ["0", "50%", "999px"]
+  "semanticColorTokenLimit": 29,
+  "lengthExceptions": ["0", "50%", "999px"],
+  "lineHeightExceptions": ["1", "1.25", "1.4", "1.4!important", "1.5", "1.5!important", "1.55", "1.65", "1.7"],
+  "lineHeightDeferralNote": "2026-08-04 (DES-13 review): 1.45, 1.35 and 1.2 were adopted as --line-height-body/-caption/-heading across 66 declarations. The values listed above have NO exact token (--line-height-body is 1.45, so 1.5 is 0.05 away and 1.4 is equidistant between caption and body). Snapping them to the nearest token would repeat the map-by-nearest-value-not-by-meaning error this review exists to correct, so consolidating them needs a design decision on the scale itself and is deferred. Detection is live: any line-height value not in this list and not a token fails the guard.",
+  "inlineStyleDeferrals": {
+    "app/PhoneInstallPanel.tsx": "2026-08-04 (DES-13 review): this component's inline <style> block still carries raw hexes, off-scale radii, spacing and font sizes, and var(--font-display)/var(--font-body) references. DES-13 is a CSS-values-only packet and must not edit .tsx, so the migration itself is deferred to DES-25 (a .tsx packet). Detection is live: a NEW inline-style raw hex in any other .tsx file fails the guard, and this entry fails once the component is cleaned up."
+  }
 }

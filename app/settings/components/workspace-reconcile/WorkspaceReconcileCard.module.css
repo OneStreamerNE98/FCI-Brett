@@ -7,7 +7,7 @@
 .reconcileBody > p {
   margin: 0;
   color: var(--text-muted);
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
   line-height: 1.5;
 }
 
@@ -26,7 +26,7 @@
 .informational {
   color: var(--text-muted);
   font-size: var(--font-size-caption);
-  line-height: 1.45;
+  line-height: var(--line-height-body);
 }
 
 .error {
@@ -82,7 +82,7 @@
   border-radius: var(--radius-pill);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-semibold);
-  line-height: 1.2;
+  line-height: var(--line-height-heading);
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -120,7 +120,7 @@
 .names dd {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: var(--font-size-caption);
+  font-size: var(--font-size-body);
 }
 
 .actionList > :global(.administrator-action-control) {

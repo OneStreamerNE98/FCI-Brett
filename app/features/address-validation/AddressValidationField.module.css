@@ -155,7 +155,7 @@
 .address {
   color: var(--color-accent-hover);
   font-size: var(--font-size-body);
-  line-height: 1.45;
+  line-height: var(--line-height-body);
 }
 
 .warning {

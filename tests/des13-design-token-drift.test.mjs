@@ -26,6 +26,26 @@ async function collectCssFiles(directory) {
   return paths;
 }
 
+async function collectTsxFiles(directory) {
+  const paths = [];
+  for (const entry of await readdir(directory)) {
+    const path = join(directory, entry);
+    const metadata = await stat(path);
+    if (metadata.isDirectory()) {
+      paths.push(...await collectTsxFiles(path));
+    } else if (path.endsWith(".tsx")) {
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+// The CSS walk above only sees .css files, so styling smuggled into a .tsx inline
+// <style> block used to be invisible to every rule in this file.
+function inlineStyleBlocks(source) {
+  return [...source.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gu)].map((match) => match[1]);
+}
+
 function stripComments(css) {
   return css.replace(/\/\*[\s\S]*?\*\//gu, "");
 }
@@ -146,6 +166,64 @@ test("DES-13 type scale and weight diet are exact", () => {
       }
     }
   }
+});
+
+test("DES-13 line-height uses the line-height scale or a documented exception", () => {
+  const expectedLineHeights = { caption: "1.35", body: "1.45", heading: "1.2" };
+  for (const [name, value] of Object.entries(expectedLineHeights)) {
+    assert.equal(tokenValue(root, `line-height-${name}`), value);
+  }
+
+  // The three tokens must actually be consumed, not merely declared.
+  const tokenUses = cssSources.reduce((total, { source }) => (
+    total + (stripComments(source).match(/line-height:\s*var\(--line-height-/gu) ?? []).length
+  ), 0);
+  assert.ok(tokenUses >= 60, `--line-height-* must be in real use, found ${tokenUses}`);
+
+  const allowedLineHeight = /^var\(--line-height-(?:caption|body|heading)\)(?:!important)?$/u;
+  for (const { path, source } of cssSources) {
+    for (const { property, value } of declarations(source)) {
+      if (property !== "line-height") continue;
+      if (allowedLineHeight.test(value)) continue;
+      assert.ok(allowlist.lineHeightExceptions.includes(value),
+        `${relative(repositoryRoot, path)} uses an off-scale line-height ${value}`);
+    }
+  }
+});
+
+test("DES-13 drift detection reaches inline <style> blocks in .tsx components", async () => {
+  const tsxFiles = await collectTsxFiles(applicationRoot);
+  const deferrals = allowlist.inlineStyleDeferrals ?? {};
+  const violations = [];
+  const seenDeferrals = new Set();
+
+  for (const path of tsxFiles) {
+    const source = await readFile(path, "utf8");
+    const blocks = inlineStyleBlocks(source);
+    if (blocks.length === 0) continue;
+    const relativePath = relative(repositoryRoot, path).replaceAll("\\", "/");
+    const hexes = blocks.flatMap((block) => rawHexViolations(block));
+    if (relativePath in deferrals) {
+      seenDeferrals.add(relativePath);
+      // Self-cleaning: once the deferred migration lands, drop the allowlist entry.
+      assert.ok(hexes.length > 0,
+        `${relativePath} is allowlisted for inline-style drift but is now clean - remove its deferral`);
+      continue;
+    }
+    violations.push(...hexes.map((value) => `${relativePath}:${value}`));
+  }
+
+  assert.deepEqual(violations, []);
+  assert.deepEqual([...seenDeferrals].sort(), Object.keys(deferrals).sort(),
+    "every inline-style deferral must name a file that still exists and still has an inline <style>");
+});
+
+test("DES-13 negative fixture proves a new inline-style raw hex fails the drift rule", async () => {
+  // Stored with a .txt suffix so this CSS-values-only change adds no .tsx to the diff.
+  const fixture = await readFile(join(repositoryRoot, "tests/fixtures/des13-inline-style-hex.tsx.txt"), "utf8");
+  const blocks = inlineStyleBlocks(fixture);
+  assert.equal(blocks.length, 1);
+  assert.deepEqual(blocks.flatMap((block) => rawHexViolations(block)), ["#123456"]);
 });
 
 test("DES-13 gap and padding values use only the 4-point spacing scale", () => {

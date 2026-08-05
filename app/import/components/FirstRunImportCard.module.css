@@ -240,7 +240,7 @@
   color: var(--text-muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-medium);
-  line-height: 1.45;
+  line-height: var(--line-height-body);
   overflow-wrap: anywhere;
 }
 
@@ -402,7 +402,7 @@
   grid-column: 1 / -1;
   color: var(--text-muted);
   font-size: var(--font-size-caption);
-  line-height: 1.45;
+  line-height: var(--line-height-body);
 }
 
 .emptyPreview {

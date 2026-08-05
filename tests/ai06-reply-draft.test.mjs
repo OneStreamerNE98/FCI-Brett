@@ -891,14 +891,17 @@ test("AI-06 reply-draft styling and accessibility are defined, not implied", asy
     assert.match(modal, new RegExp(`className="${className}"`, "u"));
     assert.match(css, new RegExp(`\\.${className}\\{[^}]+\\}`, "u"), `.${className} must be styled`);
   }
-  // The error text matches the repository's existing error treatment.
+  // The error text matches the repository's certified error treatment: the
+  // --color-danger / --color-danger-soft pair, not the neutral card fill. Both
+  // regexes stay inside a single rule body ([^}]*) so breaking either declaration
+  // fails the assertion instead of matching a later rule.
   assert.match(
     css,
-    /\.reply-ai-error\{[^}]*border:1px solid var\(--color-line\);[^}]*background:var\(--color-surface-muted\);color:var\(--color-danger\)/u,
+    /\.reply-ai-error\{[^}]*border:1px solid var\(--color-danger\);[^}]*background:var\(--color-danger-soft\);color:var\(--color-danger\)/u,
   );
   assert.match(
     css,
-    /\.project-operation-error\{[^}]*border:1px solid var\(--color-line\);[^}]*background:var\(--color-surface-muted\);color:var\(--color-danger\)/u,
+    /\.project-operation-error\{[^}]*border:1px solid var\(--color-danger\);[^}]*background:var\(--color-danger-soft\);color:var\(--color-danger\)/u,
   );
   assert.match(css, /\.reply-ai-draft>\.soft-button\[aria-disabled="true"\]\{[^}]*cursor:not-allowed/u);
 

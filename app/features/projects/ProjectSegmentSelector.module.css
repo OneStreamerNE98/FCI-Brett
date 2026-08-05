@@ -23,7 +23,7 @@
   margin: 5px 0 8px;
   color: var(--text-muted);
   font-size: var(--font-size-caption);
-  line-height: 1.45;
+  line-height: var(--line-height-body);
 }
 
 .options {
