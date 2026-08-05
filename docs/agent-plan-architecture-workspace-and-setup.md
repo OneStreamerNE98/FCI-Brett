@@ -5013,7 +5013,7 @@ queue order is FIX-07 → GI-04 → DES-06 → DES-05 (absorbs FIX-08) → DES-0
 DES-07 → DES-08 (b/c/d/a-T1) → AI-02 (a→b→c, one slot) → SET-22 UI (in flight, PR #217/#221) →
 **EDIT-05** → **EDIT-04** → **AI-10 sub-PR (f)** → **EDIT-06** → **EDIT-07** →
 SET-26 UI (blocked on SET-23) → HINT-02-B.
-**Every named packet above is now merged. SET-42 now holds the slot from the tail below.**
+**Every named packet above is now merged. DES-14 now holds the slot from the tail below.**
 
 **Tail added August 3, 2026 — five open packets were flagged for this slot and none of them
 were on the list.** A packet-assessment pass found that the claim list, which `AGENTS.md:54-58`
@@ -5024,8 +5024,8 @@ Adversarial review (August 3, 2026) then established that AI-12 takes no slot at
 its bullet — leaving four claimants; DES-14 and DES-12, filed August 3, 2026, then claimed
 in the tail, making six. Recommended claim order, most valuable first:
 
-**SET-42 (in progress on `codex/set42-swr-doctrine`) → GI-05 (if approved) →
-WS-20 (if approved) → DES-14 → DES-17 (shell scope,
+**DES-14 (in progress on `codex/des14-floorops-decomposition`) → DES-14b →
+GI-05 (if approved) → WS-20 (if approved) → DES-17 (shell scope,
 post-decomposition) → DES-10 (variants a/b only) → DES-12.**
 (DES-16 and DES-17 were added August 4, 2026 with the usability wave. DES-16 merged in
 PR #306 and released the slot; DES-17's slot need is the app-shell toast/boundary
@@ -5042,31 +5042,35 @@ machinery that remains in `FloorOpsApp.tsx` after DES-14, so it follows the extr
   `FloorOpsApp.tsx` lines. An earlier claim bullet asserted the slot was "Unavoidable"
   before the diagnosis existed; it is retired — a slot claim follows the diff, never the
   other way around.
+- **SET-07** — merged in PR #313 and is no longer a claimant. Its review fix threaded the
+  shell-owned `sheetMirror` value through one `FloorOpsApp.tsx` line at the Settings
+  audience-navigation mount; that file change was serialized rather than described as a
+  no-slot path.
 - **GI-04** — merged in PR #291 and released the slot. Its lead, client and project modals
   and record mappers are inline in that file.
 - **DES-16** — merged in PR #306 and released the slot. Its lead-capture modal,
   Overview Schedule entry points, and application navigation were inline in
   `app/FloorOpsApp.tsx`.
-- **SET-42** — **holds the slot on `codex/set42-swr-doctrine`.** Its core directory
-  reads and shared navigation-triggered revalidation are inline in `app/FloorOpsApp.tsx`.
+- **SET-42** — merged in PR #311 and released the slot. Its core directory reads and
+  shared navigation-triggered revalidation remain inline in `app/FloorOpsApp.tsx`.
 - **GI-05** — the project drawer and its Planned-capabilities list
-  (`app/FloorOpsApp.tsx:2538-2551`). Also gated on an owner decision about scheduling.
+  (inside `ProjectDrawer`). Also gated on an owner decision about scheduling.
 - **WS-20** — a mailbox picker sits beside `bucket` at the same `InboxView` mount. Also gated
   on two owner decisions recorded in its packet.
-- **DES-14** — the extraction itself is the slot's last large holder: it moves the four
-  record views and their modals out of `app/FloorOpsApp.tsx`, and it amends the queue-slot
-  law in the same PR so extracted surfaces exit the queue permanently.
+- **DES-14** — **holds the slot on `codex/des14-floorops-decomposition`.** It moves the
+  four record views and their shared contracts out of `app/FloorOpsApp.tsx`; those record
+  views exit the queue permanently, while the modal/drawer cluster and shell scope remain.
+- **DES-14b** — follows DES-14 immediately and owns the modal/drawer cluster that DES-14
+  deliberately leaves in `app/FloorOpsApp.tsx`.
 - **DES-10** — only variants (a) and (b), which edit `app/FloorOpsApp.tsx:1701`. Variant (c)
   is CSS-only and takes no slot.
 - **DES-12** — editor chrome + resolved-preview rendering at the layout mount; also holds
   the `globals.css` lock.
 - **DES-15** — deliberately takes NO slot: it targets the post-DES-14 extracted views.
 
-**Four more packets could take the slot and must NOT** — each is required to state its
+**Three more packets could take the slot and must NOT** — each is required to state its
 no-FloorOpsApp path in its own PR rather than consuming the serialised resource by default:
-**SET-23/SET-26** (mount the viewer inside `ProjectFilesPanel.tsx`), **SET-07** (the nav
-fetches its own state rather than taking a one-line prop threaded from
-`app/FloorOpsApp.tsx:2112` — a one-line prop is not a reason to serialise), **AI-11 (c)**
+**SET-23/SET-26** (mount the viewer inside `ProjectFilesPanel.tsx`), **AI-11 (c)**
 (nest in `AiAssistantSettingsCard.tsx`), and **GI-06** (keep the filter in
 `ProjectFilesPanel`'s controller).
 
