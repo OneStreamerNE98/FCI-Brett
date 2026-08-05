@@ -29,7 +29,7 @@ import { FINANCIAL_RESTRICTION_LABEL, FLOORING_KPI_TIME_ZONE, monthKeyForTimesta
 import { ProjectSegmentSelector } from "./features/projects/ProjectSegmentSelector";
 import { clearReportReturnFocusFromCurrentHistoryEntry, rememberReportReturnFocus, reportsReturnFocusHistoryKey } from "./features/reports/report-navigation";
 import { JobSiteMapCard } from "./features/maps/JobSiteMapCard";
-import { normalizeJobSiteLocation, type JobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
+import { normalizeJobSiteLocation, type JobSiteMapsRuntimeConfig } from "./features/maps/job-site-map";
 import {
   cachedGetJson,
   invalidateCachedGet,
@@ -39,7 +39,6 @@ import {
   useCachedGetSubscription,
 } from "./lib/client-get-hooks";
 import { CLIENT_INDUSTRY_OPTIONS, clientIndustryReportState } from "./lib/client-industries";
-import { formatUsd } from "./lib/format-usd";
 import {
   defaultPageLayouts,
   isDefaultPageLayout,
@@ -71,6 +70,37 @@ import {
   type ProjectStatusFilter,
   type SettingsSection,
 } from "./lib/operations-routes";
+import {
+  displayStatus,
+  isActiveProject,
+  leadStages,
+  money,
+  recordInitials,
+  terminalProjectStatuses,
+} from "./lib/record-display";
+import type {
+  AppNotification,
+  Client,
+  ClientConflictValues,
+  ClientEditPatch,
+  ClientUpdatePayload,
+  ContactConflictValues,
+  ContactEditPatch,
+  ContactUpdatePayload,
+  DashboardSummary,
+  Lead,
+  LeadConflictValues,
+  LeadEditPatch,
+  LeadUpdatePayload,
+  LiveDataState,
+  NotificationKind,
+  Notify,
+  Project,
+  ProjectConflictValues,
+  ProjectEditPatch,
+  ProjectMeeting,
+  ProjectUpdatePayload,
+} from "./lib/record-types";
 import { AiAssistantSettingsCard } from "./settings/components/AiAssistantSettingsCard";
 import { DataSecurityPanel } from "./settings/components/DataSecurityPanel";
 import { DirectorySyncPanel } from "./settings/components/DirectorySyncPanel";
@@ -87,69 +117,8 @@ import { CALLBACK_NOTE_MAX_LENGTH } from "./domain/project-operations";
 import type { AddressReviewReference } from "./domain/address-validation";
 import { normalizeRecordVersion } from "./domain/record-version";
 import { AddressValidationField } from "./features/address-validation/AddressValidationField";
-import { normalizeProjectSegment, resolveProjectSegment, type ProjectSegment } from "./domain/project-segment";
+import { normalizeProjectSegment, resolveProjectSegment } from "./domain/project-segment";
 
-type Lead = {
-  id: string;
-  number: string;
-  company: string;
-  contact: string;
-  contactEmail: string | null;
-  contactPhone: string | null;
-  project: string;
-  value: string;
-  estimatedValue: number;
-  stage: string;
-  source: string;
-  next: string;
-  nextActionAt: string | null;
-  ownerEmail: string | null;
-  site: string;
-  status: string;
-  initials: string;
-  color: string;
-  createdAt?: number | null;
-  updatedAt?: number | null;
-  version?: string;
-  addressReview?: AddressReviewReference;
-};
-type LeadEditPatch = Partial<{
-  company: string;
-  contactName: string;
-  contactEmail: string | null;
-  contactPhone: string | null;
-  projectName: string;
-  source: string;
-  stage: string;
-  site: string;
-  estimatedValue: number;
-  nextAction: string;
-  nextActionAt: string | null;
-  ownerEmail: string;
-  status: string;
-  addressReview?: AddressReviewReference;
-}>;
-type LeadConflictValues = Partial<{
-  company: string;
-  contactName: string;
-  contactEmail: string | null;
-  contactPhone: string | null;
-  projectName: string;
-  source: string;
-  stage: string;
-  site: string;
-  estimatedValue: number;
-  nextAction: string;
-  nextActionAt: number | null;
-  ownerEmail: string | null;
-  status: string;
-}>;
-type LeadUpdatePayload = {
-  lead?: Record<string, unknown>;
-  error?: string;
-  currentVersion?: string;
-  currentValues?: LeadConflictValues;
-};
 type LeadModalProps =
   | {
       mode: "create";
@@ -175,164 +144,13 @@ type LeadModalRequest = Readonly<{
   initialValues?: Partial<Lead>;
   afterCreate?: () => Promise<void>;
 }>;
-type Client = {
-  id: string;
-  code: string;
-  name: string;
-  contact: string;
-  contactId?: string;
-  contactPhone: string | null;
-  contactRole: string;
-  contactVersion?: string;
-  email: string;
-  industry: string;
-  industryRaw?: string | null;
-  status: string;
-  initials: string;
-  color: string;
-  googleStatus: "Ready" | "Setup pending";
-  jobSite: JobSiteLocation | null;
-  addressReview?: AddressReviewReference;
-  version?: string;
-  driveFolderId?: string;
-  driveUrl?: string;
-};
-type ClientEditPatch = Partial<{
-  name: string;
-  status: string;
-  industry: string | null;
-  siteAddress: string | null;
-  addressReview?: AddressReviewReference;
-}>;
-type ClientConflictValues = Partial<{
-  name: string;
-  status: string;
-  industry: string | null;
-  siteAddress: string | null;
-}>;
-type ClientUpdatePayload = {
-  client?: {
-    id: string;
-    clientCode: string;
-    name: string;
-    status: string;
-    industry: string | null;
-    siteAddress: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    addressValidationVerdict: string | null;
-    updatedAt: number;
-    version: string;
-  };
-  error?: string;
-  outcome?: "duplicate";
-  currentVersion?: string;
-  currentValues?: ClientConflictValues;
-};
-type ContactEditPatch = Partial<{
-  name: string;
-  email: string | null;
-  phone: string | null;
-  role: string;
-}>;
-type ContactConflictValues = ContactEditPatch;
-type ContactUpdatePayload = {
-  contact?: {
-    id: string;
-    clientId: string;
-    name: string;
-    email: string | null;
-    phone: string | null;
-    role: string;
-    isPrimary: boolean;
-    updatedAt: number;
-    version: string;
-  };
-  error?: string;
-  currentVersion?: string;
-  currentValues?: ContactConflictValues;
-};
-type Project = { id: string; clientId: string; number: string; client: string; name: string; status: string; progress: number; value: string; estimatedValue: number | null; flooringCategory: FlooringCategory | null; squareFeet: number | null; contractValue: number | null; segment: ProjectSegment | null; installationStartedAt: number | null; installationCompletedAt: number | null; hadCallback: boolean; callbackNote: string | null; site: string; jobSite: JobSiteLocation | null; managerId: string | null; lead: string; date: string; accent: string; createdAt?: number | null; updatedAt?: number | null; version?: string; driveFolderId?: string; driveUrl?: string; addressReview?: AddressReviewReference };
-type ProjectEditPatch = Partial<{
-  name: string;
-  status: string;
-  site: string | null;
-  clientId: string;
-  estimatedValue: number | null;
-  flooringCategory: FlooringCategory | null;
-  squareFeet: number | null;
-  contractValue: number | null;
-  segment: ProjectSegment | null;
-  addressReview?: AddressReviewReference;
-}>;
-type ProjectConflictValues = Omit<ProjectEditPatch, "addressReview">;
-type ProjectUpdatePayload = {
-  project?: {
-    id: string;
-    projectNumber: string;
-    clientId: string;
-    name: string;
-    status: string;
-    site: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    addressValidationVerdict: string | null;
-    projectManagerId: string | null;
-    estimatedValue: number | null;
-    flooringCategory: FlooringCategory | null;
-    squareFeet: number | null;
-    contractValue: number | null;
-    segment: ProjectSegment | null;
-    updatedAt: number;
-    version: string;
-  };
-  error?: string;
-  currentVersion?: string;
-  currentValues?: ProjectConflictValues;
-};
-type DashboardSummary = {
-  generatedAt: number;
-  metrics: { activeLeads: number; estimatedPipelineValue: number; activeProjects: number; clientCount: number; meetingCount: number; filedEmailCount: number };
-  projectsByStatus: Array<{ status: string; count: number }>;
-  recentActivity: Array<{ id: string; action: string; detail: string | null; actor: string; created_at: number }>;
-  todayMeetings: {
-    items: Array<{ id: string; projectId: string; title: string; meetingAt: number; projectNumber: string; projectName: string }>;
-    total: number;
-  };
-  readiness: { scheduleDataAvailable: boolean; scheduleReason: string; reportsUseLiveProjectLeadTotals: boolean };
-};
-type LiveDataState = "loading" | "ready" | "error";
-type NotificationKind = "success" | "info" | "warning" | "error";
-type NotificationAction = { label: string; run: () => void };
-type AppNotification = { message: string; kind: NotificationKind; action?: NotificationAction };
-type Notify = (message: string, kind?: NotificationKind, action?: NotificationAction) => void;
-type ProjectMeeting = {
-  id: string;
-  projectId: string;
-  title: string;
-  meetingAt: string;
-  meetingType: string;
-  sourceProvider: "otter" | "link" | "manual";
-  sourceUrl: string | null;
-  attendees: string[];
-  notes: string | null;
-  transcript: string | null;
-  summary: string | null;
-  decisions: string | null;
-  actionItems: string[];
-  createdBy: string;
-  createdAt: number;
-  updatedAt: number;
-};
 type WorkspaceSearchResult = { kind: "client" | "project" | "contact"; id: string; title: string; subtitle: string; clientId?: string; projectId?: string };
 type CurrentUserSettingsPayload = {
   preferences?: { displayTimezone?: unknown; pageLayouts?: unknown };
   isAdmin?: unknown;
 };
 
-const leadStages = LEAD_STAGE_FILTERS.filter((stage) => stage !== "other").map((stage) => LEAD_STAGE_LABELS[stage]);
 const projectLifecycleOrder = [...PROJECT_LIFECYCLE_FILTERS];
-const terminalProjectStatuses = new Set(["archived", "completed", "cancelled"]);
 const projectOperationDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: FLOORING_KPI_TIME_ZONE });
 const projectOperationDateInputFormatter = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: FLOORING_KPI_TIME_ZONE });
 const PIPELINE_ACTIONABLE_COLUMNS = ["Client / opportunity", "Stage", "Est. value", "Next action"] as const;
@@ -440,19 +258,6 @@ const managementNavItems: { label: OperationsView; icon: typeof LayoutDashboard 
   { label: "Reports", icon: Activity },
   { label: "Settings", icon: Settings },
 ];
-
-function recordInitials(value: string) {
-  return value.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "FC";
-}
-
-function displayStatus(value: unknown, fallback: string) {
-  const status = String(value ?? "").trim();
-  return status ? status.split(/[-_\s]+/).map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(" ") : fallback;
-}
-
-function money(value: number) {
-  return formatUsd(value);
-}
 
 function optionalRecordNumber(value: unknown) {
   const number = value === null || value === undefined || value === "" ? Number.NaN : Number(value);
@@ -572,10 +377,6 @@ function projectOperationTimestampFromDateInput(value: string) {
   const timestamp = Date.UTC(year, month - 1, day, 12);
   const date = new Date(timestamp);
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? timestamp : null;
-}
-
-function isActiveProject(project: Project) {
-  return !terminalProjectStatuses.has(project.status.toLowerCase());
 }
 
 function leadMatchesStageFilter(lead: Lead, filter: LeadStageFilter) {
